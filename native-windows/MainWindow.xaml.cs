@@ -1291,12 +1291,18 @@ namespace FamidashEditor
                 if (parallaxImages != null && parallaxBitmap != null && parallaxImages.Length > 0)
                 {
                     int parallaxCols = Math.Max(1, parallaxBitmap.PixelWidth / TileSize);
-                    int startRow = 0; int endRow = mapHeight + ((parallaxBelowRows > 0) ? parallaxBelowRows : 0);
                     int groundRowsToDraw = (groundTileRows > 0) ? groundTileRows : 0;
-                    // Expand horizontally so parallax covers edges
-                    int extraCols = Math.Max(4, (int)Math.Ceiling(paddedFullW / (TileSize * scale)));
-                    int startCol = -extraCols;
-                    int endCol = mapWidth + extraCols;
+                    // Determine display size in device-independent units from provided pixel sizes
+                    double displayFullW = pixelPaddedWidth / dpi.DpiScaleX;
+                    double displayFullH = pixelPaddedHeight / dpi.DpiScaleY;
+                    // number of tile columns/rows needed to cover the display
+                    int colsToCover = Math.Max(4, (int)Math.Ceiling(displayFullW / (TileSize * scale)));
+                    int rowsToCover = Math.Max(4, (int)Math.Ceiling(displayFullH / (TileSize * scale)));
+                    // allow parallax to tile above and below as needed to fill viewport
+                    int startRow = -rowsToCover;
+                    int endRow = mapHeight + parallaxBelowRows + rowsToCover;
+                    int startCol = -colsToCover;
+                    int endCol = mapWidth + colsToCover;
                     for (int pyTile = startRow; pyTile < endRow; pyTile++)
                     {
                         if (groundRowsToDraw > 0 && pyTile >= mapHeight && pyTile < mapHeight + groundRowsToDraw) continue;
@@ -1330,11 +1336,17 @@ namespace FamidashEditor
                 {
                     int cols = Math.Max(1, (groundBitmap?.PixelWidth ?? TileSize) / TileSize);
                     int groundRowsToDraw = (groundTileRows > 0) ? groundTileRows : 0;
+                    // Determine display width so ground extends left/right to fill viewport
+                    double displayFullW = pixelPaddedWidth / dpi.DpiScaleX;
+                    int colsToCover = Math.Max(4, (int)Math.Ceiling(displayFullW / (TileSize * scale)));
+                    int startCol = -colsToCover;
+                    int endCol = mapWidth + colsToCover;
                     for (int gy = 0; gy < groundRowsToDraw; gy++)
                     {
-                        for (int gx = 0; gx < mapWidth; gx++)
+                        for (int gx = startCol; gx < endCol; gx++)
                         {
-                            int idx = (gy * cols + (gx % cols)) % groundImages.Length;
+                            int wrappedX = ((gx % cols) + cols) % cols;
+                            int idx = (gy * cols + wrappedX) % groundImages.Length;
                             ImageSource? gimg = null;
                             try { if (groundTonedImages != null && groundTonedImages.Length == groundImages.Length) gimg = groundTonedImages[idx]; } catch { gimg = null; }
                             if (gimg == null) gimg = groundImages[idx];
