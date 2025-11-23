@@ -237,8 +237,12 @@ namespace FamidashEditor
             {
                 MapScrollViewer.SizeChanged += (_, __) => Redraw();
                 // On scroll, update only the parallax transform (cheap) instead of re-rendering bitmaps
-                MapScrollViewer.ScrollChanged += (s, e) => UpdateParallaxTransform();
-                MapScrollViewer.Loaded += (_, __) => { Redraw(); UpdateParallaxTransform(); };
+                MapScrollViewer.ScrollChanged += (s, e) =>
+                {
+                    ClampScrollOffsets();
+                    UpdateParallaxTransform();
+                };
+                MapScrollViewer.Loaded += (_, __) => { Redraw(); UpdateParallaxTransform(); ClampScrollOffsets(); };
             }
             // palette size sliders
             if (TileSizeSlider != null) TileSizeSlider.ValueChanged += (s, ev) =>
@@ -353,6 +357,9 @@ namespace FamidashEditor
             // apply offsets
             MapScrollViewer.ScrollToHorizontalOffset(newH);
             MapScrollViewer.ScrollToVerticalOffset(newV);
+
+            // Ensure we don't allow scrolling past the bottom of the ground after zoom
+            ClampScrollOffsets();
 
             // rebuild caches if needed and redraw
             try { EnsureLayerBitmaps(newScale, mapViewportPadding, mapWidth * TileSize * newScale, mapHeight * TileSize * newScale, (mapWidth * TileSize * newScale) + mapViewportPadding * 2, (mapHeight * TileSize * newScale) + mapViewportPadding * 2, cachedPixelWidth, cachedPixelHeight); } catch { }
@@ -1230,7 +1237,9 @@ namespace FamidashEditor
 
             if (CanvasHost != null)
             {
-                CanvasHost.Width = paddedFullW; CanvasHost.Height = paddedFullH;
+                // CanvasHost should match the display size so overlays (hover/selection) align
+                // with the expanded image layers that now cover the full viewport.
+                CanvasHost.Width = displayFullW; CanvasHost.Height = displayFullH;
             }
         }
 
@@ -1338,15 +1347,41 @@ namespace FamidashEditor
                     int groundRowsToDraw = (groundTileRows > 0) ? groundTileRows : 0;
                     // Determine display width so ground extends left/right to fill viewport
                     double displayFullW = pixelPaddedWidth / dpi.DpiScaleX;
+                    double displayFullH = pixelPaddedHeight / dpi.DpiScaleY;
                     int colsToCover = Math.Max(4, (int)Math.Ceiling(displayFullW / (TileSize * scale)));
                     int startCol = -colsToCover;
                     int endCol = mapWidth + colsToCover;
-                    for (int gy = 0; gy < groundRowsToDraw; gy++)
+
+                    // Determine how many ground tile rows we need to draw so the ground covers
+                    // the entire display height below the map. Tile the available ground rows
+                    // repeatedly if the display is taller than the ground bitmap.
+                    double mapAreaH = mapHeight * TileSize * scale;
+                    // rows below the map needed to cover the display (include padding)
+                    int rowsBelowNeeded = Math.Max(0, (int)Math.Ceiling((displayFullH - mapAreaH - pad) / (TileSize * scale)));
+                    // ensure at least the source ground rows are drawn once
+                    int rowsToDraw = Math.Max(groundRowsToDraw, rowsBelowNeeded);
+                    // add one extra row as a safety margin for rounding errors
+                    rowsToDraw += 1;
+
+                    for (int gy = 0; gy < rowsToDraw; gy++)
                     {
                         for (int gx = startCol; gx < endCol; gx++)
                         {
                             int wrappedX = ((gx % cols) + cols) % cols;
-                            int idx = (gy * cols + wrappedX) % groundImages.Length;
+                            // When repeating vertically, skip the very first source row for repeated blocks
+                            // to avoid copying the top-most seam pixel row repeatedly. Behavior:
+                            // - If groundRowsToDraw <= 1, just use row 0 always.
+                            // - Otherwise, for the first pass (gy < groundRowsToDraw) use the real source row.
+                            //   For subsequent repeated rows use source rows starting at 1, wrapping among rows [1..groundRowsToDraw-1].
+                            int srcRow;
+                            if (groundRowsToDraw <= 1) srcRow = 0;
+                            else if (gy < groundRowsToDraw) srcRow = gy;
+                            else
+                            {
+                                int repeatIndex = (gy - groundRowsToDraw) % (groundRowsToDraw - 1);
+                                srcRow = 1 + repeatIndex;
+                            }
+                            int idx = (srcRow * cols + wrappedX) % groundImages.Length;
                             ImageSource? gimg = null;
                             try { if (groundTonedImages != null && groundTonedImages.Length == groundImages.Length) gimg = groundTonedImages[idx]; } catch { gimg = null; }
                             if (gimg == null) gimg = groundImages[idx];
@@ -1376,6 +1411,31 @@ namespace FamidashEditor
             if (parallaxTransform == null) parallaxTransform = new TranslateTransform(shiftX, shiftY);
             else { parallaxTransform.X = shiftX; parallaxTransform.Y = shiftY; }
             if (ParallaxImage != null) ParallaxImage.RenderTransform = parallaxTransform;
+        }
+
+        // Prevent the ScrollViewer from scrolling below the last visible ground row.
+        // This clamps the vertical offset so the viewport bottom never goes past the bottom
+        // of the map+ground content area (including padding). Called from scroll/zoom handlers.
+        private void ClampScrollOffsets()
+        {
+            if (MapScrollViewer == null) return;
+            // Compute the padded full height (map + ground + parallax padding) using current zoom
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            double fullH = mapHeight * TileSize * scale;
+            int groundRowsToDraw = (groundTileRows > 0) ? groundTileRows : 0;
+            double extraGroundH = (groundImages != null && groundRowsToDraw > 0) ? (TileSize * scale * groundRowsToDraw) : 0.0;
+            double extraParallaxH = (parallaxImages != null) ? (TileSize * scale * parallaxBelowRows) : 0.0;
+            fullH += extraGroundH + extraParallaxH;
+            double paddedFullH = fullH + pad * 2.0;
+
+            // compute maximum allowed vertical offset so viewport bottom <= paddedFullH
+            double maxAllowedV = Math.Max(0.0, paddedFullH - MapScrollViewer.ViewportHeight);
+            // If the current VerticalOffset is larger than allowed, snap it back
+            if (MapScrollViewer.VerticalOffset > maxAllowedV + 1e-6)
+            {
+                MapScrollViewer.ScrollToVerticalOffset(maxAllowedV);
+            }
         }
 
         private void BuildGridBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
