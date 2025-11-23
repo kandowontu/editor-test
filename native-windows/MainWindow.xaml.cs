@@ -1020,6 +1020,8 @@ namespace FamidashEditor
         {
             // Use hue/saturation shifting for parallax so we actually alter hue/saturation instead of overlaying a color.
             parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint);
+            // mark background/parallax cache dirty so the parallax RTB is rebuilt with the new tint
+            backgroundDirty = true;
             if (StatusText != null)
             {
                 string info = $"UpdateParallaxTint: tintA={backgroundTint.A} parallaxImages={(parallaxImages!=null?parallaxImages.Length:0)} parallaxToned={(parallaxTonedImages!=null?parallaxTonedImages.Length:0)}";
@@ -1045,6 +1047,8 @@ namespace FamidashEditor
         {
             // For ground, also apply hue/saturation shifting so the ground graphics change hue/sat.
             groundTonedImages = CreateHueShiftedImages(groundImages, groundTint);
+            // mark background/ground cache dirty so the ground RTB is rebuilt with the new tint
+            backgroundDirty = true;
             if (StatusText != null)
             {
                 string info = $"UpdateGroundTint: tintA={groundTint.A} groundImages={(groundImages!=null?groundImages.Length:0)} groundToned={(groundTonedImages!=null?groundTonedImages.Length:0)}";
