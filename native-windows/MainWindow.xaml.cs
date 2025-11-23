@@ -1106,6 +1106,8 @@ namespace FamidashEditor
             try { scaledTileCaches.Clear(); } catch { }
             // Rebuild tiles bitmap so tint appears immediately
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            // Refresh palette so the left frame shows tinted tiles as well
+            try { PopulateTilesPanel(); } catch { }
             if (StatusText != null)
             {
                 string info = $"UpdateTileTint: tintA={tileTint.A} tileImages={(tileImages!=null?tileImages.Length:0)} tileToned={(tileTonedImages!=null?tileTonedImages.Length:0)}";
@@ -1121,7 +1123,9 @@ namespace FamidashEditor
             int idx = 0;
             foreach (var src in tileImages)
             {
-                var img = new Image { Source = src, Width = paletteTileSize, Height = paletteTileSize, Stretch = Stretch.Fill, Tag = idx };
+                // prefer tinted tiles in the left palette when available
+                var paletteSrc = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[idx] : src;
+                var img = new Image { Source = paletteSrc, Width = paletteTileSize, Height = paletteTileSize, Stretch = Stretch.Fill, Tag = idx };
                 RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
                 img.MouseLeftButtonDown += (s, e) => { selectedTile = (int)((Image)s).Tag; UpdateTileHighlight(); if (StatusText != null) StatusText.Text = "Selected tile " + selectedTile; };
                 var border = new Border { Child = img, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedTile ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedTile ? new Thickness(2) : new Thickness(0)) };
