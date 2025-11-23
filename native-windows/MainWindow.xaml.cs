@@ -51,12 +51,131 @@ namespace FamidashEditor
     private bool isPainting = false;
     private int lastPaintX = -1;
     private int lastPaintY = -1;
+    // Selection state
+    private bool isSelecting = false;
+    private int selectStartX = -1, selectStartY = -1;
+    private int selX = -1, selY = -1, selW = 0, selH = 0;
+    private int[]? selTiles = null; // row-major selW * selH
     // Allow a small padded margin around the map so users can scroll slightly out-of-bounds
     private double mapViewportPadding = 64.0; // pixels on each side
+    // Undo/redo support (unlimited)
+    private readonly Stack<IUndoAction> undoStack = new Stack<IUndoAction>();
+    private readonly Stack<IUndoAction> redoStack = new Stack<IUndoAction>();
+    // when painting (drag), build up a composite action which will be pushed on mouse up
+    private TileChangeAction? currentCompositeAction = null;
+    private bool suppressUndoRecording = false;
     // Ground/Parallax layout
     // groundTileRows will be set when a ground bitmap is loaded (equals groundBitmap.PixelHeight / TileSize)
     private int groundTileRows = 0; // actual rows available in ground bitmap
     private int parallaxBelowRows = 8; // how many tile-rows of parallax to draw below the ground
+
+    // Rendering caches for performance: background (parallax+ground), tiles (incremental), grid overlay
+    private RenderTargetBitmap? backgroundRtb = null;
+    private RenderTargetBitmap? gridRtb = null;
+    private WriteableBitmap? tilesWb = null;
+    // Pre-scaled tile pixel caches keyed by integer scale key (scale*100)
+    private class ScaledTileCache { public byte[][] Pixels; public int TileW; public int TileH; public int Stride; public double Scale; public DpiScale Dpi; public ScaledTileCache(byte[][] pixels, int w, int h, int stride, double scale, DpiScale dpi) { Pixels = pixels; TileW = w; TileH = h; Stride = stride; Scale = scale; Dpi = dpi; } }
+    private readonly Dictionary<int, ScaledTileCache> scaledTileCaches = new Dictionary<int, ScaledTileCache>();
+    private int cachedPixelWidth = 0;
+    private int cachedPixelHeight = 0;
+    private double cachedScale = 1.0;
+    private bool backgroundDirty = true;
+    private bool gridDirty = true;
+
+        private interface IUndoAction
+        {
+            void Undo(MainWindow window);
+            void Redo(MainWindow window);
+        }
+
+        // Represents a batch of tile changes (can contain many per action like drag or flood-fill)
+        private class TileChangeAction : IUndoAction
+        {
+            public struct Change { public int Index; public int Old; public int New; }
+            private readonly List<Change> changes = new List<Change>();
+            private readonly Dictionary<int, int> indexMap = new Dictionary<int, int>();
+
+            public void Add(int index, int oldVal, int newVal)
+            {
+                if (indexMap.TryGetValue(index, out var pos))
+                {
+                    // update the New value
+                    var c = changes[pos]; c = new Change { Index = c.Index, Old = c.Old, New = newVal }; changes[pos] = c;
+                }
+                else
+                {
+                    indexMap[index] = changes.Count;
+                    changes.Add(new Change { Index = index, Old = oldVal, New = newVal });
+                }
+            }
+
+            public bool IsEmpty() => changes.Count == 0;
+
+            public void Undo(MainWindow window)
+            {
+                // apply old values
+                var tiles = window.tiles;
+                foreach (var c in changes)
+                {
+                    if (c.Index >= 0 && c.Index < tiles.Length) tiles[c.Index] = c.Old;
+                }
+            }
+
+            public void Redo(MainWindow window)
+            {
+                // apply new values
+                var tiles = window.tiles;
+                foreach (var c in changes)
+                {
+                    if (c.Index >= 0 && c.Index < tiles.Length) tiles[c.Index] = c.New;
+                }
+            }
+        }
+
+        // Resize action records full tile arrays before/after resize so it can be undone/redone
+        private class MapResizeAction : IUndoAction
+        {
+            private readonly int oldW; private readonly int oldH; private readonly int[] oldTiles;
+            private readonly int newW; private readonly int newH; private readonly int[] newTiles;
+            public MapResizeAction(int oldW, int oldH, int[] oldTiles, int newW, int newH, int[] newTiles)
+            {
+                this.oldW = oldW; this.oldH = oldH; this.oldTiles = oldTiles;
+                this.newW = newW; this.newH = newH; this.newTiles = newTiles;
+            }
+
+            public void Undo(MainWindow window)
+            {
+                window.tiles = oldTiles;
+                window.mapWidth = oldW; window.mapHeight = oldH;
+                if (window.WidthBox != null) window.WidthBox.Text = oldW.ToString();
+                if (window.HeightBox != null) window.HeightBox.Text = oldH.ToString();
+                if (window.MapHeightLabel != null) window.MapHeightLabel.Text = oldH.ToString();
+                // avoid triggering the slider change handler
+                if (window.HeightSlider != null)
+                {
+                    window.HeightSlider.ValueChanged -= window.HeightSlider_ValueChanged;
+                    window.HeightSlider.Value = oldH;
+                    window.HeightSlider.ValueChanged += window.HeightSlider_ValueChanged;
+                }
+                window.Redraw();
+            }
+
+            public void Redo(MainWindow window)
+            {
+                window.tiles = newTiles;
+                window.mapWidth = newW; window.mapHeight = newH;
+                if (window.WidthBox != null) window.WidthBox.Text = newW.ToString();
+                if (window.HeightBox != null) window.HeightBox.Text = newH.ToString();
+                if (window.MapHeightLabel != null) window.MapHeightLabel.Text = newH.ToString();
+                if (window.HeightSlider != null)
+                {
+                    window.HeightSlider.ValueChanged -= window.HeightSlider_ValueChanged;
+                    window.HeightSlider.Value = newH;
+                    window.HeightSlider.ValueChanged += window.HeightSlider_ValueChanged;
+                }
+                window.Redraw();
+            }
+        }
 
         public MainWindow()
         {
@@ -77,6 +196,7 @@ namespace FamidashEditor
                 CanvasHost.MouseLeftButtonUp += CanvasHost_MouseLeftButtonUp;
                 CanvasHost.MouseLeave += CanvasHost_MouseLeave;
                 CanvasHost.MouseRightButtonDown += CanvasHost_MouseRightButtonDown;
+                CanvasHost.PreviewMouseWheel += CanvasHost_PreviewMouseWheel;
             }
 
             InitDefaultMap();
@@ -161,6 +281,7 @@ namespace FamidashEditor
             if (BgColorButton != null) BgColorButton.Click += BgColorButton_Click;
             if (BgTintButton != null) BgTintButton.Click += BgTintButton_Click;
             if (GroundTintButton != null) GroundTintButton.Click += GroundTintButton_Click;
+            if (UndoButton != null) UndoButton.Click += (s, e) => Undo();
             if (HeightSlider != null) HeightSlider.ValueChanged += (s, e) => { /* already wired above */ };
                 // tool exclusivity: only one toggled at a time
                 if (PlaceTool != null) PlaceTool.Checked += Tool_Checked;
@@ -168,6 +289,64 @@ namespace FamidashEditor
                 if (EraseTool != null) EraseTool.Checked += Tool_Checked;
                 if (FillTool != null) FillTool.Checked += Tool_Checked;
                 if (SelectTool != null) SelectTool.Checked += Tool_Checked;
+            // keyboard shortcuts for undo/redo
+            this.PreviewKeyDown += MainWindow_PreviewKeyDown;
+        }
+
+        // Ctrl + Mouse Wheel inside the canvas -> zoom in/out while keeping the point under cursor stable
+        private void CanvasHost_PreviewMouseWheel(object? sender, MouseWheelEventArgs e)
+        {
+            if (MapScrollViewer == null || ZoomSlider == null) return;
+            // Only act when Ctrl is held
+            if (!(Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))) return;
+            e.Handled = true;
+
+            double oldScale = ZoomSlider.Value;
+            // use a multiplicative zoom per mouse wheel notch (120 delta = one notch)
+            double factorPerNotch = 1.1; // 10% per notch
+            double factor = Math.Pow(factorPerNotch, e.Delta / 120.0);
+            double newScale = oldScale * factor;
+            // clamp to slider limits
+            newScale = Math.Max(ZoomSlider.Minimum, Math.Min(ZoomSlider.Maximum, newScale));
+            if (Math.Abs(newScale - oldScale) < 1e-6) return;
+
+            // Determine mouse position in viewport coordinates
+            var mouseVp = e.GetPosition(MapScrollViewer);
+            double hp = MapScrollViewer.HorizontalOffset;
+            double vp = MapScrollViewer.VerticalOffset;
+
+            // Content coordinate under cursor before zoom
+            double contentX = hp + mouseVp.X;
+            double contentY = vp + mouseVp.Y;
+
+            // map world coordinate (tile-space) under cursor
+            double mapX = (contentX - mapViewportPadding) / (TileSize * oldScale);
+            double mapY = (contentY - mapViewportPadding) / (TileSize * oldScale);
+
+            // apply new zoom value
+            ZoomSlider.Value = newScale;
+
+            // compute new content coordinate for same world point
+            double newContentX = mapViewportPadding + mapX * TileSize * newScale;
+            double newContentY = mapViewportPadding + mapY * TileSize * newScale;
+
+            // compute new scroll offsets so the same content point appears under the cursor
+            double newH = newContentX - mouseVp.X;
+            double newV = newContentY - mouseVp.Y;
+
+            // clamp offsets to valid ranges
+            double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
+            double maxV = Math.Max(0, (CanvasHost.ActualHeight) - MapScrollViewer.ViewportHeight);
+            newH = Math.Max(0, Math.Min(maxH, newH));
+            newV = Math.Max(0, Math.Min(maxV, newV));
+
+            // apply offsets
+            MapScrollViewer.ScrollToHorizontalOffset(newH);
+            MapScrollViewer.ScrollToVerticalOffset(newV);
+
+            // rebuild caches if needed and redraw
+            try { EnsureLayerBitmaps(newScale, mapViewportPadding, mapWidth * TileSize * newScale, mapHeight * TileSize * newScale, (mapWidth * TileSize * newScale) + mapViewportPadding * 2, (mapHeight * TileSize * newScale) + mapViewportPadding * 2, cachedPixelWidth, cachedPixelHeight); } catch { }
+            Redraw();
         }
 
         private void HeightSlider_ValueChanged(object? sender, RoutedPropertyChangedEventArgs<double> e)
@@ -207,12 +386,22 @@ namespace FamidashEditor
                     }
                 }
             }
+
+            // record resize action for undo/redo
+            if (!suppressUndoRecording)
+            {
+                var oldTilesCopy = tiles; // keep reference to old array
+                var action = new MapResizeAction(mapWidth, mapHeight, oldTilesCopy, newWidth, newHeight, newTiles);
+                undoStack.Push(action);
+                redoStack.Clear();
+            }
+
             mapWidth = newWidth; mapHeight = newHeight; tiles = newTiles;
             if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
             if (MapHeightLabel != null) MapHeightLabel.Text = mapHeight.ToString();
             if (HeightSlider != null && (int)Math.Round(HeightSlider.Value) != mapHeight) HeightSlider.Value = mapHeight;
-            Redraw();
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
         }
 
         private void BgColorButton_Click(object? sender, RoutedEventArgs e)
@@ -239,16 +428,25 @@ namespace FamidashEditor
         {
             // Open the picker with the stored tint exactly (preserve alpha). Do not auto-promote zero alpha to opaque.
             var initialBgTint = backgroundTint;
-            var dlg = new ColorPickerWindow(initialBgTint) { Owner = this };
+            // For parallax/background tint, use full alpha (no slider)
+            var dlg = new ColorPickerWindow(initialBgTint, allowAlpha: false) { Owner = this };
             dlg.Title = "Pick Background Tint (RGBA)";
             Action<Color> handler = (c) => { backgroundTint = c; UpdateParallaxTint(); Dispatcher.BeginInvoke(new Action(Redraw)); };
             dlg.ColorChanged += handler;
-            if (dlg.ShowDialog() == true)
+            var result = dlg.ShowDialog();
+            if (result == true)
             {
                 backgroundTint = dlg.SelectedColor;
                 UpdateParallaxTint();
                 Redraw();
                 if (StatusText != null) StatusText.Text = $"BgTint set ARGB={backgroundTint.A},{backgroundTint.R},{backgroundTint.G},{backgroundTint.B} parallaxToned={(parallaxTonedImages!=null?parallaxTonedImages.Length:0)}";
+            }
+            else
+            {
+                // user cancelled: revert to initial tint
+                backgroundTint = initialBgTint;
+                UpdateParallaxTint();
+                Redraw();
             }
             dlg.ColorChanged -= handler;
         }
@@ -257,16 +455,25 @@ namespace FamidashEditor
         {
             // Preserve stored alpha when opening the ground tint picker as well.
             var initialGroundTint = groundTint;
-            var dlg = new ColorPickerWindow(initialGroundTint) { Owner = this };
+            // For ground tint, force full alpha and hide slider
+            var dlg = new ColorPickerWindow(initialGroundTint, allowAlpha: false) { Owner = this };
             dlg.Title = "Pick Ground Tint (RGBA)";
             Action<Color> handler = (c) => { groundTint = c; UpdateGroundTint(); Dispatcher.BeginInvoke(new Action(Redraw)); };
             dlg.ColorChanged += handler;
-            if (dlg.ShowDialog() == true)
+            var result = dlg.ShowDialog();
+            if (result == true)
             {
                 groundTint = dlg.SelectedColor;
                 UpdateGroundTint();
                 Redraw();
                 if (StatusText != null) StatusText.Text = $"GroundTint set ARGB={groundTint.A},{groundTint.R},{groundTint.G},{groundTint.B} groundToned={(groundTonedImages!=null?groundTonedImages.Length:0)}";
+            }
+            else
+            {
+                // revert on cancel
+                groundTint = initialGroundTint;
+                UpdateGroundTint();
+                Redraw();
             }
             dlg.ColorChanged -= handler;
         }
@@ -597,6 +804,8 @@ namespace FamidashEditor
         private void SliceTileset()
         {
             if (tilesetBitmap == null) { tileImages = null; return; }
+            // Invalidate any existing scaled tile caches when tileset changes
+            try { scaledTileCaches.Clear(); } catch { }
             int cols = Math.Max(1, tilesetBitmap.PixelWidth / TileSize);
             int rows = Math.Max(1, tilesetBitmap.PixelHeight / TileSize);
             var list = new List<ImageSource>();
@@ -898,150 +1107,41 @@ namespace FamidashEditor
 
         private void DrawMap()
         {
+            // Compute sizes and ensure layer bitmaps exist; actual per-tile updates are incremental elsewhere
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            // Render the full map (not just the viewport) so the ScrollViewer content size is correct
             double pad = mapViewportPadding;
             double fullW = mapWidth * TileSize * scale;
-            // If we have ground tiles, extend the canvas height by the ground bitmap's rows so the full ground is visible
             int groundRowsToDraw = (groundTileRows > 0) ? groundTileRows : 0;
             double extraGroundH = (groundImages != null && groundRowsToDraw > 0) ? (TileSize * scale * groundRowsToDraw) : 0.0;
-            // Add extra parallax rows below the ground so parallax takes over after groundRows
             double extraParallaxH = (parallaxImages != null) ? (TileSize * scale * parallaxBelowRows) : 0.0;
             double fullH = mapHeight * TileSize * scale + extraGroundH + extraParallaxH;
-            // Include padding on all sides so the ScrollViewer can scroll slightly out of bounds
             double paddedFullW = fullW + pad * 2.0;
             double paddedFullH = fullH + pad * 2.0;
 
-            var dv = new DrawingVisual();
-            using (var dc = dv.RenderOpen())
-            {
-                // Background (customizable) - draw at padded origin so grid/tiles align with padding
-                dc.DrawRectangle(mapBackground, null, new Rect(pad, pad, fullW, fullH));
-
-                // Draw parallax layer tiled across and behind the map (if available).
-                // Parallax should cover the map area and extend a few rows below the map so it sits under the ground/tile band.
-                if (parallaxImages != null && parallaxBitmap != null && parallaxImages.Length > 0)
-                {
-                    int parallaxCols = Math.Max(1, parallaxBitmap.PixelWidth / TileSize);
-                    // Parallax ratio: background moves slower than foreground. 0.9 means background moves at 90% of camera.
-                    const double parallaxRatio = 0.9;
-                    double camOffsetX = 0.0, camOffsetY = 0.0;
-                    if (MapScrollViewer != null)
-                    {
-                        camOffsetX = MapScrollViewer.HorizontalOffset;
-                        camOffsetY = MapScrollViewer.VerticalOffset;
-                    }
-                    // Amount to shift parallax tiles in world space so final screen shift is parallaxRatio * camera.
-                    double parallaxWorldShiftX = camOffsetX * (1.0 - parallaxRatio);
-                    double parallaxWorldShiftY = camOffsetY * (1.0 - parallaxRatio);
-
-                    // Start at the top of the map so parallax appears in the grid area (behind tiles).
-                    int startRow = 0;
-                    // End a few rows below the map so the parallax continues under the ground band.
-                    int endRow = mapHeight + ((parallaxBelowRows > 0) ? parallaxBelowRows : 0);
-
-                    for (int pyTile = startRow; pyTile < endRow; pyTile++)
-                    {
-                        // Skip drawing parallax where ground rows exist so ground fully occludes parallax
-                        if (groundRowsToDraw > 0 && pyTile >= mapHeight && pyTile < mapHeight + groundRowsToDraw) continue;
-                        for (int pxTile = 0; pxTile < mapWidth; pxTile++)
-                        {
-                            int idx = (pyTile * parallaxCols + pxTile) % parallaxImages.Length;
-                            if (idx < 0) idx += parallaxImages.Length; // guard
-                                if (idx >= 0 && idx < parallaxImages.Length)
-                                {
-                                    ImageSource? img = null;
-                                    try
-                                    {
-                                        if (parallaxTonedImages != null && parallaxTonedImages.Length == parallaxImages.Length) img = parallaxTonedImages[idx];
-                                    }
-                                    catch { img = null; }
-                                    if (img == null) img = parallaxImages[idx];
-                                    if (img != null)
-                                    {
-                                        double px = pxTile * TileSize * scale + parallaxWorldShiftX + pad;
-                                        double py = pyTile * TileSize * scale + parallaxWorldShiftY + pad;
-                                        try { dc.DrawImage(img, new Rect(px, py, TileSize * scale, TileSize * scale)); }
-                                        catch { /* swallow individual draw failures */ }
-                                    }
-                                }
-                        }
-                    }
-                        // Parallax is tinted by using per-pixel tinted images (parallaxTonedImages). No overlay rectangle here.
-                }
-
-                // Draw ground rows under the map (if ground images available). Draw before tiles so tiles render on top.
-                if (groundImages != null && groundImages.Length > 0 && groundRowsToDraw > 0)
-                {
-                    int cols = Math.Max(1, (groundBitmap?.PixelWidth ?? TileSize) / TileSize);
-                    for (int gy = 0; gy < groundRowsToDraw; gy++)
-                    {
-                        for (int gx = 0; gx < mapWidth; gx++)
-                        {
-                            // pick tile based on column and the ground bitmap row so the full ground graphic appears
-                            int idx = (gy * cols + (gx % cols)) % groundImages.Length;
-                            ImageSource? gimg = null;
-                            try { if (groundTonedImages != null && groundTonedImages.Length == groundImages.Length) gimg = groundTonedImages[idx]; } catch { gimg = null; }
-                            if (gimg == null) gimg = groundImages[idx];
-                            double px = gx * TileSize * scale + pad;
-                            // stack ground rows immediately below the map area
-                            double py = (mapHeight + gy) * TileSize * scale + pad;
-                            try { if (gimg != null) dc.DrawImage(gimg, new Rect(px, py, TileSize * scale, TileSize * scale)); } catch { }
-                        }
-                    }
-                }
-
-                // Draw placed tiles (if tileset loaded)
-                if (tileImages != null)
-                {
-                    for (int y = 0; y < mapHeight; y++)
-                    {
-                        for (int x = 0; x < mapWidth; x++)
-                        {
-                            int idx = tiles[y * mapWidth + x];
-                            if (idx >= 0 && idx < tileImages.Length)
-                            {
-                                var img = tileImages[idx];
-                                double px = x * TileSize * scale + pad;
-                                double py = y * TileSize * scale + pad;
-                                dc.DrawImage(img, new Rect(px, py, TileSize * scale, TileSize * scale));
-                            }
-                        }
-                    }
-                }
-
-                // Deleted-tile marker removed — no visual marker for empty tiles for now.
-
-                // Grid lines on top (allow darker values by scaling slider)
-                // gridDarkness range normally 0..1; allow stronger darkness by multiplying
-                int alpha = Math.Min(255, (int)(gridDarkness * 255 * 1.6));
-                // use a lighter RGB for better contrast against dark backgrounds
-                var pen = new Pen(new SolidColorBrush(Color.FromArgb((byte)alpha, 200, 200, 200)), 1.0);
-                pen.Freeze();
-                for (int y = 0; y < mapHeight; y++)
-                    for (int x = 0; x < mapWidth; x++)
-                    {
-                        double px = x * TileSize * scale + pad; double py = y * TileSize * scale + pad;
-                        dc.DrawRectangle(Brushes.Transparent, pen, new Rect(px, py, TileSize * scale, TileSize * scale));
-                    }
-
-                // Ground is tinted by using per-pixel tinted images (groundTonedImages). No overlay rectangle here.
-            }
-
             var dpi = VisualTreeHelper.GetDpi(this);
-            int pixelWidth = Math.Max(1, (int)Math.Ceiling(fullW * dpi.DpiScaleX));
-            int pixelHeight = Math.Max(1, (int)Math.Ceiling(fullH * dpi.DpiScaleY));
-            // Render using the padded sizes
             int pixelPaddedWidth = Math.Max(1, (int)Math.Ceiling(paddedFullW * dpi.DpiScaleX));
             int pixelPaddedHeight = Math.Max(1, (int)Math.Ceiling(paddedFullH * dpi.DpiScaleY));
-            var rtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-            rtb.Render(dv);
 
-            if (VisibleImage != null)
+            // Ensure background/grid/tiles bitmaps exist and match size/scale
+            EnsureLayerBitmaps(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight);
+
+            // Update UI image sources and sizes
+            if (BackgroundImage != null && backgroundRtb != null)
             {
-                VisibleImage.Source = rtb;
-                VisibleImage.Width = paddedFullW; VisibleImage.Height = paddedFullH;
+                BackgroundImage.Source = backgroundRtb;
+                BackgroundImage.Width = paddedFullW; BackgroundImage.Height = paddedFullH;
             }
+            if (TilesImage != null && tilesWb != null)
+            {
+                TilesImage.Source = tilesWb;
+                TilesImage.Width = paddedFullW; TilesImage.Height = paddedFullH;
+            }
+            if (GridImage != null && gridRtb != null)
+            {
+                GridImage.Source = gridRtb;
+                GridImage.Width = paddedFullW; GridImage.Height = paddedFullH;
+            }
+
             if (CanvasHost != null)
             {
                 CanvasHost.Width = paddedFullW; CanvasHost.Height = paddedFullH;
@@ -1050,16 +1150,319 @@ namespace FamidashEditor
 
         private void Redraw() => DrawMap();
 
+        // Ensure the background, tiles and grid bitmaps exist for the current size/scale.
+        private void EnsureLayerBitmaps(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight)
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            // Recreate background if size changed or marked dirty
+            if (backgroundRtb == null || cachedPixelWidth != pixelPaddedWidth || cachedPixelHeight != pixelPaddedHeight || Math.Abs(cachedScale - scale) > 1e-6 || backgroundDirty)
+            {
+                BuildBackgroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
+                backgroundDirty = false;
+            }
+            // Recreate grid if needed
+            if (gridRtb == null || cachedPixelWidth != pixelPaddedWidth || cachedPixelHeight != pixelPaddedHeight || Math.Abs(cachedScale - scale) > 1e-6 || gridDirty)
+            {
+                BuildGridBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
+                gridDirty = false;
+            }
+            // Create or recreate tiles writeable bitmap if size changed
+            if (tilesWb == null || cachedPixelWidth != pixelPaddedWidth || cachedPixelHeight != pixelPaddedHeight || Math.Abs(cachedScale - scale) > 1e-6)
+            {
+                tilesWb = new WriteableBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32, null);
+                cachedPixelWidth = pixelPaddedWidth; cachedPixelHeight = pixelPaddedHeight; cachedScale = scale;
+                // initialize to transparent
+                var empty = new byte[pixelPaddedHeight * tilesWb.BackBufferStride];
+                tilesWb.WritePixels(new Int32Rect(0, 0, pixelPaddedWidth, pixelPaddedHeight), empty, tilesWb.BackBufferStride, 0);
+                // render all tiles into the tilesWb
+                RebuildAllTilesBitmap(scale, pad);
+            }
+        }
+
+        private void BuildBackgroundBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
+        {
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawRectangle(mapBackground, null, new Rect(pad, pad, fullW, fullH));
+                // Parallax
+                if (parallaxImages != null && parallaxBitmap != null && parallaxImages.Length > 0)
+                {
+                    int parallaxCols = Math.Max(1, parallaxBitmap.PixelWidth / TileSize);
+                    const double parallaxRatio = 0.9;
+                    double camOffsetX = 0.0, camOffsetY = 0.0;
+                    if (MapScrollViewer != null)
+                    {
+                        camOffsetX = MapScrollViewer.HorizontalOffset; camOffsetY = MapScrollViewer.VerticalOffset;
+                    }
+                    double parallaxWorldShiftX = camOffsetX * (1.0 - parallaxRatio);
+                    double parallaxWorldShiftY = camOffsetY * (1.0 - parallaxRatio);
+                    int startRow = 0; int endRow = mapHeight + ((parallaxBelowRows > 0) ? parallaxBelowRows : 0);
+                    int groundRowsToDraw = (groundTileRows > 0) ? groundTileRows : 0;
+                    // Expand parallax horizontally beyond the map so it extends past the grid edges
+                    int extraCols = Math.Max(4, (int)Math.Ceiling(paddedFullW / (TileSize * scale)));
+                    int startCol = -extraCols;
+                    int endCol = mapWidth + extraCols;
+                    for (int pyTile = startRow; pyTile < endRow; pyTile++)
+                    {
+                        if (groundRowsToDraw > 0 && pyTile >= mapHeight && pyTile < mapHeight + groundRowsToDraw) continue;
+                        for (int pxTile = startCol; pxTile < endCol; pxTile++)
+                        {
+                            int idx = (pyTile * parallaxCols + pxTile) % parallaxImages.Length;
+                            if (idx < 0) idx += parallaxImages.Length;
+                            ImageSource? img = null;
+                            try { if (parallaxTonedImages != null && parallaxTonedImages.Length == parallaxImages.Length) img = parallaxTonedImages[idx]; } catch { img = null; }
+                            if (img == null) img = parallaxImages[idx];
+                            if (img != null)
+                            {
+                                double px = pxTile * TileSize * scale + parallaxWorldShiftX + pad;
+                                double py = pyTile * TileSize * scale + parallaxWorldShiftY + pad;
+                                dc.DrawImage(img, new Rect(px, py, TileSize * scale, TileSize * scale));
+                            }
+                        }
+                    }
+                }
+                // Ground
+                if (groundImages != null && groundImages.Length > 0)
+                {
+                    int cols = Math.Max(1, (groundBitmap?.PixelWidth ?? TileSize) / TileSize);
+                    int groundRowsToDraw = (groundTileRows > 0) ? groundTileRows : 0;
+                    for (int gy = 0; gy < groundRowsToDraw; gy++)
+                    {
+                        for (int gx = 0; gx < mapWidth; gx++)
+                        {
+                            int idx = (gy * cols + (gx % cols)) % groundImages.Length;
+                            ImageSource? gimg = null;
+                            try { if (groundTonedImages != null && groundTonedImages.Length == groundImages.Length) gimg = groundTonedImages[idx]; } catch { gimg = null; }
+                            if (gimg == null) gimg = groundImages[idx];
+                            double px = gx * TileSize * scale + pad;
+                            double py = (mapHeight + gy) * TileSize * scale + pad;
+                            if (gimg != null) dc.DrawImage(gimg, new Rect(px, py, TileSize * scale, TileSize * scale));
+                        }
+                    }
+                }
+            }
+            backgroundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            backgroundRtb.Render(dv);
+        }
+
+        private void BuildGridBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
+        {
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                // Draw grid using integer device pixels to keep alignment stable across zoom/DPI changes
+                int alpha = Math.Min(255, (int)(gridDarkness * 255 * 1.6));
+                // Pen thickness set to one device pixel
+                double penThickness = 1.0 / dpi.DpiScaleX;
+                var pen = new Pen(new SolidColorBrush(Color.FromArgb((byte)alpha, 200, 200, 200)), penThickness);
+                pen.Freeze();
+                int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                int padPx = (int)Math.Round(pad * dpi.DpiScaleX);
+                for (int y = 0; y < mapHeight; y++)
+                {
+                    for (int x = 0; x < mapWidth; x++)
+                    {
+                        int pxPix = padPx + x * tilePixelW;
+                        int pyPix = padPx + y * tilePixelH;
+                        double px = pxPix / dpi.DpiScaleX;
+                        double py = pyPix / dpi.DpiScaleY;
+                        double w = tilePixelW / dpi.DpiScaleX;
+                        double h = tilePixelH / dpi.DpiScaleY;
+                        dc.DrawRectangle(Brushes.Transparent, pen, new Rect(px, py, w, h));
+                    }
+                }
+            }
+            gridRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            gridRtb.Render(dv);
+        }
+
+        // Rebuild the entire tiles writeable bitmap from the tiles[] array
+        private void RebuildAllTilesBitmap(double scale, double pad)
+        {
+            if (tilesWb == null) return;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            // clear
+            var clear = new byte[cachedPixelHeight * tilesWb.BackBufferStride];
+            tilesWb.WritePixels(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight), clear, tilesWb.BackBufferStride, 0);
+            // Ensure we have a pre-scaled tile cache for this zoom/dpi to avoid per-tile scaling work
+            EnsureScaledTileCache(scale, dpi);
+            // write each tile
+            for (int y = 0; y < mapHeight; y++) for (int x = 0; x < mapWidth; x++) UpdateTileBitmapAt(x, y, scale, pad, tilePixelW, tilePixelH, dpi);
+        }
+
+        // Build or ensure a scaled tile pixel cache for the given zoom and dpi.
+        // The cache stores raw BGRA32 pixel arrays for each tileImage scaled to the target tile pixel size.
+        private void EnsureScaledTileCache(double scale, DpiScale dpi)
+        {
+            if (tileImages == null) return;
+            int scaleKey = (int)Math.Round(scale * 100.0);
+            if (scaledTileCaches.TryGetValue(scaleKey, out var existing))
+            {
+                // existing cache is fine
+                return;
+            }
+            try
+            {
+                int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                int stride = tilePixelW * 4;
+                int count = tileImages.Length;
+                var pixelsArr = new byte[count][];
+                for (int i = 0; i < count; i++)
+                {
+                    var buf = new byte[tilePixelH * stride];
+                    try
+                    {
+                        var src = tileImages[i] as ImageSource;
+                        if (src != null)
+                        {
+                            var dv = new DrawingVisual();
+                            using (var dc = dv.RenderOpen()) dc.DrawImage(src, new Rect(0, 0, tilePixelW, tilePixelH));
+                            var rtb = new RenderTargetBitmap(tilePixelW, tilePixelH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                            rtb.Render(dv);
+                            rtb.CopyPixels(buf, stride, 0);
+                        }
+                    }
+                    catch { /* leave transparent if copy fails */ }
+                    pixelsArr[i] = buf;
+                }
+                var cache = new ScaledTileCache(pixelsArr, tilePixelW, tilePixelH, stride, scale, dpi);
+                scaledTileCaches[scaleKey] = cache;
+            }
+            catch { /* don't crash on cache build failure */ }
+        }
+
+        // Update a single tile's pixels inside the tiles writeable bitmap
+        private void UpdateTileBitmapAt(int x, int y, double scale, double pad, int? preTilePxW = null, int? preTilePxH = null, DpiScale? preDpi = null)
+        {
+            if (tilesWb == null) return;
+            var dpi = preDpi ?? VisualTreeHelper.GetDpi(this);
+            int tilePixelW = preTilePxW ?? Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = preTilePxH ?? Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+
+            int idx = tiles[y * mapWidth + x];
+            int destX = Math.Max(0, (int)Math.Floor((pad + x * TileSize * scale) * dpi.DpiScaleX));
+            int destY = Math.Max(0, (int)Math.Floor((pad + y * TileSize * scale) * dpi.DpiScaleY));
+
+            // Use pre-scaled cached pixels when available to avoid rendering per-tile on the UI thread
+            int stride = tilePixelW * 4;
+            byte[] pixels = new byte[tilePixelH * stride];
+            bool usedCache = false;
+            try
+            {
+                var dpiNow = dpi;
+                int scaleKey = (int)Math.Round(scale * 100.0);
+                if (scaledTileCaches.TryGetValue(scaleKey, out var cache))
+                {
+                    // Cache must match expected tile size/dpi
+                    if (cache.TileW == tilePixelW && cache.TileH == tilePixelH)
+                    {
+                        if (idx >= 0 && tileImages != null && idx < cache.Pixels.Length)
+                        {
+                            var src = cache.Pixels[idx];
+                            if (src != null && src.Length == pixels.Length)
+                            {
+                                Buffer.BlockCopy(src, 0, pixels, 0, src.Length);
+                                usedCache = true;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { /* fall back to per-tile render below */ }
+
+            if (!usedCache)
+            {
+                // Render tile image scaled to tilePixelW/tilePixelH into an intermediate bitmap and copy pixels
+                if (idx >= 0 && tileImages != null && idx < tileImages.Length)
+                {
+                    var tileSrc = tileImages[idx] as ImageSource;
+                    if (tileSrc != null)
+                    {
+                        var dv = new DrawingVisual();
+                        using (var dc = dv.RenderOpen()) dc.DrawImage(tileSrc, new Rect(0, 0, tilePixelW, tilePixelH));
+                        var rtb = new RenderTargetBitmap(tilePixelW, tilePixelH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                        rtb.Render(dv);
+                        try { rtb.CopyPixels(pixels, stride, 0); }
+                        catch { /* swallow */ }
+                    }
+                }
+                // else keep pixels transparent
+            }
+
+            try
+            {
+                tilesWb.WritePixels(new Int32Rect(destX, destY, Math.Min(tilePixelW, cachedPixelWidth - destX), Math.Min(tilePixelH, cachedPixelHeight - destY)), pixels, stride, 0);
+            }
+            catch { }
+            // assign to image source (TilesImage) done in DrawMap/Ensure
+        }
+
         private void CanvasHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
+            // Branch behavior based on active tool
+            // Select tool: start draggable selection rectangle
+            if (SelectTool != null && SelectTool.IsChecked == true)
+            {
+                StartSelectionAt(pos);
+                return;
+            }
+            // Move tool: if we have an existing selection, a click will place the selection's top-left at the clicked tile
+            if (MoveTool != null && MoveTool.IsChecked == true)
+            {
+                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double pad = mapViewportPadding;
+                double relX = pos.X - pad;
+                double relY = pos.Y - pad;
+                int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
+                int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+                if (selTiles != null && selW > 0 && selH > 0)
+                {
+                    MoveSelectionTo(x, y);
+                    return;
+                }
+                // If no selection, fallback to pick tile under cursor (previous behavior)
+                selectedTile = tiles[y * mapWidth + x];
+                UpdateTileHighlight();
+                return;
+            }
+
+            // Erase tool: if there's a selection and user clicks inside it, erase selection
+            if (EraseTool != null && EraseTool.IsChecked == true && selTiles != null && selW > 0 && selH > 0)
+            {
+                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double pad = mapViewportPadding;
+                double relX = pos.X - pad;
+                double relY = pos.Y - pad;
+                int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
+                int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+                if (x >= selX && x < selX + selW && y >= selY && y < selY + selH)
+                {
+                    EraseSelection();
+                    return;
+                }
+            }
+
+            // Default: place/erase painting behavior
             StartPaintingAt(pos);
         }
 
         private void CanvasHost_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            StopPainting();
+            if (isSelecting)
+            {
+                EndSelection();
+            }
+            else
+            {
+                StopPainting();
+            }
         }
 
         private void CanvasHost_MouseMove(object sender, MouseEventArgs e)
@@ -1067,6 +1470,12 @@ namespace FamidashEditor
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
             UpdateCoords(pos);
+            // If actively selecting, update the selection rectangle
+            if (isSelecting && e.LeftButton == MouseButtonState.Pressed)
+            {
+                UpdateSelectionTo(pos);
+                return;
+            }
             // If painting (mouse held down for place/erase) then paint the cell under the cursor
             if (isPainting && e.LeftButton == MouseButtonState.Pressed)
             {
@@ -1090,16 +1499,27 @@ namespace FamidashEditor
         private void FloodFill(int sx, int sy, int target, int replacement)
         {
             if (target == replacement) return;
+            var action = new TileChangeAction();
             var q = new System.Collections.Generic.Queue<(int x, int y)>();
             q.Enqueue((sx, sy));
             while (q.Count > 0)
             {
                 var (x, y) = q.Dequeue();
                 if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) continue;
-                if (tiles[y * mapWidth + x] != target) continue;
-                tiles[y * mapWidth + x] = replacement;
+                int idx = y * mapWidth + x;
+                if (tiles[idx] != target) continue;
+                // record change
+                action.Add(idx, tiles[idx], replacement);
+                tiles[idx] = replacement;
                 q.Enqueue((x + 1, y)); q.Enqueue((x - 1, y)); q.Enqueue((x, y + 1)); q.Enqueue((x, y - 1));
             }
+            if (!action.IsEmpty() && !suppressUndoRecording)
+            {
+                undoStack.Push(action);
+                redoStack.Clear();
+            }
+            // update tiles bitmap after flood
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
         }
 
         private void CanvasHost_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -1143,9 +1563,155 @@ namespace FamidashEditor
             {
                 isPainting = true;
                 lastPaintX = -1; lastPaintY = -1;
+                // Prepare scaled tile cache for the current zoom/DPI to avoid per-tile scaling during drag
+                try { EnsureScaledTileCache((ZoomSlider!=null?ZoomSlider.Value:1.0), VisualTreeHelper.GetDpi(this)); } catch { }
+                // begin composite undo action for this drag/session
+                if (!suppressUndoRecording) currentCompositeAction = new TileChangeAction();
                 CanvasHost.CaptureMouse();
                 DoPaintAt(x, y);
             }
+        }
+
+        // Selection helpers
+        private void StartSelectionAt(Point pos)
+        {
+            if (CanvasHost == null) return;
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            double relX = pos.X - pad;
+            double relY = pos.Y - pad;
+            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
+            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+            isSelecting = true;
+            selectStartX = x; selectStartY = y;
+            // show selection rect initially at a single tile
+            if (SelectionRect != null)
+            {
+                double left = x * TileSize * scale + mapViewportPadding;
+                double top = y * TileSize * scale + mapViewportPadding;
+                double size = TileSize * scale;
+                SelectionRect.Width = size; SelectionRect.Height = size;
+                Canvas.SetLeft(SelectionRect, left); Canvas.SetTop(SelectionRect, top);
+                SelectionRect.Visibility = Visibility.Visible;
+            }
+            if (CanvasHost != null) CanvasHost.CaptureMouse();
+        }
+
+        private void UpdateSelectionTo(Point pos)
+        {
+            if (!isSelecting || SelectionRect == null) return;
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            double relX = pos.X - pad;
+            double relY = pos.Y - pad;
+            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
+            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+            int minX = Math.Min(selectStartX, x), minY = Math.Min(selectStartY, y);
+            int maxX = Math.Max(selectStartX, x), maxY = Math.Max(selectStartY, y);
+            double left = minX * TileSize * scale + pad; double top = minY * TileSize * scale + pad;
+            double w = (maxX - minX + 1) * TileSize * scale; double h = (maxY - minY + 1) * TileSize * scale;
+            SelectionRect.Width = w; SelectionRect.Height = h; Canvas.SetLeft(SelectionRect, left); Canvas.SetTop(SelectionRect, top);
+        }
+
+        private void EndSelection()
+        {
+            if (!isSelecting) return;
+            isSelecting = false;
+            if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
+            // compute final selection bounds from current SelectionRect position
+            if (SelectionRect == null) return;
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            double left = Canvas.GetLeft(SelectionRect) - pad;
+            double top = Canvas.GetTop(SelectionRect) - pad;
+            int minX = Math.Max(0, Math.Min(mapWidth - 1, (int)(left / (TileSize * scale))));
+            int minY = Math.Max(0, Math.Min(mapHeight - 1, (int)(top / (TileSize * scale))));
+            int w = Math.Max(1, (int)Math.Round(SelectionRect.Width / (TileSize * scale)));
+            int h = Math.Max(1, (int)Math.Round(SelectionRect.Height / (TileSize * scale)));
+            // clamp to map
+            if (minX + w > mapWidth) w = mapWidth - minX;
+            if (minY + h > mapHeight) h = mapHeight - minY;
+            selX = minX; selY = minY; selW = w; selH = h;
+            // copy tiles
+            selTiles = new int[selW * selH];
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++) selTiles[yy * selW + xx] = tiles[(selY + yy) * mapWidth + (selX + xx)];
+            SelectionRect.Visibility = Visibility.Visible;
+            if (StatusText != null) StatusText.Text = $"Selected area {selW}x{selH} at {selX},{selY}";
+            Redraw();
+        }
+
+        private void ClearSelection()
+        {
+            selTiles = null; selW = 0; selH = 0; selX = selY = -1;
+            if (SelectionRect != null) SelectionRect.Visibility = Visibility.Collapsed;
+            if (StatusText != null) StatusText.Text = string.Empty;
+        }
+
+        private void MoveSelectionTo(int destX, int destY)
+        {
+            if (selTiles == null || selW <= 0 || selH <= 0) return;
+            // clamp destination so selection fits
+            if (destX < 0) destX = 0; if (destY < 0) destY = 0;
+            if (destX + selW > mapWidth) destX = mapWidth - selW;
+            if (destY + selH > mapHeight) destY = mapHeight - selH;
+
+            // Prepare final values map and record changes compared to current tiles
+            var final = (int[])tiles.Clone();
+            var changed = new TileChangeAction();
+
+            // Apply selection values to final at destination
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            {
+                int val = selTiles[yy * selW + xx];
+                int dIdx = (destY + yy) * mapWidth + (destX + xx);
+                final[dIdx] = val;
+            }
+
+            // Clear original source cells unless they are also targets for the selection (i.e., overlapping move)
+            var targetSet = new HashSet<int>();
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++) targetSet.Add((destY + yy) * mapWidth + (destX + xx));
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            {
+                int sIdx = (selY + yy) * mapWidth + (selX + xx);
+                if (!targetSet.Contains(sIdx)) final[sIdx] = -1;
+            }
+
+            // Build TileChangeAction from differences
+            for (int i = 0; i < final.Length; i++)
+            {
+                if (final[i] != tiles[i]) changed.Add(i, tiles[i], final[i]);
+            }
+
+            if (!changed.IsEmpty() && !suppressUndoRecording)
+            {
+                undoStack.Push(changed);
+                redoStack.Clear();
+            }
+
+            // Commit final state
+            tiles = final;
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            ClearSelection();
+            if (StatusText != null) StatusText.Text = $"Moved selection to {destX},{destY}";
+        }
+
+        private void EraseSelection()
+        {
+            if (selTiles == null || selW <= 0 || selH <= 0) return;
+            var action = new TileChangeAction();
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            {
+                int idx = (selY + yy) * mapWidth + (selX + xx);
+                int old = tiles[idx]; if (old != -1) action.Add(idx, old, -1);
+                tiles[idx] = -1;
+            }
+            if (!action.IsEmpty() && !suppressUndoRecording)
+            {
+                undoStack.Push(action); redoStack.Clear();
+            }
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            ClearSelection();
+            if (StatusText != null) StatusText.Text = "Erased selection";
         }
 
         private void ContinuePaintingAt(Point pos)
@@ -1167,6 +1733,16 @@ namespace FamidashEditor
             isPainting = false;
             lastPaintX = -1; lastPaintY = -1;
             if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
+            // push composite action to undo stack
+            try
+            {
+                if (!suppressUndoRecording && currentCompositeAction != null && !currentCompositeAction.IsEmpty())
+                {
+                    undoStack.Push(currentCompositeAction);
+                    redoStack.Clear();
+                }
+            }
+            finally { currentCompositeAction = null; }
         }
 
         private void DoPaintAt(int x, int y)
@@ -1175,15 +1751,38 @@ namespace FamidashEditor
             // Only paint for Place or Erase
             if (PlaceTool != null && PlaceTool.IsChecked == true)
             {
-                tiles[y * mapWidth + x] = selectedTile;
-                lastPaintX = x; lastPaintY = y;
-                Redraw();
+                int idx = y * mapWidth + x;
+                int old = tiles[idx];
+                int neu = selectedTile;
+                if (old != neu)
+                {
+                    if (!suppressUndoRecording)
+                    {
+                        if (currentCompositeAction == null) currentCompositeAction = new TileChangeAction();
+                        currentCompositeAction.Add(idx, old, neu);
+                    }
+                    tiles[idx] = neu;
+                    lastPaintX = x; lastPaintY = y;
+                    // update only this tile in the tiles layer
+                    try { UpdateTileBitmapAt(x, y, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                }
             }
             else if (EraseTool != null && EraseTool.IsChecked == true)
             {
-                tiles[y * mapWidth + x] = -1;
-                lastPaintX = x; lastPaintY = y;
-                Redraw();
+                int idx = y * mapWidth + x;
+                int old = tiles[idx];
+                int neu = -1;
+                if (old != neu)
+                {
+                    if (!suppressUndoRecording)
+                    {
+                        if (currentCompositeAction == null) currentCompositeAction = new TileChangeAction();
+                        currentCompositeAction.Add(idx, old, neu);
+                    }
+                    tiles[idx] = neu;
+                    lastPaintX = x; lastPaintY = y;
+                    try { UpdateTileBitmapAt(x, y, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                }
             }
         }
 
@@ -1234,7 +1833,61 @@ namespace FamidashEditor
 
         private void GridDarknessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            gridDarkness = e.NewValue; Redraw();
+            gridDarkness = e.NewValue; 
+            // Mark grid cache dirty so the grid bitmap is rebuilt with the new darkness
+            gridDirty = true;
+            Redraw();
+        }
+
+        private void MainWindow_PreviewKeyDown(object? sender, KeyEventArgs e)
+        {
+            // Ctrl+Z = undo, Ctrl+Y = redo
+            if ((Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)) && e.Key == Key.Z)
+            {
+                Undo(); e.Handled = true; return;
+            }
+            if ((Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)) && e.Key == Key.Y)
+            {
+                Redo(); e.Handled = true; return;
+            }
+        }
+
+        private void Undo()
+        {
+            if (undoStack.Count == 0)
+            {
+                if (StatusText != null) StatusText.Text = "Undo: nothing to undo";
+                return;
+            }
+            var action = undoStack.Pop();
+            try
+            {
+                suppressUndoRecording = true;
+                action.Undo(this);
+            }
+            finally { suppressUndoRecording = false; }
+            redoStack.Push(action);
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            if (StatusText != null) StatusText.Text = "Undid action";
+        }
+
+        private void Redo()
+        {
+            if (redoStack.Count == 0)
+            {
+                if (StatusText != null) StatusText.Text = "Redo: nothing to redo";
+                return;
+            }
+            var action = redoStack.Pop();
+            try
+            {
+                suppressUndoRecording = true;
+                action.Redo(this);
+            }
+            finally { suppressUndoRecording = false; }
+            undoStack.Push(action);
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            if (StatusText != null) StatusText.Text = "Redid action";
         }
 
         private void ResizeButton_Click(object sender, RoutedEventArgs e)

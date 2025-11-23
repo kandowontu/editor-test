@@ -116,6 +116,7 @@
                             <TextBlock Text="Select" Margin="4,0" />
                         </StackPanel>
                     </ToggleButton>
+                    <Button x:Name="UndoButton" Margin="8,0,0,0" ToolTip="Undo (Ctrl+Z)">Undo</Button>
                     <Button x:Name="BgColorButton" Content="Background..." Margin="8,0,0,0" />
                     <Button x:Name="BgTintButton" Content="Background Tint..." Margin="8,0,0,0" />
                     <Button x:Name="GroundTintButton" Content="Ground Tint..." Margin="8,0,0,0" />
@@ -148,10 +149,15 @@
 
         <ScrollViewer x:Name="MapScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
             <Grid>
-                <Image x:Name="VisibleImage" />
+                <!-- Background (parallax/ground), Tiles layer, Grid overlay -->
+                <Image x:Name="BackgroundImage" />
+                <Image x:Name="TilesImage" />
+                <Image x:Name="GridImage" />
                 <Canvas x:Name="CanvasHost" Background="Transparent">
                     <!-- Hover rectangle: shown while mouse is over a tile -->
                     <Rectangle x:Name="HoverRect" Fill="#28FFFF00" Stroke="Yellow" StrokeThickness="2" Visibility="Collapsed" IsHitTestVisible="False" />
+                        <!-- Selection rectangle for multi-tile selection -->
+                        <Rectangle x:Name="SelectionRect" Fill="#40FFFFFF" Stroke="Cyan" StrokeThickness="2" Visibility="Collapsed" IsHitTestVisible="False" />
                 </Canvas>
             </Grid>
         </ScrollViewer>
