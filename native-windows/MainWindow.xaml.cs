@@ -99,6 +99,15 @@ namespace FamidashEditor
     private const double ParallaxRatio = 0.9;
     // cheap transform applied to ParallaxImage so it moves with the scroll without re-rendering pixels
     private TranslateTransform? parallaxTransform = new TranslateTransform(0, 0);
+    // Cached brushes for performance
+    private static readonly SolidColorBrush SelectionFillBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
+    private static readonly Brush SelectionStrokeBrush = Brushes.Cyan;
+    // Cache hover position to avoid redundant updates
+    private int lastHoverX = -1;
+    private int lastHoverY = -1;
+    // Throttle timers for expensive events
+    private System.Windows.Threading.DispatcherTimer? sizeChangedThrottleTimer;
+    private System.Windows.Threading.DispatcherTimer? zoomThrottleTimer;
 
         private interface IUndoAction
         {
@@ -200,7 +209,31 @@ namespace FamidashEditor
             InitializeComponent();
             LoadSettings();
 
-            if (ZoomSlider != null) ZoomSlider.ValueChanged += (s, e) => Redraw();
+            // Throttle zoom changes with longer delay to batch rapid changes
+            if (ZoomSlider != null)
+            {
+                zoomThrottleTimer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(150) // Increased from 50ms
+                };
+                zoomThrottleTimer.Tick += (s, e) =>
+                {
+                    zoomThrottleTimer?.Stop();
+                    Redraw();
+                    // Reset hover tracking so it updates at new scale
+                    lastHoverX = -1;
+                    lastHoverY = -1;
+                };
+                
+                ZoomSlider.ValueChanged += (s, e) =>
+                {
+                    zoomThrottleTimer?.Stop();
+                    zoomThrottleTimer?.Start();
+                    
+                    // Immediate visual feedback: scale the images temporarily while waiting for redraw
+                    UpdateQuickZoomTransform();
+                };
+            }
             if (GridDarknessSlider != null) GridDarknessSlider.ValueChanged += GridDarknessSlider_ValueChanged;
             if (HeightSlider != null) HeightSlider.ValueChanged += HeightSlider_ValueChanged;
             if (SaveButton != null) SaveButton.Click += SaveButton_Click;
@@ -245,7 +278,22 @@ namespace FamidashEditor
             // Redraw when the viewport or scrollviewer size changes so the visible image updates.
             if (MapScrollViewer != null)
             {
-                MapScrollViewer.SizeChanged += (_, __) => Redraw();
+                // Throttle SizeChanged to avoid excessive redraws during resize
+                sizeChangedThrottleTimer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(50)
+                };
+                sizeChangedThrottleTimer.Tick += (s, e) =>
+                {
+                    sizeChangedThrottleTimer?.Stop();
+                    Redraw();
+                };
+                
+                MapScrollViewer.SizeChanged += (_, __) =>
+                {
+                    sizeChangedThrottleTimer?.Stop();
+                    sizeChangedThrottleTimer?.Start();
+                };
                 // On scroll, update only the parallax transform (cheap) instead of re-rendering bitmaps
                 MapScrollViewer.ScrollChanged += (s, e) =>
                 {
@@ -1247,27 +1295,31 @@ namespace FamidashEditor
             {
                 BackgroundImage.Source = backgroundRtb;
                 BackgroundImage.Width = displayFullW; BackgroundImage.Height = displayFullH;
+                BackgroundImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
             if (ParallaxImage != null && parallaxRtb != null)
             {
                 ParallaxImage.Source = parallaxRtb;
                 ParallaxImage.Width = displayFullW; ParallaxImage.Height = displayFullH;
-                ParallaxImage.RenderTransform = parallaxTransform;
+                ParallaxImage.RenderTransform = parallaxTransform; // Use only parallax transform
             }
             if (GroundImage != null && groundRtb != null)
             {
                 GroundImage.Source = groundRtb;
                 GroundImage.Width = displayFullW; GroundImage.Height = displayFullH;
+                GroundImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
             if (TilesImage != null && tilesWb != null)
             {
                 TilesImage.Source = tilesWb;
                 TilesImage.Width = displayFullW; TilesImage.Height = displayFullH;
+                TilesImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
             if (GridImage != null && gridRtb != null)
             {
                 GridImage.Source = gridRtb;
                 GridImage.Width = displayFullW; GridImage.Height = displayFullH;
+                GridImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
 
             if (CanvasHost != null)
@@ -1275,6 +1327,7 @@ namespace FamidashEditor
                 // CanvasHost should match the display size so overlays (hover/selection) align
                 // with the expanded image layers that now cover the full viewport.
                 CanvasHost.Width = displayFullW; CanvasHost.Height = displayFullH;
+                CanvasHost.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
         }
 
@@ -1288,7 +1341,7 @@ namespace FamidashEditor
             if (backgroundRtb == null || cachedPixelWidth != pixelPaddedWidth || cachedPixelHeight != pixelPaddedHeight || Math.Abs(cachedScale - scale) > 1e-6 || backgroundDirty)
             {
                 BuildBackgroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
-                // Also (re)build parallax and ground bitmaps for the current size/scale and display size
+                // Build parallax and ground synchronously but optimized
                 try { BuildParallaxBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi); } catch { }
                 try { BuildGroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi); } catch { }
                 backgroundDirty = false;
@@ -1307,8 +1360,8 @@ namespace FamidashEditor
                 // initialize to transparent
                 var empty = new byte[pixelPaddedHeight * tilesWb.BackBufferStride];
                 tilesWb.WritePixels(new Int32Rect(0, 0, pixelPaddedWidth, pixelPaddedHeight), empty, tilesWb.BackBufferStride, 0);
-                // render all tiles into the tilesWb
-                RebuildAllTilesBitmap(scale, pad);
+                // Render tiles asynchronously to avoid blocking UI
+                RebuildAllTilesBitmapAsync(scale, pad);
             }
         }
 
@@ -1339,14 +1392,15 @@ namespace FamidashEditor
                     // Determine display size in device-independent units from provided pixel sizes
                     double displayFullW = pixelPaddedWidth / dpi.DpiScaleX;
                     double displayFullH = pixelPaddedHeight / dpi.DpiScaleY;
-                    // number of tile columns/rows needed to cover the display
-                    int colsToCover = Math.Max(4, (int)Math.Ceiling(displayFullW / (TileSize * scale)));
-                    int rowsToCover = Math.Max(4, (int)Math.Ceiling(displayFullH / (TileSize * scale)));
-                    // allow parallax to tile above and below as needed to fill viewport
-                    int startRow = -rowsToCover;
-                    int endRow = mapHeight + parallaxBelowRows + rowsToCover;
-                    int startCol = -colsToCover;
-                    int endCol = mapWidth + colsToCover;
+                    // Only draw tiles that fit in the actual bitmap bounds (no need to cover entire scrollable area)
+                    int colsToCover = (int)Math.Ceiling(displayFullW / (TileSize * scale)) + 1;
+                    int rowsToCover = (int)Math.Ceiling(displayFullH / (TileSize * scale)) + 1;
+                    // Start from origin (0,0), only draw what's visible in viewport
+                    int startRow = -(int)Math.Ceiling(pad / (TileSize * scale));
+                    int endRow = startRow + rowsToCover;
+                    int startCol = -(int)Math.Ceiling(pad / (TileSize * scale));
+                    int endCol = startCol + colsToCover;
+                    
                     for (int pyTile = startRow; pyTile < endRow; pyTile++)
                     {
                         if (groundRowsToDraw > 0 && pyTile >= mapHeight && pyTile < mapHeight + groundRowsToDraw) continue;
@@ -1383,13 +1437,12 @@ namespace FamidashEditor
                     // Determine display width so ground extends left/right to fill viewport
                     double displayFullW = pixelPaddedWidth / dpi.DpiScaleX;
                     double displayFullH = pixelPaddedHeight / dpi.DpiScaleY;
-                    int colsToCover = Math.Max(4, (int)Math.Ceiling(displayFullW / (TileSize * scale)));
-                    int startCol = -colsToCover;
-                    int endCol = mapWidth + colsToCover;
+                    // Only draw columns that fit in viewport
+                    int colsToCover = (int)Math.Ceiling(displayFullW / (TileSize * scale)) + 1;
+                    int startCol = -(int)Math.Ceiling(pad / (TileSize * scale));
+                    int endCol = startCol + colsToCover;
 
-                    // Determine how many ground tile rows we need to draw so the ground covers
-                    // the entire display height below the map. Tile the available ground rows
-                    // repeatedly if the display is taller than the ground bitmap.
+                    // Determine how many ground tile rows we need to draw
                     double mapAreaH = mapHeight * TileSize * scale;
                     // rows below the map needed to cover the display (include padding)
                     int rowsBelowNeeded = Math.Max(0, (int)Math.Ceiling((displayFullH - mapAreaH - pad) / (TileSize * scale)));
@@ -1403,11 +1456,6 @@ namespace FamidashEditor
                         for (int gx = startCol; gx < endCol; gx++)
                         {
                             int wrappedX = ((gx % cols) + cols) % cols;
-                            // When repeating vertically, skip the very first source row for repeated blocks
-                            // to avoid copying the top-most seam pixel row repeatedly. Behavior:
-                            // - If groundRowsToDraw <= 1, just use row 0 always.
-                            // - Otherwise, for the first pass (gy < groundRowsToDraw) use the real source row.
-                            //   For subsequent repeated rows use source rows starting at 1, wrapping among rows [1..groundRowsToDraw-1].
                             int srcRow;
                             if (groundRowsToDraw <= 1) srcRow = 0;
                             else if (gy < groundRowsToDraw) srcRow = gy;
@@ -1430,7 +1478,8 @@ namespace FamidashEditor
             groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
             groundRtb.Render(dv);
         }
-
+        
+        // Async wrapper for BuildParallaxBitmap
         // Update the TranslateTransform applied to the ParallaxImage so it moves at the desired
         // parallax ratio relative to the current scroll offsets. This is intentionally cheap
         // and does not re-render any bitmaps.
@@ -1446,6 +1495,36 @@ namespace FamidashEditor
             if (parallaxTransform == null) parallaxTransform = new TranslateTransform(shiftX, shiftY);
             else { parallaxTransform.X = shiftX; parallaxTransform.Y = shiftY; }
             if (ParallaxImage != null) ParallaxImage.RenderTransform = parallaxTransform;
+        }
+        
+        // Provide immediate visual feedback during zoom by scaling existing images
+        // This avoids the delay of rebuilding all bitmaps
+        private void UpdateQuickZoomTransform()
+        {
+            if (ZoomSlider == null) return;
+            double newScale = ZoomSlider.Value;
+            
+            // Calculate scale factor relative to cached scale
+            if (cachedScale > 0 && Math.Abs(cachedScale - newScale) > 1e-6)
+            {
+                double scaleFactor = newScale / cachedScale;
+                var scaleTransform = new ScaleTransform(scaleFactor, scaleFactor);
+                
+                // Apply temporary scale transform to all image layers
+                if (BackgroundImage != null) BackgroundImage.LayoutTransform = scaleTransform;
+                if (ParallaxImage != null)
+                {
+                    // Combine with parallax translate transform
+                    var group = new TransformGroup();
+                    group.Children.Add(scaleTransform);
+                    if (parallaxTransform != null) group.Children.Add(parallaxTransform);
+                    ParallaxImage.RenderTransform = group;
+                }
+                if (GroundImage != null) GroundImage.LayoutTransform = scaleTransform;
+                if (TilesImage != null) TilesImage.LayoutTransform = scaleTransform;
+                if (GridImage != null) GridImage.LayoutTransform = scaleTransform;
+                if (CanvasHost != null) CanvasHost.LayoutTransform = scaleTransform;
+            }
         }
 
         // Prevent the ScrollViewer from scrolling below the last visible ground row.
@@ -1512,17 +1591,114 @@ namespace FamidashEditor
             var dpi = VisualTreeHelper.GetDpi(this);
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
-            // clear
-            var clear = new byte[cachedPixelHeight * tilesWb.BackBufferStride];
-            tilesWb.WritePixels(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight), clear, tilesWb.BackBufferStride, 0);
+            
             // Ensure we have a pre-scaled tile cache for this zoom/dpi to avoid per-tile scaling work
             EnsureScaledTileCache(scale, dpi);
-            // write each tile
-            for (int y = 0; y < mapHeight; y++) for (int x = 0; x < mapWidth; x++) UpdateTileBitmapAt(x, y, scale, pad, tilePixelW, tilePixelH, dpi);
+            
+            // Lock the bitmap once for all updates to improve performance
+            tilesWb.Lock();
+            try
+            {
+                // Clear the bitmap
+                unsafe
+                {
+                    IntPtr pBackBuffer = tilesWb.BackBuffer;
+                    int backBufferStride = tilesWb.BackBufferStride;
+                    int bytesTotal = backBufferStride * cachedPixelHeight;
+                    byte* ptr = (byte*)pBackBuffer.ToPointer();
+                    for (int i = 0; i < bytesTotal; i++)
+                    {
+                        ptr[i] = 0;
+                    }
+                }
+                
+                // Write each tile using cached pixels
+                for (int y = 0; y < mapHeight; y++)
+                {
+                    for (int x = 0; x < mapWidth; x++)
+                    {
+                        UpdateTileBitmapAtLocked(x, y, scale, pad, tilePixelW, tilePixelH, dpi);
+                    }
+                }
+                
+                // Mark entire bitmap as dirty
+                tilesWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+            }
+            finally
+            {
+                tilesWb.Unlock();
+            }
+        }
+        
+        // Async version that renders tiles in small batches to avoid blocking UI
+        private async void RebuildAllTilesBitmapAsync(double scale, double pad)
+        {
+            if (tilesWb == null) return;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            
+            // Ensure we have a pre-scaled tile cache for this zoom/dpi
+            EnsureScaledTileCache(scale, dpi);
+            
+            // Render tiles in batches to keep UI responsive
+            const int batchSize = 100; // tiles per batch
+            int totalTiles = mapWidth * mapHeight;
+            
+            for (int batchStart = 0; batchStart < totalTiles; batchStart += batchSize)
+            {
+                int batchEnd = Math.Min(batchStart + batchSize, totalTiles);
+                
+                await System.Threading.Tasks.Task.Run(() =>
+                {
+                    // Process batch on background thread
+                    for (int i = batchStart; i < batchEnd; i++)
+                    {
+                        int x = i % mapWidth;
+                        int y = i / mapWidth;
+                        int idx = tiles[y * mapWidth + x];
+                        if (idx >= 0)
+                        {
+                            // Pre-render this tile into cache
+                            int scaleKey = (int)Math.Round(scale * 100.0);
+                            GetOrRenderCachedTile(idx, scaleKey, tilePixelW, tilePixelH, dpi);
+                        }
+                    }
+                });
+                
+                // Update UI on main thread
+                Dispatcher.Invoke(() =>
+                {
+                    if (tilesWb == null) return;
+                    tilesWb.Lock();
+                    try
+                    {
+                        for (int i = batchStart; i < batchEnd; i++)
+                        {
+                            int x = i % mapWidth;
+                            int y = i / mapWidth;
+                            UpdateTileBitmapAtLocked(x, y, scale, pad, tilePixelW, tilePixelH, dpi);
+                        }
+                        // Mark this batch area as dirty
+                        int minY = batchStart / mapWidth;
+                        int maxY = (batchEnd - 1) / mapWidth;
+                        int dirtyHeight = (maxY - minY + 1) * tilePixelH;
+                        tilesWb.AddDirtyRect(new Int32Rect(0, (int)(minY * tilePixelH + pad * dpi.DpiScaleY), cachedPixelWidth, Math.Min(dirtyHeight, cachedPixelHeight)));
+                    }
+                    finally
+                    {
+                        tilesWb.Unlock();
+                    }
+                });
+                
+                // Small delay to let UI breathe
+                await System.Threading.Tasks.Task.Delay(1);
+            }
         }
 
         // Build or ensure a scaled tile pixel cache for the given zoom and dpi.
         // The cache stores raw BGRA32 pixel arrays for each tileImage scaled to the target tile pixel size.
+        // Changed to lazy initialization - creates empty cache, tiles are rendered on-demand
         private void EnsureScaledTileCache(double scale, DpiScale dpi)
         {
             if (tileImages == null) return;
@@ -1538,30 +1714,46 @@ namespace FamidashEditor
                 int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
                 int stride = tilePixelW * 4;
                 int count = tileImages.Length;
+                
+                // Create empty cache - tiles will be rendered on-demand
                 var pixelsArr = new byte[count][];
-                for (int i = 0; i < count; i++)
-                {
-                    var buf = new byte[tilePixelH * stride];
-                    try
-                    {
-                        // prefer tinted tiles when available
-                        var src = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[i] as ImageSource : tileImages[i] as ImageSource;
-                        if (src != null)
-                        {
-                            var dv = new DrawingVisual();
-                            using (var dc = dv.RenderOpen()) dc.DrawImage(src, new Rect(0, 0, tilePixelW, tilePixelH));
-                            var rtb = new RenderTargetBitmap(tilePixelW, tilePixelH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-                            rtb.Render(dv);
-                            rtb.CopyPixels(buf, stride, 0);
-                        }
-                    }
-                    catch { /* leave transparent if copy fails */ }
-                    pixelsArr[i] = buf;
-                }
+                
                 var cache = new ScaledTileCache(pixelsArr, tilePixelW, tilePixelH, stride, scale, dpi);
                 scaledTileCaches[scaleKey] = cache;
             }
             catch { /* don't crash on cache build failure */ }
+        }
+        
+        // Render and cache a single tile at the given scale (lazy caching)
+        private byte[]? GetOrRenderCachedTile(int tileIdx, int scaleKey, int tilePixelW, int tilePixelH, DpiScale dpi)
+        {
+            if (tileImages == null) return null;
+            if (!scaledTileCaches.TryGetValue(scaleKey, out var cache)) return null;
+            if (tileIdx < 0 || tileIdx >= cache.Pixels.Length) return null;
+            
+            // Check if already cached
+            if (cache.Pixels[tileIdx] != null) return cache.Pixels[tileIdx];
+            
+            // Render and cache it
+            int stride = tilePixelW * 4;
+            var buf = new byte[tilePixelH * stride];
+            try
+            {
+                // prefer tinted tiles when available
+                var src = (tileTonedImages != null && tileIdx < tileTonedImages.Length) ? tileTonedImages[tileIdx] as ImageSource : (tileIdx < tileImages.Length ? tileImages[tileIdx] as ImageSource : null);
+                if (src != null)
+                {
+                    var dv = new DrawingVisual();
+                    using (var dc = dv.RenderOpen()) dc.DrawImage(src, new Rect(0, 0, tilePixelW, tilePixelH));
+                    var rtb = new RenderTargetBitmap(tilePixelW, tilePixelH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                    rtb.Render(dv);
+                    rtb.CopyPixels(buf, stride, 0);
+                }
+            }
+            catch { /* leave transparent if render fails */ }
+            
+            cache.Pixels[tileIdx] = buf;
+            return buf;
         }
 
         // Update a single tile's pixels inside the tiles writeable bitmap
@@ -1576,50 +1768,26 @@ namespace FamidashEditor
             int destX = Math.Max(0, (int)Math.Floor((pad + x * TileSize * scale) * dpi.DpiScaleX));
             int destY = Math.Max(0, (int)Math.Floor((pad + y * TileSize * scale) * dpi.DpiScaleY));
 
-            // Use pre-scaled cached pixels when available to avoid rendering per-tile on the UI thread
+            // Use lazy-cached pixels
             int stride = tilePixelW * 4;
-            byte[] pixels = new byte[tilePixelH * stride];
-            bool usedCache = false;
-            try
+            byte[] pixels;
+            int scaleKey = (int)Math.Round(scale * 100.0);
+            
+            if (idx >= 0)
             {
-                var dpiNow = dpi;
-                int scaleKey = (int)Math.Round(scale * 100.0);
-                if (scaledTileCaches.TryGetValue(scaleKey, out var cache))
+                var cached = GetOrRenderCachedTile(idx, scaleKey, tilePixelW, tilePixelH, dpi);
+                if (cached != null && cached.Length > 0)
                 {
-                    // Cache must match expected tile size/dpi
-                    if (cache.TileW == tilePixelW && cache.TileH == tilePixelH)
-                    {
-                        if (idx >= 0 && tileImages != null && idx < cache.Pixels.Length)
-                        {
-                            var src = cache.Pixels[idx];
-                            if (src != null && src.Length == pixels.Length)
-                            {
-                                Buffer.BlockCopy(src, 0, pixels, 0, src.Length);
-                                usedCache = true;
-                            }
-                        }
-                    }
+                    pixels = cached;
+                }
+                else
+                {
+                    pixels = new byte[tilePixelH * stride]; // Empty/transparent
                 }
             }
-            catch { /* fall back to per-tile render below */ }
-
-            if (!usedCache)
+            else
             {
-                // Render tile image scaled to tilePixelW/tilePixelH into an intermediate bitmap and copy pixels
-                if (idx >= 0 && tileImages != null && idx < tileImages.Length)
-                {
-                    var tileSrc = tileImages[idx] as ImageSource;
-                    if (tileSrc != null)
-                    {
-                        var dv = new DrawingVisual();
-                        using (var dc = dv.RenderOpen()) dc.DrawImage(tileSrc, new Rect(0, 0, tilePixelW, tilePixelH));
-                        var rtb = new RenderTargetBitmap(tilePixelW, tilePixelH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-                        rtb.Render(dv);
-                        try { rtb.CopyPixels(pixels, stride, 0); }
-                        catch { /* swallow */ }
-                    }
-                }
-                // else keep pixels transparent
+                pixels = new byte[tilePixelH * stride]; // Empty tile
             }
 
             try
@@ -1628,6 +1796,46 @@ namespace FamidashEditor
             }
             catch { }
             // assign to image source (TilesImage) done in DrawMap/Ensure
+        }
+
+        // Fast version of UpdateTileBitmapAt that works with a locked WriteableBitmap
+        // Caller must lock/unlock the tilesWb before/after calling this
+        private unsafe void UpdateTileBitmapAtLocked(int x, int y, double scale, double pad, int tilePixelW, int tilePixelH, DpiScale dpi)
+        {
+            if (tilesWb == null) return;
+            
+            int idx = tiles[y * mapWidth + x];
+            if (idx < 0) return; // Empty tile, already cleared
+            
+            int destX = Math.Max(0, (int)Math.Floor((pad + x * TileSize * scale) * dpi.DpiScaleX));
+            int destY = Math.Max(0, (int)Math.Floor((pad + y * TileSize * scale) * dpi.DpiScaleY));
+            
+            // Bounds check
+            if (destX >= cachedPixelWidth || destY >= cachedPixelHeight) return;
+            
+            // Get cached pixels (lazy render if not cached)
+            int scaleKey = (int)Math.Round(scale * 100.0);
+            byte[]? srcPixels = GetOrRenderCachedTile(idx, scaleKey, tilePixelW, tilePixelH, dpi);
+            if (srcPixels == null || srcPixels.Length == 0) return;
+            
+            // Copy pixels directly to locked buffer
+            IntPtr pBackBuffer = tilesWb.BackBuffer;
+            int backBufferStride = tilesWb.BackBufferStride;
+            int copyWidth = Math.Min(tilePixelW, cachedPixelWidth - destX);
+            int copyHeight = Math.Min(tilePixelH, cachedPixelHeight - destY);
+            int srcStride = tilePixelW * 4;
+            
+            for (int row = 0; row < copyHeight; row++)
+            {
+                int srcOffset = row * srcStride;
+                long destOffset = (destY + row) * backBufferStride + destX * 4;
+                byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                
+                for (int col = 0; col < copyWidth * 4; col++)
+                {
+                    destPtr[col] = srcPixels[srcOffset + col];
+                }
+            }
         }
 
         private void CanvasHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1937,7 +2145,6 @@ namespace FamidashEditor
             // Update selection visuals
             UpdateSelectionVisuals(selX, selY, selW, selH);
             if (StatusText != null) StatusText.Text = $"Selected items: {selectionSet.Count} (bbox {selW}x{selH} at {selX},{selY})";
-            Redraw();
         }
 
         private void StartMagicWandAt(Point pos)
@@ -2010,7 +2217,6 @@ namespace FamidashEditor
             UpdateSelectionVisuals(selX, selY, selW, selH);
             string mode = isCtrl ? "added" : "selected";
             if (StatusText != null) StatusText.Text = $"Magic wand {mode} {visited.Count} tiles of type {target} (total: {selectionSet.Count})";
-            Redraw();
         }
 
         private void StartDragMove(Point pos)
@@ -2165,8 +2371,8 @@ namespace FamidashEditor
                 // During drag-selection, show a simple bounding rectangle preview
                 var rect = new Shapes.Rectangle
                 {
-                    Fill = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)),
-                    Stroke = Brushes.Cyan,
+                    Fill = SelectionFillBrush,
+                    Stroke = SelectionStrokeBrush,
                     StrokeThickness = 2,
                     Width = w * tileSize,
                     Height = h * tileSize,
@@ -2185,8 +2391,8 @@ namespace FamidashEditor
                     int ty = idx / mapWidth;
                     var rect = new Shapes.Rectangle
                     {
-                        Fill = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)),
-                        Stroke = Brushes.Cyan,
+                        Fill = SelectionFillBrush,
+                        Stroke = SelectionStrokeBrush,
                         StrokeThickness = 2,
                         Width = tileSize,
                         Height = tileSize,
@@ -2254,7 +2460,6 @@ namespace FamidashEditor
             }
             UpdateSelectionVisuals(selX, selY, selW, selH);
             if (StatusText != null) StatusText.Text = $"Selected area {selW}x{selH} at {selX},{selY} (items={selectionSet.Count})";
-            Redraw();
         }
 
         private void ClearSelection()
@@ -2431,6 +2636,12 @@ namespace FamidashEditor
                 x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
                 y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
             }
+            
+            // Only update if position changed
+            if (x == lastHoverX && y == lastHoverY && inBounds == (lastHoverX != -1)) return;
+            lastHoverX = x;
+            lastHoverY = y;
+            
             if (StatusText != null) StatusText.Text = inBounds ? $"Coords: {x}, {y}" : string.Empty;
 
             // Position hover rectangle (offset by padding)
