@@ -71,6 +71,8 @@ namespace FamidashEditor
 
     // Rendering caches for performance: background (parallax+ground), tiles (incremental), grid overlay
     private RenderTargetBitmap? backgroundRtb = null;
+    private RenderTargetBitmap? parallaxRtb = null;
+    private RenderTargetBitmap? groundRtb = null;
     private RenderTargetBitmap? gridRtb = null;
     private WriteableBitmap? tilesWb = null;
     // Pre-scaled tile pixel caches keyed by integer scale key (scale*100)
@@ -81,6 +83,10 @@ namespace FamidashEditor
     private double cachedScale = 1.0;
     private bool backgroundDirty = true;
     private bool gridDirty = true;
+    // parallax ratio (0..1) where 1.0 = moves with camera, 0 = static world; we want 0.9
+    private const double ParallaxRatio = 0.9;
+    // cheap transform applied to ParallaxImage so it moves with the scroll without re-rendering pixels
+    private TranslateTransform? parallaxTransform = new TranslateTransform(0, 0);
 
         private interface IUndoAction
         {
@@ -228,8 +234,9 @@ namespace FamidashEditor
             if (MapScrollViewer != null)
             {
                 MapScrollViewer.SizeChanged += (_, __) => Redraw();
-                MapScrollViewer.ScrollChanged += (_, __) => Redraw();
-                MapScrollViewer.Loaded += (_, __) => Redraw();
+                // On scroll, update only the parallax transform (cheap) instead of re-rendering bitmaps
+                MapScrollViewer.ScrollChanged += (s, e) => UpdateParallaxTransform();
+                MapScrollViewer.Loaded += (_, __) => { Redraw(); UpdateParallaxTransform(); };
             }
             // palette size sliders
             if (TileSizeSlider != null) TileSizeSlider.ValueChanged += (s, ev) =>
@@ -1131,6 +1138,17 @@ namespace FamidashEditor
                 BackgroundImage.Source = backgroundRtb;
                 BackgroundImage.Width = paddedFullW; BackgroundImage.Height = paddedFullH;
             }
+            if (ParallaxImage != null && parallaxRtb != null)
+            {
+                ParallaxImage.Source = parallaxRtb;
+                ParallaxImage.Width = paddedFullW; ParallaxImage.Height = paddedFullH;
+                ParallaxImage.RenderTransform = parallaxTransform;
+            }
+            if (GroundImage != null && groundRtb != null)
+            {
+                GroundImage.Source = groundRtb;
+                GroundImage.Width = paddedFullW; GroundImage.Height = paddedFullH;
+            }
             if (TilesImage != null && tilesWb != null)
             {
                 TilesImage.Source = tilesWb;
@@ -1158,6 +1176,9 @@ namespace FamidashEditor
             if (backgroundRtb == null || cachedPixelWidth != pixelPaddedWidth || cachedPixelHeight != pixelPaddedHeight || Math.Abs(cachedScale - scale) > 1e-6 || backgroundDirty)
             {
                 BuildBackgroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
+                // Also (re)build parallax and ground bitmaps for the current size/scale
+                try { BuildParallaxBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi); } catch { }
+                try { BuildGroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi); } catch { }
                 backgroundDirty = false;
             }
             // Recreate grid if needed
@@ -1184,22 +1205,27 @@ namespace FamidashEditor
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
+                // Draw only the base map background here; parallax and ground are rendered into
+                // their own RenderTargetBitmaps so they can be translated independently.
                 dc.DrawRectangle(mapBackground, null, new Rect(pad, pad, fullW, fullH));
-                // Parallax
+            }
+            backgroundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            backgroundRtb.Render(dv);
+        }
+
+        // Build parallax bitmap (static pixels). We'll translate the image with a cheap transform
+        // on scroll instead of re-rendering on every scroll event.
+        private void BuildParallaxBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
+        {
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
                 if (parallaxImages != null && parallaxBitmap != null && parallaxImages.Length > 0)
                 {
                     int parallaxCols = Math.Max(1, parallaxBitmap.PixelWidth / TileSize);
-                    const double parallaxRatio = 0.9;
-                    double camOffsetX = 0.0, camOffsetY = 0.0;
-                    if (MapScrollViewer != null)
-                    {
-                        camOffsetX = MapScrollViewer.HorizontalOffset; camOffsetY = MapScrollViewer.VerticalOffset;
-                    }
-                    double parallaxWorldShiftX = camOffsetX * (1.0 - parallaxRatio);
-                    double parallaxWorldShiftY = camOffsetY * (1.0 - parallaxRatio);
                     int startRow = 0; int endRow = mapHeight + ((parallaxBelowRows > 0) ? parallaxBelowRows : 0);
                     int groundRowsToDraw = (groundTileRows > 0) ? groundTileRows : 0;
-                    // Expand parallax horizontally beyond the map so it extends past the grid edges
+                    // Expand horizontally so parallax covers edges
                     int extraCols = Math.Max(4, (int)Math.Ceiling(paddedFullW / (TileSize * scale)));
                     int startCol = -extraCols;
                     int endCol = mapWidth + extraCols;
@@ -1215,14 +1241,23 @@ namespace FamidashEditor
                             if (img == null) img = parallaxImages[idx];
                             if (img != null)
                             {
-                                double px = pxTile * TileSize * scale + parallaxWorldShiftX + pad;
-                                double py = pyTile * TileSize * scale + parallaxWorldShiftY + pad;
+                                double px = pxTile * TileSize * scale + pad;
+                                double py = pyTile * TileSize * scale + pad;
                                 dc.DrawImage(img, new Rect(px, py, TileSize * scale, TileSize * scale));
                             }
                         }
                     }
                 }
-                // Ground
+            }
+            parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            parallaxRtb.Render(dv);
+        }
+
+        private void BuildGroundBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
+        {
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
                 if (groundImages != null && groundImages.Length > 0)
                 {
                     int cols = Math.Max(1, (groundBitmap?.PixelWidth ?? TileSize) / TileSize);
@@ -1242,8 +1277,25 @@ namespace FamidashEditor
                     }
                 }
             }
-            backgroundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-            backgroundRtb.Render(dv);
+            groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            groundRtb.Render(dv);
+        }
+
+        // Update the TranslateTransform applied to the ParallaxImage so it moves at the desired
+        // parallax ratio relative to the current scroll offsets. This is intentionally cheap
+        // and does not re-render any bitmaps.
+        private void UpdateParallaxTransform()
+        {
+            if (MapScrollViewer == null) return;
+            if (parallaxRtb == null) return;
+            // Camera offsets in content coordinates (pixels)
+            double camOffsetX = MapScrollViewer.HorizontalOffset;
+            double camOffsetY = MapScrollViewer.VerticalOffset;
+            double shiftX = camOffsetX * (1.0 - ParallaxRatio);
+            double shiftY = camOffsetY * (1.0 - ParallaxRatio);
+            if (parallaxTransform == null) parallaxTransform = new TranslateTransform(shiftX, shiftY);
+            else { parallaxTransform.X = shiftX; parallaxTransform.Y = shiftY; }
+            if (ParallaxImage != null) ParallaxImage.RenderTransform = parallaxTransform;
         }
 
         private void BuildGridBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)

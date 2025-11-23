@@ -149,8 +149,10 @@
 
         <ScrollViewer x:Name="MapScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
             <Grid>
-                <!-- Background (parallax/ground), Tiles layer, Grid overlay -->
+                <!-- Background base, Parallax, Ground, Tiles layer, Grid overlay -->
                 <Image x:Name="BackgroundImage" />
+                <Image x:Name="ParallaxImage" />
+                <Image x:Name="GroundImage" />
                 <Image x:Name="TilesImage" />
                 <Image x:Name="GridImage" />
                 <Canvas x:Name="CanvasHost" Background="Transparent">
