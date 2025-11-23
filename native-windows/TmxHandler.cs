@@ -17,23 +17,41 @@ namespace FamidashEditor
 
             int width = (int?)map.Attribute("width") ?? 0;
             int height = (int?)map.Attribute("height") ?? 0;
+            int totalTiles = width * height;
             
-            // Find the main tile layer (first tilelayer with data)
-            var tileLayer = map.Elements("layer").FirstOrDefault();
-            int[]? tiles = null;
+            // Initialize tiles array with -1 (empty)
+            int[] tiles = Enumerable.Repeat(-1, totalTiles).ToArray();
             
-            if (tileLayer != null)
+            // Process ALL tile layers and merge them
+            // TMX uses GIDs: 0=empty, 1-256=famidash tileset, 257-512=sprites tileset
+            // Convert to editor format: -1=empty, 0-255=famidash, 256-511=sprites
+            var layers = map.Elements("layer").ToList();
+            
+            foreach (var layer in layers)
             {
-                var dataElement = tileLayer.Element("data");
+                var dataElement = layer.Element("data");
                 if (dataElement != null)
                 {
                     string? encoding = (string?)dataElement.Attribute("encoding");
                     if (encoding == "csv")
                     {
                         string csvData = dataElement.Value.Trim();
-                        tiles = csvData.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-                                      .Select(s => int.Parse(s.Trim()))
-                                      .ToArray();
+                        var layerTiles = csvData.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                                               .Select(s => {
+                                                   int gid = int.Parse(s.Trim());
+                                                   // Convert TMX GID to editor index
+                                                   return gid == 0 ? -1 : gid - 1;
+                                               })
+                                               .ToArray();
+                        
+                        // Merge layer: non-empty tiles overwrite
+                        for (int i = 0; i < Math.Min(layerTiles.Length, totalTiles); i++)
+                        {
+                            if (layerTiles[i] >= 0)
+                            {
+                                tiles[i] = layerTiles[i];
+                            }
+                        }
                     }
                     else
                     {
@@ -194,32 +212,37 @@ namespace FamidashEditor
                 map.Add(groundLayer);
             }
 
-            // Add main tile layer
+            // Add main tile layer (tiles 0-255)
             var tileLayer = new XElement("layer",
                 new XAttribute("id", 1),
+                new XAttribute("name", "Tiles"),
                 new XAttribute("width", level.Width),
                 new XAttribute("height", level.Height)
             );
 
-            // Convert tiles to CSV format
+            // Convert tiles to CSV format - Layer 1: regular tiles (0-255)
             if (level.Tiles != null && level.Tiles.Length > 0)
             {
-                // Format as CSV with proper line breaks every row
                 var csvLines = new System.Text.StringBuilder();
                 for (int y = 0; y < level.Height; y++)
                 {
                     for (int x = 0; x < level.Width; x++)
                     {
                         int idx = y * level.Width + x;
+                        int tileValue = 0; // Default to GID 0 (empty)
+                        
                         if (idx < level.Tiles.Length)
                         {
-                            csvLines.Append(level.Tiles[idx]);
-                        }
-                        else
-                        {
-                            csvLines.Append(0);
+                            int editorIdx = level.Tiles[idx];
+                            // Convert editor index to TMX GID
+                            // Editor: -1=empty, 0-255=tiles → TMX: 0=empty, 1-256=tiles
+                            if (editorIdx >= 0 && editorIdx < 256)
+                            {
+                                tileValue = editorIdx + 1;
+                            }
                         }
                         
+                        csvLines.Append(tileValue);
                         if (x < level.Width - 1)
                             csvLines.Append(',');
                     }
@@ -234,6 +257,51 @@ namespace FamidashEditor
             }
 
             map.Add(tileLayer);
+
+            // Add sprite layer (tiles 256-511)
+            var spriteLayer = new XElement("layer",
+                new XAttribute("id", 2),
+                new XAttribute("name", "SP"),
+                new XAttribute("width", level.Width),
+                new XAttribute("height", level.Height)
+            );
+
+            if (level.Tiles != null && level.Tiles.Length > 0)
+            {
+                var csvLines = new System.Text.StringBuilder();
+                for (int y = 0; y < level.Height; y++)
+                {
+                    for (int x = 0; x < level.Width; x++)
+                    {
+                        int idx = y * level.Width + x;
+                        int tileValue = 0; // Default to GID 0 (empty)
+                        
+                        if (idx < level.Tiles.Length)
+                        {
+                            int editorIdx = level.Tiles[idx];
+                            // Convert editor index to TMX GID
+                            // Editor: 256-511=sprites → TMX: 257-512=sprites
+                            if (editorIdx >= 256 && editorIdx < 512)
+                            {
+                                tileValue = editorIdx + 1;
+                            }
+                        }
+                        
+                        csvLines.Append(tileValue);
+                        if (x < level.Width - 1)
+                            csvLines.Append(',');
+                    }
+                    if (y < level.Height - 1)
+                        csvLines.AppendLine(",");
+                }
+
+                spriteLayer.Add(new XElement("data",
+                    new XAttribute("encoding", "csv"),
+                    "\n" + csvLines.ToString() + "\n"
+                ));
+            }
+
+            map.Add(spriteLayer);
 
             // Save the document
             var doc = new XDocument(

@@ -933,8 +933,43 @@ namespace FamidashEditor
             int cols = Math.Max(1, tilesetBitmap.PixelWidth / TileSize);
             int rows = Math.Max(1, tilesetBitmap.PixelHeight / TileSize);
             var list = new List<ImageSource>();
-            for (int y = 0; y < rows; y++) for (int x = 0; x < cols; x++) list.Add(new CroppedBitmap(tilesetBitmap, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
+            int tileIdx = 0;
+            int errorCount = 0;
+            
+            for (int y = 0; y < rows; y++)
+            {
+                for (int x = 0; x < cols; x++)
+                {
+                    try
+                    {
+                        var cropped = new CroppedBitmap(tilesetBitmap, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize));
+                        // Freeze the cropped bitmap to make it thread-safe and prevent issues
+                        if (cropped.CanFreeze)
+                        {
+                            cropped.Freeze();
+                        }
+                        list.Add(cropped);
+                    }
+                    catch (Exception ex)
+                    {
+                        errorCount++;
+                        System.Diagnostics.Debug.WriteLine($"ERROR: Failed to crop tile {tileIdx} (0x{tileIdx:X}) at grid ({x},{y}): {ex.Message}");
+                        // Add a transparent placeholder
+                        var wb = new WriteableBitmap(TileSize, TileSize, 96, 96, PixelFormats.Bgra32, null);
+                        wb.Freeze();
+                        list.Add(wb);
+                    }
+                    tileIdx++;
+                }
+            }
+            
             tileImages = list.ToArray();
+            
+            if (errorCount > 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"WARNING: SliceTileset had {errorCount} errors out of {tileImages.Length} tiles");
+            }
+            
             // update any toned cache when tileset changes
             UpdateTileTint();
         }
@@ -945,8 +980,42 @@ namespace FamidashEditor
             int cols = Math.Max(1, spritesBitmap.PixelWidth / TileSize);
             int rows = Math.Max(1, spritesBitmap.PixelHeight / TileSize);
             var list = new List<ImageSource>();
-            for (int y = 0; y < rows; y++) for (int x = 0; x < cols; x++) list.Add(new CroppedBitmap(spritesBitmap, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
+            int spriteIdx = 0;
+            int errorCount = 0;
+            
+            for (int y = 0; y < rows; y++)
+            {
+                for (int x = 0; x < cols; x++)
+                {
+                    try
+                    {
+                        var cropped = new CroppedBitmap(spritesBitmap, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize));
+                        // Freeze the cropped bitmap to make it thread-safe and prevent issues
+                        if (cropped.CanFreeze)
+                        {
+                            cropped.Freeze();
+                        }
+                        list.Add(cropped);
+                    }
+                    catch (Exception ex)
+                    {
+                        errorCount++;
+                        System.Diagnostics.Debug.WriteLine($"ERROR: Failed to crop sprite {spriteIdx} (0x{spriteIdx:X}) at grid ({x},{y}): {ex.Message}");
+                        // Add a transparent placeholder
+                        var wb = new WriteableBitmap(TileSize, TileSize, 96, 96, PixelFormats.Bgra32, null);
+                        wb.Freeze();
+                        list.Add(wb);
+                    }
+                    spriteIdx++;
+                }
+            }
+            
             spriteImages = list.ToArray();
+            
+            if (errorCount > 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"WARNING: SliceSpriteset had {errorCount} errors out of {spriteImages.Length} sprites");
+            }
         }
 
         private void SliceParallax()
@@ -1215,6 +1284,13 @@ namespace FamidashEditor
             {
                 // prefer tinted tiles in the left palette when available
                 var paletteSrc = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[idx] : src;
+                
+                // Debug: check if specific tiles have valid sources
+                if ((idx == 34 || idx == 36) && paletteSrc == null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"ERROR: Tile {idx} has NULL palette source! Original: {src?.GetType().Name}, Toned: {(tileTonedImages != null && idx < tileTonedImages.Length ? tileTonedImages[idx]?.GetType().Name : "N/A")}");
+                }
+                
                 var img = new Image { Source = paletteSrc, Width = paletteTileSize, Height = paletteTileSize, Stretch = Stretch.Fill, Tag = idx };
                 RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
                 img.MouseLeftButtonDown += (s, e) => { selectedTile = (int)((Image)s).Tag; UpdateTileHighlight(); if (StatusText != null) StatusText.Text = "Selected tile " + selectedTile; };
@@ -1713,7 +1789,8 @@ namespace FamidashEditor
                 int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
                 int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
                 int stride = tilePixelW * 4;
-                int count = tileImages.Length;
+                // Allocate cache for 512 tiles: 0-255 for regular tiles, 256-511 for sprites
+                int count = 512;
                 
                 // Create empty cache - tiles will be rendered on-demand
                 var pixelsArr = new byte[count][];
@@ -1739,8 +1816,32 @@ namespace FamidashEditor
             var buf = new byte[tilePixelH * stride];
             try
             {
-                // prefer tinted tiles when available
-                var src = (tileTonedImages != null && tileIdx < tileTonedImages.Length) ? tileTonedImages[tileIdx] as ImageSource : (tileIdx < tileImages.Length ? tileImages[tileIdx] as ImageSource : null);
+                ImageSource? src = null;
+                
+                // Handle sprites (indices 256-511)
+                if (tileIdx >= 256 && tileIdx < 512)
+                {
+                    int spriteIdx = tileIdx - 256;
+                    if (spriteImages != null && spriteIdx < spriteImages.Length)
+                    {
+                        src = spriteImages[spriteIdx] as ImageSource;
+                    }
+                }
+                // Handle regular tiles (indices 0-255)
+                else if (tileIdx >= 0 && tileIdx < 256)
+                {
+                    // Prefer tinted tiles when available
+                    src = (tileTonedImages != null && tileIdx < tileTonedImages.Length) 
+                        ? tileTonedImages[tileIdx] as ImageSource 
+                        : (tileIdx < tileImages.Length ? tileImages[tileIdx] as ImageSource : null);
+                }
+                
+                // Debug: log if specific tiles fail to get source
+                if (src == null && (tileIdx == 34 || tileIdx == 36))
+                {
+                    System.Diagnostics.Debug.WriteLine($"DEBUG: Tile {tileIdx} has NULL source! tileImages.Length={tileImages?.Length}, tileTonedImages.Length={tileTonedImages?.Length}");
+                }
+                
                 if (src != null)
                 {
                     var dv = new DrawingVisual();
@@ -1748,9 +1849,22 @@ namespace FamidashEditor
                     var rtb = new RenderTargetBitmap(tilePixelW, tilePixelH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
                     rtb.Render(dv);
                     rtb.CopyPixels(buf, stride, 0);
+                    
+                    // Debug: check if pixels are actually non-zero
+                    if (tileIdx == 34 || tileIdx == 36)
+                    {
+                        int nonZero = buf.Count(b => b != 0);
+                        System.Diagnostics.Debug.WriteLine($"DEBUG: Rendered tile {tileIdx}, {nonZero}/{buf.Length} non-zero bytes");
+                    }
                 }
             }
-            catch { /* leave transparent if render fails */ }
+            catch (Exception ex) 
+            {
+                if (tileIdx == 34 || tileIdx == 36)
+                {
+                    System.Diagnostics.Debug.WriteLine($"DEBUG: Exception rendering tile {tileIdx}: {ex.Message}");
+                }
+            }
             
             cache.Pixels[tileIdx] = buf;
             return buf;
@@ -2840,6 +2954,10 @@ namespace FamidashEditor
                         
                         // Force a full redraw with the new dimensions
                         Redraw();
+                        
+                        // Render all loaded tiles to the bitmap
+                        double currentScale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        RebuildAllTilesBitmap(currentScale, mapViewportPadding);
                         
                         if (StatusText != null) StatusText.Text = $"Loaded {Path.GetFileName(dlg.FileName)} ({mapWidth}x{mapHeight})";
                     }
