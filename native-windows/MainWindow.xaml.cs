@@ -40,6 +40,10 @@ namespace FamidashEditor
     private int selectedSprite = -1;
     private int paletteTileSize = 16;
     private int paletteSpriteSize = 16;
+    // Painting state for drag-to-draw
+    private bool isPainting = false;
+    private int lastPaintX = -1;
+    private int lastPaintY = -1;
 
         public MainWindow()
         {
@@ -57,6 +61,8 @@ namespace FamidashEditor
             {
                 CanvasHost.MouseLeftButtonDown += CanvasHost_MouseLeftButtonDown;
                 CanvasHost.MouseMove += CanvasHost_MouseMove;
+                CanvasHost.MouseLeftButtonUp += CanvasHost_MouseLeftButtonUp;
+                CanvasHost.MouseLeave += CanvasHost_MouseLeave;
                 CanvasHost.MouseRightButtonDown += CanvasHost_MouseRightButtonDown;
             }
 
@@ -68,19 +74,21 @@ namespace FamidashEditor
                     // Run left-column sizing and palette sizing after layout has run so ActualWidth/measure are available.
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        // Run initial sizing once; subsequent calls won't force window min/width to allow shrinking.
-                        if (!initialLeftSizingDone)
-                        {
-                            UpdateLeftColumnWidth(initial: true);
-                            initialLeftSizingDone = true;
-                        }
-                        else
-                        {
-                            UpdateLeftColumnWidth(initial: false);
-                        }
-                        AdjustPaletteSizes();
-                        UpdateTilesPanelWidth();
-                        Redraw();
+                            // Run initial sizing once so 16 tiles fit across with no horizontal scroll.
+                            if (!initialLeftSizingDone)
+                            {
+                                // ensure the left column width is reasonable but don't force window width
+                                UpdateLeftColumnWidth(initial: true);
+                                Ensure16VisibleOnStartup();
+                                initialLeftSizingDone = true;
+                            }
+                            else
+                            {
+                                UpdateLeftColumnWidth(initial: false);
+                                UpdateTilesPanelWidth();
+                            }
+                            AdjustPaletteSizes();
+                            Redraw();
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
                 };
             // Redraw when the viewport or scrollviewer size changes so the visible image updates.
@@ -91,8 +99,49 @@ namespace FamidashEditor
                 MapScrollViewer.Loaded += (_, __) => Redraw();
             }
             // palette size sliders
-            if (TileSizeSlider != null) TileSizeSlider.ValueChanged += (s, ev) => { UpdateLeftColumnWidth(); if (!suppressManualTileChange) manualTileSize = true; paletteTileSize = (int)ev.NewValue; PopulateTilesPanel(); };
-            if (SpriteSizeSlider != null) SpriteSizeSlider.ValueChanged += (s, ev) => { if (!suppressManualSpriteChange) manualSpriteSize = true; paletteSpriteSize = (int)ev.NewValue; PopulateSpritesPanel(); };
+            if (TileSizeSlider != null) TileSizeSlider.ValueChanged += (s, ev) =>
+            {
+                // Tile slider adjusts only tile sizes, not the frame width. Enable horizontal scrolling
+                // if tiles exceed the available area.
+                if (!suppressManualTileChange) manualTileSize = true;
+                paletteTileSize = (int)ev.NewValue;
+                PopulateTilesPanel();
+                // Allow horizontal scrolling when the user enlarges tiles beyond the viewport.
+                if (TilesPanel != null)
+                {
+                    TilesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
+                    TilesPanel.Width = Double.NaN; // allow measure to determine content
+                }
+                // By default, sprites follow tile size unless the user manually adjusted sprite size.
+                if (!manualSpriteSize)
+                {
+                    paletteSpriteSize = paletteTileSize;
+                    if (SpriteSizeSlider != null)
+                    {
+                        suppressManualSpriteChange = true;
+                        SpriteSizeSlider.Value = paletteSpriteSize;
+                        suppressManualSpriteChange = false;
+                    }
+                    PopulateSpritesPanel();
+                    if (SpritesPanel != null)
+                    {
+                        SpritesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
+                        SpritesPanel.Width = Double.NaN;
+                    }
+                }
+            };
+            // Sprite slider: when user changes sprite slider, mark manual and update sprite sizes.
+            if (SpriteSizeSlider != null) SpriteSizeSlider.ValueChanged += (s, ev) =>
+            {
+                if (!suppressManualSpriteChange) manualSpriteSize = true;
+                paletteSpriteSize = (int)ev.NewValue;
+                PopulateSpritesPanel();
+                if (SpritesPanel != null)
+                {
+                    SpritesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
+                    SpritesPanel.Width = Double.NaN;
+                }
+            };
             if (TilesPanel != null) TilesPanel.SizeChanged += (_, __) => AdjustPaletteSizes();
             if (SpritesPanel != null) SpritesPanel.SizeChanged += (_, __) => AdjustPaletteSizes();
             if (RootGrid != null) RootGrid.SizeChanged += (_, __) => UpdateTilesPanelWidth();
@@ -226,7 +275,9 @@ namespace FamidashEditor
             {
                 if (RootGrid == null) return;
                 var col = RootGrid.ColumnDefinitions[0];
-                double ts = (TileSizeSlider != null) ? TileSizeSlider.Value : paletteTileSize;
+                // Use the current paletteTileSize (not the slider directly) so changing the slider
+                // does not resize the frame. paletteTileSize reflects automatic or manual values.
+                double ts = paletteTileSize;
                 // 16 tiles across, plus padding and the system vertical scrollbar width
                 double scrollbar = SystemParameters.VerticalScrollBarWidth;
                 double padding = 12;
@@ -236,12 +287,13 @@ namespace FamidashEditor
 
                 if (initial)
                 {
-                    // On first run, expand the window MinWidth so the left column is fully visible.
+                    // On first run, expand the window MinWidth so the left column is fully visible,
+                    // but avoid forcing the actual Window.Width (user should be able to resize freely).
                     double splitterWidth = (RootGrid.ColumnDefinitions.Count > 1) ? RootGrid.ColumnDefinitions[1].ActualWidth : 5;
-                    double mainAreaMin = 300; // reasonable minimum for editor area
+                    double mainAreaMin = 200; // smaller minimum for the main editor area to keep default window compact
                     double required = desired + splitterWidth + mainAreaMin + 40; // extra margins
                     if (this.MinWidth < required) this.MinWidth = required;
-                    if (this.Width < required) this.Width = required;
+                    // Do not set this.Width here to avoid an oversized initial window.
                 }
             }
             catch { }
@@ -251,11 +303,9 @@ namespace FamidashEditor
         {
             try
             {
-                // Default behavior: use the tile/sprite size sliders unless user manually adjusted them.
+                // Default behavior: use the tile size slider unless user manually adjusted it.
                 if (!manualTileSize && TileSizeSlider != null)
                     paletteTileSize = Math.Max(8, (int)Math.Round(TileSizeSlider.Value));
-                if (!manualSpriteSize && SpriteSizeSlider != null)
-                    paletteSpriteSize = Math.Max(8, (int)Math.Round(SpriteSizeSlider.Value));
                 PopulateTilesPanel();
                 PopulateSpritesPanel();
                 // After repopulating, adjust the ListBox widths to avoid clipping
@@ -290,6 +340,10 @@ namespace FamidashEditor
                 // Compute per-tile sizes from the viewport width (16 columns)
                 int computedTiles = Math.Max(8, (int)Math.Floor(viewportTiles / 16.0));
                 int computedSprites = Math.Max(8, (int)Math.Floor(viewportSprites / 16.0));
+                // Clamp to a reasonable maximum so the palette doesn't start huge on wide windows
+                const int maxPaletteSize = 32;
+                if (computedTiles > maxPaletteSize) computedTiles = maxPaletteSize;
+                if (computedSprites > maxPaletteSize) computedSprites = maxPaletteSize;
 
                 // Update panels while guarding against recursive layout events
                 isAdjustingPanels = true;
@@ -307,17 +361,7 @@ namespace FamidashEditor
                         PopulateTilesPanel();
                     }
 
-                    if (!manualSpriteSize && computedSprites != paletteSpriteSize)
-                    {
-                        paletteSpriteSize = computedSprites;
-                        if (SpriteSizeSlider != null)
-                        {
-                            suppressManualSpriteChange = true;
-                            SpriteSizeSlider.Value = paletteSpriteSize;
-                            suppressManualSpriteChange = false;
-                        }
-                        PopulateSpritesPanel();
-                    }
+                    // Do not auto-adjust sprite palette size here; leave sprites controllable by the user via the slider.
 
                     // Let the ListBox stretch to the left column width instead of forcing a smaller width.
                     if (TilesPanel != null) TilesPanel.Width = Double.NaN;
@@ -345,6 +389,61 @@ namespace FamidashEditor
                 }
             }
             return null;
+        }
+
+        private void Ensure16VisibleOnStartup()
+        {
+            try
+            {
+                if (RootGrid == null) return;
+                double leftColActual = RootGrid.ColumnDefinitions[0].ActualWidth;
+                if (leftColActual <= 0) return;
+
+                // small padding inside the column
+                double padding = 8;
+                double available = Math.Max(0, leftColActual - padding);
+
+                // account for an internal vertical scrollbar width if present
+                double vsw = SystemParameters.VerticalScrollBarWidth;
+
+                int computed = Math.Max(8, (int)Math.Floor((available - vsw) / 16.0));
+                const int maxStartupSize = 20; // reasonable cap so startup tiles aren't huge
+                if (computed > maxStartupSize) computed = maxStartupSize;
+
+                // Apply computed sizes without marking as manual (so sliders remain untouched by user)
+                paletteTileSize = computed;
+                paletteSpriteSize = computed;
+                if (TileSizeSlider != null)
+                {
+                    suppressManualTileChange = true;
+                    TileSizeSlider.Value = paletteTileSize;
+                    suppressManualTileChange = false;
+                }
+                if (SpriteSizeSlider != null)
+                {
+                    suppressManualSpriteChange = true;
+                    SpriteSizeSlider.Value = paletteSpriteSize;
+                    suppressManualSpriteChange = false;
+                }
+
+                // Repopulate panels with the computed sizes
+                PopulateTilesPanel();
+                PopulateSpritesPanel();
+
+                // Disable horizontal scrolling on startup: we sized tiles to fit 16 columns.
+                if (TilesPanel != null)
+                {
+                    TilesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+                    TilesPanel.Width = Math.Max(0, available);
+                }
+                // Make sprites match tiles on startup and disable horizontal scrolling for parity.
+                if (SpritesPanel != null)
+                {
+                    SpritesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+                    SpritesPanel.Width = Math.Max(0, available);
+                }
+            }
+            catch { }
         }
 
         private void LoadAssetsOnStart()
@@ -512,13 +611,60 @@ namespace FamidashEditor
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             // Render the full map (not just the viewport) so the ScrollViewer content size is correct
             double fullW = mapWidth * TileSize * scale;
-            double fullH = mapHeight * TileSize * scale;
+            // If we have ground tiles, extend the canvas height by one tile so ground can be drawn under the bottom row
+            double extraGroundH = (groundImages != null) ? (TileSize * scale) : 0.0;
+            double fullH = mapHeight * TileSize * scale + extraGroundH;
 
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
                 // Background (customizable)
                 dc.DrawRectangle(mapBackground, null, new Rect(0, 0, fullW, fullH));
+
+                // Draw parallax layer tiled across the map (if available). Start at top-left tile.
+                if (parallaxImages != null && parallaxBitmap != null)
+                {
+                    int parallaxCols = Math.Max(1, parallaxBitmap.PixelWidth / TileSize);
+                    // Parallax ratio: background moves slower than foreground. 0.9 means background moves at 90% of camera.
+                    const double parallaxRatio = 0.9;
+                    double camOffsetX = 0.0, camOffsetY = 0.0;
+                    if (MapScrollViewer != null)
+                    {
+                        camOffsetX = MapScrollViewer.HorizontalOffset;
+                        camOffsetY = MapScrollViewer.VerticalOffset;
+                    }
+                    // Amount to shift parallax tiles in world space so final screen shift is parallaxRatio * camera.
+                    double parallaxWorldShiftX = camOffsetX * (1.0 - parallaxRatio);
+                    double parallaxWorldShiftY = camOffsetY * (1.0 - parallaxRatio);
+
+                    // tile the parallax tiles across the full map area
+                    for (int pyTile = 0; pyTile < mapHeight; pyTile++)
+                    {
+                        for (int pxTile = 0; pxTile < mapWidth; pxTile++)
+                        {
+                            int idx = (pyTile * parallaxCols + pxTile) % parallaxImages.Length;
+                            if (idx >= 0 && idx < parallaxImages.Length)
+                            {
+                                var img = parallaxImages[idx];
+                                double px = pxTile * TileSize * scale + parallaxWorldShiftX;
+                                double py = pyTile * TileSize * scale + parallaxWorldShiftY;
+                                dc.DrawImage(img, new Rect(px, py, TileSize * scale, TileSize * scale));
+                            }
+                        }
+                    }
+                }
+
+                // Draw ground row under the map (if ground images available). Draw before tiles so tiles render on top.
+                if (groundImages != null)
+                {
+                    for (int gx = 0; gx < mapWidth; gx++)
+                    {
+                        var gimg = groundImages[gx % groundImages.Length];
+                        double px = gx * TileSize * scale;
+                        double py = mapHeight * TileSize * scale; // just below the last tile row
+                        dc.DrawImage(gimg, new Rect(px, py, TileSize * scale, TileSize * scale));
+                    }
+                }
 
                 // Draw placed tiles (if tileset loaded)
                 if (tileImages != null)
@@ -534,6 +680,30 @@ namespace FamidashEditor
                                 double px = x * TileSize * scale;
                                 double py = y * TileSize * scale;
                                 dc.DrawImage(img, new Rect(px, py, TileSize * scale, TileSize * scale));
+                            }
+                        }
+                    }
+                }
+
+                // Indicate deleted/empty tiles (tiles == -1) with a small dot using the inverted map background color
+                if (tiles != null)
+                {
+                    Color bgCol = (mapBackground as SolidColorBrush)?.Color ?? Color.FromRgb(40, 40, 40);
+                    var inv = Color.FromRgb((byte)(255 - bgCol.R), (byte)(255 - bgCol.G), (byte)(255 - bgCol.B));
+                    var dotBrush = new SolidColorBrush(Color.FromArgb(200, inv.R, inv.G, inv.B));
+                    dotBrush.Freeze();
+                    for (int y = 0; y < mapHeight; y++)
+                    {
+                        for (int x = 0; x < mapWidth; x++)
+                        {
+                            int idx = tiles[y * mapWidth + x];
+                            if (idx == -1)
+                            {
+                                double px = x * TileSize * scale;
+                                double py = y * TileSize * scale;
+                                double dotSize = Math.Max(1.0, TileSize * scale * 0.18);
+                                var center = new Point(px + (TileSize * scale) / 2.0, py + (TileSize * scale) / 2.0);
+                                dc.DrawEllipse(dotBrush, null, center, dotSize / 2.0, dotSize / 2.0);
                             }
                         }
                     }
@@ -576,34 +746,12 @@ namespace FamidashEditor
         {
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(pos.X / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(pos.Y / (TileSize * scale))));
-            // Handle according to active tool
-            if (EraseTool != null && EraseTool.IsChecked == true)
-            {
-                tiles[y * mapWidth + x] = -1;
-            }
-            else if (FillTool != null && FillTool.IsChecked == true)
-            {
-                // flood fill
-                int target = tiles[y * mapWidth + x];
-                if (target != selectedTile)
-                {
-                    FloodFill(x, y, target, selectedTile);
-                }
-            }
-            else if (MoveTool != null && MoveTool.IsChecked == true)
-            {
-                // pick tile into current selection
-                selectedTile = tiles[y * mapWidth + x];
-                UpdateTileHighlight();
-            }
-            else // Place or Select
-            {
-                tiles[y * mapWidth + x] = selectedTile;
-            }
-            Redraw();
+            StartPaintingAt(pos);
+        }
+
+        private void CanvasHost_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            StopPainting();
         }
 
         private void CanvasHost_MouseMove(object sender, MouseEventArgs e)
@@ -611,6 +759,11 @@ namespace FamidashEditor
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
             UpdateCoords(pos);
+            // If painting (mouse held down for place/erase) then paint the cell under the cursor
+            if (isPainting && e.LeftButton == MouseButtonState.Pressed)
+            {
+                ContinuePaintingAt(pos);
+            }
         }
 
         private void Tool_Checked(object? sender, RoutedEventArgs e)
@@ -648,12 +801,118 @@ namespace FamidashEditor
             UpdateCoords(pos);
         }
 
+        private void StartPaintingAt(Point pos)
+        {
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(pos.X / (TileSize * scale))));
+            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(pos.Y / (TileSize * scale))));
+
+            // For Fill tool, perform flood-fill on click and do not start drag-painting
+            if (FillTool != null && FillTool.IsChecked == true)
+            {
+                int target = tiles[y * mapWidth + x];
+                if (target != selectedTile)
+                {
+                    FloodFill(x, y, target, selectedTile);
+                    Redraw();
+                }
+                return;
+            }
+
+            // For Move tool, pick the tile under cursor into selection (no painting while dragging)
+            if (MoveTool != null && MoveTool.IsChecked == true)
+            {
+                selectedTile = tiles[y * mapWidth + x];
+                UpdateTileHighlight();
+                return;
+            }
+
+            // For Place or Erase tools, start painting and capture mouse so dragging works when cursor leaves the canvas
+            if ((PlaceTool != null && PlaceTool.IsChecked == true) || (EraseTool != null && EraseTool.IsChecked == true))
+            {
+                isPainting = true;
+                lastPaintX = -1; lastPaintY = -1;
+                CanvasHost.CaptureMouse();
+                DoPaintAt(x, y);
+            }
+        }
+
+        private void ContinuePaintingAt(Point pos)
+        {
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(pos.X / (TileSize * scale))));
+            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(pos.Y / (TileSize * scale))));
+            // avoid repainting the same cell repeatedly
+            if (x == lastPaintX && y == lastPaintY) return;
+            DoPaintAt(x, y);
+        }
+
+        private void StopPainting()
+        {
+            if (!isPainting) return;
+            isPainting = false;
+            lastPaintX = -1; lastPaintY = -1;
+            if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
+        }
+
+        private void DoPaintAt(int x, int y)
+        {
+            if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) return;
+            // Only paint for Place or Erase
+            if (PlaceTool != null && PlaceTool.IsChecked == true)
+            {
+                tiles[y * mapWidth + x] = selectedTile;
+                lastPaintX = x; lastPaintY = y;
+                Redraw();
+            }
+            else if (EraseTool != null && EraseTool.IsChecked == true)
+            {
+                tiles[y * mapWidth + x] = -1;
+                lastPaintX = x; lastPaintY = y;
+                Redraw();
+            }
+        }
+
         private void UpdateCoords(Point p)
         {
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(p.X / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(p.Y / (TileSize * scale))));
-            if (StatusText != null) StatusText.Text = $"Coords: {x}, {y}";
+            // Determine whether pointer is inside the map area
+            bool inBounds = p.X >= 0 && p.Y >= 0 && p.X < mapWidth * TileSize * scale && p.Y < mapHeight * TileSize * scale;
+            int x = -1, y = -1;
+            if (inBounds)
+            {
+                x = Math.Max(0, Math.Min(mapWidth - 1, (int)(p.X / (TileSize * scale))));
+                y = Math.Max(0, Math.Min(mapHeight - 1, (int)(p.Y / (TileSize * scale))));
+            }
+            if (StatusText != null) StatusText.Text = inBounds ? $"Coords: {x}, {y}" : string.Empty;
+
+            // Position hover rectangle
+            try
+            {
+                if (HoverRect != null)
+                {
+                    if (inBounds)
+                    {
+                        double left = x * TileSize * scale;
+                        double top = y * TileSize * scale;
+                        double size = TileSize * scale;
+                        HoverRect.Width = size; HoverRect.Height = size;
+                        Canvas.SetLeft(HoverRect, left);
+                        Canvas.SetTop(HoverRect, top);
+                        HoverRect.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        HoverRect.Visibility = Visibility.Collapsed;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void CanvasHost_MouseLeave(object sender, MouseEventArgs e)
+        {
+            try { if (HoverRect != null) HoverRect.Visibility = Visibility.Collapsed; } catch { }
         }
 
         private void GridDarknessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
