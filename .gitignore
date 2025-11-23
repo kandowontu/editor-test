@@ -1,0 +1,11 @@
+node_modules/
+dist-renderer/
+dist-electron/
+dist/
+dist-*/
+bin/
+obj/
+*.log
+.vscode/
+/idea/
+/.DS_Store
