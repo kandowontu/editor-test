@@ -28,6 +28,7 @@ namespace FamidashEditor
     // tint overlays (RGBA) applied over the background and ground images
     private Color backgroundTint = Color.FromArgb(0, 0, 0, 0);
     private Color groundTint = Color.FromArgb(0, 0, 0, 0);
+    private Color tileTint = Color.FromArgb(0, 0, 0, 0);
     private bool manualTileSize = false;
     private bool manualSpriteSize = false;
 
@@ -43,6 +44,7 @@ namespace FamidashEditor
     // tinted caches (updated when tint changes)
     private ImageSource[]? parallaxTonedImages;
     private ImageSource[]? groundTonedImages;
+    private ImageSource[]? tileTonedImages;
     private int selectedTile = 0;
     private int selectedSprite = -1;
     private int paletteTileSize = 16;
@@ -288,6 +290,7 @@ namespace FamidashEditor
             if (BgColorButton != null) BgColorButton.Click += BgColorButton_Click;
             if (BgTintButton != null) BgTintButton.Click += BgTintButton_Click;
             if (GroundTintButton != null) GroundTintButton.Click += GroundTintButton_Click;
+            if (TileTintButton != null) TileTintButton.Click += TileTintButton_Click;
             if (UndoButton != null) UndoButton.Click += (s, e) => Undo();
             if (HeightSlider != null) HeightSlider.ValueChanged += (s, e) => { /* already wired above */ };
                 // tool exclusivity: only one toggled at a time
@@ -480,6 +483,30 @@ namespace FamidashEditor
                 // revert on cancel
                 groundTint = initialGroundTint;
                 UpdateGroundTint();
+                Redraw();
+            }
+            dlg.ColorChanged -= handler;
+        }
+
+        private void TileTintButton_Click(object? sender, RoutedEventArgs e)
+        {
+            var initial = tileTint;
+            var dlg = new ColorPickerWindow(initial, allowAlpha: false) { Owner = this };
+            dlg.Title = "Pick Tile Tint (RGBA)";
+            Action<Color> handler = (c) => { tileTint = c; UpdateTileTint(); Dispatcher.BeginInvoke(new Action(Redraw)); };
+            dlg.ColorChanged += handler;
+            var result = dlg.ShowDialog();
+            if (result == true)
+            {
+                tileTint = dlg.SelectedColor;
+                UpdateTileTint();
+                Redraw();
+                if (StatusText != null) StatusText.Text = $"TileTint set ARGB={tileTint.A},{tileTint.R},{tileTint.G},{tileTint.B} tilesToned={(tileTonedImages!=null?tileTonedImages.Length:0)}";
+            }
+            else
+            {
+                tileTint = initial;
+                UpdateTileTint();
                 Redraw();
             }
             dlg.ColorChanged -= handler;
@@ -818,6 +845,8 @@ namespace FamidashEditor
             var list = new List<ImageSource>();
             for (int y = 0; y < rows; y++) for (int x = 0; x < cols; x++) list.Add(new CroppedBitmap(tilesetBitmap, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
             tileImages = list.ToArray();
+            // update any toned cache when tileset changes
+            UpdateTileTint();
         }
 
         private void SliceSpriteset()
@@ -1065,6 +1094,21 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
+                StatusText.Text = info;
+            }
+        }
+
+        private void UpdateTileTint()
+        {
+            // Use hue/saturation shifting for tiles so we can change hue/sat of tile graphics.
+            tileTonedImages = CreateHueShiftedImages(tileImages, tileTint);
+            // Clear pre-scaled caches so scaled pixels are rebuilt from the toned images
+            try { scaledTileCaches.Clear(); } catch { }
+            // Rebuild tiles bitmap so tint appears immediately
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            if (StatusText != null)
+            {
+                string info = $"UpdateTileTint: tintA={tileTint.A} tileImages={(tileImages!=null?tileImages.Length:0)} tileToned={(tileTonedImages!=null?tileTonedImages.Length:0)}";
                 StatusText.Text = info;
             }
         }
@@ -1373,7 +1417,8 @@ namespace FamidashEditor
                     var buf = new byte[tilePixelH * stride];
                     try
                     {
-                        var src = tileImages[i] as ImageSource;
+                        // prefer tinted tiles when available
+                        var src = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[i] as ImageSource : tileImages[i] as ImageSource;
                         if (src != null)
                         {
                             var dv = new DrawingVisual();

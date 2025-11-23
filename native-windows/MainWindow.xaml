@@ -120,6 +120,7 @@
                     <Button x:Name="BgColorButton" Content="Background..." Margin="8,0,0,0" />
                     <Button x:Name="BgTintButton" Content="Background Tint..." Margin="8,0,0,0" />
                     <Button x:Name="GroundTintButton" Content="Ground Tint..." Margin="8,0,0,0" />
+                    <Button x:Name="TileTintButton" Content="Tile Tint..." Margin="8,0,0,0" />
                 </ToolBar>
             </ToolBarTray>
 
