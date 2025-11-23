@@ -22,8 +22,12 @@ namespace FamidashEditor
     private int mapWidth = 200;
     private int mapHeight = 27;
     private int[] tiles = Array.Empty<int>();
-    private double gridDarkness = 0.5;
+    // default grid darkness: much lighter so grid lines are subtle over dark backgrounds
+    private double gridDarkness = 0.18;
     private Brush mapBackground = new SolidColorBrush(Color.FromRgb(59,59,59));
+    // tint overlays (RGBA) applied over the background and ground images
+    private Color backgroundTint = Color.FromArgb(0, 0, 0, 0);
+    private Color groundTint = Color.FromArgb(0, 0, 0, 0);
     private bool manualTileSize = false;
     private bool manualSpriteSize = false;
 
@@ -36,6 +40,9 @@ namespace FamidashEditor
     private ImageSource[]? spriteImages;
     private ImageSource[]? parallaxImages;
     private ImageSource[]? groundImages;
+    // tinted caches (updated when tint changes)
+    private ImageSource[]? parallaxTonedImages;
+    private ImageSource[]? groundTonedImages;
     private int selectedTile = 0;
     private int selectedSprite = -1;
     private int paletteTileSize = 16;
@@ -44,6 +51,12 @@ namespace FamidashEditor
     private bool isPainting = false;
     private int lastPaintX = -1;
     private int lastPaintY = -1;
+    // Allow a small padded margin around the map so users can scroll slightly out-of-bounds
+    private double mapViewportPadding = 64.0; // pixels on each side
+    // Ground/Parallax layout
+    // groundTileRows will be set when a ground bitmap is loaded (equals groundBitmap.PixelHeight / TileSize)
+    private int groundTileRows = 0; // actual rows available in ground bitmap
+    private int parallaxBelowRows = 8; // how many tile-rows of parallax to draw below the ground
 
         public MainWindow()
         {
@@ -146,6 +159,8 @@ namespace FamidashEditor
             if (SpritesPanel != null) SpritesPanel.SizeChanged += (_, __) => AdjustPaletteSizes();
             if (RootGrid != null) RootGrid.SizeChanged += (_, __) => UpdateTilesPanelWidth();
             if (BgColorButton != null) BgColorButton.Click += BgColorButton_Click;
+            if (BgTintButton != null) BgTintButton.Click += BgTintButton_Click;
+            if (GroundTintButton != null) GroundTintButton.Click += GroundTintButton_Click;
             if (HeightSlider != null) HeightSlider.ValueChanged += (s, e) => { /* already wired above */ };
                 // tool exclusivity: only one toggled at a time
                 if (PlaceTool != null) PlaceTool.Checked += Tool_Checked;
@@ -211,12 +226,49 @@ namespace FamidashEditor
                 // update resource brush (so XAML backgrounds using it update)
                 if (Resources.Contains("AppBackgroundBrush") && Resources["AppBackgroundBrush"] is SolidColorBrush sb)
                 {
-                    sb.Color = newColor;
+                    sb.Color = Color.FromRgb(newColor.R, newColor.G, newColor.B);
                 }
-                mapBackground = new SolidColorBrush(newColor);
+                // keep mapBackground as solid opaque brush for base; use backgroundTint for alpha overlays
+                mapBackground = new SolidColorBrush(Color.FromRgb(newColor.R, newColor.G, newColor.B));
                 SaveSettings(newColor);
                 Redraw();
             }
+        }
+
+        private void BgTintButton_Click(object? sender, RoutedEventArgs e)
+        {
+            // Open the picker with the stored tint exactly (preserve alpha). Do not auto-promote zero alpha to opaque.
+            var initialBgTint = backgroundTint;
+            var dlg = new ColorPickerWindow(initialBgTint) { Owner = this };
+            dlg.Title = "Pick Background Tint (RGBA)";
+            Action<Color> handler = (c) => { backgroundTint = c; UpdateParallaxTint(); Dispatcher.BeginInvoke(new Action(Redraw)); };
+            dlg.ColorChanged += handler;
+            if (dlg.ShowDialog() == true)
+            {
+                backgroundTint = dlg.SelectedColor;
+                UpdateParallaxTint();
+                Redraw();
+                if (StatusText != null) StatusText.Text = $"BgTint set ARGB={backgroundTint.A},{backgroundTint.R},{backgroundTint.G},{backgroundTint.B} parallaxToned={(parallaxTonedImages!=null?parallaxTonedImages.Length:0)}";
+            }
+            dlg.ColorChanged -= handler;
+        }
+
+        private void GroundTintButton_Click(object? sender, RoutedEventArgs e)
+        {
+            // Preserve stored alpha when opening the ground tint picker as well.
+            var initialGroundTint = groundTint;
+            var dlg = new ColorPickerWindow(initialGroundTint) { Owner = this };
+            dlg.Title = "Pick Ground Tint (RGBA)";
+            Action<Color> handler = (c) => { groundTint = c; UpdateGroundTint(); Dispatcher.BeginInvoke(new Action(Redraw)); };
+            dlg.ColorChanged += handler;
+            if (dlg.ShowDialog() == true)
+            {
+                groundTint = dlg.SelectedColor;
+                UpdateGroundTint();
+                Redraw();
+                if (StatusText != null) StatusText.Text = $"GroundTint set ARGB={groundTint.A},{groundTint.R},{groundTint.G},{groundTint.B} groundToned={(groundTonedImages!=null?groundTonedImages.Length:0)}";
+            }
+            dlg.ColorChanged -= handler;
         }
 
         private void LoadSettings()
@@ -241,6 +293,24 @@ namespace FamidashEditor
                         }
                         mapBackground = new SolidColorBrush(col);
                     }
+                    // optional background tint (RGBA)
+                    if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                    {
+                        var a = (byte)bt[0].GetInt32();
+                        var r = (byte)bt[1].GetInt32();
+                        var g = (byte)bt[2].GetInt32();
+                        var b = (byte)bt[3].GetInt32();
+                        backgroundTint = Color.FromArgb(a, r, g, b);
+                    }
+                    // optional ground tint (RGBA)
+                    if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                    {
+                        var a = (byte)gt[0].GetInt32();
+                        var r = (byte)gt[1].GetInt32();
+                        var g = (byte)gt[2].GetInt32();
+                        var b = (byte)gt[3].GetInt32();
+                        groundTint = Color.FromArgb(a, r, g, b);
+                    }
                 }
             }
             catch { }
@@ -250,7 +320,11 @@ namespace FamidashEditor
         {
             try
             {
-                var obj = new { background = new byte[] { c.R, c.G, c.B } };
+                var obj = new {
+                    background = new byte[] { c.R, c.G, c.B },
+                    backgroundTint = new byte[] { backgroundTint.A, backgroundTint.R, backgroundTint.G, backgroundTint.B },
+                    groundTint = new byte[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B }
+                };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
                 var dir = AppContext.BaseDirectory;
                 var path = System.IO.Path.Combine(dir, "editor-settings.json");
@@ -548,15 +622,231 @@ namespace FamidashEditor
             var list = new List<ImageSource>();
             for (int y = 0; y < rows; y++) for (int x = 0; x < cols; x++) list.Add(new CroppedBitmap(parallaxBitmap, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
             parallaxImages = list.ToArray();
+            // update tinted cache to reflect current tint
+            UpdateParallaxTint();
         }
 
         private void SliceGround()
         {
-            if (groundBitmap == null) { groundImages = null; return; }
+            if (groundBitmap == null) { groundImages = null; groundTileRows = 0; return; }
             int cols = Math.Max(1, groundBitmap.PixelWidth / TileSize);
+            int rows = Math.Max(1, groundBitmap.PixelHeight / TileSize);
+            groundTileRows = rows;
             var list = new List<ImageSource>();
-            for (int x = 0; x < cols; x++) list.Add(new CroppedBitmap(groundBitmap, new Int32Rect(x * TileSize, 0, TileSize, TileSize)));
+            // slice all rows and columns so the ground can be stacked to its full bitmap height
+            for (int y = 0; y < rows; y++)
+            {
+                for (int x = 0; x < cols; x++)
+                {
+                    list.Add(new CroppedBitmap(groundBitmap, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
+                }
+            }
             groundImages = list.ToArray();
+            // update tinted cache to reflect current ground tint
+            UpdateGroundTint();
+        }
+
+        // Create tinted copies of a set of ImageSources using simple alpha blend with the tint color.
+        private ImageSource[]? CreateTintedImages(ImageSource[]? originals, Color tint)
+        {
+            if (originals == null) return null;
+            if (tint.A == 0) return originals; // no tint => return originals so drawing still works
+            var outList = new List<ImageSource>(originals.Length);
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    // convert to Bgra32 for pixel access
+                    var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                    int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                    var pixels = new byte[h * stride];
+                    conv.CopyPixels(pixels, stride, 0);
+
+                    byte ta = tint.A; int tintA = ta;
+                    for (int i = 0; i < pixels.Length; i += 4)
+                    {
+                        int b = pixels[i + 0];
+                        int g = pixels[i + 1];
+                        int r = pixels[i + 2];
+                        int a = pixels[i + 3];
+                        // simple linear blend: out = original*(1 - tA) + tintRGB * tA
+                        int outR = (r * (255 - tintA) + tint.R * tintA) / 255;
+                        int outG = (g * (255 - tintA) + tint.G * tintA) / 255;
+                        int outB = (b * (255 - tintA) + tint.B * tintA) / 255;
+                        pixels[i + 0] = (byte)outB;
+                        pixels[i + 1] = (byte)outG;
+                        pixels[i + 2] = (byte)outR;
+                        pixels[i + 3] = (byte)a; // keep original alpha
+                    }
+
+                    var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                    wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                    wb.Freeze();
+                    outList.Add(wb);
+                }
+                else
+                {
+                    outList.Add(src);
+                }
+            }
+            return outList.ToArray();
+        }
+
+        // Create hue/saturation-shifted copies of images. The tint's RGB defines the target hue/saturation.
+        // The tint.A channel is used as a strength (0..255) controlling interpolation between original H and tint H.
+        private ImageSource[]? CreateHueShiftedImages(ImageSource[]? originals, Color tint)
+        {
+            if (originals == null) return null;
+            if (tint.A == 0) return originals; // strength 0 => no change
+            double strength = tint.A / 255.0;
+            // convert tint color to HSL once
+            RgbToHsl(tint.R, tint.G, tint.B, out double tintH, out double tintS, out double tintL);
+            var outList = new List<ImageSource>(originals.Length);
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                    int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                    var pixels = new byte[h * stride];
+                    conv.CopyPixels(pixels, stride, 0);
+
+                    for (int i = 0; i < pixels.Length; i += 4)
+                    {
+                        int b = pixels[i + 0];
+                        int g = pixels[i + 1];
+                        int r = pixels[i + 2];
+                        int a = pixels[i + 3];
+                        RgbToHsl((byte)r, (byte)g, (byte)b, out double h0, out double s0, out double l0);
+                        // interpolate hue towards tint hue, and optionally scale/lerp saturation
+                        double newH = LerpAngle(h0, tintH, strength);
+                        double newS = s0 * (1.0 - strength) + tintS * strength;
+                        double newL = l0; // preserve original lightness to keep details
+                        RgbFromHsl(newH, newS, newL, out byte r2, out byte g2, out byte b2);
+                        pixels[i + 0] = b2;
+                        pixels[i + 1] = g2;
+                        pixels[i + 2] = r2;
+                        pixels[i + 3] = (byte)a; // keep original alpha
+                    }
+
+                    var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                    wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                    wb.Freeze();
+                    outList.Add(wb);
+                }
+                else
+                {
+                    outList.Add(src);
+                }
+            }
+            return outList.ToArray();
+        }
+
+        // Helper: convert RGB byte values to HSL (H in degrees 0..360, S/L 0..1)
+        private static void RgbToHsl(byte r8, byte g8, byte b8, out double h, out double s, out double l)
+        {
+            double r = r8 / 255.0, g = g8 / 255.0, b = b8 / 255.0;
+            double max = Math.Max(r, Math.Max(g, b));
+            double min = Math.Min(r, Math.Min(g, b));
+            l = (max + min) / 2.0;
+            if (max == min)
+            {
+                h = 0.0; s = 0.0; return;
+            }
+            double d = max - min;
+            s = l > 0.5 ? d / (2.0 - max - min) : d / (max + min);
+            if (max == r) h = (g - b) / d + (g < b ? 6 : 0);
+            else if (max == g) h = (b - r) / d + 2;
+            else h = (r - g) / d + 4;
+            h *= 60.0;
+        }
+
+        // Helper: convert HSL to RGB bytes. H in degrees 0..360, S/L 0..1
+        private static void RgbFromHsl(double h, double s, double l, out byte r8, out byte g8, out byte b8)
+        {
+            double r, g, b;
+            if (s == 0)
+            {
+                r = g = b = l; // achromatic
+            }
+            else
+            {
+                double q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                double p = 2 * l - q;
+                double hk = (h % 360.0) / 360.0;
+                double[] t = new double[3] { hk + 1.0 / 3.0, hk, hk - 1.0 / 3.0 };
+                double[] rgb = new double[3];
+                for (int i = 0; i < 3; i++)
+                {
+                    double tc = t[i];
+                    if (tc < 0) tc += 1.0; if (tc > 1) tc -= 1.0;
+                    if (tc < 1.0 / 6.0) rgb[i] = p + (q - p) * 6.0 * tc;
+                    else if (tc < 1.0 / 2.0) rgb[i] = q;
+                    else if (tc < 2.0 / 3.0) rgb[i] = p + (q - p) * (2.0 / 3.0 - tc) * 6.0;
+                    else rgb[i] = p;
+                }
+                r = rgb[0]; g = rgb[1]; b = rgb[2];
+            }
+            r8 = (byte)Math.Max(0, Math.Min(255, (int)Math.Round(r * 255.0)));
+            g8 = (byte)Math.Max(0, Math.Min(255, (int)Math.Round(g * 255.0)));
+            b8 = (byte)Math.Max(0, Math.Min(255, (int)Math.Round(b * 255.0)));
+        }
+
+        // Linear interpolation for circular hue (degrees). t in 0..1
+        private static double LerpAngle(double a, double b, double t)
+        {
+            // convert to radians for shortest path
+            double diff = (b - a + 540.0) % 360.0 - 180.0;
+            return (a + diff * t + 360.0) % 360.0;
+        }
+
+        private void UpdateParallaxTint()
+        {
+            // Use hue/saturation shifting for parallax so we actually alter hue/saturation instead of overlaying a color.
+            parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint);
+            if (StatusText != null)
+            {
+                string info = $"UpdateParallaxTint: tintA={backgroundTint.A} parallaxImages={(parallaxImages!=null?parallaxImages.Length:0)} parallaxToned={(parallaxTonedImages!=null?parallaxTonedImages.Length:0)}";
+                try
+                {
+                    // Sample first pixel from original and toned (if available) for a quick diagnostic
+                    if (parallaxImages != null && parallaxImages.Length > 0 && parallaxImages[0] is BitmapSource orig && parallaxTonedImages != null && parallaxTonedImages.Length > 0 && parallaxTonedImages[0] is BitmapSource toned)
+                    {
+                        var origPixel = new byte[4];
+                        var tonedPixel = new byte[4];
+                        orig.CopyPixels(new Int32Rect(0, 0, 1, 1), origPixel, 4, 0);
+                        toned.CopyPixels(new Int32Rect(0, 0, 1, 1), tonedPixel, 4, 0);
+                        info += $" | origARGB={origPixel[3]},{origPixel[2]},{origPixel[1]},{origPixel[0]}";
+                        info += $" tonedARGB={tonedPixel[3]},{tonedPixel[2]},{tonedPixel[1]},{tonedPixel[0]}";
+                    }
+                }
+                catch { }
+                StatusText.Text = info;
+            }
+        }
+
+        private void UpdateGroundTint()
+        {
+            // For ground, also apply hue/saturation shifting so the ground graphics change hue/sat.
+            groundTonedImages = CreateHueShiftedImages(groundImages, groundTint);
+            if (StatusText != null)
+            {
+                string info = $"UpdateGroundTint: tintA={groundTint.A} groundImages={(groundImages!=null?groundImages.Length:0)} groundToned={(groundTonedImages!=null?groundTonedImages.Length:0)}";
+                try
+                {
+                    if (groundImages != null && groundImages.Length > 0 && groundImages[0] is BitmapSource orig && groundTonedImages != null && groundTonedImages.Length > 0 && groundTonedImages[0] is BitmapSource toned)
+                    {
+                        var origPixel = new byte[4];
+                        var tonedPixel = new byte[4];
+                        orig.CopyPixels(new Int32Rect(0, 0, 1, 1), origPixel, 4, 0);
+                        toned.CopyPixels(new Int32Rect(0, 0, 1, 1), tonedPixel, 4, 0);
+                        info += $" | origARGB={origPixel[3]},{origPixel[2]},{origPixel[1]},{origPixel[0]}";
+                        info += $" tonedARGB={tonedPixel[3]},{tonedPixel[2]},{tonedPixel[1]},{tonedPixel[0]}";
+                    }
+                }
+                catch { }
+                StatusText.Text = info;
+            }
         }
 
         private void PopulateTilesPanel()
@@ -610,19 +900,27 @@ namespace FamidashEditor
         {
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             // Render the full map (not just the viewport) so the ScrollViewer content size is correct
+            double pad = mapViewportPadding;
             double fullW = mapWidth * TileSize * scale;
-            // If we have ground tiles, extend the canvas height by one tile so ground can be drawn under the bottom row
-            double extraGroundH = (groundImages != null) ? (TileSize * scale) : 0.0;
-            double fullH = mapHeight * TileSize * scale + extraGroundH;
+            // If we have ground tiles, extend the canvas height by the ground bitmap's rows so the full ground is visible
+            int groundRowsToDraw = (groundTileRows > 0) ? groundTileRows : 0;
+            double extraGroundH = (groundImages != null && groundRowsToDraw > 0) ? (TileSize * scale * groundRowsToDraw) : 0.0;
+            // Add extra parallax rows below the ground so parallax takes over after groundRows
+            double extraParallaxH = (parallaxImages != null) ? (TileSize * scale * parallaxBelowRows) : 0.0;
+            double fullH = mapHeight * TileSize * scale + extraGroundH + extraParallaxH;
+            // Include padding on all sides so the ScrollViewer can scroll slightly out of bounds
+            double paddedFullW = fullW + pad * 2.0;
+            double paddedFullH = fullH + pad * 2.0;
 
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
-                // Background (customizable)
-                dc.DrawRectangle(mapBackground, null, new Rect(0, 0, fullW, fullH));
+                // Background (customizable) - draw at padded origin so grid/tiles align with padding
+                dc.DrawRectangle(mapBackground, null, new Rect(pad, pad, fullW, fullH));
 
-                // Draw parallax layer tiled across the map (if available). Start at top-left tile.
-                if (parallaxImages != null && parallaxBitmap != null)
+                // Draw parallax layer tiled across and behind the map (if available).
+                // Parallax should cover the map area and extend a few rows below the map so it sits under the ground/tile band.
+                if (parallaxImages != null && parallaxBitmap != null && parallaxImages.Length > 0)
                 {
                     int parallaxCols = Math.Max(1, parallaxBitmap.PixelWidth / TileSize);
                     // Parallax ratio: background moves slower than foreground. 0.9 means background moves at 90% of camera.
@@ -637,32 +935,59 @@ namespace FamidashEditor
                     double parallaxWorldShiftX = camOffsetX * (1.0 - parallaxRatio);
                     double parallaxWorldShiftY = camOffsetY * (1.0 - parallaxRatio);
 
-                    // tile the parallax tiles across the full map area
-                    for (int pyTile = 0; pyTile < mapHeight; pyTile++)
+                    // Start at the top of the map so parallax appears in the grid area (behind tiles).
+                    int startRow = 0;
+                    // End a few rows below the map so the parallax continues under the ground band.
+                    int endRow = mapHeight + ((parallaxBelowRows > 0) ? parallaxBelowRows : 0);
+
+                    for (int pyTile = startRow; pyTile < endRow; pyTile++)
                     {
+                        // Skip drawing parallax where ground rows exist so ground fully occludes parallax
+                        if (groundRowsToDraw > 0 && pyTile >= mapHeight && pyTile < mapHeight + groundRowsToDraw) continue;
                         for (int pxTile = 0; pxTile < mapWidth; pxTile++)
                         {
                             int idx = (pyTile * parallaxCols + pxTile) % parallaxImages.Length;
-                            if (idx >= 0 && idx < parallaxImages.Length)
-                            {
-                                var img = parallaxImages[idx];
-                                double px = pxTile * TileSize * scale + parallaxWorldShiftX;
-                                double py = pyTile * TileSize * scale + parallaxWorldShiftY;
-                                dc.DrawImage(img, new Rect(px, py, TileSize * scale, TileSize * scale));
-                            }
+                            if (idx < 0) idx += parallaxImages.Length; // guard
+                                if (idx >= 0 && idx < parallaxImages.Length)
+                                {
+                                    ImageSource? img = null;
+                                    try
+                                    {
+                                        if (parallaxTonedImages != null && parallaxTonedImages.Length == parallaxImages.Length) img = parallaxTonedImages[idx];
+                                    }
+                                    catch { img = null; }
+                                    if (img == null) img = parallaxImages[idx];
+                                    if (img != null)
+                                    {
+                                        double px = pxTile * TileSize * scale + parallaxWorldShiftX + pad;
+                                        double py = pyTile * TileSize * scale + parallaxWorldShiftY + pad;
+                                        try { dc.DrawImage(img, new Rect(px, py, TileSize * scale, TileSize * scale)); }
+                                        catch { /* swallow individual draw failures */ }
+                                    }
+                                }
                         }
                     }
+                        // Parallax is tinted by using per-pixel tinted images (parallaxTonedImages). No overlay rectangle here.
                 }
 
-                // Draw ground row under the map (if ground images available). Draw before tiles so tiles render on top.
-                if (groundImages != null)
+                // Draw ground rows under the map (if ground images available). Draw before tiles so tiles render on top.
+                if (groundImages != null && groundImages.Length > 0 && groundRowsToDraw > 0)
                 {
-                    for (int gx = 0; gx < mapWidth; gx++)
+                    int cols = Math.Max(1, (groundBitmap?.PixelWidth ?? TileSize) / TileSize);
+                    for (int gy = 0; gy < groundRowsToDraw; gy++)
                     {
-                        var gimg = groundImages[gx % groundImages.Length];
-                        double px = gx * TileSize * scale;
-                        double py = mapHeight * TileSize * scale; // just below the last tile row
-                        dc.DrawImage(gimg, new Rect(px, py, TileSize * scale, TileSize * scale));
+                        for (int gx = 0; gx < mapWidth; gx++)
+                        {
+                            // pick tile based on column and the ground bitmap row so the full ground graphic appears
+                            int idx = (gy * cols + (gx % cols)) % groundImages.Length;
+                            ImageSource? gimg = null;
+                            try { if (groundTonedImages != null && groundTonedImages.Length == groundImages.Length) gimg = groundTonedImages[idx]; } catch { gimg = null; }
+                            if (gimg == null) gimg = groundImages[idx];
+                            double px = gx * TileSize * scale + pad;
+                            // stack ground rows immediately below the map area
+                            double py = (mapHeight + gy) * TileSize * scale + pad;
+                            try { if (gimg != null) dc.DrawImage(gimg, new Rect(px, py, TileSize * scale, TileSize * scale)); } catch { }
+                        }
                     }
                 }
 
@@ -677,37 +1002,15 @@ namespace FamidashEditor
                             if (idx >= 0 && idx < tileImages.Length)
                             {
                                 var img = tileImages[idx];
-                                double px = x * TileSize * scale;
-                                double py = y * TileSize * scale;
+                                double px = x * TileSize * scale + pad;
+                                double py = y * TileSize * scale + pad;
                                 dc.DrawImage(img, new Rect(px, py, TileSize * scale, TileSize * scale));
                             }
                         }
                     }
                 }
 
-                // Indicate deleted/empty tiles (tiles == -1) with a small dot using the inverted map background color
-                if (tiles != null)
-                {
-                    Color bgCol = (mapBackground as SolidColorBrush)?.Color ?? Color.FromRgb(40, 40, 40);
-                    var inv = Color.FromRgb((byte)(255 - bgCol.R), (byte)(255 - bgCol.G), (byte)(255 - bgCol.B));
-                    var dotBrush = new SolidColorBrush(Color.FromArgb(200, inv.R, inv.G, inv.B));
-                    dotBrush.Freeze();
-                    for (int y = 0; y < mapHeight; y++)
-                    {
-                        for (int x = 0; x < mapWidth; x++)
-                        {
-                            int idx = tiles[y * mapWidth + x];
-                            if (idx == -1)
-                            {
-                                double px = x * TileSize * scale;
-                                double py = y * TileSize * scale;
-                                double dotSize = Math.Max(1.0, TileSize * scale * 0.18);
-                                var center = new Point(px + (TileSize * scale) / 2.0, py + (TileSize * scale) / 2.0);
-                                dc.DrawEllipse(dotBrush, null, center, dotSize / 2.0, dotSize / 2.0);
-                            }
-                        }
-                    }
-                }
+                // Deleted-tile marker removed — no visual marker for empty tiles for now.
 
                 // Grid lines on top (allow darker values by scaling slider)
                 // gridDarkness range normally 0..1; allow stronger darkness by multiplying
@@ -718,25 +1021,30 @@ namespace FamidashEditor
                 for (int y = 0; y < mapHeight; y++)
                     for (int x = 0; x < mapWidth; x++)
                     {
-                        double px = x * TileSize * scale; double py = y * TileSize * scale;
+                        double px = x * TileSize * scale + pad; double py = y * TileSize * scale + pad;
                         dc.DrawRectangle(Brushes.Transparent, pen, new Rect(px, py, TileSize * scale, TileSize * scale));
                     }
+
+                // Ground is tinted by using per-pixel tinted images (groundTonedImages). No overlay rectangle here.
             }
 
             var dpi = VisualTreeHelper.GetDpi(this);
             int pixelWidth = Math.Max(1, (int)Math.Ceiling(fullW * dpi.DpiScaleX));
             int pixelHeight = Math.Max(1, (int)Math.Ceiling(fullH * dpi.DpiScaleY));
-            var rtb = new RenderTargetBitmap(pixelWidth, pixelHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            // Render using the padded sizes
+            int pixelPaddedWidth = Math.Max(1, (int)Math.Ceiling(paddedFullW * dpi.DpiScaleX));
+            int pixelPaddedHeight = Math.Max(1, (int)Math.Ceiling(paddedFullH * dpi.DpiScaleY));
+            var rtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
             rtb.Render(dv);
 
             if (VisibleImage != null)
             {
                 VisibleImage.Source = rtb;
-                VisibleImage.Width = fullW; VisibleImage.Height = fullH;
+                VisibleImage.Width = paddedFullW; VisibleImage.Height = paddedFullH;
             }
             if (CanvasHost != null)
             {
-                CanvasHost.Width = fullW; CanvasHost.Height = fullH;
+                CanvasHost.Width = paddedFullW; CanvasHost.Height = paddedFullH;
             }
         }
 
@@ -804,8 +1112,11 @@ namespace FamidashEditor
         private void StartPaintingAt(Point pos)
         {
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(pos.X / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(pos.Y / (TileSize * scale))));
+            double pad = mapViewportPadding;
+            double relX = pos.X - pad;
+            double relY = pos.Y - pad;
+            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
+            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
 
             // For Fill tool, perform flood-fill on click and do not start drag-painting
             if (FillTool != null && FillTool.IsChecked == true)
@@ -840,8 +1151,11 @@ namespace FamidashEditor
         private void ContinuePaintingAt(Point pos)
         {
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(pos.X / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(pos.Y / (TileSize * scale))));
+            double pad = mapViewportPadding;
+            double relX = pos.X - pad;
+            double relY = pos.Y - pad;
+            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
+            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
             // avoid repainting the same cell repeatedly
             if (x == lastPaintX && y == lastPaintY) return;
             DoPaintAt(x, y);
@@ -876,25 +1190,28 @@ namespace FamidashEditor
         private void UpdateCoords(Point p)
         {
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            // Determine whether pointer is inside the map area
-            bool inBounds = p.X >= 0 && p.Y >= 0 && p.X < mapWidth * TileSize * scale && p.Y < mapHeight * TileSize * scale;
+            double pad = mapViewportPadding;
+            // Determine whether pointer is inside the map area (accounting for padding)
+            bool inBounds = p.X >= pad && p.Y >= pad && p.X < pad + mapWidth * TileSize * scale && p.Y < pad + mapHeight * TileSize * scale;
             int x = -1, y = -1;
             if (inBounds)
             {
-                x = Math.Max(0, Math.Min(mapWidth - 1, (int)(p.X / (TileSize * scale))));
-                y = Math.Max(0, Math.Min(mapHeight - 1, (int)(p.Y / (TileSize * scale))));
+                double relX = p.X - pad;
+                double relY = p.Y - pad;
+                x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
+                y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
             }
             if (StatusText != null) StatusText.Text = inBounds ? $"Coords: {x}, {y}" : string.Empty;
 
-            // Position hover rectangle
+            // Position hover rectangle (offset by padding)
             try
             {
                 if (HoverRect != null)
                 {
                     if (inBounds)
                     {
-                        double left = x * TileSize * scale;
-                        double top = y * TileSize * scale;
+                        double left = x * TileSize * scale + pad;
+                        double top = y * TileSize * scale + pad;
                         double size = TileSize * scale;
                         HoverRect.Width = size; HoverRect.Height = size;
                         Canvas.SetLeft(HoverRect, left);

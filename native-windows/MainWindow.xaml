@@ -117,6 +117,8 @@
                         </StackPanel>
                     </ToggleButton>
                     <Button x:Name="BgColorButton" Content="Background..." Margin="8,0,0,0" />
+                    <Button x:Name="BgTintButton" Content="Background Tint..." Margin="8,0,0,0" />
+                    <Button x:Name="GroundTintButton" Content="Ground Tint..." Margin="8,0,0,0" />
                 </ToolBar>
             </ToolBarTray>
 
@@ -133,7 +135,7 @@
 
         <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="4">
             <TextBlock Text="Grid darkness:" VerticalAlignment="Center" Margin="4,0"/>
-            <Slider x:Name="GridDarknessSlider" Minimum="0" Maximum="1" Value="0.5" Width="200" />
+            <Slider x:Name="GridDarknessSlider" Minimum="0" Maximum="1" Value="0.18" Width="200" />
             <TextBlock Text="Zoom:" VerticalAlignment="Center" Margin="12,0"/>
             <Slider x:Name="ZoomSlider" Minimum="0.5" Maximum="4" Value="1" Width="200" />
             <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
