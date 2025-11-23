@@ -26,11 +26,13 @@
 
         <!-- Palette grid: boxed and tightly spaced to match the provided sample image -->
         <Border Grid.Row="2" Padding="6" Background="#202020" CornerRadius="4">
-            <ScrollViewer>
+            <!-- Hide the visible vertical scrollbar but keep scrolling via mouse-wheel/ touch gesture -->
+            <ScrollViewer VerticalScrollBarVisibility="Hidden">
                 <ItemsControl x:Name="PalettePanel">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
-                            <UniformGrid Columns="12" />
+                            <!-- 14 columns x 4 rows layout matching the provided palette image -->
+                            <UniformGrid Columns="14" />
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                 </ItemsControl>

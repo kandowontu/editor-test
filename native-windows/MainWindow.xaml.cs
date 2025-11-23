@@ -9,6 +9,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Shapes = System.Windows.Shapes;
 
 namespace FamidashEditor
 {
@@ -53,11 +54,20 @@ namespace FamidashEditor
     private bool isPainting = false;
     private int lastPaintX = -1;
     private int lastPaintY = -1;
+    // Track if mouse has moved since button down to distinguish click from drag
+    private bool hasMouseMoved = false;
+    private Point mouseDownPosition;
     // Selection state
     private bool isSelecting = false;
     private int selectStartX = -1, selectStartY = -1;
     private int selX = -1, selY = -1, selW = 0, selH = 0;
     private int[]? selTiles = null; // row-major selW * selH
+    private System.Collections.Generic.HashSet<int> selectionSet = new System.Collections.Generic.HashSet<int>();
+    // Dragging selection state
+    private bool isDraggingSelection = false;
+    private Point dragStartMouse; // in CanvasHost coords
+    private int dragOrigX = 0, dragOrigY = 0; // original selection top-left
+    private Point dragOffset; // offset from mouse to selection top-left when dragging
     // Allow a small padded margin around the map so users can scroll slightly out-of-bounds
     private double mapViewportPadding = 64.0; // pixels on each side
     // Undo/redo support (unlimited)
@@ -290,7 +300,12 @@ namespace FamidashEditor
             };
             if (TilesPanel != null) TilesPanel.SizeChanged += (_, __) => AdjustPaletteSizes();
             if (SpritesPanel != null) SpritesPanel.SizeChanged += (_, __) => AdjustPaletteSizes();
-            if (RootGrid != null) RootGrid.SizeChanged += (_, __) => UpdateTilesPanelWidth();
+            if (RootGrid != null) RootGrid.SizeChanged += (_, __) => 
+            {
+                UpdateTilesPanelWidth();
+                // Also update column width when in auto mode
+                if (!manualTileSize) UpdateLeftColumnWidth(initial: false);
+            };
             if (BgColorButton != null) BgColorButton.Click += BgColorButton_Click;
             if (BgTintButton != null) BgTintButton.Click += BgTintButton_Click;
             if (GroundTintButton != null) GroundTintButton.Click += GroundTintButton_Click;
@@ -303,6 +318,7 @@ namespace FamidashEditor
                 if (EraseTool != null) EraseTool.Checked += Tool_Checked;
                 if (FillTool != null) FillTool.Checked += Tool_Checked;
                 if (SelectTool != null) SelectTool.Checked += Tool_Checked;
+        if (MagicWandTool != null) MagicWandTool.Checked += Tool_Checked;
             // keyboard shortcuts for undo/redo
             this.PreviewKeyDown += MainWindow_PreviewKeyDown;
         }
@@ -597,23 +613,28 @@ namespace FamidashEditor
             {
                 if (RootGrid == null) return;
                 var col = RootGrid.ColumnDefinitions[0];
-                // Use the current paletteTileSize (not the slider directly) so changing the slider
-                // does not resize the frame. paletteTileSize reflects automatic or manual values.
-                double ts = paletteTileSize;
-                // 16 tiles across, plus padding and the system vertical scrollbar width
-                double scrollbar = SystemParameters.VerticalScrollBarWidth;
-                double padding = 12;
-                double desired = Math.Max(160, ts * 16 + scrollbar + padding);
-                // set the left column width to desired
-                col.Width = new GridLength(desired, GridUnitType.Pixel);
+                
+                // When in auto mode (not manual tile size), adjust column width to fit 16 tiles
+                // When manual, keep the column fixed and allow scrollbars
+                if (!manualTileSize)
+                {
+                    double ts = paletteTileSize;
+                    // 16 tiles across, plus padding and the system vertical scrollbar width
+                    double scrollbar = SystemParameters.VerticalScrollBarWidth;
+                    double padding = 12;
+                    double desired = Math.Max(160, ts * 16 + scrollbar + padding);
+                    // set the left column width to desired
+                    col.Width = new GridLength(desired, GridUnitType.Pixel);
+                }
 
                 if (initial)
                 {
                     // On first run, expand the window MinWidth so the left column is fully visible,
                     // but avoid forcing the actual Window.Width (user should be able to resize freely).
+                    double colWidth = col.ActualWidth > 0 ? col.ActualWidth : 260;
                     double splitterWidth = (RootGrid.ColumnDefinitions.Count > 1) ? RootGrid.ColumnDefinitions[1].ActualWidth : 5;
                     double mainAreaMin = 200; // smaller minimum for the main editor area to keep default window compact
-                    double required = desired + splitterWidth + mainAreaMin + 40; // extra margins
+                    double required = colWidth + splitterWidth + mainAreaMin + 40; // extra margins
                     if (this.MinWidth < required) this.MinWidth = required;
                     // Do not set this.Width here to avoid an oversized initial window.
                 }
@@ -685,9 +706,23 @@ namespace FamidashEditor
 
                     // Do not auto-adjust sprite palette size here; leave sprites controllable by the user via the slider.
 
-                    // Let the ListBox stretch to the left column width instead of forcing a smaller width.
-                    if (TilesPanel != null) TilesPanel.Width = Double.NaN;
-                    if (SpritesPanel != null) SpritesPanel.Width = Double.NaN;
+                    // Disable horizontal scrollbars when not in manual mode (auto-sizing)
+                    if (TilesPanel != null)
+                    {
+                        TilesPanel.Width = Double.NaN;
+                        if (!manualTileSize)
+                        {
+                            TilesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+                        }
+                    }
+                    if (SpritesPanel != null)
+                    {
+                        SpritesPanel.Width = Double.NaN;
+                        if (!manualSpriteSize)
+                        {
+                            SpritesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+                        }
+                    }
                 }
                 finally { isAdjustingPanels = false; }
             }
@@ -1599,14 +1634,32 @@ namespace FamidashEditor
         {
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
+            
+            // Track mouse down position and reset movement flag
+            mouseDownPosition = pos;
+            hasMouseMoved = false;
+            
+            // Magic Wand tool: select connected region of same tile
+            if (MagicWandTool != null && MagicWandTool.IsChecked == true)
+            {
+                StartMagicWandAt(pos);
+                return;
+            }
             // Branch behavior based on active tool
-            // Select tool: start draggable selection rectangle
+            // Select tool: support Ctrl+click to toggle single-tile selection, or drag to rectangle-select
             if (SelectTool != null && SelectTool.IsChecked == true)
             {
+                // Ctrl+click toggles the tile under cursor
+                if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
+                {
+                    ToggleSelectionAt(pos);
+                    return;
+                }
+                // otherwise start rectangle selection
                 StartSelectionAt(pos);
                 return;
             }
-            // Move tool: if we have an existing selection, a click will place the selection's top-left at the clicked tile
+            // Move tool: begin dragging if we have an existing selection, otherwise pick tile under cursor
             if (MoveTool != null && MoveTool.IsChecked == true)
             {
                 double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
@@ -1615,14 +1668,27 @@ namespace FamidashEditor
                 double relY = pos.Y - pad;
                 int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
                 int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
-                if (selTiles != null && selW > 0 && selH > 0)
+                if (selectionSet != null && selectionSet.Count > 0)
                 {
-                    MoveSelectionTo(x, y);
+                    // start drag-move of selection
+                    StartDragMove(pos);
                     return;
                 }
-                // If no selection, fallback to pick tile under cursor (previous behavior)
-                selectedTile = tiles[y * mapWidth + x];
-                UpdateTileHighlight();
+                // If no selection, check the tile under cursor and start a single-tile selection+drag
+                int idx = y * mapWidth + x;
+                int val = tiles[idx];
+                if (val != -1)
+                {
+                    // create a 1x1 selection at this tile and begin dragging
+                    selX = x; selY = y; selW = 1; selH = 1;
+                    selTiles = new int[1] { val };
+                    selectionSet!.Clear(); selectionSet.Add(idx);
+                    // show selection visuals
+                    UpdateSelectionVisuals(selX, selY, selW, selH);
+                    StartDragMove(pos);
+                    return;
+                }
+                // otherwise nothing to drag
                 return;
             }
 
@@ -1648,13 +1714,48 @@ namespace FamidashEditor
 
         private void CanvasHost_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
+            if (CanvasHost == null) return;
+            if (isDraggingSelection)
+            {
+                EndDragMove(e.GetPosition(CanvasHost));
+                return;
+            }
             if (isSelecting)
             {
                 EndSelection();
+                return;
             }
-            else
+            if (isPainting)
             {
                 StopPainting();
+                return;
+            }
+            
+            // Handle single click - check if we should deselect
+            if (selectionSet.Count > 0)
+            {
+                var pos = e.GetPosition(CanvasHost);
+                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double pad = mapViewportPadding;
+                double relX = pos.X - pad;
+                double relY = pos.Y - pad;
+                int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
+                int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+                int idx = y * mapWidth + x;
+                
+                // If Select or MagicWand tool active and clicked outside selection, clear it
+                // (unless Ctrl is held for additive selection)
+                // Only deselect on true click (not drag end)
+                bool isCtrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+                if (!isCtrl && !selectionSet.Contains(idx) && !hasMouseMoved)
+                {
+                    if ((SelectTool != null && SelectTool.IsChecked == true) || 
+                        (MagicWandTool != null && MagicWandTool.IsChecked == true) ||
+                        (MoveTool != null && MoveTool.IsChecked == true))
+                    {
+                        ClearSelection();
+                    }
+                }
             }
         }
 
@@ -1662,8 +1763,26 @@ namespace FamidashEditor
         {
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
+            
+            // Track if mouse has moved since button down (for click vs drag detection)
+            if (e.LeftButton == MouseButtonState.Pressed && !hasMouseMoved)
+            {
+                const double dragThreshold = 3.0; // pixels
+                double dx = pos.X - mouseDownPosition.X;
+                double dy = pos.Y - mouseDownPosition.Y;
+                if (Math.Sqrt(dx * dx + dy * dy) > dragThreshold)
+                {
+                    hasMouseMoved = true;
+                }
+            }
+            
             UpdateCoords(pos);
             // If actively selecting, update the selection rectangle
+            if (isDraggingSelection && e.LeftButton == MouseButtonState.Pressed)
+            {
+                UpdateDragMoveTo(pos);
+                return;
+            }
             if (isSelecting && e.LeftButton == MouseButtonState.Pressed)
             {
                 UpdateSelectionTo(pos);
@@ -1682,7 +1801,7 @@ namespace FamidashEditor
             if (sender == null) return;
             var tb = sender as ToggleButton;
             if (tb == null) return;
-            var all = new[] { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool };
+            var all = new[] { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool };
             foreach (var t in all)
             {
                 if (t != tb) t.IsChecked = false;
@@ -1777,22 +1896,250 @@ namespace FamidashEditor
             int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
             isSelecting = true;
             selectStartX = x; selectStartY = y;
-            // show selection rect initially at a single tile
-            if (SelectionRect != null)
-            {
-                double left = x * TileSize * scale + mapViewportPadding;
-                double top = y * TileSize * scale + mapViewportPadding;
-                double size = TileSize * scale;
-                SelectionRect.Width = size; SelectionRect.Height = size;
-                Canvas.SetLeft(SelectionRect, left); Canvas.SetTop(SelectionRect, top);
-                SelectionRect.Visibility = Visibility.Visible;
-            }
+            // Show initial preview selection rectangle
+            UpdateSelectionVisuals(x, y, 1, 1, previewMode: true);
             if (CanvasHost != null) CanvasHost.CaptureMouse();
+        }
+
+        private void ToggleSelectionAt(Point pos)
+        {
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)((pos.X - pad) / (TileSize * scale))));
+            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)((pos.Y - pad) / (TileSize * scale))));
+            int idx = y * mapWidth + x;
+            // Only toggle selection for valid (non-empty) tiles
+            if (tiles[idx] == -1) return;
+            if (selectionSet.Contains(idx)) selectionSet.Remove(idx); else selectionSet.Add(idx);
+
+            if (selectionSet.Count == 0)
+            {
+                ClearSelection();
+                return;
+            }
+
+            // compute bounding box of selectionSet
+            int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+            foreach (var i in selectionSet)
+            {
+                int sx = i % mapWidth; int sy = i / mapWidth;
+                if (sx < minX) minX = sx; if (sy < minY) minY = sy;
+                if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy;
+            }
+            selX = minX; selY = minY; selW = maxX - minX + 1; selH = maxY - minY + 1;
+            selTiles = new int[selW * selH];
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            {
+                int gx = selX + xx, gy = selY + yy; int gidx = gy * mapWidth + gx;
+                if (selectionSet.Contains(gidx)) selTiles[yy * selW + xx] = tiles[gidx]; else selTiles[yy * selW + xx] = -1;
+            }
+
+            // Update selection visuals
+            UpdateSelectionVisuals(selX, selY, selW, selH);
+            if (StatusText != null) StatusText.Text = $"Selected items: {selectionSet.Count} (bbox {selW}x{selH} at {selX},{selY})";
+            Redraw();
+        }
+
+        private void StartMagicWandAt(Point pos)
+        {
+            if (CanvasHost == null) return;
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)((pos.X - pad) / (TileSize * scale))));
+            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)((pos.Y - pad) / (TileSize * scale))));
+            int startIdx = y * mapWidth + x;
+            int target = tiles[startIdx];
+            if (target == -1) return; // nothing to select
+
+            var q = new System.Collections.Generic.Queue<(int x, int y)>();
+            var visited = new System.Collections.Generic.HashSet<int>();
+            q.Enqueue((x, y)); visited.Add(startIdx);
+            while (q.Count > 0)
+            {
+                var (cx, cy) = q.Dequeue();
+                int ci = cy * mapWidth + cx;
+                // four neighbors
+                var nbrs = new (int nx, int ny)[] { (cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1) };
+                foreach (var n in nbrs)
+                {
+                    int nx = n.nx, ny = n.ny;
+                    if (nx < 0 || nx >= mapWidth || ny < 0 || ny >= mapHeight) continue;
+                    int ni = ny * mapWidth + nx;
+                    if (visited.Contains(ni)) continue;
+                    if (tiles[ni] == target)
+                    {
+                        visited.Add(ni);
+                        q.Enqueue((nx, ny));
+                    }
+                }
+            }
+
+            // Check if Ctrl is held for additive selection
+            bool isCtrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            
+            if (!isCtrl)
+            {
+                // Replace selection
+                selectionSet.Clear();
+            }
+            
+            // Add visited tiles to selection set
+            int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+            foreach (var i in visited)
+            {
+                selectionSet.Add(i);
+            }
+            
+            // Compute bounding box of entire selectionSet
+            foreach (var i in selectionSet)
+            {
+                int sx = i % mapWidth; int sy = i / mapWidth;
+                if (sx < minX) minX = sx; if (sy < minY) minY = sy;
+                if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy;
+            }
+            
+            selX = minX; selY = minY; selW = maxX - minX + 1; selH = maxY - minY + 1;
+            selTiles = new int[selW * selH];
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            {
+                int gx = selX + xx, gy = selY + yy; int gidx = gy * mapWidth + gx;
+                selTiles[yy * selW + xx] = selectionSet.Contains(gidx) ? tiles[gidx] : -1;
+            }
+
+            // Update selection visuals
+            UpdateSelectionVisuals(selX, selY, selW, selH);
+            string mode = isCtrl ? "added" : "selected";
+            if (StatusText != null) StatusText.Text = $"Magic wand {mode} {visited.Count} tiles of type {target} (total: {selectionSet.Count})";
+            Redraw();
+        }
+
+        private void StartDragMove(Point pos)
+        {
+            if (selTiles == null || selW <= 0 || selH <= 0) return;
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+
+            // Build an image for the selection (render scaled tiles into a RenderTargetBitmap)
+            int pixW = selW * tilePixelW;
+            int pixH = selH * tilePixelH;
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                for (int yy = 0; yy < selH; yy++)
+                {
+                    for (int xx = 0; xx < selW; xx++)
+                    {
+                        int val = selTiles[yy * selW + xx];
+                        if (val >= 0 && tileImages != null && val < tileImages.Length)
+                        {
+                            ImageSource? src = null;
+                            try { if (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) src = tileTonedImages[val]; } catch { src = null; }
+                            if (src == null) src = tileImages[val];
+                            if (src != null)
+                            {
+                                double x = xx * TileSize * scale;
+                                double y = yy * TileSize * scale;
+                                dc.DrawImage(src, new Rect(x, y, TileSize * scale, TileSize * scale));
+                            }
+                        }
+                    }
+                }
+            }
+            var rtb = new RenderTargetBitmap(pixW, pixH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            rtb.Render(dv);
+            rtb.Freeze();
+
+            // Set ghost image source and initial position
+            if (GhostImage != null && CanvasHost != null)
+            {
+                GhostImage.Source = rtb;
+                GhostImage.Width = selW * TileSize * scale;
+                GhostImage.Height = selH * TileSize * scale;
+                double selLeft = selX * TileSize * scale + mapViewportPadding;
+                double selTop = selY * TileSize * scale + mapViewportPadding;
+                Canvas.SetLeft(GhostImage, selLeft);
+                Canvas.SetTop(GhostImage, selTop);
+                GhostImage.Visibility = Visibility.Visible;
+            }
+
+            // capture drag state
+            isDraggingSelection = true;
+            dragStartMouse = pos;
+            dragOrigX = selX; dragOrigY = selY;
+            // compute offset so the ghost follows the pointer at the same relative point
+            double selLeftUnits = selX * TileSize * scale + mapViewportPadding;
+            double selTopUnits = selY * TileSize * scale + mapViewportPadding;
+            dragOffset = new Point(dragStartMouse.X - selLeftUnits, dragStartMouse.Y - selTopUnits);
+            if (CanvasHost != null) CanvasHost.CaptureMouse();
+        }
+
+        private void UpdateDragMoveTo(Point pos)
+        {
+            if (!isDraggingSelection || GhostImage == null) return;
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            // desired top-left in canvas units
+            double left = pos.X - dragOffset.X;
+            double top = pos.Y - dragOffset.Y;
+            // clamp so selection stays within map extents (allow small padding)
+            double minLeft = pad; double minTop = pad;
+            double maxLeft = pad + Math.Max(0, mapWidth * TileSize * scale - selW * TileSize * scale);
+            double maxTop = pad + Math.Max(0, mapHeight * TileSize * scale - selH * TileSize * scale);
+            if (left < minLeft) left = minLeft; if (left > maxLeft) left = maxLeft;
+            if (top < minTop) top = minTop; if (top > maxTop) top = maxTop;
+            Canvas.SetLeft(GhostImage, left);
+            Canvas.SetTop(GhostImage, top);
+        }
+
+        private void EndDragMove(Point pos)
+        {
+            if (!isDraggingSelection) return;
+            isDraggingSelection = false;
+            if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
+            if (GhostImage == null) return;
+            
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            
+            // If this was just a click (not a drag) outside the current selection, deselect
+            if (!hasMouseMoved && selectionSet.Count > 0)
+            {
+                int clickX = Math.Max(0, Math.Min(mapWidth - 1, (int)((pos.X - pad) / (TileSize * scale))));
+                int clickY = Math.Max(0, Math.Min(mapHeight - 1, (int)((pos.Y - pad) / (TileSize * scale))));
+                int clickedIdx = clickY * mapWidth + clickX;
+                if (!selectionSet.Contains(clickedIdx))
+                {
+                    // Hide ghost and clear selection
+                    GhostImage.Visibility = Visibility.Collapsed;
+                    GhostImage.Source = null;
+                    ClearSelection();
+                    return;
+                }
+            }
+            
+            // compute final destination tile coords from ghost position
+            double left = Canvas.GetLeft(GhostImage);
+            double top = Canvas.GetTop(GhostImage);
+            int destX = (int)Math.Round((left - pad) / (TileSize * scale));
+            int destY = (int)Math.Round((top - pad) / (TileSize * scale));
+            // clamp
+            if (destX < 0) destX = 0; if (destY < 0) destY = 0;
+            if (destX + selW > mapWidth) destX = mapWidth - selW;
+            if (destY + selH > mapHeight) destY = mapHeight - selH;
+
+            // hide ghost
+            GhostImage.Visibility = Visibility.Collapsed;
+            GhostImage.Source = null;
+
+            // commit move
+            MoveSelectionTo(destX, destY);
         }
 
         private void UpdateSelectionTo(Point pos)
         {
-            if (!isSelecting || SelectionRect == null) return;
+            if (!isSelecting) return;
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             double pad = mapViewportPadding;
             double relX = pos.X - pad;
@@ -1801,9 +2148,55 @@ namespace FamidashEditor
             int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
             int minX = Math.Min(selectStartX, x), minY = Math.Min(selectStartY, y);
             int maxX = Math.Max(selectStartX, x), maxY = Math.Max(selectStartY, y);
-            double left = minX * TileSize * scale + pad; double top = minY * TileSize * scale + pad;
-            double w = (maxX - minX + 1) * TileSize * scale; double h = (maxY - minY + 1) * TileSize * scale;
-            SelectionRect.Width = w; SelectionRect.Height = h; Canvas.SetLeft(SelectionRect, left); Canvas.SetTop(SelectionRect, top);
+            // During drag-selection, show a temporary preview bounding box
+            UpdateSelectionVisuals(minX, minY, maxX - minX + 1, maxY - minY + 1, previewMode: true);
+        }
+
+        private void UpdateSelectionVisuals(int x, int y, int w, int h, bool previewMode = false)
+        {
+            if (SelectionOverlay == null) return;
+            SelectionOverlay.Children.Clear();
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            double tileSize = TileSize * scale;
+
+            if (previewMode)
+            {
+                // During drag-selection, show a simple bounding rectangle preview
+                var rect = new Shapes.Rectangle
+                {
+                    Fill = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)),
+                    Stroke = Brushes.Cyan,
+                    StrokeThickness = 2,
+                    Width = w * tileSize,
+                    Height = h * tileSize,
+                    IsHitTestVisible = false
+                };
+                Canvas.SetLeft(rect, x * tileSize + pad);
+                Canvas.SetTop(rect, y * tileSize + pad);
+                SelectionOverlay.Children.Add(rect);
+            }
+            else
+            {
+                // Show individual rectangles for each selected tile
+                foreach (var idx in selectionSet)
+                {
+                    int tx = idx % mapWidth;
+                    int ty = idx / mapWidth;
+                    var rect = new Shapes.Rectangle
+                    {
+                        Fill = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)),
+                        Stroke = Brushes.Cyan,
+                        StrokeThickness = 2,
+                        Width = tileSize,
+                        Height = tileSize,
+                        IsHitTestVisible = false
+                    };
+                    Canvas.SetLeft(rect, tx * tileSize + pad);
+                    Canvas.SetTop(rect, ty * tileSize + pad);
+                    SelectionOverlay.Children.Add(rect);
+                }
+            }
         }
 
         private void EndSelection()
@@ -1811,32 +2204,64 @@ namespace FamidashEditor
             if (!isSelecting) return;
             isSelecting = false;
             if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
-            // compute final selection bounds from current SelectionRect position
-            if (SelectionRect == null) return;
+            
+            // If this was just a click (not a drag) outside the current selection, deselect
+            if (!hasMouseMoved && selectionSet.Count > 0)
+            {
+                int clickedIdx = selectStartY * mapWidth + selectStartX;
+                if (!selectionSet.Contains(clickedIdx))
+                {
+                    ClearSelection();
+                    return;
+                }
+            }
+            
+            // compute final selection bounds from the drag preview
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            // Use the current preview to determine bounds
+            if (SelectionOverlay == null || SelectionOverlay.Children.Count == 0) return;
+            var previewRect = SelectionOverlay.Children[0] as Shapes.Rectangle;
+            if (previewRect == null) return;
             double pad = mapViewportPadding;
-            double left = Canvas.GetLeft(SelectionRect) - pad;
-            double top = Canvas.GetTop(SelectionRect) - pad;
+            double left = Canvas.GetLeft(previewRect) - pad;
+            double top = Canvas.GetTop(previewRect) - pad;
             int minX = Math.Max(0, Math.Min(mapWidth - 1, (int)(left / (TileSize * scale))));
             int minY = Math.Max(0, Math.Min(mapHeight - 1, (int)(top / (TileSize * scale))));
-            int w = Math.Max(1, (int)Math.Round(SelectionRect.Width / (TileSize * scale)));
-            int h = Math.Max(1, (int)Math.Round(SelectionRect.Height / (TileSize * scale)));
+            int w = Math.Max(1, (int)Math.Round(previewRect.Width / (TileSize * scale)));
+            int h = Math.Max(1, (int)Math.Round(previewRect.Height / (TileSize * scale)));
             // clamp to map
             if (minX + w > mapWidth) w = mapWidth - minX;
             if (minY + h > mapHeight) h = mapHeight - minY;
             selX = minX; selY = minY; selW = w; selH = h;
-            // copy tiles
+            // copy tiles and populate selection set
             selTiles = new int[selW * selH];
-            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++) selTiles[yy * selW + xx] = tiles[(selY + yy) * mapWidth + (selX + xx)];
-            SelectionRect.Visibility = Visibility.Visible;
-            if (StatusText != null) StatusText.Text = $"Selected area {selW}x{selH} at {selX},{selY}";
+            selectionSet.Clear();
+            for (int yy = 0; yy < selH; yy++)
+            {
+                for (int xx = 0; xx < selW; xx++)
+                {
+                    int idx = (selY + yy) * mapWidth + (selX + xx);
+                    selTiles[yy * selW + xx] = tiles[idx];
+                    // Only add non-empty tiles to the selection set
+                    if (tiles[idx] != -1) selectionSet.Add(idx);
+                }
+            }
+            // If the rectangular selection contains no valid tiles, clear selection
+            if (selectionSet.Count == 0)
+            {
+                ClearSelection();
+                return;
+            }
+            UpdateSelectionVisuals(selX, selY, selW, selH);
+            if (StatusText != null) StatusText.Text = $"Selected area {selW}x{selH} at {selX},{selY} (items={selectionSet.Count})";
             Redraw();
         }
 
         private void ClearSelection()
         {
             selTiles = null; selW = 0; selH = 0; selX = selY = -1;
-            if (SelectionRect != null) SelectionRect.Visibility = Visibility.Collapsed;
+            selectionSet.Clear();
+            if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
             if (StatusText != null) StatusText.Text = string.Empty;
         }
 
@@ -1884,7 +2309,20 @@ namespace FamidashEditor
             // Commit final state
             tiles = final;
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-            ClearSelection();
+            // Update selection to new destination: preserve sparse selection membership only for cells that were selected
+            var newSelection = new System.Collections.Generic.HashSet<int>();
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            {
+                int oldIdx = (selY + yy) * mapWidth + (selX + xx);
+                int newIdx = (destY + yy) * mapWidth + (destX + xx);
+                // if the source cell was part of selectionSet (i.e., non-empty before move), include its destination
+                if (/* check source was selected */ selectionSet.Contains(oldIdx)) newSelection.Add(newIdx);
+            }
+            selectionSet = newSelection;
+            // update selX/selY to the new top-left
+            selX = destX; selY = destY;
+            // Update selection visuals to show the moved selection
+            UpdateSelectionVisuals(selX, selY, selW, selH);
             if (StatusText != null) StatusText.Text = $"Moved selection to {destX},{destY}";
         }
 

@@ -117,6 +117,12 @@
                             <TextBlock Text="Select" Margin="4,0" />
                         </StackPanel>
                     </ToggleButton>
+                    <ToggleButton x:Name="MagicWandTool" Margin="2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="✦" FontSize="12" Margin="2,0" />
+                            <TextBlock Text="Wand" Margin="4,0" />
+                        </StackPanel>
+                    </ToggleButton>
                     <Button x:Name="UndoButton" Margin="8,0,0,0" ToolTip="Undo (Ctrl+Z)">Undo</Button>
                     <Button x:Name="BgColorButton" Content="Background..." Margin="8,0,0,0" />
                     <Button x:Name="BgTintButton" Content="Background Tint..." Margin="8,0,0,0" />
@@ -160,8 +166,10 @@
                 <Canvas x:Name="CanvasHost" Background="Transparent">
                     <!-- Hover rectangle: shown while mouse is over a tile -->
                     <Rectangle x:Name="HoverRect" Fill="#28FFFF00" Stroke="Yellow" StrokeThickness="2" Visibility="Collapsed" IsHitTestVisible="False" />
-                        <!-- Selection rectangle for multi-tile selection -->
-                        <Rectangle x:Name="SelectionRect" Fill="#40FFFFFF" Stroke="Cyan" StrokeThickness="2" Visibility="Collapsed" IsHitTestVisible="False" />
+                        <!-- Selection overlay canvas: contains individual rectangle overlays for each selected tile -->
+                        <Canvas x:Name="SelectionOverlay" IsHitTestVisible="False" />
+                        <!-- Ghost image shown while dragging a selection -->
+                        <Image x:Name="GhostImage" Visibility="Collapsed" IsHitTestVisible="False" Opacity="0.75" />
                 </Canvas>
             </Grid>
         </ScrollViewer>
