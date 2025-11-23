@@ -1177,39 +1177,55 @@ namespace FamidashEditor
             double paddedFullW = fullW + pad * 2.0;
             double paddedFullH = fullH + pad * 2.0;
 
+            // Ensure the rendered layer bitmaps cover the visible editor area. If the ScrollViewer
+            // viewport is larger than the padded map size (blank grey around the map), expand the
+            // layer sizes to cover the viewport so parallax/ground fill the entire visible region.
+            double displayFullW = paddedFullW;
+            double displayFullH = paddedFullH;
+            if (MapScrollViewer != null)
+            {
+                // Use ViewportWidth/Height when available; fall back to ActualWidth/Height.
+                double vpw = MapScrollViewer.ViewportWidth > 0 ? MapScrollViewer.ViewportWidth : MapScrollViewer.ActualWidth;
+                double vph = MapScrollViewer.ViewportHeight > 0 ? MapScrollViewer.ViewportHeight : MapScrollViewer.ActualHeight;
+                if (!double.IsNaN(vpw) && vpw > displayFullW) displayFullW = vpw;
+                if (!double.IsNaN(vph) && vph > displayFullH) displayFullH = vph;
+            }
+
             var dpi = VisualTreeHelper.GetDpi(this);
             int pixelPaddedWidth = Math.Max(1, (int)Math.Ceiling(paddedFullW * dpi.DpiScaleX));
             int pixelPaddedHeight = Math.Max(1, (int)Math.Ceiling(paddedFullH * dpi.DpiScaleY));
+            int pixelDisplayWidth = Math.Max(1, (int)Math.Ceiling(displayFullW * dpi.DpiScaleX));
+            int pixelDisplayHeight = Math.Max(1, (int)Math.Ceiling(displayFullH * dpi.DpiScaleY));
 
             // Ensure background/grid/tiles bitmaps exist and match size/scale
-            EnsureLayerBitmaps(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight);
+            EnsureLayerBitmaps(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelDisplayWidth, pixelDisplayHeight);
 
             // Update UI image sources and sizes
             if (BackgroundImage != null && backgroundRtb != null)
             {
                 BackgroundImage.Source = backgroundRtb;
-                BackgroundImage.Width = paddedFullW; BackgroundImage.Height = paddedFullH;
+                BackgroundImage.Width = displayFullW; BackgroundImage.Height = displayFullH;
             }
             if (ParallaxImage != null && parallaxRtb != null)
             {
                 ParallaxImage.Source = parallaxRtb;
-                ParallaxImage.Width = paddedFullW; ParallaxImage.Height = paddedFullH;
+                ParallaxImage.Width = displayFullW; ParallaxImage.Height = displayFullH;
                 ParallaxImage.RenderTransform = parallaxTransform;
             }
             if (GroundImage != null && groundRtb != null)
             {
                 GroundImage.Source = groundRtb;
-                GroundImage.Width = paddedFullW; GroundImage.Height = paddedFullH;
+                GroundImage.Width = displayFullW; GroundImage.Height = displayFullH;
             }
             if (TilesImage != null && tilesWb != null)
             {
                 TilesImage.Source = tilesWb;
-                TilesImage.Width = paddedFullW; TilesImage.Height = paddedFullH;
+                TilesImage.Width = displayFullW; TilesImage.Height = displayFullH;
             }
             if (GridImage != null && gridRtb != null)
             {
                 GridImage.Source = gridRtb;
-                GridImage.Width = paddedFullW; GridImage.Height = paddedFullH;
+                GridImage.Width = displayFullW; GridImage.Height = displayFullH;
             }
 
             if (CanvasHost != null)
@@ -1228,7 +1244,7 @@ namespace FamidashEditor
             if (backgroundRtb == null || cachedPixelWidth != pixelPaddedWidth || cachedPixelHeight != pixelPaddedHeight || Math.Abs(cachedScale - scale) > 1e-6 || backgroundDirty)
             {
                 BuildBackgroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
-                // Also (re)build parallax and ground bitmaps for the current size/scale
+                // Also (re)build parallax and ground bitmaps for the current size/scale and display size
                 try { BuildParallaxBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi); } catch { }
                 try { BuildGroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi); } catch { }
                 backgroundDirty = false;
