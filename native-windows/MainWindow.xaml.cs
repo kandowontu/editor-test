@@ -1641,8 +1641,8 @@ namespace FamidashEditor
             // Ensure we have a pre-scaled tile cache for this zoom/dpi
             EnsureScaledTileCache(scale, dpi);
             
-            // Render tiles in batches to keep UI responsive
-            const int batchSize = 100; // tiles per batch
+            // Render tiles in larger batches for better performance
+            int batchSize = Math.Max(500, mapWidth); // At least one full row, or 500 tiles
             int totalTiles = mapWidth * mapHeight;
             
             for (int batchStart = 0; batchStart < totalTiles; batchStart += batchSize)
@@ -1691,8 +1691,8 @@ namespace FamidashEditor
                     }
                 });
                 
-                // Small delay to let UI breathe
-                await System.Threading.Tasks.Task.Delay(1);
+                // No delay - process as fast as possible
+                // await System.Threading.Tasks.Task.Delay(1);
             }
         }
 
@@ -2743,33 +2743,115 @@ namespace FamidashEditor
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new SaveFileDialog { Filter = "JSON level|*.json|All files|*.*" };
+            var dlg = new SaveFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*", DefaultExt = "tmx" };
             if (dlg.ShowDialog(this) == true)
             {
-                var model = new LevelModel { Width = mapWidth, Height = mapHeight, Tiles = tiles };
-                File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(model));
-                if (StatusText != null) StatusText.Text = "Saved " + dlg.FileName;
+                try
+                {
+                    string ext = Path.GetExtension(dlg.FileName).ToLower();
+                    
+                    if (ext == ".tmx")
+                    {
+                        // Save as TMX format
+                        var tmxLevel = new TmxLevel
+                        {
+                            Width = mapWidth,
+                            Height = mapHeight,
+                            Tiles = tiles,
+                            ParallaxSource = "../../../GRAPHICS/Old/parallax Red.bmp",
+                            ParallaxX = 0.9,
+                            ParallaxY = 0.9,
+                            ParallaxRepeatX = true,
+                            ParallaxRepeatY = true,
+                            GroundSource = "../../../GRAPHICS/ground Red.bmp",
+                            GroundOffsetY = 432,
+                            GroundRepeatX = true
+                        };
+                        TmxHandler.SaveTmx(dlg.FileName, tmxLevel);
+                    }
+                    else
+                    {
+                        // Save as JSON format
+                        var model = new LevelModel { Width = mapWidth, Height = mapHeight, Tiles = tiles };
+                        File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(model));
+                    }
+                    
+                    if (StatusText != null) StatusText.Text = "Saved " + dlg.FileName;
+                }
+                catch (Exception ex)
+                {
+                    if (StatusText != null) StatusText.Text = "Save failed: " + ex.Message;
+                }
             }
         }
 
         private void LoadButton_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new OpenFileDialog { Filter = "JSON level|*.json|All files|*.*" };
+            var dlg = new OpenFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*" };
             if (dlg.ShowDialog(this) == true)
             {
                 try
                 {
-                    var json = File.ReadAllText(dlg.FileName);
-                    var model = JsonSerializer.Deserialize<LevelModel>(json);
-                    if (model != null)
+                    string ext = Path.GetExtension(dlg.FileName).ToLower();
+                    int loadedWidth = 0;
+                    int loadedHeight = 0;
+                    int[]? loadedTiles = null;
+                    
+                    if (ext == ".tmx")
                     {
-                        mapWidth = model.Width; mapHeight = model.Height; tiles = model.Tiles ?? Enumerable.Repeat(-1, mapWidth * mapHeight).ToArray();
-                        if (WidthBox != null) WidthBox.Text = mapWidth.ToString(); if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+                        // Load TMX format
+                        var tmxLevel = TmxHandler.LoadTmx(dlg.FileName);
+                        loadedWidth = tmxLevel.Width;
+                        loadedHeight = tmxLevel.Height;
+                        loadedTiles = tmxLevel.Tiles;
+                        
+                        // Note: Parallax and ground image sources are loaded but not automatically applied
+                        // You may want to add logic here to load the actual images if needed
+                    }
+                    else
+                    {
+                        // Load JSON format
+                        var json = File.ReadAllText(dlg.FileName);
+                        var model = JsonSerializer.Deserialize<LevelModel>(json);
+                        if (model != null)
+                        {
+                            loadedWidth = model.Width;
+                            loadedHeight = model.Height;
+                            loadedTiles = model.Tiles;
+                        }
+                    }
+                    
+                    if (loadedWidth > 0 && loadedHeight > 0 && loadedTiles != null)
+                    {
+                        // Directly set the data without going through ResizeMap to avoid undo recording
+                        suppressUndoRecording = true;
+                        mapWidth = loadedWidth;
+                        mapHeight = loadedHeight;
+                        tiles = loadedTiles;
+                        
+                        if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
+                        if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+                        
+                        // Clear undo/redo stacks when loading a new file
+                        undoStack.Clear();
+                        redoStack.Clear();
+                        
+                        suppressUndoRecording = false;
+                        
+                        // Force a full redraw with the new dimensions
                         Redraw();
-                        if (StatusText != null) StatusText.Text = "Loaded " + dlg.FileName;
+                        
+                        if (StatusText != null) StatusText.Text = $"Loaded {Path.GetFileName(dlg.FileName)} ({mapWidth}x{mapHeight})";
+                    }
+                    else
+                    {
+                        if (StatusText != null) StatusText.Text = "Load failed: Invalid or empty map data";
                     }
                 }
-                catch (Exception ex) { if (StatusText != null) StatusText.Text = "Load failed: " + ex.Message; }
+                catch (Exception ex)
+                {
+                    if (StatusText != null) StatusText.Text = "Load failed: " + ex.Message;
+                }
             }
         }
     }
