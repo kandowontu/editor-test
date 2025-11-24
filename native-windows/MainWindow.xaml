@@ -25,7 +25,9 @@
             </Grid.RowDefinitions>
 
             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="4" VerticalAlignment="Center">
-                <TextBlock Text="Tiles" FontWeight="Bold" VerticalAlignment="Center" />
+                <Border x:Name="TilesLabelBorder" BorderBrush="Transparent" BorderThickness="3" Padding="6,3" CornerRadius="4" Cursor="Hand" MouseLeftButtonDown="TilesLabel_Click">
+                    <TextBlock x:Name="TilesLabel" Text="TILES" FontWeight="Bold" FontSize="14" VerticalAlignment="Center" />
+                </Border>
                 <TextBlock Text="  " />
                 <TextBlock Text="Size:" VerticalAlignment="Center" Margin="6,0,2,0" FontSize="11" />
                 <Slider x:Name="TileSizeSlider" Minimum="8" Maximum="48" Value="16" Width="80" VerticalAlignment="Center" />
@@ -53,7 +55,9 @@
             </ListBox>
 
             <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="6,8,4,4" VerticalAlignment="Center">
-                <TextBlock Text="Sprites" FontWeight="Bold" VerticalAlignment="Center" />
+                <Border x:Name="SpritesLabelBorder" BorderBrush="Transparent" BorderThickness="3" Padding="6,3" CornerRadius="4" Cursor="Hand" MouseLeftButtonDown="SpritesLabel_Click">
+                    <TextBlock x:Name="SpritesLabel" Text="SPRITES" FontWeight="Bold" FontSize="14" VerticalAlignment="Center" />
+                </Border>
                 <TextBlock Text="  " />
                 <TextBlock Text="Size:" VerticalAlignment="Center" Margin="6,0,2,0" FontSize="11" />
                 <Slider x:Name="SpriteSizeSlider" Minimum="8" Maximum="48" Value="16" Width="80" VerticalAlignment="Center" />
@@ -101,6 +105,7 @@
                     <MenuItem x:Name="MenuToolWand" Header="_Magic Wand" IsCheckable="True" />
                     <Separator />
                     <MenuItem x:Name="MenuToolUndo" Header="_Undo" InputGestureText="Ctrl+Z" />
+                    <MenuItem x:Name="MenuToolRedo" Header="_Redo" InputGestureText="Ctrl+Y" />
                 </MenuItem>
                 <MenuItem Header="_Colors">
                     <MenuItem x:Name="MenuColorEditorBackground" Header="_Editor Background Color..." />
@@ -151,6 +156,7 @@
                         </StackPanel>
                     </ToggleButton>
                     <Button x:Name="UndoButton" Margin="8,0,0,0" ToolTip="Undo (Ctrl+Z)">Undo</Button>
+                    <Button x:Name="RedoButton" Margin="4,0,0,0" ToolTip="Redo (Ctrl+Y)">Redo</Button>
                 </ToolBar>
             </ToolBarTray>
 
@@ -173,7 +179,8 @@
             <TextBlock x:Name="ZoomLevelLabel" Text="1x" VerticalAlignment="Center" Margin="4,0" Width="24" />
         </StackPanel>
 
-        <ScrollViewer x:Name="MapScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="MapScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" 
+                      IsManipulationEnabled="True">
             <Grid>
                 <!-- Background base, Parallax, Ground, Tiles layer, Sprites layer, Grid overlay -->
                 <Image x:Name="BackgroundImage" />
