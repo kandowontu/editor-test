@@ -50,6 +50,13 @@ namespace FamidashEditor
     private ImageSource[]? tileTonedImages;
     private int selectedTile = 0;
     private int selectedSprite = -1;
+    // Multi-tile/sprite selection support
+    private List<int> selectedTiles = new List<int> { 0 }; // Multiple selected tiles (for placing in a row/pattern)
+    private List<int> selectedSprites = new List<int>(); // Multiple selected sprites
+    private int selectionWidth = 1; // Width of the selection grid
+    private int selectionHeight = 1; // Height of the selection grid
+    private bool isSelectingMultipleTiles = false; // Track if user is dragging in tile palette
+    private System.Windows.Point? tileSelectionStart = null; // Starting point for multi-select
     // Layer selection state - can select both layers simultaneously for tools
     private bool tilesLayerActive = true;
     private bool spritesLayerActive = false;
@@ -289,6 +296,8 @@ namespace FamidashEditor
             // Throttle zoom changes with longer delay to batch rapid changes
             if (ZoomSlider != null)
             {
+                bool isZoomSliderPressed = false;
+                
                 zoomThrottleTimer = new System.Windows.Threading.DispatcherTimer
                 {
                     Interval = TimeSpan.FromMilliseconds(150) // Increased from 50ms
@@ -296,23 +305,68 @@ namespace FamidashEditor
                 zoomThrottleTimer.Tick += (s, e) =>
                 {
                     zoomThrottleTimer?.Stop();
-                    Redraw();
-                    // Reset hover tracking so it updates at new scale
-                    lastHoverX = -1;
-                    lastHoverY = -1;
+                    // Only redraw if slider is not being dragged
+                    if (!isZoomSliderPressed)
+                    {
+                        Redraw();
+                        // Reset hover tracking so it updates at new scale
+                        lastHoverX = -1;
+                        lastHoverY = -1;
+                    }
+                };
+                
+                // Track mouse down/up on slider thumb
+                ZoomSlider.PreviewMouseLeftButtonDown += (s, e) =>
+                {
+                    isZoomSliderPressed = true;
+                };
+                
+                ZoomSlider.PreviewMouseLeftButtonUp += (s, e) =>
+                {
+                    isZoomSliderPressed = false;
+                    // Trigger immediate redraw on mouse release with loading dialog
+                    zoomThrottleTimer?.Stop();
+                    
+                    // Show rendering dialog
+                    LoadingWindow? zoomLoadingWindow = null;
+                    try
+                    {
+                        zoomLoadingWindow = new LoadingWindow { Owner = this };
+                        zoomLoadingWindow.SetMessage("Rendering zoom...");
+                        zoomLoadingWindow.Show();
+                        Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+                        
+                        Redraw();
+                        lastHoverX = -1;
+                        lastHoverY = -1;
+                    }
+                    finally
+                    {
+                        if (zoomLoadingWindow != null)
+                        {
+                            zoomLoadingWindow.Close();
+                        }
+                    }
                 };
                 
                 ZoomSlider.ValueChanged += (s, e) =>
                 {
+                    // Stop any pending throttled redraw
                     zoomThrottleTimer?.Stop();
-                    zoomThrottleTimer?.Start();
                     
-                    // Update zoom level label
+                    // Update zoom level label immediately
                     if (ZoomLevelLabel != null)
                         ZoomLevelLabel.Text = $"{(int)e.NewValue}x";
                     
                     // Immediate visual feedback: scale the images temporarily while waiting for redraw
                     UpdateQuickZoomTransform();
+                    
+                    // Only start throttle timer if not currently dragging
+                    // (on release, we'll do immediate redraw instead)
+                    if (!isZoomSliderPressed)
+                    {
+                        zoomThrottleTimer?.Start();
+                    }
                 };
             }
             if (GridDarknessSlider != null) GridDarknessSlider.ValueChanged += GridDarknessSlider_ValueChanged;
@@ -1985,6 +2039,8 @@ namespace FamidashEditor
                 
                 var img = new Image { Source = paletteSrc, Width = paletteTileSize, Height = paletteTileSize, Stretch = Stretch.Fill, Tag = idx };
                 RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
+                
+                // Mouse down starts selection
                 img.MouseLeftButtonDown += (s, e) => { 
                     int clickedTile = (int)((Image)s).Tag;
                     
@@ -1993,25 +2049,59 @@ namespace FamidashEditor
                     
                     if (isCtrl && selectedSprite >= 0)
                     {
-                        // Ctrl+Click with sprite already selected: enable both layers
+                        // Ctrl+Click with sprite already selected: enable both layers (single tile only)
                         selectedTile = clickedTile;
+                        selectedTiles = new List<int> { clickedTile };
+                        selectionWidth = 1;
+                        selectionHeight = 1;
                         tilesLayerActive = true;
                         spritesLayerActive = true;
                         if (StatusText != null) StatusText.Text = $"Selected tile {selectedTile} + sprite {selectedSprite} (both layers active)";
+                        UpdatePaletteHighlight();
                     }
                     else
                     {
-                        // Normal click: select only tile, deselect sprite
+                        // Start multi-tile selection (disables sprite layer)
+                        isSelectingMultipleTiles = true;
+                        tileSelectionStart = e.GetPosition(TilesPanel);
                         selectedTile = clickedTile;
+                        selectedTiles = new List<int> { clickedTile };
+                        selectionWidth = 1;
+                        selectionHeight = 1;
                         selectedSprite = -1; 
                         tilesLayerActive = true; 
                         spritesLayerActive = false;
                         if (StatusText != null) StatusText.Text = "Selected tile " + selectedTile;
+                        UpdatePaletteHighlight();
+                        ((Image)s).CaptureMouse();
                     }
-                    
-                    UpdatePaletteHighlight();
                 };
-                var border = new Border { Child = img, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedTile ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedTile ? new Thickness(2) : new Thickness(0)) };
+                
+                // Mouse move updates selection
+                img.MouseMove += (s, e) => {
+                    if (isSelectingMultipleTiles && tileSelectionStart != null)
+                    {
+                        var currentPos = e.GetPosition(TilesPanel);
+                        UpdateTileSelection(tileSelectionStart.Value, currentPos);
+                        UpdatePaletteHighlight();
+                    }
+                };
+                
+                // Mouse up finalizes selection
+                img.MouseLeftButtonUp += (s, e) => {
+                    isSelectingMultipleTiles = false;
+                    tileSelectionStart = null;
+                    ((Image)s).ReleaseMouseCapture();
+                };
+                
+                var border = new Border { 
+                    Child = img, 
+                    Margin = new Thickness(0), 
+                    Padding = new Thickness(0), 
+                    BorderBrush = Brushes.Transparent, 
+                    BorderThickness = new Thickness(2) 
+                };
+                
                 TilesPanel.Items.Add(border);
                 idx++;
             }
@@ -2033,9 +2123,10 @@ namespace FamidashEditor
                     // Check if Ctrl is held for multi-layer selection
                     bool isCtrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
                     
-                    if (isCtrl && selectedTile >= 0)
+                    // Only allow multi-layer if a single tile is selected (not multiple tiles)
+                    if (isCtrl && selectedTile >= 0 && selectedTiles.Count == 1)
                     {
-                        // Ctrl+Click with tile already selected: enable both layers
+                        // Ctrl+Click with single tile selected: enable both layers
                         selectedSprite = clickedSprite;
                         spritesLayerActive = true;
                         tilesLayerActive = true;
@@ -2043,9 +2134,12 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        // Normal click: select only sprite, deselect tile
+                        // Normal click: select only sprite, deselect tiles
                         selectedSprite = clickedSprite;
-                        selectedTile = -1; 
+                        selectedTile = -1;
+                        selectedTiles = new List<int>();
+                        selectionWidth = 1;
+                        selectionHeight = 1;
                         spritesLayerActive = true; 
                         tilesLayerActive = false;
                         if (StatusText != null) StatusText.Text = "Selected sprite " + selectedSprite;
@@ -2059,22 +2153,85 @@ namespace FamidashEditor
             }
         }
 
+        private void UpdateTileSelection(System.Windows.Point start, System.Windows.Point end)
+        {
+            if (TilesPanel == null || tileImages == null) return;
+            
+            // TilesPanel uses UniformGrid with 16 columns
+            const int tilesPerRow = 16;
+            
+            // Calculate the size of each cell in the grid
+            double cellWidth = TilesPanel.ActualWidth / tilesPerRow;
+            
+            // Calculate actual number of rows in the grid
+            int totalRows = (int)Math.Ceiling((double)tileImages.Length / tilesPerRow);
+            double cellHeight = TilesPanel.ActualHeight / totalRows;
+            
+            // If height isn't ready yet, use estimated height
+            if (cellHeight <= 0 || double.IsNaN(cellHeight) || double.IsInfinity(cellHeight))
+            {
+                cellHeight = paletteTileSize + 2; // Border thickness accounts for spacing
+            }
+            
+            // Convert positions to tile indices
+            int startCol = Math.Max(0, Math.Min((int)(start.X / cellWidth), tilesPerRow - 1));
+            int startRow = Math.Max(0, (int)(start.Y / cellHeight));
+            int endCol = Math.Max(0, Math.Min((int)(end.X / cellWidth), tilesPerRow - 1));
+            int endRow = Math.Max(0, (int)(end.Y / cellHeight));
+            
+            // Get min/max bounds
+            int minRow = Math.Min(startRow, endRow);
+            int maxRow = Math.Max(startRow, endRow);
+            int minCol = Math.Min(startCol, endCol);
+            int maxCol = Math.Max(startCol, endCol);
+            
+            // Build selection list
+            selectedTiles.Clear();
+            selectionWidth = maxCol - minCol + 1;
+            selectionHeight = maxRow - minRow + 1;
+            
+            for (int row = minRow; row <= maxRow; row++)
+            {
+                for (int col = minCol; col <= maxCol; col++)
+                {
+                    int idx = row * tilesPerRow + col;
+                    if (idx >= 0 && idx < tileImages.Length)
+                    {
+                        selectedTiles.Add(idx);
+                    }
+                }
+            }
+            
+            // Update selectedTile to be the first in selection
+            if (selectedTiles.Count > 0)
+            {
+                selectedTile = selectedTiles[0];
+                if (StatusText != null)
+                {
+                    if (selectedTiles.Count == 1)
+                        StatusText.Text = $"Selected tile {selectedTile}";
+                    else
+                        StatusText.Text = $"Selected {selectedTiles.Count} tiles ({selectionWidth}x{selectionHeight})";
+                }
+            }
+        }
+
         private void UpdatePaletteHighlight()
         {
-            // Update tile highlights - show yellow if this tile is selected
+            // Update tile highlights - show yellow border around all selected tiles
             if (TilesPanel != null)
             {
                 for (int i = 0; i < TilesPanel.Items.Count; i++)
                 {
                     if (TilesPanel.Items[i] is Border b)
                     {
-                        bool isSelected = (i == selectedTile && selectedTile >= 0);
+                        bool isSelected = selectedTiles.Contains(i);
                         b.BorderBrush = isSelected ? Brushes.Yellow : Brushes.Transparent;
                         b.BorderThickness = isSelected ? new Thickness(2) : new Thickness(0);
                     }
                 }
             }
-            // Update sprite highlights - show yellow if this sprite is selected
+            // Update sprite highlights - show yellow border if sprite is selected
             if (SpritesPanel != null)
             {
                 for (int i = 0; i < SpritesPanel.Items.Count; i++)
@@ -4041,16 +4198,52 @@ namespace FamidashEditor
         private void DoPaintAt(int x, int y)
         {
             if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) return;
-            int idx = y * mapWidth + x;
             
             // Place tool: respect active layers
             if (PlaceTool != null && PlaceTool.IsChecked == true)
             {
                 bool changed = false;
                 
+                // Handle multi-tile placement
+                if (tilesLayerActive && selectedTiles.Count > 0)
+                {
+                    for (int dy = 0; dy < selectionHeight; dy++)
+                    {
+                        for (int dx = 0; dx < selectionWidth; dx++)
+                        {
+                            int targetX = x + dx;
+                            int targetY = y + dy;
+                            
+                            if (targetX >= 0 && targetX < mapWidth && targetY >= 0 && targetY < mapHeight)
+                            {
+                                int idx = targetY * mapWidth + targetX;
+                                int selIdx = dy * selectionWidth + dx;
+                                
+                                if (selIdx < selectedTiles.Count)
+                                {
+                                    int old = tiles[idx];
+                                    int neu = selectedTiles[selIdx];
+                                    
+                                    if (old != neu)
+                                    {
+                                        if (!suppressUndoRecording)
+                                        {
+                                            if (currentCompositeAction == null) currentCompositeAction = new TileChangeAction();
+                                            currentCompositeAction.Add(idx, old, neu);
+                                        }
+                                        tiles[idx] = neu;
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 // Place sprite if sprites layer is active and a sprite is selected
                 if (spritesLayerActive && selectedSprite >= 0)
                 {
+                    int idx = y * mapWidth + x;
                     int old = sprites[idx];
                     int neu = selectedSprite;
                     if (old != neu)
@@ -4065,23 +4258,6 @@ namespace FamidashEditor
                     }
                 }
                 
-                // Place tile if tiles layer is active and a tile is selected
-                if (tilesLayerActive && selectedTile >= 0)
-                {
-                    int old = tiles[idx];
-                    int neu = selectedTile;
-                    if (old != neu)
-                    {
-                        if (!suppressUndoRecording)
-                        {
-                            if (currentCompositeAction == null) currentCompositeAction = new TileChangeAction();
-                            currentCompositeAction.Add(idx, old, neu);
-                        }
-                        tiles[idx] = neu;
-                        changed = true;
-                    }
-                }
-                
                 if (changed)
                 {
                     lastPaintX = x; lastPaintY = y;
@@ -4091,9 +4267,21 @@ namespace FamidashEditor
                         {
                             RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
                         }
-                        if (tilesLayerActive && selectedTile >= 0)
+                        if (tilesLayerActive && selectedTiles.Count > 0)
                         {
-                            UpdateTileBitmapAt(x, y, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                            // Update all affected tiles
+                            for (int dy = 0; dy < selectionHeight; dy++)
+                            {
+                                for (int dx = 0; dx < selectionWidth; dx++)
+                                {
+                                    int targetX = x + dx;
+                                    int targetY = y + dy;
+                                    if (targetX >= 0 && targetX < mapWidth && targetY >= 0 && targetY < mapHeight)
+                                    {
+                                        UpdateTileBitmapAt(targetX, targetY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                    }
+                                }
+                            }
                         }
                     } 
                     catch { Redraw(); }
@@ -4108,21 +4296,36 @@ namespace FamidashEditor
                 
                 if (tilesLayerActive)
                 {
-                    int oldTile = tiles[idx];
-                    if (oldTile != -1)
+                    // Erase multi-tile pattern if multiple tiles are selected
+                    for (int dy = 0; dy < selectionHeight; dy++)
                     {
-                        if (!suppressUndoRecording)
+                        for (int dx = 0; dx < selectionWidth; dx++)
                         {
-                            if (currentCompositeAction == null) currentCompositeAction = new TileChangeAction();
-                            currentCompositeAction.Add(idx, oldTile, -1);
+                            int targetX = x + dx;
+                            int targetY = y + dy;
+                            
+                            if (targetX >= 0 && targetX < mapWidth && targetY >= 0 && targetY < mapHeight)
+                            {
+                                int idx = targetY * mapWidth + targetX;
+                                int oldTile = tiles[idx];
+                                if (oldTile != -1)
+                                {
+                                    if (!suppressUndoRecording)
+                                    {
+                                        if (currentCompositeAction == null) currentCompositeAction = new TileChangeAction();
+                                        currentCompositeAction.Add(idx, oldTile, -1);
+                                    }
+                                    tiles[idx] = -1;
+                                    changed = true;
+                                }
+                            }
                         }
-                        tiles[idx] = -1;
-                        changed = true;
                     }
                 }
                 
                 if (spritesLayerActive)
                 {
+                    int idx = y * mapWidth + x;
                     int oldSprite = sprites[idx];
                     if (oldSprite != -1)
                     {
@@ -4141,7 +4344,21 @@ namespace FamidashEditor
                     lastPaintX = x; lastPaintY = y;
                     try { 
                         if (tilesLayerActive)
-                            UpdateTileBitmapAt(x, y, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                        {
+                            // Update all affected tiles
+                            for (int dy = 0; dy < selectionHeight; dy++)
+                            {
+                                for (int dx = 0; dx < selectionWidth; dx++)
+                                {
+                                    int targetX = x + dx;
+                                    int targetY = y + dy;
+                                    if (targetX >= 0 && targetX < mapWidth && targetY >= 0 && targetY < mapHeight)
+                                    {
+                                        UpdateTileBitmapAt(targetX, targetY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                    }
+                                }
+                            }
+                        }
                         if (spritesLayerActive)
                             RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
                     } catch { Redraw(); }
@@ -4434,6 +4651,7 @@ namespace FamidashEditor
             var dlg = new OpenFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*" };
             if (dlg.ShowDialog(this) == true)
             {
+                LoadingWindow? loadingWindow = null;
                 try
                 {
                     string ext = Path.GetExtension(dlg.FileName).ToLower();
@@ -4444,6 +4662,14 @@ namespace FamidashEditor
                     
                     if (ext == ".tmx")
                     {
+                        // Show loading dialog
+                        loadingWindow = new LoadingWindow { Owner = this };
+                        loadingWindow.SetMessage("Loading TMX file...\nThis may take a while on larger maps.");
+                        loadingWindow.Show();
+                        
+                        // Force UI update
+                        Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+                        
                         // Load TMX format
                         var tmxLevel = TmxHandler.LoadTmx(dlg.FileName);
                         loadedWidth = tmxLevel.Width;
@@ -4505,14 +4731,6 @@ namespace FamidashEditor
                         undoStack.Clear();
                         redoStack.Clear();
                         
-                        // Reset view position to show ground (scroll to left and appropriate vertical position)
-                        if (MapScrollViewer != null)
-                        {
-                            MapScrollViewer.ScrollToLeftEnd();
-                            // Scroll to show ground (approximate position where ground should be visible)
-                            MapScrollViewer.ScrollToVerticalOffset(0);
-                        }
-                        
                         suppressUndoRecording = false;
                         
                         // Update current file and clear dirty flag
@@ -4527,6 +4745,14 @@ namespace FamidashEditor
                         RebuildAllTilesBitmap(currentScale, mapViewportPadding);
                         RebuildAllSpritesBitmap(currentScale, mapViewportPadding);
                         
+                        // Snap to ground level (bottom) and left side
+                        if (MapScrollViewer != null)
+                        {
+                            MapScrollViewer.UpdateLayout(); // Ensure layout is updated
+                            MapScrollViewer.ScrollToLeftEnd();
+                            MapScrollViewer.ScrollToBottom();
+                        }
+                        
                         if (StatusText != null) StatusText.Text = $"Loaded {Path.GetFileName(dlg.FileName)} ({mapWidth}x{mapHeight})";
                     }
                     else
@@ -4537,6 +4763,14 @@ namespace FamidashEditor
                 catch (Exception ex)
                 {
                     if (StatusText != null) StatusText.Text = "Load failed: " + ex.Message;
+                }
+                finally
+                {
+                    // Close loading window
+                    if (loadingWindow != null)
+                    {
+                        loadingWindow.Close();
+                    }
                 }
             }
         }
