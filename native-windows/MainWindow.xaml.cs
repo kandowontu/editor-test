@@ -2836,6 +2836,10 @@ namespace FamidashEditor
                     try
                     {
                         var dv = new DrawingVisual();
+                        // Convert pixel dimensions to device-independent units for proper rendering
+                        double dipWidth = tilePixelW / dpi.DpiScaleX;
+                        double dipHeight = tilePixelH / dpi.DpiScaleY;
+                        
                         using (var dc = dv.RenderOpen())
                         {
                             // Check if this is a half-height tile (8 pixels tall source)
@@ -2844,25 +2848,25 @@ namespace FamidashEditor
                                 // For half-height tiles (16x8 source), scale proportionally
                                 // The source is 16x8, we want it to occupy 8 scaled pixels height
                                 // Calculate the scale factor from the tile size
-                                double scale = tilePixelH / 16.0; // How much are we scaling from base 16px tile
-                                double scaledHeight = 8 * scale;  // 8 pixels scaled
+                                double scaleFactor = dipHeight / 16.0; // How much are we scaling from base 16 DIP tile
+                                double scaledHeight = 8 * scaleFactor;  // 8 DIP scaled
                                 
                                 // Top-half tiles (0x7F) need to be positioned at the bottom of the tile space
                                 if (IsTopHalfTile(tileIdx))
                                 {
-                                    double yOffset = tilePixelH - scaledHeight; // Position at bottom
-                                    dc.DrawImage(customTile, new Rect(0, yOffset, tilePixelW, scaledHeight));
+                                    double yOffset = dipHeight - scaledHeight; // Position at bottom
+                                    dc.DrawImage(customTile, new Rect(0, yOffset, dipWidth, scaledHeight));
                                 }
                                 else
                                 {
                                     // Bottom-half tiles (0x04) stay at the top
-                                    dc.DrawImage(customTile, new Rect(0, 0, tilePixelW, scaledHeight));
+                                    dc.DrawImage(customTile, new Rect(0, 0, dipWidth, scaledHeight));
                                 }
                             }
                             else
                             {
                                 // Full-height tiles (16x16 source) use the entire tile space
-                                dc.DrawImage(customTile, new Rect(0, 0, tilePixelW, tilePixelH));
+                                dc.DrawImage(customTile, new Rect(0, 0, dipWidth, dipHeight));
                             }
                         }
                         var rtb = new RenderTargetBitmap(tilePixelW, tilePixelH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
@@ -2915,7 +2919,10 @@ namespace FamidashEditor
                 if (src != null)
                 {
                     var dv = new DrawingVisual();
-                    using (var dc = dv.RenderOpen()) dc.DrawImage(src, new Rect(0, 0, tilePixelW, tilePixelH));
+                    // Convert pixel dimensions to device-independent units for proper rendering
+                    double dipWidth = tilePixelW / dpi.DpiScaleX;
+                    double dipHeight = tilePixelH / dpi.DpiScaleY;
+                    using (var dc = dv.RenderOpen()) dc.DrawImage(src, new Rect(0, 0, dipWidth, dipHeight));
                     var rtb = new RenderTargetBitmap(tilePixelW, tilePixelH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
                     rtb.Render(dv);
                     rtb.CopyPixels(buf, stride, 0);
@@ -2953,8 +2960,11 @@ namespace FamidashEditor
             // Apply animation mapping if in preview mode
             int animatedIdx = GetAnimatedTileIndex(idx);
             
-            int destX = Math.Max(0, (int)Math.Floor((pad + x * TileSize * scale) * dpi.DpiScaleX));
-            int destY = Math.Max(0, (int)Math.Floor((pad + y * TileSize * scale) * dpi.DpiScaleY));
+            // Calculate pixel position using same method as grid for consistency
+            int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
+            int destX = Math.Max(0, padPxX + x * tilePixelW);
+            int destY = Math.Max(0, padPxY + y * tilePixelH);
 
             // Use lazy-cached pixels
             int stride = tilePixelW * 4;
@@ -2998,8 +3008,11 @@ namespace FamidashEditor
             // Apply animation mapping if in preview mode
             int animatedIdx = GetAnimatedTileIndex(idx);
             
-            int destX = Math.Max(0, (int)Math.Floor((pad + x * TileSize * scale) * dpi.DpiScaleX));
-            int destY = Math.Max(0, (int)Math.Floor((pad + y * TileSize * scale) * dpi.DpiScaleY));
+            // Calculate pixel position using same method as grid for consistency
+            int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
+            int destX = Math.Max(0, padPxX + x * tilePixelW);
+            int destY = Math.Max(0, padPxY + y * tilePixelH);
             
             // Bounds check
             if (destX >= cachedPixelWidth || destY >= cachedPixelHeight) return;
@@ -3121,9 +3134,11 @@ namespace FamidashEditor
             
             try
             {
-                // Use same position calculation as tiles for perfect alignment
-                int destX = Math.Max(0, (int)Math.Floor((pad + x * TileSize * scale) * dpi.DpiScaleX));
-                int destY = Math.Max(0, (int)Math.Floor((pad + y * TileSize * scale) * dpi.DpiScaleY));
+                // Calculate pixel position using same method as grid for consistency
+                int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
+                int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
+                int destX = Math.Max(0, padPxX + x * spritePixelW);
+                int destY = Math.Max(0, padPxY + y * spritePixelH);
                 
                 // Bounds check
                 if (destX >= cachedPixelWidth || destY >= cachedPixelHeight) return;
