@@ -176,14 +176,6 @@ namespace FamidashEditor
                 window.mapWidth = oldW; window.mapHeight = oldH;
                 if (window.WidthBox != null) window.WidthBox.Text = oldW.ToString();
                 if (window.HeightBox != null) window.HeightBox.Text = oldH.ToString();
-                if (window.MapHeightLabel != null) window.MapHeightLabel.Text = oldH.ToString();
-                // avoid triggering the slider change handler
-                if (window.HeightSlider != null)
-                {
-                    window.HeightSlider.ValueChanged -= window.HeightSlider_ValueChanged;
-                    window.HeightSlider.Value = oldH;
-                    window.HeightSlider.ValueChanged += window.HeightSlider_ValueChanged;
-                }
                 window.Redraw();
             }
 
@@ -193,13 +185,6 @@ namespace FamidashEditor
                 window.mapWidth = newW; window.mapHeight = newH;
                 if (window.WidthBox != null) window.WidthBox.Text = newW.ToString();
                 if (window.HeightBox != null) window.HeightBox.Text = newH.ToString();
-                if (window.MapHeightLabel != null) window.MapHeightLabel.Text = newH.ToString();
-                if (window.HeightSlider != null)
-                {
-                    window.HeightSlider.ValueChanged -= window.HeightSlider_ValueChanged;
-                    window.HeightSlider.Value = newH;
-                    window.HeightSlider.ValueChanged += window.HeightSlider_ValueChanged;
-                }
                 window.Redraw();
             }
         }
@@ -230,12 +215,15 @@ namespace FamidashEditor
                     zoomThrottleTimer?.Stop();
                     zoomThrottleTimer?.Start();
                     
+                    // Update zoom level label
+                    if (ZoomLevelLabel != null)
+                        ZoomLevelLabel.Text = $"{(int)e.NewValue}x";
+                    
                     // Immediate visual feedback: scale the images temporarily while waiting for redraw
                     UpdateQuickZoomTransform();
                 };
             }
             if (GridDarknessSlider != null) GridDarknessSlider.ValueChanged += GridDarknessSlider_ValueChanged;
-            if (HeightSlider != null) HeightSlider.ValueChanged += HeightSlider_ValueChanged;
             if (SaveButton != null) SaveButton.Click += SaveButton_Click;
             if (LoadButton != null) LoadButton.Click += LoadButton_Click;
             if (ResizeButton != null) ResizeButton.Click += ResizeButton_Click;
@@ -359,9 +347,8 @@ namespace FamidashEditor
             if (GroundTintButton != null) GroundTintButton.Click += GroundTintButton_Click;
             if (TileTintButton != null) TileTintButton.Click += TileTintButton_Click;
             if (UndoButton != null) UndoButton.Click += (s, e) => Undo();
-            if (HeightSlider != null) HeightSlider.ValueChanged += (s, e) => { /* already wired above */ };
-                // tool exclusivity: only one toggled at a time
-                if (PlaceTool != null) PlaceTool.Checked += Tool_Checked;
+            // tool exclusivity: only one toggled at a time
+            if (PlaceTool != null) PlaceTool.Checked += Tool_Checked;
                 if (MoveTool != null) MoveTool.Checked += Tool_Checked;
                 if (EraseTool != null) EraseTool.Checked += Tool_Checked;
                 if (FillTool != null) FillTool.Checked += Tool_Checked;
@@ -372,71 +359,86 @@ namespace FamidashEditor
         }
 
         // Ctrl + Mouse Wheel inside the canvas -> zoom in/out while keeping the point under cursor stable
+        // Ctrl + Mouse Wheel -> zoom in/out
+        // Shift + Mouse Wheel -> horizontal scrolling (also handles touchpad 2-finger swipe)
+        // Mouse Wheel without modifiers -> vertical scrolling (handled by ScrollViewer)
         private void CanvasHost_PreviewMouseWheel(object? sender, MouseWheelEventArgs e)
         {
-            if (MapScrollViewer == null || ZoomSlider == null) return;
-            // Only act when Ctrl is held
-            if (!(Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))) return;
-            e.Handled = true;
-
-            double oldScale = ZoomSlider.Value;
-            // use a multiplicative zoom per mouse wheel notch (120 delta = one notch)
-            double factorPerNotch = 1.1; // 10% per notch
-            double factor = Math.Pow(factorPerNotch, e.Delta / 120.0);
-            double newScale = oldScale * factor;
-            // clamp to slider limits
-            newScale = Math.Max(ZoomSlider.Minimum, Math.Min(ZoomSlider.Maximum, newScale));
-            if (Math.Abs(newScale - oldScale) < 1e-6) return;
-
-            // Determine mouse position in viewport coordinates
-            var mouseVp = e.GetPosition(MapScrollViewer);
-            double hp = MapScrollViewer.HorizontalOffset;
-            double vp = MapScrollViewer.VerticalOffset;
-
-            // Content coordinate under cursor before zoom
-            double contentX = hp + mouseVp.X;
-            double contentY = vp + mouseVp.Y;
-
-            // map world coordinate (tile-space) under cursor
-            double mapX = (contentX - mapViewportPadding) / (TileSize * oldScale);
-            double mapY = (contentY - mapViewportPadding) / (TileSize * oldScale);
-
-            // apply new zoom value
-            ZoomSlider.Value = newScale;
-
-            // compute new content coordinate for same world point
-            double newContentX = mapViewportPadding + mapX * TileSize * newScale;
-            double newContentY = mapViewportPadding + mapY * TileSize * newScale;
-
-            // compute new scroll offsets so the same content point appears under the cursor
-            double newH = newContentX - mouseVp.X;
-            double newV = newContentY - mouseVp.Y;
-
-            // clamp offsets to valid ranges
-            double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
-            double maxV = Math.Max(0, (CanvasHost.ActualHeight) - MapScrollViewer.ViewportHeight);
-            newH = Math.Max(0, Math.Min(maxH, newH));
-            newV = Math.Max(0, Math.Min(maxV, newV));
-
-            // apply offsets
-            MapScrollViewer.ScrollToHorizontalOffset(newH);
-            MapScrollViewer.ScrollToVerticalOffset(newV);
-
-            // Ensure we don't allow scrolling past the bottom of the ground after zoom
-            ClampScrollOffsets();
-
-            // rebuild caches if needed and redraw
-            try { EnsureLayerBitmaps(newScale, mapViewportPadding, mapWidth * TileSize * newScale, mapHeight * TileSize * newScale, (mapWidth * TileSize * newScale) + mapViewportPadding * 2, (mapHeight * TileSize * newScale) + mapViewportPadding * 2, cachedPixelWidth, cachedPixelHeight); } catch { }
-            Redraw();
-        }
-
-        private void HeightSlider_ValueChanged(object? sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            int newH = Math.Max((int)HeightSlider.Minimum, Math.Min((int)HeightSlider.Maximum, (int)Math.Round(e.NewValue)));
-            if (newH != mapHeight)
+            if (MapScrollViewer == null) return;
+            
+            // Ctrl+Wheel = Zoom
+            if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
             {
-                ResizeMap(mapWidth, newH);
+                if (ZoomSlider == null) return;
+                e.Handled = true;
+
+                double oldScale = ZoomSlider.Value;
+                // use a multiplicative zoom per mouse wheel notch (120 delta = one notch)
+                double factorPerNotch = 1.1; // 10% per notch
+                double factor = Math.Pow(factorPerNotch, e.Delta / 120.0);
+                double newScale = oldScale * factor;
+                // clamp to slider limits
+                newScale = Math.Max(ZoomSlider.Minimum, Math.Min(ZoomSlider.Maximum, newScale));
+                // Snap to nearest integer
+                newScale = Math.Round(newScale);
+                if (Math.Abs(newScale - oldScale) < 1e-6) return;
+
+                // Determine mouse position in viewport coordinates
+                var mouseVp = e.GetPosition(MapScrollViewer);
+                double hp = MapScrollViewer.HorizontalOffset;
+                double vp = MapScrollViewer.VerticalOffset;
+
+                // Content coordinate under cursor before zoom
+                double contentX = hp + mouseVp.X;
+                double contentY = vp + mouseVp.Y;
+
+                // map world coordinate (tile-space) under cursor
+                double mapX = (contentX - mapViewportPadding) / (TileSize * oldScale);
+                double mapY = (contentY - mapViewportPadding) / (TileSize * oldScale);
+
+                // apply new zoom value
+                ZoomSlider.Value = newScale;
+
+                // compute new content coordinate for same world point
+                double newContentX = mapViewportPadding + mapX * TileSize * newScale;
+                double newContentY = mapViewportPadding + mapY * TileSize * newScale;
+
+                // compute new scroll offsets so the same content point appears under the cursor
+                double newH = newContentX - mouseVp.X;
+                double newV = newContentY - mouseVp.Y;
+
+                // clamp offsets to valid ranges
+                double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
+                double maxV = Math.Max(0, (CanvasHost.ActualHeight) - MapScrollViewer.ViewportHeight);
+                newH = Math.Max(0, Math.Min(maxH, newH));
+                newV = Math.Max(0, Math.Min(maxV, newV));
+
+                // apply offsets
+                MapScrollViewer.ScrollToHorizontalOffset(newH);
+                MapScrollViewer.ScrollToVerticalOffset(newV);
+
+                // Ensure we don't allow scrolling past the bottom of the ground after zoom
+                ClampScrollOffsets();
+
+                // rebuild caches if needed and redraw
+                try { EnsureLayerBitmaps(newScale, mapViewportPadding, mapWidth * TileSize * newScale, mapHeight * TileSize * newScale, (mapWidth * TileSize * newScale) + mapViewportPadding * 2, (mapHeight * TileSize * newScale) + mapViewportPadding * 2, cachedPixelWidth, cachedPixelHeight); } catch { }
+                Redraw();
+                return;
             }
+            
+            // Shift+Wheel = Horizontal scrolling (touchpad 2-finger horizontal swipe triggers this)
+            if (Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift))
+            {
+                e.Handled = true;
+                // e.Delta: positive = wheel up/swipe right, negative = wheel down/swipe left
+                // We want positive delta to scroll right (increase offset)
+                double scrollAmount = e.Delta * 0.5; // Scale down for smoother scrolling
+                double newOffset = MapScrollViewer.HorizontalOffset - scrollAmount;
+                MapScrollViewer.ScrollToHorizontalOffset(newOffset);
+                return;
+            }
+            
+            // No modifiers = Normal vertical scrolling (handled by ScrollViewer automatically)
         }
 
         private void ResizeMap(int newWidth, int newHeight)
@@ -480,8 +482,6 @@ namespace FamidashEditor
             mapWidth = newWidth; mapHeight = newHeight; tiles = newTiles;
             if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
-            if (MapHeightLabel != null) MapHeightLabel.Text = mapHeight.ToString();
-            if (HeightSlider != null && (int)Math.Round(HeightSlider.Value) != mapHeight) HeightSlider.Value = mapHeight;
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
         }
 
@@ -2806,6 +2806,38 @@ namespace FamidashEditor
             {
                 Redo(); e.Handled = true; return;
             }
+            
+            // Arrow key scrolling - check all held keys to allow diagonal movement
+            if (MapScrollViewer == null) return;
+            
+            bool isShiftPressed = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+            double scrollAmount = isShiftPressed ? 4 : 32; // 4px with Shift, 32px normally
+            
+            bool handled = false;
+            
+            if (Keyboard.IsKeyDown(Key.Left))
+            {
+                MapScrollViewer.ScrollToHorizontalOffset(MapScrollViewer.HorizontalOffset - scrollAmount);
+                handled = true;
+            }
+            if (Keyboard.IsKeyDown(Key.Right))
+            {
+                MapScrollViewer.ScrollToHorizontalOffset(MapScrollViewer.HorizontalOffset + scrollAmount);
+                handled = true;
+            }
+            if (Keyboard.IsKeyDown(Key.Up))
+            {
+                MapScrollViewer.ScrollToVerticalOffset(MapScrollViewer.VerticalOffset - scrollAmount);
+                handled = true;
+            }
+            if (Keyboard.IsKeyDown(Key.Down))
+            {
+                MapScrollViewer.ScrollToVerticalOffset(MapScrollViewer.VerticalOffset + scrollAmount);
+                handled = true;
+            }
+            
+            if (handled)
+                e.Handled = true;
         }
 
         private void Undo()

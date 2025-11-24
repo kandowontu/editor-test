@@ -144,15 +144,10 @@
 
         <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="4">
             <TextBlock Text="Grid darkness:" VerticalAlignment="Center" Margin="4,0"/>
-            <Slider x:Name="GridDarknessSlider" Minimum="0" Maximum="1" Value="0.18" Width="200" />
-            <TextBlock Text="Zoom:" VerticalAlignment="Center" Margin="12,0"/>
-            <Slider x:Name="ZoomSlider" Minimum="0.5" Maximum="4" Value="1" Width="200" />
-            <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="Map Height:" VerticalAlignment="Center" Margin="6,0,4,0" />
-                <TextBlock x:Name="MapHeightLabel" Text="27" VerticalAlignment="Center" Width="36" />
-                <TextBlock Text="Y Slider:" VerticalAlignment="Center" Margin="8,0,2,0" />
-                <Slider x:Name="HeightSlider" Minimum="16" Maximum="57" Value="27" Width="160" />
-            </StackPanel>
+            <Slider x:Name="GridDarknessSlider" Minimum="0" Maximum="1" Value="0.18" Width="200" Focusable="False" />
+            <TextBlock Text="Zoom:" VerticalAlignment="Center" Margin="12,0,4,0"/>
+            <Slider x:Name="ZoomSlider" Minimum="1" Maximum="4" Value="1" Width="200" TickFrequency="1" IsSnapToTickEnabled="True" Focusable="False" />
+            <TextBlock x:Name="ZoomLevelLabel" Text="1x" VerticalAlignment="Center" Margin="4,0" Width="24" />
         </StackPanel>
 
         <ScrollViewer x:Name="MapScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
