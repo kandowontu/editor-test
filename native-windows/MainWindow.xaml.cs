@@ -23,6 +23,7 @@ namespace FamidashEditor
     private int mapWidth = 200;
     private int mapHeight = 27;
     private int[] tiles = Array.Empty<int>();
+    private int[] sprites = Array.Empty<int>(); // separate layer for sprites
     // default grid darkness: much lighter so grid lines are subtle over dark backgrounds
     private double gridDarkness = 0.18;
     private Brush mapBackground = new SolidColorBrush(Color.FromRgb(59,59,59));
@@ -81,12 +82,13 @@ namespace FamidashEditor
     private int groundTileRows = 0; // actual rows available in ground bitmap
     private int parallaxBelowRows = 8; // how many tile-rows of parallax to draw below the ground
 
-    // Rendering caches for performance: background (parallax+ground), tiles (incremental), grid overlay
+    // Rendering caches for performance: background (parallax+ground), tiles (incremental), sprites, grid overlay
     private RenderTargetBitmap? backgroundRtb = null;
     private RenderTargetBitmap? parallaxRtb = null;
     private RenderTargetBitmap? groundRtb = null;
     private RenderTargetBitmap? gridRtb = null;
     private WriteableBitmap? tilesWb = null;
+    private WriteableBitmap? spritesWb = null;
     // Pre-scaled tile pixel caches keyed by integer scale key (scale*100)
     private class ScaledTileCache { public byte[][] Pixels; public int TileW; public int TileH; public int Stride; public double Scale; public DpiScale Dpi; public ScaledTileCache(byte[][] pixels, int w, int h, int stride, double scale, DpiScale dpi) { Pixels = pixels; TileW = w; TileH = h; Stride = stride; Scale = scale; Dpi = dpi; } }
     private readonly Dictionary<int, ScaledTileCache> scaledTileCaches = new Dictionary<int, ScaledTileCache>();
@@ -464,8 +466,9 @@ namespace FamidashEditor
 
         private void ResizeMap(int newWidth, int newHeight)
         {
-            // preserve existing tiles where possible
+            // preserve existing tiles and sprites where possible
             var newTiles = Enumerable.Repeat(-1, newWidth * newHeight).ToArray();
+            var newSprites = Enumerable.Repeat(-1, newWidth * newHeight).ToArray();
             int copyW = Math.Min(mapWidth, newWidth);
             // preserve bottom-aligned: existing content should remain at the bottom
             if (newHeight >= mapHeight)
@@ -476,6 +479,7 @@ namespace FamidashEditor
                     for (int x = 0; x < copyW; x++)
                     {
                         newTiles[(y + yOffset) * newWidth + x] = tiles[y * mapWidth + x];
+                        newSprites[(y + yOffset) * newWidth + x] = sprites[y * mapWidth + x];
                     }
                 }
             }
@@ -487,6 +491,7 @@ namespace FamidashEditor
                     for (int x = 0; x < copyW; x++)
                     {
                         newTiles[y * newWidth + x] = tiles[(y + startOldY) * mapWidth + x];
+                        newSprites[y * newWidth + x] = sprites[(y + startOldY) * mapWidth + x];
                     }
                 }
             }
@@ -500,7 +505,9 @@ namespace FamidashEditor
                 redoStack.Clear();
             }
 
-            mapWidth = newWidth; mapHeight = newHeight; tiles = newTiles;
+            mapWidth = newWidth; mapHeight = newHeight; 
+            tiles = newTiles;
+            sprites = newSprites;
             if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
             
@@ -694,6 +701,7 @@ namespace FamidashEditor
         private void InitDefaultMap()
         {
             tiles = Enumerable.Repeat(-1, mapWidth * mapHeight).ToArray();
+            sprites = Enumerable.Repeat(-1, mapWidth * mapHeight).ToArray();
             if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
         }
@@ -1339,7 +1347,7 @@ namespace FamidashEditor
                 
                 var img = new Image { Source = paletteSrc, Width = paletteTileSize, Height = paletteTileSize, Stretch = Stretch.Fill, Tag = idx };
                 RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
-                img.MouseLeftButtonDown += (s, e) => { selectedTile = (int)((Image)s).Tag; UpdateTileHighlight(); if (StatusText != null) StatusText.Text = "Selected tile " + selectedTile; };
+                img.MouseLeftButtonDown += (s, e) => { selectedTile = (int)((Image)s).Tag; selectedSprite = -1; UpdatePaletteHighlight(); if (StatusText != null) StatusText.Text = "Selected tile " + selectedTile; };
                 var border = new Border { Child = img, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedTile ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedTile ? new Thickness(2) : new Thickness(0)) };
                 TilesPanel.Items.Add(border);
                 idx++;
@@ -1356,14 +1364,50 @@ namespace FamidashEditor
             {
                 var img = new Image { Source = src, Width = paletteSpriteSize, Height = paletteSpriteSize, Stretch = Stretch.Fill, Tag = idx };
                 RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
-                img.MouseLeftButtonDown += (s, e) => { selectedSprite = (int)((Image)s).Tag; if (StatusText != null) StatusText.Text = "Selected sprite " + selectedSprite; };
-                var border = new Border { Child = img, Margin = new Thickness(0), Padding = new Thickness(0) };
+                img.MouseLeftButtonDown += (s, e) => { selectedSprite = (int)((Image)s).Tag; selectedTile = -1; UpdatePaletteHighlight(); if (StatusText != null) StatusText.Text = "Selected sprite " + selectedSprite; };
+                var border = new Border { Child = img, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedSprite ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedSprite ? new Thickness(2) : new Thickness(0)) };
                 SpritesPanel.Items.Add(border);
                 idx++;
             }
         }
 
+        private void UpdatePaletteHighlight()
+        {
+            // Update tile highlights
+            if (TilesPanel != null)
+            {
+                for (int i = 0; i < TilesPanel.Items.Count; i++)
+                {
+                    if (TilesPanel.Items[i] is Border b)
+                    {
+                        bool isSelected = (i == selectedTile && selectedSprite == -1);
+                        b.BorderBrush = isSelected ? Brushes.Yellow : Brushes.Transparent;
+                        b.BorderThickness = isSelected ? new Thickness(2) : new Thickness(0);
+                    }
+                }
+            }
+            // Update sprite highlights
+            if (SpritesPanel != null)
+            {
+                for (int i = 0; i < SpritesPanel.Items.Count; i++)
+                {
+                    if (SpritesPanel.Items[i] is Border b)
+                    {
+                        bool isSelected = (i == selectedSprite && selectedSprite != -1);
+                        b.BorderBrush = isSelected ? Brushes.Yellow : Brushes.Transparent;
+                        b.BorderThickness = isSelected ? new Thickness(2) : new Thickness(0);
+                    }
+                }
+            }
+        }
+
         private void UpdateTileHighlight()
+        {
+            // Call the unified highlight method
+            UpdatePaletteHighlight();
+        }
+
+        private void UpdateTileHighlight2()
         {
             if (TilesPanel == null) return;
             for (int i = 0; i < TilesPanel.Items.Count; i++)
@@ -1437,6 +1481,12 @@ namespace FamidashEditor
                 TilesImage.Width = displayFullW; TilesImage.Height = displayFullH;
                 TilesImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
+            if (SpritesImage != null && spritesWb != null)
+            {
+                SpritesImage.Source = spritesWb;
+                SpritesImage.Width = displayFullW; SpritesImage.Height = displayFullH;
+                SpritesImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
+            }
             if (GridImage != null && gridRtb != null)
             {
                 GridImage.Source = gridRtb;
@@ -1475,7 +1525,8 @@ namespace FamidashEditor
                 gridDirty = false;
             }
             // Create or recreate tiles writeable bitmap if size changed
-            if (tilesWb == null || cachedPixelWidth != pixelPaddedWidth || cachedPixelHeight != pixelPaddedHeight || Math.Abs(cachedScale - scale) > 1e-6)
+            bool sizeOrScaleChanged = tilesWb == null || cachedPixelWidth != pixelPaddedWidth || cachedPixelHeight != pixelPaddedHeight || Math.Abs(cachedScale - scale) > 1e-6;
+            if (sizeOrScaleChanged)
             {
                 tilesWb = new WriteableBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32, null);
                 cachedPixelWidth = pixelPaddedWidth; cachedPixelHeight = pixelPaddedHeight; cachedScale = scale;
@@ -1484,6 +1535,16 @@ namespace FamidashEditor
                 tilesWb.WritePixels(new Int32Rect(0, 0, pixelPaddedWidth, pixelPaddedHeight), empty, tilesWb.BackBufferStride, 0);
                 // Render tiles asynchronously to avoid blocking UI
                 RebuildAllTilesBitmapAsync(scale, pad);
+            }
+            // Create or recreate sprites writeable bitmap if size changed (use same flag as tiles!)
+            if (sizeOrScaleChanged)
+            {
+                spritesWb = new WriteableBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32, null);
+                // initialize to transparent
+                var empty = new byte[pixelPaddedHeight * spritesWb.BackBufferStride];
+                spritesWb.WritePixels(new Int32Rect(0, 0, pixelPaddedWidth, pixelPaddedHeight), empty, spritesWb.BackBufferStride, 0);
+                // Render sprites
+                RebuildAllSpritesBitmap(scale, pad);
             }
         }
 
@@ -1995,6 +2056,190 @@ namespace FamidashEditor
                 {
                     destPtr[col] = srcPixels[srcOffset + col];
                 }
+            }
+        }
+
+        private void RebuildAllSpritesBitmap(double scale, double pad)
+        {
+            if (spritesWb == null || spriteImages == null) return;
+            
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"RebuildAllSpritesBitmap: scale={scale}, pad={pad}, mapWidth={mapWidth}, mapHeight={mapHeight}");
+                
+                var dpi = VisualTreeHelper.GetDpi(this);
+                int spritePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                int spritePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                
+                System.Diagnostics.Debug.WriteLine($"  spritePixelW={spritePixelW}, spritePixelH={spritePixelH}, dpi={dpi.DpiScaleX}");
+                System.Diagnostics.Debug.WriteLine($"  cachedPixelWidth={cachedPixelWidth}, cachedPixelHeight={cachedPixelHeight}");
+                
+                // Lock the bitmap once for all updates
+                spritesWb.Lock();
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"  Bitmap locked, clearing...");
+                    // Clear the bitmap
+                    unsafe
+                    {
+                        IntPtr pBackBuffer = spritesWb.BackBuffer;
+                        int backBufferStride = spritesWb.BackBufferStride;
+                        int bytesTotal = backBufferStride * cachedPixelHeight;
+                        byte* ptr = (byte*)pBackBuffer.ToPointer();
+                        for (int i = 0; i < bytesTotal; i++)
+                        {
+                            ptr[i] = 0;
+                        }
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"  Cleared, now rendering {mapWidth}x{mapHeight} sprites...");
+                    // Write each sprite
+                    int spriteCount = 0;
+                    for (int y = 0; y < mapHeight; y++)
+                    {
+                        for (int x = 0; x < mapWidth; x++)
+                        {
+                            int idx = sprites[y * mapWidth + x];
+                            if (idx >= 0 && idx < spriteImages.Length)
+                            {
+                                spriteCount++;
+                                try
+                                {
+                                    UpdateSpriteBitmapAtLocked(x, y, idx, scale, pad, spritePixelW, spritePixelH, dpi);
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"    Error at sprite ({x},{y}): {ex.Message}");
+                                }
+                            }
+                        }
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"  Rendered {spriteCount} sprites, marking dirty...");
+                    // Mark entire bitmap as dirty
+                    spritesWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+                    System.Diagnostics.Debug.WriteLine($"  Marked dirty");
+                }
+                finally
+                {
+                    System.Diagnostics.Debug.WriteLine($"  Unlocking bitmap...");
+                    spritesWb.Unlock();
+                    System.Diagnostics.Debug.WriteLine($"  Unlocked");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"EXCEPTION in RebuildAllSpritesBitmap: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Stack: {ex.StackTrace}");
+                // If rebuild fails, just clear the sprites
+                if (spritesWb != null)
+                {
+                    try
+                    {
+                        var empty = new byte[cachedPixelHeight * spritesWb.BackBufferStride];
+                        spritesWb.WritePixels(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight), empty, spritesWb.BackBufferStride, 0);
+                    }
+                    catch { }
+                }
+                throw; // Re-throw so we can see the error
+            }
+        }
+
+        private void UpdateSpriteBitmapAtLocked(int x, int y, int spriteIdx, double scale, double pad, int spritePixelW, int spritePixelH, DpiScale dpi)
+        {
+            if (spritesWb == null || spriteImages == null || spriteIdx < 0 || spriteIdx >= spriteImages.Length) return;
+            
+            try
+            {
+                // Use same position calculation as tiles for perfect alignment
+                int destX = Math.Max(0, (int)Math.Floor((pad + x * TileSize * scale) * dpi.DpiScaleX));
+                int destY = Math.Max(0, (int)Math.Floor((pad + y * TileSize * scale) * dpi.DpiScaleY));
+                
+                // Bounds check
+                if (destX >= cachedPixelWidth || destY >= cachedPixelHeight) return;
+                
+                // Get the source sprite
+                var sprite = spriteImages[spriteIdx] as BitmapSource;
+                if (sprite == null) return;
+                
+                // Calculate the actual size we need to render
+                int srcWidth = sprite.PixelWidth;
+                int srcHeight = sprite.PixelHeight;
+                
+                // Sanity check dimensions
+                if (srcWidth <= 0 || srcHeight <= 0 || spritePixelW <= 0 || spritePixelH <= 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Invalid dimensions: src={srcWidth}x{srcHeight}, dest={spritePixelW}x{spritePixelH}");
+                    return;
+                }
+                
+                // Copy source sprite pixels
+                int srcStride = srcWidth * 4;
+                byte[] srcPixels = new byte[srcHeight * srcStride];
+                sprite.CopyPixels(srcPixels, srcStride, 0);
+                
+                // If no scaling needed and sprite is already correct size, copy directly
+                if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && srcHeight == TileSize)
+                {
+                    // Direct copy - no scaling
+                    IntPtr pBackBuffer = spritesWb.BackBuffer;
+                    int backBufferStride = spritesWb.BackBufferStride;
+                    int copyWidth = Math.Min(srcWidth, cachedPixelWidth - destX);
+                    int copyHeight = Math.Min(srcHeight, cachedPixelHeight - destY);
+                    
+                    unsafe
+                    {
+                        for (int row = 0; row < copyHeight; row++)
+                        {
+                            int srcOffset = row * srcStride;
+                            long destOffset = (destY + row) * backBufferStride + destX * 4;
+                            byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                            
+                            for (int col = 0; col < copyWidth * 4; col++)
+                            {
+                                destPtr[col] = srcPixels[srcOffset + col];
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // Need to scale - use simple nearest-neighbor scaling to avoid TransformedBitmap issues
+                    double scaleX = (double)spritePixelW / srcWidth;
+                    double scaleY = (double)spritePixelH / srcHeight;
+                    
+                    IntPtr pBackBuffer = spritesWb.BackBuffer;
+                    int backBufferStride = spritesWb.BackBufferStride;
+                    int copyWidth = Math.Min(spritePixelW, cachedPixelWidth - destX);
+                    int copyHeight = Math.Min(spritePixelH, cachedPixelHeight - destY);
+                    
+                    unsafe
+                    {
+                        for (int row = 0; row < copyHeight; row++)
+                        {
+                            for (int col = 0; col < copyWidth; col++)
+                            {
+                                // Map destination pixel back to source pixel (nearest neighbor)
+                                int srcX = Math.Min((int)(col / scaleX), srcWidth - 1);
+                                int srcY = Math.Min((int)(row / scaleY), srcHeight - 1);
+                                int srcOffset = srcY * srcStride + srcX * 4;
+                                
+                                long destOffset = (destY + row) * backBufferStride + (destX + col) * 4;
+                                byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                                
+                                // Copy BGRA pixel
+                                destPtr[0] = srcPixels[srcOffset + 0]; // B
+                                destPtr[1] = srcPixels[srcOffset + 1]; // G
+                                destPtr[2] = srcPixels[srcOffset + 2]; // R
+                                destPtr[3] = srcPixels[srcOffset + 3]; // A
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ERROR rendering sprite at ({x},{y}), idx={spriteIdx}: {ex.Message}");
             }
         }
 
@@ -2752,10 +2997,37 @@ namespace FamidashEditor
         private void DoPaintAt(int x, int y)
         {
             if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) return;
-            // Only paint for Place or Erase
+            int idx = y * mapWidth + x;
+            
+            // Handle placing sprites
+            if (selectedSprite >= 0 && PlaceTool != null && PlaceTool.IsChecked == true)
+            {
+                int old = sprites[idx];
+                int neu = selectedSprite;
+                if (old != neu)
+                {
+                    sprites[idx] = neu;
+                    lastPaintX = x; lastPaintY = y;
+                    // Rebuild sprites layer
+                    try 
+                    { 
+                        System.Diagnostics.Debug.WriteLine($"Rebuilding sprites at zoom={(ZoomSlider!=null?ZoomSlider.Value:1.0)}, pad={mapViewportPadding}");
+                        RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); 
+                        System.Diagnostics.Debug.WriteLine($"Rebuild complete");
+                    } 
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"CRASH in RebuildAllSpritesBitmap: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"Stack: {ex.StackTrace}");
+                        MessageBox.Show($"Error placing sprite: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                return;
+            }
+            
+            // Handle placing tiles (only if no sprite is selected)
             if (PlaceTool != null && PlaceTool.IsChecked == true)
             {
-                int idx = y * mapWidth + x;
                 int old = tiles[idx];
                 int neu = selectedTile;
                 if (old != neu)
@@ -2773,19 +3045,35 @@ namespace FamidashEditor
             }
             else if (EraseTool != null && EraseTool.IsChecked == true)
             {
-                int idx = y * mapWidth + x;
-                int old = tiles[idx];
-                int neu = -1;
-                if (old != neu)
+                // Erase both tile and sprite
+                int oldTile = tiles[idx];
+                int oldSprite = sprites[idx];
+                bool changed = false;
+                
+                if (oldTile != -1)
                 {
                     if (!suppressUndoRecording)
                     {
                         if (currentCompositeAction == null) currentCompositeAction = new TileChangeAction();
-                        currentCompositeAction.Add(idx, old, neu);
+                        currentCompositeAction.Add(idx, oldTile, -1);
                     }
-                    tiles[idx] = neu;
+                    tiles[idx] = -1;
+                    changed = true;
+                }
+                
+                if (oldSprite != -1)
+                {
+                    sprites[idx] = -1;
+                    changed = true;
+                }
+                
+                if (changed)
+                {
                     lastPaintX = x; lastPaintY = y;
-                    try { UpdateTileBitmapAt(x, y, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    try { 
+                        UpdateTileBitmapAt(x, y, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                        RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                    } catch { Redraw(); }
                 }
             }
         }
