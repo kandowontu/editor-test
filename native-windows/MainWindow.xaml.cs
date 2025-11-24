@@ -25,6 +25,8 @@ namespace FamidashEditor
     private int mapHeight = 27;
     private int[] tiles = Array.Empty<int>();
     private int[] sprites = Array.Empty<int>(); // separate layer for sprites
+    // Legacy trigger offset option (default off)
+    private bool useLegacyTriggerOffset = false;
     // default grid darkness: much lighter so grid lines are subtle over dark backgrounds
     private double gridDarkness = 0.18;
     private Brush mapBackground = new SolidColorBrush(Color.FromRgb(59,59,59));
@@ -560,6 +562,20 @@ namespace FamidashEditor
             if (MenuColorBackgroundTint != null) MenuColorBackgroundTint.Click += BgTintButton_Click;
             if (MenuColorGroundTint != null) MenuColorGroundTint.Click += GroundTintButton_Click;
             if (MenuColorTileTint != null) MenuColorTileTint.Click += TileTintButton_Click;
+            
+            if (MenuOptionLegacyTriggers != null) 
+            {
+                MenuOptionLegacyTriggers.Checked += (s, e) => 
+                { 
+                    useLegacyTriggerOffset = true; 
+                    SaveSettingsWithTriggerOption();
+                };
+                MenuOptionLegacyTriggers.Unchecked += (s, e) => 
+                { 
+                    useLegacyTriggerOffset = false; 
+                    SaveSettingsWithTriggerOption();
+                };
+            }
             
             if (UndoButton != null) UndoButton.Click += (s, e) => Undo();
             if (RedoButton != null) RedoButton.Click += (s, e) => Redo();
@@ -1808,6 +1824,15 @@ namespace FamidashEditor
                         var b = (byte)gt[3].GetInt32();
                         groundTint = Color.FromArgb(a, r, g, b);
                     }
+                    // optional legacy trigger offset
+                    if (doc.RootElement.TryGetProperty("useLegacyTriggerOffset", out var lto))
+                    {
+                        useLegacyTriggerOffset = lto.GetBoolean();
+                        if (MenuOptionLegacyTriggers != null)
+                        {
+                            MenuOptionLegacyTriggers.IsChecked = useLegacyTriggerOffset;
+                        }
+                    }
                 }
             }
             catch { }
@@ -1820,12 +1845,23 @@ namespace FamidashEditor
                 var obj = new {
                     background = new int[] { c.A, c.R, c.G, c.B },
                     backgroundTint = new int[] { backgroundTint.A, backgroundTint.R, backgroundTint.G, backgroundTint.B },
-                    groundTint = new int[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B }
+                    groundTint = new int[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B },
+                    useLegacyTriggerOffset = useLegacyTriggerOffset
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
                 var dir = AppContext.BaseDirectory;
                 var path = System.IO.Path.Combine(dir, "editor-settings.json");
                 System.IO.File.WriteAllText(path, txt);
+            }
+            catch { }
+        }
+        
+        private void SaveSettingsWithTriggerOption()
+        {
+            try
+            {
+                var c = mapBackground is SolidColorBrush sb ? sb.Color : Color.FromRgb(59, 59, 59);
+                SaveSettings(c);
             }
             catch { }
         }
@@ -5259,7 +5295,14 @@ namespace FamidashEditor
                             GroundRepeatX = loadedGroundRepeatX,
                             HasGroundLayer = loadedHasGroundLayer
                         };
-                        TmxHandler.SaveTmx(dlg.FileName, tmxLevel);
+                        var saveCollisionMessages = TmxHandler.SaveTmx(dlg.FileName, tmxLevel, useLegacyTriggerOffset);
+                        
+                        // Show collision messages if any
+                        if (!string.IsNullOrEmpty(saveCollisionMessages))
+                        {
+                            MessageBox.Show("Sprite collision adjustments during save:\n\n" + saveCollisionMessages, 
+                                "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
                     }
                     else
                     {
@@ -5326,11 +5369,18 @@ namespace FamidashEditor
                         Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
                         
                         // Load TMX format
-                        var tmxLevel = TmxHandler.LoadTmx(dlg.FileName);
+                        var tmxLevel = TmxHandler.LoadTmx(dlg.FileName, useLegacyTriggerOffset);
                         loadedWidth = tmxLevel.Width;
                         loadedHeight = tmxLevel.Height;
                         loadedTiles = tmxLevel.Tiles;
                         loadedSprites = tmxLevel.Sprites;
+                        
+                        // Show collision messages if any
+                        if (!string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
+                        {
+                            MessageBox.Show("Sprite collision adjustments during load:\n\n" + tmxLevel.LoadCollisionMessages, 
+                                "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
                         
                         // Store TMX metadata to preserve when saving
                         loadedTilesetSource = tmxLevel.TilesetSource;
@@ -5400,12 +5450,23 @@ namespace FamidashEditor
                         RebuildAllTilesBitmap(currentScale, mapViewportPadding);
                         RebuildAllSpritesBitmap(currentScale, mapViewportPadding);
                         
-                        // Snap to ground level (bottom) and left side
+                        // Snap to show ground at bottom (barely visible) and left side
                         if (MapScrollViewer != null)
                         {
                             MapScrollViewer.UpdateLayout(); // Ensure layout is updated
                             MapScrollViewer.ScrollToLeftEnd();
-                            MapScrollViewer.ScrollToBottom();
+                            
+                            // Scroll to show just a bit of the ground (about 1-2 tiles from bottom)
+                            double maxScroll = MapScrollViewer.ScrollableHeight;
+                            double viewportHeight = MapScrollViewer.ViewportHeight;
+                            double zoomScale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                            double tilePixelHeight = TileSize * zoomScale;
+                            
+                            // Position so ground is just barely visible (show about 1.5 tiles from bottom)
+                            double targetOffset = maxScroll - (tilePixelHeight * 1.5);
+                            if (targetOffset < 0) targetOffset = 0;
+                            
+                            MapScrollViewer.ScrollToVerticalOffset(targetOffset);
                         }
                         
                         if (StatusText != null) StatusText.Text = $"Loaded {Path.GetFileName(dlg.FileName)} ({mapWidth}x{mapHeight})";

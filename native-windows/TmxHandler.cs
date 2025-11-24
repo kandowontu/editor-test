@@ -7,7 +7,21 @@ namespace FamidashEditor
 {
     public static class TmxHandler
     {
-        public static TmxLevel LoadTmx(string filePath)
+        // Check if a sprite index is a trigger sprite that needs position offsetting
+        private static bool IsTriggerSprite(int spriteIdx)
+        {
+            if (spriteIdx < 0) return false;
+            
+            return spriteIdx == 0x0F ||
+                   spriteIdx == 0x6F ||
+                   (spriteIdx >= 0x70 && spriteIdx <= 0x74) ||
+                   spriteIdx == 0x7D ||
+                   spriteIdx == 0x7F ||
+                   (spriteIdx >= 0x80 && spriteIdx <= 0xEF) ||
+                   (spriteIdx >= 0xF0 && spriteIdx <= 0xF5);
+        }
+        
+        public static TmxLevel LoadTmx(string filePath, bool useLegacyTriggerOffset = false)
         {
             var doc = XDocument.Load(filePath);
             var map = doc.Element("map");
@@ -18,6 +32,9 @@ namespace FamidashEditor
             int width = (int?)map.Attribute("width") ?? 0;
             int height = (int?)map.Attribute("height") ?? 0;
             int totalTiles = width * height;
+            
+            // Track collision warnings
+            var collisionWarnings = new System.Collections.Generic.List<string>();
             
             // Read tileset sources
             string? tilesetSource = null;
@@ -38,6 +55,9 @@ namespace FamidashEditor
             // Initialize separate tiles and sprites arrays with -1 (empty)
             int[] tiles = Enumerable.Repeat(-1, totalTiles).ToArray();
             int[] sprites = Enumerable.Repeat(-1, totalTiles).ToArray();
+            
+            // Track sprite collisions during loading
+            var collisionMessages = new System.Collections.Generic.List<string>();
             
             // Process tile layers separately
             // TMX uses GIDs: 0=empty, 1-256=famidash tileset, 257-512=sprites tileset
@@ -69,7 +89,79 @@ namespace FamidashEditor
                                 {
                                     // Sprite layer: GID 257-512 → editor index 0-255
                                     if (gid >= 257)
-                                        sprites[i] = gid - 257;
+                                    {
+                                        int spriteIdx = gid - 257;
+                                        
+                                        // Calculate position in grid
+                                        int y = i / width;
+                                        int x = i % width;
+                                        int originalX = x;
+                                        int originalY = y;
+                                        
+                                        // Trigger sprites are stored 10 tiles to the right in TMX,
+                                        // but displayed 10 tiles to the left in editor (unless legacy mode enabled)
+                                        if (!useLegacyTriggerOffset && IsTriggerSprite(spriteIdx))
+                                        {
+                                            x -= 10; // Shift left
+                                            if (x < 0) x = 0; // Clamp to left boundary instead of skipping
+                                        }
+                                        
+                                        int newIdx = y * width + x;
+                                        
+                                        // Check for collision and find nearest vertical neighbor if needed
+                                        if (newIdx >= 0 && newIdx < totalTiles)
+                                        {
+                                            if (sprites[newIdx] != -1)
+                                            {
+                                                // Collision detected - find nearest vertical neighbor
+                                                int finalY = y;
+                                                bool foundSlot = false;
+                                                
+                                                // Search up and down alternately
+                                                for (int offset = 1; offset < height; offset++)
+                                                {
+                                                    // Try below first
+                                                    int testY = y + offset;
+                                                    if (testY < height)
+                                                    {
+                                                        int testIdx = testY * width + x;
+                                                        if (sprites[testIdx] == -1)
+                                                        {
+                                                            finalY = testY;
+                                                            foundSlot = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                    
+                                                    // Try above
+                                                    testY = y - offset;
+                                                    if (testY >= 0)
+                                                    {
+                                                        int testIdx = testY * width + x;
+                                                        if (sprites[testIdx] == -1)
+                                                        {
+                                                            finalY = testY;
+                                                            foundSlot = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                if (foundSlot)
+                                                {
+                                                    collisionMessages.Add($"Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) shifted to ({x},{y}) collides, moved to ({x},{finalY})");
+                                                    newIdx = finalY * width + x;
+                                                }
+                                                else
+                                                {
+                                                    collisionMessages.Add($"Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) shifted to ({x},{y}) collides, no free vertical slot found - sprite dropped");
+                                                    continue; // Skip this sprite
+                                                }
+                                            }
+                                            
+                                            sprites[newIdx] = spriteIdx;
+                                        }
+                                    }
                                 }
                                 else
                                 {
@@ -178,12 +270,16 @@ namespace FamidashEditor
                 GroundSource = groundSource,
                 GroundOffsetY = groundOffsetY,
                 GroundRepeatX = groundRepeatX,
-                HasGroundLayer = groundLayer != null
+                HasGroundLayer = groundLayer != null,
+                LoadCollisionMessages = collisionMessages.Count > 0 ? string.Join("\n", collisionMessages) : null
             };
         }
 
-        public static void SaveTmx(string filePath, TmxLevel level)
+        public static string? SaveTmx(string filePath, TmxLevel level, bool useLegacyTriggerOffset = false)
         {
+            // Track sprite collisions during saving
+            var collisionMessages = new System.Collections.Generic.List<string>();
+            
             // Create the XML structure
             var map = new XElement("map",
                 new XAttribute("version", "1.10"),
@@ -346,6 +442,92 @@ namespace FamidashEditor
 
             if (level.Sprites != null && level.Sprites.Length > 0)
             {
+                // First, create a temporary array with trigger sprites shifted right by 10 tiles
+                int[] spritesToSave = new int[level.Sprites.Length];
+                Array.Fill(spritesToSave, -1); // Initialize with empty
+                
+                for (int y = 0; y < level.Height; y++)
+                {
+                    for (int x = 0; x < level.Width; x++)
+                    {
+                        int idx = y * level.Width + x;
+                        if (idx >= level.Sprites.Length) continue;
+                        
+                        int spriteIdx = level.Sprites[idx];
+                        if (spriteIdx >= 0)
+                        {
+                            int saveX = x;
+                            int originalX = x;
+                            int originalY = y;
+                            
+                            // Trigger sprites are displayed 10 tiles left in editor,
+                            // but need to be saved 10 tiles right in TMX (unless legacy mode enabled)
+                            if (!useLegacyTriggerOffset && IsTriggerSprite(spriteIdx))
+                            {
+                                saveX += 10; // Shift right for saving
+                                if (saveX >= level.Width) continue; // Skip if out of bounds
+                            }
+                            
+                            int saveIdx = y * level.Width + saveX;
+                            
+                            // Check for collision and find nearest vertical neighbor if needed
+                            if (saveIdx >= 0 && saveIdx < spritesToSave.Length)
+                            {
+                                if (spritesToSave[saveIdx] != -1)
+                                {
+                                    // Collision detected - find nearest vertical neighbor
+                                    int finalY = y;
+                                    bool foundSlot = false;
+                                    
+                                    // Search up and down alternately
+                                    for (int offset = 1; offset < level.Height; offset++)
+                                    {
+                                        // Try below first
+                                        int testY = y + offset;
+                                        if (testY < level.Height)
+                                        {
+                                            int testIdx = testY * level.Width + saveX;
+                                            if (spritesToSave[testIdx] == -1)
+                                            {
+                                                finalY = testY;
+                                                foundSlot = true;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        // Try above
+                                        testY = y - offset;
+                                        if (testY >= 0)
+                                        {
+                                            int testIdx = testY * level.Width + saveX;
+                                            if (spritesToSave[testIdx] == -1)
+                                            {
+                                                finalY = testY;
+                                                foundSlot = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    
+                                    if (foundSlot)
+                                    {
+                                        collisionMessages.Add($"Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) shifted to ({saveX},{y}) collides, saved to ({saveX},{finalY})");
+                                        saveIdx = finalY * level.Width + saveX;
+                                    }
+                                    else
+                                    {
+                                        collisionMessages.Add($"Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) shifted to ({saveX},{y}) collides, no free vertical slot found - sprite dropped");
+                                        continue; // Skip this sprite
+                                    }
+                                }
+                                
+                                spritesToSave[saveIdx] = spriteIdx;
+                            }
+                        }
+                    }
+                }
+                
+                // Now write the shifted sprites to CSV
                 var csvLines = new System.Text.StringBuilder();
                 for (int y = 0; y < level.Height; y++)
                 {
@@ -354,9 +536,9 @@ namespace FamidashEditor
                         int idx = y * level.Width + x;
                         int tileValue = 0; // Default to GID 0 (empty)
                         
-                        if (idx < level.Sprites.Length)
+                        if (idx < spritesToSave.Length)
                         {
-                            int editorIdx = level.Sprites[idx];
+                            int editorIdx = spritesToSave[idx];
                             // Convert editor index to TMX GID
                             // Editor: -1=empty, 0-255=sprites → TMX: 0=empty, 257-512=sprites
                             if (editorIdx >= 0 && editorIdx < 256)
@@ -408,6 +590,9 @@ namespace FamidashEditor
                     doc.Save(xmlWriter);
                 }
             }
+            
+            // Return collision messages if any
+            return collisionMessages.Count > 0 ? string.Join("\n", collisionMessages) : null;
         }
     }
 
@@ -442,5 +627,9 @@ namespace FamidashEditor
         public double GroundOffsetY { get; set; } = 432;
         public bool GroundRepeatX { get; set; } = true;
         public bool HasGroundLayer { get; set; } = false; // Track if ground existed in loaded file
+        
+        // Collision messages from loading/saving
+        public string? LoadCollisionMessages { get; set; }
+        public string? SaveCollisionMessages { get; set; }
     }
 }
