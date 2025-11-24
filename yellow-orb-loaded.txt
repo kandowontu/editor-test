@@ -1,0 +1,5 @@
+Yellow orb frames loaded successfully at 11/24/2025 2:40:55 PM
+Frame 1: 16x16
+Frame 2: 16x16
+Frame 3: 16x16
+Frame 4: 16x16

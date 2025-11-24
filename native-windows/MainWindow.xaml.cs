@@ -147,6 +147,7 @@ namespace FamidashEditor
     // Preview mode for animations (saws, etc.)
     private bool previewMode = false;
     private int animationFrame = 0; // Increments each frame, used to determine animation states
+    private int timerTicks = 0; // Counts all timer ticks for frame skipping logic
     private System.Windows.Threading.DispatcherTimer? previewTimer;
     // Animated saw frames: stored as separate tile images (4 tiles per frame, 2 frames)
     private BitmapSource[]? sawFrame1Tiles; // 4 tiles: top-left, top-right, bottom-left, bottom-right
@@ -163,6 +164,40 @@ namespace FamidashEditor
     private BitmapSource[]? largeSawFrame2Tiles; // 9 tiles for frame 2
     private ImageSource[]? largeSawFrame1TilesTinted; // Tinted versions
     private ImageSource[]? largeSawFrame2TilesTinted; // Tinted versions
+    // Yellow orb animation frames: 4 frames for sprites 0x0B, 0x1F, 0x29
+    private BitmapSource[]? yellowOrbFrame1; // Frame 1 for all 3 yellow orb sprites
+    private BitmapSource[]? yellowOrbFrame2; // Frame 2 for all 3 yellow orb sprites
+    private BitmapSource[]? yellowOrbFrame3; // Frame 3 for all 3 yellow orb sprites
+    private BitmapSource[]? yellowOrbFrame4; // Frame 4 for all 3 yellow orb sprites
+    // Blue orb animation frames: 4 frames for sprite 0x05
+    private BitmapSource[]? blueOrbFrame1;
+    private BitmapSource[]? blueOrbFrame2;
+    private BitmapSource[]? blueOrbFrame3;
+    private BitmapSource[]? blueOrbFrame4;
+    // Pink orb animation frames: 4 frames for sprite 0x06
+    private BitmapSource[]? pinkOrbFrame1;
+    private BitmapSource[]? pinkOrbFrame2;
+    private BitmapSource[]? pinkOrbFrame3;
+    private BitmapSource[]? pinkOrbFrame4;
+    // Green orb animation frames: 4 frames for sprite 0x27
+    private BitmapSource[]? greenOrbFrame1;
+    private BitmapSource[]? greenOrbFrame2;
+    private BitmapSource[]? greenOrbFrame3;
+    private BitmapSource[]? greenOrbFrame4;
+    // Red orb animation frames: 4 frames for sprite 0x28
+    private BitmapSource[]? redOrbFrame1;
+    private BitmapSource[]? redOrbFrame2;
+    private BitmapSource[]? redOrbFrame3;
+    private BitmapSource[]? redOrbFrame4;
+    // Black orb animation frames: 4 frames for sprite 0x44
+    private BitmapSource[]? blackOrbFrame1;
+    private BitmapSource[]? blackOrbFrame2;
+    private BitmapSource[]? blackOrbFrame3;
+    private BitmapSource[]? blackOrbFrame4;
+    // Random frame offsets for each sprite position to desynchronize animations
+    private Dictionary<int, int> spriteFrameOffsets = new Dictionary<int, int>();
+    private Random spriteAnimationRandom = new Random();
+    private int currentSpritePositionKey = 0; // Temp variable for passing position to GetAnimatedSpriteIndex
 
         private interface IUndoAction
         {
@@ -534,16 +569,21 @@ namespace FamidashEditor
             {
                 PreviewModeCheckbox.Checked += (s, e) =>
                 {
+                    System.IO.File.AppendAllText(@"C:\Editor Test\preview-mode-debug.txt", 
+                        $"Preview Mode CHECKED at {DateTime.Now}\n");
                     previewMode = true;
                     StartPreviewTimer();
                 };
                 PreviewModeCheckbox.Unchecked += (s, e) =>
                 {
+                    System.IO.File.AppendAllText(@"C:\Editor Test\preview-mode-debug.txt", 
+                        $"Preview Mode UNCHECKED at {DateTime.Now}\n");
                     previewMode = false;
                     StopPreviewTimer();
                     animationFrame = 0;
-                    // Redraw to show non-animated tiles
+                    // Redraw to show non-animated tiles and sprites
                     RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
+                    RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
                 };
             }
             
@@ -812,7 +852,7 @@ namespace FamidashEditor
         {
             if (previewTimer == null)
             {
-                // 60 FPS timer (approximately 16.67ms per frame)
+                // Timer at reasonable rate, but we'll throttle actual animation updates
                 previewTimer = new System.Windows.Threading.DispatcherTimer
                 {
                     Interval = TimeSpan.FromMilliseconds(1000.0 / 60.0)
@@ -820,6 +860,7 @@ namespace FamidashEditor
                 previewTimer.Tick += PreviewTimer_Tick;
             }
             animationFrame = 0;
+            timerTicks = 0;
             previewTimer.Start();
         }
 
@@ -830,6 +871,20 @@ namespace FamidashEditor
 
         private void PreviewTimer_Tick(object? sender, EventArgs e)
         {
+            timerTicks++;
+            
+            // Only update visuals every 2nd tick at 1x zoom to slow down animation
+            // At higher zooms, update every tick since rendering is slower
+            double currentZoom = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
+            int skipFrames = (currentZoom <= 1.0) ? 2 : 1;
+            
+            // Skip rendering on non-update ticks, but don't increment animation frame
+            if (timerTicks % skipFrames != 0)
+            {
+                return; // Skip rendering this tick
+            }
+            
+            // Only increment animation frame when we actually render
             animationFrame++;
             
             // Debug: Log frame switching every 60 frames (once per second)
@@ -886,6 +941,54 @@ namespace FamidashEditor
                     {
                         tilesWb.Unlock();
                     }
+                }
+            }
+            
+            // Update animated orb sprites (all colors)
+            if (spritesWb != null && 
+                ((yellowOrbFrame1 != null && yellowOrbFrame2 != null && yellowOrbFrame3 != null && yellowOrbFrame4 != null) ||
+                 (blueOrbFrame1 != null && blueOrbFrame2 != null && blueOrbFrame3 != null && blueOrbFrame4 != null) ||
+                 (pinkOrbFrame1 != null && pinkOrbFrame2 != null && pinkOrbFrame3 != null && pinkOrbFrame4 != null) ||
+                 (greenOrbFrame1 != null && greenOrbFrame2 != null && greenOrbFrame3 != null && greenOrbFrame4 != null) ||
+                 (redOrbFrame1 != null && redOrbFrame2 != null && redOrbFrame3 != null && redOrbFrame4 != null) ||
+                 (blackOrbFrame1 != null && blackOrbFrame2 != null && blackOrbFrame3 != null && blackOrbFrame4 != null)))
+            {
+                // Check if we have any animated orb sprites
+                bool hasAnimatedOrbs = false;
+                for (int i = 0; i < sprites.Length; i++)
+                {
+                    int spriteIdx = sprites[i];
+                    if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
+                        spriteIdx == 0x05 || // Blue
+                        spriteIdx == 0x06 || // Pink
+                        spriteIdx == 0x27 || // Green
+                        spriteIdx == 0x28 || // Red
+                        spriteIdx == 0x44)   // Black
+                    {
+                        hasAnimatedOrbs = true;
+                        
+                        // Debug: Log first time we find animated orbs
+                        if (animationFrame % 60 == 0)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Found animated orb sprite 0x{spriteIdx:X2} at index {i}, will rebuild sprites");
+                        }
+                        break;
+                    }
+                }
+                
+                if (hasAnimatedOrbs)
+                {
+                    // Rebuild all sprites (efficient enough for a few animated sprites)
+                    double scale = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
+                    RebuildAllSpritesBitmap(scale, mapViewportPadding);
+                }
+            }
+            else
+            {
+                // Debug: Why aren't we checking orbs?
+                if (animationFrame % 120 == 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Not checking orbs: spritesWb={(spritesWb != null)}, yellow={(yellowOrbFrame1 != null)}, blue={(blueOrbFrame1 != null)}, pink={(pinkOrbFrame1 != null)}, green={(greenOrbFrame1 != null)}, red={(redOrbFrame1 != null)}, black={(blackOrbFrame1 != null)}");
                 }
             }
         }
@@ -945,6 +1048,73 @@ namespace FamidashEditor
             return originalIndex; // Not a saw tile
         }
         
+        // Returns special indices (>= 2000) to indicate custom animation sprites
+        // Orbs have 4-frame animation: yellow (0x0B, 0x1F, 0x29), blue (0x05), pink (0x06), 
+        // green (0x27), red (0x28), black (0x44)
+        private int GetAnimatedSpriteIndex(int originalIndex)
+        {
+            if (!previewMode) return originalIndex;
+            
+            // Check if this is an animated orb sprite
+            bool isYellowOrb = (originalIndex == 0x0B || originalIndex == 0x1F || originalIndex == 0x29);
+            bool isBlueOrb = (originalIndex == 0x05);
+            bool isPinkOrb = (originalIndex == 0x06);
+            bool isGreenOrb = (originalIndex == 0x27);
+            bool isRedOrb = (originalIndex == 0x28);
+            bool isBlackOrb = (originalIndex == 0x44);
+            
+            if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb)
+            {
+                // 4-frame animation at 9/20 speed (slower than saws)
+                // Each sprite gets a random offset so they don't all sync
+                int spritePositionKey = currentSpritePositionKey; // Set by UpdateSpriteBitmapAtLocked
+                if (!spriteFrameOffsets.ContainsKey(spritePositionKey))
+                {
+                    spriteFrameOffsets[spritePositionKey] = spriteAnimationRandom.Next(0, 4);
+                }
+                int frameOffset = spriteFrameOffsets[spritePositionKey];
+                
+                // Calculate which frame (0-3) based on animation counter + random offset
+                int frame = (((animationFrame * 9) / 20) + frameOffset) % 4;
+                
+                // Determine which orb color and map to custom index range
+                // Yellow: 2000-2011 (3 sprites × 4 frames)
+                // Blue:   2012-2015 (1 sprite × 4 frames)
+                // Pink:   2016-2019 (1 sprite × 4 frames)
+                // Green:  2020-2023 (1 sprite × 4 frames)
+                // Red:    2024-2027 (1 sprite × 4 frames)
+                // Black:  2028-2031 (1 sprite × 4 frames)
+                
+                if (isYellowOrb)
+                {
+                    int spriteOffset = (originalIndex == 0x0B) ? 0 : (originalIndex == 0x1F) ? 1 : 2;
+                    return 2000 + (frame * 3) + spriteOffset;
+                }
+                else if (isBlueOrb)
+                {
+                    return 2012 + frame;
+                }
+                else if (isPinkOrb)
+                {
+                    return 2016 + frame;
+                }
+                else if (isGreenOrb)
+                {
+                    return 2020 + frame;
+                }
+                else if (isRedOrb)
+                {
+                    return 2024 + frame;
+                }
+                else if (isBlackOrb)
+                {
+                    return 2028 + frame;
+                }
+            }
+            
+            return originalIndex; // Not an animated orb
+        }
+        
         // Get the custom saw animation tile if index is >= 1000
         private BitmapSource? GetCustomAnimationTile(int customIndex)
         {
@@ -1002,6 +1172,106 @@ namespace FamidashEditor
                     return largeSawFrame2TilesTinted[offset] as BitmapSource;
                 return largeSawFrame2Tiles?[offset];
             }
+            return null;
+        }
+        
+        // Get the custom orb animation sprite if index is >= 2000
+        private BitmapSource? GetCustomAnimationSprite(int customIndex)
+        {
+            // Yellow orb sprites: 2000-2011 (3 sprites × 4 frames)
+            // Blue orb: 2012-2015 (1 sprite × 4 frames)
+            // Pink orb: 2016-2019 (1 sprite × 4 frames)
+            // Green orb: 2020-2023 (1 sprite × 4 frames)
+            // Red orb: 2024-2027 (1 sprite × 4 frames)
+            // Black orb: 2028-2031 (1 sprite × 4 frames)
+            
+            if (customIndex >= 2000 && customIndex <= 2011)
+            {
+                // Yellow orbs
+                int frameAndSpriteIndex = customIndex - 2000; // 0-11
+                int frame = frameAndSpriteIndex / 3; // 0-3 (which frame)
+                int spriteOffset = frameAndSpriteIndex % 3; // 0-2 (which sprite: 0x0B, 0x1F, 0x29)
+                
+                BitmapSource[]? frameArray = frame switch
+                {
+                    0 => yellowOrbFrame1,
+                    1 => yellowOrbFrame2,
+                    2 => yellowOrbFrame3,
+                    3 => yellowOrbFrame4,
+                    _ => null
+                };
+                
+                if (frameArray != null && spriteOffset < frameArray.Length)
+                {
+                    return frameArray[spriteOffset];
+                }
+            }
+            else if (customIndex >= 2012 && customIndex <= 2015)
+            {
+                // Blue orb
+                int frame = customIndex - 2012; // 0-3
+                return frame switch
+                {
+                    0 => blueOrbFrame1?[0],
+                    1 => blueOrbFrame2?[0],
+                    2 => blueOrbFrame3?[0],
+                    3 => blueOrbFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2016 && customIndex <= 2019)
+            {
+                // Pink orb
+                int frame = customIndex - 2016; // 0-3
+                return frame switch
+                {
+                    0 => pinkOrbFrame1?[0],
+                    1 => pinkOrbFrame2?[0],
+                    2 => pinkOrbFrame3?[0],
+                    3 => pinkOrbFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2020 && customIndex <= 2023)
+            {
+                // Green orb
+                int frame = customIndex - 2020; // 0-3
+                return frame switch
+                {
+                    0 => greenOrbFrame1?[0],
+                    1 => greenOrbFrame2?[0],
+                    2 => greenOrbFrame3?[0],
+                    3 => greenOrbFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2024 && customIndex <= 2027)
+            {
+                // Red orb
+                int frame = customIndex - 2024; // 0-3
+                return frame switch
+                {
+                    0 => redOrbFrame1?[0],
+                    1 => redOrbFrame2?[0],
+                    2 => redOrbFrame3?[0],
+                    3 => redOrbFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2028 && customIndex <= 2031)
+            {
+                // Black orb
+                int frame = customIndex - 2028; // 0-3
+                return frame switch
+                {
+                    0 => blackOrbFrame1?[0],
+                    1 => blackOrbFrame2?[0],
+                    2 => blackOrbFrame3?[0],
+                    3 => blackOrbFrame4?[0],
+                    _ => null
+                };
+            }
+            
             return null;
         }
         
@@ -1227,6 +1497,261 @@ namespace FamidashEditor
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to load saw animation frames: {ex.Message}");
             }
+        }
+
+        // Load yellow orb animation frames from PNG files
+        // Yellow orbs are sprites 0x0B, 0x1F, 0x29 with 4 animation frames each
+        private void InitializeYellowOrbAnimationFrames()
+        {
+            try
+            {
+                // Write to file immediately to confirm this is called
+                System.IO.File.WriteAllText(@"C:\Editor Test\yellow-orb-init.txt", $"Init called at {DateTime.Now}\n");
+                
+                System.Diagnostics.Debug.WriteLine("=== InitializeYellowOrbAnimationFrames START ===");
+                
+                // Try to load from embedded resources first
+                var frame1 = LoadEmbeddedImage("yellow-orb-frame1.png");
+                var frame2 = LoadEmbeddedImage("yellow-orb-frame2.png");
+                var frame3 = LoadEmbeddedImage("yellow-orb-frame3.png");
+                var frame4 = LoadEmbeddedImage("yellow-orb-frame4.png");
+                
+                System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-init.txt", $"Embedded: {frame1 != null}/{frame2 != null}/{frame3 != null}/{frame4 != null}\n");
+                
+                System.Diagnostics.Debug.WriteLine($"After LoadEmbeddedImage: frame1={frame1 != null}, frame2={frame2 != null}, frame3={frame3 != null}, frame4={frame4 != null}");
+                
+                // If not found in embedded resources, try file system
+                if (frame1 == null || frame2 == null || frame3 == null || frame4 == null)
+                {
+                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-init.txt", "Checking file system...\n");
+                    
+                    System.Diagnostics.Debug.WriteLine($"Yellow orb frames not in embedded resources, checking file system...");
+                    var baseDir = AppContext.BaseDirectory;
+                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-init.txt", $"BaseDir: {baseDir}\n");
+                    
+                    var frame1Path = System.IO.Path.Combine(baseDir, "yellow-orb-frame1.png");
+                    var frame2Path = System.IO.Path.Combine(baseDir, "yellow-orb-frame2.png");
+                    var frame3Path = System.IO.Path.Combine(baseDir, "yellow-orb-frame3.png");
+                    var frame4Path = System.IO.Path.Combine(baseDir, "yellow-orb-frame4.png");
+                    
+                    System.Diagnostics.Debug.WriteLine($"  BaseDir: {baseDir}");
+                    System.Diagnostics.Debug.WriteLine($"  Frame1 exists at BaseDir: {System.IO.File.Exists(frame1Path)}");
+                    
+                    var repo = FindRepoRootFor("famidash.bmp");
+                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-init.txt", $"Repo: {repo ?? "NULL"}\n");
+                    
+                    if (!string.IsNullOrEmpty(repo))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"  Repo root: {repo}");
+                        var repoFrame1 = System.IO.Path.Combine(repo, "yellow-orb-frame1.png");
+                        var repoFrame2 = System.IO.Path.Combine(repo, "yellow-orb-frame2.png");
+                        var repoFrame3 = System.IO.Path.Combine(repo, "yellow-orb-frame3.png");
+                        var repoFrame4 = System.IO.Path.Combine(repo, "yellow-orb-frame4.png");
+                        
+                        bool e1 = System.IO.File.Exists(repoFrame1);
+                        bool e2 = System.IO.File.Exists(repoFrame2);
+                        bool e3 = System.IO.File.Exists(repoFrame3);
+                        bool e4 = System.IO.File.Exists(repoFrame4);
+                        
+                        System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-init.txt", $"Files exist: {e1}/{e2}/{e3}/{e4}\n");
+                        
+                        System.Diagnostics.Debug.WriteLine($"  Frame1 exists at repo: {e1} - {repoFrame1}");
+                        System.Diagnostics.Debug.WriteLine($"  Frame2 exists at repo: {e2} - {repoFrame2}");
+                        System.Diagnostics.Debug.WriteLine($"  Frame3 exists at repo: {e3} - {repoFrame3}");
+                        System.Diagnostics.Debug.WriteLine($"  Frame4 exists at repo: {e4} - {repoFrame4}");
+                        
+                        if (System.IO.File.Exists(repoFrame1)) frame1Path = repoFrame1;
+                        if (System.IO.File.Exists(repoFrame2)) frame2Path = repoFrame2;
+                        if (System.IO.File.Exists(repoFrame3)) frame3Path = repoFrame3;
+                        if (System.IO.File.Exists(repoFrame4)) frame4Path = repoFrame4;
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"  Repo root not found!");
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"Final paths:");
+                    System.Diagnostics.Debug.WriteLine($"  frame1Path: {frame1Path}, exists: {System.IO.File.Exists(frame1Path)}");
+                    System.Diagnostics.Debug.WriteLine($"  frame2Path: {frame2Path}, exists: {System.IO.File.Exists(frame2Path)}");
+                    System.Diagnostics.Debug.WriteLine($"  frame3Path: {frame3Path}, exists: {System.IO.File.Exists(frame3Path)}");
+                    System.Diagnostics.Debug.WriteLine($"  frame4Path: {frame4Path}, exists: {System.IO.File.Exists(frame4Path)}");
+                    
+                    if (System.IO.File.Exists(frame1Path))
+                    {
+                        frame1 = new BitmapImage();
+                        frame1.BeginInit();
+                        frame1.CacheOption = BitmapCacheOption.OnLoad;
+                        frame1.UriSource = new Uri(frame1Path);
+                        frame1.EndInit();
+                        frame1.Freeze();
+                    }
+                    if (System.IO.File.Exists(frame2Path))
+                    {
+                        frame2 = new BitmapImage();
+                        frame2.BeginInit();
+                        frame2.CacheOption = BitmapCacheOption.OnLoad;
+                        frame2.UriSource = new Uri(frame2Path);
+                        frame2.EndInit();
+                        frame2.Freeze();
+                    }
+                    if (System.IO.File.Exists(frame3Path))
+                    {
+                        frame3 = new BitmapImage();
+                        frame3.BeginInit();
+                        frame3.CacheOption = BitmapCacheOption.OnLoad;
+                        frame3.UriSource = new Uri(frame3Path);
+                        frame3.EndInit();
+                        frame3.Freeze();
+                    }
+                    if (System.IO.File.Exists(frame4Path))
+                    {
+                        frame4 = new BitmapImage();
+                        frame4.BeginInit();
+                        frame4.CacheOption = BitmapCacheOption.OnLoad;
+                        frame4.UriSource = new Uri(frame4Path);
+                        frame4.EndInit();
+                        frame4.Freeze();
+                    }
+                }
+                
+                if (frame1 != null && frame2 != null && frame3 != null && frame4 != null)
+                {
+                    // Store each frame (each frame is 16x16 pixels for 3 sprite types)
+                    // Convert to Pbgra32 format to match the sprite rendering expectations
+                    var convertedFrame1 = new FormatConvertedBitmap(frame1, PixelFormats.Pbgra32, null, 0);
+                    var convertedFrame2 = new FormatConvertedBitmap(frame2, PixelFormats.Pbgra32, null, 0);
+                    var convertedFrame3 = new FormatConvertedBitmap(frame3, PixelFormats.Pbgra32, null, 0);
+                    var convertedFrame4 = new FormatConvertedBitmap(frame4, PixelFormats.Pbgra32, null, 0);
+                    
+                    // We'll use the same image for all 3 yellow orb sprites (0x0B, 0x1F, 0x29)
+                    yellowOrbFrame1 = new BitmapSource[3];
+                    yellowOrbFrame2 = new BitmapSource[3];
+                    yellowOrbFrame3 = new BitmapSource[3];
+                    yellowOrbFrame4 = new BitmapSource[3];
+                    
+                    // All 3 sprites share the same animation frames
+                    for (int i = 0; i < 3; i++)
+                    {
+                        yellowOrbFrame1[i] = convertedFrame1;
+                        yellowOrbFrame2[i] = convertedFrame2;
+                        yellowOrbFrame3[i] = convertedFrame3;
+                        yellowOrbFrame4[i] = convertedFrame4;
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"✓ Loaded yellow orb animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine($"  Frame 1: {frame1.PixelWidth}x{frame1.PixelHeight}");
+                    System.Diagnostics.Debug.WriteLine($"  Frame 2: {frame2.PixelWidth}x{frame2.PixelHeight}");
+                    System.Diagnostics.Debug.WriteLine($"  Frame 3: {frame3.PixelWidth}x{frame3.PixelHeight}");
+                    System.Diagnostics.Debug.WriteLine($"  Frame 4: {frame4.PixelWidth}x{frame4.PixelHeight}");
+                    
+                    // Write to file so we can verify it loaded
+                    try
+                    {
+                        System.IO.File.WriteAllText("C:\\Editor Test\\yellow-orb-loaded.txt", 
+                            $"Yellow orb frames loaded successfully at {DateTime.Now}\n" +
+                            $"Frame 1: {frame1.PixelWidth}x{frame1.PixelHeight}\n" +
+                            $"Frame 2: {frame2.PixelWidth}x{frame2.PixelHeight}\n" +
+                            $"Frame 3: {frame3.PixelWidth}x{frame3.PixelHeight}\n" +
+                            $"Frame 4: {frame4.PixelWidth}x{frame4.PixelHeight}\n");
+                    }
+                    catch { }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"✗ Yellow orb frame files not found (need all 4 frames)");
+                    System.Diagnostics.Debug.WriteLine($"  frame1: {(frame1 != null ? "loaded" : "null")}");
+                    System.Diagnostics.Debug.WriteLine($"  frame2: {(frame2 != null ? "loaded" : "null")}");
+                    System.Diagnostics.Debug.WriteLine($"  frame3: {(frame3 != null ? "loaded" : "null")}");
+                    System.Diagnostics.Debug.WriteLine($"  frame4: {(frame4 != null ? "loaded" : "null")}");
+                    
+                    // Write to file so we can verify why it failed
+                    try
+                    {
+                        System.IO.File.WriteAllText("C:\\Editor Test\\yellow-orb-FAILED.txt", 
+                            $"Yellow orb frames FAILED to load at {DateTime.Now}\n" +
+                            $"frame1: {(frame1 != null ? "loaded" : "null")}\n" +
+                            $"frame2: {(frame2 != null ? "loaded" : "null")}\n" +
+                            $"frame3: {(frame3 != null ? "loaded" : "null")}\n" +
+                            $"frame4: {(frame4 != null ? "loaded" : "null")}\n");
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load yellow orb animation frames: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+            }
+        }
+
+        // Helper function to load orb animation frames
+        private void LoadOrbFrames(string colorName, ref BitmapSource[]? frame1, ref BitmapSource[]? frame2, 
+                                     ref BitmapSource[]? frame3, ref BitmapSource[]? frame4, int arraySize = 1)
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage($"{colorName}-orb-frame1.png");
+                var f2 = LoadEmbeddedImage($"{colorName}-orb-frame2.png");
+                var f3 = LoadEmbeddedImage($"{colorName}-orb-frame3.png");
+                var f4 = LoadEmbeddedImage($"{colorName}-orb-frame4.png");
+                
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    // Convert to Pbgra32 format to match sprite rendering expectations
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+                    
+                    frame1 = new BitmapSource[arraySize];
+                    frame2 = new BitmapSource[arraySize];
+                    frame3 = new BitmapSource[arraySize];
+                    frame4 = new BitmapSource[arraySize];
+                    
+                    for (int i = 0; i < arraySize; i++)
+                    {
+                        frame1[i] = converted1;
+                        frame2[i] = converted2;
+                        frame3[i] = converted3;
+                        frame4[i] = converted4;
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"✓ Loaded {colorName} orb animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"✗ {colorName} orb frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load {colorName} orb animation frames: {ex.Message}");
+            }
+        }
+
+        private void InitializeBlueOrbAnimationFrames()
+        {
+            LoadOrbFrames("blue", ref blueOrbFrame1, ref blueOrbFrame2, ref blueOrbFrame3, ref blueOrbFrame4);
+        }
+
+        private void InitializePinkOrbAnimationFrames()
+        {
+            LoadOrbFrames("pink", ref pinkOrbFrame1, ref pinkOrbFrame2, ref pinkOrbFrame3, ref pinkOrbFrame4);
+        }
+
+        private void InitializeGreenOrbAnimationFrames()
+        {
+            LoadOrbFrames("green", ref greenOrbFrame1, ref greenOrbFrame2, ref greenOrbFrame3, ref greenOrbFrame4);
+        }
+
+        private void InitializeRedOrbAnimationFrames()
+        {
+            LoadOrbFrames("red", ref redOrbFrame1, ref redOrbFrame2, ref redOrbFrame3, ref redOrbFrame4);
+        }
+
+        private void InitializeBlackOrbAnimationFrames()
+        {
+            LoadOrbFrames("black", ref blackOrbFrame1, ref blackOrbFrame2, ref blackOrbFrame3, ref blackOrbFrame4);
         }
 
         private void LoadSettings()
@@ -1586,6 +2111,16 @@ namespace FamidashEditor
                 
                 // Initialize saw animation frames
                 InitializeSawAnimationFrames();
+                
+                // Initialize yellow orb animation frames
+                InitializeYellowOrbAnimationFrames();
+                
+                // Initialize other orb color animation frames
+                InitializeBlueOrbAnimationFrames();
+                InitializePinkOrbAnimationFrames();
+                InitializeGreenOrbAnimationFrames();
+                InitializeRedOrbAnimationFrames();
+                InitializeBlackOrbAnimationFrames();
             }
             catch (Exception ex)
             {
@@ -1597,14 +2132,28 @@ namespace FamidashEditor
         private string? FindRepoRootFor(string filename)
         {
             string dir = AppContext.BaseDirectory;
+            System.IO.File.AppendAllText(@"C:\Editor Test\find-repo-debug.txt", $"FindRepoRootFor({filename}) starting from: {dir}\n");
+            
             for (int i = 0; i < 6; i++)
             {
                 var candidate = Path.Combine(dir, filename);
-                if (File.Exists(candidate)) return dir;
+                bool exists = File.Exists(candidate);
+                System.IO.File.AppendAllText(@"C:\Editor Test\find-repo-debug.txt", $"  [{i}] Checking: {candidate} - Exists: {exists}\n");
+                
+                if (exists) {
+                    System.IO.File.AppendAllText(@"C:\Editor Test\find-repo-debug.txt", $"  FOUND! Returning: {dir}\n");
+                    return dir;
+                }
+                
                 var parent = Directory.GetParent(dir);
-                if (parent == null) break;
+                if (parent == null) {
+                    System.IO.File.AppendAllText(@"C:\Editor Test\find-repo-debug.txt", $"  No parent directory, breaking\n");
+                    break;
+                }
                 dir = parent.FullName;
             }
+            
+            System.IO.File.AppendAllText(@"C:\Editor Test\find-repo-debug.txt", $"  NOT FOUND, returning null\n");
             return null;
         }
 
@@ -1766,6 +2315,11 @@ namespace FamidashEditor
             }
             
             spriteImages = list.ToArray();
+            
+            System.Diagnostics.Debug.WriteLine($"Loaded {spriteImages.Length} sprite images");
+            System.Diagnostics.Debug.WriteLine($"  Sprite 0x0B ({0x0B}) in range: {0x0B < spriteImages.Length}");
+            System.Diagnostics.Debug.WriteLine($"  Sprite 0x1F ({0x1F}) in range: {0x1F < spriteImages.Length}");
+            System.Diagnostics.Debug.WriteLine($"  Sprite 0x29 ({0x29}) in range: {0x29 < spriteImages.Length}");
             
             if (errorCount > 0)
             {
@@ -3148,7 +3702,19 @@ namespace FamidashEditor
 
         private void UpdateSpriteBitmapAtLocked(int x, int y, int spriteIdx, double scale, double pad, int spritePixelW, int spritePixelH, DpiScale dpi)
         {
-            if (spritesWb == null || spriteImages == null || spriteIdx < 0 || spriteIdx >= spriteImages.Length) return;
+            if (spritesWb == null || spriteImages == null) return;
+            
+            // Bounds check on original index
+            if (spriteIdx < 0 || spriteIdx >= spriteImages.Length) return;
+            
+            // Set the position key for random frame offsets (unique per position on map)
+            currentSpritePositionKey = y * mapWidth + x;
+            
+            // Debug: Log when we're updating a yellow orb
+            if ((spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29) && animationFrame % 60 == 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"UpdateSpriteBitmapAtLocked: Updating yellow orb sprite 0x{spriteIdx:X2} at ({x},{y}), previewMode={previewMode}");
+            }
             
             try
             {
@@ -3161,18 +3727,62 @@ namespace FamidashEditor
                 // Bounds check
                 if (destX >= cachedPixelWidth || destY >= cachedPixelHeight) return;
                 
-                // Get the source sprite
-                var sprite = spriteImages[spriteIdx] as BitmapSource;
+                // Get the source sprite - check for animation
+                int animatedIdx = GetAnimatedSpriteIndex(spriteIdx);
+                BitmapSource? sprite = null;
+                
+                // Debug logging
+                bool isYellowOrb = (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29);
+                if (isYellowOrb && animationFrame % 60 == 0)
+                {
+                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
+                        $"UpdateSpriteBitmapAtLocked: spriteIdx=0x{spriteIdx:X2}, animatedIdx={animatedIdx}, previewMode={previewMode}\n");
+                }
+                
+                // Check if this is a custom animated sprite
+                if (animatedIdx >= 2000)
+                {
+                    sprite = GetCustomAnimationSprite(animatedIdx);
+                    if (isYellowOrb && animationFrame % 60 == 0)
+                    {
+                        System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
+                            $"  Custom sprite: {(sprite != null ? $"{sprite.PixelWidth}x{sprite.PixelHeight}" : "NULL")}\n");
+                    }
+                }
+                
+                // Fall back to normal sprite if not animated or animation not loaded
+                if (sprite == null)
+                {
+                    sprite = spriteImages[spriteIdx] as BitmapSource;
+                    if (isYellowOrb && animationFrame % 60 == 0)
+                    {
+                        System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
+                            $"  Fallback sprite: {(sprite != null ? $"{sprite.PixelWidth}x{sprite.PixelHeight}" : "NULL")}\n");
+                    }
+                }
+                
                 if (sprite == null) return;
                 
                 // Calculate the actual size we need to render
                 int srcWidth = sprite.PixelWidth;
                 int srcHeight = sprite.PixelHeight;
                 
+                // Debug logging for yellow orbs
+                if (isYellowOrb && animationFrame % 60 == 0)
+                {
+                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
+                        $"  Rendering: src={srcWidth}x{srcHeight}, dest={spritePixelW}x{spritePixelH}, scale={scale}, TileSize={TileSize}\n");
+                }
+                
                 // Sanity check dimensions
                 if (srcWidth <= 0 || srcHeight <= 0 || spritePixelW <= 0 || spritePixelH <= 0)
                 {
                     System.Diagnostics.Debug.WriteLine($"Invalid dimensions: src={srcWidth}x{srcHeight}, dest={spritePixelW}x{spritePixelH}");
+                    if (isYellowOrb)
+                    {
+                        System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
+                            $"  ERROR: Invalid dimensions!\n");
+                    }
                     return;
                 }
                 
@@ -3180,6 +3790,18 @@ namespace FamidashEditor
                 int srcStride = srcWidth * 4;
                 byte[] srcPixels = new byte[srcHeight * srcStride];
                 sprite.CopyPixels(srcPixels, srcStride, 0);
+                
+                // Debug: Check if pixels are transparent
+                if (isYellowOrb && animationFrame % 60 == 0)
+                {
+                    int nonZeroPixels = 0;
+                    for (int i = 3; i < srcPixels.Length; i += 4) // Check alpha channel
+                    {
+                        if (srcPixels[i] > 0) nonZeroPixels++;
+                    }
+                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
+                        $"  Pixels: {srcPixels.Length} bytes, {nonZeroPixels} non-transparent pixels\n");
+                }
                 
                 // If no scaling needed and sprite is already correct size, copy directly
                 if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && srcHeight == TileSize)
