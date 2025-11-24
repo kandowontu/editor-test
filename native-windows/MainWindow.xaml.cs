@@ -1321,33 +1321,41 @@ namespace FamidashEditor
 
         private void LoadAssetsOnStart()
         {
-            var dirs = new List<string>();
-            var repo = FindRepoRootFor("famidash.bmp");
-            if (!string.IsNullOrEmpty(repo)) { dirs.Add(repo); dirs.Add(Path.Combine(repo, "src", "renderer", "assets")); }
-            dirs.Add(AppContext.BaseDirectory); dirs.Add(Path.Combine(AppContext.BaseDirectory, "assets"));
-
-            var tilesCandidates = new[] { "famidash.bmp", "famidash.png", "tileset.bmp", "tileset.png" };
-            var spriteCandidates = new[] { "sprites.png", "sprites.bmp" };
-            var parallaxCandidates = new[] { "parallax.bmp", "parallax.png" };
-            var groundCandidates = new[] { "ground.bmp", "ground.png" };
-
-            foreach (var d in dirs)
+            try
             {
-                try
+                var dirs = new List<string>();
+                var repo = FindRepoRootFor("famidash.bmp");
+                if (!string.IsNullOrEmpty(repo)) { dirs.Add(repo); dirs.Add(Path.Combine(repo, "src", "renderer", "assets")); }
+                dirs.Add(AppContext.BaseDirectory); dirs.Add(Path.Combine(AppContext.BaseDirectory, "assets"));
+
+                var tilesCandidates = new[] { "famidash.bmp", "famidash.png", "tileset.bmp", "tileset.png" };
+                var spriteCandidates = new[] { "sprites.png", "sprites.bmp" };
+                var parallaxCandidates = new[] { "parallax.bmp", "parallax.png" };
+                var groundCandidates = new[] { "ground.bmp", "ground.png" };
+
+                foreach (var d in dirs)
                 {
-                    if (Directory.Exists(d))
+                    try
                     {
-                        foreach (var f in tilesCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadTileset(p); break; } }
-                        foreach (var f in spriteCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadSpriteset(p); break; } }
-                        foreach (var f in parallaxCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadParallax(p); break; } }
-                        foreach (var f in groundCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadGround(p); break; } }
+                        if (Directory.Exists(d))
+                        {
+                            foreach (var f in tilesCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadTileset(p); break; } }
+                            foreach (var f in spriteCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadSpriteset(p); break; } }
+                            foreach (var f in parallaxCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadParallax(p); break; } }
+                            foreach (var f in groundCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadGround(p); break; } }
+                        }
                     }
+                    catch { }
                 }
-                catch { }
+                
+                // Initialize saw animation frames
+                InitializeSawAnimationFrames();
             }
-            
-            // Initialize saw animation frames
-            InitializeSawAnimationFrames();
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in LoadAssetsOnStart: {ex.Message}");
+                // Don't let asset loading errors crash the app
+            }
         }
 
         private string? FindRepoRootFor(string filename)

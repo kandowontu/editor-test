@@ -8,8 +8,38 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
+  
+  <ItemGroup>
+    <!-- Saw animation frames -->
+    <Content Include="..\saw-frame1.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\saw-frame2.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\small-saw-frame1.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\small-saw-frame2.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    
+    <!-- Main asset files -->
+    <Content Include="..\famidash.bmp">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\sprites.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\src\renderer\assets\parallax.bmp">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>parallax.bmp</Link>
+    </Content>
+    <Content Include="..\src\renderer\assets\ground.bmp">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>ground.bmp</Link>
+    </Content>
+  </ItemGroup>
 </Project>
