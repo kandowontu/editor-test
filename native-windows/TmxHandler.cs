@@ -19,16 +19,36 @@ namespace FamidashEditor
             int height = (int?)map.Attribute("height") ?? 0;
             int totalTiles = width * height;
             
-            // Initialize tiles array with -1 (empty)
-            int[] tiles = Enumerable.Repeat(-1, totalTiles).ToArray();
+            // Read tileset sources
+            string? tilesetSource = null;
+            string? spritesetSource = null;
+            var tilesets = map.Elements("tileset").ToList();
+            foreach (var tileset in tilesets)
+            {
+                int firstgid = (int?)tileset.Attribute("firstgid") ?? 0;
+                var imageElem = tileset.Element("image");
+                if (imageElem != null)
+                {
+                    string? source = (string?)imageElem.Attribute("source");
+                    if (firstgid == 1) tilesetSource = source;
+                    else if (firstgid == 257) spritesetSource = source;
+                }
+            }
             
-            // Process ALL tile layers and merge them
+            // Initialize separate tiles and sprites arrays with -1 (empty)
+            int[] tiles = Enumerable.Repeat(-1, totalTiles).ToArray();
+            int[] sprites = Enumerable.Repeat(-1, totalTiles).ToArray();
+            
+            // Process tile layers separately
             // TMX uses GIDs: 0=empty, 1-256=famidash tileset, 257-512=sprites tileset
-            // Convert to editor format: -1=empty, 0-255=famidash, 256-511=sprites
+            // Convert to editor format: -1=empty, 0-255=famidash tiles, 0-255=sprites
             var layers = map.Elements("layer").ToList();
             
             foreach (var layer in layers)
             {
+                string? layerName = (string?)layer.Attribute("name");
+                bool isSpriteLayer = layerName?.Equals("SP", StringComparison.OrdinalIgnoreCase) == true;
+                
                 var dataElement = layer.Element("data");
                 if (dataElement != null)
                 {
@@ -37,19 +57,26 @@ namespace FamidashEditor
                     {
                         string csvData = dataElement.Value.Trim();
                         var layerTiles = csvData.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-                                               .Select(s => {
-                                                   int gid = int.Parse(s.Trim());
-                                                   // Convert TMX GID to editor index
-                                                   return gid == 0 ? -1 : gid - 1;
-                                               })
+                                               .Select(s => int.Parse(s.Trim()))
                                                .ToArray();
                         
-                        // Merge layer: non-empty tiles overwrite
                         for (int i = 0; i < Math.Min(layerTiles.Length, totalTiles); i++)
                         {
-                            if (layerTiles[i] >= 0)
+                            int gid = layerTiles[i];
+                            if (gid > 0)
                             {
-                                tiles[i] = layerTiles[i];
+                                if (isSpriteLayer)
+                                {
+                                    // Sprite layer: GID 257-512 → editor index 0-255
+                                    if (gid >= 257)
+                                        sprites[i] = gid - 257;
+                                }
+                                else
+                                {
+                                    // Tile layer: GID 1-256 → editor index 0-255
+                                    if (gid >= 1 && gid <= 256)
+                                        tiles[i] = gid - 1;
+                                }
                             }
                         }
                     }
@@ -104,19 +131,54 @@ namespace FamidashEditor
                 }
             }
 
+            // Extract editor settings
+            var editorSettings = map.Element("editorsettings");
+            bool hasEditorSettings = editorSettings != null;
+            int chunkWidth = 16;
+            int chunkHeight = height; // Default to map height
+            string? exportTarget = null;
+            string exportFormat = "csv";
+            
+            if (editorSettings != null)
+            {
+                var chunkSize = editorSettings.Element("chunksize");
+                if (chunkSize != null)
+                {
+                    chunkWidth = (int?)chunkSize.Attribute("width") ?? 16;
+                    chunkHeight = (int?)chunkSize.Attribute("height") ?? height;
+                }
+                
+                var export = editorSettings.Element("export");
+                if (export != null)
+                {
+                    exportTarget = (string?)export.Attribute("target");
+                    exportFormat = (string?)export.Attribute("format") ?? "csv";
+                }
+            }
+
             return new TmxLevel
             {
                 Width = width,
                 Height = height,
                 Tiles = tiles,
+                Sprites = sprites,
+                TilesetSource = tilesetSource,
+                SpritesetSource = spritesetSource,
+                HasEditorSettings = hasEditorSettings,
+                ChunkWidth = chunkWidth,
+                ChunkHeight = chunkHeight,
+                ExportTarget = exportTarget,
+                ExportFormat = exportFormat,
                 ParallaxSource = parallaxSource,
                 ParallaxX = parallaxX,
                 ParallaxY = parallaxY,
                 ParallaxRepeatX = parallaxRepeatX,
                 ParallaxRepeatY = parallaxRepeatY,
+                HasParallaxLayer = parallaxLayer != null,
                 GroundSource = groundSource,
                 GroundOffsetY = groundOffsetY,
-                GroundRepeatX = groundRepeatX
+                GroundRepeatX = groundRepeatX,
+                HasGroundLayer = groundLayer != null
             };
         }
 
@@ -137,6 +199,23 @@ namespace FamidashEditor
                 new XAttribute("nextobjectid", 1)
             );
 
+            // Add editor settings first (right after map element)
+            var editorSettings = new XElement("editorsettings");
+            
+            // Chunksize element
+            editorSettings.Add(new XElement("chunksize",
+                new XAttribute("width", level.ChunkWidth),
+                new XAttribute("height", level.ChunkHeight)
+            ));
+            
+            // Export element
+            editorSettings.Add(new XElement("export",
+                new XAttribute("target", level.ExportTarget ?? "export.csv"),
+                new XAttribute("format", level.ExportFormat)
+            ));
+            
+            map.Add(editorSettings);
+
             // Add tilesets
             map.Add(new XElement("tileset",
                 new XAttribute("firstgid", 1),
@@ -146,7 +225,7 @@ namespace FamidashEditor
                 new XAttribute("tilecount", 256),
                 new XAttribute("columns", 16),
                 new XElement("image",
-                    new XAttribute("source", "../../../GRAPHICS/famidash Red.bmp"),
+                    new XAttribute("source", level.TilesetSource ?? "famidash.bmp"),
                     new XAttribute("width", 256),
                     new XAttribute("height", 256)
                 )
@@ -160,14 +239,14 @@ namespace FamidashEditor
                 new XAttribute("tilecount", 256),
                 new XAttribute("columns", 16),
                 new XElement("image",
-                    new XAttribute("source", "../../../GRAPHICS/sprites.png"),
+                    new XAttribute("source", level.SpritesetSource ?? "sprites.png"),
                     new XAttribute("width", 256),
                     new XAttribute("height", 256)
                 )
             ));
 
-            // Add parallax image layer if source is specified
-            if (!string.IsNullOrEmpty(level.ParallaxSource))
+            // Only add parallax image layer if it existed in the loaded file
+            if (level.HasParallaxLayer && !string.IsNullOrEmpty(level.ParallaxSource))
             {
                 var parallaxLayer = new XElement("imagelayer",
                     new XAttribute("id", 3),
@@ -190,8 +269,8 @@ namespace FamidashEditor
                 map.Add(parallaxLayer);
             }
 
-            // Add ground image layer if source is specified
-            if (!string.IsNullOrEmpty(level.GroundSource))
+            // Only add ground image layer if it existed in the loaded file
+            if (level.HasGroundLayer && !string.IsNullOrEmpty(level.GroundSource))
             {
                 var groundLayer = new XElement("imagelayer",
                     new XAttribute("id", 4),
@@ -215,12 +294,11 @@ namespace FamidashEditor
             // Add main tile layer (tiles 0-255)
             var tileLayer = new XElement("layer",
                 new XAttribute("id", 1),
-                new XAttribute("name", "Tiles"),
                 new XAttribute("width", level.Width),
                 new XAttribute("height", level.Height)
             );
 
-            // Convert tiles to CSV format - Layer 1: regular tiles (0-255)
+            // Convert tiles to CSV format
             if (level.Tiles != null && level.Tiles.Length > 0)
             {
                 var csvLines = new System.Text.StringBuilder();
@@ -258,7 +336,7 @@ namespace FamidashEditor
 
             map.Add(tileLayer);
 
-            // Add sprite layer (tiles 256-511)
+            // Add sprite layer
             var spriteLayer = new XElement("layer",
                 new XAttribute("id", 2),
                 new XAttribute("name", "SP"),
@@ -266,7 +344,7 @@ namespace FamidashEditor
                 new XAttribute("height", level.Height)
             );
 
-            if (level.Tiles != null && level.Tiles.Length > 0)
+            if (level.Sprites != null && level.Sprites.Length > 0)
             {
                 var csvLines = new System.Text.StringBuilder();
                 for (int y = 0; y < level.Height; y++)
@@ -276,14 +354,14 @@ namespace FamidashEditor
                         int idx = y * level.Width + x;
                         int tileValue = 0; // Default to GID 0 (empty)
                         
-                        if (idx < level.Tiles.Length)
+                        if (idx < level.Sprites.Length)
                         {
-                            int editorIdx = level.Tiles[idx];
+                            int editorIdx = level.Sprites[idx];
                             // Convert editor index to TMX GID
-                            // Editor: 256-511=sprites → TMX: 257-512=sprites
-                            if (editorIdx >= 256 && editorIdx < 512)
+                            // Editor: -1=empty, 0-255=sprites → TMX: 0=empty, 257-512=sprites
+                            if (editorIdx >= 0 && editorIdx < 256)
                             {
-                                tileValue = editorIdx + 1;
+                                tileValue = editorIdx + 257;
                             }
                         }
                         
@@ -304,12 +382,32 @@ namespace FamidashEditor
             map.Add(spriteLayer);
 
             // Save the document
-            var doc = new XDocument(
-                new XDeclaration("1.0", "UTF-8", null),
-                map
-            );
+            var doc = new XDocument(map);
             
-            doc.Save(filePath);
+            // Save settings for precise XML formatting
+            var settings = new System.Xml.XmlWriterSettings
+            {
+                Encoding = new System.Text.UTF8Encoding(false), // No BOM
+                Indent = true,
+                IndentChars = " ", // Single space per indent
+                NewLineChars = "\n", // Unix line endings
+                NewLineHandling = System.Xml.NewLineHandling.Replace,
+                OmitXmlDeclaration = true // We'll write it manually
+            };
+            
+            using (var stream = new System.IO.FileStream(filePath, System.IO.FileMode.Create, System.IO.FileAccess.Write))
+            using (var streamWriter = new System.IO.StreamWriter(stream, new System.Text.UTF8Encoding(false))) // No BOM
+            {
+                // Manually write the XML declaration with uppercase UTF-8
+                streamWriter.Write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+                streamWriter.Flush();
+                
+                // Write the rest of the document
+                using (var xmlWriter = System.Xml.XmlWriter.Create(streamWriter, settings))
+                {
+                    doc.Save(xmlWriter);
+                }
+            }
         }
     }
 
@@ -318,6 +416,18 @@ namespace FamidashEditor
         public int Width { get; set; }
         public int Height { get; set; }
         public int[]? Tiles { get; set; }
+        public int[]? Sprites { get; set; }  // Separate sprites array
+        
+        // Tileset sources (preserve from loaded file)
+        public string? TilesetSource { get; set; } = "famidash.bmp";
+        public string? SpritesetSource { get; set; } = "sprites.png";
+        
+        // Editor settings (preserve from loaded file)
+        public bool HasEditorSettings { get; set; } = false;
+        public int ChunkWidth { get; set; } = 16;
+        public int ChunkHeight { get; set; } = 27;
+        public string? ExportTarget { get; set; }
+        public string ExportFormat { get; set; } = "csv";
         
         // Parallax layer properties
         public string? ParallaxSource { get; set; }
@@ -325,10 +435,12 @@ namespace FamidashEditor
         public double ParallaxY { get; set; } = 0.9;
         public bool ParallaxRepeatX { get; set; } = true;
         public bool ParallaxRepeatY { get; set; } = true;
+        public bool HasParallaxLayer { get; set; } = false; // Track if parallax existed in loaded file
         
         // Ground layer properties
         public string? GroundSource { get; set; }
         public double GroundOffsetY { get; set; } = 432;
         public bool GroundRepeatX { get; set; } = true;
+        public bool HasGroundLayer { get; set; } = false; // Track if ground existed in loaded file
     }
 }

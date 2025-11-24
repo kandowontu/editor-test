@@ -52,6 +52,27 @@ namespace FamidashEditor
     // Layer selection state - can select both layers simultaneously for tools
     private bool tilesLayerActive = true;
     private bool spritesLayerActive = false;
+    // Track changes and current file
+    private string? currentFilePath = null;
+    private bool hasUnsavedChanges = false;
+    // Store loaded TMX metadata to preserve when saving
+    private string? loadedTilesetSource = null;
+    private string? loadedSpritesetSource = null;
+    private bool loadedHasEditorSettings = false;
+    private int loadedChunkWidth = 16;
+    private int loadedChunkHeight = 27;
+    private string? loadedExportTarget = null;
+    private string loadedExportFormat = "csv";
+    private string? loadedParallaxSource = null;
+    private double loadedParallaxX = 0.9;
+    private double loadedParallaxY = 0.9;
+    private bool loadedParallaxRepeatX = true;
+    private bool loadedParallaxRepeatY = true;
+    private bool loadedHasParallaxLayer = false;
+    private string? loadedGroundSource = null;
+    private double loadedGroundOffsetY = 432;
+    private bool loadedGroundRepeatX = true;
+    private bool loadedHasGroundLayer = false;
     private int paletteTileSize = 16;
     private int paletteSpriteSize = 16;
     // Painting state for drag-to-draw
@@ -1683,9 +1704,8 @@ namespace FamidashEditor
             if (backgroundRtb == null || cachedPixelWidth != pixelPaddedWidth || cachedPixelHeight != pixelPaddedHeight || Math.Abs(cachedScale - scale) > 1e-6 || backgroundDirty)
             {
                 BuildBackgroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
-                // Build parallax and ground synchronously but optimized
-                try { BuildParallaxBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi); } catch { }
-                try { BuildGroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi); } catch { }
+                BuildParallaxBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
+                BuildGroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
                 backgroundDirty = false;
             }
             // Recreate grid if needed
@@ -1831,8 +1851,9 @@ namespace FamidashEditor
             groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
             groundRtb.Render(dv);
         }
-        
-        // Async wrapper for BuildParallaxBitmap
+
+        // Async versions of parallax and ground rendering to avoid blocking UI during zoom
+        // Async wrapper removed - was causing rendering issues
         // Update the TranslateTransform applied to the ParallaxImage so it moves at the desired
         // parallax ratio relative to the current scroll offsets. This is intentionally cheap
         // and does not re-render any bitmaps.
@@ -2624,6 +2645,7 @@ namespace FamidashEditor
             {
                 undoStack.Push(action);
                 redoStack.Clear();
+                hasUnsavedChanges = true;
             }
             // update tiles bitmap after flood
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
@@ -2649,6 +2671,7 @@ namespace FamidashEditor
             {
                 undoStack.Push(action);
                 redoStack.Clear();
+                hasUnsavedChanges = true;
             }
             // update sprites bitmap after flood
             try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
@@ -3256,6 +3279,7 @@ namespace FamidashEditor
                 {
                     undoStack.Push(changedTiles);
                     redoStack.Clear();
+                    hasUnsavedChanges = true;
                 }
 
                 // Commit final tile state
@@ -3306,6 +3330,7 @@ namespace FamidashEditor
                 {
                     undoStack.Push(changedSprites);
                     redoStack.Clear();
+                    hasUnsavedChanges = true;
                 }
 
                 // Commit final sprite state
@@ -3375,11 +3400,13 @@ namespace FamidashEditor
                 {
                     undoStack.Push(currentCompositeAction);
                     redoStack.Clear();
+                    hasUnsavedChanges = true;
                 }
                 if (!suppressUndoRecording && currentCompositeSpriteAction != null && !currentCompositeSpriteAction.IsEmpty())
                 {
                     undoStack.Push(currentCompositeSpriteAction);
                     redoStack.Clear();
+                    hasUnsavedChanges = true;
                 }
             }
             finally 
@@ -3687,6 +3714,13 @@ namespace FamidashEditor
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
             var dlg = new SaveFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*", DefaultExt = "tmx" };
+            
+            // Use current file path if we have one
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                dlg.FileName = currentFilePath;
+            }
+            
             if (dlg.ShowDialog(this) == true)
             {
                 try
@@ -3695,20 +3729,41 @@ namespace FamidashEditor
                     
                     if (ext == ".tmx")
                     {
-                        // Save as TMX format
+                        // Determine export target - use loaded value or generate default from filename
+                        string? exportTarget = loadedExportTarget;
+                        if (string.IsNullOrEmpty(exportTarget))
+                        {
+                            // Default: use same filename as TMX but with .csv extension
+                            exportTarget = Path.ChangeExtension(Path.GetFileName(dlg.FileName), ".csv");
+                        }
+                        
+                        // Determine chunk height - use loaded value or default to map height
+                        int chunkHeight = loadedHasEditorSettings ? loadedChunkHeight : mapHeight;
+                        
+                        // Save as TMX format with separate tiles and sprites
                         var tmxLevel = new TmxLevel
                         {
                             Width = mapWidth,
                             Height = mapHeight,
                             Tiles = tiles,
-                            ParallaxSource = "../../../GRAPHICS/Old/parallax Red.bmp",
-                            ParallaxX = 0.9,
-                            ParallaxY = 0.9,
-                            ParallaxRepeatX = true,
-                            ParallaxRepeatY = true,
-                            GroundSource = "../../../GRAPHICS/ground Red.bmp",
-                            GroundOffsetY = 432,
-                            GroundRepeatX = true
+                            Sprites = sprites,
+                            TilesetSource = loadedTilesetSource ?? "../../../GRAPHICS/famidash.bmp",
+                            SpritesetSource = loadedSpritesetSource ?? "../../../GRAPHICS/sprites.png",
+                            HasEditorSettings = true, // Always include editor settings
+                            ChunkWidth = loadedChunkWidth,
+                            ChunkHeight = chunkHeight,
+                            ExportTarget = exportTarget,
+                            ExportFormat = loadedExportFormat,
+                            ParallaxSource = loadedParallaxSource,
+                            ParallaxX = loadedParallaxX,
+                            ParallaxY = loadedParallaxY,
+                            ParallaxRepeatX = loadedParallaxRepeatX,
+                            ParallaxRepeatY = loadedParallaxRepeatY,
+                            HasParallaxLayer = loadedHasParallaxLayer,
+                            GroundSource = loadedGroundSource,
+                            GroundOffsetY = loadedGroundOffsetY,
+                            GroundRepeatX = loadedGroundRepeatX,
+                            HasGroundLayer = loadedHasGroundLayer
                         };
                         TmxHandler.SaveTmx(dlg.FileName, tmxLevel);
                     }
@@ -3719,6 +3774,8 @@ namespace FamidashEditor
                         File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(model));
                     }
                     
+                    currentFilePath = dlg.FileName;
+                    hasUnsavedChanges = false;
                     if (StatusText != null) StatusText.Text = "Saved " + dlg.FileName;
                 }
                 catch (Exception ex)
@@ -3730,6 +3787,28 @@ namespace FamidashEditor
 
         private void LoadButton_Click(object sender, RoutedEventArgs e)
         {
+            // Prompt to save if there are unsaved changes
+            if (hasUnsavedChanges)
+            {
+                var result = MessageBox.Show(
+                    "You have unsaved changes. Do you want to save before loading?",
+                    "Unsaved Changes",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+                
+                if (result == MessageBoxResult.Yes)
+                {
+                    SaveButton_Click(sender, e);
+                    // If user cancelled the save dialog, abort the load
+                    if (hasUnsavedChanges) return;
+                }
+                else if (result == MessageBoxResult.Cancel)
+                {
+                    return; // User cancelled the load operation
+                }
+                // If No, continue with load without saving
+            }
+            
             var dlg = new OpenFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*" };
             if (dlg.ShowDialog(this) == true)
             {
@@ -3739,6 +3818,7 @@ namespace FamidashEditor
                     int loadedWidth = 0;
                     int loadedHeight = 0;
                     int[]? loadedTiles = null;
+                    int[]? loadedSprites = null;
                     
                     if (ext == ".tmx")
                     {
@@ -3747,6 +3827,26 @@ namespace FamidashEditor
                         loadedWidth = tmxLevel.Width;
                         loadedHeight = tmxLevel.Height;
                         loadedTiles = tmxLevel.Tiles;
+                        loadedSprites = tmxLevel.Sprites;
+                        
+                        // Store TMX metadata to preserve when saving
+                        loadedTilesetSource = tmxLevel.TilesetSource;
+                        loadedSpritesetSource = tmxLevel.SpritesetSource;
+                        loadedHasEditorSettings = tmxLevel.HasEditorSettings;
+                        loadedChunkWidth = tmxLevel.ChunkWidth;
+                        loadedChunkHeight = tmxLevel.ChunkHeight;
+                        loadedExportTarget = tmxLevel.ExportTarget;
+                        loadedExportFormat = tmxLevel.ExportFormat;
+                        loadedParallaxSource = tmxLevel.ParallaxSource;
+                        loadedParallaxX = tmxLevel.ParallaxX;
+                        loadedParallaxY = tmxLevel.ParallaxY;
+                        loadedParallaxRepeatX = tmxLevel.ParallaxRepeatX;
+                        loadedParallaxRepeatY = tmxLevel.ParallaxRepeatY;
+                        loadedHasParallaxLayer = tmxLevel.HasParallaxLayer;
+                        loadedGroundSource = tmxLevel.GroundSource;
+                        loadedGroundOffsetY = tmxLevel.GroundOffsetY;
+                        loadedGroundRepeatX = tmxLevel.GroundRepeatX;
+                        loadedHasGroundLayer = tmxLevel.HasGroundLayer;
                         
                         // Note: Parallax and ground image sources are loaded but not automatically applied
                         // You may want to add logic here to load the actual images if needed
@@ -3771,22 +3871,39 @@ namespace FamidashEditor
                         mapWidth = loadedWidth;
                         mapHeight = loadedHeight;
                         tiles = loadedTiles;
+                        sprites = loadedSprites ?? Enumerable.Repeat(-1, loadedWidth * loadedHeight).ToArray();
                         
                         if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
                         if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+                        
+                        // Clear selection
+                        ClearSelection();
                         
                         // Clear undo/redo stacks when loading a new file
                         undoStack.Clear();
                         redoStack.Clear();
                         
+                        // Reset view position to show ground (scroll to left and appropriate vertical position)
+                        if (MapScrollViewer != null)
+                        {
+                            MapScrollViewer.ScrollToLeftEnd();
+                            // Scroll to show ground (approximate position where ground should be visible)
+                            MapScrollViewer.ScrollToVerticalOffset(0);
+                        }
+                        
                         suppressUndoRecording = false;
+                        
+                        // Update current file and clear dirty flag
+                        currentFilePath = dlg.FileName;
+                        hasUnsavedChanges = false;
                         
                         // Force a full redraw with the new dimensions
                         Redraw();
                         
-                        // Render all loaded tiles to the bitmap
+                        // Render all loaded tiles and sprites to the bitmaps
                         double currentScale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
                         RebuildAllTilesBitmap(currentScale, mapViewportPadding);
+                        RebuildAllSpritesBitmap(currentScale, mapViewportPadding);
                         
                         if (StatusText != null) StatusText.Text = $"Loaded {Path.GetFileName(dlg.FileName)} ({mapWidth}x{mapHeight})";
                     }
