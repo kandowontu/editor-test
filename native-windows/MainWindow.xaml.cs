@@ -136,6 +136,15 @@ namespace FamidashEditor
     // Throttle timers for expensive events
     private System.Windows.Threading.DispatcherTimer? sizeChangedThrottleTimer;
     private System.Windows.Threading.DispatcherTimer? zoomThrottleTimer;
+    // Preview mode for animations (saws, etc.)
+    private bool previewMode = false;
+    private int animationFrame = 0; // Increments each frame, used to determine animation states
+    private System.Windows.Threading.DispatcherTimer? previewTimer;
+    // Animated saw frames: stored as separate tile images (4 tiles per frame, 2 frames)
+    private BitmapSource[]? sawFrame1Tiles; // 4 tiles: top-left, top-right, bottom-left, bottom-right
+    private BitmapSource[]? sawFrame2Tiles; // 4 tiles: top-left, top-right, bottom-left, bottom-right
+    private ImageSource[]? sawFrame1TilesTinted; // Tinted versions
+    private ImageSource[]? sawFrame2TilesTinted; // Tinted versions
 
         private interface IUndoAction
         {
@@ -436,6 +445,25 @@ namespace FamidashEditor
             
             if (UndoButton != null) UndoButton.Click += (s, e) => Undo();
             if (RedoButton != null) RedoButton.Click += (s, e) => Redo();
+            
+            // Preview mode checkbox and timer
+            if (PreviewModeCheckbox != null)
+            {
+                PreviewModeCheckbox.Checked += (s, e) =>
+                {
+                    previewMode = true;
+                    StartPreviewTimer();
+                };
+                PreviewModeCheckbox.Unchecked += (s, e) =>
+                {
+                    previewMode = false;
+                    StopPreviewTimer();
+                    animationFrame = 0;
+                    // Redraw to show non-animated tiles
+                    RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
+                };
+            }
+            
             // tool exclusivity: only one toggled at a time
             if (PlaceTool != null) PlaceTool.Checked += Tool_Checked;
                 if (MoveTool != null) MoveTool.Checked += Tool_Checked;
@@ -695,6 +723,204 @@ namespace FamidashEditor
                 Redraw();
             }
             dlg.ColorChanged -= handler;
+        }
+
+        private void StartPreviewTimer()
+        {
+            if (previewTimer == null)
+            {
+                // 60 FPS timer (approximately 16.67ms per frame)
+                previewTimer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(1000.0 / 60.0)
+                };
+                previewTimer.Tick += PreviewTimer_Tick;
+            }
+            animationFrame = 0;
+            previewTimer.Start();
+        }
+
+        private void StopPreviewTimer()
+        {
+            previewTimer?.Stop();
+        }
+
+        private void PreviewTimer_Tick(object? sender, EventArgs e)
+        {
+            animationFrame++;
+            
+            // Debug: Log frame switching every 60 frames (once per second)
+            if (animationFrame % 60 == 0)
+            {
+                bool frame2 = ((animationFrame / 1) % 2) == 1;
+                System.Diagnostics.Debug.WriteLine($"Animation frame {animationFrame}, showing frame {(frame2 ? 2 : 1)}, sawFrame1Tiles={sawFrame1Tiles?.Length}, sawFrame2Tiles={sawFrame2Tiles?.Length}");
+            }
+            
+            // Only rebuild tiles if we have animated saws on screen
+            // This is much more efficient than rebuilding everything every frame
+            if (tilesWb != null && sawFrame1Tiles != null && sawFrame2Tiles != null)
+            {
+                // Find and update only the saw tiles (0x08-0x0B)
+                bool hasSaws = false;
+                for (int i = 0; i < tiles.Length; i++)
+                {
+                    int tileIdx = tiles[i];
+                    if (tileIdx >= 0x08 && tileIdx <= 0x0B)
+                    {
+                        hasSaws = true;
+                        break;
+                    }
+                }
+                
+                if (hasSaws)
+                {
+                    // Only update saw tiles, not entire bitmap
+                    double scale = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                    int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                    
+                    tilesWb.Lock();
+                    try
+                    {
+                        for (int y = 0; y < mapHeight; y++)
+                        {
+                            for (int x = 0; x < mapWidth; x++)
+                            {
+                                int tileIdx = tiles[y * mapWidth + x];
+                                if (tileIdx >= 0x08 && tileIdx <= 0x0B)
+                                {
+                                    UpdateTileBitmapAtLocked(x, y, scale, mapViewportPadding, tilePixelW, tilePixelH, dpi);
+                                }
+                            }
+                        }
+                        tilesWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+                    }
+                    finally
+                    {
+                        tilesWb.Unlock();
+                    }
+                }
+            }
+        }
+
+        // Map a tile index to its animated version based on current animation frame
+        // Saw tiles (0x08-0x0B) animate using custom frames stored in sawFrame1Tiles/sawFrame2Tiles
+        // Returns special indices (>= 1000) to indicate custom animation tiles
+        private int GetAnimatedTileIndex(int originalIndex)
+        {
+            if (!previewMode) return originalIndex;
+            
+            // Check if this is one of the saw tiles (0x08-0x0B)
+            if (originalIndex >= 0x08 && originalIndex <= 0x0B)
+            {
+                // 3/4 speed: switch every 4/3 frames (every 80ms at 60 FPS)
+                bool showFrame2 = (((animationFrame * 3) / 4) % 2) == 1;
+                
+                // Map to custom saw frame tile
+                // Use special indices: 1000-1003 for frame 1, 1004-1007 for frame 2
+                int tileOffset = originalIndex - 0x08; // 0-3
+                if (showFrame2)
+                    return 1004 + tileOffset; // Frame 2 tiles
+                else
+                    return 1000 + tileOffset; // Frame 1 tiles
+            }
+            
+            return originalIndex; // Not a saw tile
+        }
+        
+        // Get the custom saw animation tile if index is >= 1000
+        private BitmapSource? GetCustomAnimationTile(int customIndex)
+        {
+            if (customIndex >= 1000 && customIndex <= 1003)
+            {
+                // Frame 1 tiles (1000-1003)
+                int offset = customIndex - 1000;
+                // Use tinted version if available, otherwise use original
+                if (sawFrame1TilesTinted != null && offset < sawFrame1TilesTinted.Length)
+                    return sawFrame1TilesTinted[offset] as BitmapSource;
+                return sawFrame1Tiles?[offset];
+            }
+            else if (customIndex >= 1004 && customIndex <= 1007)
+            {
+                // Frame 2 tiles (1004-1007)
+                int offset = customIndex - 1004;
+                // Use tinted version if available, otherwise use original
+                if (sawFrame2TilesTinted != null && offset < sawFrame2TilesTinted.Length)
+                    return sawFrame2TilesTinted[offset] as BitmapSource;
+                return sawFrame2Tiles?[offset];
+            }
+            return null;
+        }
+
+        // Create saw animation frames from the provided pixel data
+        // Each frame is 32x32 pixels (2x2 tiles)
+        private void InitializeSawAnimationFrames()
+        {
+            try
+            {
+                // Frame 1 and Frame 2 pixel data (will be populated from your images)
+                // For now, create placeholder frames - you'll need to provide the actual pixel data
+                sawFrame1Tiles = new BitmapSource[4];
+                sawFrame2Tiles = new BitmapSource[4];
+                
+                // Try to load from files first
+                var baseDir = AppContext.BaseDirectory;
+                var frame1Path = System.IO.Path.Combine(baseDir, "saw-frame1.png");
+                var frame2Path = System.IO.Path.Combine(baseDir, "saw-frame2.png");
+                
+                // Also check in repository structure
+                var repo = FindRepoRootFor("famidash.bmp");
+                if (!string.IsNullOrEmpty(repo))
+                {
+                    var repoFrame1 = System.IO.Path.Combine(repo, "saw-frame1.png");
+                    var repoFrame2 = System.IO.Path.Combine(repo, "saw-frame2.png");
+                    if (System.IO.File.Exists(repoFrame1)) frame1Path = repoFrame1;
+                    if (System.IO.File.Exists(repoFrame2)) frame2Path = repoFrame2;
+                }
+                
+                if (System.IO.File.Exists(frame1Path) && System.IO.File.Exists(frame2Path))
+                {
+                    var frame1Full = new BitmapImage();
+                    frame1Full.BeginInit();
+                    frame1Full.CacheOption = BitmapCacheOption.OnLoad;
+                    frame1Full.UriSource = new Uri(frame1Path);
+                    frame1Full.EndInit();
+                    frame1Full.Freeze();
+                    
+                    var frame2Full = new BitmapImage();
+                    frame2Full.BeginInit();
+                    frame2Full.CacheOption = BitmapCacheOption.OnLoad;
+                    frame2Full.UriSource = new Uri(frame2Path);
+                    frame2Full.EndInit();
+                    frame2Full.Freeze();
+                    
+                    // Split each 32x32 frame into 4 16x16 tiles
+                    sawFrame1Tiles[0] = new CroppedBitmap(frame1Full, new Int32Rect(0, 0, 16, 16));   // Top-left
+                    sawFrame1Tiles[1] = new CroppedBitmap(frame1Full, new Int32Rect(16, 0, 16, 16));  // Top-right
+                    sawFrame1Tiles[2] = new CroppedBitmap(frame1Full, new Int32Rect(0, 16, 16, 16));  // Bottom-left
+                    sawFrame1Tiles[3] = new CroppedBitmap(frame1Full, new Int32Rect(16, 16, 16, 16)); // Bottom-right
+                    
+                    sawFrame2Tiles[0] = new CroppedBitmap(frame2Full, new Int32Rect(0, 0, 16, 16));
+                    sawFrame2Tiles[1] = new CroppedBitmap(frame2Full, new Int32Rect(16, 0, 16, 16));
+                    sawFrame2Tiles[2] = new CroppedBitmap(frame2Full, new Int32Rect(0, 16, 16, 16));
+                    sawFrame2Tiles[3] = new CroppedBitmap(frame2Full, new Int32Rect(16, 16, 16, 16));
+                    
+                    System.Diagnostics.Debug.WriteLine($"✓ Loaded saw animation frames from files: {frame1Path}");
+                    System.Diagnostics.Debug.WriteLine($"  Frame 1: {frame1Full.PixelWidth}x{frame1Full.PixelHeight}");
+                    System.Diagnostics.Debug.WriteLine($"  Frame 2: {frame2Full.PixelWidth}x{frame2Full.PixelHeight}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"✗ Saw frame files not found:");
+                    System.Diagnostics.Debug.WriteLine($"  Looked for: {frame1Path}");
+                    System.Diagnostics.Debug.WriteLine($"  Looked for: {frame2Path}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load saw animation frames: {ex.Message}");
+            }
         }
 
         private void LoadSettings()
@@ -1006,6 +1232,9 @@ namespace FamidashEditor
                 }
                 catch { }
             }
+            
+            // Initialize saw animation frames
+            InitializeSawAnimationFrames();
         }
 
         private string? FindRepoRootFor(string filename)
@@ -1390,6 +1619,11 @@ namespace FamidashEditor
         {
             // Use hue/saturation shifting for tiles so we can change hue/sat of tile graphics.
             tileTonedImages = CreateHueShiftedImages(tileImages, tileTint);
+            
+            // Also tint the animated saw frames
+            sawFrame1TilesTinted = CreateHueShiftedImages(sawFrame1Tiles, tileTint);
+            sawFrame2TilesTinted = CreateHueShiftedImages(sawFrame2Tiles, tileTint);
+            
             // Clear pre-scaled caches so scaled pixels are rebuilt from the toned images
             try { scaledTileCaches.Clear(); } catch { }
             // Rebuild tiles bitmap so tint appears immediately
@@ -2103,6 +2337,30 @@ namespace FamidashEditor
         private byte[]? GetOrRenderCachedTile(int tileIdx, int scaleKey, int tilePixelW, int tilePixelH, DpiScale dpi)
         {
             if (tileImages == null) return null;
+            
+            // Check if this is a custom animation tile (>= 1000)
+            if (tileIdx >= 1000)
+            {
+                var customTile = GetCustomAnimationTile(tileIdx);
+                if (customTile != null)
+                {
+                    // Render the custom tile directly (don't cache since it's animated)
+                    int customStride = tilePixelW * 4;
+                    var customBuf = new byte[tilePixelH * customStride];
+                    try
+                    {
+                        var dv = new DrawingVisual();
+                        using (var dc = dv.RenderOpen()) dc.DrawImage(customTile, new Rect(0, 0, tilePixelW, tilePixelH));
+                        var rtb = new RenderTargetBitmap(tilePixelW, tilePixelH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                        rtb.Render(dv);
+                        rtb.CopyPixels(customBuf, customStride, 0);
+                    }
+                    catch { }
+                    return customBuf;
+                }
+                return null;
+            }
+            
             if (!scaledTileCaches.TryGetValue(scaleKey, out var cache)) return null;
             if (tileIdx < 0 || tileIdx >= cache.Pixels.Length) return null;
             
@@ -2177,6 +2435,10 @@ namespace FamidashEditor
             int tilePixelH = preTilePxH ?? Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
 
             int idx = tiles[y * mapWidth + x];
+            
+            // Apply animation mapping if in preview mode
+            int animatedIdx = GetAnimatedTileIndex(idx);
+            
             int destX = Math.Max(0, (int)Math.Floor((pad + x * TileSize * scale) * dpi.DpiScaleX));
             int destY = Math.Max(0, (int)Math.Floor((pad + y * TileSize * scale) * dpi.DpiScaleY));
 
@@ -2185,9 +2447,9 @@ namespace FamidashEditor
             byte[] pixels;
             int scaleKey = (int)Math.Round(scale * 100.0);
             
-            if (idx >= 0)
+            if (animatedIdx >= 0)
             {
-                var cached = GetOrRenderCachedTile(idx, scaleKey, tilePixelW, tilePixelH, dpi);
+                var cached = GetOrRenderCachedTile(animatedIdx, scaleKey, tilePixelW, tilePixelH, dpi);
                 if (cached != null && cached.Length > 0)
                 {
                     pixels = cached;
@@ -2219,15 +2481,18 @@ namespace FamidashEditor
             int idx = tiles[y * mapWidth + x];
             if (idx < 0) return; // Empty tile, already cleared
             
+            // Apply animation mapping if in preview mode
+            int animatedIdx = GetAnimatedTileIndex(idx);
+            
             int destX = Math.Max(0, (int)Math.Floor((pad + x * TileSize * scale) * dpi.DpiScaleX));
             int destY = Math.Max(0, (int)Math.Floor((pad + y * TileSize * scale) * dpi.DpiScaleY));
             
             // Bounds check
             if (destX >= cachedPixelWidth || destY >= cachedPixelHeight) return;
             
-            // Get cached pixels (lazy render if not cached)
+            // Get cached pixels (lazy render if not cached) - use animated index
             int scaleKey = (int)Math.Round(scale * 100.0);
-            byte[]? srcPixels = GetOrRenderCachedTile(idx, scaleKey, tilePixelW, tilePixelH, dpi);
+            byte[]? srcPixels = GetOrRenderCachedTile(animatedIdx, scaleKey, tilePixelW, tilePixelH, dpi);
             if (srcPixels == null || srcPixels.Length == 0) return;
             
             // Copy pixels directly to locked buffer
