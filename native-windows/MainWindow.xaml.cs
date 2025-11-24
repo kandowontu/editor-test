@@ -145,6 +145,11 @@ namespace FamidashEditor
     private BitmapSource[]? sawFrame2Tiles; // 4 tiles: top-left, top-right, bottom-left, bottom-right
     private ImageSource[]? sawFrame1TilesTinted; // Tinted versions
     private ImageSource[]? sawFrame2TilesTinted; // Tinted versions
+    // Small saw frames: 3 single tiles (0x04, 0x7D, 0x7F)
+    private BitmapSource[]? smallSawFrame1Tiles; // 3 tiles for frame 1
+    private BitmapSource[]? smallSawFrame2Tiles; // 3 tiles for frame 2
+    private ImageSource[]? smallSawFrame1TilesTinted; // Tinted versions
+    private ImageSource[]? smallSawFrame2TilesTinted; // Tinted versions
 
         private interface IUndoAction
         {
@@ -753,19 +758,21 @@ namespace FamidashEditor
             if (animationFrame % 60 == 0)
             {
                 bool frame2 = ((animationFrame / 1) % 2) == 1;
-                System.Diagnostics.Debug.WriteLine($"Animation frame {animationFrame}, showing frame {(frame2 ? 2 : 1)}, sawFrame1Tiles={sawFrame1Tiles?.Length}, sawFrame2Tiles={sawFrame2Tiles?.Length}");
+                System.Diagnostics.Debug.WriteLine($"Animation frame {animationFrame}, showing frame {(frame2 ? 2 : 1)}, sawFrame1Tiles={sawFrame1Tiles?.Length}, sawFrame2Tiles={sawFrame2Tiles?.Length}, smallSawFrame1={smallSawFrame1Tiles?.Length}, smallSawFrame2={smallSawFrame2Tiles?.Length}");
             }
             
             // Only rebuild tiles if we have animated saws on screen
             // This is much more efficient than rebuilding everything every frame
-            if (tilesWb != null && sawFrame1Tiles != null && sawFrame2Tiles != null)
+            if (tilesWb != null && 
+                ((sawFrame1Tiles != null && sawFrame2Tiles != null) || 
+                 (smallSawFrame1Tiles != null && smallSawFrame2Tiles != null)))
             {
-                // Find and update only the saw tiles (0x08-0x0B)
+                // Find and update only the saw tiles (0x08-0x0B, 0x04, 0x7D, 0x7F)
                 bool hasSaws = false;
                 for (int i = 0; i < tiles.Length; i++)
                 {
                     int tileIdx = tiles[i];
-                    if (tileIdx >= 0x08 && tileIdx <= 0x0B)
+                    if ((tileIdx >= 0x08 && tileIdx <= 0x0B) || tileIdx == 0x04 || tileIdx == 0x7D || tileIdx == 0x7F)
                     {
                         hasSaws = true;
                         break;
@@ -788,7 +795,7 @@ namespace FamidashEditor
                             for (int x = 0; x < mapWidth; x++)
                             {
                                 int tileIdx = tiles[y * mapWidth + x];
-                                if (tileIdx >= 0x08 && tileIdx <= 0x0B)
+                                if ((tileIdx >= 0x08 && tileIdx <= 0x0B) || tileIdx == 0x04 || tileIdx == 0x7D || tileIdx == 0x7F)
                                 {
                                     UpdateTileBitmapAtLocked(x, y, scale, mapViewportPadding, tilePixelW, tilePixelH, dpi);
                                 }
@@ -826,6 +833,21 @@ namespace FamidashEditor
                     return 1000 + tileOffset; // Frame 1 tiles
             }
             
+            // Check if this is one of the small saw tiles (0x04, 0x7D, 0x7F)
+            if (originalIndex == 0x04 || originalIndex == 0x7D || originalIndex == 0x7F)
+            {
+                // Same speed as large saws
+                bool showFrame2 = (((animationFrame * 3) / 4) % 2) == 1;
+                
+                // Map to custom small saw frame tile
+                // Use special indices: 1010-1012 for frame 1, 1013-1015 for frame 2
+                int tileOffset = (originalIndex == 0x04) ? 0 : (originalIndex == 0x7D) ? 1 : 2;
+                if (showFrame2)
+                    return 1013 + tileOffset; // Small saw frame 2 tiles
+                else
+                    return 1010 + tileOffset; // Small saw frame 1 tiles
+            }
+            
             return originalIndex; // Not a saw tile
         }
         
@@ -850,7 +872,42 @@ namespace FamidashEditor
                     return sawFrame2TilesTinted[offset] as BitmapSource;
                 return sawFrame2Tiles?[offset];
             }
+            else if (customIndex >= 1010 && customIndex <= 1012)
+            {
+                // Small saw frame 1 tiles (1010-1012)
+                int offset = customIndex - 1010;
+                // Use tinted version if available, otherwise use original
+                if (smallSawFrame1TilesTinted != null && offset < smallSawFrame1TilesTinted.Length)
+                    return smallSawFrame1TilesTinted[offset] as BitmapSource;
+                return smallSawFrame1Tiles?[offset];
+            }
+            else if (customIndex >= 1013 && customIndex <= 1015)
+            {
+                // Small saw frame 2 tiles (1013-1015)
+                int offset = customIndex - 1013;
+                // Use tinted version if available, otherwise use original
+                if (smallSawFrame2TilesTinted != null && offset < smallSawFrame2TilesTinted.Length)
+                    return smallSawFrame2TilesTinted[offset] as BitmapSource;
+                return smallSawFrame2Tiles?[offset];
+            }
             return null;
+        }
+        
+        // Check if a custom animation tile index represents a half-height tile (8 pixels tall)
+        private bool IsHalfHeightTile(int customIndex)
+        {
+            // Tiles 1010 and 1012 are half-height (0x04=bottom half, 0x7F=top half)
+            // Tiles 1011 is full-height (0x7D=full centered saw)
+            // Same for frame 2: 1013 and 1015 are half-height, 1014 is full
+            return (customIndex == 1010 || customIndex == 1012 || 
+                    customIndex == 1013 || customIndex == 1015);
+        }
+        
+        // Check if a custom animation tile is specifically the top-half tile (0x7F)
+        private bool IsTopHalfTile(int customIndex)
+        {
+            // Tiles 1012 and 1015 are the top-half tiles (0x7F in frames 1 and 2)
+            return (customIndex == 1012 || customIndex == 1015);
         }
 
         // Create saw animation frames from the provided pixel data
@@ -915,6 +972,62 @@ namespace FamidashEditor
                     System.Diagnostics.Debug.WriteLine($"✗ Saw frame files not found:");
                     System.Diagnostics.Debug.WriteLine($"  Looked for: {frame1Path}");
                     System.Diagnostics.Debug.WriteLine($"  Looked for: {frame2Path}");
+                }
+                
+                // Load small saw frames
+                var smallFrame1Path = System.IO.Path.Combine(baseDir, "small-saw-frame1.png");
+                var smallFrame2Path = System.IO.Path.Combine(baseDir, "small-saw-frame2.png");
+                
+                if (!string.IsNullOrEmpty(repo))
+                {
+                    var repoSmallFrame1 = System.IO.Path.Combine(repo, "small-saw-frame1.png");
+                    var repoSmallFrame2 = System.IO.Path.Combine(repo, "small-saw-frame2.png");
+                    if (System.IO.File.Exists(repoSmallFrame1)) smallFrame1Path = repoSmallFrame1;
+                    if (System.IO.File.Exists(repoSmallFrame2)) smallFrame2Path = repoSmallFrame2;
+                }
+                
+                if (System.IO.File.Exists(smallFrame1Path) && System.IO.File.Exists(smallFrame2Path))
+                {
+                    smallSawFrame1Tiles = new BitmapSource[3];
+                    smallSawFrame2Tiles = new BitmapSource[3];
+                    
+                    var smallFrame1Full = new BitmapImage();
+                    smallFrame1Full.BeginInit();
+                    smallFrame1Full.CacheOption = BitmapCacheOption.OnLoad;
+                    smallFrame1Full.UriSource = new Uri(smallFrame1Path);
+                    smallFrame1Full.EndInit();
+                    smallFrame1Full.Freeze();
+                    
+                    var smallFrame2Full = new BitmapImage();
+                    smallFrame2Full.BeginInit();
+                    smallFrame2Full.CacheOption = BitmapCacheOption.OnLoad;
+                    smallFrame2Full.UriSource = new Uri(smallFrame2Path);
+                    smallFrame2Full.EndInit();
+                    smallFrame2Full.Freeze();
+                    
+                    System.Diagnostics.Debug.WriteLine($"Small saw frames dimensions: Frame1={smallFrame1Full.PixelWidth}x{smallFrame1Full.PixelHeight}, Frame2={smallFrame2Full.PixelWidth}x{smallFrame2Full.PixelHeight}");
+                    
+                    // Each small saw tile (split HORIZONTALLY - top and bottom halves):
+                    // 0x04: Bottom half of saw (16px wide × 8px tall, from y=8)
+                    // 0x7F: Top half of saw (16px wide × 8px tall, from y=0)
+                    // 0x7D: Full centered small saw (16px wide × 16px tall)
+                    smallSawFrame1Tiles[0] = new CroppedBitmap(smallFrame1Full, new Int32Rect(0, 8, 16, 8));    // 0x04 - bottom half
+                    smallSawFrame1Tiles[1] = new CroppedBitmap(smallFrame1Full, new Int32Rect(0, 0, 16, 16));   // 0x7D - full saw
+                    smallSawFrame1Tiles[2] = new CroppedBitmap(smallFrame1Full, new Int32Rect(0, 0, 16, 8));    // 0x7F - top half
+                    
+                    smallSawFrame2Tiles[0] = new CroppedBitmap(smallFrame2Full, new Int32Rect(0, 8, 16, 8));    // 0x04 - bottom half
+                    smallSawFrame2Tiles[1] = new CroppedBitmap(smallFrame2Full, new Int32Rect(0, 0, 16, 16));   // 0x7D - full saw
+                    smallSawFrame2Tiles[2] = new CroppedBitmap(smallFrame2Full, new Int32Rect(0, 0, 16, 8));    // 0x7F - top half
+                    
+                    System.Diagnostics.Debug.WriteLine($"✓ Loaded small saw animation frames from files: {smallFrame1Path}");
+                    System.Diagnostics.Debug.WriteLine($"  Small Frame 1: {smallFrame1Full.PixelWidth}x{smallFrame1Full.PixelHeight}");
+                    System.Diagnostics.Debug.WriteLine($"  Small Frame 2: {smallFrame2Full.PixelWidth}x{smallFrame2Full.PixelHeight}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"✗ Small saw frame files not found:");
+                    System.Diagnostics.Debug.WriteLine($"  Looked for: {smallFrame1Path}");
+                    System.Diagnostics.Debug.WriteLine($"  Looked for: {smallFrame2Path}");
                 }
             }
             catch (Exception ex)
@@ -1623,6 +1736,8 @@ namespace FamidashEditor
             // Also tint the animated saw frames
             sawFrame1TilesTinted = CreateHueShiftedImages(sawFrame1Tiles, tileTint);
             sawFrame2TilesTinted = CreateHueShiftedImages(sawFrame2Tiles, tileTint);
+            smallSawFrame1TilesTinted = CreateHueShiftedImages(smallSawFrame1Tiles, tileTint);
+            smallSawFrame2TilesTinted = CreateHueShiftedImages(smallSawFrame2Tiles, tileTint);
             
             // Clear pre-scaled caches so scaled pixels are rebuilt from the toned images
             try { scaledTileCaches.Clear(); } catch { }
@@ -2350,7 +2465,35 @@ namespace FamidashEditor
                     try
                     {
                         var dv = new DrawingVisual();
-                        using (var dc = dv.RenderOpen()) dc.DrawImage(customTile, new Rect(0, 0, tilePixelW, tilePixelH));
+                        using (var dc = dv.RenderOpen())
+                        {
+                            // Check if this is a half-height tile (8 pixels tall source)
+                            if (IsHalfHeightTile(tileIdx))
+                            {
+                                // For half-height tiles (16x8 source), scale proportionally
+                                // The source is 16x8, we want it to occupy 8 scaled pixels height
+                                // Calculate the scale factor from the tile size
+                                double scale = tilePixelH / 16.0; // How much are we scaling from base 16px tile
+                                double scaledHeight = 8 * scale;  // 8 pixels scaled
+                                
+                                // Top-half tiles (0x7F) need to be positioned at the bottom of the tile space
+                                if (IsTopHalfTile(tileIdx))
+                                {
+                                    double yOffset = tilePixelH - scaledHeight; // Position at bottom
+                                    dc.DrawImage(customTile, new Rect(0, yOffset, tilePixelW, scaledHeight));
+                                }
+                                else
+                                {
+                                    // Bottom-half tiles (0x04) stay at the top
+                                    dc.DrawImage(customTile, new Rect(0, 0, tilePixelW, scaledHeight));
+                                }
+                            }
+                            else
+                            {
+                                // Full-height tiles (16x16 source) use the entire tile space
+                                dc.DrawImage(customTile, new Rect(0, 0, tilePixelW, tilePixelH));
+                            }
+                        }
                         var rtb = new RenderTargetBitmap(tilePixelW, tilePixelH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
                         rtb.Render(dv);
                         rtb.CopyPixels(customBuf, customStride, 0);
