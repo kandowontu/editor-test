@@ -384,6 +384,24 @@ namespace FamidashEditor
                 CanvasHost.PreviewMouseWheel += CanvasHost_PreviewMouseWheel;
             }
 
+            // Add MouseUp handler to TilesPanel to catch mouse releases that escape individual tile images
+            if (TilesPanel != null)
+            {
+                TilesPanel.MouseLeftButtonUp += (s, e) =>
+                {
+                    if (isSelectingMultipleTiles)
+                    {
+                        isSelectingMultipleTiles = false;
+                        tileSelectionStart = null;
+                        // Release any captured mouse
+                        if (Mouse.Captured != null)
+                        {
+                            Mouse.Captured.ReleaseMouseCapture();
+                        }
+                    }
+                };
+            }
+
             InitDefaultMap();
                 Loaded += (s, e) =>
                 {
@@ -2099,7 +2117,7 @@ namespace FamidashEditor
                     Margin = new Thickness(0), 
                     Padding = new Thickness(0), 
                     BorderBrush = Brushes.Transparent, 
-                    BorderThickness = new Thickness(2) 
+                    BorderThickness = new Thickness(0) // Start with 0, will be set to 2 when selected
                 };
                 
                 TilesPanel.Items.Add(border);
