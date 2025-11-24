@@ -151,6 +151,11 @@ namespace FamidashEditor
     private BitmapSource[]? smallSawFrame2Tiles; // 3 tiles for frame 2
     private ImageSource[]? smallSawFrame1TilesTinted; // Tinted versions
     private ImageSource[]? smallSawFrame2TilesTinted; // Tinted versions
+    // Large saw frames: 9 tiles (3x3 grid) for 0x74-0x7C
+    private BitmapSource[]? largeSawFrame1Tiles; // 9 tiles for frame 1
+    private BitmapSource[]? largeSawFrame2Tiles; // 9 tiles for frame 2
+    private ImageSource[]? largeSawFrame1TilesTinted; // Tinted versions
+    private ImageSource[]? largeSawFrame2TilesTinted; // Tinted versions
 
         private interface IUndoAction
         {
@@ -759,21 +764,22 @@ namespace FamidashEditor
             if (animationFrame % 60 == 0)
             {
                 bool frame2 = ((animationFrame / 1) % 2) == 1;
-                System.Diagnostics.Debug.WriteLine($"Animation frame {animationFrame}, showing frame {(frame2 ? 2 : 1)}, sawFrame1Tiles={sawFrame1Tiles?.Length}, sawFrame2Tiles={sawFrame2Tiles?.Length}, smallSawFrame1={smallSawFrame1Tiles?.Length}, smallSawFrame2={smallSawFrame2Tiles?.Length}");
+                System.Diagnostics.Debug.WriteLine($"Animation frame {animationFrame}, showing frame {(frame2 ? 2 : 1)}, sawFrame1Tiles={sawFrame1Tiles?.Length}, sawFrame2Tiles={sawFrame2Tiles?.Length}, smallSawFrame1={smallSawFrame1Tiles?.Length}, smallSawFrame2={smallSawFrame2Tiles?.Length}, largeSawFrame1={largeSawFrame1Tiles?.Length}, largeSawFrame2={largeSawFrame2Tiles?.Length}");
             }
             
             // Only rebuild tiles if we have animated saws on screen
             // This is much more efficient than rebuilding everything every frame
             if (tilesWb != null && 
                 ((sawFrame1Tiles != null && sawFrame2Tiles != null) || 
-                 (smallSawFrame1Tiles != null && smallSawFrame2Tiles != null)))
+                 (smallSawFrame1Tiles != null && smallSawFrame2Tiles != null) ||
+                 (largeSawFrame1Tiles != null && largeSawFrame2Tiles != null)))
             {
-                // Find and update only the saw tiles (0x08-0x0B, 0x04, 0x7D, 0x7F)
+                // Find and update only the saw tiles (0x08-0x0B, 0x04, 0x7D, 0x7F, 0x74-0x7C)
                 bool hasSaws = false;
                 for (int i = 0; i < tiles.Length; i++)
                 {
                     int tileIdx = tiles[i];
-                    if ((tileIdx >= 0x08 && tileIdx <= 0x0B) || tileIdx == 0x04 || tileIdx == 0x7D || tileIdx == 0x7F)
+                    if ((tileIdx >= 0x08 && tileIdx <= 0x0B) || tileIdx == 0x04 || tileIdx == 0x7D || tileIdx == 0x7F || (tileIdx >= 0x74 && tileIdx <= 0x7C))
                     {
                         hasSaws = true;
                         break;
@@ -796,7 +802,7 @@ namespace FamidashEditor
                             for (int x = 0; x < mapWidth; x++)
                             {
                                 int tileIdx = tiles[y * mapWidth + x];
-                                if ((tileIdx >= 0x08 && tileIdx <= 0x0B) || tileIdx == 0x04 || tileIdx == 0x7D || tileIdx == 0x7F)
+                                if ((tileIdx >= 0x08 && tileIdx <= 0x0B) || tileIdx == 0x04 || tileIdx == 0x7D || tileIdx == 0x7F || (tileIdx >= 0x74 && tileIdx <= 0x7C))
                                 {
                                     UpdateTileBitmapAtLocked(x, y, scale, mapViewportPadding, tilePixelW, tilePixelH, dpi);
                                 }
@@ -813,7 +819,7 @@ namespace FamidashEditor
         }
 
         // Map a tile index to its animated version based on current animation frame
-        // Saw tiles (0x08-0x0B) animate using custom frames stored in sawFrame1Tiles/sawFrame2Tiles
+        // Saw tiles (0x08-0x0B, 0x74-0x7C, 0x04, 0x7D, 0x7F) animate using custom frames
         // Returns special indices (>= 1000) to indicate custom animation tiles
         private int GetAnimatedTileIndex(int originalIndex)
         {
@@ -847,6 +853,21 @@ namespace FamidashEditor
                     return 1013 + tileOffset; // Small saw frame 2 tiles
                 else
                     return 1010 + tileOffset; // Small saw frame 1 tiles
+            }
+            
+            // Check if this is one of the large saw tiles (0x74-0x7C) - 9 tiles in 3x3 grid
+            if (originalIndex >= 0x74 && originalIndex <= 0x7C)
+            {
+                // Same speed as other saws
+                bool showFrame2 = (((animationFrame * 3) / 4) % 2) == 1;
+                
+                // Map to custom large saw frame tile
+                // Use special indices: 1020-1028 for frame 1, 1029-1037 for frame 2
+                int tileOffset = originalIndex - 0x74; // 0-8
+                if (showFrame2)
+                    return 1029 + tileOffset; // Large saw frame 2 tiles
+                else
+                    return 1020 + tileOffset; // Large saw frame 1 tiles
             }
             
             return originalIndex; // Not a saw tile
@@ -890,6 +911,24 @@ namespace FamidashEditor
                 if (smallSawFrame2TilesTinted != null && offset < smallSawFrame2TilesTinted.Length)
                     return smallSawFrame2TilesTinted[offset] as BitmapSource;
                 return smallSawFrame2Tiles?[offset];
+            }
+            else if (customIndex >= 1020 && customIndex <= 1028)
+            {
+                // Large saw frame 1 tiles (1020-1028) - 9 tiles
+                int offset = customIndex - 1020;
+                // Use tinted version if available, otherwise use original
+                if (largeSawFrame1TilesTinted != null && offset < largeSawFrame1TilesTinted.Length)
+                    return largeSawFrame1TilesTinted[offset] as BitmapSource;
+                return largeSawFrame1Tiles?[offset];
+            }
+            else if (customIndex >= 1029 && customIndex <= 1037)
+            {
+                // Large saw frame 2 tiles (1029-1037) - 9 tiles
+                int offset = customIndex - 1029;
+                // Use tinted version if available, otherwise use original
+                if (largeSawFrame2TilesTinted != null && offset < largeSawFrame2TilesTinted.Length)
+                    return largeSawFrame2TilesTinted[offset] as BitmapSource;
+                return largeSawFrame2Tiles?[offset];
             }
             return null;
         }
@@ -1044,6 +1083,72 @@ namespace FamidashEditor
                 else
                 {
                     System.Diagnostics.Debug.WriteLine($"✗ Small saw frame files not found");
+                }
+                
+                // Load large saw frames (3x3 grid = 9 tiles for 0x74-0x7C)
+                var largeFrame1Full = LoadEmbeddedImage("large-saw-frame1.png");
+                var largeFrame2Full = LoadEmbeddedImage("large-saw-frame2.png");
+                
+                // If not found in embedded resources, try file system
+                if (largeFrame1Full == null || largeFrame2Full == null)
+                {
+                    var baseDir = AppContext.BaseDirectory;
+                    var largeFrame1Path = System.IO.Path.Combine(baseDir, "large-saw-frame1.png");
+                    var largeFrame2Path = System.IO.Path.Combine(baseDir, "large-saw-frame2.png");
+                    
+                    var repo = FindRepoRootFor("famidash.bmp");
+                    if (!string.IsNullOrEmpty(repo))
+                    {
+                        var repoLargeFrame1 = System.IO.Path.Combine(repo, "large-saw-frame1.png");
+                        var repoLargeFrame2 = System.IO.Path.Combine(repo, "large-saw-frame2.png");
+                        if (System.IO.File.Exists(repoLargeFrame1)) largeFrame1Path = repoLargeFrame1;
+                        if (System.IO.File.Exists(repoLargeFrame2)) largeFrame2Path = repoLargeFrame2;
+                    }
+                    
+                    if (System.IO.File.Exists(largeFrame1Path) && System.IO.File.Exists(largeFrame2Path))
+                    {
+                        largeFrame1Full = new BitmapImage();
+                        largeFrame1Full.BeginInit();
+                        largeFrame1Full.CacheOption = BitmapCacheOption.OnLoad;
+                        largeFrame1Full.UriSource = new Uri(largeFrame1Path);
+                        largeFrame1Full.EndInit();
+                        largeFrame1Full.Freeze();
+                        
+                        largeFrame2Full = new BitmapImage();
+                        largeFrame2Full.BeginInit();
+                        largeFrame2Full.CacheOption = BitmapCacheOption.OnLoad;
+                        largeFrame2Full.UriSource = new Uri(largeFrame2Path);
+                        largeFrame2Full.EndInit();
+                        largeFrame2Full.Freeze();
+                    }
+                }
+                
+                if (largeFrame1Full != null && largeFrame2Full != null)
+                {
+                    largeSawFrame1Tiles = new BitmapSource[9];
+                    largeSawFrame2Tiles = new BitmapSource[9];
+                    
+                    System.Diagnostics.Debug.WriteLine($"Large saw frames dimensions: Frame1={largeFrame1Full.PixelWidth}x{largeFrame1Full.PixelHeight}, Frame2={largeFrame2Full.PixelWidth}x{largeFrame2Full.PixelHeight}");
+                    
+                    // Split 48x48 image into 9 tiles (3x3 grid), 16x16 each
+                    // Order: top-left to top-right, then next row, etc. (0x74-0x7C)
+                    for (int row = 0; row < 3; row++)
+                    {
+                        for (int col = 0; col < 3; col++)
+                        {
+                            int index = row * 3 + col;
+                            largeSawFrame1Tiles[index] = new CroppedBitmap(largeFrame1Full, new Int32Rect(col * 16, row * 16, 16, 16));
+                            largeSawFrame2Tiles[index] = new CroppedBitmap(largeFrame2Full, new Int32Rect(col * 16, row * 16, 16, 16));
+                        }
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"✓ Loaded large saw animation frames (9 tiles)");
+                    System.Diagnostics.Debug.WriteLine($"  Large Frame 1: {largeFrame1Full.PixelWidth}x{largeFrame1Full.PixelHeight}");
+                    System.Diagnostics.Debug.WriteLine($"  Large Frame 2: {largeFrame2Full.PixelWidth}x{largeFrame2Full.PixelHeight}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"✗ Large saw frame files not found");
                 }
             }
             catch (Exception ex)
@@ -1845,6 +1950,8 @@ namespace FamidashEditor
             sawFrame2TilesTinted = CreateHueShiftedImages(sawFrame2Tiles, tileTint);
             smallSawFrame1TilesTinted = CreateHueShiftedImages(smallSawFrame1Tiles, tileTint);
             smallSawFrame2TilesTinted = CreateHueShiftedImages(smallSawFrame2Tiles, tileTint);
+            largeSawFrame1TilesTinted = CreateHueShiftedImages(largeSawFrame1Tiles, tileTint);
+            largeSawFrame2TilesTinted = CreateHueShiftedImages(largeSawFrame2Tiles, tileTint);
             
             // Clear pre-scaled caches so scaled pixels are rebuilt from the toned images
             try { scaledTileCaches.Clear(); } catch { }

@@ -26,6 +26,8 @@
     <EmbeddedResource Include="..\saw-frame2.png" />
     <EmbeddedResource Include="..\small-saw-frame1.png" />
     <EmbeddedResource Include="..\small-saw-frame2.png" />
+    <EmbeddedResource Include="..\large-saw-frame1.png" />
+    <EmbeddedResource Include="..\large-saw-frame2.png" />
     <EmbeddedResource Include="..\famidash.bmp" />
     <EmbeddedResource Include="..\sprites.png" />
     <EmbeddedResource Include="..\src\renderer\assets\parallax.bmp">
