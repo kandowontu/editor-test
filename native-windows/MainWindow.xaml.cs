@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -916,42 +917,49 @@ namespace FamidashEditor
         {
             try
             {
-                // Frame 1 and Frame 2 pixel data (will be populated from your images)
-                // For now, create placeholder frames - you'll need to provide the actual pixel data
                 sawFrame1Tiles = new BitmapSource[4];
                 sawFrame2Tiles = new BitmapSource[4];
                 
-                // Try to load from files first
-                var baseDir = AppContext.BaseDirectory;
-                var frame1Path = System.IO.Path.Combine(baseDir, "saw-frame1.png");
-                var frame2Path = System.IO.Path.Combine(baseDir, "saw-frame2.png");
+                // Try to load from embedded resources first
+                var frame1Full = LoadEmbeddedImage("saw-frame1.png");
+                var frame2Full = LoadEmbeddedImage("saw-frame2.png");
                 
-                // Also check in repository structure
-                var repo = FindRepoRootFor("famidash.bmp");
-                if (!string.IsNullOrEmpty(repo))
+                // If not found in embedded resources, try file system
+                if (frame1Full == null || frame2Full == null)
                 {
-                    var repoFrame1 = System.IO.Path.Combine(repo, "saw-frame1.png");
-                    var repoFrame2 = System.IO.Path.Combine(repo, "saw-frame2.png");
-                    if (System.IO.File.Exists(repoFrame1)) frame1Path = repoFrame1;
-                    if (System.IO.File.Exists(repoFrame2)) frame2Path = repoFrame2;
+                    var baseDir = AppContext.BaseDirectory;
+                    var frame1Path = System.IO.Path.Combine(baseDir, "saw-frame1.png");
+                    var frame2Path = System.IO.Path.Combine(baseDir, "saw-frame2.png");
+                    
+                    var repo = FindRepoRootFor("famidash.bmp");
+                    if (!string.IsNullOrEmpty(repo))
+                    {
+                        var repoFrame1 = System.IO.Path.Combine(repo, "saw-frame1.png");
+                        var repoFrame2 = System.IO.Path.Combine(repo, "saw-frame2.png");
+                        if (System.IO.File.Exists(repoFrame1)) frame1Path = repoFrame1;
+                        if (System.IO.File.Exists(repoFrame2)) frame2Path = repoFrame2;
+                    }
+                    
+                    if (System.IO.File.Exists(frame1Path) && System.IO.File.Exists(frame2Path))
+                    {
+                        frame1Full = new BitmapImage();
+                        frame1Full.BeginInit();
+                        frame1Full.CacheOption = BitmapCacheOption.OnLoad;
+                        frame1Full.UriSource = new Uri(frame1Path);
+                        frame1Full.EndInit();
+                        frame1Full.Freeze();
+                        
+                        frame2Full = new BitmapImage();
+                        frame2Full.BeginInit();
+                        frame2Full.CacheOption = BitmapCacheOption.OnLoad;
+                        frame2Full.UriSource = new Uri(frame2Path);
+                        frame2Full.EndInit();
+                        frame2Full.Freeze();
+                    }
                 }
                 
-                if (System.IO.File.Exists(frame1Path) && System.IO.File.Exists(frame2Path))
+                if (frame1Full != null && frame2Full != null)
                 {
-                    var frame1Full = new BitmapImage();
-                    frame1Full.BeginInit();
-                    frame1Full.CacheOption = BitmapCacheOption.OnLoad;
-                    frame1Full.UriSource = new Uri(frame1Path);
-                    frame1Full.EndInit();
-                    frame1Full.Freeze();
-                    
-                    var frame2Full = new BitmapImage();
-                    frame2Full.BeginInit();
-                    frame2Full.CacheOption = BitmapCacheOption.OnLoad;
-                    frame2Full.UriSource = new Uri(frame2Path);
-                    frame2Full.EndInit();
-                    frame2Full.Freeze();
-                    
                     // Split each 32x32 frame into 4 16x16 tiles
                     sawFrame1Tiles[0] = new CroppedBitmap(frame1Full, new Int32Rect(0, 0, 16, 16));   // Top-left
                     sawFrame1Tiles[1] = new CroppedBitmap(frame1Full, new Int32Rect(16, 0, 16, 16));  // Top-right
@@ -963,47 +971,57 @@ namespace FamidashEditor
                     sawFrame2Tiles[2] = new CroppedBitmap(frame2Full, new Int32Rect(0, 16, 16, 16));
                     sawFrame2Tiles[3] = new CroppedBitmap(frame2Full, new Int32Rect(16, 16, 16, 16));
                     
-                    System.Diagnostics.Debug.WriteLine($"✓ Loaded saw animation frames from files: {frame1Path}");
+                    System.Diagnostics.Debug.WriteLine($"✓ Loaded saw animation frames");
                     System.Diagnostics.Debug.WriteLine($"  Frame 1: {frame1Full.PixelWidth}x{frame1Full.PixelHeight}");
                     System.Diagnostics.Debug.WriteLine($"  Frame 2: {frame2Full.PixelWidth}x{frame2Full.PixelHeight}");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"✗ Saw frame files not found:");
-                    System.Diagnostics.Debug.WriteLine($"  Looked for: {frame1Path}");
-                    System.Diagnostics.Debug.WriteLine($"  Looked for: {frame2Path}");
+                    System.Diagnostics.Debug.WriteLine($"✗ Saw frame files not found");
                 }
                 
                 // Load small saw frames
-                var smallFrame1Path = System.IO.Path.Combine(baseDir, "small-saw-frame1.png");
-                var smallFrame2Path = System.IO.Path.Combine(baseDir, "small-saw-frame2.png");
+                var smallFrame1Full = LoadEmbeddedImage("small-saw-frame1.png");
+                var smallFrame2Full = LoadEmbeddedImage("small-saw-frame2.png");
                 
-                if (!string.IsNullOrEmpty(repo))
+                // If not found in embedded resources, try file system
+                if (smallFrame1Full == null || smallFrame2Full == null)
                 {
-                    var repoSmallFrame1 = System.IO.Path.Combine(repo, "small-saw-frame1.png");
-                    var repoSmallFrame2 = System.IO.Path.Combine(repo, "small-saw-frame2.png");
-                    if (System.IO.File.Exists(repoSmallFrame1)) smallFrame1Path = repoSmallFrame1;
-                    if (System.IO.File.Exists(repoSmallFrame2)) smallFrame2Path = repoSmallFrame2;
+                    var baseDir = AppContext.BaseDirectory;
+                    var smallFrame1Path = System.IO.Path.Combine(baseDir, "small-saw-frame1.png");
+                    var smallFrame2Path = System.IO.Path.Combine(baseDir, "small-saw-frame2.png");
+                    
+                    var repo = FindRepoRootFor("famidash.bmp");
+                    if (!string.IsNullOrEmpty(repo))
+                    {
+                        var repoSmallFrame1 = System.IO.Path.Combine(repo, "small-saw-frame1.png");
+                        var repoSmallFrame2 = System.IO.Path.Combine(repo, "small-saw-frame2.png");
+                        if (System.IO.File.Exists(repoSmallFrame1)) smallFrame1Path = repoSmallFrame1;
+                        if (System.IO.File.Exists(repoSmallFrame2)) smallFrame2Path = repoSmallFrame2;
+                    }
+                    
+                    if (System.IO.File.Exists(smallFrame1Path) && System.IO.File.Exists(smallFrame2Path))
+                    {
+                        smallFrame1Full = new BitmapImage();
+                        smallFrame1Full.BeginInit();
+                        smallFrame1Full.CacheOption = BitmapCacheOption.OnLoad;
+                        smallFrame1Full.UriSource = new Uri(smallFrame1Path);
+                        smallFrame1Full.EndInit();
+                        smallFrame1Full.Freeze();
+                        
+                        smallFrame2Full = new BitmapImage();
+                        smallFrame2Full.BeginInit();
+                        smallFrame2Full.CacheOption = BitmapCacheOption.OnLoad;
+                        smallFrame2Full.UriSource = new Uri(smallFrame2Path);
+                        smallFrame2Full.EndInit();
+                        smallFrame2Full.Freeze();
+                    }
                 }
                 
-                if (System.IO.File.Exists(smallFrame1Path) && System.IO.File.Exists(smallFrame2Path))
+                if (smallFrame1Full != null && smallFrame2Full != null)
                 {
                     smallSawFrame1Tiles = new BitmapSource[3];
                     smallSawFrame2Tiles = new BitmapSource[3];
-                    
-                    var smallFrame1Full = new BitmapImage();
-                    smallFrame1Full.BeginInit();
-                    smallFrame1Full.CacheOption = BitmapCacheOption.OnLoad;
-                    smallFrame1Full.UriSource = new Uri(smallFrame1Path);
-                    smallFrame1Full.EndInit();
-                    smallFrame1Full.Freeze();
-                    
-                    var smallFrame2Full = new BitmapImage();
-                    smallFrame2Full.BeginInit();
-                    smallFrame2Full.CacheOption = BitmapCacheOption.OnLoad;
-                    smallFrame2Full.UriSource = new Uri(smallFrame2Path);
-                    smallFrame2Full.EndInit();
-                    smallFrame2Full.Freeze();
                     
                     System.Diagnostics.Debug.WriteLine($"Small saw frames dimensions: Frame1={smallFrame1Full.PixelWidth}x{smallFrame1Full.PixelHeight}, Frame2={smallFrame2Full.PixelWidth}x{smallFrame2Full.PixelHeight}");
                     
@@ -1019,15 +1037,13 @@ namespace FamidashEditor
                     smallSawFrame2Tiles[1] = new CroppedBitmap(smallFrame2Full, new Int32Rect(0, 0, 16, 16));   // 0x7D - full saw
                     smallSawFrame2Tiles[2] = new CroppedBitmap(smallFrame2Full, new Int32Rect(0, 0, 16, 8));    // 0x7F - top half
                     
-                    System.Diagnostics.Debug.WriteLine($"✓ Loaded small saw animation frames from files: {smallFrame1Path}");
+                    System.Diagnostics.Debug.WriteLine($"✓ Loaded small saw animation frames");
                     System.Diagnostics.Debug.WriteLine($"  Small Frame 1: {smallFrame1Full.PixelWidth}x{smallFrame1Full.PixelHeight}");
                     System.Diagnostics.Debug.WriteLine($"  Small Frame 2: {smallFrame2Full.PixelWidth}x{smallFrame2Full.PixelHeight}");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"✗ Small saw frame files not found:");
-                    System.Diagnostics.Debug.WriteLine($"  Looked for: {smallFrame1Path}");
-                    System.Diagnostics.Debug.WriteLine($"  Looked for: {smallFrame2Path}");
+                    System.Diagnostics.Debug.WriteLine($"✗ Small saw frame files not found");
                 }
             }
             catch (Exception ex)
@@ -1323,29 +1339,72 @@ namespace FamidashEditor
         {
             try
             {
-                var dirs = new List<string>();
-                var repo = FindRepoRootFor("famidash.bmp");
-                if (!string.IsNullOrEmpty(repo)) { dirs.Add(repo); dirs.Add(Path.Combine(repo, "src", "renderer", "assets")); }
-                dirs.Add(AppContext.BaseDirectory); dirs.Add(Path.Combine(AppContext.BaseDirectory, "assets"));
-
-                var tilesCandidates = new[] { "famidash.bmp", "famidash.png", "tileset.bmp", "tileset.png" };
-                var spriteCandidates = new[] { "sprites.png", "sprites.bmp" };
-                var parallaxCandidates = new[] { "parallax.bmp", "parallax.png" };
-                var groundCandidates = new[] { "ground.bmp", "ground.png" };
-
-                foreach (var d in dirs)
+                // Try to load from embedded resources first
+                var embeddedTileset = LoadEmbeddedImage("famidash.bmp");
+                if (embeddedTileset != null)
                 {
-                    try
+                    tilesetBitmap = embeddedTileset;
+                    SliceTileset();
+                    PopulateTilesPanel();
+                    if (StatusText != null) StatusText.Text = "Loaded tileset from embedded resources";
+                }
+                
+                var embeddedSprites = LoadEmbeddedImage("sprites.png");
+                if (embeddedSprites != null)
+                {
+                    spritesBitmap = embeddedSprites;
+                    SliceSpriteset();
+                    PopulateSpritesPanel();
+                    if (StatusText != null) StatusText.Text = "Loaded sprites from embedded resources";
+                }
+                
+                var embeddedParallax = LoadEmbeddedImage("parallax.bmp");
+                if (embeddedParallax != null)
+                {
+                    parallaxBitmap = embeddedParallax;
+                    SliceParallax();
+                    if (StatusText != null) StatusText.Text = "Loaded parallax from embedded resources";
+                }
+                
+                var embeddedGround = LoadEmbeddedImage("ground.bmp");
+                if (embeddedGround != null)
+                {
+                    groundBitmap = embeddedGround;
+                    SliceGround();
+                    if (StatusText != null) StatusText.Text = "Loaded ground from embedded resources";
+                }
+                
+                // If embedded resources didn't load, try file system as fallback
+                if (tilesetBitmap == null || spritesBitmap == null || parallaxBitmap == null || groundBitmap == null)
+                {
+                    var dirs = new List<string>();
+                    var repo = FindRepoRootFor("famidash.bmp");
+                    if (!string.IsNullOrEmpty(repo)) { dirs.Add(repo); dirs.Add(Path.Combine(repo, "src", "renderer", "assets")); }
+                    dirs.Add(AppContext.BaseDirectory); dirs.Add(Path.Combine(AppContext.BaseDirectory, "assets"));
+
+                    var tilesCandidates = new[] { "famidash.bmp", "famidash.png", "tileset.bmp", "tileset.png" };
+                    var spriteCandidates = new[] { "sprites.png", "sprites.bmp" };
+                    var parallaxCandidates = new[] { "parallax.bmp", "parallax.png" };
+                    var groundCandidates = new[] { "ground.bmp", "ground.png" };
+
+                    foreach (var d in dirs)
                     {
-                        if (Directory.Exists(d))
+                        try
                         {
-                            foreach (var f in tilesCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadTileset(p); break; } }
-                            foreach (var f in spriteCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadSpriteset(p); break; } }
-                            foreach (var f in parallaxCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadParallax(p); break; } }
-                            foreach (var f in groundCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadGround(p); break; } }
+                            if (Directory.Exists(d))
+                            {
+                                if (tilesetBitmap == null)
+                                    foreach (var f in tilesCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadTileset(p); break; } }
+                                if (spritesBitmap == null)
+                                    foreach (var f in spriteCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadSpriteset(p); break; } }
+                                if (parallaxBitmap == null)
+                                    foreach (var f in parallaxCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadParallax(p); break; } }
+                                if (groundBitmap == null)
+                                    foreach (var f in groundCandidates) { var p = Path.Combine(d, f); if (File.Exists(p)) { LoadGround(p); break; } }
+                            }
                         }
+                        catch { }
                     }
-                    catch { }
                 }
                 
                 // Initialize saw animation frames
@@ -1370,6 +1429,46 @@ namespace FamidashEditor
                 dir = parent.FullName;
             }
             return null;
+        }
+
+        private BitmapImage? LoadEmbeddedImage(string resourceName)
+        {
+            try
+            {
+                var assembly = Assembly.GetExecutingAssembly();
+                var resourceNames = assembly.GetManifestResourceNames();
+                
+                // Find the resource - it might have the full path prefix
+                var fullResourceName = resourceNames.FirstOrDefault(r => r.EndsWith(resourceName));
+                if (fullResourceName == null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Resource not found: {resourceName}");
+                    System.Diagnostics.Debug.WriteLine($"Available resources: {string.Join(", ", resourceNames)}");
+                    return null;
+                }
+                
+                using (var stream = assembly.GetManifestResourceStream(fullResourceName))
+                {
+                    if (stream == null)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Failed to load resource stream: {fullResourceName}");
+                        return null;
+                    }
+                    
+                    var bi = new BitmapImage();
+                    bi.BeginInit();
+                    bi.CacheOption = BitmapCacheOption.OnLoad;
+                    bi.StreamSource = stream;
+                    bi.EndInit();
+                    bi.Freeze();
+                    return bi;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading embedded resource {resourceName}: {ex.Message}");
+                return null;
+            }
         }
 
         private void LoadTileset(string path)

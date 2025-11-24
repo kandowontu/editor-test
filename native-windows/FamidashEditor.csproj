@@ -9,37 +9,30 @@
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- Exclude unnecessary satellite assemblies to reduce size -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- WPF doesn't work well with single-file, keep multi-file -->
+    <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
   
   <ItemGroup>
-    <!-- Saw animation frames -->
-    <Content Include="..\saw-frame1.png">
+    <!-- Include app config for DLL probing -->
+    <None Include="FamidashEditor.exe.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\saw-frame2.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\small-saw-frame1.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\small-saw-frame2.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    </None>
     
-    <!-- Main asset files -->
-    <Content Include="..\famidash.bmp">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\sprites.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\src\renderer\assets\parallax.bmp">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>parallax.bmp</Link>
-    </Content>
-    <Content Include="..\src\renderer\assets\ground.bmp">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>ground.bmp</Link>
-    </Content>
+    <!-- Embed assets as resources -->
+    <EmbeddedResource Include="..\saw-frame1.png" />
+    <EmbeddedResource Include="..\saw-frame2.png" />
+    <EmbeddedResource Include="..\small-saw-frame1.png" />
+    <EmbeddedResource Include="..\small-saw-frame2.png" />
+    <EmbeddedResource Include="..\famidash.bmp" />
+    <EmbeddedResource Include="..\sprites.png" />
+    <EmbeddedResource Include="..\src\renderer\assets\parallax.bmp">
+      <LogicalName>parallax.bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\src\renderer\assets\ground.bmp">
+      <LogicalName>ground.bmp</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 </Project>
