@@ -342,10 +342,25 @@ namespace FamidashEditor
                 // Also update column width when in auto mode
                 if (!manualTileSize) UpdateLeftColumnWidth(initial: false);
             };
-            if (BgColorButton != null) BgColorButton.Click += BgColorButton_Click;
-            if (BgTintButton != null) BgTintButton.Click += BgTintButton_Click;
-            if (GroundTintButton != null) GroundTintButton.Click += GroundTintButton_Click;
-            if (TileTintButton != null) TileTintButton.Click += TileTintButton_Click;
+            
+            // Wire up menu items
+            if (MenuFileSave != null) MenuFileSave.Click += SaveButton_Click;
+            if (MenuFileLoad != null) MenuFileLoad.Click += LoadButton_Click;
+            if (MenuFileResize != null) MenuFileResize.Click += ResizeButton_Click;
+            
+            if (MenuToolPlace != null) MenuToolPlace.Click += (s, e) => { if (PlaceTool != null) PlaceTool.IsChecked = true; };
+            if (MenuToolMove != null) MenuToolMove.Click += (s, e) => { if (MoveTool != null) MoveTool.IsChecked = true; };
+            if (MenuToolErase != null) MenuToolErase.Click += (s, e) => { if (EraseTool != null) EraseTool.IsChecked = true; };
+            if (MenuToolFill != null) MenuToolFill.Click += (s, e) => { if (FillTool != null) FillTool.IsChecked = true; };
+            if (MenuToolSelect != null) MenuToolSelect.Click += (s, e) => { if (SelectTool != null) SelectTool.IsChecked = true; };
+            if (MenuToolWand != null) MenuToolWand.Click += (s, e) => { if (MagicWandTool != null) MagicWandTool.IsChecked = true; };
+            if (MenuToolUndo != null) MenuToolUndo.Click += (s, e) => Undo();
+            
+            if (MenuColorEditorBackground != null) MenuColorEditorBackground.Click += BgColorButton_Click;
+            if (MenuColorBackgroundTint != null) MenuColorBackgroundTint.Click += BgTintButton_Click;
+            if (MenuColorGroundTint != null) MenuColorGroundTint.Click += GroundTintButton_Click;
+            if (MenuColorTileTint != null) MenuColorTileTint.Click += TileTintButton_Click;
+            
             if (UndoButton != null) UndoButton.Click += (s, e) => Undo();
             // tool exclusivity: only one toggled at a time
             if (PlaceTool != null) PlaceTool.Checked += Tool_Checked;
@@ -426,19 +441,25 @@ namespace FamidashEditor
                 return;
             }
             
-            // Shift+Wheel = Horizontal scrolling (touchpad 2-finger horizontal swipe triggers this)
+            // Shift+Wheel = Vertical scrolling
             if (Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift))
             {
                 e.Handled = true;
-                // e.Delta: positive = wheel up/swipe right, negative = wheel down/swipe left
-                // We want positive delta to scroll right (increase offset)
+                // e.Delta: positive = wheel up, negative = wheel down
+                // We want positive delta to scroll up (decrease offset)
                 double scrollAmount = e.Delta * 0.5; // Scale down for smoother scrolling
-                double newOffset = MapScrollViewer.HorizontalOffset - scrollAmount;
-                MapScrollViewer.ScrollToHorizontalOffset(newOffset);
+                double newOffset = MapScrollViewer.VerticalOffset - scrollAmount;
+                MapScrollViewer.ScrollToVerticalOffset(newOffset);
                 return;
             }
             
-            // No modifiers = Normal vertical scrolling (handled by ScrollViewer automatically)
+            // No modifiers (Wheel alone) = Horizontal scrolling
+            e.Handled = true;
+            // e.Delta: positive = wheel up, negative = wheel down
+            // We want positive delta to scroll right (increase offset)
+            double horizontalScrollAmount = e.Delta * 0.5; // Scale down for smoother scrolling
+            double newHorizontalOffset = MapScrollViewer.HorizontalOffset - horizontalScrollAmount;
+            MapScrollViewer.ScrollToHorizontalOffset(newHorizontalOffset);
         }
 
         private void ResizeMap(int newWidth, int newHeight)
@@ -482,24 +503,35 @@ namespace FamidashEditor
             mapWidth = newWidth; mapHeight = newHeight; tiles = newTiles;
             if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
-            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            
+            // Force rebuild of all layers (background, grid, tiles)
+            backgroundDirty = true;
+            gridDirty = true;
+            // Clear cached dimensions to force size recalculation
+            cachedPixelWidth = 0;
+            cachedPixelHeight = 0;
+            
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+            ClampScrollOffsets();
+            Redraw();
         }
 
         private void BgColorButton_Click(object? sender, RoutedEventArgs e)
         {
             var brush = (SolidColorBrush?)Resources["AppBackgroundBrush"];
-            var initial = brush != null ? brush.Color : Color.FromRgb(40, 40, 40);
-            var dlg = new ColorPickerWindow(initial) { Owner = this };
+            var initial = brush != null ? brush.Color : Color.FromArgb(255, 40, 40, 40);
+            // Use color wheel picker for editor background
+            var dlg = new ColorWheelPickerWindow(initial) { Owner = this };
             if (dlg.ShowDialog() == true)
             {
                 var newColor = dlg.SelectedColor;
                 // update resource brush (so XAML backgrounds using it update)
                 if (Resources.Contains("AppBackgroundBrush") && Resources["AppBackgroundBrush"] is SolidColorBrush sb)
                 {
-                    sb.Color = Color.FromRgb(newColor.R, newColor.G, newColor.B);
+                    sb.Color = newColor;
                 }
-                // keep mapBackground as solid opaque brush for base; use backgroundTint for alpha overlays
-                mapBackground = new SolidColorBrush(Color.FromRgb(newColor.R, newColor.G, newColor.B));
+                // keep mapBackground as brush with full RGBA support
+                mapBackground = new SolidColorBrush(newColor);
                 SaveSettings(newColor);
                 Redraw();
             }
@@ -595,10 +627,24 @@ namespace FamidashEditor
                     var doc = System.Text.Json.JsonDocument.Parse(txt);
                     if (doc.RootElement.TryGetProperty("background", out var bg))
                     {
-                        var r = (byte)bg[0].GetInt32();
-                        var g = (byte)bg[1].GetInt32();
-                        var b = (byte)bg[2].GetInt32();
-                        var col = Color.FromRgb(r, g, b);
+                        Color col;
+                        if (bg.GetArrayLength() >= 4)
+                        {
+                            // New format: ARGB
+                            var a = (byte)bg[0].GetInt32();
+                            var r = (byte)bg[1].GetInt32();
+                            var g = (byte)bg[2].GetInt32();
+                            var b = (byte)bg[3].GetInt32();
+                            col = Color.FromArgb(a, r, g, b);
+                        }
+                        else
+                        {
+                            // Old format: RGB (backward compatibility)
+                            var r = (byte)bg[0].GetInt32();
+                            var g = (byte)bg[1].GetInt32();
+                            var b = (byte)bg[2].GetInt32();
+                            col = Color.FromRgb(r, g, b);
+                        }
                         if (Resources.Contains("AppBackgroundBrush") && Resources["AppBackgroundBrush"] is SolidColorBrush sb)
                         {
                             sb.Color = col;
@@ -633,9 +679,9 @@ namespace FamidashEditor
             try
             {
                 var obj = new {
-                    background = new byte[] { c.R, c.G, c.B },
-                    backgroundTint = new byte[] { backgroundTint.A, backgroundTint.R, backgroundTint.G, backgroundTint.B },
-                    groundTint = new byte[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B }
+                    background = new int[] { c.A, c.R, c.G, c.B },
+                    backgroundTint = new int[] { backgroundTint.A, backgroundTint.R, backgroundTint.G, backgroundTint.B },
+                    groundTint = new int[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B }
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
                 var dir = AppContext.BaseDirectory;
@@ -2128,6 +2174,14 @@ namespace FamidashEditor
             {
                 if (t != tb) t.IsChecked = false;
             }
+            
+            // Sync menu checkmarks with toolbar
+            if (MenuToolPlace != null) MenuToolPlace.IsChecked = (tb == PlaceTool);
+            if (MenuToolMove != null) MenuToolMove.IsChecked = (tb == MoveTool);
+            if (MenuToolErase != null) MenuToolErase.IsChecked = (tb == EraseTool);
+            if (MenuToolFill != null) MenuToolFill.IsChecked = (tb == FillTool);
+            if (MenuToolSelect != null) MenuToolSelect.IsChecked = (tb == SelectTool);
+            if (MenuToolWand != null) MenuToolWand.IsChecked = (tb == MagicWandTool);
         }
 
         private void FloodFill(int sx, int sy, int target, int replacement)

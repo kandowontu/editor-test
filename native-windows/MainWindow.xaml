@@ -1,7 +1,7 @@
 <Window x:Class="FamidashEditor.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="FamidashEditor" Height="640" Width="960">
+    Title="FamidashEditor" Height="900" Width="1200">
     <Window.Resources>
         <!-- lighter default grey -->
         <SolidColorBrush x:Key="AppBackgroundBrush" Color="#3B3B3B" />
@@ -84,6 +84,33 @@
 
         <!-- Main area -->
         <DockPanel Grid.Column="2">
+            <!-- Menu Bar -->
+            <Menu DockPanel.Dock="Top">
+                <MenuItem Header="_File">
+                    <MenuItem x:Name="MenuFileSave" Header="_Save" />
+                    <MenuItem x:Name="MenuFileLoad" Header="_Load" />
+                    <Separator />
+                    <MenuItem x:Name="MenuFileResize" Header="_Resize Map..." />
+                </MenuItem>
+                <MenuItem Header="_Tools">
+                    <MenuItem x:Name="MenuToolPlace" Header="_Place" IsCheckable="True" IsChecked="True" />
+                    <MenuItem x:Name="MenuToolMove" Header="_Move" IsCheckable="True" />
+                    <MenuItem x:Name="MenuToolErase" Header="_Erase" IsCheckable="True" />
+                    <MenuItem x:Name="MenuToolFill" Header="_Fill" IsCheckable="True" />
+                    <MenuItem x:Name="MenuToolSelect" Header="_Select" IsCheckable="True" />
+                    <MenuItem x:Name="MenuToolWand" Header="_Magic Wand" IsCheckable="True" />
+                    <Separator />
+                    <MenuItem x:Name="MenuToolUndo" Header="_Undo" InputGestureText="Ctrl+Z" />
+                </MenuItem>
+                <MenuItem Header="_Colors">
+                    <MenuItem x:Name="MenuColorEditorBackground" Header="_Editor Background Color..." />
+                    <Separator />
+                    <MenuItem x:Name="MenuColorBackgroundTint" Header="_Background Tint..." />
+                    <MenuItem x:Name="MenuColorGroundTint" Header="_Ground Tint..." />
+                    <MenuItem x:Name="MenuColorTileTint" Header="_Tile Tint..." />
+                </MenuItem>
+            </Menu>
+            
             <!-- Toolbar -->
             <ToolBarTray DockPanel.Dock="Top">
                 <ToolBar>
@@ -124,10 +151,6 @@
                         </StackPanel>
                     </ToggleButton>
                     <Button x:Name="UndoButton" Margin="8,0,0,0" ToolTip="Undo (Ctrl+Z)">Undo</Button>
-                    <Button x:Name="BgColorButton" Content="Background..." Margin="8,0,0,0" />
-                    <Button x:Name="BgTintButton" Content="Background Tint..." Margin="8,0,0,0" />
-                    <Button x:Name="GroundTintButton" Content="Ground Tint..." Margin="8,0,0,0" />
-                    <Button x:Name="TileTintButton" Content="Tile Tint..." Margin="8,0,0,0" />
                 </ToolBar>
             </ToolBarTray>
 
