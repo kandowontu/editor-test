@@ -13,6 +13,8 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- WPF doesn't work well with single-file, keep multi-file -->
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- Add application manifest for DPI awareness -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   
   <ItemGroup>

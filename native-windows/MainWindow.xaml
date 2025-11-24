@@ -1,7 +1,10 @@
 <Window x:Class="FamidashEditor.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="FamidashEditor" Height="900" Width="1200">
+    Title="FamidashEditor" Height="900" Width="1200"
+    UseLayoutRounding="True"
+    SnapsToDevicePixels="True"
+    TextOptions.TextFormattingMode="Display">
     <Window.Resources>
         <!-- lighter default grey -->
         <SolidColorBrush x:Key="AppBackgroundBrush" Color="#3B3B3B" />
