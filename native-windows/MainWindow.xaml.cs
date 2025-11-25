@@ -796,8 +796,7 @@ namespace FamidashEditor
             {
                 PreviewModeCheckbox.Checked += (s, e) =>
                 {
-                    System.IO.File.AppendAllText(@"C:\Editor Test\preview-mode-debug.txt", 
-                        $"Preview Mode CHECKED at {DateTime.Now}\n");
+                    System.Diagnostics.Debug.WriteLine($"Preview Mode CHECKED at {DateTime.Now}");
                     previewMode = true;
                     StartPreviewTimer();
                     // Redraw to show portal sprites and animations
@@ -806,8 +805,7 @@ namespace FamidashEditor
                 };
                 PreviewModeCheckbox.Unchecked += (s, e) =>
                 {
-                    System.IO.File.AppendAllText(@"C:\Editor Test\preview-mode-debug.txt", 
-                        $"Preview Mode UNCHECKED at {DateTime.Now}\n");
+                    System.Diagnostics.Debug.WriteLine($"Preview Mode UNCHECKED at {DateTime.Now}");
                     previewMode = false;
                     StopPreviewTimer();
                     animationFrame = 0;
@@ -3040,28 +3038,28 @@ namespace FamidashEditor
         private string? FindRepoRootFor(string filename)
         {
             string dir = AppContext.BaseDirectory;
-            System.IO.File.AppendAllText(@"C:\Editor Test\find-repo-debug.txt", $"FindRepoRootFor({filename}) starting from: {dir}\n");
+            System.Diagnostics.Debug.WriteLine($"FindRepoRootFor({filename}) starting from: {dir}");
             
             for (int i = 0; i < 6; i++)
             {
                 var candidate = Path.Combine(dir, filename);
                 bool exists = File.Exists(candidate);
-                System.IO.File.AppendAllText(@"C:\Editor Test\find-repo-debug.txt", $"  [{i}] Checking: {candidate} - Exists: {exists}\n");
+                System.Diagnostics.Debug.WriteLine($"  [{i}] Checking: {candidate} - Exists: {exists}");
                 
                 if (exists) {
-                    System.IO.File.AppendAllText(@"C:\Editor Test\find-repo-debug.txt", $"  FOUND! Returning: {dir}\n");
+                    System.Diagnostics.Debug.WriteLine($"  FOUND! Returning: {dir}");
                     return dir;
                 }
                 
                 var parent = Directory.GetParent(dir);
                 if (parent == null) {
-                    System.IO.File.AppendAllText(@"C:\Editor Test\find-repo-debug.txt", $"  No parent directory, breaking\n");
+                    System.Diagnostics.Debug.WriteLine($"  No parent directory, breaking");
                     break;
                 }
                 dir = parent.FullName;
             }
             
-            System.IO.File.AppendAllText(@"C:\Editor Test\find-repo-debug.txt", $"  NOT FOUND, returning null\n");
+            System.Diagnostics.Debug.WriteLine($"  NOT FOUND, returning null");
             return null;
         }
 
@@ -3131,8 +3129,8 @@ namespace FamidashEditor
                     // Ensure directory exists
                     var dir = Path.GetDirectoryName(cand);
                     if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                    // Create or append a header line so file exists and is writable
-                    File.AppendAllText(cand, $"=== portal-debug started {DateTime.Now:yyyy-MM-dd HH:mm:ss} (pid={System.Diagnostics.Process.GetCurrentProcess().Id}) ===\n");
+                    // Do not create log files automatically in release - just record candidate path
+                    System.Diagnostics.Debug.WriteLine($"Portal debug candidate path: {cand}");
                     portalDebugPath = cand;
                     return;
                 }
