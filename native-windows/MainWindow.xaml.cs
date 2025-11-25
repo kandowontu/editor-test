@@ -5417,10 +5417,17 @@ namespace FamidashEditor
             // Set the position key for random frame offsets (unique per position on map)
             currentSpritePositionKey = y * mapWidth + x;
             
-            // Debug: Log when we're updating a yellow orb
-            if ((spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29) && animationFrame % 60 == 0)
+            // Debug: Log when we're updating an orb or coin (periodic)
+            if ((spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
+                 spriteIdx == 0x05 || // Blue
+                 spriteIdx == 0x06 || // Pink
+                 spriteIdx == 0x27 || // Green
+                 spriteIdx == 0x28 || // Red
+                 spriteIdx == 0x44 || // Black
+                 spriteIdx == 0x7A || // White
+                 spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B) && animationFrame % 60 == 0)
             {
-                System.Diagnostics.Debug.WriteLine($"UpdateSpriteBitmapAtLocked: Updating yellow orb sprite 0x{spriteIdx:X2} at ({x},{y}), previewMode={previewMode}");
+                System.Diagnostics.Debug.WriteLine($"UpdateSpriteBitmapAtLocked: Updating animated sprite 0x{spriteIdx:X2} at ({x},{y}), previewMode={previewMode}");
             }
             
             try
@@ -5451,7 +5458,7 @@ namespace FamidashEditor
                     sprite = GetCustomAnimationSprite(animatedIdx);
 
                     // Lightweight diagnostic: sample first pixel of pad frames to detect per-frame changes
-                    if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26))
+                    if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26 || spriteIdx == 0x7A || spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B))
                     {
                         try
                         {
