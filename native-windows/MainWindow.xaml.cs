@@ -109,6 +109,151 @@ namespace FamidashEditor
     // Undo/redo support (unlimited)
     private readonly Stack<IUndoAction> undoStack = new Stack<IUndoAction>();
     private readonly Stack<IUndoAction> redoStack = new Stack<IUndoAction>();
+    
+    // Configuration file support for per-TMX settings
+    private class TmxConfig
+    {
+        public byte BackgroundTintR { get; set; } = 255;
+        public byte BackgroundTintG { get; set; } = 255;
+        public byte BackgroundTintB { get; set; } = 255;
+        public byte GroundTintR { get; set; } = 255;
+        public byte GroundTintG { get; set; } = 255;
+        public byte GroundTintB { get; set; } = 255;
+        public byte TileTintR { get; set; } = 255;
+        public byte TileTintG { get; set; } = 255;
+        public byte TileTintB { get; set; } = 255;
+    }
+    
+    private string GetConfigPath(string tmxFilePath)
+    {
+        // Store configs in Documents/Famidash Editor/
+        string docsFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        string configFolder = Path.Combine(docsFolder, "Famidash Editor");
+        
+        // Create folder if it doesn't exist
+        if (!Directory.Exists(configFolder))
+        {
+            Directory.CreateDirectory(configFolder);
+        }
+        
+        // Use just the filename (not full path) to allow sharing configs
+        string tmxFileName = Path.GetFileName(tmxFilePath);
+        string configFileName = tmxFileName + ".cfg";
+        
+        return Path.Combine(configFolder, configFileName);
+    }
+    
+    private void SaveTmxConfig(string tmxFilePath)
+    {
+        try
+        {
+            var config = new TmxConfig
+            {
+                BackgroundTintR = backgroundTint.R,
+                BackgroundTintG = backgroundTint.G,
+                BackgroundTintB = backgroundTint.B,
+                GroundTintR = groundTint.R,
+                GroundTintG = groundTint.G,
+                GroundTintB = groundTint.B,
+                TileTintR = tileTint.R,
+                TileTintG = tileTint.G,
+                TileTintB = tileTint.B
+            };
+            
+            string configPath = GetConfigPath(tmxFilePath);
+            string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(configPath, json);
+            
+            System.Diagnostics.Debug.WriteLine($"Saved config to: {configPath}");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to save TMX config: {ex.Message}");
+        }
+    }
+    
+    private void LoadTmxConfig(string tmxFilePath)
+    {
+        try
+        {
+            string configPath = GetConfigPath(tmxFilePath);
+            
+            if (File.Exists(configPath))
+            {
+                string json = File.ReadAllText(configPath);
+                var config = JsonSerializer.Deserialize<TmxConfig>(json);
+                
+                if (config != null)
+                {
+                    // Apply loaded tints
+                    backgroundTint = Color.FromRgb(config.BackgroundTintR, config.BackgroundTintG, config.BackgroundTintB);
+                    groundTint = Color.FromRgb(config.GroundTintR, config.GroundTintG, config.GroundTintB);
+                    tileTint = Color.FromRgb(config.TileTintR, config.TileTintG, config.TileTintB);
+                    
+                    // Update tinted images
+                    UpdateParallaxTint();
+                    UpdateGroundTint();
+                    UpdateTileTint();
+                    
+                    System.Diagnostics.Debug.WriteLine($"Loaded config from: {configPath}");
+                    if (StatusText != null) StatusText.Text = $"Loaded tint config for {Path.GetFileName(tmxFilePath)}";
+                }
+            }
+            else
+            {
+                // No config file - reset to defaults (transparent = no tint)
+                backgroundTint = Color.FromArgb(0, 0, 0, 0);
+                groundTint = Color.FromArgb(0, 0, 0, 0);
+                tileTint = Color.FromArgb(0, 0, 0, 0);
+                
+                // Don't call Update methods - just clear the toned images to use originals
+                parallaxTonedImages = null;
+                groundTonedImages = null;
+                tileTonedImages = null;
+                sawFrame1TilesTinted = null;
+                sawFrame2TilesTinted = null;
+                
+                // Mark background dirty to force rebuild of parallax/ground without tints
+                backgroundDirty = true;
+                
+                // Clear tile caches and rebuild tiles without tint
+                try { scaledTileCaches.Clear(); } catch { }
+                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                
+                // Refresh tile palette to show untinted tiles
+                try { PopulateTilesPanel(); } catch { }
+                
+                System.Diagnostics.Debug.WriteLine($"No config found at: {configPath}, using defaults");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to load TMX config: {ex.Message}");
+            
+            // Reset to defaults on error (transparent = no tint)
+            backgroundTint = Color.FromArgb(0, 0, 0, 0);
+            groundTint = Color.FromArgb(0, 0, 0, 0);
+            tileTint = Color.FromArgb(0, 0, 0, 0);
+            
+            // Clear toned images to use originals
+            parallaxTonedImages = null;
+            groundTonedImages = null;
+            tileTonedImages = null;
+            sawFrame1TilesTinted = null;
+            sawFrame2TilesTinted = null;
+            
+            // Mark background dirty to force rebuild
+            backgroundDirty = true;
+            
+            // Clear tile caches and rebuild
+            try { scaledTileCaches.Clear(); } catch { }
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+            
+            // Refresh tile palette
+            try { PopulateTilesPanel(); } catch { }
+        }
+    }
+    
     // when painting (drag), build up a composite action which will be pushed on mouse up
     private TileChangeAction? currentCompositeAction = null;
     private SpriteChangeAction? currentCompositeSpriteAction = null;
@@ -804,6 +949,13 @@ namespace FamidashEditor
                 backgroundTint = dlg.SelectedColor;
                 UpdateParallaxTint();
                 Redraw();
+                
+                // Auto-save config when tint is changed
+                if (!string.IsNullOrEmpty(currentFilePath))
+                {
+                    SaveTmxConfig(currentFilePath);
+                }
+                
                 if (StatusText != null) StatusText.Text = $"BgTint set ARGB={backgroundTint.A},{backgroundTint.R},{backgroundTint.G},{backgroundTint.B} parallaxToned={(parallaxTonedImages!=null?parallaxTonedImages.Length:0)}";
             }
             else
@@ -831,6 +983,13 @@ namespace FamidashEditor
                 groundTint = dlg.SelectedColor;
                 UpdateGroundTint();
                 Redraw();
+                
+                // Auto-save config when tint is changed
+                if (!string.IsNullOrEmpty(currentFilePath))
+                {
+                    SaveTmxConfig(currentFilePath);
+                }
+                
                 if (StatusText != null) StatusText.Text = $"GroundTint set ARGB={groundTint.A},{groundTint.R},{groundTint.G},{groundTint.B} groundToned={(groundTonedImages!=null?groundTonedImages.Length:0)}";
             }
             else
@@ -856,6 +1015,13 @@ namespace FamidashEditor
                 tileTint = dlg.SelectedColor;
                 UpdateTileTint();
                 Redraw();
+                
+                // Auto-save config when tint is changed
+                if (!string.IsNullOrEmpty(currentFilePath))
+                {
+                    SaveTmxConfig(currentFilePath);
+                }
+                
                 if (StatusText != null) StatusText.Text = $"TileTint set ARGB={tileTint.A},{tileTint.R},{tileTint.G},{tileTint.B} tilesToned={(tileTonedImages!=null?tileTonedImages.Length:0)}";
             }
             else
@@ -1552,76 +1718,34 @@ namespace FamidashEditor
         {
             try
             {
-                // Write to file immediately to confirm this is called
-                System.IO.File.WriteAllText(@"C:\Editor Test\yellow-orb-init.txt", $"Init called at {DateTime.Now}\n");
-                
-                System.Diagnostics.Debug.WriteLine("=== InitializeYellowOrbAnimationFrames START ===");
-                
                 // Try to load from embedded resources first
                 var frame1 = LoadEmbeddedImage("yellow-orb-frame1.png");
                 var frame2 = LoadEmbeddedImage("yellow-orb-frame2.png");
                 var frame3 = LoadEmbeddedImage("yellow-orb-frame3.png");
                 var frame4 = LoadEmbeddedImage("yellow-orb-frame4.png");
                 
-                System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-init.txt", $"Embedded: {frame1 != null}/{frame2 != null}/{frame3 != null}/{frame4 != null}\n");
-                
-                System.Diagnostics.Debug.WriteLine($"After LoadEmbeddedImage: frame1={frame1 != null}, frame2={frame2 != null}, frame3={frame3 != null}, frame4={frame4 != null}");
-                
                 // If not found in embedded resources, try file system
                 if (frame1 == null || frame2 == null || frame3 == null || frame4 == null)
                 {
-                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-init.txt", "Checking file system...\n");
-                    
-                    System.Diagnostics.Debug.WriteLine($"Yellow orb frames not in embedded resources, checking file system...");
                     var baseDir = AppContext.BaseDirectory;
-                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-init.txt", $"BaseDir: {baseDir}\n");
-                    
                     var frame1Path = System.IO.Path.Combine(baseDir, "yellow-orb-frame1.png");
                     var frame2Path = System.IO.Path.Combine(baseDir, "yellow-orb-frame2.png");
                     var frame3Path = System.IO.Path.Combine(baseDir, "yellow-orb-frame3.png");
                     var frame4Path = System.IO.Path.Combine(baseDir, "yellow-orb-frame4.png");
                     
-                    System.Diagnostics.Debug.WriteLine($"  BaseDir: {baseDir}");
-                    System.Diagnostics.Debug.WriteLine($"  Frame1 exists at BaseDir: {System.IO.File.Exists(frame1Path)}");
-                    
                     var repo = FindRepoRootFor("famidash.bmp");
-                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-init.txt", $"Repo: {repo ?? "NULL"}\n");
-                    
                     if (!string.IsNullOrEmpty(repo))
                     {
-                        System.Diagnostics.Debug.WriteLine($"  Repo root: {repo}");
                         var repoFrame1 = System.IO.Path.Combine(repo, "yellow-orb-frame1.png");
                         var repoFrame2 = System.IO.Path.Combine(repo, "yellow-orb-frame2.png");
                         var repoFrame3 = System.IO.Path.Combine(repo, "yellow-orb-frame3.png");
                         var repoFrame4 = System.IO.Path.Combine(repo, "yellow-orb-frame4.png");
-                        
-                        bool e1 = System.IO.File.Exists(repoFrame1);
-                        bool e2 = System.IO.File.Exists(repoFrame2);
-                        bool e3 = System.IO.File.Exists(repoFrame3);
-                        bool e4 = System.IO.File.Exists(repoFrame4);
-                        
-                        System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-init.txt", $"Files exist: {e1}/{e2}/{e3}/{e4}\n");
-                        
-                        System.Diagnostics.Debug.WriteLine($"  Frame1 exists at repo: {e1} - {repoFrame1}");
-                        System.Diagnostics.Debug.WriteLine($"  Frame2 exists at repo: {e2} - {repoFrame2}");
-                        System.Diagnostics.Debug.WriteLine($"  Frame3 exists at repo: {e3} - {repoFrame3}");
-                        System.Diagnostics.Debug.WriteLine($"  Frame4 exists at repo: {e4} - {repoFrame4}");
                         
                         if (System.IO.File.Exists(repoFrame1)) frame1Path = repoFrame1;
                         if (System.IO.File.Exists(repoFrame2)) frame2Path = repoFrame2;
                         if (System.IO.File.Exists(repoFrame3)) frame3Path = repoFrame3;
                         if (System.IO.File.Exists(repoFrame4)) frame4Path = repoFrame4;
                     }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine($"  Repo root not found!");
-                    }
-                    
-                    System.Diagnostics.Debug.WriteLine($"Final paths:");
-                    System.Diagnostics.Debug.WriteLine($"  frame1Path: {frame1Path}, exists: {System.IO.File.Exists(frame1Path)}");
-                    System.Diagnostics.Debug.WriteLine($"  frame2Path: {frame2Path}, exists: {System.IO.File.Exists(frame2Path)}");
-                    System.Diagnostics.Debug.WriteLine($"  frame3Path: {frame3Path}, exists: {System.IO.File.Exists(frame3Path)}");
-                    System.Diagnostics.Debug.WriteLine($"  frame4Path: {frame4Path}, exists: {System.IO.File.Exists(frame4Path)}");
                     
                     if (System.IO.File.Exists(frame1Path))
                     {
@@ -1684,50 +1808,11 @@ namespace FamidashEditor
                         yellowOrbFrame3[i] = convertedFrame3;
                         yellowOrbFrame4[i] = convertedFrame4;
                     }
-                    
-                    System.Diagnostics.Debug.WriteLine($"✓ Loaded yellow orb animation frames (4 frames)");
-                    System.Diagnostics.Debug.WriteLine($"  Frame 1: {frame1.PixelWidth}x{frame1.PixelHeight}");
-                    System.Diagnostics.Debug.WriteLine($"  Frame 2: {frame2.PixelWidth}x{frame2.PixelHeight}");
-                    System.Diagnostics.Debug.WriteLine($"  Frame 3: {frame3.PixelWidth}x{frame3.PixelHeight}");
-                    System.Diagnostics.Debug.WriteLine($"  Frame 4: {frame4.PixelWidth}x{frame4.PixelHeight}");
-                    
-                    // Write to file so we can verify it loaded
-                    try
-                    {
-                        System.IO.File.WriteAllText("C:\\Editor Test\\yellow-orb-loaded.txt", 
-                            $"Yellow orb frames loaded successfully at {DateTime.Now}\n" +
-                            $"Frame 1: {frame1.PixelWidth}x{frame1.PixelHeight}\n" +
-                            $"Frame 2: {frame2.PixelWidth}x{frame2.PixelHeight}\n" +
-                            $"Frame 3: {frame3.PixelWidth}x{frame3.PixelHeight}\n" +
-                            $"Frame 4: {frame4.PixelWidth}x{frame4.PixelHeight}\n");
-                    }
-                    catch { }
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"✗ Yellow orb frame files not found (need all 4 frames)");
-                    System.Diagnostics.Debug.WriteLine($"  frame1: {(frame1 != null ? "loaded" : "null")}");
-                    System.Diagnostics.Debug.WriteLine($"  frame2: {(frame2 != null ? "loaded" : "null")}");
-                    System.Diagnostics.Debug.WriteLine($"  frame3: {(frame3 != null ? "loaded" : "null")}");
-                    System.Diagnostics.Debug.WriteLine($"  frame4: {(frame4 != null ? "loaded" : "null")}");
-                    
-                    // Write to file so we can verify why it failed
-                    try
-                    {
-                        System.IO.File.WriteAllText("C:\\Editor Test\\yellow-orb-FAILED.txt", 
-                            $"Yellow orb frames FAILED to load at {DateTime.Now}\n" +
-                            $"frame1: {(frame1 != null ? "loaded" : "null")}\n" +
-                            $"frame2: {(frame2 != null ? "loaded" : "null")}\n" +
-                            $"frame3: {(frame3 != null ? "loaded" : "null")}\n" +
-                            $"frame4: {(frame4 != null ? "loaded" : "null")}\n");
-                    }
-                    catch { }
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to load yellow orb animation frames: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
             }
         }
 
@@ -2341,8 +2426,15 @@ namespace FamidashEditor
                 System.Diagnostics.Debug.WriteLine($"WARNING: SliceTileset had {errorCount} errors out of {tileImages.Length} tiles");
             }
             
-            // update any toned cache when tileset changes
-            UpdateTileTint();
+            // update toned cache only if tint is active (not transparent)
+            if (tileTint.A != 0)
+            {
+                UpdateTileTint();
+            }
+            else
+            {
+                tileTonedImages = null; // clear toned images when no tint
+            }
         }
 
         private void SliceSpriteset()
@@ -2402,8 +2494,15 @@ namespace FamidashEditor
             var list = new List<ImageSource>();
             for (int y = 0; y < rows; y++) for (int x = 0; x < cols; x++) list.Add(new CroppedBitmap(parallaxBitmap, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
             parallaxImages = list.ToArray();
-            // update tinted cache to reflect current tint
-            UpdateParallaxTint();
+            // update tinted cache only if tint is active (not transparent)
+            if (backgroundTint.A != 0)
+            {
+                UpdateParallaxTint();
+            }
+            else
+            {
+                parallaxTonedImages = null; // clear toned images when no tint
+            }
         }
 
         private void SliceGround()
@@ -2422,8 +2521,15 @@ namespace FamidashEditor
                 }
             }
             groundImages = list.ToArray();
-            // update tinted cache to reflect current ground tint
-            UpdateGroundTint();
+            // update tinted cache only if tint is active (not transparent)
+            if (groundTint.A != 0)
+            {
+                UpdateGroundTint();
+            }
+            else
+            {
+                groundTonedImages = null; // clear toned images when no tint
+            }
         }
 
         // Create tinted copies of a set of ImageSources using simple alpha blend with the tint color.
@@ -3134,9 +3240,16 @@ namespace FamidashEditor
             // Use the full parallax bitmap (not individual tiles)
             BitmapSource sourceImage = parallaxBitmap;
             
-            // If we have toned images, we need to apply the tint to the full bitmap, not use individual toned tiles
-            // For now, just use the original parallax bitmap - tinting will be handled separately
-            // TODO: Apply tint to full parallaxBitmap when backgroundTint changes
+            // Apply tint if needed (check if background tint is active - not transparent and not white)
+            if (backgroundTint.A != 0 && (backgroundTint.R != 255 || backgroundTint.G != 255 || backgroundTint.B != 255))
+            {
+                // Apply hue/saturation shift to the full parallax bitmap
+                var tintedImages = CreateHueShiftedImages(new ImageSource[] { parallaxBitmap }, backgroundTint);
+                if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
+                {
+                    sourceImage = tinted;
+                }
+            }
             
             // Use DrawImage loop like ground - it scales correctly and performs well
             var dv = new DrawingVisual();
@@ -3146,20 +3259,13 @@ namespace FamidashEditor
                 double tileWidthDiu = (sourceImage.PixelWidth / dpi.DpiScaleX) * scale;
                 double tileHeightDiu = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
                 
-                // Get viewport size to limit rendering area
-                double viewportW = pixelPaddedWidth / dpi.DpiScaleX;
-                double viewportH = pixelPaddedHeight / dpi.DpiScaleY;
-                if (MapScrollViewer != null)
-                {
-                    double vpw = MapScrollViewer.ViewportWidth;
-                    double vph = MapScrollViewer.ViewportHeight;
-                    if (!double.IsNaN(vpw) && vpw > 0) viewportW = Math.Min(viewportW, vpw * 2); // 2x viewport for scrolling buffer
-                    if (!double.IsNaN(vph) && vph > 0) viewportH = Math.Min(viewportH, vph * 2);
-                }
+                // Use full padded dimensions for parallax (it should tile across the entire map)
+                double renderW = pixelPaddedWidth / dpi.DpiScaleX;
+                double renderH = pixelPaddedHeight / dpi.DpiScaleY;
                 
-                // Calculate how many tiles we need (limited to viewport area)
-                int tilesWide = (int)Math.Ceiling(viewportW / tileWidthDiu) + 2;
-                int tilesHigh = (int)Math.Ceiling(viewportH / tileHeightDiu) + 2;
+                // Calculate how many tiles we need to fill the entire area
+                int tilesWide = (int)Math.Ceiling(renderW / tileWidthDiu) + 2;
+                int tilesHigh = (int)Math.Ceiling(renderH / tileHeightDiu) + 2;
                 
                 // Align starting position with padding
                 double startX = -(pad % tileWidthDiu);
@@ -3206,9 +3312,16 @@ namespace FamidashEditor
             // Use the full ground bitmap (not individual tiles)
             BitmapSource sourceImage = groundBitmap;
             
-            // If we have toned images, we need to apply the tint to the full bitmap, not use individual toned tiles
-            // For now, just use the original ground bitmap - tinting will be handled separately
-            // TODO: Apply tint to full groundBitmap when groundTint changes
+            // Apply tint if needed (check if ground tint is active - not transparent and not white)
+            if (groundTint.A != 0 && (groundTint.R != 255 || groundTint.G != 255 || groundTint.B != 255))
+            {
+                // Apply hue/saturation shift to the full ground bitmap
+                var tintedImages = CreateHueShiftedImages(new ImageSource[] { groundBitmap }, groundTint);
+                if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
+                {
+                    sourceImage = tinted;
+                }
+            }
             
             // Ground tiles horizontally but stretches vertically to fit the available space
             var dv = new DrawingVisual();
@@ -4063,34 +4176,16 @@ namespace FamidashEditor
                 int animatedIdx = GetAnimatedSpriteIndex(spriteIdx);
                 BitmapSource? sprite = null;
                 
-                // Debug logging
-                bool isYellowOrb = (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29);
-                if (isYellowOrb && animationFrame % 60 == 0)
-                {
-                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
-                        $"UpdateSpriteBitmapAtLocked: spriteIdx=0x{spriteIdx:X2}, animatedIdx={animatedIdx}, previewMode={previewMode}\n");
-                }
-                
                 // Check if this is a custom animated sprite
                 if (animatedIdx >= 2000)
                 {
                     sprite = GetCustomAnimationSprite(animatedIdx);
-                    if (isYellowOrb && animationFrame % 60 == 0)
-                    {
-                        System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
-                            $"  Custom sprite: {(sprite != null ? $"{sprite.PixelWidth}x{sprite.PixelHeight}" : "NULL")}\n");
-                    }
                 }
                 
                 // Fall back to normal sprite if not animated or animation not loaded
                 if (sprite == null)
                 {
                     sprite = spriteImages[spriteIdx] as BitmapSource;
-                    if (isYellowOrb && animationFrame % 60 == 0)
-                    {
-                        System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
-                            $"  Fallback sprite: {(sprite != null ? $"{sprite.PixelWidth}x{sprite.PixelHeight}" : "NULL")}\n");
-                    }
                 }
                 
                 if (sprite == null) return;
@@ -4099,22 +4194,10 @@ namespace FamidashEditor
                 int srcWidth = sprite.PixelWidth;
                 int srcHeight = sprite.PixelHeight;
                 
-                // Debug logging for yellow orbs
-                if (isYellowOrb && animationFrame % 60 == 0)
-                {
-                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
-                        $"  Rendering: src={srcWidth}x{srcHeight}, dest={spritePixelW}x{spritePixelH}, scale={scale}, TileSize={TileSize}\n");
-                }
-                
                 // Sanity check dimensions
                 if (srcWidth <= 0 || srcHeight <= 0 || spritePixelW <= 0 || spritePixelH <= 0)
                 {
                     System.Diagnostics.Debug.WriteLine($"Invalid dimensions: src={srcWidth}x{srcHeight}, dest={spritePixelW}x{spritePixelH}");
-                    if (isYellowOrb)
-                    {
-                        System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
-                            $"  ERROR: Invalid dimensions!\n");
-                    }
                     return;
                 }
                 
@@ -4122,18 +4205,6 @@ namespace FamidashEditor
                 int srcStride = srcWidth * 4;
                 byte[] srcPixels = new byte[srcHeight * srcStride];
                 sprite.CopyPixels(srcPixels, srcStride, 0);
-                
-                // Debug: Check if pixels are transparent
-                if (isYellowOrb && animationFrame % 60 == 0)
-                {
-                    int nonZeroPixels = 0;
-                    for (int i = 3; i < srcPixels.Length; i += 4) // Check alpha channel
-                    {
-                        if (srcPixels[i] > 0) nonZeroPixels++;
-                    }
-                    System.IO.File.AppendAllText(@"C:\Editor Test\yellow-orb-render.txt", 
-                        $"  Pixels: {srcPixels.Length} bytes, {nonZeroPixels} non-transparent pixels\n");
-                }
                 
                 // If no scaling needed and sprite is already correct size, copy directly
                 if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && srcHeight == TileSize)
@@ -5571,6 +5642,26 @@ namespace FamidashEditor
             tiles = new int[mapWidth * mapHeight];
             sprites = new int[mapWidth * mapHeight];
             
+            // Reset tints to defaults (transparent = no tint)
+            backgroundTint = Color.FromArgb(0, 0, 0, 0);
+            groundTint = Color.FromArgb(0, 0, 0, 0);
+            tileTint = Color.FromArgb(0, 0, 0, 0);
+            
+            // Clear toned images to use originals
+            parallaxTonedImages = null;
+            groundTonedImages = null;
+            tileTonedImages = null;
+            sawFrame1TilesTinted = null;
+            sawFrame2TilesTinted = null;
+            
+            // Mark background dirty and clear tile caches to force rebuild without tints
+            backgroundDirty = true;
+            try { scaledTileCaches.Clear(); } catch { }
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+            
+            // Refresh tile palette
+            try { PopulateTilesPanel(); } catch { }
+            
             // Clear undo/redo stacks
             undoStack.Clear();
             redoStack.Clear();
@@ -5753,8 +5844,12 @@ namespace FamidashEditor
                         // Show collision messages if any
                         if (!string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
                         {
-                            MessageBox.Show("Sprite collision adjustments during load:\n\n" + tmxLevel.LoadCollisionMessages, 
+                            MessageBox.Show(this, "Sprite collision adjustments during load:\n\n" + tmxLevel.LoadCollisionMessages, 
                                 "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
+                            
+                            // Restore focus to main window after MessageBox
+                            this.Activate();
+                            this.Focus();
                         }
                         
                         // Store TMX metadata to preserve when saving
@@ -5859,6 +5954,12 @@ namespace FamidashEditor
                         }
                         
                         if (StatusText != null) StatusText.Text = $"Loaded {Path.GetFileName(dlg.FileName)} ({mapWidth}x{mapHeight})";
+                        
+                        // Load and apply saved tint configuration
+                        LoadTmxConfig(dlg.FileName);
+                        
+                        // Redraw to apply the loaded tints
+                        Redraw();
                     }
                     else
                     {
