@@ -322,6 +322,9 @@ namespace FamidashEditor
     private BitmapSource? spiderPortalSprite; // for sprite 0x17 (spider-portal.png)
     private BitmapSource? swingcopterPortalSprite; // for sprite 0x4B (swingcopter-portal.png)
     private BitmapSource? ninjaPortalSprite; // for sprite 0x58 (ninja-portal.png)
+    // Additional new portals
+    private BitmapSource? dualPortalSprite; // for sprite 0x22 (dual-portal.png)
+    private BitmapSource? singlePortalSprite; // for sprite 0x23 (single-portal.png)
     // Gravity portals
     private BitmapSource? gravityDownPortalSprite; // for sprite 0x08 (gravity-down-portal.png)
     private BitmapSource? gravityUpPortalSprite; // for sprite 0x09 (gravity-up-portal.png)
@@ -1392,7 +1395,8 @@ namespace FamidashEditor
                      spriteIdx == 0x17 || spriteIdx == 0x4B || spriteIdx == 0x58 ||
                      spriteIdx == 0x08 || spriteIdx == 0x09 ||
                      // Horizontal gravity portals
-                     spriteIdx == 0x10 || spriteIdx == 0x11 || spriteIdx == 0x12 || spriteIdx == 0x13;
+                     spriteIdx == 0x10 || spriteIdx == 0x11 || spriteIdx == 0x12 || spriteIdx == 0x13 ||
+                         spriteIdx == 0x22 || spriteIdx == 0x23;
         }
         
         // Get the portal sprite bitmap for a given sprite ID
@@ -1415,6 +1419,8 @@ namespace FamidashEditor
                 0x11 => gravityDownUpwardsPortalSprite,
                 0x12 => gravityUpDownwardsPortalSprite,
                 0x13 => gravityUpUpwardsPortalSprite,
+                0x22 => dualPortalSprite,
+                0x23 => singlePortalSprite,
                 _ => null
             };
         }
@@ -1471,6 +1477,14 @@ namespace FamidashEditor
             if (originalIndex == 0x13)
             {
                 return 3014; // Gravity up (upwards) horizontal portal
+            }
+            if (originalIndex == 0x22)
+            {
+                return 3015; // Dual portal (new)
+            }
+            if (originalIndex == 0x23)
+            {
+                return 3016; // Single portal (new)
             }
             if (originalIndex == 0x52)
             {
@@ -1671,6 +1685,9 @@ namespace FamidashEditor
             if (customIndex == 3012) return gravityDownUpwardsPortalSprite;
             if (customIndex == 3013) return gravityUpDownwardsPortalSprite;
             if (customIndex == 3014) return gravityUpUpwardsPortalSprite;
+            // New larger portals
+            if (customIndex == 3015) return dualPortalSprite;
+            if (customIndex == 3016) return singlePortalSprite;
             
             if (customIndex >= 2000 && customIndex <= 2011)
             {
@@ -2200,6 +2217,9 @@ namespace FamidashEditor
                 gravityDownUpwardsPortalSprite = LoadPortalSprite("gravity-down-upwards-portal.png");
                 gravityUpDownwardsPortalSprite = LoadPortalSprite("gravity-up-downwards-portal.png");
                 gravityUpUpwardsPortalSprite = LoadPortalSprite("gravity-up-upwards-portal.png");
+                // New larger portals
+                dualPortalSprite = LoadPortalSprite("dual-portal.png");
+                singlePortalSprite = LoadPortalSprite("single-portal.png");
             }
             catch (Exception ex)
             {
@@ -5012,7 +5032,7 @@ namespace FamidashEditor
                                         int portalRenderWidth = spritePixelW;
                                         int portalRenderHeight = spritePixelH;
                                         int portalAnimatedIdx = GetAnimatedSpriteIndex(checkSpriteId);
-                                        bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3014);
+                                        bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3016);
                                         if (portalIsMulti)
                                         {
                                             if (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3010)
@@ -5496,7 +5516,7 @@ namespace FamidashEditor
                 if (sprite == null) return;
                 
                 // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3014)
-                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3014);
+                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3016);
                 int renderHeight = spritePixelH;
                 int renderWidth = spritePixelW;
 

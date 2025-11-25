@@ -117,5 +117,7 @@
     <EmbeddedResource Include="..\gravity-down-upwards-portal.png" />
     <EmbeddedResource Include="..\gravity-up-downwards-portal.png" />
     <EmbeddedResource Include="..\gravity-up-upwards-portal.png" />
+    <EmbeddedResource Include="..\dual-portal.png" />
+    <EmbeddedResource Include="..\single-portal.png" />
   </ItemGroup>
 </Project>
