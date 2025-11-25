@@ -322,6 +322,9 @@ namespace FamidashEditor
     private BitmapSource? spiderPortalSprite; // for sprite 0x17 (spider-portal.png)
     private BitmapSource? swingcopterPortalSprite; // for sprite 0x4B (swingcopter-portal.png)
     private BitmapSource? ninjaPortalSprite; // for sprite 0x58 (ninja-portal.png)
+    // Gravity portals
+    private BitmapSource? gravityDownPortalSprite; // for sprite 0x08 (gravity-down-portal.png)
+    private BitmapSource? gravityUpPortalSprite; // for sprite 0x09 (gravity-up-portal.png)
     // Yellow orb animation frames: 4 frames for sprites 0x0B, 0x1F, 0x29
     private BitmapSource[]? yellowOrbFrame1; // Frame 1 for all 3 yellow orb sprites
     private BitmapSource[]? yellowOrbFrame2; // Frame 2 for all 3 yellow orb sprites
@@ -1301,9 +1304,10 @@ namespace FamidashEditor
         private bool IsPortalSprite(int spriteIdx)
         {
             // Includes original portals plus newly added portal sprite IDs
-            return spriteIdx == 0x00 || spriteIdx == 0x01 || spriteIdx == 0x02 ||
-                   spriteIdx == 0x03 || spriteIdx == 0x04 || spriteIdx == 0x24 ||
-                   spriteIdx == 0x17 || spriteIdx == 0x4B || spriteIdx == 0x58;
+                 return spriteIdx == 0x00 || spriteIdx == 0x01 || spriteIdx == 0x02 ||
+                     spriteIdx == 0x03 || spriteIdx == 0x04 || spriteIdx == 0x24 ||
+                     spriteIdx == 0x17 || spriteIdx == 0x4B || spriteIdx == 0x58 ||
+                     spriteIdx == 0x08 || spriteIdx == 0x09;
         }
         
         // Get the portal sprite bitmap for a given sprite ID
@@ -1319,6 +1323,8 @@ namespace FamidashEditor
                 0x24 => wavePortalSprite,
                 0x17 => spiderPortalSprite,
                 0x4B => swingcopterPortalSprite,
+                0x08 => gravityDownPortalSprite,
+                0x09 => gravityUpPortalSprite,
                 0x58 => ninjaPortalSprite,
                 _ => null
             };
@@ -1354,6 +1360,16 @@ namespace FamidashEditor
             {
                 try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x58 detected, previewMode={previewMode}, returning 3008\n"); } catch { }
                 return 3008; // Ninja portal
+            }
+            if (originalIndex == 0x08)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x08 detected, previewMode={previewMode}, returning 3009\n"); } catch { }
+                return 3009; // Gravity down portal
+            }
+            if (originalIndex == 0x09)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x09 detected, previewMode={previewMode}, returning 3010\n"); } catch { }
+                return 3010; // Gravity up portal
             }
             
             // Check if this is an animated orb sprite
@@ -1502,6 +1518,8 @@ namespace FamidashEditor
             if (customIndex == 3006) return spiderPortalSprite;
             if (customIndex == 3007) return swingcopterPortalSprite;
             if (customIndex == 3008) return ninjaPortalSprite;
+            if (customIndex == 3009) return gravityDownPortalSprite;
+            if (customIndex == 3010) return gravityUpPortalSprite;
             
             if (customIndex >= 2000 && customIndex <= 2011)
             {
@@ -1894,6 +1912,11 @@ namespace FamidashEditor
                 System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] swingcopterPortalSprite loaded? {swingcopterPortalSprite != null}\n");
                 ninjaPortalSprite = LoadPortalSprite("ninja-portal.png");
                 System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] ninjaPortalSprite loaded? {ninjaPortalSprite != null}\n");
+                // Gravity portals
+                gravityDownPortalSprite = LoadPortalSprite("gravity-down-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityDownPortalSprite loaded? {gravityDownPortalSprite != null}\n");
+                gravityUpPortalSprite = LoadPortalSprite("gravity-up-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityUpPortalSprite loaded? {gravityUpPortalSprite != null}\n");
             }
             catch (Exception ex)
             {
@@ -2675,6 +2698,8 @@ namespace FamidashEditor
             System.Diagnostics.Debug.WriteLine($"  Sprite 0x17 ({0x17}) in range: {0x17 < spriteImages.Length}");
             System.Diagnostics.Debug.WriteLine($"  Sprite 0x4B ({0x4B}) in range: {0x4B < spriteImages.Length}");
             System.Diagnostics.Debug.WriteLine($"  Sprite 0x58 ({0x58}) in range: {0x58 < spriteImages.Length}");
+            System.Diagnostics.Debug.WriteLine($"  Sprite 0x08 ({0x08}) in range: {0x08 < spriteImages.Length}");
+            System.Diagnostics.Debug.WriteLine($"  Sprite 0x09 ({0x09}) in range: {0x09 < spriteImages.Length}");
             System.Diagnostics.Debug.WriteLine($"  Sprite 0x0B ({0x0B}) in range: {0x0B < spriteImages.Length}");
             System.Diagnostics.Debug.WriteLine($"  Sprite 0x1F ({0x1F}) in range: {0x1F < spriteImages.Length}");
             System.Diagnostics.Debug.WriteLine($"  Sprite 0x29 ({0x29}) in range: {0x29 < spriteImages.Length}");
@@ -4472,7 +4497,7 @@ namespace FamidashEditor
                                 {
                                     try
                                     {
-                                        if (idx == 0x17 || idx == 0x4B || idx == 0x58)
+                                        if (idx == 0x17 || idx == 0x4B || idx == 0x58 || idx == 0x08 || idx == 0x09)
                                         {
                                             try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] RebuildAllSpritesBitmap: found spriteIdx=0x{idx:X2} at ({x},{y})\n"); } catch { }
                                         }

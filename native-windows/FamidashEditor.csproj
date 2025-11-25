@@ -39,6 +39,8 @@
     <EmbeddedResource Include="..\spider-portal.png" />
     <EmbeddedResource Include="..\swingcopter-portal.png" />
     <EmbeddedResource Include="..\ninja-portal.png" />
+    <EmbeddedResource Include="..\gravity-down-portal.png" />
+    <EmbeddedResource Include="..\gravity-up-portal.png" />
     <EmbeddedResource Include="..\yellow-orb-frame1.png" />
     <EmbeddedResource Include="..\yellow-orb-frame2.png" />
     <EmbeddedResource Include="..\yellow-orb-frame3.png" />
