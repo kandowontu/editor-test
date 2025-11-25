@@ -1254,7 +1254,11 @@ namespace FamidashEditor
                         spriteIdx == 0x0D || // Blue pad down
                         spriteIdx == 0x0E || // Blue pad up
                         spriteIdx == 0x25 || // Pink pad down
-                        spriteIdx == 0x26)   // Pink pad up
+                        spriteIdx == 0x26 || // Pink pad up
+                        spriteIdx == 0x7A || // White orb
+                        spriteIdx == 0x07 || // Coin type 1
+                        spriteIdx == 0x1A || // Coin type 2
+                        spriteIdx == 0x1B)   // Coin type 3
                     {
                         hasAnimatedOrbs = true;
                         
@@ -1317,9 +1321,9 @@ namespace FamidashEditor
             else
             {
                 // Debug: Why aren't we checking orbs?
-                if (animationFrame % 120 == 0)
+                    if (animationFrame % 120 == 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Not checking orbs: spritesWb={(spritesWb != null)}, yellow={(yellowOrbFrame1 != null)}, blue={(blueOrbFrame1 != null)}, pink={(pinkOrbFrame1 != null)}, green={(greenOrbFrame1 != null)}, red={(redOrbFrame1 != null)}, black={(blackOrbFrame1 != null)}");
+                    System.Diagnostics.Debug.WriteLine($"Not checking orbs: spritesWb={(spritesWb != null)}, yellow={(yellowOrbFrame1 != null)}, blue={(blueOrbFrame1 != null)}, pink={(pinkOrbFrame1 != null)}, green={(greenOrbFrame1 != null)}, red={(redOrbFrame1 != null)}, black={(blackOrbFrame1 != null)}, white={(whiteOrbFrame1 != null)}, coin={(coinFrame1 != null)}");
                 }
             }
         }
