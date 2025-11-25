@@ -198,6 +198,7 @@
                 <Image x:Name="ParallaxImage" />
                 <Image x:Name="GroundImage" />
                 <Image x:Name="TilesImage" />
+                <Image x:Name="PortalsImage" />
                 <Image x:Name="SpritesImage" />
                 <Image x:Name="GridImage" />
                 <Canvas x:Name="CanvasHost" Background="Transparent">

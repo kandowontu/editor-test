@@ -1,0 +1,6 @@
+[09:57:02] UpdateSpriteBitmapAtLocked: Sprite 0x00: animatedIdx=0, previewMode=False
+[09:57:02] UpdateSpriteBitmapAtLocked: Sprite 0x00: animatedIdx=0, previewMode=False
+[09:57:03] UpdateSpriteBitmapAtLocked: Sprite 0x00: animatedIdx=3000, previewMode=True
+[09:57:03] UpdateSpriteBitmapAtLocked: Sprite 0x00: customSprite=24x48
+[09:57:03] Portal scaled render: srcWidth=24, srcHeight=48, scaleX=1.00, scaleY=1.00, copyWidth=24, copyHeight=48
+[09:57:04] UpdateSpriteBitmapAtLocked: Sprite 0x00: animatedIdx=0, previewMode=False
