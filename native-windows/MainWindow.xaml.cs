@@ -345,6 +345,42 @@ namespace FamidashEditor
     private BitmapSource[]? redPadFrame2;
     private BitmapSource[]? redPadFrame3;
     private BitmapSource[]? redPadFrame4;
+    // Additional pad animations (preview-only)
+    // Sprite 0x53: red-pad-up-frame1..4
+    private BitmapSource[]? redPadUpFrame1;
+    private BitmapSource[]? redPadUpFrame2;
+    private BitmapSource[]? redPadUpFrame3;
+    private BitmapSource[]? redPadUpFrame4;
+    // Sprite 0x0A: yellow-pad-down-frame1..4
+    private BitmapSource[]? yellowPadDownFrame1;
+    private BitmapSource[]? yellowPadDownFrame2;
+    private BitmapSource[]? yellowPadDownFrame3;
+    private BitmapSource[]? yellowPadDownFrame4;
+    // Sprite 0x0C: yellow-pad-up-frame1..4
+    private BitmapSource[]? yellowPadUpFrame1;
+    private BitmapSource[]? yellowPadUpFrame2;
+    private BitmapSource[]? yellowPadUpFrame3;
+    private BitmapSource[]? yellowPadUpFrame4;
+    // Sprite 0x0D: blue-pad-down-frame1..4
+    private BitmapSource[]? bluePadDownFrame1;
+    private BitmapSource[]? bluePadDownFrame2;
+    private BitmapSource[]? bluePadDownFrame3;
+    private BitmapSource[]? bluePadDownFrame4;
+    // Sprite 0x0E: blue-pad-up-frame1..4
+    private BitmapSource[]? bluePadUpFrame1;
+    private BitmapSource[]? bluePadUpFrame2;
+    private BitmapSource[]? bluePadUpFrame3;
+    private BitmapSource[]? bluePadUpFrame4;
+    // Sprite 0x25: pink-pad-down-frame1..4
+    private BitmapSource[]? pinkPadDownFrame1;
+    private BitmapSource[]? pinkPadDownFrame2;
+    private BitmapSource[]? pinkPadDownFrame3;
+    private BitmapSource[]? pinkPadDownFrame4;
+    // Sprite 0x26: pink-pad-up-frame1..4
+    private BitmapSource[]? pinkPadUpFrame1;
+    private BitmapSource[]? pinkPadUpFrame2;
+    private BitmapSource[]? pinkPadUpFrame3;
+    private BitmapSource[]? pinkPadUpFrame4;
     // Pink orb animation frames: 4 frames for sprite 0x06
     private BitmapSource[]? pinkOrbFrame1;
     private BitmapSource[]? pinkOrbFrame2;
@@ -369,6 +405,8 @@ namespace FamidashEditor
     private Dictionary<int, int> spriteFrameOffsets = new Dictionary<int, int>();
     private Random spriteAnimationRandom = new Random();
     private int currentSpritePositionKey = 0; // Temp variable for passing position to GetAnimatedSpriteIndex
+    // Portal debug log path (initialized at startup)
+    private string? portalDebugPath = null;
 
         private interface IUndoAction
         {
@@ -1178,14 +1216,15 @@ namespace FamidashEditor
                 }
             }
             
-            // Update animated orb sprites (all colors)
+            // Update animated orb sprites (all colors) and preview-only red pad
             if (spritesWb != null && 
                 ((yellowOrbFrame1 != null && yellowOrbFrame2 != null && yellowOrbFrame3 != null && yellowOrbFrame4 != null) ||
                  (blueOrbFrame1 != null && blueOrbFrame2 != null && blueOrbFrame3 != null && blueOrbFrame4 != null) ||
                  (pinkOrbFrame1 != null && pinkOrbFrame2 != null && pinkOrbFrame3 != null && pinkOrbFrame4 != null) ||
                  (greenOrbFrame1 != null && greenOrbFrame2 != null && greenOrbFrame3 != null && greenOrbFrame4 != null) ||
                  (redOrbFrame1 != null && redOrbFrame2 != null && redOrbFrame3 != null && redOrbFrame4 != null) ||
-                 (blackOrbFrame1 != null && blackOrbFrame2 != null && blackOrbFrame3 != null && blackOrbFrame4 != null)))
+                 (blackOrbFrame1 != null && blackOrbFrame2 != null && blackOrbFrame3 != null && blackOrbFrame4 != null) ||
+                 (redPadFrame1 != null && redPadFrame2 != null && redPadFrame3 != null && redPadFrame4 != null)))
             {
                 // Check if we have any animated orb sprites
                 bool hasAnimatedOrbs = false;
@@ -1197,7 +1236,15 @@ namespace FamidashEditor
                         spriteIdx == 0x06 || // Pink
                         spriteIdx == 0x27 || // Green
                         spriteIdx == 0x28 || // Red
-                        spriteIdx == 0x44)   // Black
+                        spriteIdx == 0x44 || // Black
+                        spriteIdx == 0x52 || // Red pad (preview-only)
+                        spriteIdx == 0x53 || // Red pad up
+                        spriteIdx == 0x0A || // Yellow pad down
+                        spriteIdx == 0x0C || // Yellow pad up
+                        spriteIdx == 0x0D || // Blue pad down
+                        spriteIdx == 0x0E || // Blue pad up
+                        spriteIdx == 0x25 || // Pink pad down
+                        spriteIdx == 0x26)   // Pink pad up
                     {
                         hasAnimatedOrbs = true;
                         
@@ -1231,7 +1278,15 @@ namespace FamidashEditor
                                     spriteIdx == 0x06 || // Pink
                                     spriteIdx == 0x27 || // Green
                                     spriteIdx == 0x28 || // Red
-                                    spriteIdx == 0x44)   // Black
+                                    spriteIdx == 0x44 || // Black
+                                    spriteIdx == 0x52 || // Red pad (preview-only)
+                                    spriteIdx == 0x53 || // Red pad up
+                                    spriteIdx == 0x0A || // Yellow pad down
+                                    spriteIdx == 0x0C || // Yellow pad up
+                                    spriteIdx == 0x0D || // Blue pad down
+                                    spriteIdx == 0x0E || // Blue pad up
+                                    spriteIdx == 0x25 || // Pink pad down
+                                    spriteIdx == 0x26)   // Pink pad up
                                 {
                                     UpdateSpriteBitmapAtLocked(x, y, spriteIdx, scale, mapViewportPadding, spritePixelW, spritePixelH, dpi);
                                 }
@@ -1364,49 +1419,43 @@ namespace FamidashEditor
             if (originalIndex == 0x24) return 3005; // Wave portal
             if (originalIndex == 0x17)
             {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x17 detected, previewMode={previewMode}, returning 3006\n"); } catch { }
                 return 3006; // Spider portal
             }
             if (originalIndex == 0x4B)
             {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x4B detected, previewMode={previewMode}, returning 3007\n"); } catch { }
                 return 3007; // Swingcopter portal (0x4B)
             }
             if (originalIndex == 0x58)
             {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x58 detected, previewMode={previewMode}, returning 3008\n"); } catch { }
                 return 3008; // Ninja portal
             }
             if (originalIndex == 0x08)
             {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x08 detected, previewMode={previewMode}, returning 3009\n"); } catch { }
                 return 3009; // Gravity down portal
             }
             if (originalIndex == 0x09)
             {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x09 detected, previewMode={previewMode}, returning 3010\n"); } catch { }
                 return 3010; // Gravity up portal
             }
             // Horizontal gravity portals (new)
             if (originalIndex == 0x10)
             {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x10 detected, previewMode={previewMode}, returning 3011\n"); } catch { }
                 return 3011; // Gravity down (downwards) horizontal portal
             }
             if (originalIndex == 0x11)
             {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x11 detected, previewMode={previewMode}, returning 3012\n"); } catch { }
                 return 3012; // Gravity down (upwards) horizontal portal
             }
             if (originalIndex == 0x12)
             {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x12 detected, previewMode={previewMode}, returning 3013\n"); } catch { }
                 return 3013; // Gravity up (downwards) horizontal portal
             }
             if (originalIndex == 0x13)
             {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x13 detected, previewMode={previewMode}, returning 3014\n"); } catch { }
                 return 3014; // Gravity up (upwards) horizontal portal
+            }
+            if (originalIndex == 0x52)
+            {
             }
             
             // Check if this is an animated orb sprite
@@ -1416,7 +1465,9 @@ namespace FamidashEditor
             bool isGreenOrb = (originalIndex == 0x27);
             bool isRedOrb = (originalIndex == 0x28);
             bool isBlackOrb = (originalIndex == 0x44);
-            bool isPad = (originalIndex == 0x52); // red pad (preview-only) animated
+            // Pads (preview-only): 0x52 red-pad-down, 0x53 red-pad-up, 0x0A yellow-pad-down, 0x0C yellow-pad-up,
+            // 0x0D blue-pad-down, 0x0E blue-pad-up, 0x25 pink-pad-down, 0x26 pink-pad-up
+            bool isPad = (originalIndex == 0x52 || originalIndex == 0x53 || originalIndex == 0x0A || originalIndex == 0x0C || originalIndex == 0x0D || originalIndex == 0x0E || originalIndex == 0x25 || originalIndex == 0x26);
             
             if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb || isPad)
             {
@@ -1425,12 +1476,18 @@ namespace FamidashEditor
                 int spritePositionKey = currentSpritePositionKey; // Set by UpdateSpriteBitmapAtLocked
                 if (!spriteFrameOffsets.ContainsKey(spritePositionKey))
                 {
-                    spriteFrameOffsets[spritePositionKey] = spriteAnimationRandom.Next(0, 4);
+                    int rnd = spriteAnimationRandom.Next(0, 4);
+                    spriteFrameOffsets[spritePositionKey] = rnd;
                 }
                 int frameOffset = spriteFrameOffsets[spritePositionKey];
                 
                 // Calculate which frame (0-3) based on animation counter + random offset
                 int frame = (((animationFrame * 9) / 20) + frameOffset) % 4;
+
+                // Detailed debug for red pad to trace why frame may be constant
+                if (isPad)
+                {
+                }
                 
                 // Determine which orb color and map to custom index range
                 // Yellow: 2000-2011 (3 sprites × 4 frames)
@@ -1467,8 +1524,21 @@ namespace FamidashEditor
                 }
                 else if (isPad)
                 {
-                    // Red pad (single sprite animation)
-                    return 2032 + frame;
+                    // Map each pad sprite to its own 4-frame custom range
+                    int baseIndex = 2032; // default for 0x52
+                    switch (originalIndex)
+                    {
+                        case 0x52: baseIndex = 2032; break; // red-pad-down (existing)
+                        case 0x53: baseIndex = 2036; break; // red-pad-up
+                        case 0x0A: baseIndex = 2040; break; // yellow-pad-down
+                        case 0x0C: baseIndex = 2044; break; // yellow-pad-up
+                        case 0x0D: baseIndex = 2048; break; // blue-pad-down
+                        case 0x0E: baseIndex = 2052; break; // blue-pad-up
+                        case 0x25: baseIndex = 2056; break; // pink-pad-down
+                        case 0x26: baseIndex = 2060; break; // pink-pad-up
+                        default: baseIndex = 2032; break;
+                    }
+                    return baseIndex + frame;
                 }
             }
             
@@ -1538,6 +1608,7 @@ namespace FamidashEditor
         // Get the custom orb animation sprite if index is >= 2000
         private BitmapSource? GetCustomAnimationSprite(int customIndex)
         {
+            // (debug logging removed)
             // Portal sprites: 3000-3010 (24x48 multi-tile sprites - 1.5x3 tiles each)
             // 3000: Cube portal (0x00)
             // 3001: Ship portal (0x01)
@@ -1584,7 +1655,9 @@ namespace FamidashEditor
                     3 => yellowOrbFrame4,
                     _ => null
                 };
-                
+
+                // (debug logging removed)
+
                 if (frameArray != null && spriteOffset < frameArray.Length)
                 {
                     return frameArray[spriteOffset];
@@ -1665,6 +1738,97 @@ namespace FamidashEditor
                     1 => redPadFrame2?[0],
                     2 => redPadFrame3?[0],
                     3 => redPadFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2036 && customIndex <= 2039)
+            {
+                // Red pad (up)
+                int frame = customIndex - 2036;
+                return frame switch
+                {
+                    0 => redPadUpFrame1?[0],
+                    1 => redPadUpFrame2?[0],
+                    2 => redPadUpFrame3?[0],
+                    3 => redPadUpFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2040 && customIndex <= 2043)
+            {
+                // Yellow pad (down)
+                int frame = customIndex - 2040;
+                return frame switch
+                {
+                    0 => yellowPadDownFrame1?[0],
+                    1 => yellowPadDownFrame2?[0],
+                    2 => yellowPadDownFrame3?[0],
+                    3 => yellowPadDownFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2044 && customIndex <= 2047)
+            {
+                // Yellow pad (up)
+                int frame = customIndex - 2044;
+                return frame switch
+                {
+                    0 => yellowPadUpFrame1?[0],
+                    1 => yellowPadUpFrame2?[0],
+                    2 => yellowPadUpFrame3?[0],
+                    3 => yellowPadUpFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2048 && customIndex <= 2051)
+            {
+                // Blue pad (down)
+                int frame = customIndex - 2048;
+                return frame switch
+                {
+                    0 => bluePadDownFrame1?[0],
+                    1 => bluePadDownFrame2?[0],
+                    2 => bluePadDownFrame3?[0],
+                    3 => bluePadDownFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2052 && customIndex <= 2055)
+            {
+                // Blue pad (up)
+                int frame = customIndex - 2052;
+                return frame switch
+                {
+                    0 => bluePadUpFrame1?[0],
+                    1 => bluePadUpFrame2?[0],
+                    2 => bluePadUpFrame3?[0],
+                    3 => bluePadUpFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2056 && customIndex <= 2059)
+            {
+                // Pink pad (down)
+                int frame = customIndex - 2056;
+                return frame switch
+                {
+                    0 => pinkPadDownFrame1?[0],
+                    1 => pinkPadDownFrame2?[0],
+                    2 => pinkPadDownFrame3?[0],
+                    3 => pinkPadDownFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2060 && customIndex <= 2063)
+            {
+                // Pink pad (up)
+                int frame = customIndex - 2060;
+                return frame switch
+                {
+                    0 => pinkPadUpFrame1?[0],
+                    1 => pinkPadUpFrame2?[0],
+                    2 => pinkPadUpFrame3?[0],
+                    3 => pinkPadUpFrame4?[0],
                     _ => null
                 };
             }
@@ -1935,7 +2099,6 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] LoadPortalSprite: not found embedded nor filePaths: baseDir={baseDir}, repoPortal={(!string.IsNullOrEmpty(repo)?System.IO.Path.Combine(repo, filename):"<none>" )}, editorDev={editorDevPath}\n"); } catch { }
                         }
                     }
                     
@@ -1943,7 +2106,6 @@ namespace FamidashEditor
                     {
                         var converted = new FormatConvertedBitmap(portal, PixelFormats.Pbgra32, null, 0);
                         System.Diagnostics.Debug.WriteLine($"✓ Loaded {filename}: {portal.PixelWidth}x{portal.PixelHeight}");
-                        try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] Loaded {filename} from {foundPath}\n"); } catch { }
                         return converted;
                     }
                     else
@@ -1955,38 +2117,23 @@ namespace FamidashEditor
                 
                 // Load all portal sprites (24x48 - 1.5x3 tiles each)
                 cubePortalSprite = LoadPortalSprite("cube-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] cubePortalSprite loaded? {cubePortalSprite != null}\n");
                 shipPortalSprite = LoadPortalSprite("ship-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] shipPortalSprite loaded? {shipPortalSprite != null}\n");
                 ballPortalSprite = LoadPortalSprite("ball-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] ballPortalSprite loaded? {ballPortalSprite != null}\n");
                 ufoPortalSprite = LoadPortalSprite("ufo-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] ufoPortalSprite loaded? {ufoPortalSprite != null}\n");
                 robotPortalSprite = LoadPortalSprite("robot-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] robotPortalSprite loaded? {robotPortalSprite != null}\n");
                 wavePortalSprite = LoadPortalSprite("wave-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] wavePortalSprite loaded? {wavePortalSprite != null}\n");
                 // New portal sprites
                 spiderPortalSprite = LoadPortalSprite("spider-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] spiderPortalSprite loaded? {spiderPortalSprite != null}\n");
                 swingcopterPortalSprite = LoadPortalSprite("swingcopter-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] swingcopterPortalSprite loaded? {swingcopterPortalSprite != null}\n");
                 ninjaPortalSprite = LoadPortalSprite("ninja-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] ninjaPortalSprite loaded? {ninjaPortalSprite != null}\n");
                 // Gravity portals
                 gravityDownPortalSprite = LoadPortalSprite("gravity-down-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityDownPortalSprite loaded? {gravityDownPortalSprite != null}\n");
                 gravityUpPortalSprite = LoadPortalSprite("gravity-up-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityUpPortalSprite loaded? {gravityUpPortalSprite != null}\n");
                 // Horizontal gravity portals
                 gravityDownDownwardsPortalSprite = LoadPortalSprite("gravity-down-downwards-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityDownDownwardsPortalSprite loaded? {gravityDownDownwardsPortalSprite != null}\n");
                 gravityDownUpwardsPortalSprite = LoadPortalSprite("gravity-down-upwards-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityDownUpwardsPortalSprite loaded? {gravityDownUpwardsPortalSprite != null}\n");
                 gravityUpDownwardsPortalSprite = LoadPortalSprite("gravity-up-downwards-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityUpDownwardsPortalSprite loaded? {gravityUpDownwardsPortalSprite != null}\n");
                 gravityUpUpwardsPortalSprite = LoadPortalSprite("gravity-up-upwards-portal.png");
-                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityUpUpwardsPortalSprite loaded? {gravityUpUpwardsPortalSprite != null}\n");
             }
             catch (Exception ex)
             {
@@ -2199,6 +2346,279 @@ namespace FamidashEditor
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to load red pad animation frames: {ex.Message}");
+            }
+        }
+
+        private void InitializeRedPadUpAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("red-pad-up-frame1.png");
+                var f2 = LoadEmbeddedImage("red-pad-up-frame2.png");
+                var f3 = LoadEmbeddedImage("red-pad-up-frame3.png");
+                var f4 = LoadEmbeddedImage("red-pad-up-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    redPadUpFrame1 = new BitmapSource[1];
+                    redPadUpFrame2 = new BitmapSource[1];
+                    redPadUpFrame3 = new BitmapSource[1];
+                    redPadUpFrame4 = new BitmapSource[1];
+
+                    redPadUpFrame1[0] = converted1;
+                    redPadUpFrame2[0] = converted2;
+                    redPadUpFrame3[0] = converted3;
+                    redPadUpFrame4[0] = converted4;
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded red pad (up) animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ red pad (up) frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load red pad (up) animation frames: {ex.Message}");
+            }
+        }
+
+        private void InitializeYellowPadDownAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("yellow-pad-down-frame1.png");
+                var f2 = LoadEmbeddedImage("yellow-pad-down-frame2.png");
+                var f3 = LoadEmbeddedImage("yellow-pad-down-frame3.png");
+                var f4 = LoadEmbeddedImage("yellow-pad-down-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    yellowPadDownFrame1 = new BitmapSource[1];
+                    yellowPadDownFrame2 = new BitmapSource[1];
+                    yellowPadDownFrame3 = new BitmapSource[1];
+                    yellowPadDownFrame4 = new BitmapSource[1];
+
+                    yellowPadDownFrame1[0] = converted1;
+                    yellowPadDownFrame2[0] = converted2;
+                    yellowPadDownFrame3[0] = converted3;
+                    yellowPadDownFrame4[0] = converted4;
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded yellow pad (down) animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ yellow pad (down) frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load yellow pad (down) animation frames: {ex.Message}");
+            }
+        }
+
+        private void InitializeYellowPadUpAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("yellow-pad-up-frame1.png");
+                var f2 = LoadEmbeddedImage("yellow-pad-up-frame2.png");
+                var f3 = LoadEmbeddedImage("yellow-pad-up-frame3.png");
+                var f4 = LoadEmbeddedImage("yellow-pad-up-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    yellowPadUpFrame1 = new BitmapSource[1];
+                    yellowPadUpFrame2 = new BitmapSource[1];
+                    yellowPadUpFrame3 = new BitmapSource[1];
+                    yellowPadUpFrame4 = new BitmapSource[1];
+
+                    yellowPadUpFrame1[0] = converted1;
+                    yellowPadUpFrame2[0] = converted2;
+                    yellowPadUpFrame3[0] = converted3;
+                    yellowPadUpFrame4[0] = converted4;
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded yellow pad (up) animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ yellow pad (up) frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load yellow pad (up) animation frames: {ex.Message}");
+            }
+        }
+
+        private void InitializeBluePadDownAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("blue-pad-down-frame1.png");
+                var f2 = LoadEmbeddedImage("blue-pad-down-frame2.png");
+                var f3 = LoadEmbeddedImage("blue-pad-down-frame3.png");
+                var f4 = LoadEmbeddedImage("blue-pad-down-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    bluePadDownFrame1 = new BitmapSource[1];
+                    bluePadDownFrame2 = new BitmapSource[1];
+                    bluePadDownFrame3 = new BitmapSource[1];
+                    bluePadDownFrame4 = new BitmapSource[1];
+
+                    bluePadDownFrame1[0] = converted1;
+                    bluePadDownFrame2[0] = converted2;
+                    bluePadDownFrame3[0] = converted3;
+                    bluePadDownFrame4[0] = converted4;
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded blue pad (down) animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ blue pad (down) frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load blue pad (down) animation frames: {ex.Message}");
+            }
+        }
+
+        private void InitializeBluePadUpAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("blue-pad-up-frame1.png");
+                var f2 = LoadEmbeddedImage("blue-pad-up-frame2.png");
+                var f3 = LoadEmbeddedImage("blue-pad-up-frame3.png");
+                var f4 = LoadEmbeddedImage("blue-pad-up-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    bluePadUpFrame1 = new BitmapSource[1];
+                    bluePadUpFrame2 = new BitmapSource[1];
+                    bluePadUpFrame3 = new BitmapSource[1];
+                    bluePadUpFrame4 = new BitmapSource[1];
+
+                    bluePadUpFrame1[0] = converted1;
+                    bluePadUpFrame2[0] = converted2;
+                    bluePadUpFrame3[0] = converted3;
+                    bluePadUpFrame4[0] = converted4;
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded blue pad (up) animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ blue pad (up) frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load blue pad (up) animation frames: {ex.Message}");
+            }
+        }
+
+        private void InitializePinkPadDownAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("pink-pad-down-frame1.png");
+                var f2 = LoadEmbeddedImage("pink-pad-down-frame2.png");
+                var f3 = LoadEmbeddedImage("pink-pad-down-frame3.png");
+                var f4 = LoadEmbeddedImage("pink-pad-down-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    pinkPadDownFrame1 = new BitmapSource[1];
+                    pinkPadDownFrame2 = new BitmapSource[1];
+                    pinkPadDownFrame3 = new BitmapSource[1];
+                    pinkPadDownFrame4 = new BitmapSource[1];
+
+                    pinkPadDownFrame1[0] = converted1;
+                    pinkPadDownFrame2[0] = converted2;
+                    pinkPadDownFrame3[0] = converted3;
+                    pinkPadDownFrame4[0] = converted4;
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded pink pad (down) animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ pink pad (down) frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load pink pad (down) animation frames: {ex.Message}");
+            }
+        }
+
+        private void InitializePinkPadUpAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("pink-pad-up-frame1.png");
+                var f2 = LoadEmbeddedImage("pink-pad-up-frame2.png");
+                var f3 = LoadEmbeddedImage("pink-pad-up-frame3.png");
+                var f4 = LoadEmbeddedImage("pink-pad-up-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    pinkPadUpFrame1 = new BitmapSource[1];
+                    pinkPadUpFrame2 = new BitmapSource[1];
+                    pinkPadUpFrame3 = new BitmapSource[1];
+                    pinkPadUpFrame4 = new BitmapSource[1];
+
+                    pinkPadUpFrame1[0] = converted1;
+                    pinkPadUpFrame2[0] = converted2;
+                    pinkPadUpFrame3[0] = converted3;
+                    pinkPadUpFrame4[0] = converted4;
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded pink pad (up) animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ pink pad (up) frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load pink pad (up) animation frames: {ex.Message}");
             }
         }
 
@@ -2514,6 +2934,9 @@ namespace FamidashEditor
         {
             try
             {
+                // Ensure portal debug log exists and is writable early so subsequent code can append safely
+                InitializePortalDebugLog();
+
                 // Try to load from embedded resources first
                 var embeddedTileset = LoadEmbeddedImage("famidash.bmp");
                 if (embeddedTileset != null)
@@ -2599,6 +3022,13 @@ namespace FamidashEditor
                 InitializeBlackOrbAnimationFrames();
                 // Initialize pad animation frames (preview-only)
                 InitializeRedPadAnimationFrames();
+                InitializeRedPadUpAnimationFrames();
+                InitializeYellowPadDownAnimationFrames();
+                InitializeYellowPadUpAnimationFrames();
+                InitializeBluePadDownAnimationFrames();
+                InitializeBluePadUpAnimationFrames();
+                InitializePinkPadDownAnimationFrames();
+                InitializePinkPadUpAnimationFrames();
             }
             catch (Exception ex)
             {
@@ -2641,19 +3071,15 @@ namespace FamidashEditor
             {
                 var assembly = Assembly.GetExecutingAssembly();
                 var resourceNames = assembly.GetManifestResourceNames();
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] LoadEmbeddedImage: looking for {resourceName}, resource count={resourceNames.Length}\n"); } catch { }
-                // Also log matching resources for portal files for ease
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] Available resources: {string.Join(", ", resourceNames.Where(r => r.EndsWith("-portal.png") || r.EndsWith("-orb-frame1.png"))) }\n"); } catch { }
+                // (debug logging removed)
 
                 // Find the resource - it might have the full path prefix
                 var fullResourceName = resourceNames.FirstOrDefault(r => r.EndsWith(resourceName));
-                if (fullResourceName == null)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Resource not found: {resourceName}");
-                    try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] LoadEmbeddedImage: FAILED to find resource {resourceName}\n"); } catch { }
-                    try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] Available resources (full match): {string.Join(", ", resourceNames)}\n"); } catch { }
-                    return null;
-                }
+                    if (fullResourceName == null)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Resource not found: {resourceName}");
+                        return null;
+                    }
                 
                 using (var stream = assembly.GetManifestResourceStream(fullResourceName))
                 {
@@ -2677,6 +3103,47 @@ namespace FamidashEditor
                 System.Diagnostics.Debug.WriteLine($"Error loading embedded resource {resourceName}: {ex.Message}");
                 return null;
             }
+        }
+
+        // Initialize a reliable portal debug log path and create the file with a header.
+        // This tries the executable directory first, then the repo root, then the temp folder.
+        private void InitializePortalDebugLog()
+        {
+            if (!string.IsNullOrEmpty(portalDebugPath)) return;
+
+            // Compute repo root once to avoid possible null being passed into Path.Combine
+            string? repoRoot = FindRepoRootFor("famidash.bmp");
+            string? repoCandidate = (!string.IsNullOrEmpty(repoRoot)) ? Path.Combine(repoRoot, "portal-debug.txt") : null;
+
+            string?[] candidates = new string?[] {
+                Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"),
+                // Try repo root (if available)
+                repoCandidate,
+                // Fallback to temp
+                Path.Combine(Path.GetTempPath(), "portal-debug.txt")
+            };
+
+            foreach (var cand in candidates)
+            {
+                if (string.IsNullOrEmpty(cand)) continue;
+                try
+                {
+                    // Ensure directory exists
+                    var dir = Path.GetDirectoryName(cand);
+                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                    // Create or append a header line so file exists and is writable
+                    File.AppendAllText(cand, $"=== portal-debug started {DateTime.Now:yyyy-MM-dd HH:mm:ss} (pid={System.Diagnostics.Process.GetCurrentProcess().Id}) ===\n");
+                    portalDebugPath = cand;
+                    return;
+                }
+                catch
+                {
+                    // try next candidate
+                }
+            }
+
+            // As a last resort, try to set portalDebugPath to a file under AppContext.BaseDirectory even if writes failed earlier.
+            portalDebugPath = Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
         }
 
         private void LoadTileset(string path)
@@ -4626,7 +5093,7 @@ namespace FamidashEditor
                                     {
                                         if (idx == 0x17 || idx == 0x4B || idx == 0x58 || idx == 0x08 || idx == 0x09)
                                         {
-                                            try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] RebuildAllSpritesBitmap: found spriteIdx=0x{idx:X2} at ({x},{y})\n"); } catch { }
+                                            // (debug logging removed)
                                         }
                                         UpdateSpriteBitmapAtLocked(x, y, idx, scale, pad, spritePixelW, spritePixelH, dpi);
                                     }
@@ -4794,7 +5261,6 @@ namespace FamidashEditor
                         int idx = sprites[ay * mapWidth + ax];
                         if (IsPortalSprite(idx))
                         {
-                            try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] RebuildPortalsRegion: found portal id=0x{idx:X2} at ({ax},{ay})\n"); } catch { }
                             // Determine portal bounds in tiles
                             int px1 = ax;
                             int py1 = ay;
@@ -4858,23 +5324,37 @@ namespace FamidashEditor
                 if (spriteIdx == 0x00)
                 {
                     System.Diagnostics.Debug.WriteLine($"Sprite 0x00: animatedIdx={animatedIdx}, previewMode={previewMode}");
-                    
-                    // Write to log file
-                    var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
-                    System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] UpdateSpriteBitmapAtLocked: Sprite 0x00: animatedIdx={animatedIdx}, previewMode={previewMode}\n");
                 }
                 
                 // Check if this is a custom animated sprite
                 if (animatedIdx >= 2000)
                 {
+                    // Request the custom animation sprite
                     sprite = GetCustomAnimationSprite(animatedIdx);
+
+                    // Lightweight diagnostic: sample first pixel of pad frames to detect per-frame changes
+                    if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26))
+                    {
+                        try
+                        {
+                            // Only log periodically to avoid spamming the debug output
+                            if (animationFrame % 30 == 0)
+                            {
+                                byte[] sample = new byte[4];
+                                sprite.CopyPixels(new Int32Rect(0, 0, Math.Max(1, Math.Min(1, sprite.PixelWidth)), Math.Max(1, Math.Min(1, sprite.PixelHeight))), sample, 4, 0);
+                                string sampleHex = BitConverter.ToString(sample);
+                                System.Diagnostics.Debug.WriteLine($"PAD_SAMPLE ({x},{y}) sprite=0x{spriteIdx:X2} animatedIdx={animatedIdx} sample={sampleHex}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"PAD_SAMPLE error at ({x},{y}) sprite=0x{spriteIdx:X2}: {ex.Message}");
+                        }
+                    }
+                    
                     if (spriteIdx == 0x00)
                     {
                         System.Diagnostics.Debug.WriteLine($"Sprite 0x00: customSprite={(sprite != null ? $"{sprite.PixelWidth}x{sprite.PixelHeight}" : "null")}");
-                        
-                        // Write to log file
-                        var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
-                        System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] UpdateSpriteBitmapAtLocked: Sprite 0x00: customSprite={(sprite != null ? $"{sprite.PixelWidth}x{sprite.PixelHeight}" : "null")}\n");
                     }
                 }
                 
@@ -5103,8 +5583,7 @@ namespace FamidashEditor
                     
                     if (isMultiTilePortal)
                     {
-                        var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
-                        System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] Portal scaled render: srcWidth={srcWidth}, srcHeight={srcHeight}, scaleX={scaleX:F2}, scaleY={scaleY:F2}, copyWidth={copyWidth}, copyHeight={copyHeight}\n");
+                        // (debug logging removed)
                     }
                     
                     unsafe
@@ -5191,8 +5670,7 @@ namespace FamidashEditor
             var portalSprite = GetPortalSpriteForId(spriteIdx);
             if (portalSprite == null)
             {
-                var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
-                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] WARNING: Portal sprite null for idx=0x{spriteIdx:X2} at ({x},{y})\n");
+                System.Diagnostics.Debug.WriteLine($"WARNING: Portal sprite null for idx=0x{spriteIdx:X2} at ({x},{y})");
                 return;
             }
 
@@ -5225,8 +5703,7 @@ namespace FamidashEditor
             int srcHeight = portalSprite.PixelHeight;
             if (srcWidth <= 0 || srcHeight <= 0)
             {
-                var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
-                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] WARNING: Portal sprite invalid size for idx=0x{spriteIdx:X2}: {srcWidth}x{srcHeight}\n");
+                System.Diagnostics.Debug.WriteLine($"WARNING: Portal sprite invalid size for idx=0x{spriteIdx:X2}: {srcWidth}x{srcHeight}");
                 return;
             }
 
@@ -5306,7 +5783,6 @@ namespace FamidashEditor
             }
             finally
             {
-                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] UpdatePortalBitmapAtLocked: drawing spriteIdx=0x{spriteIdx:X2} at ({x},{y}), src={srcWidth}x{srcHeight}, dest={copyWidth}x{copyHeight}\n"); } catch { }
                 if (portalsWb != null)
                 {
                     try { portalsWb.AddDirtyRect(new Int32Rect(destX, destY, copyWidth, copyHeight)); } catch { }
