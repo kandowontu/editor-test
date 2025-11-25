@@ -7330,8 +7330,10 @@ namespace FamidashEditor
             // Create a new 200x27 map
             mapWidth = 200;
             mapHeight = 27;
-            tiles = new int[mapWidth * mapHeight];
-            sprites = new int[mapWidth * mapHeight];
+            // Initialize tiles and sprites to -1 (empty) using shared initializer
+            InitDefaultMap();
+            // Reset any per-position animation offsets so new empty map starts fresh
+            try { spriteFrameOffsets.Clear(); } catch { }
             
             // Reset tints to defaults (transparent = no tint)
             backgroundTint = Color.FromArgb(0, 0, 0, 0);
@@ -7350,8 +7352,9 @@ namespace FamidashEditor
             try { scaledTileCaches.Clear(); } catch { }
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
             
-            // Refresh tile palette
+            // Refresh tile and sprite palettes
             try { PopulateTilesPanel(); } catch { }
+            try { PopulateSpritesPanel(); } catch { }
             
             // Clear undo/redo stacks
             undoStack.Clear();
@@ -7366,7 +7369,8 @@ namespace FamidashEditor
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
             if (StatusText != null) StatusText.Text = "New map created (200x27)";
             
-            // Redraw the map
+            // Rebuild sprites layer and redraw the map
+            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
             Redraw();
         }
 
