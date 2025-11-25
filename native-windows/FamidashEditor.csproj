@@ -65,6 +65,10 @@
     <EmbeddedResource Include="..\black-orb-frame2.png" />
     <EmbeddedResource Include="..\black-orb-frame3.png" />
     <EmbeddedResource Include="..\black-orb-frame4.png" />
+    <EmbeddedResource Include="..\red-pad-down-frame1.png" />
+    <EmbeddedResource Include="..\red-pad-down-frame2.png" />
+    <EmbeddedResource Include="..\red-pad-down-frame3.png" />
+    <EmbeddedResource Include="..\red-pad-down-frame4.png" />
     <EmbeddedResource Include="..\famidash.bmp" />
     <EmbeddedResource Include="..\sprites.png" />
     <EmbeddedResource Include="..\src\renderer\assets\parallax.bmp">

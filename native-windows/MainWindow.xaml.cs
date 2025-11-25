@@ -340,6 +340,11 @@ namespace FamidashEditor
     private BitmapSource[]? blueOrbFrame2;
     private BitmapSource[]? blueOrbFrame3;
     private BitmapSource[]? blueOrbFrame4;
+    // Red pad (preview-only) animation frames: 4 frames for sprite 0x52
+    private BitmapSource[]? redPadFrame1;
+    private BitmapSource[]? redPadFrame2;
+    private BitmapSource[]? redPadFrame3;
+    private BitmapSource[]? redPadFrame4;
     // Pink orb animation frames: 4 frames for sprite 0x06
     private BitmapSource[]? pinkOrbFrame1;
     private BitmapSource[]? pinkOrbFrame2;
@@ -1411,6 +1416,7 @@ namespace FamidashEditor
             bool isGreenOrb = (originalIndex == 0x27);
             bool isRedOrb = (originalIndex == 0x28);
             bool isBlackOrb = (originalIndex == 0x44);
+            bool isPad = (originalIndex == 0x52); // red pad (preview-only) animated
             
             if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb)
             {
@@ -1458,6 +1464,11 @@ namespace FamidashEditor
                 else if (isBlackOrb)
                 {
                     return 2028 + frame;
+                }
+                else if (isPad)
+                {
+                    // Red pad (single sprite animation)
+                    return 2032 + frame;
                 }
             }
             
@@ -1641,6 +1652,19 @@ namespace FamidashEditor
                     1 => blackOrbFrame2?[0],
                     2 => blackOrbFrame3?[0],
                     3 => blackOrbFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2032 && customIndex <= 2035)
+            {
+                // Red pad (preview-only)
+                int frame = customIndex - 2032; // 0-3
+                return frame switch
+                {
+                    0 => redPadFrame1?[0],
+                    1 => redPadFrame2?[0],
+                    2 => redPadFrame3?[0],
+                    3 => redPadFrame4?[0],
                     _ => null
                 };
             }
@@ -2139,6 +2163,45 @@ namespace FamidashEditor
             LoadOrbFrames("red", ref redOrbFrame1, ref redOrbFrame2, ref redOrbFrame3, ref redOrbFrame4);
         }
 
+        private void InitializeRedPadAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("red-pad-down-frame1.png");
+                var f2 = LoadEmbeddedImage("red-pad-down-frame2.png");
+                var f3 = LoadEmbeddedImage("red-pad-down-frame3.png");
+                var f4 = LoadEmbeddedImage("red-pad-down-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    redPadFrame1 = new BitmapSource[1];
+                    redPadFrame2 = new BitmapSource[1];
+                    redPadFrame3 = new BitmapSource[1];
+                    redPadFrame4 = new BitmapSource[1];
+
+                    redPadFrame1[0] = converted1;
+                    redPadFrame2[0] = converted2;
+                    redPadFrame3[0] = converted3;
+                    redPadFrame4[0] = converted4;
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded red pad animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ red pad frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load red pad animation frames: {ex.Message}");
+            }
+        }
+
         private void InitializeBlackOrbAnimationFrames()
         {
             LoadOrbFrames("black", ref blackOrbFrame1, ref blackOrbFrame2, ref blackOrbFrame3, ref blackOrbFrame4);
@@ -2534,6 +2597,8 @@ namespace FamidashEditor
                 InitializeGreenOrbAnimationFrames();
                 InitializeRedOrbAnimationFrames();
                 InitializeBlackOrbAnimationFrames();
+                // Initialize pad animation frames (preview-only)
+                InitializeRedPadAnimationFrames();
             }
             catch (Exception ex)
             {
