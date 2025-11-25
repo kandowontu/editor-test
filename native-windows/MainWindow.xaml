@@ -34,6 +34,7 @@
                 <TextBlock Text="  " />
                 <TextBlock Text="Size:" VerticalAlignment="Center" Margin="6,0,2,0" FontSize="11" />
                 <Slider x:Name="TileSizeSlider" Minimum="8" Maximum="48" Value="16" Width="80" VerticalAlignment="Center" />
+                <TextBlock x:Name="TileIdIndicator" Text="" VerticalAlignment="Center" Margin="8,0,0,0" FontSize="11" FontFamily="Consolas" Foreground="#AAAAAA" />
             </StackPanel>
 
             <!-- Use ListBox's internal ScrollViewer to avoid double scrollbars -->
@@ -64,6 +65,7 @@
                 <TextBlock Text="  " />
                 <TextBlock Text="Size:" VerticalAlignment="Center" Margin="6,0,2,0" FontSize="11" />
                 <Slider x:Name="SpriteSizeSlider" Minimum="8" Maximum="48" Value="16" Width="80" VerticalAlignment="Center" />
+                <TextBlock x:Name="SpriteIdIndicator" Text="" VerticalAlignment="Center" Margin="8,0,0,0" FontSize="11" FontFamily="Consolas" Foreground="#AAAAAA" />
             </StackPanel>
 
             <ListBox x:Name="SpritesPanel" Grid.Row="3" BorderThickness="0" Background="Transparent" SelectionMode="Single"

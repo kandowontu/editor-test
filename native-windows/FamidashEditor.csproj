@@ -30,6 +30,12 @@
     <EmbeddedResource Include="..\small-saw-frame2.png" />
     <EmbeddedResource Include="..\large-saw-frame1.png" />
     <EmbeddedResource Include="..\large-saw-frame2.png" />
+    <EmbeddedResource Include="..\cube-portal.png" />
+    <EmbeddedResource Include="..\ship-portal.png" />
+    <EmbeddedResource Include="..\ball-portal.png" />
+    <EmbeddedResource Include="..\ufo-portal.png" />
+    <EmbeddedResource Include="..\robot-portal.png" />
+    <EmbeddedResource Include="..\wave-portal.png" />
     <EmbeddedResource Include="..\yellow-orb-frame1.png" />
     <EmbeddedResource Include="..\yellow-orb-frame2.png" />
     <EmbeddedResource Include="..\yellow-orb-frame3.png" />

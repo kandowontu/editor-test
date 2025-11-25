@@ -310,6 +310,13 @@ namespace FamidashEditor
     private BitmapSource[]? largeSawFrame2Tiles; // 9 tiles for frame 2
     private ImageSource[]? largeSawFrame1TilesTinted; // Tinted versions
     private ImageSource[]? largeSawFrame2TilesTinted; // Tinted versions
+    // Portal sprites for preview mode (multi-tile replacements)
+    private BitmapSource? cubePortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x00 in preview mode
+    private BitmapSource? shipPortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x01 in preview mode
+    private BitmapSource? ballPortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x02 in preview mode
+    private BitmapSource? ufoPortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x03 in preview mode
+    private BitmapSource? robotPortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x04 in preview mode
+    private BitmapSource? wavePortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x24 in preview mode
     // Yellow orb animation frames: 4 frames for sprites 0x0B, 0x1F, 0x29
     private BitmapSource[]? yellowOrbFrame1; // Frame 1 for all 3 yellow orb sprites
     private BitmapSource[]? yellowOrbFrame2; // Frame 2 for all 3 yellow orb sprites
@@ -737,6 +744,9 @@ namespace FamidashEditor
                         $"Preview Mode CHECKED at {DateTime.Now}\n");
                     previewMode = true;
                     StartPreviewTimer();
+                    // Redraw to show portal sprites and animations
+                    RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
+                    RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
                 };
                 PreviewModeCheckbox.Unchecked += (s, e) =>
                 {
@@ -1261,12 +1271,44 @@ namespace FamidashEditor
             return originalIndex; // Not a saw tile
         }
         
+        // Check if a sprite ID is a portal sprite (in preview mode, these become 2x3 multi-tile sprites)
+        private bool IsPortalSprite(int spriteIdx)
+        {
+            return spriteIdx == 0x00 || spriteIdx == 0x01 || spriteIdx == 0x02 || 
+                   spriteIdx == 0x03 || spriteIdx == 0x04 || spriteIdx == 0x24;
+        }
+        
+        // Get the portal sprite bitmap for a given sprite ID
+        private BitmapSource? GetPortalSpriteForId(int spriteIdx)
+        {
+            return spriteIdx switch
+            {
+                0x00 => cubePortalSprite,
+                0x01 => shipPortalSprite,
+                0x02 => ballPortalSprite,
+                0x03 => ufoPortalSprite,
+                0x04 => robotPortalSprite,
+                0x24 => wavePortalSprite,
+                _ => null
+            };
+        }
+        
         // Returns special indices (>= 2000) to indicate custom animation sprites
         // Orbs have 4-frame animation: yellow (0x0B, 0x1F, 0x29), blue (0x05), pink (0x06), 
         // green (0x27), red (0x28), black (0x44)
+        // Portals: cube (0x00), ship (0x01), ball (0x02), ufo (0x03), robot (0x04), wave (0x24)
+        // return 3000-3005 to indicate multi-tile portal sprites (24x48 - 1.5x3 tiles each)
         private int GetAnimatedSpriteIndex(int originalIndex)
         {
             if (!previewMode) return originalIndex;
+            
+            // Check if this is a portal sprite
+            if (originalIndex == 0x00) return 3000; // Cube portal
+            if (originalIndex == 0x01) return 3001; // Ship portal
+            if (originalIndex == 0x02) return 3002; // Ball portal
+            if (originalIndex == 0x03) return 3003; // UFO portal
+            if (originalIndex == 0x04) return 3004; // Robot portal
+            if (originalIndex == 0x24) return 3005; // Wave portal
             
             // Check if this is an animated orb sprite
             bool isYellowOrb = (originalIndex == 0x0B || originalIndex == 0x1F || originalIndex == 0x29);
@@ -1391,12 +1433,26 @@ namespace FamidashEditor
         // Get the custom orb animation sprite if index is >= 2000
         private BitmapSource? GetCustomAnimationSprite(int customIndex)
         {
+            // Portal sprites: 3000-3005 (24x48 multi-tile sprites - 1.5x3 tiles each)
+            // 3000: Cube portal (0x00)
+            // 3001: Ship portal (0x01)
+            // 3002: Ball portal (0x02)
+            // 3003: UFO portal (0x03)
+            // 3004: Robot portal (0x04)
+            // 3005: Wave portal (0x24)
             // Yellow orb sprites: 2000-2011 (3 sprites × 4 frames)
             // Blue orb: 2012-2015 (1 sprite × 4 frames)
             // Pink orb: 2016-2019 (1 sprite × 4 frames)
             // Green orb: 2020-2023 (1 sprite × 4 frames)
             // Red orb: 2024-2027 (1 sprite × 4 frames)
             // Black orb: 2028-2031 (1 sprite × 4 frames)
+            
+            if (customIndex == 3000) return cubePortalSprite;
+            if (customIndex == 3001) return shipPortalSprite;
+            if (customIndex == 3002) return ballPortalSprite;
+            if (customIndex == 3003) return ufoPortalSprite;
+            if (customIndex == 3004) return robotPortalSprite;
+            if (customIndex == 3005) return wavePortalSprite;
             
             if (customIndex >= 2000 && customIndex <= 2011)
             {
@@ -1709,6 +1765,66 @@ namespace FamidashEditor
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to load saw animation frames: {ex.Message}");
+            }
+        }
+
+        // Load portal sprites for preview mode (multi-tile replacements)
+        private void InitializePortalSprites()
+        {
+            try
+            {
+                // Helper function to load a portal sprite
+                BitmapSource? LoadPortalSprite(string filename)
+                {
+                    var portal = LoadEmbeddedImage(filename);
+                    
+                    if (portal == null)
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var portalPath = System.IO.Path.Combine(baseDir, filename);
+                        
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo))
+                        {
+                            var repoPortal = System.IO.Path.Combine(repo, filename);
+                            if (System.IO.File.Exists(repoPortal)) portalPath = repoPortal;
+                        }
+                        
+                        if (System.IO.File.Exists(portalPath))
+                        {
+                            portal = new BitmapImage();
+                            portal.BeginInit();
+                            portal.CacheOption = BitmapCacheOption.OnLoad;
+                            portal.UriSource = new Uri(portalPath);
+                            portal.EndInit();
+                            portal.Freeze();
+                        }
+                    }
+                    
+                    if (portal != null)
+                    {
+                        var converted = new FormatConvertedBitmap(portal, PixelFormats.Pbgra32, null, 0);
+                        System.Diagnostics.Debug.WriteLine($"✓ Loaded {filename}: {portal.PixelWidth}x{portal.PixelHeight}");
+                        return converted;
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"✗ {filename} not found");
+                        return null;
+                    }
+                }
+                
+                // Load all portal sprites (24x48 - 1.5x3 tiles each)
+                cubePortalSprite = LoadPortalSprite("cube-portal.png");
+                shipPortalSprite = LoadPortalSprite("ship-portal.png");
+                ballPortalSprite = LoadPortalSprite("ball-portal.png");
+                ufoPortalSprite = LoadPortalSprite("ufo-portal.png");
+                robotPortalSprite = LoadPortalSprite("robot-portal.png");
+                wavePortalSprite = LoadPortalSprite("wave-portal.png");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load portal sprites: {ex.Message}");
             }
         }
 
@@ -2263,6 +2379,9 @@ namespace FamidashEditor
                 
                 // Initialize saw animation frames
                 InitializeSawAnimationFrames();
+                
+                // Initialize portal sprites for preview mode
+                InitializePortalSprites();
                 
                 // Initialize yellow orb animation frames
                 InitializeYellowOrbAnimationFrames();
@@ -2839,6 +2958,21 @@ namespace FamidashEditor
                     ((Image)s).ReleaseMouseCapture();
                 };
                 
+                // Update ID indicator on hover
+                img.MouseEnter += (s, e) => {
+                    int hoveredTile = (int)((Image)s).Tag;
+                    if (TileIdIndicator != null)
+                        TileIdIndicator.Text = $"ID: 0x{hoveredTile:X2} ({hoveredTile})";
+                };
+                
+                img.MouseLeave += (s, e) => {
+                    // Show selected tile when not hovering
+                    if (TileIdIndicator != null && selectedTile >= 0)
+                        TileIdIndicator.Text = $"Selected: 0x{selectedTile:X2} ({selectedTile})";
+                    else if (TileIdIndicator != null)
+                        TileIdIndicator.Text = "";
+                };
+                
                 var border = new Border { 
                     Child = img, 
                     Margin = new Thickness(0), 
@@ -2892,6 +3026,22 @@ namespace FamidashEditor
                     
                     UpdatePaletteHighlight();
                 };
+                
+                // Update ID indicator on hover
+                img.MouseEnter += (s, e) => {
+                    int hoveredSprite = (int)((Image)s).Tag;
+                    if (SpriteIdIndicator != null)
+                        SpriteIdIndicator.Text = $"ID: 0x{hoveredSprite:X2} ({hoveredSprite})";
+                };
+                
+                img.MouseLeave += (s, e) => {
+                    // Show selected sprite when not hovering
+                    if (SpriteIdIndicator != null && selectedSprite >= 0)
+                        SpriteIdIndicator.Text = $"Selected: 0x{selectedSprite:X2} ({selectedSprite})";
+                    else if (SpriteIdIndicator != null)
+                        SpriteIdIndicator.Text = "";
+                };
+                
                 var border = new Border { Child = img, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedSprite ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedSprite ? new Thickness(2) : new Thickness(0)) };
                 SpritesPanel.Items.Add(border);
                 idx++;
@@ -2976,6 +3126,10 @@ namespace FamidashEditor
                     }
                 }
             }
+            
+            // Update ID indicators
+            UpdateIdIndicators();
+            
             // Update sprite highlights - show yellow border if sprite is selected
             if (SpritesPanel != null)
             {
@@ -2998,6 +3152,28 @@ namespace FamidashEditor
             if (SpritesLabelBorder != null)
             {
                 SpritesLabelBorder.BorderBrush = spritesLayerActive ? Brushes.Yellow : Brushes.Transparent;
+            }
+        }
+        
+        // Update the ID indicator text labels
+        private void UpdateIdIndicators()
+        {
+            // Update tile ID indicator
+            if (TileIdIndicator != null)
+            {
+                if (selectedTile >= 0)
+                    TileIdIndicator.Text = $"Selected: 0x{selectedTile:X2} ({selectedTile})";
+                else
+                    TileIdIndicator.Text = "";
+            }
+            
+            // Update sprite ID indicator
+            if (SpriteIdIndicator != null)
+            {
+                if (selectedSprite >= 0)
+                    SpriteIdIndicator.Text = $"Selected: 0x{selectedSprite:X2} ({selectedSprite})";
+                else
+                    SpriteIdIndicator.Text = "";
             }
         }
 
@@ -3959,6 +4135,7 @@ namespace FamidashEditor
                     
                     unsafe
                     {
+                        // Clear the area first
                         for (int row = 0; row < clearHeight; row++)
                         {
                             long destOffset = (destY + row) * backBufferStride + destX * 4;
@@ -3967,6 +4144,74 @@ namespace FamidashEditor
                             for (int col = 0; col < clearWidth * 4; col++)
                             {
                                 destPtr[col] = 0; // Set to transparent
+                            }
+                        }
+                        
+                        // In preview mode, check if there's a portal nearby that extends into this position
+                        // and render that portal section
+                        if (previewMode)
+                        {
+                            // Check tiles around this position to see if any contain a portal sprite
+                            // A portal is 2x3 tiles, so we need to check positions that could have portals extending here
+                            for (int checkY = Math.Max(0, y - 2); checkY <= Math.Min(mapHeight - 1, y); checkY++)
+                            {
+                                for (int checkX = Math.Max(0, x - 1); checkX <= Math.Min(mapWidth - 1, x); checkX++)
+                                {
+                                    int checkIdx = checkY * mapWidth + checkX;
+                                    int checkSpriteId = sprites[checkIdx];
+                                    
+                                    if (IsPortalSprite(checkSpriteId))
+                                    {
+                                        var portalSprite = GetPortalSpriteForId(checkSpriteId);
+                                        if (portalSprite == null) continue;
+                                        
+                                        // Found a portal! Calculate which part of it overlaps with our current tile
+                                        int portalDestX = Math.Max(0, padPxX + checkX * spritePixelW);
+                                        int portalDestY = Math.Max(0, padPxY + checkY * spritePixelH);
+                                        int portalRenderWidth = (spritePixelW * 3) / 2;  // 1.5 tiles wide = 24 pixels
+                                        int portalRenderHeight = spritePixelH * 3;
+                                        
+                                        // Calculate the intersection between the portal and our current tile
+                                        int intersectLeft = Math.Max(destX, portalDestX);
+                                        int intersectTop = Math.Max(destY, portalDestY);
+                                        int intersectRight = Math.Min(destX + spritePixelW, portalDestX + portalRenderWidth);
+                                        int intersectBottom = Math.Min(destY + spritePixelH, portalDestY + portalRenderHeight);
+                                        
+                                        if (intersectRight > intersectLeft && intersectBottom > intersectTop)
+                                        {
+                                            // There's an intersection - render this part of the portal
+                                            int portalSrcWidth = portalSprite.PixelWidth;
+                                            int portalSrcHeight = portalSprite.PixelHeight;
+                                            int portalSrcStride = portalSrcWidth * 4;
+                                            byte[] portalPixels = new byte[portalSrcHeight * portalSrcStride];
+                                            portalSprite.CopyPixels(portalPixels, portalSrcStride, 0);
+                                            
+                                            double portalScaleX = (double)portalRenderWidth / portalSrcWidth;
+                                            double portalScaleY = (double)portalRenderHeight / portalSrcHeight;
+                                            
+                                            for (int py = intersectTop; py < intersectBottom; py++)
+                                            {
+                                                for (int px = intersectLeft; px < intersectRight; px++)
+                                                {
+                                                    // Map back to portal source coordinates
+                                                    int offsetX = px - portalDestX;
+                                                    int offsetY = py - portalDestY;
+                                                    int portalSrcX = Math.Min((int)(offsetX / portalScaleX), portalSrcWidth - 1);
+                                                    int portalSrcY = Math.Min((int)(offsetY / portalScaleY), portalSrcHeight - 1);
+                                                    int portalSrcOffset = portalSrcY * portalSrcStride + portalSrcX * 4;
+                                                    
+                                                    long portalDestOffset = py * backBufferStride + px * 4;
+                                                    byte* portalDestPtr = (byte*)pBackBuffer.ToPointer() + portalDestOffset;
+                                                    
+                                                    portalDestPtr[0] = portalPixels[portalSrcOffset + 0]; // B
+                                                    portalDestPtr[1] = portalPixels[portalSrcOffset + 1]; // G
+                                                    portalDestPtr[2] = portalPixels[portalSrcOffset + 2]; // R
+                                                    portalDestPtr[3] = portalPixels[portalSrcOffset + 3]; // A
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -4077,6 +4322,7 @@ namespace FamidashEditor
                     }
                 });
                 
+                
                 // Render sprites in batches
                 int totalSprites = mapWidth * mapHeight;
                 bool isLargeMap = totalSprites > 50000;
@@ -4145,6 +4391,8 @@ namespace FamidashEditor
             }
         }
 
+        
+
         private void UpdateSpriteBitmapAtLocked(int x, int y, int spriteIdx, double scale, double pad, int spritePixelW, int spritePixelH, DpiScale dpi)
         {
             if (spritesWb == null || spriteImages == null) return;
@@ -4176,10 +4424,28 @@ namespace FamidashEditor
                 int animatedIdx = GetAnimatedSpriteIndex(spriteIdx);
                 BitmapSource? sprite = null;
                 
+                // Debug output for sprite 0x00
+                if (spriteIdx == 0x00)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Sprite 0x00: animatedIdx={animatedIdx}, previewMode={previewMode}");
+                    
+                    // Write to log file
+                    var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
+                    System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] UpdateSpriteBitmapAtLocked: Sprite 0x00: animatedIdx={animatedIdx}, previewMode={previewMode}\n");
+                }
+                
                 // Check if this is a custom animated sprite
                 if (animatedIdx >= 2000)
                 {
                     sprite = GetCustomAnimationSprite(animatedIdx);
+                    if (spriteIdx == 0x00)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Sprite 0x00: customSprite={(sprite != null ? $"{sprite.PixelWidth}x{sprite.PixelHeight}" : "null")}");
+                        
+                        // Write to log file
+                        var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
+                        System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] UpdateSpriteBitmapAtLocked: Sprite 0x00: customSprite={(sprite != null ? $"{sprite.PixelWidth}x{sprite.PixelHeight}" : "null")}\n");
+                    }
                 }
                 
                 // Fall back to normal sprite if not animated or animation not loaded
@@ -4189,6 +4455,18 @@ namespace FamidashEditor
                 }
                 
                 if (sprite == null) return;
+                
+                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3005)
+                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3005);
+                int renderHeight = spritePixelH;
+                int renderWidth = spritePixelW;
+                
+                if (isMultiTilePortal)
+                {
+                    // Portals are 24 pixels wide, 48 pixels tall (1.5x3 tiles at 16px per tile)
+                    renderWidth = (spritePixelW * 3) / 2;  // 1.5 tiles wide = 24 pixels at 16px/tile
+                    renderHeight = spritePixelH * 3;
+                }
                 
                 // Calculate the actual size we need to render
                 int srcWidth = sprite.PixelWidth;
@@ -4206,12 +4484,136 @@ namespace FamidashEditor
                 byte[] srcPixels = new byte[srcHeight * srcStride];
                 sprite.CopyPixels(srcPixels, srcStride, 0);
                 
-                // If no scaling needed and sprite is already correct size, copy directly
-                if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && srcHeight == TileSize)
+                IntPtr pBackBuffer = spritesWb.BackBuffer;
+                int backBufferStride = spritesWb.BackBufferStride;
+                
+                // Clear the rendering area
+                // For portals: clear their full area
+                // For regular sprites: clear only their tile, but also re-render any portal underneath first
+                unsafe
                 {
-                    // Direct copy - no scaling
-                    IntPtr pBackBuffer = spritesWb.BackBuffer;
-                    int backBufferStride = spritesWb.BackBufferStride;
+                    int clearWidth = Math.Min(isMultiTilePortal ? renderWidth : spritePixelW, cachedPixelWidth - destX);
+                    int clearHeight = Math.Min(isMultiTilePortal ? renderHeight : spritePixelH, cachedPixelHeight - destY);
+                    
+                    
+                    
+                    // Only clear the area if we're rendering a portal OR there's no portal underneath
+                    // For regular sprites over portals, we want to preserve the portal and composite on top
+                    bool shouldClear = isMultiTilePortal;
+                    
+                    if (!shouldClear && previewMode)
+                    {
+                        // Check if there's a portal underneath - if so, don't clear
+                        bool portalUnderneath = false;
+                        for (int checkY = Math.Max(0, y - 2); checkY <= Math.Min(mapHeight - 1, y) && !portalUnderneath; checkY++)
+                        {
+                            for (int checkX = Math.Max(0, x - 1); checkX <= Math.Min(mapWidth - 1, x) && !portalUnderneath; checkX++)
+                            {
+                                if (checkX == x && checkY == y) continue;
+                                int checkSpriteId = sprites[checkY * mapWidth + checkX];
+                                if (IsPortalSprite(checkSpriteId))
+                                {
+                                    portalUnderneath = true;
+                                }
+                            }
+                        }
+                        shouldClear = !portalUnderneath;
+                    }
+                    
+                    // Clear the area only if needed
+                    if (shouldClear)
+                    {
+                        for (int row = 0; row < clearHeight; row++)
+                        {
+                            long destOffset = (destY + row) * backBufferStride + destX * 4;
+                            byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                            
+                            for (int col = 0; col < clearWidth; col++)
+                            {
+                                int pixelOffset = col * 4;
+                                destPtr[pixelOffset + 0] = 0; // B
+                                destPtr[pixelOffset + 1] = 0; // G
+                                destPtr[pixelOffset + 2] = 0; // R
+                                destPtr[pixelOffset + 3] = 0; // A (transparent)
+                            }
+                        }
+                    }
+                    
+                    // If this is a regular sprite (not a portal), check if there's a portal underneath
+                    // and re-render that portal section into the area (or keep it if we didn't clear)
+                    if (!isMultiTilePortal && previewMode)
+                    {
+                        // Check tiles around this position to see if any contain a portal sprite
+                        // A portal is 2x3 tiles, so we need to check positions that could have portals extending here
+                        for (int checkY = Math.Max(0, y - 2); checkY <= Math.Min(mapHeight - 1, y); checkY++)
+                        {
+                            for (int checkX = Math.Max(0, x - 1); checkX <= Math.Min(mapWidth - 1, x); checkX++)
+                            {
+                                // Skip checking the current position (x, y) - we don't want to render ourselves
+                                if (checkX == x && checkY == y) continue;
+                                
+                                int checkSpriteId = sprites[checkY * mapWidth + checkX];
+                                
+                                if (IsPortalSprite(checkSpriteId))
+                                {
+                                    var portalSprite = GetPortalSpriteForId(checkSpriteId);
+                                    if (portalSprite == null) continue;
+                                    
+                                    // Found a portal! Calculate which part of it overlaps with our current tile
+                                    int portalDestX = Math.Max(0, padPxX + checkX * spritePixelW);
+                                    int portalDestY = Math.Max(0, padPxY + checkY * spritePixelH);
+                                    int portalRenderWidth = (spritePixelW * 3) / 2;  // 1.5 tiles wide = 24 pixels
+                                    int portalRenderHeight = spritePixelH * 3;
+                                    
+                                    // Calculate the intersection between the portal and our current tile
+                                    int intersectLeft = Math.Max(destX, portalDestX);
+                                    int intersectTop = Math.Max(destY, portalDestY);
+                                    int intersectRight = Math.Min(destX + spritePixelW, portalDestX + portalRenderWidth);
+                                    int intersectBottom = Math.Min(destY + spritePixelH, portalDestY + portalRenderHeight);
+                                    
+                                    if (intersectRight > intersectLeft && intersectBottom > intersectTop)
+                                    {
+                                        // There's an intersection - render this part of the portal
+                                        int portalSrcWidth = portalSprite.PixelWidth;
+                                        int portalSrcHeight = portalSprite.PixelHeight;
+                                        int portalSrcStride = portalSrcWidth * 4;
+                                        byte[] portalPixels = new byte[portalSrcHeight * portalSrcStride];
+                                        portalSprite.CopyPixels(portalPixels, portalSrcStride, 0);
+                                        
+                                        double portalScaleX = (double)portalRenderWidth / portalSrcWidth;
+                                        double portalScaleY = (double)portalRenderHeight / portalSrcHeight;
+                                        
+                                        for (int py = intersectTop; py < intersectBottom; py++)
+                                        {
+                                            for (int px = intersectLeft; px < intersectRight; px++)
+                                            {
+                                                // Map back to portal source coordinates
+                                                int offsetX = px - portalDestX;
+                                                int offsetY = py - portalDestY;
+                                                int portalSrcX = Math.Min((int)(offsetX / portalScaleX), portalSrcWidth - 1);
+                                                int portalSrcY = Math.Min((int)(offsetY / portalScaleY), portalSrcHeight - 1);
+                                                int portalSrcOffset = portalSrcY * portalSrcStride + portalSrcX * 4;
+                                                
+                                                long portalDestOffset = py * backBufferStride + px * 4;
+                                                byte* portalDestPtr = (byte*)pBackBuffer.ToPointer() + portalDestOffset;
+                                                
+                                                portalDestPtr[0] = portalPixels[portalSrcOffset + 0]; // B
+                                                portalDestPtr[1] = portalPixels[portalSrcOffset + 1]; // G
+                                                portalDestPtr[2] = portalPixels[portalSrcOffset + 2]; // R
+                                                portalDestPtr[3] = portalPixels[portalSrcOffset + 3]; // A
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // If no scaling needed and sprite is already correct size, copy directly
+                if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && !isMultiTilePortal)
+                {
+                    // Direct copy - no scaling (only for single-tile sprites)
                     int copyWidth = Math.Min(srcWidth, cachedPixelWidth - destX);
                     int copyHeight = Math.Min(srcHeight, cachedPixelHeight - destY);
                     
@@ -4223,9 +4625,51 @@ namespace FamidashEditor
                             long destOffset = (destY + row) * backBufferStride + destX * 4;
                             byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
                             
-                            for (int col = 0; col < copyWidth * 4; col++)
+                            // Use alpha compositing: only overwrite pixels where sprite has opacity
+                            // This preserves portal pixels underneath transparent areas of the orb
+                            for (int col = 0; col < copyWidth; col++)
                             {
-                                destPtr[col] = srcPixels[srcOffset + col];
+                                int pixelOffset = col * 4;
+                                byte srcAlpha = srcPixels[srcOffset + pixelOffset + 3];
+                                
+                                if (srcAlpha == 255)
+                                {
+                                    // Fully opaque - direct copy
+                                    destPtr[pixelOffset + 0] = srcPixels[srcOffset + pixelOffset + 0]; // B
+                                    destPtr[pixelOffset + 1] = srcPixels[srcOffset + pixelOffset + 1]; // G
+                                    destPtr[pixelOffset + 2] = srcPixels[srcOffset + pixelOffset + 2]; // R
+                                    destPtr[pixelOffset + 3] = srcPixels[srcOffset + pixelOffset + 3]; // A
+                                }
+                                else if (srcAlpha > 0)
+                                {
+                                    // Semi-transparent - alpha blend with existing pixel
+                                    byte destAlpha = destPtr[pixelOffset + 3];
+                                    
+                                    if (destAlpha == 0)
+                                    {
+                                        // Destination is transparent, just copy source
+                                        destPtr[pixelOffset + 0] = srcPixels[srcOffset + pixelOffset + 0]; // B
+                                        destPtr[pixelOffset + 1] = srcPixels[srcOffset + pixelOffset + 1]; // G
+                                        destPtr[pixelOffset + 2] = srcPixels[srcOffset + pixelOffset + 2]; // R
+                                        destPtr[pixelOffset + 3] = srcPixels[srcOffset + pixelOffset + 3]; // A
+                                    }
+                                    else
+                                    {
+                                        // Both have opacity - proper alpha compositing
+                                        float srcA = srcAlpha / 255.0f;
+                                        float dstA = destAlpha / 255.0f;
+                                        float outA = srcA + dstA * (1 - srcA);
+                                        
+                                        if (outA > 0)
+                                        {
+                                            destPtr[pixelOffset + 0] = (byte)((srcPixels[srcOffset + pixelOffset + 0] * srcA + destPtr[pixelOffset + 0] * dstA * (1 - srcA)) / outA);
+                                            destPtr[pixelOffset + 1] = (byte)((srcPixels[srcOffset + pixelOffset + 1] * srcA + destPtr[pixelOffset + 1] * dstA * (1 - srcA)) / outA);
+                                            destPtr[pixelOffset + 2] = (byte)((srcPixels[srcOffset + pixelOffset + 2] * srcA + destPtr[pixelOffset + 2] * dstA * (1 - srcA)) / outA);
+                                            destPtr[pixelOffset + 3] = (byte)(outA * 255);
+                                        }
+                                    }
+                                }
+                                // If srcAlpha == 0, don't modify destination (preserve portal underneath)
                             }
                         }
                     }
@@ -4233,13 +4677,17 @@ namespace FamidashEditor
                 else
                 {
                     // Need to scale - use simple nearest-neighbor scaling to avoid TransformedBitmap issues
-                    double scaleX = (double)spritePixelW / srcWidth;
-                    double scaleY = (double)spritePixelH / srcHeight;
+                    double scaleX = (double)renderWidth / srcWidth;
+                    double scaleY = (double)renderHeight / srcHeight;
                     
-                    IntPtr pBackBuffer = spritesWb.BackBuffer;
-                    int backBufferStride = spritesWb.BackBufferStride;
-                    int copyWidth = Math.Min(spritePixelW, cachedPixelWidth - destX);
-                    int copyHeight = Math.Min(spritePixelH, cachedPixelHeight - destY);
+                    int copyWidth = Math.Min(renderWidth, cachedPixelWidth - destX);
+                    int copyHeight = Math.Min(renderHeight, cachedPixelHeight - destY);
+                    
+                    if (isMultiTilePortal)
+                    {
+                        var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
+                        System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] Portal scaled render: srcWidth={srcWidth}, srcHeight={srcHeight}, scaleX={scaleX:F2}, scaleY={scaleY:F2}, copyWidth={copyWidth}, copyHeight={copyHeight}\n");
+                    }
                     
                     unsafe
                     {
@@ -4255,11 +4703,54 @@ namespace FamidashEditor
                                 long destOffset = (destY + row) * backBufferStride + (destX + col) * 4;
                                 byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
                                 
-                                // Copy BGRA pixel
-                                destPtr[0] = srcPixels[srcOffset + 0]; // B
-                                destPtr[1] = srcPixels[srcOffset + 1]; // G
-                                destPtr[2] = srcPixels[srcOffset + 2]; // R
-                                destPtr[3] = srcPixels[srcOffset + 3]; // A
+                                byte srcAlpha = srcPixels[srcOffset + 3];
+                                
+                                if (isMultiTilePortal)
+                                {
+                                    // Portals: direct copy (they own their entire area)
+                                    destPtr[0] = srcPixels[srcOffset + 0]; // B
+                                    destPtr[1] = srcPixels[srcOffset + 1]; // G
+                                    destPtr[2] = srcPixels[srcOffset + 2]; // R
+                                    destPtr[3] = srcPixels[srcOffset + 3]; // A
+                                }
+                                else if (srcAlpha == 255)
+                                {
+                                    // Fully opaque - direct copy
+                                    destPtr[0] = srcPixels[srcOffset + 0]; // B
+                                    destPtr[1] = srcPixels[srcOffset + 1]; // G
+                                    destPtr[2] = srcPixels[srcOffset + 2]; // R
+                                    destPtr[3] = srcPixels[srcOffset + 3]; // A
+                                }
+                                else if (srcAlpha > 0)
+                                {
+                                    // Semi-transparent - alpha blend with existing pixel
+                                    byte destAlpha = destPtr[3];
+                                    
+                                    if (destAlpha == 0)
+                                    {
+                                        // Destination is transparent, just copy source
+                                        destPtr[0] = srcPixels[srcOffset + 0]; // B
+                                        destPtr[1] = srcPixels[srcOffset + 1]; // G
+                                        destPtr[2] = srcPixels[srcOffset + 2]; // R
+                                        destPtr[3] = srcPixels[srcOffset + 3]; // A
+                                    }
+                                    else
+                                    {
+                                        // Both have opacity - proper alpha compositing
+                                        float srcA = srcAlpha / 255.0f;
+                                        float dstA = destAlpha / 255.0f;
+                                        float outA = srcA + dstA * (1 - srcA);
+                                        
+                                        if (outA > 0)
+                                        {
+                                            destPtr[0] = (byte)((srcPixels[srcOffset + 0] * srcA + destPtr[0] * dstA * (1 - srcA)) / outA);
+                                            destPtr[1] = (byte)((srcPixels[srcOffset + 1] * srcA + destPtr[1] * dstA * (1 - srcA)) / outA);
+                                            destPtr[2] = (byte)((srcPixels[srcOffset + 2] * srcA + destPtr[2] * dstA * (1 - srcA)) / outA);
+                                            destPtr[3] = (byte)(outA * 255);
+                                        }
+                                    }
+                                }
+                                // If srcAlpha == 0, don't modify destination (preserve portal underneath)
                             }
                         }
                     }
@@ -5298,6 +5789,10 @@ namespace FamidashEditor
                     }
                 }
                 
+                // Track if we're replacing a portal sprite (for later cleanup)
+                bool replacedPortal = false;
+                bool placedPortal = false;
+                
                 // Place sprite if sprites layer is active and a sprite is selected
                 if (spritesLayerActive && selectedSprite >= 0)
                 {
@@ -5306,6 +5801,18 @@ namespace FamidashEditor
                     int neu = selectedSprite;
                     if (old != neu)
                     {
+                        // Check if we're replacing a portal in preview mode
+                        if (previewMode && IsPortalSprite(old))
+                        {
+                            replacedPortal = true;
+                        }
+                        
+                        // Check if we're PLACING a portal in preview mode
+                        if (previewMode && IsPortalSprite(neu))
+                        {
+                            placedPortal = true;
+                        }
+                        
                         if (!suppressUndoRecording)
                         {
                             if (currentCompositeSpriteAction == null) currentCompositeSpriteAction = new SpriteChangeAction();
@@ -5323,8 +5830,149 @@ namespace FamidashEditor
                     { 
                         if (spritesLayerActive && selectedSprite >= 0)
                         {
-                            // Update only the specific sprite that was placed
+                            // Update the newly placed sprite
                             UpdateSpriteBitmapAt(x, y, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                            
+                            // If we PLACED a portal in preview mode, render all tiles it occupies
+                            // Portal is 2 tiles wide x 3 tiles tall
+                            if (placedPortal)
+                            {
+                                for (int py = 0; py < 3; py++)
+                                {
+                                    for (int px = 0; px < 2; px++)
+                                    {
+                                        int portalX = x + px;
+                                        int portalY = y + py;
+                                        
+                                        if (portalX >= 0 && portalX < mapWidth && portalY >= 0 && portalY < mapHeight)
+                                        {
+                                            // Skip the anchor tile (x, y) since we already updated it
+                                            if (!(px == 0 && py == 0))
+                                            {
+                                                UpdateSpriteBitmapAt(portalX, portalY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // If we replaced a portal in preview mode, redraw all tiles it occupied
+                            // Portal is 2 tiles wide x 3 tiles tall
+                            if (replacedPortal)
+                            {
+                                for (int py = 0; py < 3; py++)
+                                {
+                                    for (int px = 0; px < 2; px++)
+                                    {
+                                        int clearX = x + px;
+                                        int clearY = y + py;
+                                        
+                                        if (clearX >= 0 && clearX < mapWidth && clearY >= 0 && clearY < mapHeight)
+                                        {
+                                            // Skip the anchor tile (x, y) since we already updated it
+                                            if (!(px == 0 && py == 0))
+                                            {
+                                                UpdateSpriteBitmapAt(clearX, clearY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Also check if there are any OTHER portals nearby that might be overlapping
+                            // this tile position and need redrawing
+                            if (previewMode)
+                            {
+                                // A portal at (px, py) occupies tiles from (px, py) to (px+1, py+2)
+                                // So to find portals that could overlap position (x, y), check:
+                                // - (x-1, y-2) through (x, y)
+                                
+                                for (int checkY = Math.Max(0, y - 2); checkY <= y && checkY < mapHeight; checkY++)
+                                {
+                                    for (int checkX = Math.Max(0, x - 1); checkX <= x && checkX < mapWidth; checkX++)
+                                    {
+                                        // Skip the position we just placed at
+                                        if (checkX == x && checkY == y) continue;
+                                        
+                                        int checkIdx = checkY * mapWidth + checkX;
+                                        
+                                        // Check if there's a portal at this position
+                                        if (IsPortalSprite(sprites[checkIdx]))
+                                        {
+                                            // Before redrawing this portal, verify that ALL its tiles still have
+                                            // the same portal sprite. If any tile has been replaced, don't redraw.
+                                            int portalSpriteId = sprites[checkIdx];
+                                            bool portalIntact = true;
+                                            
+                                            for (int py = 0; py < 3 && portalIntact; py++)
+                                            {
+                                                for (int px = 0; px < 2 && portalIntact; px++)
+                                                {
+                                                    int checkTileX = checkX + px;
+                                                    int checkTileY = checkY + py;
+                                                    
+                                                    if (checkTileX >= 0 && checkTileX < mapWidth && checkTileY >= 0 && checkTileY < mapHeight)
+                                                    {
+                                                        int checkTileIdx = checkTileY * mapWidth + checkTileX;
+                                                        // For the anchor tile, it should match the portal ID
+                                                        // For extended tiles, they should be -1 (empty) or the same portal
+                                                        if (px == 0 && py == 0)
+                                                        {
+                                                            // Anchor tile - must match
+                                                            if (sprites[checkTileIdx] != portalSpriteId)
+                                                            {
+                                                                portalIntact = false;
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            // Extended tile - should be empty (-1) or same portal
+                                                            // (we don't store the portal ID in extended tiles, they're -1)
+                                                            // Actually, we just need to make sure no OTHER sprite is there
+                                                            // If it's the position we just placed at (x, y), the portal is not intact
+                                                            if (checkTileX == x && checkTileY == y)
+                                                            {
+                                                                portalIntact = false;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // Found a nearby portal! Redraw all tiles it occupies (2x3) if still intact
+                                            if (portalIntact)
+                                            {
+                                                for (int py = 0; py < 3; py++)
+                                                {
+                                                    for (int px = 0; px < 2; px++)
+                                                    {
+                                                        int redrawX = checkX + px;
+                                                        int redrawY = checkY + py;
+                                                        
+                                                        if (redrawX >= 0 && redrawX < mapWidth && redrawY >= 0 && redrawY < mapHeight)
+                                                        {
+                                                            // Always skip the tile we just placed/updated at (x, y)
+                                                            // This ensures the new sprite stays visible and doesn't get
+                                                            // overwritten by the nearby portal redraw
+                                                            if (redrawX != x || redrawY != y)
+                                                            {
+                                                                UpdateSpriteBitmapAt(redrawX, redrawY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // If we placed a portal, re-render the anchor tile AFTER checking nearby portals
+                                // This ensures our new portal's anchor isn't overwritten by nearby portal rendering
+                                if (placedPortal)
+                                {
+                                    UpdateSpriteBitmapAt(x, y, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                }
+                            }
                         }
                         if (tilesLayerActive && selectedTiles.Count > 0)
                         {
@@ -5344,6 +5992,8 @@ namespace FamidashEditor
                         }
                     } 
                     catch { Redraw(); }
+                    // After making sprite changes, rebuild portal background and then sprites composite so portals are persistent
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                 }
                 return;
             }
