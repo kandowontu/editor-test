@@ -1418,7 +1418,7 @@ namespace FamidashEditor
             bool isBlackOrb = (originalIndex == 0x44);
             bool isPad = (originalIndex == 0x52); // red pad (preview-only) animated
             
-            if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb)
+            if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb || isPad)
             {
                 // 4-frame animation at 9/20 speed (slower than saws)
                 // Each sprite gets a random offset so they don't all sync
