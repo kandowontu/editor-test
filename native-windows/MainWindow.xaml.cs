@@ -1334,7 +1334,7 @@ namespace FamidashEditor
         // Orbs have 4-frame animation: yellow (0x0B, 0x1F, 0x29), blue (0x05), pink (0x06), 
         // green (0x27), red (0x28), black (0x44)
         // Portals: cube (0x00), ship (0x01), ball (0x02), ufo (0x03), robot (0x04), wave (0x24)
-        // return 3000-3008 to indicate multi-tile portal sprites (24x48 - 1.5x3 tiles each)
+        // return 3000-3010 to indicate multi-tile portal sprites (24x48 - 1.5x3 tiles each)
         private int GetAnimatedSpriteIndex(int originalIndex)
         {
             if (!previewMode) return originalIndex;
@@ -1495,7 +1495,7 @@ namespace FamidashEditor
         // Get the custom orb animation sprite if index is >= 2000
         private BitmapSource? GetCustomAnimationSprite(int customIndex)
         {
-            // Portal sprites: 3000-3008 (24x48 multi-tile sprites - 1.5x3 tiles each)
+            // Portal sprites: 3000-3010 (24x48 multi-tile sprites - 1.5x3 tiles each)
             // 3000: Cube portal (0x00)
             // 3001: Ship portal (0x01)
             // 3002: Ball portal (0x02)
@@ -4759,8 +4759,8 @@ namespace FamidashEditor
                 
                 if (sprite == null) return;
                 
-                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3008)
-                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3008);
+                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3010)
+                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3010);
                 int renderHeight = spritePixelH;
                 int renderWidth = spritePixelW;
                 
