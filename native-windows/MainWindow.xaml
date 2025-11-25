@@ -94,6 +94,7 @@
             <!-- Menu Bar -->
             <Menu DockPanel.Dock="Top">
                 <MenuItem Header="_File">
+                    <MenuItem x:Name="MenuFileNew" Header="_New" />
                     <MenuItem x:Name="MenuFileSave" Header="_Save" />
                     <MenuItem x:Name="MenuFileLoad" Header="_Load" />
                     <Separator />
