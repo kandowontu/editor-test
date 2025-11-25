@@ -65,6 +65,14 @@
     <EmbeddedResource Include="..\black-orb-frame2.png" />
     <EmbeddedResource Include="..\black-orb-frame3.png" />
     <EmbeddedResource Include="..\black-orb-frame4.png" />
+    <EmbeddedResource Include="..\white-orb-frame1.png" />
+    <EmbeddedResource Include="..\white-orb-frame2.png" />
+    <EmbeddedResource Include="..\white-orb-frame3.png" />
+    <EmbeddedResource Include="..\white-orb-frame4.png" />
+    <EmbeddedResource Include="..\coin-frame1.png" />
+    <EmbeddedResource Include="..\coin-frame2.png" />
+    <EmbeddedResource Include="..\coin-frame3.png" />
+    <EmbeddedResource Include="..\coin-frame4.png" />
     <EmbeddedResource Include="..\red-pad-up-frame1.png" />
     <EmbeddedResource Include="..\red-pad-up-frame2.png" />
     <EmbeddedResource Include="..\red-pad-up-frame3.png" />

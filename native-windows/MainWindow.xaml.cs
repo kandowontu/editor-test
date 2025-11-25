@@ -340,6 +340,16 @@ namespace FamidashEditor
     private BitmapSource[]? blueOrbFrame2;
     private BitmapSource[]? blueOrbFrame3;
     private BitmapSource[]? blueOrbFrame4;
+    // White orb animation frames: 4 frames for sprite 0x7A
+    private BitmapSource[]? whiteOrbFrame1;
+    private BitmapSource[]? whiteOrbFrame2;
+    private BitmapSource[]? whiteOrbFrame3;
+    private BitmapSource[]? whiteOrbFrame4;
+    // Coin animation frames: 4 frames shared by sprites 0x07, 0x1A, 0x1B
+    private BitmapSource[]? coinFrame1;
+    private BitmapSource[]? coinFrame2;
+    private BitmapSource[]? coinFrame3;
+    private BitmapSource[]? coinFrame4;
     // Red pad (preview-only) animation frames: 4 frames for sprite 0x52
     private BitmapSource[]? redPadFrame1;
     private BitmapSource[]? redPadFrame2;
@@ -1222,11 +1232,13 @@ namespace FamidashEditor
                  (greenOrbFrame1 != null && greenOrbFrame2 != null && greenOrbFrame3 != null && greenOrbFrame4 != null) ||
                  (redOrbFrame1 != null && redOrbFrame2 != null && redOrbFrame3 != null && redOrbFrame4 != null) ||
                  (blackOrbFrame1 != null && blackOrbFrame2 != null && blackOrbFrame3 != null && blackOrbFrame4 != null) ||
-                 (redPadFrame1 != null && redPadFrame2 != null && redPadFrame3 != null && redPadFrame4 != null)))
+                 (redPadFrame1 != null && redPadFrame2 != null && redPadFrame3 != null && redPadFrame4 != null) ||
+                 (whiteOrbFrame1 != null && whiteOrbFrame2 != null && whiteOrbFrame3 != null && whiteOrbFrame4 != null) ||
+                 (coinFrame1 != null && coinFrame2 != null && coinFrame3 != null && coinFrame4 != null)))
             {
                 // Check if we have any animated orb sprites
                 bool hasAnimatedOrbs = false;
-                for (int i = 0; i < sprites.Length; i++)
+                    for (int i = 0; i < sprites.Length; i++)
                 {
                     int spriteIdx = sprites[i];
                     if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
@@ -1235,7 +1247,7 @@ namespace FamidashEditor
                         spriteIdx == 0x27 || // Green
                         spriteIdx == 0x28 || // Red
                         spriteIdx == 0x44 || // Black
-                        spriteIdx == 0x52 || // Red pad (preview-only)
+                            spriteIdx == 0x52 || // Red pad (preview-only)
                         spriteIdx == 0x53 || // Red pad up
                         spriteIdx == 0x0A || // Yellow pad down
                         spriteIdx == 0x0C || // Yellow pad up
@@ -1266,7 +1278,7 @@ namespace FamidashEditor
                     spritesWb.Lock();
                     try
                     {
-                        for (int y = 0; y < mapHeight; y++)
+                                for (int y = 0; y < mapHeight; y++)
                         {
                             for (int x = 0; x < mapWidth; x++)
                             {
@@ -1277,14 +1289,18 @@ namespace FamidashEditor
                                     spriteIdx == 0x27 || // Green
                                     spriteIdx == 0x28 || // Red
                                     spriteIdx == 0x44 || // Black
-                                    spriteIdx == 0x52 || // Red pad (preview-only)
+                                            spriteIdx == 0x52 || // Red pad (preview-only)
                                     spriteIdx == 0x53 || // Red pad up
                                     spriteIdx == 0x0A || // Yellow pad down
                                     spriteIdx == 0x0C || // Yellow pad up
                                     spriteIdx == 0x0D || // Blue pad down
                                     spriteIdx == 0x0E || // Blue pad up
                                     spriteIdx == 0x25 || // Pink pad down
-                                    spriteIdx == 0x26)   // Pink pad up
+                                            spriteIdx == 0x26 || // Pink pad up
+                                            spriteIdx == 0x7A || // White orb
+                                            spriteIdx == 0x07 || // Coin types
+                                            spriteIdx == 0x1A ||
+                                            spriteIdx == 0x1B)   // Coin types
                                 {
                                     UpdateSpriteBitmapAtLocked(x, y, spriteIdx, scale, mapViewportPadding, spritePixelW, spritePixelH, dpi);
                                 }
@@ -1463,11 +1479,14 @@ namespace FamidashEditor
             bool isGreenOrb = (originalIndex == 0x27);
             bool isRedOrb = (originalIndex == 0x28);
             bool isBlackOrb = (originalIndex == 0x44);
+            bool isWhiteOrb = (originalIndex == 0x7A);
+            // Coins: 0x07, 0x1A, 0x1B
+            bool isCoin = (originalIndex == 0x07 || originalIndex == 0x1A || originalIndex == 0x1B);
             // Pads (preview-only): 0x52 red-pad-down, 0x53 red-pad-up, 0x0A yellow-pad-down, 0x0C yellow-pad-up,
             // 0x0D blue-pad-down, 0x0E blue-pad-up, 0x25 pink-pad-down, 0x26 pink-pad-up
             bool isPad = (originalIndex == 0x52 || originalIndex == 0x53 || originalIndex == 0x0A || originalIndex == 0x0C || originalIndex == 0x0D || originalIndex == 0x0E || originalIndex == 0x25 || originalIndex == 0x26);
             
-            if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb || isPad)
+            if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb || isPad || isWhiteOrb || isCoin)
             {
                 // 4-frame animation at 9/20 speed (slower than saws)
                 // Each sprite gets a random offset so they don't all sync
@@ -1519,6 +1538,17 @@ namespace FamidashEditor
                 else if (isBlackOrb)
                 {
                     return 2028 + frame;
+                }
+                else if (isCoin)
+                {
+                    // Coins: 2064-2075 (3 sprites × 4 frames)
+                    int spriteOffset = (originalIndex == 0x07) ? 0 : (originalIndex == 0x1A) ? 1 : 2;
+                    return 2064 + (frame * 3) + spriteOffset;
+                }
+                else if (isWhiteOrb)
+                {
+                    // White orb: 2076-2079 (1 sprite × 4 frames)
+                    return 2076 + frame;
                 }
                 else if (isPad)
                 {
@@ -1827,6 +1857,40 @@ namespace FamidashEditor
                     1 => pinkPadUpFrame2?[0],
                     2 => pinkPadUpFrame3?[0],
                     3 => pinkPadUpFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2064 && customIndex <= 2075)
+            {
+                // Coins: 3 sprites × 4 frames (2064-2075)
+                int frameAndSpriteIndex = customIndex - 2064; // 0-11
+                int frame = frameAndSpriteIndex / 3; // 0-3
+                int spriteOffset = frameAndSpriteIndex % 3; // 0-2 (which coin sprite)
+
+                BitmapSource[]? frameArray = frame switch
+                {
+                    0 => coinFrame1,
+                    1 => coinFrame2,
+                    2 => coinFrame3,
+                    3 => coinFrame4,
+                    _ => null
+                };
+
+                if (frameArray != null && spriteOffset < frameArray.Length)
+                {
+                    return frameArray[spriteOffset];
+                }
+            }
+            else if (customIndex >= 2076 && customIndex <= 2079)
+            {
+                // White orb (single sprite)
+                int frame = customIndex - 2076; // 0-3
+                return frame switch
+                {
+                    0 => whiteOrbFrame1?[0],
+                    1 => whiteOrbFrame2?[0],
+                    2 => whiteOrbFrame3?[0],
+                    3 => whiteOrbFrame4?[0],
                     _ => null
                 };
             }
@@ -2286,6 +2350,60 @@ namespace FamidashEditor
             {
                 System.Diagnostics.Debug.WriteLine($"Failed to load {colorName} orb animation frames: {ex.Message}");
             }
+        }
+
+        // Load coin frames (non-orb naming: coin-frame1.png..coin-frame4.png)
+        private void LoadCoinFrames(ref BitmapSource[]? frame1, ref BitmapSource[]? frame2, ref BitmapSource[]? frame3, ref BitmapSource[]? frame4)
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("coin-frame1.png");
+                var f2 = LoadEmbeddedImage("coin-frame2.png");
+                var f3 = LoadEmbeddedImage("coin-frame3.png");
+                var f4 = LoadEmbeddedImage("coin-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    // Coin frames are shared by 3 coin sprite IDs
+                    frame1 = new BitmapSource[3];
+                    frame2 = new BitmapSource[3];
+                    frame3 = new BitmapSource[3];
+                    frame4 = new BitmapSource[3];
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        frame1[i] = converted1;
+                        frame2[i] = converted2;
+                        frame3[i] = converted3;
+                        frame4[i] = converted4;
+                    }
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded coin animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ coin frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load coin animation frames: {ex.Message}");
+            }
+        }
+
+        private void InitializeWhiteOrbAnimationFrames()
+        {
+            LoadOrbFrames("white", ref whiteOrbFrame1, ref whiteOrbFrame2, ref whiteOrbFrame3, ref whiteOrbFrame4, 1);
+        }
+
+        private void InitializeCoinAnimationFrames()
+        {
+            LoadCoinFrames(ref coinFrame1, ref coinFrame2, ref coinFrame3, ref coinFrame4);
         }
 
         private void InitializeBlueOrbAnimationFrames()
@@ -3017,6 +3135,8 @@ namespace FamidashEditor
                 InitializePinkOrbAnimationFrames();
                 InitializeGreenOrbAnimationFrames();
                 InitializeRedOrbAnimationFrames();
+                InitializeWhiteOrbAnimationFrames();
+                InitializeCoinAnimationFrames();
                 InitializeBlackOrbAnimationFrames();
                 // Initialize pad animation frames (preview-only)
                 InitializeRedPadAnimationFrames();
