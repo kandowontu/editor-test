@@ -325,6 +325,11 @@ namespace FamidashEditor
     // Gravity portals
     private BitmapSource? gravityDownPortalSprite; // for sprite 0x08 (gravity-down-portal.png)
     private BitmapSource? gravityUpPortalSprite; // for sprite 0x09 (gravity-up-portal.png)
+    // Horizontal gravity portals
+    private BitmapSource? gravityDownDownwardsPortalSprite; // for sprite 0x10 (gravity-down-downwards-portal.png)
+    private BitmapSource? gravityDownUpwardsPortalSprite; // for sprite 0x11 (gravity-down-upwards-portal.png)
+    private BitmapSource? gravityUpDownwardsPortalSprite; // for sprite 0x12 (gravity-up-downwards-portal.png)
+    private BitmapSource? gravityUpUpwardsPortalSprite; // for sprite 0x13 (gravity-up-upwards-portal.png)
     // Yellow orb animation frames: 4 frames for sprites 0x0B, 0x1F, 0x29
     private BitmapSource[]? yellowOrbFrame1; // Frame 1 for all 3 yellow orb sprites
     private BitmapSource[]? yellowOrbFrame2; // Frame 2 for all 3 yellow orb sprites
@@ -1307,7 +1312,9 @@ namespace FamidashEditor
                  return spriteIdx == 0x00 || spriteIdx == 0x01 || spriteIdx == 0x02 ||
                      spriteIdx == 0x03 || spriteIdx == 0x04 || spriteIdx == 0x24 ||
                      spriteIdx == 0x17 || spriteIdx == 0x4B || spriteIdx == 0x58 ||
-                     spriteIdx == 0x08 || spriteIdx == 0x09;
+                     spriteIdx == 0x08 || spriteIdx == 0x09 ||
+                     // Horizontal gravity portals
+                     spriteIdx == 0x10 || spriteIdx == 0x11 || spriteIdx == 0x12 || spriteIdx == 0x13;
         }
         
         // Get the portal sprite bitmap for a given sprite ID
@@ -1326,6 +1333,10 @@ namespace FamidashEditor
                 0x08 => gravityDownPortalSprite,
                 0x09 => gravityUpPortalSprite,
                 0x58 => ninjaPortalSprite,
+                0x10 => gravityDownDownwardsPortalSprite,
+                0x11 => gravityDownUpwardsPortalSprite,
+                0x12 => gravityUpDownwardsPortalSprite,
+                0x13 => gravityUpUpwardsPortalSprite,
                 _ => null
             };
         }
@@ -1370,6 +1381,27 @@ namespace FamidashEditor
             {
                 try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x09 detected, previewMode={previewMode}, returning 3010\n"); } catch { }
                 return 3010; // Gravity up portal
+            }
+            // Horizontal gravity portals (new)
+            if (originalIndex == 0x10)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x10 detected, previewMode={previewMode}, returning 3011\n"); } catch { }
+                return 3011; // Gravity down (downwards) horizontal portal
+            }
+            if (originalIndex == 0x11)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x11 detected, previewMode={previewMode}, returning 3012\n"); } catch { }
+                return 3012; // Gravity down (upwards) horizontal portal
+            }
+            if (originalIndex == 0x12)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x12 detected, previewMode={previewMode}, returning 3013\n"); } catch { }
+                return 3013; // Gravity up (downwards) horizontal portal
+            }
+            if (originalIndex == 0x13)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x13 detected, previewMode={previewMode}, returning 3014\n"); } catch { }
+                return 3014; // Gravity up (upwards) horizontal portal
             }
             
             // Check if this is an animated orb sprite
@@ -1520,6 +1552,11 @@ namespace FamidashEditor
             if (customIndex == 3008) return ninjaPortalSprite;
             if (customIndex == 3009) return gravityDownPortalSprite;
             if (customIndex == 3010) return gravityUpPortalSprite;
+            // Horizontal gravity portal custom indices
+            if (customIndex == 3011) return gravityDownDownwardsPortalSprite;
+            if (customIndex == 3012) return gravityDownUpwardsPortalSprite;
+            if (customIndex == 3013) return gravityUpDownwardsPortalSprite;
+            if (customIndex == 3014) return gravityUpUpwardsPortalSprite;
             
             if (customIndex >= 2000 && customIndex <= 2011)
             {
@@ -1917,6 +1954,15 @@ namespace FamidashEditor
                 System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityDownPortalSprite loaded? {gravityDownPortalSprite != null}\n");
                 gravityUpPortalSprite = LoadPortalSprite("gravity-up-portal.png");
                 System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityUpPortalSprite loaded? {gravityUpPortalSprite != null}\n");
+                // Horizontal gravity portals
+                gravityDownDownwardsPortalSprite = LoadPortalSprite("gravity-down-downwards-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityDownDownwardsPortalSprite loaded? {gravityDownDownwardsPortalSprite != null}\n");
+                gravityDownUpwardsPortalSprite = LoadPortalSprite("gravity-down-upwards-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityDownUpwardsPortalSprite loaded? {gravityDownUpwardsPortalSprite != null}\n");
+                gravityUpDownwardsPortalSprite = LoadPortalSprite("gravity-up-downwards-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityUpDownwardsPortalSprite loaded? {gravityUpDownwardsPortalSprite != null}\n");
+                gravityUpUpwardsPortalSprite = LoadPortalSprite("gravity-up-upwards-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] gravityUpUpwardsPortalSprite loaded? {gravityUpUpwardsPortalSprite != null}\n");
             }
             catch (Exception ex)
             {
@@ -4309,8 +4355,24 @@ namespace FamidashEditor
                                         // Found a portal! Calculate which part of it overlaps with our current tile
                                         int portalDestX = Math.Max(0, padPxX + checkX * spritePixelW);
                                         int portalDestY = Math.Max(0, padPxY + checkY * spritePixelH);
-                                        int portalRenderWidth = (spritePixelW * 3) / 2;  // 1.5 tiles wide = 24 pixels
-                                        int portalRenderHeight = spritePixelH * 3;
+                                        int portalRenderWidth = spritePixelW;
+                                        int portalRenderHeight = spritePixelH;
+                                        int portalAnimatedIdx = GetAnimatedSpriteIndex(checkSpriteId);
+                                        bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3014);
+                                        if (portalIsMulti)
+                                        {
+                                            if (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3010)
+                                            {
+                                                portalRenderWidth = (spritePixelW * 3) / 2;  // 1.5 tiles wide
+                                                portalRenderHeight = spritePixelH * 3;
+                                            }
+                                            else
+                                            {
+                                                // Horizontal gravity portals: 3 tiles wide, 2 tiles tall
+                                                portalRenderWidth = spritePixelW * 3;
+                                                portalRenderHeight = spritePixelH * 2;
+                                            }
+                                        }
                                         
                                         // Calculate the intersection between the portal and our current tile
                                         int intersectLeft = Math.Max(destX, portalDestX);
@@ -4759,16 +4821,27 @@ namespace FamidashEditor
                 
                 if (sprite == null) return;
                 
-                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3010)
-                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3010);
+                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3014)
+                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3014);
                 int renderHeight = spritePixelH;
                 int renderWidth = spritePixelW;
-                
+
                 if (isMultiTilePortal)
                 {
-                    // Portals are 24 pixels wide, 48 pixels tall (1.5x3 tiles at 16px per tile)
-                    renderWidth = (spritePixelW * 3) / 2;  // 1.5 tiles wide = 24 pixels at 16px/tile
-                    renderHeight = spritePixelH * 3;
+                    // Different portals have different tile dimensions. Standard portals (3000-3010)
+                    // are 1.5 tiles wide x 3 tiles tall. The new horizontal gravity portals
+                    // (3011-3014) are wider horizontally and shorter vertically (3 tiles wide x 2 tiles tall).
+                    if (animatedIdx >= 3000 && animatedIdx <= 3010)
+                    {
+                        renderWidth = (spritePixelW * 3) / 2;  // 1.5 tiles wide
+                        renderHeight = spritePixelH * 3;      // 3 tiles tall
+                    }
+                    else
+                    {
+                        // Horizontal gravity portals: 3 tiles wide, 2 tiles tall
+                        renderWidth = spritePixelW * 3;
+                        renderHeight = spritePixelH * 2;
+                    }
                 }
                 
                 // Calculate the actual size we need to render
@@ -5064,8 +5137,24 @@ namespace FamidashEditor
             int destX = Math.Max(0, padPxX + x * spritePixelW);
             int destY = Math.Max(0, padPxY + y * spritePixelH);
 
-            int renderWidth = (spritePixelW * 3) / 2; // 1.5 tiles wide
-            int renderHeight = spritePixelH * 3;
+            int renderWidth = spritePixelW;
+            int renderHeight = spritePixelH;
+            int portalAnimatedIdx = GetAnimatedSpriteIndex(spriteIdx);
+            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3014);
+            if (portalIsMulti)
+            {
+                if (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3010)
+                {
+                    renderWidth = (spritePixelW * 3) / 2; // 1.5 tiles wide
+                    renderHeight = spritePixelH * 3;
+                }
+                else
+                {
+                    // Horizontal gravity portals: 3 tiles wide x 2 tiles tall
+                    renderWidth = spritePixelW * 3;
+                    renderHeight = spritePixelH * 2;
+                }
+            }
 
             int srcWidth = portalSprite.PixelWidth;
             int srcHeight = portalSprite.PixelHeight;

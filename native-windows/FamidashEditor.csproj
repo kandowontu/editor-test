@@ -73,5 +73,9 @@
     <EmbeddedResource Include="..\src\renderer\assets\ground.bmp">
       <LogicalName>ground.bmp</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="..\gravity-down-downwards-portal.png" />
+    <EmbeddedResource Include="..\gravity-down-upwards-portal.png" />
+    <EmbeddedResource Include="..\gravity-up-downwards-portal.png" />
+    <EmbeddedResource Include="..\gravity-up-upwards-portal.png" />
   </ItemGroup>
 </Project>
