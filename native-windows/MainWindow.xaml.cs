@@ -159,11 +159,11 @@ namespace FamidashEditor
                 TileTintG = tileTint.G,
                 TileTintB = tileTint.B
             };
-            
+
             string configPath = GetConfigPath(tmxFilePath);
             string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(configPath, json);
-            
+
             System.Diagnostics.Debug.WriteLine($"Saved config to: {configPath}");
         }
         catch (Exception ex)
@@ -318,6 +318,10 @@ namespace FamidashEditor
     private BitmapSource? ufoPortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x03 in preview mode
     private BitmapSource? robotPortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x04 in preview mode
     private BitmapSource? wavePortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x24 in preview mode
+    // New portal sprites added by the user
+    private BitmapSource? spiderPortalSprite; // for sprite 0x17 (spider-portal.png)
+    private BitmapSource? swingcopterPortalSprite; // for sprite 0x4B (swingcopter-portal.png)
+    private BitmapSource? ninjaPortalSprite; // for sprite 0x58 (ninja-portal.png)
     // Yellow orb animation frames: 4 frames for sprites 0x0B, 0x1F, 0x29
     private BitmapSource[]? yellowOrbFrame1; // Frame 1 for all 3 yellow orb sprites
     private BitmapSource[]? yellowOrbFrame2; // Frame 2 for all 3 yellow orb sprites
@@ -756,6 +760,27 @@ namespace FamidashEditor
                     previewMode = false;
                     StopPreviewTimer();
                     animationFrame = 0;
+                    // Clear portal layer and redraw to show non-animated tiles and sprites
+                    if (portalsWb != null)
+                    {
+                        try
+                        {
+                            portalsWb.Lock();
+                            unsafe
+                            {
+                                IntPtr pBackBuffer = portalsWb.BackBuffer;
+                                if (pBackBuffer != IntPtr.Zero)
+                                {
+                                    int stride = portalsWb.BackBufferStride;
+                                    int bytesTotal = stride * cachedPixelHeight;
+                                    byte* ptr = (byte*)pBackBuffer.ToPointer();
+                                    for (int i = 0; i < bytesTotal; i++) ptr[i] = 0;
+                                }
+                            }
+                            portalsWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+                        }
+                        finally { try { portalsWb.Unlock(); } catch { } }
+                    }
                     // Redraw to show non-animated tiles and sprites
                     RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
                     RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
@@ -1275,8 +1300,10 @@ namespace FamidashEditor
         // Check if a sprite ID is a portal sprite (in preview mode, these become 2x3 multi-tile sprites)
         private bool IsPortalSprite(int spriteIdx)
         {
-            return spriteIdx == 0x00 || spriteIdx == 0x01 || spriteIdx == 0x02 || 
-                   spriteIdx == 0x03 || spriteIdx == 0x04 || spriteIdx == 0x24;
+            // Includes original portals plus newly added portal sprite IDs
+            return spriteIdx == 0x00 || spriteIdx == 0x01 || spriteIdx == 0x02 ||
+                   spriteIdx == 0x03 || spriteIdx == 0x04 || spriteIdx == 0x24 ||
+                   spriteIdx == 0x17 || spriteIdx == 0x4B || spriteIdx == 0x58;
         }
         
         // Get the portal sprite bitmap for a given sprite ID
@@ -1290,6 +1317,9 @@ namespace FamidashEditor
                 0x03 => ufoPortalSprite,
                 0x04 => robotPortalSprite,
                 0x24 => wavePortalSprite,
+                0x17 => spiderPortalSprite,
+                0x4B => swingcopterPortalSprite,
+                0x58 => ninjaPortalSprite,
                 _ => null
             };
         }
@@ -1298,7 +1328,7 @@ namespace FamidashEditor
         // Orbs have 4-frame animation: yellow (0x0B, 0x1F, 0x29), blue (0x05), pink (0x06), 
         // green (0x27), red (0x28), black (0x44)
         // Portals: cube (0x00), ship (0x01), ball (0x02), ufo (0x03), robot (0x04), wave (0x24)
-        // return 3000-3005 to indicate multi-tile portal sprites (24x48 - 1.5x3 tiles each)
+        // return 3000-3008 to indicate multi-tile portal sprites (24x48 - 1.5x3 tiles each)
         private int GetAnimatedSpriteIndex(int originalIndex)
         {
             if (!previewMode) return originalIndex;
@@ -1310,6 +1340,21 @@ namespace FamidashEditor
             if (originalIndex == 0x03) return 3003; // UFO portal
             if (originalIndex == 0x04) return 3004; // Robot portal
             if (originalIndex == 0x24) return 3005; // Wave portal
+            if (originalIndex == 0x17)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x17 detected, previewMode={previewMode}, returning 3006\n"); } catch { }
+                return 3006; // Spider portal
+            }
+            if (originalIndex == 0x4B)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x4B detected, previewMode={previewMode}, returning 3007\n"); } catch { }
+                return 3007; // Swingcopter portal (0x4B)
+            }
+            if (originalIndex == 0x58)
+            {
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] GetAnimatedSpriteIndex: sprite 0x58 detected, previewMode={previewMode}, returning 3008\n"); } catch { }
+                return 3008; // Ninja portal
+            }
             
             // Check if this is an animated orb sprite
             bool isYellowOrb = (originalIndex == 0x0B || originalIndex == 0x1F || originalIndex == 0x29);
@@ -1434,7 +1479,7 @@ namespace FamidashEditor
         // Get the custom orb animation sprite if index is >= 2000
         private BitmapSource? GetCustomAnimationSprite(int customIndex)
         {
-            // Portal sprites: 3000-3005 (24x48 multi-tile sprites - 1.5x3 tiles each)
+            // Portal sprites: 3000-3008 (24x48 multi-tile sprites - 1.5x3 tiles each)
             // 3000: Cube portal (0x00)
             // 3001: Ship portal (0x01)
             // 3002: Ball portal (0x02)
@@ -1454,6 +1499,9 @@ namespace FamidashEditor
             if (customIndex == 3003) return ufoPortalSprite;
             if (customIndex == 3004) return robotPortalSprite;
             if (customIndex == 3005) return wavePortalSprite;
+            if (customIndex == 3006) return spiderPortalSprite;
+            if (customIndex == 3007) return swingcopterPortalSprite;
+            if (customIndex == 3008) return ninjaPortalSprite;
             
             if (customIndex >= 2000 && customIndex <= 2011)
             {
@@ -1777,6 +1825,7 @@ namespace FamidashEditor
                 // Helper function to load a portal sprite
                 BitmapSource? LoadPortalSprite(string filename)
                 {
+                    string foundPath = "embedded";
                     var portal = LoadEmbeddedImage(filename);
                     
                     if (portal == null)
@@ -1790,8 +1839,12 @@ namespace FamidashEditor
                             var repoPortal = System.IO.Path.Combine(repo, filename);
                             if (System.IO.File.Exists(repoPortal)) portalPath = repoPortal;
                         }
-                        
-                        if (System.IO.File.Exists(portalPath))
+                            // If the portal wasn't found yet, also check the user's editor-dev folder (suggested by user)
+                            var editorDevPath = System.IO.Path.Combine("C:", "editor-dev", filename);
+
+                            if (!System.IO.File.Exists(portalPath) && System.IO.File.Exists(editorDevPath)) portalPath = editorDevPath;
+
+                            if (System.IO.File.Exists(portalPath))
                         {
                             portal = new BitmapImage();
                             portal.BeginInit();
@@ -1799,6 +1852,11 @@ namespace FamidashEditor
                             portal.UriSource = new Uri(portalPath);
                             portal.EndInit();
                             portal.Freeze();
+                            foundPath = portalPath;
+                        }
+                        else
+                        {
+                            try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] LoadPortalSprite: not found embedded nor filePaths: baseDir={baseDir}, repoPortal={(!string.IsNullOrEmpty(repo)?System.IO.Path.Combine(repo, filename):"<none>" )}, editorDev={editorDevPath}\n"); } catch { }
                         }
                     }
                     
@@ -1806,6 +1864,7 @@ namespace FamidashEditor
                     {
                         var converted = new FormatConvertedBitmap(portal, PixelFormats.Pbgra32, null, 0);
                         System.Diagnostics.Debug.WriteLine($"✓ Loaded {filename}: {portal.PixelWidth}x{portal.PixelHeight}");
+                        try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] Loaded {filename} from {foundPath}\n"); } catch { }
                         return converted;
                     }
                     else
@@ -1817,11 +1876,24 @@ namespace FamidashEditor
                 
                 // Load all portal sprites (24x48 - 1.5x3 tiles each)
                 cubePortalSprite = LoadPortalSprite("cube-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] cubePortalSprite loaded? {cubePortalSprite != null}\n");
                 shipPortalSprite = LoadPortalSprite("ship-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] shipPortalSprite loaded? {shipPortalSprite != null}\n");
                 ballPortalSprite = LoadPortalSprite("ball-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] ballPortalSprite loaded? {ballPortalSprite != null}\n");
                 ufoPortalSprite = LoadPortalSprite("ufo-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] ufoPortalSprite loaded? {ufoPortalSprite != null}\n");
                 robotPortalSprite = LoadPortalSprite("robot-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] robotPortalSprite loaded? {robotPortalSprite != null}\n");
                 wavePortalSprite = LoadPortalSprite("wave-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] wavePortalSprite loaded? {wavePortalSprite != null}\n");
+                // New portal sprites
+                spiderPortalSprite = LoadPortalSprite("spider-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] spiderPortalSprite loaded? {spiderPortalSprite != null}\n");
+                swingcopterPortalSprite = LoadPortalSprite("swingcopter-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] swingcopterPortalSprite loaded? {swingcopterPortalSprite != null}\n");
+                ninjaPortalSprite = LoadPortalSprite("ninja-portal.png");
+                System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] ninjaPortalSprite loaded? {ninjaPortalSprite != null}\n");
             }
             catch (Exception ex)
             {
@@ -2435,13 +2507,17 @@ namespace FamidashEditor
             {
                 var assembly = Assembly.GetExecutingAssembly();
                 var resourceNames = assembly.GetManifestResourceNames();
-                
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] LoadEmbeddedImage: looking for {resourceName}, resource count={resourceNames.Length}\n"); } catch { }
+                // Also log matching resources for portal files for ease
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] Available resources: {string.Join(", ", resourceNames.Where(r => r.EndsWith("-portal.png") || r.EndsWith("-orb-frame1.png"))) }\n"); } catch { }
+
                 // Find the resource - it might have the full path prefix
                 var fullResourceName = resourceNames.FirstOrDefault(r => r.EndsWith(resourceName));
                 if (fullResourceName == null)
                 {
                     System.Diagnostics.Debug.WriteLine($"Resource not found: {resourceName}");
-                    System.Diagnostics.Debug.WriteLine($"Available resources: {string.Join(", ", resourceNames)}");
+                    try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] LoadEmbeddedImage: FAILED to find resource {resourceName}\n"); } catch { }
+                    try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] Available resources (full match): {string.Join(", ", resourceNames)}\n"); } catch { }
                     return null;
                 }
                 
@@ -2596,6 +2672,9 @@ namespace FamidashEditor
             spriteImages = list.ToArray();
             
             System.Diagnostics.Debug.WriteLine($"Loaded {spriteImages.Length} sprite images");
+            System.Diagnostics.Debug.WriteLine($"  Sprite 0x17 ({0x17}) in range: {0x17 < spriteImages.Length}");
+            System.Diagnostics.Debug.WriteLine($"  Sprite 0x4B ({0x4B}) in range: {0x4B < spriteImages.Length}");
+            System.Diagnostics.Debug.WriteLine($"  Sprite 0x58 ({0x58}) in range: {0x58 < spriteImages.Length}");
             System.Diagnostics.Debug.WriteLine($"  Sprite 0x0B ({0x0B}) in range: {0x0B < spriteImages.Length}");
             System.Diagnostics.Debug.WriteLine($"  Sprite 0x1F ({0x1F}) in range: {0x1F < spriteImages.Length}");
             System.Diagnostics.Debug.WriteLine($"  Sprite 0x29 ({0x29}) in range: {0x29 < spriteImages.Length}");
@@ -3396,8 +3475,32 @@ namespace FamidashEditor
                 portalsWb = new WriteableBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32, null);
                 var emptyPortal = new byte[pixelPaddedHeight * portalsWb.BackBufferStride];
                 portalsWb.WritePixels(new Int32Rect(0, 0, pixelPaddedWidth, pixelPaddedHeight), emptyPortal, portalsWb.BackBufferStride, 0);
-                // Render portals then sprites
-                RebuildPortalsRegion(0, 0, mapWidth - 1, mapHeight - 1, scale, pad);
+                // Render portals then sprites if preview mode is enabled, otherwise clear portals bitmap
+                if (previewMode)
+                {
+                    RebuildPortalsRegion(0, 0, mapWidth - 1, mapHeight - 1, scale, pad);
+                }
+                else
+                {
+                    // Clear portals bitmap (ensure no stale portal images remain)
+                    try
+                    {
+                        portalsWb.Lock();
+                        unsafe
+                        {
+                            IntPtr pb = portalsWb.BackBuffer;
+                            if (pb != IntPtr.Zero)
+                            {
+                                int stride = portalsWb.BackBufferStride;
+                                int bytesTotal = stride * cachedPixelHeight;
+                                byte* p = (byte*)pb.ToPointer();
+                                for (int i = 0; i < bytesTotal; i++) p[i] = 0;
+                            }
+                        }
+                        portalsWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+                    }
+                    finally { try { portalsWb.Unlock(); } catch { } }
+                }
                 RebuildAllSpritesBitmap(scale, pad);
             }
         }
@@ -4141,6 +4244,7 @@ namespace FamidashEditor
                     
                     // Clear pixels directly in the back buffer
                     IntPtr pBackBuffer = spritesWb.BackBuffer;
+                    if (pBackBuffer == IntPtr.Zero) return;
                     int backBufferStride = spritesWb.BackBufferStride;
                     int clearWidth = Math.Min(spritePixelW, cachedPixelWidth - destX);
                     int clearHeight = Math.Min(spritePixelH, cachedPixelHeight - destY);
@@ -4304,8 +4408,8 @@ namespace FamidashEditor
             
             try
             {
-                // Ensure portals layer is built for entire map before drawing sprites
-                if (portalsWb != null)
+                // Ensure portals layer is built for entire map before drawing sprites (only if preview mode is enabled)
+                if (previewMode && portalsWb != null)
                 {
                     RebuildPortalsRegion(0, 0, mapWidth - 1, mapHeight - 1, scale, pad);
                 }
@@ -4323,6 +4427,7 @@ namespace FamidashEditor
                         unsafe
                         {
                             IntPtr pBackBuffer = spritesWb.BackBuffer;
+                            if (pBackBuffer == IntPtr.Zero) return;
                             int backBufferStride = spritesWb.BackBufferStride;
                             int bytesTotal = backBufferStride * cachedPixelHeight;
                             byte* ptr = (byte*)pBackBuffer.ToPointer();
@@ -4367,6 +4472,10 @@ namespace FamidashEditor
                                 {
                                     try
                                     {
+                                        if (idx == 0x17 || idx == 0x4B || idx == 0x58)
+                                        {
+                                            try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] RebuildAllSpritesBitmap: found spriteIdx=0x{idx:X2} at ({x},{y})\n"); } catch { }
+                                        }
                                         UpdateSpriteBitmapAtLocked(x, y, idx, scale, pad, spritePixelW, spritePixelH, dpi);
                                     }
                                     catch (Exception ex)
@@ -4409,9 +4518,63 @@ namespace FamidashEditor
         }
 
         // Rebuild portal region - used to update only the affected portion of portalsWb
+        // Fields used to debounce/queue portal region rebuilds so fast painting/dragging
+        // operations do not trigger many repeated small RebuildPortalsRegion() calls.
+        private int portalDirtyMinX = int.MaxValue;
+        private int portalDirtyMinY = int.MaxValue;
+        private int portalDirtyMaxX = int.MinValue;
+        private int portalDirtyMaxY = int.MinValue;
+        private bool portalDirtyScheduled = false;
+        private System.Windows.Threading.DispatcherTimer? portalDirtyTimer = null;
+
+        private void EnsurePortalDirtyTimer()
+        {
+            if (portalDirtyTimer != null) return;
+            portalDirtyTimer = new System.Windows.Threading.DispatcherTimer();
+            portalDirtyTimer.Interval = TimeSpan.FromMilliseconds(40); // small debounce window
+            portalDirtyTimer.Tick += (s, e) =>
+            {
+                var t = portalDirtyTimer; // capture to local to satisfy nullable analysis
+                if (t == null) return;
+                t.Stop();
+                portalDirtyScheduled = false;
+                // Copy and reset
+                int minX = portalDirtyMinX;
+                int minY = portalDirtyMinY;
+                int maxX = portalDirtyMaxX;
+                int maxY = portalDirtyMaxY;
+                portalDirtyMinX = int.MaxValue;
+                portalDirtyMinY = int.MaxValue;
+                portalDirtyMaxX = int.MinValue;
+                portalDirtyMaxY = int.MinValue;
+                if (minX <= maxX && minY <= maxY)
+                {
+                    try { RebuildPortalsRegion(minX, minY, maxX, maxY, (ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+                }
+            };
+        }
+
+        private void QueueRebuildPortalsRegion(int minX, int minY, int maxX, int maxY)
+        {
+            // Merge request
+            portalDirtyMinX = Math.Min(portalDirtyMinX, minX);
+            portalDirtyMinY = Math.Min(portalDirtyMinY, minY);
+            portalDirtyMaxX = Math.Max(portalDirtyMaxX, maxX);
+            portalDirtyMaxY = Math.Max(portalDirtyMaxY, maxY);
+            EnsurePortalDirtyTimer();
+            if (!portalDirtyScheduled && portalDirtyTimer != null)
+            {
+                portalDirtyScheduled = true;
+                portalDirtyTimer.Start();
+            }
+        }
+
         private void RebuildPortalsRegion(int minX, int minY, int maxX, int maxY, double scale, double pad)
         {
             if (portalsWb == null) return;
+            if (spriteImages == null) return;
+            if (spriteImages == null) return;
+            if (spriteImages == null) return;
             try
             {
                 var dpi = VisualTreeHelper.GetDpi(this);
@@ -4445,6 +4608,7 @@ namespace FamidashEditor
                         unsafe
                         {
                             IntPtr pBackBuffer = portalsWb.BackBuffer;
+                            if (pBackBuffer == IntPtr.Zero) return;
                             int stride = portalsWb.BackBufferStride;
                             for (int row = 0; row < heightPx; row++)
                             {
@@ -4478,6 +4642,7 @@ namespace FamidashEditor
                         int idx = sprites[ay * mapWidth + ax];
                         if (IsPortalSprite(idx))
                         {
+                            try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] RebuildPortalsRegion: found portal id=0x{idx:X2} at ({ax},{ay})\n"); } catch { }
                             // Determine portal bounds in tiles
                             int px1 = ax;
                             int py1 = ay;
@@ -4507,6 +4672,10 @@ namespace FamidashEditor
             if (spritesWb == null || spriteImages == null) return;
             
             // Bounds check on original index
+            if (spriteImages == null) return;
+            if (spriteImages == null) return;
+            if (spriteImages == null) return;
+            if (spriteImages == null) return;
             if (spriteIdx < 0 || spriteIdx >= spriteImages.Length) return;
             
             // Set the position key for random frame offsets (unique per position on map)
@@ -4565,8 +4734,8 @@ namespace FamidashEditor
                 
                 if (sprite == null) return;
                 
-                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3005)
-                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3005);
+                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3008)
+                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3008);
                 int renderHeight = spritePixelH;
                 int renderWidth = spritePixelW;
                 
@@ -4594,6 +4763,7 @@ namespace FamidashEditor
                 sprite.CopyPixels(srcPixels, srcStride, 0);
                 
                 IntPtr pBackBuffer = spritesWb.BackBuffer;
+                if (pBackBuffer == IntPtr.Zero) return;
                 int backBufferStride = spritesWb.BackBufferStride;
                 
                 // Clear the rendering area
@@ -4639,11 +4809,17 @@ namespace FamidashEditor
                     
                     // Only clear the area if we're rendering a portal OR there's no portal underneath
                     // For regular sprites over portals, we want to preserve the portal and composite on top
-                    bool shouldClear = isMultiTilePortal;
-                    
-                    if (!shouldClear && previewMode)
+                    // When not in preview mode, we should clear tiles fully (so sprites don't ghost)
+                    // When in preview mode, preserve portal pixels under sprites to avoid destroying portal visuals
+                    bool shouldClear = true;
+                    if (isMultiTilePortal)
                     {
-                        // Check if there's a portal underneath - if so, don't clear
+                        // Portals own their entire area; always clear and write into portal layer
+                        shouldClear = true;
+                    }
+                    else if (previewMode)
+                    {
+                        // In preview mode, if there's a portal underneath, don't clear - otherwise, clear
                         bool portalUnderneath = false;
                         for (int checkY = Math.Max(0, y - 2); checkY <= Math.Min(mapHeight - 1, y) && !portalUnderneath; checkY++)
                         {
@@ -4844,12 +5020,18 @@ namespace FamidashEditor
         // Render a portal anchor sprite into the portal Wb (does not affect spritesWb)
         private void UpdatePortalBitmapAtLocked(int x, int y, int spriteIdx, double scale, double pad, int spritePixelW, int spritePixelH, DpiScale dpi)
         {
+            if (spriteImages == null) return;
             if (portalsWb == null) return;
             if (spriteIdx < 0 || spriteIdx >= spriteImages.Length) return;
             if (!IsPortalSprite(spriteIdx)) return;
 
             var portalSprite = GetPortalSpriteForId(spriteIdx);
-            if (portalSprite == null) return;
+            if (portalSprite == null)
+            {
+                var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] WARNING: Portal sprite null for idx=0x{spriteIdx:X2} at ({x},{y})\n");
+                return;
+            }
 
             // Calculate pixel position
             int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
@@ -4862,7 +5044,12 @@ namespace FamidashEditor
 
             int srcWidth = portalSprite.PixelWidth;
             int srcHeight = portalSprite.PixelHeight;
-            if (srcWidth <= 0 || srcHeight <= 0) return;
+            if (srcWidth <= 0 || srcHeight <= 0)
+            {
+                var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] WARNING: Portal sprite invalid size for idx=0x{spriteIdx:X2}: {srcWidth}x{srcHeight}\n");
+                return;
+            }
 
             int srcStride = srcWidth * 4;
             byte[] srcPixels = new byte[srcHeight * srcStride];
@@ -4878,6 +5065,7 @@ namespace FamidashEditor
                 unsafe
                 {
                     IntPtr pBackBuffer = portalsWb.BackBuffer;
+                    if (pBackBuffer == IntPtr.Zero) return;
                     int backBufferStride = portalsWb.BackBufferStride;
                 for (int row = 0; row < copyHeight; row++)
                 {
@@ -4939,8 +5127,12 @@ namespace FamidashEditor
             }
             finally
             {
-                portalsWb.AddDirtyRect(new Int32Rect(destX, destY, copyWidth, copyHeight));
-                portalsWb.Unlock();
+                try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "portal-debug.txt"), $"[{DateTime.Now:HH:mm:ss}] UpdatePortalBitmapAtLocked: drawing spriteIdx=0x{spriteIdx:X2} at ({x},{y}), src={srcWidth}x{srcHeight}, dest={copyWidth}x{copyHeight}\n"); } catch { }
+                if (portalsWb != null)
+                {
+                    try { portalsWb.AddDirtyRect(new Int32Rect(destX, destY, copyWidth, copyHeight)); } catch { }
+                    try { portalsWb.Unlock(); } catch { }
+                }
             }
         }
 
@@ -6018,19 +6210,19 @@ namespace FamidashEditor
                             // If we PLACED a portal in preview mode, rebuild portal pixels for the affected region only
                             if (placedPortal)
                             {
-                                RebuildPortalsRegion(x - 1, y - 2, x + 1, y + 2, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                QueueRebuildPortalsRegion(x - 1, y - 2, x + 1, y + 2);
                             }
                             
                             // If we replaced a portal in preview mode, rebuild portal region so old portal pixels are removed
                             if (replacedPortal)
                             {
-                                RebuildPortalsRegion(x - 1, y - 2, x + 1, y + 2, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                QueueRebuildPortalsRegion(x - 1, y - 2, x + 1, y + 2);
                             }
                             
                             // Rebuild portal region around the changed tile to reflect new portal placements
                             if (previewMode)
                             {
-                                RebuildPortalsRegion(x - 2, y - 3, x + 2, y + 2, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                QueueRebuildPortalsRegion(x - 2, y - 3, x + 2, y + 2);
                             }
                         }
                         if (tilesLayerActive && selectedTiles.Count > 0)
@@ -6135,7 +6327,7 @@ namespace FamidashEditor
                             // If the erased sprite was a portal anchor, rebuild that region
                             if (IsPortalSprite(erasedOldSprite))
                             {
-                                RebuildPortalsRegion(x - 1, y - 2, x + 1, y + 2, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                QueueRebuildPortalsRegion(x - 1, y - 2, x + 1, y + 2);
                             }
                         }
                     } catch { Redraw(); }

@@ -6,3 +6,75 @@ FindRepoRootFor(famidash.bmp) starting from: C:\Editor Test\native-windows\bin\D
   [4] Checking: C:\Editor Test\native-windows\bin\famidash.bmp - Exists: False
   [5] Checking: C:\Editor Test\native-windows\famidash.bmp - Exists: False
   NOT FOUND, returning null
+FindRepoRootFor(famidash.bmp) starting from: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\
+  [0] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [1] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [2] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\famidash.bmp - Exists: False
+  [3] Checking: C:\Editor Test\native-windows\bin\Debug\famidash.bmp - Exists: False
+  [4] Checking: C:\Editor Test\native-windows\bin\famidash.bmp - Exists: False
+  [5] Checking: C:\Editor Test\native-windows\famidash.bmp - Exists: False
+  NOT FOUND, returning null
+FindRepoRootFor(famidash.bmp) starting from: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\
+  [0] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [1] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [2] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\famidash.bmp - Exists: False
+  [3] Checking: C:\Editor Test\native-windows\bin\Debug\famidash.bmp - Exists: False
+  [4] Checking: C:\Editor Test\native-windows\bin\famidash.bmp - Exists: False
+  [5] Checking: C:\Editor Test\native-windows\famidash.bmp - Exists: False
+  NOT FOUND, returning null
+FindRepoRootFor(famidash.bmp) starting from: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\
+  [0] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [1] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [2] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\famidash.bmp - Exists: False
+  [3] Checking: C:\Editor Test\native-windows\bin\Debug\famidash.bmp - Exists: False
+  [4] Checking: C:\Editor Test\native-windows\bin\famidash.bmp - Exists: False
+  [5] Checking: C:\Editor Test\native-windows\famidash.bmp - Exists: False
+  NOT FOUND, returning null
+FindRepoRootFor(famidash.bmp) starting from: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\
+  [0] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [1] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [2] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\famidash.bmp - Exists: False
+  [3] Checking: C:\Editor Test\native-windows\bin\Debug\famidash.bmp - Exists: False
+  [4] Checking: C:\Editor Test\native-windows\bin\famidash.bmp - Exists: False
+  [5] Checking: C:\Editor Test\native-windows\famidash.bmp - Exists: False
+  NOT FOUND, returning null
+FindRepoRootFor(famidash.bmp) starting from: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\
+  [0] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [1] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [2] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\famidash.bmp - Exists: False
+  [3] Checking: C:\Editor Test\native-windows\bin\Debug\famidash.bmp - Exists: False
+  [4] Checking: C:\Editor Test\native-windows\bin\famidash.bmp - Exists: False
+  [5] Checking: C:\Editor Test\native-windows\famidash.bmp - Exists: False
+  NOT FOUND, returning null
+FindRepoRootFor(famidash.bmp) starting from: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\
+  [0] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [1] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [2] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\famidash.bmp - Exists: False
+  [3] Checking: C:\Editor Test\native-windows\bin\Debug\famidash.bmp - Exists: False
+  [4] Checking: C:\Editor Test\native-windows\bin\famidash.bmp - Exists: False
+  [5] Checking: C:\Editor Test\native-windows\famidash.bmp - Exists: False
+  NOT FOUND, returning null
+FindRepoRootFor(famidash.bmp) starting from: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\
+  [0] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [1] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [2] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\famidash.bmp - Exists: False
+  [3] Checking: C:\Editor Test\native-windows\bin\Debug\famidash.bmp - Exists: False
+  [4] Checking: C:\Editor Test\native-windows\bin\famidash.bmp - Exists: False
+  [5] Checking: C:\Editor Test\native-windows\famidash.bmp - Exists: False
+  NOT FOUND, returning null
+FindRepoRootFor(famidash.bmp) starting from: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\
+  [0] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [1] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [2] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\famidash.bmp - Exists: False
+  [3] Checking: C:\Editor Test\native-windows\bin\Debug\famidash.bmp - Exists: False
+  [4] Checking: C:\Editor Test\native-windows\bin\famidash.bmp - Exists: False
+  [5] Checking: C:\Editor Test\native-windows\famidash.bmp - Exists: False
+  NOT FOUND, returning null
+FindRepoRootFor(famidash.bmp) starting from: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\
+  [0] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [1] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\win-x64\famidash.bmp - Exists: False
+  [2] Checking: C:\Editor Test\native-windows\bin\Debug\net7.0-windows\famidash.bmp - Exists: False
+  [3] Checking: C:\Editor Test\native-windows\bin\Debug\famidash.bmp - Exists: False
+  [4] Checking: C:\Editor Test\native-windows\bin\famidash.bmp - Exists: False
+  [5] Checking: C:\Editor Test\native-windows\famidash.bmp - Exists: False
+  NOT FOUND, returning null
