@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Windows;
+using System.Threading.Tasks;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -962,45 +963,84 @@ namespace FamidashEditor
             // Preview mode checkbox and timer
             if (PreviewModeCheckbox != null)
             {
-                PreviewModeCheckbox.Checked += (s, e) =>
+                PreviewModeCheckbox.Checked += async (s, e) =>
                 {
                     System.Diagnostics.Debug.WriteLine($"Preview Mode CHECKED at {DateTime.Now}");
                     previewMode = true;
                     StartPreviewTimer();
-                    // Redraw to show portal sprites and animations
-                    RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
-                    RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
+
+                    LoadingWindow? loading = null;
+                    try
+                    {
+                        loading = new LoadingWindow { Owner = this };
+                        loading.SetMessage("Enabling preview mode... rendering frames");
+                        loading.Show();
+
+                        // Allow the UI to render the dialog and the checkbox change before heavy work
+                        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+
+                        // Perform the rebuilds (still on UI thread for safety) after UI had a chance to update
+                        RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
+                        RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
+                    }
+                    finally
+                    {
+                        if (loading != null)
+                        {
+                            loading.Close();
+                        }
+                    }
                 };
-                PreviewModeCheckbox.Unchecked += (s, e) =>
+
+                PreviewModeCheckbox.Unchecked += async (s, e) =>
                 {
                     System.Diagnostics.Debug.WriteLine($"Preview Mode UNCHECKED at {DateTime.Now}");
                     previewMode = false;
                     StopPreviewTimer();
                     animationFrame = 0;
-                    // Clear portal layer and redraw to show non-animated tiles and sprites
-                    if (portalsWb != null)
+
+                    LoadingWindow? loading = null;
+                    try
                     {
-                        try
+                        loading = new LoadingWindow { Owner = this };
+                        loading.SetMessage("Disabling preview mode... rebuilding frames");
+                        loading.Show();
+
+                        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+
+                        // Clear portal layer and redraw to show non-animated tiles and sprites
+                        if (portalsWb != null)
                         {
-                            portalsWb.Lock();
-                            unsafe
+                            try
                             {
-                                IntPtr pBackBuffer = portalsWb.BackBuffer;
-                                if (pBackBuffer != IntPtr.Zero)
+                                portalsWb.Lock();
+                                unsafe
                                 {
-                                    int stride = portalsWb.BackBufferStride;
-                                    int bytesTotal = stride * cachedPixelHeight;
-                                    byte* ptr = (byte*)pBackBuffer.ToPointer();
-                                    for (int i = 0; i < bytesTotal; i++) ptr[i] = 0;
+                                    IntPtr pBackBuffer = portalsWb.BackBuffer;
+                                    if (pBackBuffer != IntPtr.Zero)
+                                    {
+                                        int stride = portalsWb.BackBufferStride;
+                                        int bytesTotal = stride * cachedPixelHeight;
+                                        byte* ptr = (byte*)pBackBuffer.ToPointer();
+                                        for (int i = 0; i < bytesTotal; i++) ptr[i] = 0;
+                                    }
                                 }
+                                portalsWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
                             }
-                            portalsWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+                            finally { try { portalsWb.Unlock(); } catch { } }
                         }
-                        finally { try { portalsWb.Unlock(); } catch { } }
+
+                        // Redraw to show non-animated tiles and sprites
+                        RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
+                        RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
                     }
-                    // Redraw to show non-animated tiles and sprites
-                    RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
-                    RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
+                    finally
+                    {
+                        if (loading != null)
+                        {
+                            loading.Close();
+                        }
+                    }
                 };
             }
             
