@@ -126,5 +126,34 @@
     <EmbeddedResource Include="..\gravity-1x-portal.png" />
     <EmbeddedResource Include="..\dual-portal.png" />
     <EmbeddedResource Include="..\single-portal.png" />
+    <!-- Dash orb 2-frame slow animations -->
+    <EmbeddedResource Include="..\dash-orb-right-frame1.png" />
+    <EmbeddedResource Include="..\dash-orb-right-frame2.png" />
+    <EmbeddedResource Include="..\dash-gravity-orb-right-frame1.png" />
+    <EmbeddedResource Include="..\dash-gravity-orb-right-frame2.png" />
+    <EmbeddedResource Include="..\dash-orb-45deg-upwards-frame1.png" />
+    <EmbeddedResource Include="..\dash-orb-45deg-upwards-frame2.png" />
+    <EmbeddedResource Include="..\dash-gravity-orb-45deg-upwards-frame1.png" />
+    <EmbeddedResource Include="..\dash-gravity-orb-45deg-upwards-frame2.png" />
+    <EmbeddedResource Include="..\dash-orb-45deg-downwards-frame1.png" />
+    <EmbeddedResource Include="..\dash-orb-45deg-downwards-frame2.png" />
+    <EmbeddedResource Include="..\dash-gravity-orb-45deg-downwards-frame1.png" />
+    <EmbeddedResource Include="..\dash-gravity-orb-45deg-downwards-frame2.png" />
+    <EmbeddedResource Include="..\dash-orb-up-frame1.png" />
+    <EmbeddedResource Include="..\dash-orb-up-frame2.png" />
+    <EmbeddedResource Include="..\dash-gravity-orb-up-frame1.png" />
+    <EmbeddedResource Include="..\dash-gravity-orb-up-frame2.png" />
+    <EmbeddedResource Include="..\dash-orb-down-frame1.png" />
+    <EmbeddedResource Include="..\dash-orb-down-frame2.png" />
+    <EmbeddedResource Include="..\dash-gravity-orb-down-frame1.png" />
+    <EmbeddedResource Include="..\dash-gravity-orb-down-frame2.png" />
+    <EmbeddedResource Include="..\teleport-orb-enter-frame1.png" />
+    <EmbeddedResource Include="..\teleport-orb-enter-frame2.png" />
+    <EmbeddedResource Include="..\teleport-orb-exit-frame1.png" />
+    <EmbeddedResource Include="..\teleport-orb-exit-frame2.png" />
+    <EmbeddedResource Include="..\spider-orb-downwards-frame1.png" />
+    <EmbeddedResource Include="..\spider-orb-downwards-frame2.png" />
+    <EmbeddedResource Include="..\spider-orb-upwards-frame1.png" />
+    <EmbeddedResource Include="..\spider-orb-upwards-frame2.png" />
   </ItemGroup>
 </Project>

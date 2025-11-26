@@ -423,6 +423,37 @@ namespace FamidashEditor
     private BitmapSource[]? blackOrbFrame2;
     private BitmapSource[]? blackOrbFrame3;
     private BitmapSource[]? blackOrbFrame4;
+    // Dash orb 2-frame slow animations (preview-only)
+    private BitmapSource[]? dashOrbRightFrame1;
+    private BitmapSource[]? dashOrbRightFrame2;
+    private BitmapSource[]? dashGravityOrbRightFrame1;
+    private BitmapSource[]? dashGravityOrbRightFrame2;
+    private BitmapSource[]? dashOrb45UpFrame1;
+    private BitmapSource[]? dashOrb45UpFrame2;
+    private BitmapSource[]? dashGravityOrb45UpFrame1;
+    private BitmapSource[]? dashGravityOrb45UpFrame2;
+    private BitmapSource[]? dashOrb45DownFrame1;
+    private BitmapSource[]? dashOrb45DownFrame2;
+    private BitmapSource[]? dashGravityOrb45DownFrame1;
+    private BitmapSource[]? dashGravityOrb45DownFrame2;
+    private BitmapSource[]? dashOrbUpFrame1;
+    private BitmapSource[]? dashOrbUpFrame2;
+    private BitmapSource[]? dashGravityOrbUpFrame1;
+    private BitmapSource[]? dashGravityOrbUpFrame2;
+    private BitmapSource[]? dashOrbDownFrame1;
+    private BitmapSource[]? dashOrbDownFrame2;
+    private BitmapSource[]? dashGravityOrbDownFrame1;
+    private BitmapSource[]? dashGravityOrbDownFrame2;
+    // Teleport orb 2-frame animations
+    private BitmapSource[]? teleportOrbEnterFrame1;
+    private BitmapSource[]? teleportOrbEnterFrame2;
+    private BitmapSource[]? teleportOrbExitFrame1;
+    private BitmapSource[]? teleportOrbExitFrame2;
+    // Spider orb 2-frame animations (new)
+    private BitmapSource[]? spiderOrbDownFrame1;
+    private BitmapSource[]? spiderOrbDownFrame2;
+    private BitmapSource[]? spiderOrbUpFrame1;
+    private BitmapSource[]? spiderOrbUpFrame2;
     // Random frame offsets for each sprite position to desynchronize animations
     private Dictionary<int, int> spriteFrameOffsets = new Dictionary<int, int>();
     private Random spriteAnimationRandom = new Random();
@@ -1237,41 +1268,62 @@ namespace FamidashEditor
             }
             
             // Update animated orb sprites (all colors) and preview-only red pad
-            if (spritesWb != null && 
-                ((yellowOrbFrame1 != null && yellowOrbFrame2 != null && yellowOrbFrame3 != null && yellowOrbFrame4 != null) ||
-                 (blueOrbFrame1 != null && blueOrbFrame2 != null && blueOrbFrame3 != null && blueOrbFrame4 != null) ||
-                 (pinkOrbFrame1 != null && pinkOrbFrame2 != null && pinkOrbFrame3 != null && pinkOrbFrame4 != null) ||
-                 (greenOrbFrame1 != null && greenOrbFrame2 != null && greenOrbFrame3 != null && greenOrbFrame4 != null) ||
-                 (redOrbFrame1 != null && redOrbFrame2 != null && redOrbFrame3 != null && redOrbFrame4 != null) ||
-                 (blackOrbFrame1 != null && blackOrbFrame2 != null && blackOrbFrame3 != null && blackOrbFrame4 != null) ||
-                 (redPadFrame1 != null && redPadFrame2 != null && redPadFrame3 != null && redPadFrame4 != null) ||
-                 (whiteOrbFrame1 != null && whiteOrbFrame2 != null && whiteOrbFrame3 != null && whiteOrbFrame4 != null) ||
-                 (coinFrame1 != null && coinFrame2 != null && coinFrame3 != null && coinFrame4 != null)))
+            bool anyOrbFramesAvailable =
+                (yellowOrbFrame1 != null && yellowOrbFrame2 != null && yellowOrbFrame3 != null && yellowOrbFrame4 != null) ||
+                (blueOrbFrame1 != null && blueOrbFrame2 != null && blueOrbFrame3 != null && blueOrbFrame4 != null) ||
+                (pinkOrbFrame1 != null && pinkOrbFrame2 != null && pinkOrbFrame3 != null && pinkOrbFrame4 != null) ||
+                (greenOrbFrame1 != null && greenOrbFrame2 != null && greenOrbFrame3 != null && greenOrbFrame4 != null) ||
+                (redOrbFrame1 != null && redOrbFrame2 != null && redOrbFrame3 != null && redOrbFrame4 != null) ||
+                (blackOrbFrame1 != null && blackOrbFrame2 != null && blackOrbFrame3 != null && blackOrbFrame4 != null) ||
+                (redPadFrame1 != null && redPadFrame2 != null && redPadFrame3 != null && redPadFrame4 != null) ||
+                (whiteOrbFrame1 != null && whiteOrbFrame2 != null && whiteOrbFrame3 != null && whiteOrbFrame4 != null) ||
+                (coinFrame1 != null && coinFrame2 != null && coinFrame3 != null && coinFrame4 != null) ||
+                // Any of the two-frame dash orb sets present
+                (dashOrbRightFrame1 != null && dashOrbRightFrame2 != null) ||
+                (dashGravityOrbRightFrame1 != null && dashGravityOrbRightFrame2 != null) ||
+                (dashOrb45UpFrame1 != null && dashOrb45UpFrame2 != null) ||
+                (dashGravityOrb45UpFrame1 != null && dashGravityOrb45UpFrame2 != null) ||
+                (dashOrb45DownFrame1 != null && dashOrb45DownFrame2 != null) ||
+                (dashGravityOrb45DownFrame1 != null && dashGravityOrb45DownFrame2 != null) ||
+                (dashOrbUpFrame1 != null && dashOrbUpFrame2 != null) ||
+                (dashGravityOrbUpFrame1 != null && dashGravityOrbUpFrame2 != null) ||
+                (dashOrbDownFrame1 != null && dashOrbDownFrame2 != null) ||
+                (dashGravityOrbDownFrame1 != null && dashGravityOrbDownFrame2 != null) ||
+                // Teleport orb two-frame sets
+                (teleportOrbEnterFrame1 != null && teleportOrbEnterFrame2 != null) ||
+                (teleportOrbExitFrame1 != null && teleportOrbExitFrame2 != null) ||
+                // Spider orb two-frame sets
+                (spiderOrbDownFrame1 != null && spiderOrbDownFrame2 != null) ||
+                (spiderOrbUpFrame1 != null && spiderOrbUpFrame2 != null);
+
+            if (spritesWb != null && anyOrbFramesAvailable)
             {
                 // Check if we have any animated orb sprites
                 bool hasAnimatedOrbs = false;
                     for (int i = 0; i < sprites.Length; i++)
-                {
-                    int spriteIdx = sprites[i];
-                    if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
-                        spriteIdx == 0x05 || // Blue
-                        spriteIdx == 0x06 || // Pink
-                        spriteIdx == 0x27 || // Green
-                        spriteIdx == 0x28 || // Red
-                        spriteIdx == 0x44 || // Black
-                            spriteIdx == 0x52 || // Red pad (preview-only)
-                        spriteIdx == 0x53 || // Red pad up
-                        spriteIdx == 0x0A || // Yellow pad down
-                        spriteIdx == 0x0C || // Yellow pad up
-                        spriteIdx == 0x0D || // Blue pad down
-                        spriteIdx == 0x0E || // Blue pad up
-                        spriteIdx == 0x25 || // Pink pad down
-                        spriteIdx == 0x26 || // Pink pad up
-                        spriteIdx == 0x7A || // White orb
-                        spriteIdx == 0x07 || // Coin type 1
-                        spriteIdx == 0x1A || // Coin type 2
-                        spriteIdx == 0x1B)   // Coin type 3
                     {
+                        int spriteIdx = sprites[i];
+                        if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
+                            spriteIdx == 0x05 || // Blue
+                            spriteIdx == 0x06 || // Pink
+                            spriteIdx == 0x27 || // Green
+                            spriteIdx == 0x28 || // Red
+                            spriteIdx == 0x44 || // Black
+                                spriteIdx == 0x52 || // Red pad (preview-only)
+                            spriteIdx == 0x53 || // Red pad up
+                            spriteIdx == 0x0A || // Yellow pad down
+                            spriteIdx == 0x0C || // Yellow pad up
+                            spriteIdx == 0x0D || // Blue pad down
+                            spriteIdx == 0x0E || // Blue pad up
+                            spriteIdx == 0x25 || // Pink pad down
+                            spriteIdx == 0x26 || // Pink pad up
+                            spriteIdx == 0x7A || // White orb
+                            spriteIdx == 0x07 || // Coin type 1
+                            spriteIdx == 0x1A || // Coin type 2
+                            spriteIdx == 0x1B || // Coin type 3
+                            // New dash orb sprites (2-frame slow animations)
+                            spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55)
+                        {
                         hasAnimatedOrbs = true;
                         
                         // Debug: Log first time we find animated orbs
@@ -1305,18 +1357,20 @@ namespace FamidashEditor
                                     spriteIdx == 0x27 || // Green
                                     spriteIdx == 0x28 || // Red
                                     spriteIdx == 0x44 || // Black
-                                            spriteIdx == 0x52 || // Red pad (preview-only)
+                                        spriteIdx == 0x52 || // Red pad (preview-only)
                                     spriteIdx == 0x53 || // Red pad up
                                     spriteIdx == 0x0A || // Yellow pad down
                                     spriteIdx == 0x0C || // Yellow pad up
                                     spriteIdx == 0x0D || // Blue pad down
                                     spriteIdx == 0x0E || // Blue pad up
                                     spriteIdx == 0x25 || // Pink pad down
-                                            spriteIdx == 0x26 || // Pink pad up
-                                            spriteIdx == 0x7A || // White orb
-                                            spriteIdx == 0x07 || // Coin types
-                                            spriteIdx == 0x1A ||
-                                            spriteIdx == 0x1B)   // Coin types
+                                        spriteIdx == 0x26 || // Pink pad up
+                                        spriteIdx == 0x7A || // White orb
+                                        spriteIdx == 0x07 || // Coin types
+                                        spriteIdx == 0x1A ||
+                                        spriteIdx == 0x1B || // Coin types
+                                        // New dash orb sprites
+                                        spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55)
                                 {
                                     UpdateSpriteBitmapAtLocked(x, y, spriteIdx, scale, mapViewportPadding, spritePixelW, spritePixelH, dpi);
                                 }
@@ -1405,7 +1459,9 @@ namespace FamidashEditor
                      spriteIdx == 0x08 || spriteIdx == 0x09 ||
                      // Horizontal gravity portals
                      spriteIdx == 0x10 || spriteIdx == 0x11 || spriteIdx == 0x12 || spriteIdx == 0x13 ||
-                         spriteIdx == 0x22 || spriteIdx == 0x23;
+                         spriteIdx == 0x22 || spriteIdx == 0x23 ||
+                     // Additional gravity-X portal sprite IDs (preview replacements)
+                     spriteIdx == 0x5F || spriteIdx == 0x60 || spriteIdx == 0x61 || spriteIdx == 0x62 || spriteIdx == 0x63;
         }
         
         // Get the portal sprite bitmap for a given sprite ID
@@ -1516,6 +1572,12 @@ namespace FamidashEditor
             if (originalIndex == 0x61) return 3021; // gravity 2/3
             if (originalIndex == 0x62) return 3022; // gravity 2x
             if (originalIndex == 0x63) return 3023; // gravity 1x
+            // Teleport orb 2-frame animations (use the same deterministic two-frame timing as dash orbs)
+            if (originalIndex == 0x59) return GetTwoFrameCustomIndex(2100); // teleport enter (2100/2101)
+            if (originalIndex == 0x5A) return GetTwoFrameCustomIndex(2102); // teleport exit  (2102/2103)
+            // Spider orb 2-frame animations (use same two-frame timing)
+            if (originalIndex == 0x54) return GetTwoFrameCustomIndex(2106); // spider orb upwards   (2106/2107)
+            if (originalIndex == 0x55) return GetTwoFrameCustomIndex(2104); // spider orb downwards (2104/2105)
             if (originalIndex == 0x52)
             {
             }
@@ -1617,6 +1679,38 @@ namespace FamidashEditor
                     return baseIndex + frame;
                 }
             }
+
+            // New: Dash orb 2-frame slow animations (custom indices 2080-2099)
+            // Sprite IDs:
+            // 0x45 => 2080/2081
+            // 0x46 => 2082/2083
+            // 0x4C => 2084/2085
+            // 0x4D => 2086/2087
+            // 0x50 => 2088/2089
+            // 0x51 => 2090/2091
+            // 0x5B => 2092/2093
+            // 0x5C => 2094/2095
+            // 0x5D => 2096/2097
+            // 0x5E => 2098/2099
+            if (originalIndex == 0x45 || originalIndex == 0x46 || originalIndex == 0x4C || originalIndex == 0x4D || originalIndex == 0x50 || originalIndex == 0x51 || originalIndex == 0x5B || originalIndex == 0x5C || originalIndex == 0x5D || originalIndex == 0x5E)
+            {
+                int spriteBase = originalIndex switch
+                {
+                    0x45 => 2080,
+                    0x46 => 2082,
+                    0x4C => 2084,
+                    0x4D => 2086,
+                    0x50 => 2088,
+                    0x51 => 2090,
+                    0x5B => 2092,
+                    0x5C => 2094,
+                    0x5D => 2096,
+                    0x5E => 2098,
+                    _ => 2080
+                };
+
+                return GetTwoFrameCustomIndex(spriteBase);
+            }
             
             return originalIndex; // Not an animated orb
         }
@@ -1679,6 +1773,14 @@ namespace FamidashEditor
                 return largeSawFrame2Tiles?[offset];
             }
             return null;
+        }
+
+        // Helper to compute deterministic two-frame custom animation index
+        private int GetTwoFrameCustomIndex(int spriteBase)
+        {
+            // Slower rate: match the dash-orb timing used elsewhere
+            int frame = (((animationFrame * 3) / 40) % 2 + 2) % 2;
+            return spriteBase + frame;
         }
         
         // Get the custom orb animation sprite if index is >= 2000
@@ -1953,6 +2055,60 @@ namespace FamidashEditor
                     3 => whiteOrbFrame4?[0],
                     _ => null
                 };
+            }
+
+            // Dash orb 2-frame slow animations: 2080-2099 (10 sprites × 2 frames)
+            if (customIndex >= 2080 && customIndex <= 2099)
+            {
+                switch (customIndex)
+                {
+                    case 2080: return dashOrbRightFrame1?[0];
+                    case 2081: return dashOrbRightFrame2?[0];
+                    case 2082: return dashGravityOrbRightFrame1?[0];
+                    case 2083: return dashGravityOrbRightFrame2?[0];
+                    case 2084: return dashOrb45UpFrame1?[0];
+                    case 2085: return dashOrb45UpFrame2?[0];
+                    case 2086: return dashGravityOrb45UpFrame1?[0];
+                    case 2087: return dashGravityOrb45UpFrame2?[0];
+                    case 2088: return dashOrb45DownFrame1?[0];
+                    case 2089: return dashOrb45DownFrame2?[0];
+                    case 2090: return dashGravityOrb45DownFrame1?[0];
+                    case 2091: return dashGravityOrb45DownFrame2?[0];
+                    case 2092: return dashOrbUpFrame1?[0];
+                    case 2093: return dashOrbUpFrame2?[0];
+                    case 2094: return dashGravityOrbUpFrame1?[0];
+                    case 2095: return dashGravityOrbUpFrame2?[0];
+                    case 2096: return dashOrbDownFrame1?[0];
+                    case 2097: return dashOrbDownFrame2?[0];
+                    case 2098: return dashGravityOrbDownFrame1?[0];
+                    case 2099: return dashGravityOrbDownFrame2?[0];
+                    default: return null;
+                }
+            }
+
+            // Teleport orb 2-frame animations: 2100-2103 (2 sprites × 2 frames)
+            if (customIndex >= 2100 && customIndex <= 2103)
+            {
+                switch (customIndex)
+                {
+                    case 2100: return teleportOrbEnterFrame1?[0];
+                    case 2101: return teleportOrbEnterFrame2?[0];
+                    case 2102: return teleportOrbExitFrame1?[0];
+                    case 2103: return teleportOrbExitFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Spider orb 2-frame animations: 2104-2107 (2 sprites × 2 frames)
+            if (customIndex >= 2104 && customIndex <= 2107)
+            {
+                switch (customIndex)
+                {
+                    case 2104: return spiderOrbDownFrame1?[0];
+                    case 2105: return spiderOrbDownFrame2?[0];
+                    case 2106: return spiderOrbUpFrame1?[0];
+                    case 2107: return spiderOrbUpFrame2?[0];
+                    default: return null;
+                }
             }
             
             return null;
@@ -2815,6 +2971,64 @@ namespace FamidashEditor
             LoadOrbFrames("black", ref blackOrbFrame1, ref blackOrbFrame2, ref blackOrbFrame3, ref blackOrbFrame4);
         }
 
+        // Helper to load two-frame orb variants (slower animations)
+        private void LoadTwoFrameOrb(string baseName, ref BitmapSource[]? frame1, ref BitmapSource[]? frame2)
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage($"{baseName}-frame1.png");
+                var f2 = LoadEmbeddedImage($"{baseName}-frame2.png");
+
+                if (f1 != null && f2 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+
+                    frame1 = new BitmapSource[1];
+                    frame2 = new BitmapSource[1];
+                    frame1[0] = converted1;
+                    frame2[0] = converted2;
+
+                    System.Diagnostics.Debug.WriteLine($"✓ Loaded two-frame orb: {baseName} (2 frames)");
+                    return;
+                }
+
+                // Fallback to file system (repo root or base dir)
+                var baseDir = AppContext.BaseDirectory;
+                var p1 = Path.Combine(baseDir, $"{baseName}-frame1.png");
+                var p2 = Path.Combine(baseDir, $"{baseName}-frame2.png");
+                var repo = FindRepoRootFor("famidash.bmp");
+                if (!string.IsNullOrEmpty(repo))
+                {
+                    var r1 = Path.Combine(repo, $"{baseName}-frame1.png");
+                    var r2 = Path.Combine(repo, $"{baseName}-frame2.png");
+                    if (File.Exists(r1)) p1 = r1;
+                    if (File.Exists(r2)) p2 = r2;
+                }
+
+                if (File.Exists(p1) && File.Exists(p2))
+                {
+                    var bi1 = new BitmapImage(); bi1.BeginInit(); bi1.CacheOption = BitmapCacheOption.OnLoad; bi1.UriSource = new Uri(p1); bi1.EndInit(); bi1.Freeze();
+                    var bi2 = new BitmapImage(); bi2.BeginInit(); bi2.CacheOption = BitmapCacheOption.OnLoad; bi2.UriSource = new Uri(p2); bi2.EndInit(); bi2.Freeze();
+
+                    frame1 = new BitmapSource[1];
+                    frame2 = new BitmapSource[1];
+                    frame1[0] = new FormatConvertedBitmap(bi1, PixelFormats.Pbgra32, null, 0);
+                    frame2[0] = new FormatConvertedBitmap(bi2, PixelFormats.Pbgra32, null, 0);
+
+                    System.Diagnostics.Debug.WriteLine($"✓ Loaded two-frame orb from files: {baseName}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"✗ Two-frame orb files not found: {baseName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load two-frame orb {baseName}: {ex.Message}");
+            }
+        }
+
         private void LoadSettings()
         {
             try
@@ -3219,6 +3433,23 @@ namespace FamidashEditor
                 InitializeBluePadUpAnimationFrames();
                 InitializePinkPadDownAnimationFrames();
                 InitializePinkPadUpAnimationFrames();
+                // Initialize new dash orb two-frame slow animations
+                LoadTwoFrameOrb("dash-orb-right", ref dashOrbRightFrame1, ref dashOrbRightFrame2);
+                LoadTwoFrameOrb("dash-gravity-orb-right", ref dashGravityOrbRightFrame1, ref dashGravityOrbRightFrame2);
+                LoadTwoFrameOrb("dash-orb-45deg-upwards", ref dashOrb45UpFrame1, ref dashOrb45UpFrame2);
+                LoadTwoFrameOrb("dash-gravity-orb-45deg-upwards", ref dashGravityOrb45UpFrame1, ref dashGravityOrb45UpFrame2);
+                LoadTwoFrameOrb("dash-orb-45deg-downwards", ref dashOrb45DownFrame1, ref dashOrb45DownFrame2);
+                LoadTwoFrameOrb("dash-gravity-orb-45deg-downwards", ref dashGravityOrb45DownFrame1, ref dashGravityOrb45DownFrame2);
+                LoadTwoFrameOrb("dash-orb-up", ref dashOrbUpFrame1, ref dashOrbUpFrame2);
+                LoadTwoFrameOrb("dash-gravity-orb-up", ref dashGravityOrbUpFrame1, ref dashGravityOrbUpFrame2);
+                LoadTwoFrameOrb("dash-orb-down", ref dashOrbDownFrame1, ref dashOrbDownFrame2);
+                LoadTwoFrameOrb("dash-gravity-orb-down", ref dashGravityOrbDownFrame1, ref dashGravityOrbDownFrame2);
+                // Teleport orb two-frame animations
+                LoadTwoFrameOrb("teleport-orb-enter", ref teleportOrbEnterFrame1, ref teleportOrbEnterFrame2);
+                LoadTwoFrameOrb("teleport-orb-exit", ref teleportOrbExitFrame1, ref teleportOrbExitFrame2);
+                // Spider orb two-frame animations
+                LoadTwoFrameOrb("spider-orb-downwards", ref spiderOrbDownFrame1, ref spiderOrbDownFrame2);
+                LoadTwoFrameOrb("spider-orb-upwards", ref spiderOrbUpFrame1, ref spiderOrbUpFrame2);
             }
             catch (Exception ex)
             {
@@ -5462,7 +5693,7 @@ namespace FamidashEditor
                             int py2 = ay + 2; // inclusive bottom tile (default for tall portals)
 
                             // Horizontal gravity portals are wider and shorter
-                            if (portalAnimatedIdx >= 3011 && portalAnimatedIdx <= 3014)
+                            if ((portalAnimatedIdx >= 3011 && portalAnimatedIdx <= 3014) || (portalAnimatedIdx >= 3019 && portalAnimatedIdx <= 3023))
                             {
                                 px2 = ax + 2; // 3 tiles wide
                                 py2 = ay + 1; // 2 tiles tall
@@ -5541,6 +5772,8 @@ namespace FamidashEditor
                 {
                     System.Diagnostics.Debug.WriteLine($"Sprite 0x00: animatedIdx={animatedIdx}, previewMode={previewMode}");
                 }
+
+                // (no logging)
                 
                 // Check if this is a custom animated sprite
                 if (animatedIdx >= 2000)
