@@ -104,6 +104,9 @@ namespace FamidashEditor
             UpdatePreviewAndNotify();
         }
 
+        // Expose whether user checked 'Set as default'
+        public bool SetAsDefault => (SetDefaultCheckbox != null && SetDefaultCheckbox.IsChecked == true);
+
         private void PreviewIndex(int idx)
         {
             if (idx < 0 || idx >= PaletteColors.Length) return;

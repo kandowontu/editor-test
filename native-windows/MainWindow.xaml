@@ -119,6 +119,7 @@
                     <MenuItem x:Name="MenuColorBackgroundTint" Header="_Background Tint..." />
                     <MenuItem x:Name="MenuColorGroundTint" Header="_Ground Tint..." />
                     <MenuItem x:Name="MenuColorTileTint" Header="_Tile Tint..." />
+                    <MenuItem x:Name="MenuColorPlayerTint" Header="_Player Color..." />
                 </MenuItem>
                 <MenuItem Header="_Options">
                     <MenuItem x:Name="MenuOptionLegacyTriggers" Header="Legacy Trigger Load/Save" IsCheckable="True" IsChecked="False" />

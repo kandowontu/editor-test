@@ -38,6 +38,9 @@ namespace FamidashEditor
             OkButton.Click += (s, e) => { DialogResult = true; };
             CancelButton.Click += (s, e) => { DialogResult = false; };
         }
+
+        // Expose whether user checked 'Set as default'
+        public bool SetAsDefault => (SetDefaultCheckbox != null && SetDefaultCheckbox.IsChecked == true);
         
         private void GenerateColorWheel()
         {

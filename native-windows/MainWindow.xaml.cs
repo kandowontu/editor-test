@@ -34,6 +34,10 @@ namespace FamidashEditor
     private Color backgroundTint = Color.FromArgb(0, 0, 0, 0);
     private Color groundTint = Color.FromArgb(0, 0, 0, 0);
     private Color tileTint = Color.FromArgb(0, 0, 0, 0);
+    // Player tint (applied to decoration pixels that are not black/transparent)
+    private Color playerTint = Color.FromArgb(0, 0, 0, 0);
+    // Whether player tinting is enabled (user-selected). Default: disabled.
+    private bool playerTintEnabled = false;
     private bool manualTileSize = false;
     private bool manualSpriteSize = false;
 
@@ -454,10 +458,33 @@ namespace FamidashEditor
     private BitmapSource[]? spiderOrbDownFrame2;
     private BitmapSource[]? spiderOrbUpFrame1;
     private BitmapSource[]? spiderOrbUpFrame2;
+    // Star decoration 2-frame preview animation (sprite 0x36)
+    private BitmapSource[]? starFrame1;
+    private BitmapSource[]? starFrame2;
+    // Additional decoration two-frame preview animations
+    private BitmapSource[]? diamondFrame1; // sprite 0x32
+    private BitmapSource[]? diamondFrame2;
+    private BitmapSource[]? diamondHalfFrame1; // sprite 0x33
+    private BitmapSource[]? diamondHalfFrame2;
+    private BitmapSource[]? questionMarkFrame1; // sprite 0x34
+    private BitmapSource[]? questionMarkFrame2;
+    private BitmapSource[]? exclamationFrame1; // sprite 0x35
+    private BitmapSource[]? exclamationFrame2;
+    private BitmapSource[]? xFrame1; // sprite 0x37
+    private BitmapSource[]? xFrame2;
+    private BitmapSource[]? poleShortFrame1; // sprite 0x2C
+    private BitmapSource[]? poleShortFrame2;
+    private BitmapSource[]? poleShortUpsideDownFrame1; // sprite 0x3C
+    private BitmapSource[]? poleShortUpsideDownFrame2;
     // Random frame offsets for each sprite position to desynchronize animations
     private Dictionary<int, int> spriteFrameOffsets = new Dictionary<int, int>();
     private Random spriteAnimationRandom = new Random();
     private int currentSpritePositionKey = 0; // Temp variable for passing position to GetAnimatedSpriteIndex
+    // Caches for tinted decoration bitmaps (keyed by spriteIdx or custom animation index)
+    private readonly Dictionary<int, BitmapSource?> tintedSpriteCache = new Dictionary<int, BitmapSource?>();
+    private readonly Dictionary<int, BitmapSource?> tintedCustomCache = new Dictionary<int, BitmapSource?>();
+    // Decoration sprite ids that should receive player tinting
+    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C };
     // Portal debug log path (initialized at startup)
     private string? portalDebugPath = null;
 
@@ -826,6 +853,7 @@ namespace FamidashEditor
             if (MenuColorBackgroundTint != null) MenuColorBackgroundTint.Click += BgTintButton_Click;
             if (MenuColorGroundTint != null) MenuColorGroundTint.Click += GroundTintButton_Click;
             if (MenuColorTileTint != null) MenuColorTileTint.Click += TileTintButton_Click;
+            if (MenuColorPlayerTint != null) MenuColorPlayerTint.Click += PlayerTintButton_Click;
             
             if (MenuOptionLegacyTriggers != null) 
             {
@@ -1087,13 +1115,19 @@ namespace FamidashEditor
                 backgroundTint = dlg.SelectedColor;
                 UpdateParallaxTint();
                 Redraw();
-                
-                // Auto-save config when tint is changed
+
+                // Auto-save config when tint is changed (TMX-specific)
                 if (!string.IsNullOrEmpty(currentFilePath))
                 {
                     SaveTmxConfig(currentFilePath);
                 }
-                
+
+                // Persist as editor default if user checked 'Set as default'
+                if (dlg.SetAsDefault)
+                {
+                    try { SaveSettingsWithTriggerOption(); } catch { }
+                }
+
                 if (StatusText != null) StatusText.Text = $"BgTint set ARGB={backgroundTint.A},{backgroundTint.R},{backgroundTint.G},{backgroundTint.B} parallaxToned={(parallaxTonedImages!=null?parallaxTonedImages.Length:0)}";
             }
             else
@@ -1121,13 +1155,19 @@ namespace FamidashEditor
                 groundTint = dlg.SelectedColor;
                 UpdateGroundTint();
                 Redraw();
-                
-                // Auto-save config when tint is changed
+
+                // Auto-save config when tint is changed (TMX-specific)
                 if (!string.IsNullOrEmpty(currentFilePath))
                 {
                     SaveTmxConfig(currentFilePath);
                 }
-                
+
+                // Persist as editor default if user checked 'Set as default'
+                if (dlg.SetAsDefault)
+                {
+                    try { SaveSettingsWithTriggerOption(); } catch { }
+                }
+
                 if (StatusText != null) StatusText.Text = $"GroundTint set ARGB={groundTint.A},{groundTint.R},{groundTint.G},{groundTint.B} groundToned={(groundTonedImages!=null?groundTonedImages.Length:0)}";
             }
             else
@@ -1153,13 +1193,19 @@ namespace FamidashEditor
                 tileTint = dlg.SelectedColor;
                 UpdateTileTint();
                 Redraw();
-                
-                // Auto-save config when tint is changed
+
+                // Auto-save config when tint is changed (TMX-specific)
                 if (!string.IsNullOrEmpty(currentFilePath))
                 {
                     SaveTmxConfig(currentFilePath);
                 }
-                
+
+                // Persist as editor default if user checked 'Set as default'
+                if (dlg.SetAsDefault)
+                {
+                    try { SaveSettingsWithTriggerOption(); } catch { }
+                }
+
                 if (StatusText != null) StatusText.Text = $"TileTint set ARGB={tileTint.A},{tileTint.R},{tileTint.G},{tileTint.B} tilesToned={(tileTonedImages!=null?tileTonedImages.Length:0)}";
             }
             else
@@ -1169,6 +1215,43 @@ namespace FamidashEditor
                 Redraw();
             }
             dlg.ColorChanged -= handler;
+        }
+
+        private void PlayerTintButton_Click(object? sender, RoutedEventArgs e)
+        {
+            var initial = playerTint;
+            // Use the preset 16x4 palette without alpha for player color
+            var dlg = new ColorPickerWindow(initial, allowAlpha: false) { Owner = this };
+            dlg.Title = "Pick Player Color (tints decorations)";
+
+            // Live preview while dialog open (match bg/ground/tile tint behavior)
+            var initialColor = playerTint;
+            var initialEnabled = playerTintEnabled;
+            Action<Color> handler = (c) => { playerTint = c; playerTintEnabled = true; Redraw(); };
+            dlg.ColorChanged += handler;
+            var res = dlg.ShowDialog();
+            dlg.ColorChanged -= handler;
+
+            if (res == true)
+            {
+                // Confirm selection: ensure enabled and persist only if requested
+                playerTint = dlg.SelectedColor;
+                playerTintEnabled = true;
+
+                if (dlg.SetAsDefault)
+                {
+                    try { SaveSettingsWithTriggerOption(); } catch { }
+                }
+
+                Redraw();
+            }
+            else
+            {
+                // Revert to initial values
+                playerTint = initialColor;
+                playerTintEnabled = initialEnabled;
+                Redraw();
+            }
         }
 
         private void StartPreviewTimer()
@@ -1296,37 +1379,42 @@ namespace FamidashEditor
                 (spiderOrbDownFrame1 != null && spiderOrbDownFrame2 != null) ||
                 (spiderOrbUpFrame1 != null && spiderOrbUpFrame2 != null);
 
+            // Include star two-frame preview frames and additional decorations
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (starFrame1 != null && starFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (diamondFrame1 != null && diamondFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (diamondHalfFrame1 != null && diamondHalfFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (questionMarkFrame1 != null && questionMarkFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (exclamationFrame1 != null && exclamationFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (xFrame1 != null && xFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleShortFrame1 != null && poleShortFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame2 != null);
+
             if (spritesWb != null && anyOrbFramesAvailable)
             {
-                // Check if we have any animated orb sprites
+                // Check if we have any animated orb sprites (fast scan)
                 bool hasAnimatedOrbs = false;
-                    for (int i = 0; i < sprites.Length; i++)
+                for (int i = 0; i < sprites.Length; i++)
+                {
+                    int spriteIdx = sprites[i];
+                    // Animated sprites: orbs, coins, pads, dash/teleport/spider two-frame sets and star (0x36)
+                    if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
+                        spriteIdx == 0x05 || // Blue
+                        spriteIdx == 0x06 || // Pink
+                        spriteIdx == 0x27 || // Green
+                        spriteIdx == 0x28 || // Red
+                        spriteIdx == 0x44 || // Black
+                        spriteIdx == 0x7A || // White
+                        spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
+                        spriteIdx == 0x52 || spriteIdx == 0x53 || // Red pad down/up
+                        spriteIdx == 0x0A || spriteIdx == 0x0C || // Yellow pad down/up
+                        spriteIdx == 0x0D || spriteIdx == 0x0E || // Blue pad down/up
+                        spriteIdx == 0x25 || spriteIdx == 0x26 || // Pink pad down/up
+                        // Dash/teleport/spider two-frame sprites
+                        spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
+                        // Star and other decoration sprites
+                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C)
                     {
-                        int spriteIdx = sprites[i];
-                        if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
-                            spriteIdx == 0x05 || // Blue
-                            spriteIdx == 0x06 || // Pink
-                            spriteIdx == 0x27 || // Green
-                            spriteIdx == 0x28 || // Red
-                            spriteIdx == 0x44 || // Black
-                                spriteIdx == 0x52 || // Red pad (preview-only)
-                            spriteIdx == 0x53 || // Red pad up
-                            spriteIdx == 0x0A || // Yellow pad down
-                            spriteIdx == 0x0C || // Yellow pad up
-                            spriteIdx == 0x0D || // Blue pad down
-                            spriteIdx == 0x0E || // Blue pad up
-                            spriteIdx == 0x25 || // Pink pad down
-                            spriteIdx == 0x26 || // Pink pad up
-                            spriteIdx == 0x7A || // White orb
-                            spriteIdx == 0x07 || // Coin type 1
-                            spriteIdx == 0x1A || // Coin type 2
-                            spriteIdx == 0x1B || // Coin type 3
-                            // New dash orb sprites (2-frame slow animations)
-                            spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55)
-                        {
                         hasAnimatedOrbs = true;
-                        
-                        // Debug: Log first time we find animated orbs
                         if (animationFrame % 60 == 0)
                         {
                             System.Diagnostics.Debug.WriteLine($"Found animated orb sprite 0x{spriteIdx:X2} at index {i}, will rebuild sprites");
@@ -1370,7 +1458,9 @@ namespace FamidashEditor
                                         spriteIdx == 0x1A ||
                                         spriteIdx == 0x1B || // Coin types
                                         // New dash orb sprites
-                                        spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55)
+                                        spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
+                                        // Decorations
+                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C)
                                 {
                                     UpdateSpriteBitmapAtLocked(x, y, spriteIdx, scale, mapViewportPadding, spritePixelW, spritePixelH, dpi);
                                 }
@@ -1578,6 +1668,16 @@ namespace FamidashEditor
             // Spider orb 2-frame animations (use same two-frame timing)
             if (originalIndex == 0x54) return GetTwoFrameCustomIndex(2106); // spider orb upwards   (2106/2107)
             if (originalIndex == 0x55) return GetTwoFrameCustomIndex(2104); // spider orb downwards (2104/2105)
+            // Star decoration (two-frame preview) - sprite 0x36
+            // Decorations two-frame preview mapping
+            if (originalIndex == 0x32) return GetTwoFrameCustomIndex(2112); // diamond (2112/2113)
+            if (originalIndex == 0x33) return GetTwoFrameCustomIndex(2114); // diamond half (2114/2115)
+            if (originalIndex == 0x34) return GetTwoFrameCustomIndex(2116); // question mark (2116/2117)
+            if (originalIndex == 0x35) return GetTwoFrameCustomIndex(2118); // exclamation (2118/2119)
+            if (originalIndex == 0x37) return GetTwoFrameCustomIndex(2120); // x decoration (2120/2121)
+            if (originalIndex == 0x2C) return GetTwoFrameCustomIndex(2122); // pole short (2122/2123)
+            if (originalIndex == 0x3C) return GetTwoFrameCustomIndex(2124); // pole short upside-down (2124/2125)
+            if (originalIndex == 0x36) return GetTwoFrameCustomIndex(2110); // star (2110/2111)
             if (originalIndex == 0x52)
             {
             }
@@ -2107,6 +2207,86 @@ namespace FamidashEditor
                     case 2105: return spiderOrbDownFrame2?[0];
                     case 2106: return spiderOrbUpFrame1?[0];
                     case 2107: return spiderOrbUpFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Star 2-frame preview: 2110-2111 (single decoration sprite)
+            if (customIndex >= 2110 && customIndex <= 2111)
+            {
+                switch (customIndex)
+                {
+                    case 2110: return starFrame1?[0];
+                    case 2111: return starFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Diamond decoration: 2112-2113 (sprite 0x32)
+            if (customIndex >= 2112 && customIndex <= 2113)
+            {
+                switch (customIndex)
+                {
+                    case 2112: return diamondFrame1?[0];
+                    case 2113: return diamondFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Diamond half decoration: 2114-2115 (sprite 0x33)
+            if (customIndex >= 2114 && customIndex <= 2115)
+            {
+                switch (customIndex)
+                {
+                    case 2114: return diamondHalfFrame1?[0];
+                    case 2115: return diamondHalfFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Question mark decoration: 2116-2117 (sprite 0x34)
+            if (customIndex >= 2116 && customIndex <= 2117)
+            {
+                switch (customIndex)
+                {
+                    case 2116: return questionMarkFrame1?[0];
+                    case 2117: return questionMarkFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Exclamation decoration: 2118-2119 (sprite 0x35)
+            if (customIndex >= 2118 && customIndex <= 2119)
+            {
+                switch (customIndex)
+                {
+                    case 2118: return exclamationFrame1?[0];
+                    case 2119: return exclamationFrame2?[0];
+                    default: return null;
+                }
+            }
+            // X decoration: 2120-2121 (sprite 0x37)
+            if (customIndex >= 2120 && customIndex <= 2121)
+            {
+                switch (customIndex)
+                {
+                    case 2120: return xFrame1?[0];
+                    case 2121: return xFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Pole short: 2122-2123 (sprite 0x2C)
+            if (customIndex >= 2122 && customIndex <= 2123)
+            {
+                switch (customIndex)
+                {
+                    case 2122: return poleShortFrame1?[0];
+                    case 2123: return poleShortFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Pole short upside-down: 2124-2125 (sprite 0x3C)
+            if (customIndex >= 2124 && customIndex <= 2125)
+            {
+                switch (customIndex)
+                {
+                    case 2124: return poleShortUpsideDownFrame1?[0];
+                    case 2125: return poleShortUpsideDownFrame2?[0];
                     default: return null;
                 }
             }
@@ -3092,6 +3272,29 @@ namespace FamidashEditor
                             MenuOptionLegacyTriggers.IsChecked = useLegacyTriggerOffset;
                         }
                     }
+                    // optional grid darkness (double)
+                    if (doc.RootElement.TryGetProperty("gridDarkness", out var gd))
+                    {
+                        try { gridDarkness = gd.GetDouble(); } catch { try { gridDarkness = gd.GetSingle(); } catch { } }
+                        if (GridDarknessSlider != null) GridDarknessSlider.Value = gridDarkness;
+                        gridDirty = true;
+                    }
+                    // optional player tint (RGB or ARGB)
+                    if (doc.RootElement.TryGetProperty("playerColor", out var pc) && (pc.GetArrayLength() == 3 || pc.GetArrayLength() == 4))
+                    {
+                        byte a = 255;
+                        int idx = 0;
+                        if (pc.GetArrayLength() == 4) { a = (byte)pc[0].GetInt32(); idx = 1; }
+                        var r = (byte)pc[idx + 0].GetInt32();
+                        var g = (byte)pc[idx + 1].GetInt32();
+                        var b = (byte)pc[idx + 2].GetInt32();
+                        playerTint = Color.FromArgb(a, r, g, b);
+                    }
+                    // optional player tint enabled flag (defaults to false)
+                    if (doc.RootElement.TryGetProperty("playerColorEnabled", out var pce))
+                    {
+                        try { playerTintEnabled = pce.GetBoolean(); } catch { playerTintEnabled = false; }
+                    }
                 }
             }
             catch { }
@@ -3105,7 +3308,10 @@ namespace FamidashEditor
                     background = new int[] { c.A, c.R, c.G, c.B },
                     backgroundTint = new int[] { backgroundTint.A, backgroundTint.R, backgroundTint.G, backgroundTint.B },
                     groundTint = new int[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B },
-                    useLegacyTriggerOffset = useLegacyTriggerOffset
+                    useLegacyTriggerOffset = useLegacyTriggerOffset,
+                    playerColor = new int[] { playerTint.A, playerTint.R, playerTint.G, playerTint.B },
+                    playerColorEnabled = playerTintEnabled,
+                    gridDarkness = gridDarkness
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
                 var dir = AppContext.BaseDirectory;
@@ -3450,6 +3656,16 @@ namespace FamidashEditor
                 // Spider orb two-frame animations
                 LoadTwoFrameOrb("spider-orb-downwards", ref spiderOrbDownFrame1, ref spiderOrbDownFrame2);
                 LoadTwoFrameOrb("spider-orb-upwards", ref spiderOrbUpFrame1, ref spiderOrbUpFrame2);
+                // Star two-frame preview animation (sprite 0x36)
+                LoadTwoFrameOrb("star", ref starFrame1, ref starFrame2);
+                // Additional decoration two-frame previews
+                LoadTwoFrameOrb("diamond", ref diamondFrame1, ref diamondFrame2); // sprite 0x32
+                LoadTwoFrameOrb("diamond-half", ref diamondHalfFrame1, ref diamondHalfFrame2); // sprite 0x33
+                LoadTwoFrameOrb("question-mark", ref questionMarkFrame1, ref questionMarkFrame2); // sprite 0x34
+                LoadTwoFrameOrb("exclamation-mark", ref exclamationFrame1, ref exclamationFrame2); // sprite 0x35
+                LoadTwoFrameOrb("x", ref xFrame1, ref xFrame2); // sprite 0x37
+                LoadTwoFrameOrb("pole-short", ref poleShortFrame1, ref poleShortFrame2); // sprite 0x2C
+                LoadTwoFrameOrb("pole-short-upsidedown", ref poleShortUpsideDownFrame1, ref poleShortUpsideDownFrame2); // sprite 0x3C
             }
             catch (Exception ex)
             {
@@ -5740,14 +5956,15 @@ namespace FamidashEditor
             currentSpritePositionKey = y * mapWidth + x;
             
             // Debug: Log when we're updating an orb or coin (periodic)
-            if ((spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
-                 spriteIdx == 0x05 || // Blue
-                 spriteIdx == 0x06 || // Pink
-                 spriteIdx == 0x27 || // Green
-                 spriteIdx == 0x28 || // Red
-                 spriteIdx == 0x44 || // Black
-                 spriteIdx == 0x7A || // White
-                 spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B) && animationFrame % 60 == 0)
+              if ((spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
+                  spriteIdx == 0x05 || // Blue
+                  spriteIdx == 0x06 || // Pink
+                  spriteIdx == 0x27 || // Green
+                  spriteIdx == 0x28 || // Red
+                  spriteIdx == 0x44 || // Black
+                  spriteIdx == 0x7A || // White
+                  spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
+                  spriteIdx == 0x36) && animationFrame % 60 == 0)
             {
                 System.Diagnostics.Debug.WriteLine($"UpdateSpriteBitmapAtLocked: Updating animated sprite 0x{spriteIdx:X2} at ({x},{y}), previewMode={previewMode}");
             }
@@ -5782,7 +5999,7 @@ namespace FamidashEditor
                     sprite = GetCustomAnimationSprite(animatedIdx);
 
                     // Lightweight diagnostic: sample first pixel of pad frames to detect per-frame changes
-                    if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26 || spriteIdx == 0x7A || spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B))
+                    if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26 || spriteIdx == 0x7A || spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || spriteIdx == 0x36))
                     {
                         try
                         {
@@ -5981,23 +6198,50 @@ namespace FamidashEditor
                                 
                                 if (srcAlpha == 255)
                                 {
-                                    // Fully opaque - direct copy
-                                    destPtr[pixelOffset + 0] = srcPixels[srcOffset + pixelOffset + 0]; // B
-                                    destPtr[pixelOffset + 1] = srcPixels[srcOffset + pixelOffset + 1]; // G
-                                    destPtr[pixelOffset + 2] = srcPixels[srcOffset + pixelOffset + 2]; // R
-                                    destPtr[pixelOffset + 3] = srcPixels[srcOffset + pixelOffset + 3]; // A
+                                    // Fully opaque - direct copy (with optional tint for decoration sprites)
+                                    byte srcB = srcPixels[srcOffset + pixelOffset + 0];
+                                    byte srcG = srcPixels[srcOffset + pixelOffset + 1];
+                                    byte srcR = srcPixels[srcOffset + pixelOffset + 2];
+
+                                    if (previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0))
+                                    {
+                                        destPtr[pixelOffset + 0] = playerTint.B; // B
+                                        destPtr[pixelOffset + 1] = playerTint.G; // G
+                                        destPtr[pixelOffset + 2] = playerTint.R; // R
+                                        destPtr[pixelOffset + 3] = srcPixels[srcOffset + pixelOffset + 3]; // A
+                                    }
+                                    else
+                                    {
+                                        destPtr[pixelOffset + 0] = srcB; // B
+                                        destPtr[pixelOffset + 1] = srcG; // G
+                                        destPtr[pixelOffset + 2] = srcR; // R
+                                        destPtr[pixelOffset + 3] = srcPixels[srcOffset + pixelOffset + 3]; // A
+                                    }
                                 }
                                 else if (srcAlpha > 0)
                                 {
                                     // Semi-transparent - alpha blend with existing pixel
                                     byte destAlpha = destPtr[pixelOffset + 3];
                                     
+                                    // Read source color and apply tint if needed
+                                    byte srcB = srcPixels[srcOffset + pixelOffset + 0];
+                                    byte srcG = srcPixels[srcOffset + pixelOffset + 1];
+                                    byte srcR = srcPixels[srcOffset + pixelOffset + 2];
+
+                                    bool applyTint = previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0);
+                                    if (applyTint)
+                                    {
+                                        srcB = playerTint.B;
+                                        srcG = playerTint.G;
+                                        srcR = playerTint.R;
+                                    }
+
                                     if (destAlpha == 0)
                                     {
                                         // Destination is transparent, just copy source
-                                        destPtr[pixelOffset + 0] = srcPixels[srcOffset + pixelOffset + 0]; // B
-                                        destPtr[pixelOffset + 1] = srcPixels[srcOffset + pixelOffset + 1]; // G
-                                        destPtr[pixelOffset + 2] = srcPixels[srcOffset + pixelOffset + 2]; // R
+                                        destPtr[pixelOffset + 0] = srcB; // B
+                                        destPtr[pixelOffset + 1] = srcG; // G
+                                        destPtr[pixelOffset + 2] = srcR; // R
                                         destPtr[pixelOffset + 3] = srcPixels[srcOffset + pixelOffset + 3]; // A
                                     }
                                     else
@@ -6009,9 +6253,9 @@ namespace FamidashEditor
                                         
                                         if (outA > 0)
                                         {
-                                            destPtr[pixelOffset + 0] = (byte)((srcPixels[srcOffset + pixelOffset + 0] * srcA + destPtr[pixelOffset + 0] * dstA * (1 - srcA)) / outA);
-                                            destPtr[pixelOffset + 1] = (byte)((srcPixels[srcOffset + pixelOffset + 1] * srcA + destPtr[pixelOffset + 1] * dstA * (1 - srcA)) / outA);
-                                            destPtr[pixelOffset + 2] = (byte)((srcPixels[srcOffset + pixelOffset + 2] * srcA + destPtr[pixelOffset + 2] * dstA * (1 - srcA)) / outA);
+                                            destPtr[pixelOffset + 0] = (byte)((srcB * srcA + destPtr[pixelOffset + 0] * dstA * (1 - srcA)) / outA);
+                                            destPtr[pixelOffset + 1] = (byte)((srcG * srcA + destPtr[pixelOffset + 1] * dstA * (1 - srcA)) / outA);
+                                            destPtr[pixelOffset + 2] = (byte)((srcR * srcA + destPtr[pixelOffset + 2] * dstA * (1 - srcA)) / outA);
                                             destPtr[pixelOffset + 3] = (byte)(outA * 255);
                                         }
                                     }
@@ -6061,23 +6305,50 @@ namespace FamidashEditor
                                 }
                                 else if (srcAlpha == 255)
                                 {
-                                    // Fully opaque - direct copy
-                                    destPtr[0] = srcPixels[srcOffset + 0]; // B
-                                    destPtr[1] = srcPixels[srcOffset + 1]; // G
-                                    destPtr[2] = srcPixels[srcOffset + 2]; // R
-                                    destPtr[3] = srcPixels[srcOffset + 3]; // A
+                                    // Fully opaque - direct copy (with optional tint for decoration sprites)
+                                    byte srcB = srcPixels[srcOffset + 0];
+                                    byte srcG = srcPixels[srcOffset + 1];
+                                    byte srcR = srcPixels[srcOffset + 2];
+
+                                    if (previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0))
+                                    {
+                                        destPtr[0] = playerTint.B; // B
+                                        destPtr[1] = playerTint.G; // G
+                                        destPtr[2] = playerTint.R; // R
+                                        destPtr[3] = srcPixels[srcOffset + 3]; // A
+                                    }
+                                    else
+                                    {
+                                        destPtr[0] = srcB; // B
+                                        destPtr[1] = srcG; // G
+                                        destPtr[2] = srcR; // R
+                                        destPtr[3] = srcPixels[srcOffset + 3]; // A
+                                    }
                                 }
                                 else if (srcAlpha > 0)
                                 {
                                     // Semi-transparent - alpha blend with existing pixel
                                     byte destAlpha = destPtr[3];
-                                    
+
+                                    // Read source color and apply tint if needed
+                                    byte srcB = srcPixels[srcOffset + 0];
+                                    byte srcG = srcPixels[srcOffset + 1];
+                                    byte srcR = srcPixels[srcOffset + 2];
+
+                                    bool applyTint = previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0);
+                                    if (applyTint)
+                                    {
+                                        srcB = playerTint.B;
+                                        srcG = playerTint.G;
+                                        srcR = playerTint.R;
+                                    }
+
                                     if (destAlpha == 0)
                                     {
                                         // Destination is transparent, just copy source
-                                        destPtr[0] = srcPixels[srcOffset + 0]; // B
-                                        destPtr[1] = srcPixels[srcOffset + 1]; // G
-                                        destPtr[2] = srcPixels[srcOffset + 2]; // R
+                                        destPtr[0] = srcB; // B
+                                        destPtr[1] = srcG; // G
+                                        destPtr[2] = srcR; // R
                                         destPtr[3] = srcPixels[srcOffset + 3]; // A
                                     }
                                     else
@@ -6086,12 +6357,12 @@ namespace FamidashEditor
                                         float srcA = srcAlpha / 255.0f;
                                         float dstA = destAlpha / 255.0f;
                                         float outA = srcA + dstA * (1 - srcA);
-                                        
+
                                         if (outA > 0)
                                         {
-                                            destPtr[0] = (byte)((srcPixels[srcOffset + 0] * srcA + destPtr[0] * dstA * (1 - srcA)) / outA);
-                                            destPtr[1] = (byte)((srcPixels[srcOffset + 1] * srcA + destPtr[1] * dstA * (1 - srcA)) / outA);
-                                            destPtr[2] = (byte)((srcPixels[srcOffset + 2] * srcA + destPtr[2] * dstA * (1 - srcA)) / outA);
+                                            destPtr[0] = (byte)((srcB * srcA + destPtr[0] * dstA * (1 - srcA)) / outA);
+                                            destPtr[1] = (byte)((srcG * srcA + destPtr[1] * dstA * (1 - srcA)) / outA);
+                                            destPtr[2] = (byte)((srcR * srcA + destPtr[2] * dstA * (1 - srcA)) / outA);
                                             destPtr[3] = (byte)(outA * 255);
                                         }
                                     }
@@ -7504,6 +7775,7 @@ namespace FamidashEditor
             // Mark grid cache dirty so the grid bitmap is rebuilt with the new darkness
             gridDirty = true;
             Redraw();
+            try { SaveSettingsWithTriggerOption(); } catch { }
         }
 
         private void MapScrollViewer_ManipulationDelta(object? sender, ManipulationDeltaEventArgs e)

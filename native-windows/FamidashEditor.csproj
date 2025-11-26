@@ -155,5 +155,23 @@
     <EmbeddedResource Include="..\spider-orb-downwards-frame2.png" />
     <EmbeddedResource Include="..\spider-orb-upwards-frame1.png" />
     <EmbeddedResource Include="..\spider-orb-upwards-frame2.png" />
+    <!-- Star decoration two-frame preview animation -->
+    <EmbeddedResource Include="..\star-frame1.png" />
+    <EmbeddedResource Include="..\star-frame2.png" />
+    <!-- Additional decoration two-frame preview animations -->
+    <EmbeddedResource Include="..\diamond-frame1.png" />
+    <EmbeddedResource Include="..\diamond-frame2.png" />
+    <EmbeddedResource Include="..\diamond-half-frame1.png" />
+    <EmbeddedResource Include="..\diamond-half-frame2.png" />
+    <EmbeddedResource Include="..\question-mark-frame1.png" />
+    <EmbeddedResource Include="..\question-mark-frame2.png" />
+    <EmbeddedResource Include="..\exclamation-mark-frame1.png" />
+    <EmbeddedResource Include="..\exclamation-mark-frame2.png" />
+    <EmbeddedResource Include="..\x-frame1.png" />
+    <EmbeddedResource Include="..\x-frame2.png" />
+    <EmbeddedResource Include="..\pole-short-frame1.png" />
+    <EmbeddedResource Include="..\pole-short-frame2.png" />
+    <EmbeddedResource Include="..\pole-short-upsidedown-frame1.png" />
+    <EmbeddedResource Include="..\pole-short-upsidedown-frame2.png" />
   </ItemGroup>
 </Project>
