@@ -476,6 +476,9 @@ namespace FamidashEditor
     private BitmapSource[]? poleShortFrame2;
     private BitmapSource[]? poleShortUpsideDownFrame1; // sprite 0x3C
     private BitmapSource[]? poleShortUpsideDownFrame2;
+    // Chain decorations (single-frame preview-only)
+    private BitmapSource[]? chainFrame1; // sprite 0x2D
+    private BitmapSource[]? chainUpsideDownFrame1; // sprite 0x3D
     // Random frame offsets for each sprite position to desynchronize animations
     private Dictionary<int, int> spriteFrameOffsets = new Dictionary<int, int>();
     private Random spriteAnimationRandom = new Random();
@@ -553,7 +556,7 @@ namespace FamidashEditor
     private readonly LruCache<long, BitmapSource?> tintedSpriteCache = new LruCache<long, BitmapSource?>(TintCacheCapacity);
     private readonly LruCache<long, BitmapSource?> tintedCustomCache = new LruCache<long, BitmapSource?>(TintCacheCapacity);
     // Decoration sprite ids that should receive player tinting
-    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C };
+    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D };
     // Portal debug log path (initialized at startup)
     private string? portalDebugPath = null;
 
@@ -1824,6 +1827,9 @@ namespace FamidashEditor
             if (originalIndex == 0x2C) return GetTwoFrameCustomIndex(2122); // pole short (2122/2123)
             if (originalIndex == 0x3C) return GetTwoFrameCustomIndex(2124); // pole short upside-down (2124/2125)
             if (originalIndex == 0x36) return GetTwoFrameCustomIndex(2110); // star (2110/2111)
+            // Chain decorations (preview-only, single-frame)
+            if (originalIndex == 0x2D) return 2126; // chain (2126)
+            if (originalIndex == 0x3D) return 2127; // chain-upsidedown (2127)
             if (originalIndex == 0x52)
             {
             }
@@ -2435,6 +2441,16 @@ namespace FamidashEditor
                     case 2125: return poleShortUpsideDownFrame2?[0];
                     default: return null;
                 }
+            }
+            // Chain single-frame decoration: 2126 (sprite 0x2D)
+            if (customIndex == 2126)
+            {
+                return chainFrame1?[0];
+            }
+            // Chain upside-down single-frame decoration: 2127 (sprite 0x3D)
+            if (customIndex == 2127)
+            {
+                return chainUpsideDownFrame1?[0];
             }
             
             return null;
@@ -3817,6 +3833,54 @@ namespace FamidashEditor
                 LoadTwoFrameOrb("x", ref xFrame1, ref xFrame2); // sprite 0x37
                 LoadTwoFrameOrb("pole-short", ref poleShortFrame1, ref poleShortFrame2); // sprite 0x2C
                 LoadTwoFrameOrb("pole-short-upsidedown", ref poleShortUpsideDownFrame1, ref poleShortUpsideDownFrame2); // sprite 0x3C
+                // Chain decorations (single-frame preview-only)
+                try
+                {
+                    var ch = LoadEmbeddedImage("chain.png");
+                    if (ch != null)
+                    {
+                        chainFrame1 = new BitmapSource[1];
+                        chainFrame1[0] = new FormatConvertedBitmap(ch, PixelFormats.Pbgra32, null, 0);
+                    }
+                    else
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var p = Path.Combine(baseDir, "chain.png");
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "chain.png"); if (File.Exists(rp)) p = rp; }
+                        if (File.Exists(p))
+                        {
+                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
+                            chainFrame1 = new BitmapSource[1];
+                            chainFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var ch2 = LoadEmbeddedImage("chain-upsidedown.png");
+                    if (ch2 != null)
+                    {
+                        chainUpsideDownFrame1 = new BitmapSource[1];
+                        chainUpsideDownFrame1[0] = new FormatConvertedBitmap(ch2, PixelFormats.Pbgra32, null, 0);
+                    }
+                    else
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var p = Path.Combine(baseDir, "chain-upsidedown.png");
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "chain-upsidedown.png"); if (File.Exists(rp)) p = rp; }
+                        if (File.Exists(p))
+                        {
+                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
+                            chainUpsideDownFrame1 = new BitmapSource[1];
+                            chainUpsideDownFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                        }
+                    }
+                }
+                catch { }
             }
             catch (Exception ex)
             {
@@ -6127,6 +6191,18 @@ namespace FamidashEditor
                 int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
                 int destX = Math.Max(0, padPxX + x * spritePixelW);
                 int destY = Math.Max(0, padPxY + y * spritePixelH);
+
+                // Shift the chain preview up so it visually hangs from above.
+                // Apply an initial full-tile shift, plus an additional offset that is
+                // half a tile at 1x zoom (8px) and a full tile at >=2x zoom (16px).
+                if (previewMode && spriteIdx == 0x2D)
+                {
+                    // Use scaled tile size so the visual offset is uniform across zoom levels.
+                    double oneTileScaled = TileSize * scale * dpi.DpiScaleY; // e.g. 16*scale*dpi
+                    // Move up by 1.5 tiles (1 + 0.5) in the same coordinate space as destY
+                    int totalShift = (int)Math.Round(oneTileScaled * 1.5);
+                    destY = Math.Max(0, destY - totalShift);
+                }
                 
                 // Bounds check
                 if (destX >= cachedPixelWidth || destY >= cachedPixelHeight) return;
@@ -6253,6 +6329,12 @@ namespace FamidashEditor
                         renderHeight = spritePixelH * 2;
                     }
                 }
+
+                // Treat chain decorations (custom indices 2126/2127) as 1.5 tiles tall (24px if TileSize==16)
+                if (!isMultiTilePortal && (animatedIdx == 2126 || animatedIdx == 2127))
+                {
+                    renderHeight = (spritePixelH * 3) / 2; // 1.5 tiles tall
+                }
                 
                 // Calculate the actual size we need to render
                 int srcWidth = sprite.PixelWidth;
@@ -6280,7 +6362,7 @@ namespace FamidashEditor
                 unsafe
                 {
                     int clearWidth = Math.Min(isMultiTilePortal ? renderWidth : spritePixelW, cachedPixelWidth - destX);
-                    int clearHeight = Math.Min(isMultiTilePortal ? renderHeight : spritePixelH, cachedPixelHeight - destY);
+                    int clearHeight = Math.Min(renderHeight, cachedPixelHeight - destY);
 
                     // If this is a regular sprite and portals exist underneath, copy portal pixels into spritesWb first
                     // so that animated sprites (orbs) can clear/re-render each frame correctly while preserving portals.
@@ -6374,7 +6456,10 @@ namespace FamidashEditor
                     return;
                 }
                 // If no scaling needed and sprite is already correct size, copy directly
-                if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && !isMultiTilePortal)
+                // Direct copy fast-path: only use for non-custom, single-tile sprites at 1x scale/DPI.
+                // Custom preview sprites (animatedIdx >= 2000) must go through the scaling branch
+                // so they can be rendered at 1.5 tiles tall when appropriate (e.g. chains).
+                if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && !isMultiTilePortal && animatedIdx < 2000)
                 {
                     // Direct copy - no scaling (only for single-tile sprites)
                     int copyWidth = Math.Min(srcWidth, cachedPixelWidth - destX);

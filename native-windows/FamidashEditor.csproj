@@ -173,5 +173,8 @@
     <EmbeddedResource Include="..\pole-short-frame2.png" />
     <EmbeddedResource Include="..\pole-short-upsidedown-frame1.png" />
     <EmbeddedResource Include="..\pole-short-upsidedown-frame2.png" />
+    <!-- Chain preview decorations -->
+    <EmbeddedResource Include="..\chain.png" />
+    <EmbeddedResource Include="..\chain-upsidedown.png" />
   </ItemGroup>
 </Project>
