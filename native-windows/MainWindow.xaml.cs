@@ -480,13 +480,97 @@ namespace FamidashEditor
     private Dictionary<int, int> spriteFrameOffsets = new Dictionary<int, int>();
     private Random spriteAnimationRandom = new Random();
     private int currentSpritePositionKey = 0; // Temp variable for passing position to GetAnimatedSpriteIndex
-    // Caches for tinted decoration bitmaps (keyed by spriteIdx or custom animation index)
-    private readonly Dictionary<int, BitmapSource?> tintedSpriteCache = new Dictionary<int, BitmapSource?>();
-    private readonly Dictionary<int, BitmapSource?> tintedCustomCache = new Dictionary<int, BitmapSource?>();
+    // Caches for tinted decoration bitmaps (keyed by combined (id<<32)|ARGB)
+    // Simple LRU cache to limit memory usage when storing tinted bitmaps
+    private class LruCache<TKey, TValue> where TKey : notnull
+    {
+        private readonly int capacity;
+        private readonly Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>> map = new Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>>();
+        private readonly LinkedList<KeyValuePair<TKey, TValue>> list = new LinkedList<KeyValuePair<TKey, TValue>>();
+
+        public LruCache(int capacity)
+        {
+            this.capacity = Math.Max(16, capacity);
+        }
+
+        public bool TryGetValue(TKey key, out TValue? value)
+        {
+            if (map.TryGetValue(key, out var node))
+            {
+                // move to front
+                list.Remove(node);
+                list.AddFirst(node);
+                value = node.Value.Value;
+                return true;
+            }
+            value = default;
+            return false;
+        }
+
+        public TValue? this[TKey key]
+        {
+            set { Put(key, value); }
+            get
+            {
+                if (TryGetValue(key, out var v)) return v;
+                return default;
+            }
+        }
+
+                public void Put(TKey key, TValue? value)
+        {
+            if (map.TryGetValue(key, out var node))
+            {
+                node.Value = new KeyValuePair<TKey, TValue>(key, value!);
+                list.Remove(node);
+                list.AddFirst(node);
+            }
+            else
+            {
+                var kv = new KeyValuePair<TKey, TValue>(key, value!);
+                var n = list.AddFirst(kv);
+                map[key] = n;
+                if (map.Count > capacity)
+                {
+                    var last = list.Last;
+                    if (last != null)
+                    {
+                        map.Remove(last.Value.Key);
+                        list.RemoveLast();
+                    }
+                }
+            }
+        }
+
+        public void Clear()
+        {
+            map.Clear();
+            list.Clear();
+        }
+    }
+
+    private const int TintCacheCapacity = 512;
+    private readonly LruCache<long, BitmapSource?> tintedSpriteCache = new LruCache<long, BitmapSource?>(TintCacheCapacity);
+    private readonly LruCache<long, BitmapSource?> tintedCustomCache = new LruCache<long, BitmapSource?>(TintCacheCapacity);
     // Decoration sprite ids that should receive player tinting
     private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C };
     // Portal debug log path (initialized at startup)
     private string? portalDebugPath = null;
+
+        // Clear tinted caches (call when player tint changes)
+        private void ClearTintedCaches()
+        {
+            try
+            {
+                tintedSpriteCache.Clear();
+            }
+            catch { }
+            try
+            {
+                tintedCustomCache.Clear();
+            }
+            catch { }
+        }
 
         private interface IUndoAction
         {
@@ -1238,6 +1322,9 @@ namespace FamidashEditor
                 playerTint = dlg.SelectedColor;
                 playerTintEnabled = true;
 
+                // Clear tinted caches so new tint takes effect immediately
+                ClearTintedCaches();
+
                 if (dlg.SetAsDefault)
                 {
                     try { SaveSettingsWithTriggerOption(); } catch { }
@@ -1250,6 +1337,7 @@ namespace FamidashEditor
                 // Revert to initial values
                 playerTint = initialColor;
                 playerTintEnabled = initialEnabled;
+                // No need to clear caches when cancelling (tint unchanged)
                 Redraw();
             }
         }
@@ -3298,6 +3386,11 @@ namespace FamidashEditor
                 }
             }
             catch { }
+            finally
+            {
+                // Ensure any previous tinted caches are cleared so they don't reference stale tints
+                ClearTintedCaches();
+            }
         }
 
         private void SaveSettings(Color c)
@@ -6029,6 +6122,54 @@ namespace FamidashEditor
                 {
                     sprite = spriteImages[spriteIdx] as BitmapSource;
                 }
+
+                // If player tinting is enabled and this sprite is a decoration, try to obtain a cached tinted bitmap
+                BitmapSource? cachedTinted = null;
+                if (previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && sprite != null)
+                {
+                    // Build a 64-bit cache key composed of id and ARGB
+                    uint argb = (uint)((playerTint.A << 24) | (playerTint.R << 16) | (playerTint.G << 8) | (playerTint.B));
+                    long key = (((long)(animatedIdx >= 2000 ? animatedIdx : spriteIdx)) << 32) | argb;
+                    var cache = (animatedIdx >= 2000) ? tintedCustomCache : tintedSpriteCache;
+                    if (cache.TryGetValue(key, out var found) && found != null)
+                    {
+                        cachedTinted = found;
+                        sprite = cachedTinted;
+                    }
+                    else
+                    {
+                        // create tinted source and insert into cache
+                        try
+                        {
+                            var conv = new FormatConvertedBitmap(sprite, PixelFormats.Bgra32, null, 0);
+                            int w = conv.PixelWidth, h = conv.PixelHeight, stride = w * 4;
+                            var pixels = new byte[h * stride];
+                            conv.CopyPixels(pixels, stride, 0);
+                            // Apply tint to non-black, non-transparent pixels
+                            for (int i = 0; i < pixels.Length; i += 4)
+                            {
+                                byte b = pixels[i + 0];
+                                byte g = pixels[i + 1];
+                                byte r = pixels[i + 2];
+                                byte a = pixels[i + 3];
+                                if (a != 0 && !(r == 0 && g == 0 && b == 0))
+                                {
+                                    pixels[i + 0] = playerTint.B;
+                                    pixels[i + 1] = playerTint.G;
+                                    pixels[i + 2] = playerTint.R;
+                                    // keep alpha
+                                }
+                            }
+                            var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                            wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                            wb.Freeze();
+                            cache[key] = wb;
+                            sprite = wb;
+                            
+                        }
+                        catch { /* ignore tint cache failures, fallback to runtime tint code below */ }
+                    }
+                }
                 
                 if (sprite == null) return;
                 
@@ -7627,7 +7768,9 @@ namespace FamidashEditor
                     } 
                     catch { Redraw(); }
                     // After making sprite changes, rebuild portal background and then sprites composite so portals are persistent
-                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                    // Only rebuild the entire sprites bitmap when in preview mode (portals/preview-only animations require a full composite).
+                    // When preview mode is off, we already updated the specific sprite/tile bitmaps above, so a full rebuild causes unnecessary flicker.
+                    try { if (previewMode) RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                 }
                 return;
             }
