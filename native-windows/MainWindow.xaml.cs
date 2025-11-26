@@ -1363,6 +1363,33 @@ namespace FamidashEditor
             previewTimer?.Stop();
         }
 
+        // Compute the visible tile rectangle in map coordinates (inclusive)
+        private void GetVisibleTileBounds(out int minX, out int maxX, out int minY, out int maxY)
+        {
+            minX = 0; maxX = Math.Max(0, mapWidth - 1); minY = 0; maxY = Math.Max(0, mapHeight - 1);
+            try
+            {
+                if (MapScrollViewer == null) return;
+                double scale = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
+                double pad = mapViewportPadding;
+                double viewLeft = MapScrollViewer.HorizontalOffset;
+                double viewTop = MapScrollViewer.VerticalOffset;
+                double viewRight = viewLeft + MapScrollViewer.ViewportWidth;
+                double viewBottom = viewTop + MapScrollViewer.ViewportHeight;
+
+                int lx = (int)Math.Floor((viewLeft - pad) / (TileSize * scale));
+                int rx = (int)Math.Floor((viewRight - pad) / (TileSize * scale));
+                int ty = (int)Math.Floor((viewTop - pad) / (TileSize * scale));
+                int by = (int)Math.Floor((viewBottom - pad) / (TileSize * scale));
+
+                minX = Math.Max(0, Math.Min(mapWidth - 1, lx));
+                maxX = Math.Max(0, Math.Min(mapWidth - 1, rx));
+                minY = Math.Max(0, Math.Min(mapHeight - 1, ty));
+                maxY = Math.Max(0, Math.Min(mapHeight - 1, by));
+            }
+            catch { }
+        }
+
         private void PreviewTimer_Tick(object? sender, EventArgs e)
         {
             timerTicks++;
@@ -1395,32 +1422,41 @@ namespace FamidashEditor
                  (smallSawFrame1Tiles != null && smallSawFrame2Tiles != null) ||
                  (largeSawFrame1Tiles != null && largeSawFrame2Tiles != null)))
             {
-                // Find and update only the saw tiles (0x08-0x0B, 0x04, 0x7D, 0x7F, 0x74-0x7C)
+                // Helper to compute visible tile bounds
+                GetVisibleTileBounds(out _, out _, out _, out _);
+                // Helper to compute visible tile bounds
+                int visMinX = 0, visMaxX = mapWidth - 1, visMinY = 0, visMaxY = mapHeight - 1;
+                GetVisibleTileBounds(out visMinX, out visMaxX, out visMinY, out visMaxY);
+                // Find visible tile bounds and update only saw tiles inside the viewport
+                GetVisibleTileBounds(out int sMinX, out int sMaxX, out int sMinY, out int sMaxY);
+                // Find and update only the saw tiles in the visible region
                 bool hasSaws = false;
-                for (int i = 0; i < tiles.Length; i++)
+                for (int yy = sMinY; yy <= sMaxY && !hasSaws; yy++)
                 {
-                    int tileIdx = tiles[i];
-                    if ((tileIdx >= 0x08 && tileIdx <= 0x0B) || tileIdx == 0x04 || tileIdx == 0x7D || tileIdx == 0x7F || (tileIdx >= 0x74 && tileIdx <= 0x7C))
+                    for (int xx = sMinX; xx <= sMaxX; xx++)
                     {
-                        hasSaws = true;
-                        break;
+                        int tileIdx = tiles[yy * mapWidth + xx];
+                        if ((tileIdx >= 0x08 && tileIdx <= 0x0B) || tileIdx == 0x04 || tileIdx == 0x7D || tileIdx == 0x7F || (tileIdx >= 0x74 && tileIdx <= 0x7C))
+                        {
+                            hasSaws = true; break;
+                        }
                     }
                 }
-                
+
                 if (hasSaws)
                 {
-                    // Only update saw tiles, not entire bitmap
+                    // Only update saw tiles inside visible bounds
                     double scale = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
                     var dpi = VisualTreeHelper.GetDpi(this);
                     int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
                     int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
-                    
+
                     tilesWb.Lock();
                     try
                     {
-                        for (int y = 0; y < mapHeight; y++)
+                        for (int y = sMinY; y <= sMaxY; y++)
                         {
-                            for (int x = 0; x < mapWidth; x++)
+                            for (int x = sMinX; x <= sMaxX; x++)
                             {
                                 int tileIdx = tiles[y * mapWidth + x];
                                 if ((tileIdx >= 0x08 && tileIdx <= 0x0B) || tileIdx == 0x04 || tileIdx == 0x7D || tileIdx == 0x7F || (tileIdx >= 0x74 && tileIdx <= 0x7C))
@@ -1429,7 +1465,15 @@ namespace FamidashEditor
                                 }
                             }
                         }
-                        tilesWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+
+                        // Compute dirty rect for visible area
+                        int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                        int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                        int leftPx = Math.Max(0, padPxX + sMinX * tilePixelW);
+                        int topPx = Math.Max(0, padPxY + sMinY * tilePixelH);
+                        int wPx = Math.Min(cachedPixelWidth - leftPx, (sMaxX - sMinX + 1) * tilePixelW);
+                        int hPx = Math.Min(cachedPixelHeight - topPx, (sMaxY - sMinY + 1) * tilePixelH);
+                        tilesWb.AddDirtyRect(new Int32Rect(leftPx, topPx, Math.Max(1, wPx), Math.Max(1, hPx)));
                     }
                     finally
                     {
@@ -1480,51 +1524,57 @@ namespace FamidashEditor
             if (spritesWb != null && anyOrbFramesAvailable)
             {
                 // Check if we have any animated orb sprites (fast scan)
+                // Determine visible tile bounds
+                GetVisibleTileBounds(out int vMinX, out int vMaxX, out int vMinY, out int vMaxY);
+
+                // Check if we have any animated orb sprites in the visible area (fast scan)
                 bool hasAnimatedOrbs = false;
-                for (int i = 0; i < sprites.Length; i++)
+                for (int yy = vMinY; yy <= vMaxY && !hasAnimatedOrbs; yy++)
                 {
-                    int spriteIdx = sprites[i];
-                    // Animated sprites: orbs, coins, pads, dash/teleport/spider two-frame sets and star (0x36)
-                    if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
-                        spriteIdx == 0x05 || // Blue
-                        spriteIdx == 0x06 || // Pink
-                        spriteIdx == 0x27 || // Green
-                        spriteIdx == 0x28 || // Red
-                        spriteIdx == 0x44 || // Black
-                        spriteIdx == 0x7A || // White
-                        spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
-                        spriteIdx == 0x52 || spriteIdx == 0x53 || // Red pad down/up
-                        spriteIdx == 0x0A || spriteIdx == 0x0C || // Yellow pad down/up
-                        spriteIdx == 0x0D || spriteIdx == 0x0E || // Blue pad down/up
-                        spriteIdx == 0x25 || spriteIdx == 0x26 || // Pink pad down/up
-                        // Dash/teleport/spider two-frame sprites
-                        spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
-                        // Star and other decoration sprites
-                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C)
+                    for (int xx = vMinX; xx <= vMaxX; xx++)
                     {
-                        hasAnimatedOrbs = true;
-                        if (animationFrame % 60 == 0)
+                        int spriteIdx = sprites[yy * mapWidth + xx];
+                        if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
+                            spriteIdx == 0x05 || // Blue
+                            spriteIdx == 0x06 || // Pink
+                            spriteIdx == 0x27 || // Green
+                            spriteIdx == 0x28 || // Red
+                            spriteIdx == 0x44 || // Black
+                            spriteIdx == 0x7A || // White
+                            spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
+                            spriteIdx == 0x52 || spriteIdx == 0x53 || // Red pad down/up
+                            spriteIdx == 0x0A || spriteIdx == 0x0C || // Yellow pad down/up
+                            spriteIdx == 0x0D || spriteIdx == 0x0E || // Blue pad down/up
+                            spriteIdx == 0x25 || spriteIdx == 0x26 || // Pink pad down/up
+                            // Dash/teleport/spider two-frame sprites
+                            spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
+                            // Star and other decoration sprites
+                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C)
                         {
-                            System.Diagnostics.Debug.WriteLine($"Found animated orb sprite 0x{spriteIdx:X2} at index {i}, will rebuild sprites");
+                            hasAnimatedOrbs = true;
+                            if (animationFrame % 60 == 0)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Found animated orb sprite 0x{spriteIdx:X2} at ({xx},{yy}), will rebuild sprites");
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
-                
+
                 if (hasAnimatedOrbs)
                 {
-                    // Only update animated orb sprites, not entire bitmap (same as saws)
+                    // Only update animated orb sprites in the visible region
                     double scale = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
                     var dpi = VisualTreeHelper.GetDpi(this);
                     int spritePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
                     int spritePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
-                    
+
                     spritesWb.Lock();
                     try
                     {
-                                for (int y = 0; y < mapHeight; y++)
+                        for (int y = vMinY; y <= vMaxY; y++)
                         {
-                            for (int x = 0; x < mapWidth; x++)
+                            for (int x = vMinX; x <= vMaxX; x++)
                             {
                                 int spriteIdx = sprites[y * mapWidth + x];
                                 if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
@@ -1554,7 +1604,15 @@ namespace FamidashEditor
                                 }
                             }
                         }
-                        spritesWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+
+                        // Compute dirty rect for visible area
+                        int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                        int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                        int leftPx = Math.Max(0, padPxX + vMinX * spritePixelW);
+                        int topPx = Math.Max(0, padPxY + vMinY * spritePixelH);
+                        int wPx = Math.Min(cachedPixelWidth - leftPx, (vMaxX - vMinX + 1) * spritePixelW);
+                        int hPx = Math.Min(cachedPixelHeight - topPx, (vMaxY - vMinY + 1) * spritePixelH);
+                        spritesWb.AddDirtyRect(new Int32Rect(leftPx, topPx, Math.Max(1, wPx), Math.Max(1, hPx)));
                     }
                     finally
                     {
@@ -6540,6 +6598,14 @@ namespace FamidashEditor
             int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
             int destX = Math.Max(0, padPxX + x * spritePixelW);
             int destY = Math.Max(0, padPxY + y * spritePixelH);
+
+            // Special-case: in preview mode, certain horizontal gravity portal previews
+            // should be visually shifted up by one tile (16px) to align correctly.
+            // Apply for sprite IDs 0x10 and 0x12.
+            if (previewMode && (spriteIdx == 0x10 || spriteIdx == 0x12))
+            {
+                destY = Math.Max(0, destY - spritePixelH);
+            }
 
             int renderWidth = spritePixelW;
             int renderHeight = spritePixelH;
