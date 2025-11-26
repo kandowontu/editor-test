@@ -325,6 +325,9 @@ namespace FamidashEditor
     // Additional new portals
     private BitmapSource? dualPortalSprite; // for sprite 0x22 (dual-portal.png)
     private BitmapSource? singlePortalSprite; // for sprite 0x23 (single-portal.png)
+    // New mini/growth portals
+    private BitmapSource? miniPortalSprite; // for sprite 0x18 (mini-portal.png - preview replacement)
+    private BitmapSource? growthPortalSprite; // for sprite 0x19 (growth-portal.png - preview replacement)
     // Gravity portals
     private BitmapSource? gravityDownPortalSprite; // for sprite 0x08 (gravity-down-portal.png)
     private BitmapSource? gravityUpPortalSprite; // for sprite 0x09 (gravity-up-portal.png)
@@ -1392,7 +1395,7 @@ namespace FamidashEditor
             // Includes original portals plus newly added portal sprite IDs
                  return spriteIdx == 0x00 || spriteIdx == 0x01 || spriteIdx == 0x02 ||
                      spriteIdx == 0x03 || spriteIdx == 0x04 || spriteIdx == 0x24 ||
-                     spriteIdx == 0x17 || spriteIdx == 0x4B || spriteIdx == 0x58 ||
+                     spriteIdx == 0x17 || spriteIdx == 0x18 || spriteIdx == 0x19 || spriteIdx == 0x4B || spriteIdx == 0x58 ||
                      spriteIdx == 0x08 || spriteIdx == 0x09 ||
                      // Horizontal gravity portals
                      spriteIdx == 0x10 || spriteIdx == 0x11 || spriteIdx == 0x12 || spriteIdx == 0x13 ||
@@ -1411,6 +1414,8 @@ namespace FamidashEditor
                 0x04 => robotPortalSprite,
                 0x24 => wavePortalSprite,
                 0x17 => spiderPortalSprite,
+                0x18 => miniPortalSprite,
+                0x19 => growthPortalSprite,
                 0x4B => swingcopterPortalSprite,
                 0x08 => gravityDownPortalSprite,
                 0x09 => gravityUpPortalSprite,
@@ -1444,6 +1449,14 @@ namespace FamidashEditor
             if (originalIndex == 0x17)
             {
                 return 3006; // Spider portal
+            }
+            if (originalIndex == 0x18)
+            {
+                return 3017; // Mini portal (new)
+            }
+            if (originalIndex == 0x19)
+            {
+                return 3018; // Growth portal (new)
             }
             if (originalIndex == 0x4B)
             {
@@ -1688,6 +1701,9 @@ namespace FamidashEditor
             // New larger portals
             if (customIndex == 3015) return dualPortalSprite;
             if (customIndex == 3016) return singlePortalSprite;
+            // New mini/growth portal custom indices
+            if (customIndex == 3017) return miniPortalSprite;
+            if (customIndex == 3018) return growthPortalSprite;
             
             if (customIndex >= 2000 && customIndex <= 2011)
             {
@@ -2207,6 +2223,9 @@ namespace FamidashEditor
                 wavePortalSprite = LoadPortalSprite("wave-portal.png");
                 // New portal sprites
                 spiderPortalSprite = LoadPortalSprite("spider-portal.png");
+                    // New mini and growth portal preview images (placed in workspace root)
+                    miniPortalSprite = LoadPortalSprite("mini-portal.png");
+                    growthPortalSprite = LoadPortalSprite("growth-portal.png");
                 swingcopterPortalSprite = LoadPortalSprite("swingcopter-portal.png");
                 ninjaPortalSprite = LoadPortalSprite("ninja-portal.png");
                 // Gravity portals
@@ -5534,8 +5553,8 @@ namespace FamidashEditor
                 
                 if (sprite == null) return;
                 
-                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3014)
-                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3016);
+                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3018)
+                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3018);
                 int renderHeight = spritePixelH;
                 int renderWidth = spritePixelW;
 
@@ -5851,8 +5870,8 @@ namespace FamidashEditor
             int renderWidth = spritePixelW;
             int renderHeight = spritePixelH;
             int portalAnimatedIdx = GetAnimatedSpriteIndex(spriteIdx);
-            // Treat custom portal indices up through 3016 as multi-tile portals
-            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3016);
+            // Treat custom portal indices up through 3018 as multi-tile portals
+            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3018);
             if (portalIsMulti)
             {
                 // Standard tall portals (3000-3010) are 1.5 tiles × 3 tiles
