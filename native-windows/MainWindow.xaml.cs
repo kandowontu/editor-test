@@ -556,6 +556,8 @@ namespace FamidashEditor
     private const int TintCacheCapacity = 512;
     private readonly LruCache<long, BitmapSource?> tintedSpriteCache = new LruCache<long, BitmapSource?>(TintCacheCapacity);
     private readonly LruCache<long, BitmapSource?> tintedCustomCache = new LruCache<long, BitmapSource?>(TintCacheCapacity);
+    // Lock for thread-safe access to the tinted caches when precomputing on background threads
+    private readonly object tintedCacheLock = new object();
     // Decoration sprite ids that should receive player tinting
     private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D };
     // Portal debug log path (initialized at startup)
@@ -979,6 +981,9 @@ namespace FamidashEditor
                         // Allow the UI to render the dialog and the checkbox change before heavy work
                         await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
 
+                        // Start background precomputation of tinted decoration sprites to reduce per-frame tint work
+                        var _ = PrecomputeTintedCachesAsync();
+
                         // Perform the rebuilds (still on UI thread for safety) after UI had a chance to update
                         RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
                         RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
@@ -1007,6 +1012,9 @@ namespace FamidashEditor
                         loading.Show();
 
                         await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+
+                        // Kick off a background refresh of tinted cache (keeps cache warm for next toggle)
+                        var __ = PrecomputeTintedCachesAsync();
 
                         // Clear portal layer and redraw to show non-animated tiles and sprites
                         if (portalsWb != null)
@@ -6192,6 +6200,71 @@ namespace FamidashEditor
             {
                 System.Diagnostics.Debug.WriteLine($"EXCEPTION in RebuildPortalsRegion: {ex.Message}");
             }
+        }
+
+        // Background precompute for tinted decoration sprites to reduce work during rebuild
+        private Task PrecomputeTintedCachesAsync()
+        {
+            if (!playerTintEnabled) return Task.CompletedTask;
+            // Capture current tint to avoid races
+            var tint = playerTint;
+            return Task.Run(() =>
+            {
+                try
+                {
+                    uint argb = (uint)((tint.A << 24) | (tint.R << 16) | (tint.G << 8) | (tint.B));
+                    foreach (var id in decorationSpriteIds)
+                    {
+                        try
+                        {
+                            if (spriteImages == null) continue;
+                            if (id < 0 || id >= spriteImages.Length) continue;
+                            long key = (((long)id) << 32) | argb;
+                            lock (tintedCacheLock)
+                            {
+                                if (tintedSpriteCache.TryGetValue(key, out var existing) && existing != null) continue;
+                            }
+
+                            var src = spriteImages[id] as BitmapSource;
+                            if (src == null) continue;
+
+                            var conv = new FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
+                            int w = conv.PixelWidth, h = conv.PixelHeight, stride = w * 4;
+                            if (w <= 0 || h <= 0) continue;
+                            var pixels = new byte[h * stride];
+                            conv.CopyPixels(pixels, stride, 0);
+
+                            for (int i = 0; i < pixels.Length; i += 4)
+                            {
+                                byte b = pixels[i + 0];
+                                byte g = pixels[i + 1];
+                                byte r = pixels[i + 2];
+                                byte a = pixels[i + 3];
+                                if (a != 0 && !(r == 0 && g == 0 && b == 0))
+                                {
+                                    pixels[i + 0] = tint.B;
+                                    pixels[i + 1] = tint.G;
+                                    pixels[i + 2] = tint.R;
+                                }
+                            }
+
+                            var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                            wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                            wb.Freeze();
+
+                            lock (tintedCacheLock)
+                            {
+                                tintedSpriteCache.Put(key, wb);
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"PrecomputeTintedCachesAsync error: {ex.Message}");
+                }
+            });
         }
 
         
