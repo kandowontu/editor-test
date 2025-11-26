@@ -5403,11 +5403,30 @@ namespace FamidashEditor
                         int idx = sprites[ay * mapWidth + ax];
                         if (IsPortalSprite(idx))
                         {
-                            // Determine portal bounds in tiles
+                            // Determine portal bounds in tiles. Different portal types occupy different tile footprints:
+                            // - Standard tall portals: 1.5 tiles wide × 3 tiles tall  (covers ax..ax+1, ay..ay+2)
+                            // - Horizontal gravity portals: 3 tiles wide × 2 tiles tall (covers ax..ax+2, ay..ay+1)
+                            // - New dual/single portals (3015/3016): treat like standard tall portals (1.5×3)
+                            int portalAnimatedIdx = GetAnimatedSpriteIndex(idx);
                             int px1 = ax;
                             int py1 = ay;
-                            int px2 = ax + 1;
-                            int py2 = ay + 2;
+                            int px2 = ax + 1; // inclusive right tile (default for tall portals)
+                            int py2 = ay + 2; // inclusive bottom tile (default for tall portals)
+
+                            // Horizontal gravity portals are wider and shorter
+                            if (portalAnimatedIdx >= 3011 && portalAnimatedIdx <= 3014)
+                            {
+                                px2 = ax + 2; // 3 tiles wide
+                                py2 = ay + 1; // 2 tiles tall
+                            }
+                            // New dual/single portals (3015/3016) should be treated as tall portals (1.5×3)
+                            else if (portalAnimatedIdx == 3015 || portalAnimatedIdx == 3016)
+                            {
+                                px2 = ax + 1;
+                                py2 = ay + 2;
+                            }
+
+                            // Intersection test with requested dirty region
                             if (px2 < minX || px1 > maxX || py2 < minY || py1 > maxY) continue; // no intersection
 
                             // Render this portal anchor into portalsWb
@@ -5832,19 +5851,27 @@ namespace FamidashEditor
             int renderWidth = spritePixelW;
             int renderHeight = spritePixelH;
             int portalAnimatedIdx = GetAnimatedSpriteIndex(spriteIdx);
-            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3014);
+            // Treat custom portal indices up through 3016 as multi-tile portals
+            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3016);
             if (portalIsMulti)
             {
+                // Standard tall portals (3000-3010) are 1.5 tiles × 3 tiles
                 if (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3010)
                 {
                     renderWidth = (spritePixelW * 3) / 2; // 1.5 tiles wide
                     renderHeight = spritePixelH * 3;
                 }
-                else
+                // Horizontal gravity portals (3011-3014) are 3 tiles × 2 tiles
+                else if (portalAnimatedIdx >= 3011 && portalAnimatedIdx <= 3014)
                 {
-                    // Horizontal gravity portals: 3 tiles wide x 2 tiles tall
                     renderWidth = spritePixelW * 3;
                     renderHeight = spritePixelH * 2;
+                }
+                // New dual/single portals (3015,3016): treat like standard tall portals (1.5×3)
+                else
+                {
+                    renderWidth = (spritePixelW * 3) / 2;
+                    renderHeight = spritePixelH * 3;
                 }
             }
 
