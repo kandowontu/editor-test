@@ -336,6 +336,12 @@ namespace FamidashEditor
     private BitmapSource? gravityDownUpwardsPortalSprite; // for sprite 0x11 (gravity-down-upwards-portal.png)
     private BitmapSource? gravityUpDownwardsPortalSprite; // for sprite 0x12 (gravity-up-downwards-portal.png)
     private BitmapSource? gravityUpUpwardsPortalSprite; // for sprite 0x13 (gravity-up-upwards-portal.png)
+    // Additional gravity-strength X-axis portals (preview replacements)
+    private BitmapSource? gravity1ThirdXPortalSprite; // for sprite 0x5F (gravity-1-3rd-x-portal.png)
+    private BitmapSource? gravity1HalfXPortalSprite; // for sprite 0x60 (gravity-1-half-x-portal.png)
+    private BitmapSource? gravity2ThirdXPortalSprite; // for sprite 0x61 (gravity-2-3rd-x-portal.png)
+    private BitmapSource? gravity2XPortalSprite; // for sprite 0x62 (gravity-2x-portal.png)
+    private BitmapSource? gravity1XPortalSprite; // for sprite 0x63 (gravity-1x-portal.png)
     // Yellow orb animation frames: 4 frames for sprites 0x0B, 0x1F, 0x29
     private BitmapSource[]? yellowOrbFrame1; // Frame 1 for all 3 yellow orb sprites
     private BitmapSource[]? yellowOrbFrame2; // Frame 2 for all 3 yellow orb sprites
@@ -1416,6 +1422,11 @@ namespace FamidashEditor
                 0x17 => spiderPortalSprite,
                 0x18 => miniPortalSprite,
                 0x19 => growthPortalSprite,
+                0x5F => gravity1ThirdXPortalSprite,
+                0x60 => gravity1HalfXPortalSprite,
+                0x61 => gravity2ThirdXPortalSprite,
+                0x62 => gravity2XPortalSprite,
+                0x63 => gravity1XPortalSprite,
                 0x4B => swingcopterPortalSprite,
                 0x08 => gravityDownPortalSprite,
                 0x09 => gravityUpPortalSprite,
@@ -1499,6 +1510,12 @@ namespace FamidashEditor
             {
                 return 3016; // Single portal (new)
             }
+            // Additional gravity-strength X-axis portals (preview-only)
+            if (originalIndex == 0x5F) return 3019; // gravity 1/3
+            if (originalIndex == 0x60) return 3020; // gravity 1/2
+            if (originalIndex == 0x61) return 3021; // gravity 2/3
+            if (originalIndex == 0x62) return 3022; // gravity 2x
+            if (originalIndex == 0x63) return 3023; // gravity 1x
             if (originalIndex == 0x52)
             {
             }
@@ -1704,6 +1721,12 @@ namespace FamidashEditor
             // New mini/growth portal custom indices
             if (customIndex == 3017) return miniPortalSprite;
             if (customIndex == 3018) return growthPortalSprite;
+            // New gravity-strength X-axis portal custom indices
+            if (customIndex == 3019) return gravity1ThirdXPortalSprite;
+            if (customIndex == 3020) return gravity1HalfXPortalSprite;
+            if (customIndex == 3021) return gravity2ThirdXPortalSprite;
+            if (customIndex == 3022) return gravity2XPortalSprite;
+            if (customIndex == 3023) return gravity1XPortalSprite;
             
             if (customIndex >= 2000 && customIndex <= 2011)
             {
@@ -2226,6 +2249,12 @@ namespace FamidashEditor
                     // New mini and growth portal preview images (placed in workspace root)
                     miniPortalSprite = LoadPortalSprite("mini-portal.png");
                     growthPortalSprite = LoadPortalSprite("growth-portal.png");
+                // Additional gravity-strength X-axis portals
+                    gravity1ThirdXPortalSprite = LoadPortalSprite("gravity-1-3rd-x-portal.png");
+                    gravity1HalfXPortalSprite = LoadPortalSprite("gravity-1-half-x-portal.png");
+                    gravity2ThirdXPortalSprite = LoadPortalSprite("gravity-2-3rd-x-portal.png");
+                    gravity2XPortalSprite = LoadPortalSprite("gravity-2x-portal.png");
+                    gravity1XPortalSprite = LoadPortalSprite("gravity-1x-portal.png");
                 swingcopterPortalSprite = LoadPortalSprite("swingcopter-portal.png");
                 ninjaPortalSprite = LoadPortalSprite("ninja-portal.png");
                 // Gravity portals
@@ -5553,8 +5582,8 @@ namespace FamidashEditor
                 
                 if (sprite == null) return;
                 
-                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3018)
-                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3018);
+                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3023)
+                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3023);
                 int renderHeight = spritePixelH;
                 int renderWidth = spritePixelW;
 
@@ -5870,8 +5899,8 @@ namespace FamidashEditor
             int renderWidth = spritePixelW;
             int renderHeight = spritePixelH;
             int portalAnimatedIdx = GetAnimatedSpriteIndex(spriteIdx);
-            // Treat custom portal indices up through 3018 as multi-tile portals
-            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3018);
+            // Treat custom portal indices up through 3023 as multi-tile portals
+            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3023);
             if (portalIsMulti)
             {
                 // Standard tall portals (3000-3010) are 1.5 tiles × 3 tiles

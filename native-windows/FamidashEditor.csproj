@@ -119,6 +119,11 @@
     <EmbeddedResource Include="..\gravity-down-upwards-portal.png" />
     <EmbeddedResource Include="..\gravity-up-downwards-portal.png" />
     <EmbeddedResource Include="..\gravity-up-upwards-portal.png" />
+    <EmbeddedResource Include="..\gravity-1-3rd-x-portal.png" />
+    <EmbeddedResource Include="..\gravity-1-half-x-portal.png" />
+    <EmbeddedResource Include="..\gravity-2-3rd-x-portal.png" />
+    <EmbeddedResource Include="..\gravity-2x-portal.png" />
+    <EmbeddedResource Include="..\gravity-1x-portal.png" />
     <EmbeddedResource Include="..\dual-portal.png" />
     <EmbeddedResource Include="..\single-portal.png" />
   </ItemGroup>
