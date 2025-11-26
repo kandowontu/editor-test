@@ -12,6 +12,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Shapes = System.Windows.Shapes;
 
+            
 namespace FamidashEditor
 {
     public partial class MainWindow : Window
@@ -174,8 +175,9 @@ namespace FamidashEditor
         {
             System.Diagnostics.Debug.WriteLine($"Failed to save TMX config: {ex.Message}");
         }
+        }
     }
-    
+
     private void LoadTmxConfig(string tmxFilePath)
     {
         try
@@ -926,6 +928,7 @@ namespace FamidashEditor
             if (MenuFileSave != null) MenuFileSave.Click += SaveButton_Click;
             if (MenuFileSaveAs != null) MenuFileSaveAs.Click += MenuFileSaveAs_Click;
             if (MenuFileLoad != null) MenuFileLoad.Click += LoadButton_Click;
+            if (MenuFileResize != null) MenuFileResize.Click += ResizeButton_Click;
             
             if (MenuToolPlace != null) MenuToolPlace.Click += (s, e) => { if (PlaceTool != null) PlaceTool.IsChecked = true; };
             if (MenuToolMove != null) MenuToolMove.Click += (s, e) => { if (MoveTool != null) MoveTool.IsChecked = true; };
@@ -8205,36 +8208,6 @@ namespace FamidashEditor
             {
                 EraseSelectedLayers(); e.Handled = true; return;
             }
-
-            // Single-key tool shortcuts (no Ctrl)
-            if (!Keyboard.IsKeyDown(Key.LeftCtrl) && !Keyboard.IsKeyDown(Key.RightCtrl))
-            {
-                if (e.Key == Key.B)
-                {
-                    if (PlaceTool != null) PlaceTool.IsChecked = true; e.Handled = true; return;
-                }
-                if (e.Key == Key.M)
-                {
-                    if (MoveTool != null) MoveTool.IsChecked = true; e.Handled = true; return;
-                }
-                if (e.Key == Key.E)
-                {
-                    if (EraseTool != null) EraseTool.IsChecked = true; e.Handled = true; return;
-                }
-                if (e.Key == Key.F)
-                {
-                    if (FillTool != null) FillTool.IsChecked = true; e.Handled = true; return;
-                }
-                if (e.Key == Key.S)
-                {
-                    // Only activate Select when not used as Ctrl+S (save handled above)
-                    if (SelectTool != null) SelectTool.IsChecked = true; e.Handled = true; return;
-                }
-                if (e.Key == Key.W)
-                {
-                    if (MagicWandTool != null) MagicWandTool.IsChecked = true; e.Handled = true; return;
-                }
-            }
         }
 
         private void Undo()
@@ -8474,26 +8447,26 @@ namespace FamidashEditor
             }
         }
 
-        private void MenuFileSaveAs_Click(object? sender, RoutedEventArgs e)
-        {
-            // Force a Save As dialog (do not prefill with current file)
-            var dlg = new Microsoft.Win32.SaveFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*", DefaultExt = "tmx" };
-            if (dlg.ShowDialog(this) == true)
+            private void MenuFileSaveAs_Click(object? sender, RoutedEventArgs e)
             {
-                try
+                // Force a Save As dialog (do not prefill with current file)
+                var dlg = new SaveFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*", DefaultExt = "tmx" };
+                if (dlg.ShowDialog(this) == true)
                 {
-                    // Reuse Save logic by setting currentFilePath then calling SaveButton_Click
-                    var prev = currentFilePath;
-                    currentFilePath = dlg.FileName;
-                    SaveButton_Click(this, e);
-                    currentFilePath = dlg.FileName; // keep new path
-                }
-                catch (Exception ex)
-                {
-                    if (StatusText != null) StatusText.Text = "Save failed: " + ex.Message;
+                    try
+                    {
+                        // Reuse Save logic by setting currentFilePath then calling SaveButton_Click
+                        var prev = currentFilePath;
+                        currentFilePath = dlg.FileName;
+                        SaveButton_Click(this, e);
+                        currentFilePath = dlg.FileName; // keep new path
+                    }
+                    catch (Exception ex)
+                    {
+                        if (StatusText != null) StatusText.Text = "Save failed: " + ex.Message;
+                    }
                 }
             }
-        }
 
         private async void LoadButton_Click(object sender, RoutedEventArgs e)
         {
@@ -8535,7 +8508,7 @@ namespace FamidashEditor
                     {
                         // Show loading dialog
                         loadingWindow = new LoadingWindow { Owner = this };
-                        loadingWindow.SetMessage("Loading TMX file...\nThis may take a while on larger maps.");
+                        loadingWindow.SetMessage("Opening TMX file...\nThis may take a while on larger maps.");
                         loadingWindow.Show();
                         
                         // Force UI update
@@ -8711,12 +8684,12 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        if (StatusText != null) StatusText.Text = "Load failed: Invalid or empty map data";
+                        if (StatusText != null) StatusText.Text = "Open failed: Invalid or empty map data";
                     }
                 }
                 catch (Exception ex)
                 {
-                    if (StatusText != null) StatusText.Text = "Load failed: " + ex.Message;
+                    if (StatusText != null) StatusText.Text = "Open failed: " + ex.Message;
                 }
                 finally
                 {
@@ -8729,4 +8702,3 @@ namespace FamidashEditor
             }
         }
     }
-}

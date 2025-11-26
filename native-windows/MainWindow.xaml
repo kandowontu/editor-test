@@ -96,19 +96,19 @@
             <!-- Menu Bar -->
             <Menu DockPanel.Dock="Top">
                 <MenuItem Header="_File">
-                    <MenuItem x:Name="MenuFileNew" Header="_New" />
-                    <MenuItem x:Name="MenuFileSave" Header="_Save" />
-                    <MenuItem x:Name="MenuFileLoad" Header="_Load" />
+                    <MenuItem x:Name="MenuFileNew" Header="_New TMX" InputGestureText="Ctrl+N" />
+                    <MenuItem x:Name="MenuFileSave" Header="_Save TMX" InputGestureText="Ctrl+S" />
+                    <MenuItem x:Name="MenuFileSaveAs" Header="Save TMX As..." InputGestureText="Ctrl+Alt+S" />
+                    <MenuItem x:Name="MenuFileLoad" Header="_Open TMX" InputGestureText="Ctrl+O" />
                     <Separator />
-                    <MenuItem x:Name="MenuFileResize" Header="_Resize Map..." />
                 </MenuItem>
                 <MenuItem Header="_Tools">
-                    <MenuItem x:Name="MenuToolPlace" Header="_Place" IsCheckable="True" IsChecked="True" />
-                    <MenuItem x:Name="MenuToolMove" Header="_Move" IsCheckable="True" />
-                    <MenuItem x:Name="MenuToolErase" Header="_Erase" IsCheckable="True" />
-                    <MenuItem x:Name="MenuToolFill" Header="_Fill" IsCheckable="True" />
-                    <MenuItem x:Name="MenuToolSelect" Header="_Select" IsCheckable="True" />
-                    <MenuItem x:Name="MenuToolWand" Header="_Magic Wand" IsCheckable="True" />
+                    <MenuItem x:Name="MenuToolPlace" Header="_Brush" IsCheckable="True" IsChecked="True" InputGestureText="B" />
+                    <MenuItem x:Name="MenuToolMove" Header="_Move" IsCheckable="True" InputGestureText="M" />
+                    <MenuItem x:Name="MenuToolErase" Header="_Erase" IsCheckable="True" InputGestureText="E" />
+                    <MenuItem x:Name="MenuToolFill" Header="_Fill" IsCheckable="True" InputGestureText="F" />
+                    <MenuItem x:Name="MenuToolSelect" Header="_Select" IsCheckable="True" InputGestureText="S" />
+                    <MenuItem x:Name="MenuToolWand" Header="_Magic Wand" IsCheckable="True" InputGestureText="W" />
                     <Separator />
                     <MenuItem x:Name="MenuToolUndo" Header="_Undo" InputGestureText="Ctrl+Z" />
                     <MenuItem x:Name="MenuToolRedo" Header="_Redo" InputGestureText="Ctrl+Y" />
@@ -132,7 +132,7 @@
                     <ToggleButton x:Name="PlaceTool" IsChecked="True" Margin="2">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="▦" FontSize="12" Margin="2,0" />
-                            <TextBlock Text="Place" Margin="4,0" />
+                            <TextBlock Text="Brush" Margin="4,0" />
                         </StackPanel>
                     </ToggleButton>
                     <ToggleButton x:Name="MoveTool" Margin="2">
@@ -173,8 +173,8 @@
             </ToolBarTray>
 
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="4">
-            <Button x:Name="SaveButton" Content="Save" Margin="2" />
-            <Button x:Name="LoadButton" Content="Load" Margin="2" />
+            <Button x:Name="SaveButton" Content="Save" Margin="2" ToolTip="Save TMX (Ctrl+S)" />
+            <Button x:Name="LoadButton" Content="Open" Margin="2" ToolTip="Open TMX (Ctrl+O)" />
             <TextBlock Text="Width (X):" VerticalAlignment="Center" Margin="6,0,2,0" />
             <TextBox x:Name="WidthBox" Width="60" Margin="2" />
             <TextBlock Text="Height (Y):" VerticalAlignment="Center" Margin="8,0,2,0" />
