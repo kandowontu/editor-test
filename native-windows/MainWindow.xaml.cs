@@ -8511,6 +8511,47 @@ namespace FamidashEditor
                             await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
                         }
                         
+                        // If preview mode is enabled, disable it for TMX loads so preview-only
+                        // decorations and portal previews do not interfere with the loaded map.
+                        if (previewMode)
+                        {
+                            try
+                            {
+                                if (PreviewModeCheckbox != null)
+                                {
+                                    PreviewModeCheckbox.IsChecked = false; // triggers Unchecked handler
+                                }
+                                else
+                                {
+                                    // Fallback: manually disable preview mode
+                                    previewMode = false;
+                                    StopPreviewTimer();
+                                    animationFrame = 0;
+                                    if (portalsWb != null)
+                                    {
+                                        try
+                                        {
+                                            portalsWb.Lock();
+                                            unsafe
+                                            {
+                                                IntPtr pBackBuffer = portalsWb.BackBuffer;
+                                                if (pBackBuffer != IntPtr.Zero)
+                                                {
+                                                    int stride = portalsWb.BackBufferStride;
+                                                    int bytesTotal = stride * cachedPixelHeight;
+                                                    byte* ptr = (byte*)pBackBuffer.ToPointer();
+                                                    for (int i = 0; i < bytesTotal; i++) ptr[i] = 0;
+                                                }
+                                            }
+                                            portalsWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+                                        }
+                                        finally { try { portalsWb.Unlock(); } catch { } }
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+
                         // Force a full redraw with the new dimensions
                         // This will rebuild all bitmaps via EnsureLayerBitmaps
                         Redraw();
