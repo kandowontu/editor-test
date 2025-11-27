@@ -4280,6 +4280,58 @@ namespace FamidashEditor
             return outList.ToArray();
         }
 
+        // Create exact RGB-replaced copies of images. For every non-black, non-transparent pixel
+        // we replace the RGB channels with the tint's RGB (preserve original alpha). If tint.A == 0
+        // the originals are returned unchanged.
+        private ImageSource[]? CreateRgbReplacedImages(ImageSource[]? originals, Color tint)
+        {
+            if (originals == null) return null;
+            if (tint.A == 0) return originals; // no change requested
+            var outList = new List<ImageSource>(originals.Length);
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte b = pixels[i + 0];
+                            byte g = pixels[i + 1];
+                            byte r = pixels[i + 2];
+                            byte a = pixels[i + 3];
+                            bool isBlack = (r <= 12 && g <= 12 && b <= 12);
+                            if (a != 0 && !isBlack)
+                            {
+                                pixels[i + 0] = tint.B;
+                                pixels[i + 1] = tint.G;
+                                pixels[i + 2] = tint.R;
+                            }
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch
+                    {
+                        outList.Add(src);
+                    }
+                }
+                else
+                {
+                    outList.Add(src);
+                }
+            }
+            return outList.ToArray();
+        }
+
         // Create HSL-hue shifted copies of images. For each visible, non-black/non-white pixel
         // we replace the hue with the tint's hue while preserving the original saturation and lightness.
         // Returns originals if tint.A == 0.
@@ -4467,8 +4519,8 @@ namespace FamidashEditor
 
         private void UpdateParallaxTint()
         {
-            // Use hue/saturation shifting for parallax so we actually alter hue/saturation instead of overlaying a color.
-            parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint);
+            // Use exact RGB replacement for parallax so the displayed color matches the picker swatch.
+            parallaxTonedImages = CreateRgbReplacedImages(parallaxImages, backgroundTint);
             // mark background/parallax cache dirty so the parallax RTB is rebuilt with the new tint
             backgroundDirty = true;
             if (StatusText != null)
@@ -5118,53 +5170,11 @@ namespace FamidashEditor
                 // or a hue/saturation shift. Full replacement is desirable for neutral grays
                 // (low saturation) and near-black/near-white swatches where HSL-shifting
                 // produces little or undesirable change.
-                RgbToHsl(backgroundTint.R, backgroundTint.G, backgroundTint.B, out double tintH, out double tintS, out double tintL);
-                bool isNearWhite = (backgroundTint.R >= 250 && backgroundTint.G >= 250 && backgroundTint.B >= 250);
-                bool isNearBlack = (backgroundTint.R <= 32 && backgroundTint.G <= 32 && backgroundTint.B <= 32);
-                bool isLowSaturation = tintS < 0.06; // treat near-gray colors as replacement
-
-                if (isNearWhite || isNearBlack || isLowSaturation)
+                // Always apply exact RGB replacement for parallax: replace visible non-black pixels with tint
+                var tintedImages = CreateRgbReplacedImages(new ImageSource[] { parallaxBitmap }, backgroundTint);
+                if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
                 {
-                    try
-                    {
-                        var conv = new FormatConvertedBitmap(parallaxBitmap, PixelFormats.Bgra32, null, 0);
-                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
-                        var pixels = new byte[h * stride];
-                        conv.CopyPixels(pixels, stride, 0);
-
-                        for (int i = 0; i < pixels.Length; i += 4)
-                        {
-                            byte b = pixels[i + 0];
-                            byte g = pixels[i + 1];
-                            byte r = pixels[i + 2];
-                            byte a = pixels[i + 3];
-                            // Treat very-dark pixels as black to avoid tinting anti-aliased edges.
-                            bool isBlack = (r <= 12 && g <= 12 && b <= 12);
-                            // If this pixel is not black (and not fully transparent), replace RGB with tint
-                            if (a != 0 && !isBlack)
-                            {
-                                pixels[i + 0] = backgroundTint.B;
-                                pixels[i + 1] = backgroundTint.G;
-                                pixels[i + 2] = backgroundTint.R;
-                                // keep original alpha
-                            }
-                        }
-
-                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
-                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                        wb.Freeze();
-                        sourceImage = wb;
-                    }
-                    catch { /* if anything fails, fall back to original sourceImage */ }
-                }
-                else
-                {
-                    // Apply hue/saturation shift to the full parallax bitmap
-                    var tintedImages = CreateHueShiftedImages(new ImageSource[] { parallaxBitmap }, backgroundTint);
-                    if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
-                    {
-                        sourceImage = tinted;
-                    }
+                    sourceImage = tinted;
                 }
             }
             
