@@ -42,8 +42,10 @@ namespace FamidashEditor
             SelectedColor = initial;
             this.allowAlpha = allowAlpha;
 
-            // Try to load palette data. Prefer a .pal file in the repo assets (if present), then
-            // a palette image next to the exe (palette.png/bmp). Fall back to defaults.
+            // Try to load palette data. Prefer a .pal file or image placed next to the exe
+            // (or in an `assets`/`renderer/assets` subfolder). Do NOT search up into the
+            // repository tree — published builds should use the embedded/default palette
+            // unless an explicit palette file is provided beside the exe.
             Color[]? loaded = null;
             try
             {
@@ -319,20 +321,14 @@ namespace FamidashEditor
         // Check a few likely locations: exe folder, exe/..\..\src\renderer\assets, and repo src path.
         private Color[]? TryLoadPaletteFromPalFile(string fileName)
         {
-            // candidate locations
+            // candidate locations (only local to the exe). Do not search up into the repo tree.
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
             var candidates = new List<string>() {
                 System.IO.Path.Combine(baseDir, fileName),
                 System.IO.Path.Combine(baseDir, "assets", fileName),
                 System.IO.Path.Combine(baseDir, "renderer", "assets", fileName),
-                System.IO.Path.Combine(baseDir, "..", "..", "src", "renderer", "assets", fileName),
-                System.IO.Path.Combine(Environment.CurrentDirectory, "src", "renderer", "assets", fileName),
                 System.IO.Path.Combine(baseDir, "..", "assets", fileName),
             };
-
-            // also try repository-relative absolute path if running in development (common workspace layout)
-            var repoPal = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(System.IO.Path.DirectorySeparatorChar), "..", "..", "..", "src", "renderer", "assets", fileName);
-            candidates.Add(System.IO.Path.GetFullPath(repoPal));
 
             string? found = null;
             foreach (var c in candidates)
