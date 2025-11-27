@@ -1240,7 +1240,7 @@ namespace FamidashEditor
             // Open the picker with the stored tint exactly (preserve alpha). Do not auto-promote zero alpha to opaque.
             var initialBgTint = backgroundTint;
             // For parallax/background tint, use full alpha (no slider)
-            var dlg = new ColorPickerWindow(initialBgTint, allowAlpha: false) { Owner = this };
+            var dlg = new ColorPickerWindow(initialBgTint, allowAlpha: false, forcedIndex: (backgroundTint.A == 0 ? 1 : -1)) { Owner = this };
             dlg.Title = "Pick Background Tint (RGBA)";
             Action<Color> handler = (c) => { backgroundTint = c; UpdateParallaxTint(); Dispatcher.BeginInvoke(new Action(Redraw)); };
             dlg.ColorChanged += handler;
@@ -1280,7 +1280,7 @@ namespace FamidashEditor
             // Preserve stored alpha when opening the ground tint picker as well.
             var initialGroundTint = groundTint;
             // For ground tint, force full alpha and hide slider
-            var dlg = new ColorPickerWindow(initialGroundTint, allowAlpha: false) { Owner = this };
+            var dlg = new ColorPickerWindow(initialGroundTint, allowAlpha: false, forcedIndex: (groundTint.A == 0 ? 29 : -1)) { Owner = this };
             dlg.Title = "Pick Ground Tint (RGBA)";
             Action<Color> handler = (c) => { groundTint = c; UpdateGroundTint(); Dispatcher.BeginInvoke(new Action(Redraw)); };
             dlg.ColorChanged += handler;
@@ -4280,47 +4280,61 @@ namespace FamidashEditor
             return outList.ToArray();
         }
 
-        // Create hue/saturation-shifted copies of images. The tint's RGB defines the target hue/saturation.
-        // The tint.A channel is used as a strength (0..255) controlling interpolation between original H and tint H.
-        private ImageSource[]? CreateHueShiftedImages(ImageSource[]? originals, Color tint)
+        // Create HSL-hue shifted copies of images. For each visible, non-black/non-white pixel
+        // we replace the hue with the tint's hue while preserving the original saturation and lightness.
+        // Returns originals if tint.A == 0.
+        private ImageSource[]? CreateHslShiftedImages(ImageSource[]? originals, Color tint)
         {
             if (originals == null) return null;
-            if (tint.A == 0) return originals; // strength 0 => no change
-            double strength = tint.A / 255.0;
-            // convert tint color to HSL once
+            if (tint.A == 0) return originals; // no change requested
+            // Precompute tint hue
             RgbToHsl(tint.R, tint.G, tint.B, out double tintH, out double tintS, out double tintL);
+
             var outList = new List<ImageSource>(originals.Length);
             foreach (var src in originals)
             {
                 if (src is BitmapSource bs)
                 {
-                    var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
-                    int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
-                    var pixels = new byte[h * stride];
-                    conv.CopyPixels(pixels, stride, 0);
-
-                    for (int i = 0; i < pixels.Length; i += 4)
+                    try
                     {
-                        int b = pixels[i + 0];
-                        int g = pixels[i + 1];
-                        int r = pixels[i + 2];
-                        int a = pixels[i + 3];
-                        RgbToHsl((byte)r, (byte)g, (byte)b, out double h0, out double s0, out double l0);
-                        // interpolate hue towards tint hue, and optionally scale/lerp saturation
-                        double newH = LerpAngle(h0, tintH, strength);
-                        double newS = s0 * (1.0 - strength) + tintS * strength;
-                        double newL = l0; // preserve original lightness to keep details
-                        RgbFromHsl(newH, newS, newL, out byte r2, out byte g2, out byte b2);
-                        pixels[i + 0] = b2;
-                        pixels[i + 1] = g2;
-                        pixels[i + 2] = r2;
-                        pixels[i + 3] = (byte)a; // keep original alpha
-                    }
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
 
-                    var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
-                    wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                    wb.Freeze();
-                    outList.Add(wb);
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte b = pixels[i + 0];
+                            byte g = pixels[i + 1];
+                            byte r = pixels[i + 2];
+                            byte a = pixels[i + 3];
+                            // Skip fully transparent, near-black, and near-white pixels
+                            bool isBlack = (r <= 12 && g <= 12 && b <= 12);
+                            bool isWhite = (r >= 249 && g >= 249 && b >= 249);
+                            if (a == 0 || isBlack || isWhite) continue;
+
+                            // Convert pixel to HSL, replace hue with tint hue, keep S/L
+                            RgbToHsl(r, g, b, out double ph, out double ps, out double pl);
+                            double nh = tintH; // replace hue
+                            double ns = ps;
+                            double nl = pl;
+                            RgbFromHsl(nh, ns, nl, out byte nr, out byte ng, out byte nb);
+
+                            pixels[i + 0] = nb;
+                            pixels[i + 1] = ng;
+                            pixels[i + 2] = nr;
+                            // alpha unchanged
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch
+                    {
+                        outList.Add(src);
+                    }
                 }
                 else
                 {
@@ -4329,6 +4343,69 @@ namespace FamidashEditor
             }
             return outList.ToArray();
         }
+
+        private ImageSource[]? CreateHueShiftedImages(ImageSource[]? originals, Color tint)
+        {
+            if (originals == null) return null;
+            if (tint.A == 0) return originals; // strength 0 => no change
+
+            double strength = tint.A / 255.0;
+            // convert tint color to HSL once
+            RgbToHsl(tint.R, tint.G, tint.B, out double tintH, out double tintS, out double tintL);
+            var outList = new List<ImageSource>(originals.Length);
+
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            int b = pixels[i + 0];
+                            int g = pixels[i + 1];
+                            int r = pixels[i + 2];
+                            int a = pixels[i + 3];
+
+                            RgbToHsl((byte)r, (byte)g, (byte)b, out double h0, out double s0, out double l0);
+
+                            // interpolate hue towards tint hue, and optionally scale/lerp saturation
+                            double newH = LerpAngle(h0, tintH, strength);
+                            double newS = s0 * (1.0 - strength) + tintS * strength;
+                            double newL = l0; // preserve original lightness to keep details
+
+                            RgbFromHsl(newH, newS, newL, out byte r2, out byte g2, out byte b2);
+
+                            pixels[i + 0] = b2;
+                            pixels[i + 1] = g2;
+                            pixels[i + 2] = r2;
+                            pixels[i + 3] = (byte)a; // keep original alpha
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch
+                    {
+                        outList.Add(src);
+                    }
+                }
+                else
+                {
+                    outList.Add(src);
+                }
+            }
+            return outList.ToArray();
+        }
+
+        // (No CreateHueShiftedImagesSimple - ground will use the HSL-based CreateHueShiftedImages)
 
         // Helper: convert RGB byte values to HSL (H in degrees 0..360, S/L 0..1)
         private static void RgbToHsl(byte r8, byte g8, byte b8, out double h, out double s, out double l)
@@ -4417,7 +4494,7 @@ namespace FamidashEditor
 
         private void UpdateGroundTint()
         {
-            // For ground, also apply hue/saturation shifting so the ground graphics change hue/sat.
+            // For ground, use the HSL hue/saturation shifting as in the previous commit.
             groundTonedImages = CreateHueShiftedImages(groundImages, groundTint);
             // mark background/ground cache dirty so the ground RTB is rebuilt with the new tint
             backgroundDirty = true;
@@ -4443,16 +4520,16 @@ namespace FamidashEditor
 
         private void UpdateTileTint()
         {
-            // Use hue/saturation shifting for tiles so we can change hue/sat of tile graphics.
-            tileTonedImages = CreateHueShiftedImages(tileImages, tileTint);
-            
-            // Also tint the animated saw frames
-            sawFrame1TilesTinted = CreateHueShiftedImages(sawFrame1Tiles, tileTint);
-            sawFrame2TilesTinted = CreateHueShiftedImages(sawFrame2Tiles, tileTint);
-            smallSawFrame1TilesTinted = CreateHueShiftedImages(smallSawFrame1Tiles, tileTint);
-            smallSawFrame2TilesTinted = CreateHueShiftedImages(smallSawFrame2Tiles, tileTint);
-            largeSawFrame1TilesTinted = CreateHueShiftedImages(largeSawFrame1Tiles, tileTint);
-            largeSawFrame2TilesTinted = CreateHueShiftedImages(largeSawFrame2Tiles, tileTint);
+            // Use HSL hue-shifting for tiles so we preserve shading while changing hue.
+            tileTonedImages = CreateHslShiftedImages(tileImages, tileTint);
+
+            // Also tint the animated saw frames using HSL hue shift
+            sawFrame1TilesTinted = CreateHslShiftedImages(sawFrame1Tiles, tileTint);
+            sawFrame2TilesTinted = CreateHslShiftedImages(sawFrame2Tiles, tileTint);
+            smallSawFrame1TilesTinted = CreateHslShiftedImages(smallSawFrame1Tiles, tileTint);
+            smallSawFrame2TilesTinted = CreateHslShiftedImages(smallSawFrame2Tiles, tileTint);
+            largeSawFrame1TilesTinted = CreateHslShiftedImages(largeSawFrame1Tiles, tileTint);
+            largeSawFrame2TilesTinted = CreateHslShiftedImages(largeSawFrame2Tiles, tileTint);
             
             // Clear pre-scaled caches so scaled pixels are rebuilt from the toned images
             try { scaledTileCaches.Clear(); } catch { }
@@ -5034,14 +5111,60 @@ namespace FamidashEditor
             // Use the full parallax bitmap (not individual tiles)
             BitmapSource sourceImage = parallaxBitmap;
             
-            // Apply tint if needed (check if background tint is active - not transparent and not white)
-            if (backgroundTint.A != 0 && (backgroundTint.R != 255 || backgroundTint.G != 255 || backgroundTint.B != 255))
+            // Apply tint if needed (check if background tint is active)
+            if (backgroundTint.A != 0)
             {
-                // Apply hue/saturation shift to the full parallax bitmap
-                var tintedImages = CreateHueShiftedImages(new ImageSource[] { parallaxBitmap }, backgroundTint);
-                if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
+                // Decide whether to do a full replacement (replace visible/non-black pixels)
+                // or a hue/saturation shift. Full replacement is desirable for neutral grays
+                // (low saturation) and near-black/near-white swatches where HSL-shifting
+                // produces little or undesirable change.
+                RgbToHsl(backgroundTint.R, backgroundTint.G, backgroundTint.B, out double tintH, out double tintS, out double tintL);
+                bool isNearWhite = (backgroundTint.R >= 250 && backgroundTint.G >= 250 && backgroundTint.B >= 250);
+                bool isNearBlack = (backgroundTint.R <= 32 && backgroundTint.G <= 32 && backgroundTint.B <= 32);
+                bool isLowSaturation = tintS < 0.06; // treat near-gray colors as replacement
+
+                if (isNearWhite || isNearBlack || isLowSaturation)
                 {
-                    sourceImage = tinted;
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(parallaxBitmap, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte b = pixels[i + 0];
+                            byte g = pixels[i + 1];
+                            byte r = pixels[i + 2];
+                            byte a = pixels[i + 3];
+                            // Treat very-dark pixels as black to avoid tinting anti-aliased edges.
+                            bool isBlack = (r <= 12 && g <= 12 && b <= 12);
+                            // If this pixel is not black (and not fully transparent), replace RGB with tint
+                            if (a != 0 && !isBlack)
+                            {
+                                pixels[i + 0] = backgroundTint.B;
+                                pixels[i + 1] = backgroundTint.G;
+                                pixels[i + 2] = backgroundTint.R;
+                                // keep original alpha
+                            }
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        sourceImage = wb;
+                    }
+                    catch { /* if anything fails, fall back to original sourceImage */ }
+                }
+                else
+                {
+                    // Apply hue/saturation shift to the full parallax bitmap
+                    var tintedImages = CreateHueShiftedImages(new ImageSource[] { parallaxBitmap }, backgroundTint);
+                    if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
+                    {
+                        sourceImage = tinted;
+                    }
                 }
             }
             

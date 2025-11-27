@@ -36,7 +36,7 @@ namespace FamidashEditor
         private System.Windows.Threading.DispatcherTimer? debounceTimer = null;
         private Color? pendingColor = null;
 
-        public ColorPickerWindow(Color initial, bool allowAlpha = true)
+        public ColorPickerWindow(Color initial, bool allowAlpha = true, int forcedIndex = -1)
         {
             InitializeComponent();
             SelectedColor = initial;
@@ -89,13 +89,20 @@ namespace FamidashEditor
                 AVal.Text = "255";
             }
 
-            // Preselect nearest palette color if any
-            int nearest = FindNearestPaletteIndex(initial);
-            if (nearest >= 0) SelectIndex(nearest, clearOthers: true);
+            // Preselect palette color. If caller provided a forced index, use it.
+            if (forcedIndex >= 0 && forcedIndex < PaletteColors.Length)
+            {
+                SelectIndex(forcedIndex, clearOthers: true);
+            }
             else
             {
-                // if no exact match, select first by default
-                SelectIndex(0, clearOthers: true);
+                int nearest = FindNearestPaletteIndex(initial);
+                if (nearest >= 0) SelectIndex(nearest, clearOthers: true);
+                else
+                {
+                    // if no exact match, select first by default
+                    SelectIndex(0, clearOthers: true);
+                }
             }
 
             OkButton.Click += (s, e) => { DialogResult = true; SelectedColor = GetBlendedColor(); };
