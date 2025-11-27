@@ -19,14 +19,14 @@ namespace FamidashEditor
         // to the built-in approximate palette below.
         private readonly Color[] PaletteColors;
         private static readonly Color[] DefaultPaletteColors = new Color[] {
-            // Row 1 (dark accents)
-            Color.FromRgb(128,128,128), Color.FromRgb(0,40,120), Color.FromRgb(48,0,128), Color.FromRgb(88,24,120), Color.FromRgb(128,24,24), Color.FromRgb(160,72,32), Color.FromRgb(96,64,24), Color.FromRgb(24,96,24), Color.FromRgb(32,120,48), Color.FromRgb(8,112,104), Color.FromRgb(0,96,128), Color.FromRgb(0,72,104), Color.FromRgb(0,48,72), Color.FromRgb(16,16,16),
+            // Row 1 (dark accents) - updated
+            Color.FromRgb(105,107,99), Color.FromRgb(0,23,116), Color.FromRgb(30,0,135), Color.FromRgb(52,0,115), Color.FromRgb(86,0,87), Color.FromRgb(94,0,19), Color.FromRgb(83,26,0), Color.FromRgb(59,36,0), Color.FromRgb(36,48,0), Color.FromRgb(6,58,0), Color.FromRgb(0,63,0), Color.FromRgb(0,59,30), Color.FromRgb(0,51,78), Color.FromRgb(0,0,0),
             // Row 2 (vibrant midtones)
-            Color.FromRgb(255,255,255), Color.FromRgb(32,96,220), Color.FromRgb(96,32,208), Color.FromRgb(136,24,176), Color.FromRgb(192,48,48), Color.FromRgb(216,112,48), Color.FromRgb(176,120,48), Color.FromRgb(136,168,48), Color.FromRgb(96,200,48), Color.FromRgb(48,200,120), Color.FromRgb(0,168,200), Color.FromRgb(0,136,176), Color.FromRgb(64,112,120), Color.FromRgb(24,24,24),
+            Color.FromRgb(185,187,179), Color.FromRgb(20,83,185), Color.FromRgb(77,44,218), Color.FromRgb(103,30,222), Color.FromRgb(152,24,156), Color.FromRgb(157,35,68), Color.FromRgb(160,62,0), Color.FromRgb(141,85,0), Color.FromRgb(101,109,0), Color.FromRgb(44,121,0), Color.FromRgb(0,129,0), Color.FromRgb(0,125,66), Color.FromRgb(0,120,138), Color.FromRgb(0,0,0),
             // Row 3 (bright pastels / neons)
-            Color.FromRgb(248,248,248), Color.FromRgb(88,176,248), Color.FromRgb(160,112,232), Color.FromRgb(232,64,160), Color.FromRgb(232,96,48), Color.FromRgb(232,152,56), Color.FromRgb(200,168,72), Color.FromRgb(168,208,88), Color.FromRgb(128,224,96), Color.FromRgb(88,224,176), Color.FromRgb(80,192,224), Color.FromRgb(72,168,192), Color.FromRgb(64,152,176), Color.FromRgb(96,96,96),
+            Color.FromRgb(255,255,255), Color.FromRgb(105,168,255), Color.FromRgb(150,145,255), Color.FromRgb(178,138,250), Color.FromRgb(234,125,250), Color.FromRgb(243,123,199), Color.FromRgb(242,142,89), Color.FromRgb(230,173,39), Color.FromRgb(215,200,5), Color.FromRgb(144,223,7), Color.FromRgb(100,229,60), Color.FromRgb(69,226,125), Color.FromRgb(72,213,217), Color.FromRgb(78,80,72),
             // Row 4 (paler pastels / neutrals)
-            Color.FromRgb(240,240,240), Color.FromRgb(200,160,200), Color.FromRgb(176,128,208), Color.FromRgb(232,160,112), Color.FromRgb(224,200,160), Color.FromRgb(216,232,120), Color.FromRgb(200,232,184), Color.FromRgb(168,232,232), Color.FromRgb(144,232,232), Color.FromRgb(200,200,200), Color.FromRgb(216,216,216), Color.FromRgb(200,200,200), Color.FromRgb(176,176,176), Color.FromRgb(144,144,144),
+            Color.FromRgb(255,255,255), Color.FromRgb(210,234,255), Color.FromRgb(226,226,255), Color.FromRgb(233,216,255), Color.FromRgb(245,210,255), Color.FromRgb(248,217,234), Color.FromRgb(250,222,185), Color.FromRgb(249,232,155), Color.FromRgb(243,242,140), Color.FromRgb(211,250,145), Color.FromRgb(184,252,168), Color.FromRgb(174,250,202), Color.FromRgb(202,243,243), Color.FromRgb(190,192,184),
         };
 
         // selection state (single index)
