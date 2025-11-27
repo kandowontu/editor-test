@@ -1367,14 +1367,25 @@ namespace FamidashEditor
             Action<Color> handler = (c) => {
                 playerTint = c;
                 playerTintEnabled = true;
-                // Clear tinted sprite caches and scaled tile caches so live preview updates
-                try { ClearTintedCaches(); } catch { }
+                // Always refresh palette preview and scaled tile caches so the left palette updates
                 try { scaledTileCaches.Clear(); } catch { }
-                // Rebuild tiles and sprites immediately so the map updates live
-                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-                // Refresh palette preview
                 try { PopulateTilesPanel(); } catch { }
+
+                // Only clear tinted sprite caches and rebuild sprites when in preview mode.
+                // When not in preview mode, rebuilding sprites on every hover causes visible
+                // flicker — avoid that and only apply sprite cache changes when the user
+                // confirms the color (or when preview mode is active).
+                if (previewMode)
+                {
+                    try { ClearTintedCaches(); } catch { }
+                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                }
+                else
+                {
+                    // Update tiles only (lighter), avoid touching sprite caches to prevent flicker
+                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                }
             };
             dlg.ColorChanged += handler;
             var res = dlg.ShowDialog();
