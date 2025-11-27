@@ -140,6 +140,8 @@ namespace FamidashEditor
         {
             Directory.CreateDirectory(configFolder);
         }
+
+
         
         
 
@@ -280,10 +282,15 @@ namespace FamidashEditor
     // Pre-scaled tile pixel caches keyed by integer scale key (scale*100)
     private class ScaledTileCache { public byte[][] Pixels; public int TileW; public int TileH; public int Stride; public double Scale; public DpiScale Dpi; public ScaledTileCache(byte[][] pixels, int w, int h, int stride, double scale, DpiScale dpi) { Pixels = pixels; TileW = w; TileH = h; Stride = stride; Scale = scale; Dpi = dpi; } }
     private readonly Dictionary<int, ScaledTileCache> scaledTileCaches = new Dictionary<int, ScaledTileCache>();
+    // Caches for single-tinted parallax/ground bitmaps keyed by (scaleKey<<32)|ARGB
+    private readonly Dictionary<long, BitmapSource> parallaxTintCache = new Dictionary<long, BitmapSource>();
+    private readonly Dictionary<long, BitmapSource> groundTintCache = new Dictionary<long, BitmapSource>();
     private int cachedPixelWidth = 0;
     private int cachedPixelHeight = 0;
     private double cachedScale = 1.0;
     private bool backgroundDirty = true;
+    // Warm up flag to avoid the large one-time cost of the first WritePixels call
+    private bool tilesWriteWarmed = false;
     private bool gridDirty = true;
     // parallax ratio (0..1) where 1.0 = moves with camera, 0 = static world; we want 0.9
     private const double ParallaxRatio = 0.9;
@@ -708,6 +715,16 @@ namespace FamidashEditor
         {
             InitializeComponent();
             LoadSettings();
+            // Ensure debug timing output is captured to a file for profiling (helpful when not running under debugger)
+            try
+            {
+                var logFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "FamidashEditor-render.log");
+                var tw = new System.IO.StreamWriter(logFile, append: true) { AutoFlush = true };
+                var listener = new System.Diagnostics.TextWriterTraceListener(tw);
+                System.Diagnostics.Trace.Listeners.Add(listener);
+                System.Diagnostics.Trace.WriteLine($"Logging to {logFile} at {DateTime.Now}");
+            }
+            catch { }
             
             // Wire up window closing event to prompt for unsaved changes
             Closing += Window_Closing;
@@ -767,6 +784,9 @@ namespace FamidashEditor
                         }
                     }
                 };
+
+            // Warm tiles WritePixels pipeline early to avoid a large one-time delay
+            try { EnsureTilesWriteWarm(); } catch { }
                 
                 ZoomSlider.ValueChanged += (s, e) =>
                 {
@@ -1157,7 +1177,7 @@ namespace FamidashEditor
             MapScrollViewer.ScrollToHorizontalOffset(newHorizontalOffset);
         }
 
-        private void ResizeMap(int newWidth, int newHeight)
+        private async void ResizeMap(int newWidth, int newHeight)
         {
             // preserve existing tiles and sprites where possible
             var newTiles = Enumerable.Repeat(-1, newWidth * newHeight).ToArray();
@@ -1210,8 +1230,35 @@ namespace FamidashEditor
             // Clear cached dimensions to force size recalculation
             cachedPixelWidth = 0;
             cachedPixelHeight = 0;
-            
-            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+
+            // Show a loading indicator while the map is being resized and rebuilt
+            LoadingWindow? loading = null;
+            try
+            {
+                loading = new LoadingWindow { Owner = this };
+                loading.MessageText.Text = "Resizing, please wait while it loads...";
+                loading.Show();
+            }
+            catch { loading = null; }
+
+            double scale = (ZoomSlider!=null?ZoomSlider.Value:1.0);
+            try
+            {
+                await RebuildAllTilesBitmapAsync(scale, mapViewportPadding);
+            }
+            catch
+            {
+                try { RebuildAllTilesBitmap(scale, mapViewportPadding); } catch { }
+            }
+
+            try { PopulateTilesPanel(); } catch { }
+            try { PopulateSpritesPanel(); } catch { }
+
+            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+
+            // Close loading indicator
+            try { loading?.Close(); } catch { }
+
             ClampScrollOffsets();
             Redraw();
         }
@@ -1378,13 +1425,39 @@ namespace FamidashEditor
                 if (previewMode)
                 {
                     try { ClearTintedCaches(); } catch { }
-                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                    // For very large maps, only repaint the visible region immediately and
+                    // schedule the rest as background work to avoid UI stalls during live preview.
+                    int totalTiles = mapWidth * mapHeight;
+                    bool isVeryLarge = totalTiles > 50000;
+                    double scale = (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                    if (isVeryLarge && MapScrollViewer != null)
+                    {
+                        try { RebuildVisibleTilesRegion(scale, mapViewportPadding); } catch { Redraw(); }
+                        _ = RebuildAllTilesBitmapAsync(scale, mapViewportPadding, allowFullWrites: false);
+                        // Defer sprite rebuild work for large maps to background precomputation
+                        _ = PrecomputeTintedCachesAsync();
+                    }
+                    else
+                    {
+                        try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                    }
                 }
                 else
                 {
                     // Update tiles only (lighter), avoid touching sprite caches to prevent flicker
-                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    int totalTiles = mapWidth * mapHeight;
+                    bool isVeryLarge = totalTiles > 50000;
+                    double scale = (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                    if (isVeryLarge && MapScrollViewer != null)
+                    {
+                        try { RebuildVisibleTilesRegion(scale, mapViewportPadding); } catch { Redraw(); }
+                        _ = RebuildAllTilesBitmapAsync(scale, mapViewportPadding, allowFullWrites: false);
+                    }
+                    else
+                    {
+                        try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    }
                 }
             };
             dlg.ColorChanged += handler;
@@ -4481,6 +4554,41 @@ namespace FamidashEditor
             return outList.ToArray();
         }
 
+        // Create or retrieve a single tinted BitmapSource for a full bitmap (parallax/ground).
+        // If useRgbReplace==true, uses CreateRgbReplacedImages; otherwise uses CreateHueShiftedImages.
+        private BitmapSource? GetOrCreateSingleTinted(BitmapSource src, Color tint, bool useRgbReplace, int scaleKey)
+        {
+            try
+            {
+                uint argb = ((uint)tint.A << 24) | ((uint)tint.R << 16) | ((uint)tint.G << 8) | tint.B;
+                long key = (((long)scaleKey) << 32) | argb;
+                var cache = useRgbReplace ? parallaxTintCache : groundTintCache;
+                if (cache.TryGetValue(key, out var existing)) return existing;
+
+                ImageSource[]? arr = null;
+                if (useRgbReplace)
+                {
+                    arr = CreateRgbReplacedImages(new ImageSource[] { src }, tint);
+                }
+                else
+                {
+                    arr = CreateHueShiftedImages(new ImageSource[] { src }, tint);
+                }
+
+                if (arr != null && arr.Length > 0 && arr[0] is BitmapSource bs)
+                {
+                    bs.Freeze();
+                    cache[key] = bs;
+                    return bs;
+                }
+                return src;
+            }
+            catch
+            {
+                return src;
+            }
+        }
+
         // (No CreateHueShiftedImagesSimple - ground will use the HSL-based CreateHueShiftedImages)
 
         // Helper: convert RGB byte values to HSL (H in degrees 0..360, S/L 0..1)
@@ -4547,6 +4655,8 @@ namespace FamidashEditor
             parallaxTonedImages = CreateRgbReplacedImages(parallaxImages, backgroundTint);
             // mark background/parallax cache dirty so the parallax RTB is rebuilt with the new tint
             backgroundDirty = true;
+            // mark background/parallax cache dirty so the parallax RTB is rebuilt with the new tint
+            // (deferred rebuild will run via EnsureLayerBitmaps/Redraw as needed)
             if (StatusText != null)
             {
                 string info = $"UpdateParallaxTint: tintA={backgroundTint.A} parallaxImages={(parallaxImages!=null?parallaxImages.Length:0)} parallaxToned={(parallaxTonedImages!=null?parallaxTonedImages.Length:0)}";
@@ -4574,6 +4684,8 @@ namespace FamidashEditor
             groundTonedImages = CreateHueShiftedImages(groundImages, groundTint);
             // mark background/ground cache dirty so the ground RTB is rebuilt with the new tint
             backgroundDirty = true;
+            // mark background/parallax cache dirty so the parallax RTB is rebuilt with the new tint
+            // (deferred rebuild will run via EnsureLayerBitmaps/Redraw as needed)
             if (StatusText != null)
             {
                 string info = $"UpdateGroundTint: tintA={groundTint.A} groundImages={(groundImages!=null?groundImages.Length:0)} groundToned={(groundTonedImages!=null?groundTonedImages.Length:0)}";
@@ -4609,8 +4721,24 @@ namespace FamidashEditor
             
             // Clear pre-scaled caches so scaled pixels are rebuilt from the toned images
             try { scaledTileCaches.Clear(); } catch { }
-            // Rebuild tiles bitmap so tint appears immediately
-            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+
+            // For very large maps, repaint only the visible region immediately and
+            // progressively rebuild the remainder in background to keep UI responsive.
+            int totalTiles = mapWidth * mapHeight;
+            bool isVeryLarge = totalTiles > 50000;
+            double scale = (ZoomSlider!=null?ZoomSlider.Value:1.0);
+            if (isVeryLarge && MapScrollViewer != null)
+            {
+                try { RebuildVisibleTilesRegion(scale, mapViewportPadding); } catch { Redraw(); }
+                // Fire-and-forget the async full rebuild; during interactive preview avoid full UI writes
+                // so pass allowFullWrites=false when previewMode is active to skip non-visible UI writes.
+                _ = RebuildAllTilesBitmapAsync(scale, mapViewportPadding, allowFullWrites: !previewMode);
+            }
+            else
+            {
+                // Rebuild tiles bitmap so tint appears immediately
+                try { RebuildAllTilesBitmap(scale, mapViewportPadding); } catch { Redraw(); }
+            }
             // Refresh palette so the left frame shows tinted tiles as well
             try { PopulateTilesPanel(); } catch { }
             if (StatusText != null)
@@ -5190,11 +5318,31 @@ namespace FamidashEditor
             {
                 tilesWb = new WriteableBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32, null);
                 cachedPixelWidth = pixelPaddedWidth; cachedPixelHeight = pixelPaddedHeight; cachedScale = scale;
-                // initialize to transparent
-                var empty = new byte[pixelPaddedHeight * tilesWb.BackBufferStride];
-                tilesWb.WritePixels(new Int32Rect(0, 0, pixelPaddedWidth, pixelPaddedHeight), empty, tilesWb.BackBufferStride, 0);
+                // initialize to transparent using direct backbuffer write to avoid the heavy
+                // one-time cost that can occur with WritePixels on first use
+                try
+                {
+                    tilesWb.Lock();
+                    unsafe
+                    {
+                        IntPtr pb = tilesWb.BackBuffer;
+                        if (pb != IntPtr.Zero)
+                        {
+                            int stride = tilesWb.BackBufferStride;
+                            int bytesTotal = stride * pixelPaddedHeight;
+                            byte* p = (byte*)pb.ToPointer();
+                            for (int i = 0; i < bytesTotal; i++) p[i] = 0;
+                        }
+                    }
+                    tilesWb.AddDirtyRect(new Int32Rect(0, 0, cachedPixelWidth, cachedPixelHeight));
+                }
+                finally { try { tilesWb.Unlock(); } catch { } }
+
+                // Ensure WritePixels pipeline is warmed when tilesWb exists
+                try { EnsureTilesWriteWarm(); } catch { }
+
                 // Render tiles asynchronously to avoid blocking UI
-                RebuildAllTilesBitmapAsync(scale, pad);
+                _ = RebuildAllTilesBitmapAsync(scale, pad);
             }
             // Create or recreate sprites writeable bitmap if size changed (use same flag as tiles!)
             if (sizeOrScaleChanged)
@@ -5262,68 +5410,41 @@ namespace FamidashEditor
             
             // Use the full parallax bitmap (not individual tiles)
             BitmapSource sourceImage = parallaxBitmap;
-            
-            // Apply tint if needed (check if background tint is active)
+
+            // Apply tint if needed and cache a single tinted bitmap per scale/tint
             if (backgroundTint.A != 0)
             {
-                // Decide whether to do a full replacement (replace visible/non-black pixels)
-                // or a hue/saturation shift. Full replacement is desirable for neutral grays
-                // (low saturation) and near-black/near-white swatches where HSL-shifting
-                // produces little or undesirable change.
-                // Always apply exact RGB replacement for parallax: replace visible non-black pixels with tint
-                var tintedImages = CreateRgbReplacedImages(new ImageSource[] { parallaxBitmap }, backgroundTint);
-                if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
-                {
-                    sourceImage = tinted;
-                }
+                var maybe = GetOrCreateSingleTinted(parallaxBitmap, backgroundTint, useRgbReplace: true, (int)Math.Round(scale * 100.0));
+                if (maybe != null) sourceImage = maybe;
             }
-            
-            // Use DrawImage loop like ground - it scales correctly and performs well
+
+            // Draw using a tiled ImageBrush so we only do the pixel tint once and let WPF tile it efficiently
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
-                // Calculate the scaled tile size (same formula as ground)
-                double tileWidthDiu = (sourceImage.PixelWidth / dpi.DpiScaleX) * scale;
-                double tileHeightDiu = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
-                
-                // Use full padded dimensions for parallax (it should tile across the entire map)
-                double renderW = pixelPaddedWidth / dpi.DpiScaleX;
+                double tileWidthDiu = (double)sourceImage.PixelWidth / dpi.DpiScaleX * scale;
+                double tileHeightDiu = (double)sourceImage.PixelHeight / dpi.DpiScaleY * scale;
+                double renderW = pixelPaddedWidth / dpi.PixelsPerInchX * dpi.PixelsPerInchX / dpi.PixelsPerInchX; // keep as device independent units
+                renderW = pixelPaddedWidth / dpi.DpiScaleX;
                 double renderH = pixelPaddedHeight / dpi.DpiScaleY;
-                
-                // Calculate how many tiles we need to fill the entire area
-                int tilesWide = (int)Math.Ceiling(renderW / tileWidthDiu) + 2;
-                int tilesHigh = (int)Math.Ceiling(renderH / tileHeightDiu) + 2;
-                
+
                 // Align starting position with padding
                 double startX = -(pad % tileWidthDiu);
                 double startY = -(pad % tileHeightDiu);
-                
-                // Calculate ground area to avoid overlap
-                double groundHeight = 0.0;
-                if (groundBitmap != null && groundImages != null && groundImages.Length > 0)
+
+                var brush = new ImageBrush(sourceImage)
                 {
-                    groundHeight = (groundBitmap.PixelHeight / dpi.DpiScaleY) * scale;
-                }
-                double groundStartY = mapHeight * TileSize * scale + pad;
-                double groundEndY = groundStartY + groundHeight;
-                
-                // Draw the parallax tiles (limited area for performance)
-                for (int ty = 0; ty < tilesHigh; ty++)
-                {
-                    for (int tx = 0; tx < tilesWide; tx++)
-                    {
-                        double x = startX + (tx * tileWidthDiu);
-                        double y = startY + (ty * tileHeightDiu);
-                        
-                        // Skip tiles that are completely within the ground area
-                        if (groundHeight > 0 && y >= groundStartY && y + tileHeightDiu <= groundEndY)
-                            continue;
-                        
-                        dc.DrawImage(sourceImage, new Rect(x, y, tileWidthDiu, tileHeightDiu));
-                    }
-                }
+                    TileMode = TileMode.Tile,
+                    ViewportUnits = BrushMappingMode.Absolute,
+                    Viewport = new Rect(0, 0, tileWidthDiu, tileHeightDiu),
+                    Stretch = Stretch.None
+                };
+                // Offset the brush so tiling aligns with padding
+                brush.Transform = new TranslateTransform(startX, startY);
+
+                dc.DrawRectangle(brush, null, new Rect(0, 0, renderW, renderH));
             }
-            
+
             parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
             parallaxRtb.Render(dv);
         }
@@ -5338,40 +5459,37 @@ namespace FamidashEditor
             
             // Use the full ground bitmap (not individual tiles)
             BitmapSource sourceImage = groundBitmap;
-            
-            // Apply tint if needed (check if ground tint is active - not transparent and not white)
+
+            // Apply tint if needed and cache a single tinted bitmap per scale/tint
             if (groundTint.A != 0 && (groundTint.R != 255 || groundTint.G != 255 || groundTint.B != 255))
             {
-                // Apply hue/saturation shift to the full ground bitmap
-                var tintedImages = CreateHueShiftedImages(new ImageSource[] { groundBitmap }, groundTint);
-                if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
-                {
-                    sourceImage = tinted;
-                }
+                var maybe = GetOrCreateSingleTinted(groundBitmap, groundTint, useRgbReplace: false, (int)Math.Round(scale * 100.0));
+                if (maybe != null) sourceImage = maybe;
             }
-            
-            // Ground tiles horizontally but stretches vertically to fit the available space
+
+            // Draw ground using an ImageBrush tiled horizontally, placed at the ground Y position
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
-                // Ground starts below the map
                 double groundY = mapHeight * TileSize * scale + pad;
                 double fillWidth = pixelPaddedWidth / dpi.DpiScaleX;
-                double groundHeightDiu = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
-                
-                // Calculate how many times we need to tile the ground horizontally
-                double tileWidthDiu = (sourceImage.PixelWidth / dpi.DpiScaleX) * scale;
-                int tilesNeeded = (int)Math.Ceiling(fillWidth / tileWidthDiu) + 1;
-                
-                // Draw the ground tiled horizontally, starting from left edge accounting for padding
-                double startX = -(pad % tileWidthDiu); // Align with padding
-                for (int i = 0; i < tilesNeeded; i++)
+                double tileWidthDiu = (double)sourceImage.PixelWidth / dpi.DpiScaleX * scale;
+                double groundHeightDiu = (double)sourceImage.PixelHeight / dpi.DpiScaleY * scale;
+
+                var brush = new ImageBrush(sourceImage)
                 {
-                    double x = startX + (i * tileWidthDiu);
-                    dc.DrawImage(sourceImage, new Rect(x, groundY, tileWidthDiu, groundHeightDiu));
-                }
+                    TileMode = TileMode.Tile,
+                    ViewportUnits = BrushMappingMode.Absolute,
+                    Viewport = new Rect(0, 0, tileWidthDiu, groundHeightDiu),
+                    Stretch = Stretch.None
+                };
+                double startX = -(pad % tileWidthDiu);
+                brush.Transform = new TranslateTransform(startX, groundY);
+
+                // Draw a rectangle the width of the canvas at the ground vertical position
+                dc.DrawRectangle(brush, null, new Rect(0, groundY, fillWidth, groundHeightDiu));
             }
-            
+
             groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
             groundRtb.Render(dv);
         }
@@ -5497,6 +5615,8 @@ namespace FamidashEditor
                         groundRtb = newGroundRtb;
                         if (ParallaxImage != null) ParallaxImage.Source = parallaxRtb;
                         if (GroundImage != null) GroundImage.Source = groundRtb;
+                        // Clear any visible-region overlays since full images are now available
+                        // (overlay controls were removed; nothing to clear here)
                         
                         System.Diagnostics.Debug.WriteLine($"RebuildParallaxGroundDeferredAsync: Expansion {expansion}x complete");
                     }
@@ -5515,6 +5635,8 @@ namespace FamidashEditor
             
             System.Diagnostics.Debug.WriteLine("RebuildParallaxGroundDeferredAsync: All expansions complete");
         }
+
+        // (Visible-region overlay logic removed; parallax/ground handled via existing RTBs)
 
         // Async versions of parallax and ground rendering to avoid blocking UI during zoom
         // Async wrapper removed - was causing rendering issues
@@ -5676,7 +5798,7 @@ namespace FamidashEditor
         }
         
         // Async version that renders tiles in small batches to avoid blocking UI
-        private async void RebuildAllTilesBitmapAsync(double scale, double pad)
+        private async System.Threading.Tasks.Task RebuildAllTilesBitmapAsync(double scale, double pad, bool allowFullWrites = true)
         {
             if (tilesWb == null) return;
             var dpi = VisualTreeHelper.GetDpi(this);
@@ -5691,60 +5813,450 @@ namespace FamidashEditor
             bool isLargeMap = totalTiles > 50000;
             int batchSize = isLargeMap ? Math.Max(2000, mapWidth * 2) : Math.Max(500, mapWidth);
             
-            System.Diagnostics.Debug.WriteLine($"RebuildAllTilesBitmapAsync: {totalTiles} tiles, batchSize={batchSize}, isLargeMap={isLargeMap}");
+            System.Diagnostics.Trace.WriteLine($"RebuildAllTilesBitmapAsync: {totalTiles} tiles, batchSize={batchSize}, isLargeMap={isLargeMap} allowFullWrites={allowFullWrites}");
+            var totalSw = System.Diagnostics.Stopwatch.StartNew();
+            long totalPreRenderMs = 0; long totalUiMs = 0; int totalRendered = 0;
+            // Track which tiles have been written to the tilesWb so we can flush the remaining ones
+            var tilesWritten = new bool[mapWidth * mapHeight];
+            const long MAX_BATCH_BYTES = 30_000_000; // avoid allocating huge buffers (>~30MB)
             
             for (int batchStart = 0; batchStart < totalTiles; batchStart += batchSize)
             {
                 int batchEnd = Math.Min(batchStart + batchSize, totalTiles);
                 
-                // For large maps, skip the background pre-render step and just render directly in UI
-                if (!isLargeMap)
+                // Pre-render this batch on a background thread (avoids expensive UI rendering)
+                // For preview/live interactions or when full writes aren't allowed, limit
+                // pre-rendering to the viewport-only tiles to avoid doing work for the
+                // entire map which scales with map size.
+                var preSw = System.Diagnostics.Stopwatch.StartNew();
+                int batchRendered = 0;
+                // Determine whether we should pre-render only the viewport region
+                bool preRenderOnlyViewport = (isLargeMap && (!allowFullWrites || previewMode));
+                int viewportLeft = 0, viewportRight = mapWidth - 1, viewportTop = 0, viewportBottom = mapHeight - 1;
+                if (preRenderOnlyViewport && MapScrollViewer != null)
                 {
-                    await System.Threading.Tasks.Task.Run(() =>
+                    try
                     {
-                        // Process batch on background thread
-                        for (int i = batchStart; i < batchEnd; i++)
+                        var vpw = MapScrollViewer.ViewportWidth; var vph = MapScrollViewer.ViewportHeight;
+                        if (!double.IsNaN(vpw) && !double.IsInfinity(vpw) && vpw > 0 && !double.IsNaN(vph) && !double.IsInfinity(vph) && vph > 0)
                         {
-                            int x = i % mapWidth;
-                            int y = i / mapWidth;
-                            int idx = tiles[y * mapWidth + x];
-                            if (idx >= 0)
-                            {
-                                // Pre-render this tile into cache
-                                int scaleKey = (int)Math.Round(scale * 100.0);
-                                GetOrRenderCachedTile(idx, scaleKey, tilePixelW, tilePixelH, dpi);
-                            }
+                            double hOff = MapScrollViewer.HorizontalOffset; double vOff = MapScrollViewer.VerticalOffset;
+                            double contentLeft = Math.Max(0, hOff - pad);
+                            double contentTop = Math.Max(0, vOff - pad);
+                            double contentRight = hOff + vpw + pad;
+                            double contentBottom = vOff + vph + pad;
+                            viewportLeft = (int)Math.Max(0, Math.Floor((contentLeft) / (TileSize * scale)));
+                            viewportRight = (int)Math.Min(mapWidth - 1, Math.Floor((contentRight) / (TileSize * scale)));
+                            viewportTop = (int)Math.Max(0, Math.Floor((contentTop) / (TileSize * scale)));
+                            viewportBottom = (int)Math.Min(mapHeight - 1, Math.Floor((contentBottom) / (TileSize * scale)));
                         }
-                    });
+                        else
+                        {
+                            // If viewport not available, be conservative: force preRenderOnlyViewport=false
+                            preRenderOnlyViewport = false;
+                        }
+                    }
+                    catch { preRenderOnlyViewport = false; }
                 }
+
+                await System.Threading.Tasks.Task.Run(() =>
+                {
+                    for (int i = batchStart; i < batchEnd; i++)
+                    {
+                        int x = i % mapWidth;
+                        int y = i / mapWidth;
+                        // If we're limiting to viewport pre-rendering, skip tiles outside viewport
+                        if (preRenderOnlyViewport)
+                        {
+                            if (x < viewportLeft || x > viewportRight || y < viewportTop || y > viewportBottom) continue;
+                        }
+                        int idx = tiles[y * mapWidth + x];
+                        if (idx >= 0)
+                        {
+                            int scaleKey = (int)Math.Round(scale * 100.0);
+                            try
+                            {
+                                var buf = GetOrRenderCachedTile(idx, scaleKey, tilePixelW, tilePixelH, dpi);
+                                if (buf != null && buf.Length > 0) batchRendered++;
+                            }
+                            catch { }
+                        }
+                    }
+                });
+                preSw.Stop();
+                totalPreRenderMs += preSw.ElapsedMilliseconds;
+                totalRendered += batchRendered;
                 
                 // Update UI on main thread
+                int minY = batchStart / mapWidth;
+                int maxY = (batchEnd - 1) / mapWidth;
+                int batchRows = (maxY - minY + 1);
+
+                // For very large maps, only write the portion that intersects the current viewport
+                // to keep UI updates fast. The remainder is left pre-rendered in the cache and
+                // can be flushed later at low priority.
+                int padPx = (int)Math.Round(pad * dpi.DpiScaleX);
+                int visibleLeft = 0, visibleRight = mapWidth - 1, visibleTop = 0, visibleBottom = mapHeight - 1;
+                bool haveViewport = false;
+                if (isLargeMap && MapScrollViewer != null)
+                {
+                    var vpw = MapScrollViewer.ViewportWidth; var vph = MapScrollViewer.ViewportHeight;
+                    if (!double.IsNaN(vpw) && !double.IsInfinity(vpw) && vpw > 0 && !double.IsNaN(vph) && !double.IsInfinity(vph) && vph > 0)
+                    {
+                        double hOff = MapScrollViewer.HorizontalOffset; double vOff = MapScrollViewer.VerticalOffset;
+                        double contentLeft = Math.Max(0, hOff - pad);
+                        double contentTop = Math.Max(0, vOff - pad);
+                        double contentRight = hOff + vpw + pad;
+                        double contentBottom = vOff + vph + pad;
+                        visibleLeft = (int)Math.Max(0, Math.Floor((contentLeft) / (TileSize * scale)));
+                        visibleRight = (int)Math.Min(mapWidth - 1, Math.Floor((contentRight) / (TileSize * scale)));
+                        visibleTop = (int)Math.Max(0, Math.Floor((contentTop) / (TileSize * scale)));
+                        visibleBottom = (int)Math.Min(mapHeight - 1, Math.Floor((contentBottom) / (TileSize * scale)));
+                        haveViewport = true;
+                    }
+                }
+
+                byte[]? batchBuf = null;
+                int destX = 0, destY = 0, widthPx = 0, heightPx = 0, batchStride = 0;
+
+                try
+                {
+                    if (!isLargeMap || !haveViewport || !allowFullWrites)
+                    {
+                        // Small map or no viewport info: assemble full-width rows as before
+                        int firstX = 0;
+                        destX = Math.Max(0, padPx + firstX * tilePixelW);
+                        destY = Math.Max(0, padPx + minY * tilePixelH);
+                        widthPx = Math.Min(cachedPixelWidth - destX, mapWidth * tilePixelW);
+                        heightPx = Math.Min(cachedPixelHeight - destY, batchRows * tilePixelH);
+                        batchStride = Math.Max(1, widthPx) * 4;
+                        long bytesNeeded = (long)heightPx * (long)batchStride;
+                        if (bytesNeeded > int.MaxValue || bytesNeeded > MAX_BATCH_BYTES)
+                        {
+                            // Too large to allocate safely — skip assembling this batch's full buffer
+                            System.Diagnostics.Trace.WriteLine($"RebuildAllTilesBitmapAsync: skipping large assemble ({bytesNeeded} bytes)");
+                            batchBuf = null;
+                        }
+                        else
+                        {
+                            batchBuf = new byte[heightPx * batchStride];
+                        }
+                        for (int row = 0; row < batchRows; row++)
+                        {
+                            int y = minY + row;
+                            for (int col = 0; col < mapWidth; col++)
+                            {
+                                int tileIndex = y * mapWidth + col;
+                                if (tileIndex < 0 || tileIndex >= tiles.Length) continue;
+                                int idx = tiles[tileIndex];
+                                byte[]? tilePixels = null;
+                                try { tilePixels = GetOrRenderCachedTile(idx, (int)Math.Round(scale * 100.0), tilePixelW, tilePixelH, dpi); } catch { }
+                                if (tilePixels == null || tilePixels.Length == 0) continue;
+                                for (int tr = 0; tr < tilePixelH; tr++)
+                                {
+                                    int destRow = row * tilePixelH + tr;
+                                    int destOffset = destRow * batchStride + col * tilePixelW * 4;
+                                    int srcOffset = tr * tilePixelW * 4;
+                                        if (batchBuf == null) continue;
+                                        Buffer.BlockCopy(tilePixels, srcOffset, batchBuf, destOffset, tilePixelW * 4);
+                                }
+                                // mark as written (only if we actually assembled a buffer)
+                                try { if (batchBuf != null) tilesWritten[y * mapWidth + col] = true; } catch { }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Large map: only assemble the intersection between this batch rows and the visible columns
+                        int writeLeft = Math.Max(0, visibleLeft);
+                        int writeRight = Math.Max(writeLeft, Math.Min(mapWidth - 1, visibleRight));
+                        int overlapTop = Math.Max(minY, visibleTop);
+                        int overlapBottom = Math.Min(maxY, visibleBottom);
+                        if (overlapBottom >= overlapTop && writeRight >= writeLeft)
+                        {
+                            int overlapRows = overlapBottom - overlapTop + 1;
+                            destX = Math.Max(0, padPx + writeLeft * tilePixelW);
+                            destY = Math.Max(0, padPx + overlapTop * tilePixelH);
+                            widthPx = Math.Min(cachedPixelWidth - destX, (writeRight - writeLeft + 1) * tilePixelW);
+                            heightPx = Math.Min(cachedPixelHeight - destY, overlapRows * tilePixelH);
+                            batchStride = Math.Max(1, widthPx) * 4;
+                            long bytesNeeded = (long)heightPx * (long)batchStride;
+                            if (bytesNeeded > int.MaxValue || bytesNeeded > MAX_BATCH_BYTES)
+                            {
+                                System.Diagnostics.Trace.WriteLine($"RebuildAllTilesBitmapAsync: skipping large assemble (visible segment {bytesNeeded} bytes)");
+                                batchBuf = null;
+                            }
+                            else
+                            {
+                                batchBuf = new byte[heightPx * batchStride];
+                            }
+
+                            for (int row = 0; row < overlapRows; row++)
+                            {
+                                int y = overlapTop + row;
+                                for (int col = writeLeft; col <= writeRight; col++)
+                                {
+                                    int tileIndex = y * mapWidth + col;
+                                    if (tileIndex < 0 || tileIndex >= tiles.Length) continue;
+                                    int idx = tiles[tileIndex];
+                                    byte[]? tilePixels = null;
+                                    try { tilePixels = GetOrRenderCachedTile(idx, (int)Math.Round(scale * 100.0), tilePixelW, tilePixelH, dpi); } catch { }
+                                    if (tilePixels == null || tilePixels.Length == 0) continue;
+                                    for (int tr = 0; tr < tilePixelH; tr++)
+                                    {
+                                        int destRow = row * tilePixelH + tr;
+                                        int destOffset = destRow * batchStride + (col - writeLeft) * tilePixelW * 4;
+                                        int srcOffset = tr * tilePixelW * 4;
+                                            if (batchBuf == null) continue;
+                                            Buffer.BlockCopy(tilePixels, srcOffset, batchBuf, destOffset, tilePixelW * 4);
+                                    }
+                                    // mark as written (only if buffer exists)
+                                    try { if (batchBuf != null) tilesWritten[y * mapWidth + col] = true; } catch { }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // No intersection with viewport: skip UI write for this batch to keep UI responsive
+                            batchBuf = null;
+                        }
+                    }
+                }
+                    catch (OverflowException oex)
+                    {
+                        System.Diagnostics.Trace.WriteLine($"RebuildAllTilesBitmapAsync: assembly overflow: {oex.Message}");
+                        batchBuf = null;
+                    }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine($"RebuildAllTilesBitmapAsync: failed to assemble batch buffer: {ex.Message}");
+                    batchBuf = null;
+                }
+
+                var uiSw = System.Diagnostics.Stopwatch.StartNew();
                 await Dispatcher.InvokeAsync(() =>
                 {
                     if (tilesWb == null) return;
-                    tilesWb.Lock();
                     try
                     {
-                        for (int i = batchStart; i < batchEnd; i++)
+                        if (batchBuf != null && batchBuf.Length > 0 && widthPx > 0 && heightPx > 0)
                         {
-                            int x = i % mapWidth;
-                            int y = i / mapWidth;
-                            UpdateTileBitmapAtLocked(x, y, scale, pad, tilePixelW, tilePixelH, dpi);
+                            try
+                            {
+                                tilesWb.Lock();
+                                tilesWb.WritePixels(new Int32Rect(destX, destY, widthPx, heightPx), batchBuf, batchStride, 0);
+                                tilesWb.AddDirtyRect(new Int32Rect(destX, destY, widthPx, heightPx));
+                            }
+                            finally { try { tilesWb.Unlock(); } catch { } }
                         }
-                        // Mark this batch area as dirty
-                        int minY = batchStart / mapWidth;
-                        int maxY = (batchEnd - 1) / mapWidth;
-                        int dirtyHeight = (maxY - minY + 1) * tilePixelH;
-                        tilesWb.AddDirtyRect(new Int32Rect(0, (int)(minY * tilePixelH + pad * dpi.DpiScaleY), cachedPixelWidth, Math.Min(dirtyHeight, cachedPixelHeight)));
+                        else
+                        {
+                            // Skip heavy UI writes for non-visible batches on very large maps
+                            // (these batches remain pre-rendered in cache and will be flushed later)
+                        }
                     }
-                    finally
+                    catch (Exception ex)
                     {
-                        tilesWb.Unlock();
+                        System.Diagnostics.Trace.WriteLine($"RebuildAllTilesBitmapAsync: UI write failed: {ex.Message}");
                     }
                 }, System.Windows.Threading.DispatcherPriority.Background);
+
+                // No buffer pooling here; GC will reclaim temporary arrays as before
+                uiSw.Stop();
+                totalUiMs += uiSw.ElapsedMilliseconds;
+                System.Diagnostics.Trace.WriteLine($"RebuildAllTilesBitmapAsync: batch {batchStart}-{batchEnd} preMs={preSw.ElapsedMilliseconds} uiMs={uiSw.ElapsedMilliseconds} rendered={batchRendered} assembled={(batchBuf!=null)}");
             }
-            
-            System.Diagnostics.Debug.WriteLine($"RebuildAllTilesBitmapAsync: Complete");
+            // Schedule a deferred flush for any tiles that were pre-rendered but not written
+            if (isLargeMap)
+            {
+                _ = RebuildRemainingTilesDeferredAsync(scale, pad, tilesWritten);
+            }
+
+            // If full writes were not allowed in this pass (we only flushed viewport),
+            // schedule an aggressive full-pass after a short delay so the map eventually
+            // becomes fully rendered. This avoids doing a full write immediately when
+            // viewport information isn't ready.
+            if (isLargeMap && !allowFullWrites)
+            {
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    await System.Threading.Tasks.Task.Delay(600);
+                    try { await RebuildAllTilesBitmapAsync(scale, pad, true); } catch { }
+                });
+            }
+            totalSw.Stop();
+            System.Diagnostics.Trace.WriteLine($"RebuildAllTilesBitmapAsync: Complete totalMs={totalSw.ElapsedMilliseconds} preMs={totalPreRenderMs} uiMs={totalUiMs} totalRendered={totalRendered}");
+        }
+
+        // Deferred background pass to flush any tiles that were pre-rendered but not written
+        private async System.Threading.Tasks.Task RebuildRemainingTilesDeferredAsync(double scale, double pad, bool[] tilesWritten)
+        {
+            try
+            {
+                var dpi = VisualTreeHelper.GetDpi(this);
+                int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                int padPx = (int)Math.Round(pad * dpi.DpiScaleX);
+
+                const int maxColsPerWrite = 8; // keep writes small
+                int writes = 0;
+
+                for (int y = 0; y < mapHeight; y++)
+                {
+                    int x = 0;
+                    while (x < mapWidth)
+                    {
+                        // Find next unwritten tile in this row
+                        while (x < mapWidth && tilesWritten[y * mapWidth + x]) x++;
+                        if (x >= mapWidth) break;
+                        int startX = x;
+                        int endX = startX;
+                        // Extend segment up to maxColsPerWrite
+                        while (endX + 1 < mapWidth && endX - startX + 1 < maxColsPerWrite && !tilesWritten[y * mapWidth + endX + 1]) endX++;
+
+                        int cols = endX - startX + 1;
+                        int destX = Math.Max(0, padPx + startX * tilePixelW);
+                        int destY = Math.Max(0, padPx + y * tilePixelH);
+                        int widthPx = Math.Min(cachedPixelWidth - destX, cols * tilePixelW);
+                        int heightPx = Math.Min(cachedPixelHeight - destY, tilePixelH);
+                        int stride = Math.Max(1, widthPx) * 4;
+                        long bytesNeeded = (long)heightPx * (long)stride;
+                        if (bytesNeeded > int.MaxValue || bytesNeeded > 30_000_000)
+                        {
+                            System.Diagnostics.Trace.WriteLine($"RebuildRemainingTilesDeferredAsync: skipping large write ({bytesNeeded} bytes)");
+                            x = endX + 1;
+                            continue;
+                        }
+                        byte[] buf = new byte[heightPx * stride];
+
+                        for (int col = startX; col <= endX; col++)
+                        {
+                            int tileIndex = y * mapWidth + col;
+                            int idx = tiles[tileIndex];
+                            byte[]? tilePixels = null;
+                            try { tilePixels = GetOrRenderCachedTile(idx, (int)Math.Round(scale * 100.0), tilePixelW, tilePixelH, dpi); } catch { }
+                            if (tilePixels == null || tilePixels.Length == 0) continue;
+                            int colOffset = (col - startX) * tilePixelW * 4;
+                            for (int tr = 0; tr < tilePixelH; tr++)
+                            {
+                                int srcOffset = tr * tilePixelW * 4;
+                                int destOffset = tr * stride + colOffset;
+                                Buffer.BlockCopy(tilePixels, srcOffset, buf, destOffset, tilePixelW * 4);
+                            }
+                            tilesWritten[tileIndex] = true;
+                        }
+
+                        // Write this small segment on the UI thread at low priority
+                        try
+                        {
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                if (tilesWb == null) return;
+                                try
+                                {
+                                    tilesWb.Lock();
+                                    tilesWb.WritePixels(new Int32Rect(destX, destY, widthPx, heightPx), buf, stride, 0);
+                                    tilesWb.AddDirtyRect(new Int32Rect(destX, destY, widthPx, heightPx));
+                                }
+                                finally { try { tilesWb.Unlock(); } catch { } }
+                            }, System.Windows.Threading.DispatcherPriority.Background);
+                        }
+                        catch { }
+                        // no pooling; allow GC to collect the temporary buffer
+
+                        writes++;
+                        if ((writes & 0x7) == 0) await System.Threading.Tasks.Task.Delay(20); // yield occasionally
+
+                        x = endX + 1;
+                    }
+                }
+                System.Diagnostics.Trace.WriteLine($"RebuildRemainingTilesDeferredAsync: completed writes={writes}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"RebuildRemainingTilesDeferredAsync: error {ex.Message}");
+            }
+        }
+
+        // Rebuild only the currently visible tiles area immediately (fast), leaving
+        // the remainder to be rebuilt asynchronously. This avoids blocking the UI
+        // when tint changes on very large maps.
+        private void RebuildVisibleTilesRegion(double scale, double pad)
+        {
+            if (tilesWb == null) return;
+            if (MapScrollViewer == null)
+            {
+                // Fall back to full rebuild if we can't determine viewport
+                RebuildAllTilesBitmap(scale, pad);
+                return;
+            }
+
+            var dpi = VisualTreeHelper.GetDpi(this);
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+
+            double hOff = MapScrollViewer.HorizontalOffset;
+            double vOff = MapScrollViewer.VerticalOffset;
+            double vpW = MapScrollViewer.ViewportWidth;
+            double vpH = MapScrollViewer.ViewportHeight;
+
+            double contentLeft = hOff;
+            double contentTop = vOff;
+            double contentRight = hOff + vpW;
+            double contentBottom = vOff + vpH;
+
+            int leftTile = (int)Math.Floor((contentLeft - pad) / (TileSize * scale));
+            int topTile = (int)Math.Floor((contentTop - pad) / (TileSize * scale));
+            int rightTile = (int)Math.Floor((contentRight - pad) / (TileSize * scale));
+            int bottomTile = (int)Math.Floor((contentBottom - pad) / (TileSize * scale));
+
+            leftTile = Math.Max(0, Math.Min(mapWidth - 1, leftTile));
+            rightTile = Math.Max(0, Math.Min(mapWidth - 1, rightTile));
+            topTile = Math.Max(0, Math.Min(mapHeight - 1, topTile));
+            bottomTile = Math.Max(0, Math.Min(mapHeight - 1, bottomTile));
+
+            if (rightTile < leftTile || bottomTile < topTile) return;
+
+            int padPx = (int)Math.Round(pad * dpi.DpiScaleX);
+            int destX = Math.Max(0, padPx + leftTile * tilePixelW);
+            int destY = Math.Max(0, padPx + topTile * tilePixelH);
+            int widthPx = Math.Min(cachedPixelWidth - destX, (rightTile - leftTile + 1) * tilePixelW);
+            int heightPx = Math.Min(cachedPixelHeight - destY, (bottomTile - topTile + 1) * tilePixelH);
+            if (widthPx <= 0 || heightPx <= 0) return;
+
+            // Lock and clear only the visible region, then redraw tiles in that region
+            tilesWb.Lock();
+            try
+            {
+                unsafe
+                {
+                    IntPtr pBackBuffer = tilesWb.BackBuffer;
+                    if (pBackBuffer != IntPtr.Zero)
+                    {
+                        int backBufferStride = tilesWb.BackBufferStride;
+                        for (int row = 0; row < heightPx; row++)
+                        {
+                            long destOffset = (destY + row) * backBufferStride + destX * 4;
+                            byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                            for (int i = 0; i < widthPx * 4; i++) destPtr[i] = 0;
+                        }
+                    }
+                }
+
+                for (int y = topTile; y <= bottomTile; y++)
+                {
+                    for (int x = leftTile; x <= rightTile; x++)
+                    {
+                        UpdateTileBitmapAtLocked(x, y, scale, pad, tilePixelW, tilePixelH, dpi);
+                    }
+                }
+
+                tilesWb.AddDirtyRect(new Int32Rect(destX, destY, widthPx, heightPx));
+            }
+            finally
+            {
+                tilesWb.Unlock();
+            }
         }
 
         // Build or ensure a scaled tile pixel cache for the given zoom and dpi.
@@ -5774,6 +6286,38 @@ namespace FamidashEditor
                 scaledTileCaches[scaleKey] = cache;
             }
             catch { /* don't crash on cache build failure */ }
+        }
+
+        // Warm a tiny WritePixels call so WPF/Direct3D initialization happens
+        // ahead of user actions. This avoids a ~1s hiccup on the first real
+        // WritePixels call (observed when changing tints on large maps).
+        private void EnsureTilesWriteWarm()
+        {
+            if (tilesWriteWarmed) return;
+            if (tilesWb == null) return;
+            tilesWriteWarmed = true;
+            try
+            {
+                // Schedule a small write at background priority so it doesn't
+                // block constructor work but still runs early.
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (tilesWb == null) return;
+                        tilesWb.Lock();
+                        try
+                        {
+                            var zero = new byte[4];
+                            tilesWb.WritePixels(new Int32Rect(0, 0, 1, 1), zero, 4, 0);
+                            tilesWb.AddDirtyRect(new Int32Rect(0, 0, 1, 1));
+                        }
+                        finally { try { tilesWb.Unlock(); } catch { } }
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { tilesWriteWarmed = false; }
         }
         
         // Render and cache a single tile at the given scale (lazy caching)
