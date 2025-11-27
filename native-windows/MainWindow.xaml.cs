@@ -1,4 +1,4 @@
-using Microsoft.Win32;
+﻿using Microsoft.Win32;
 using System;
 using System.IO;
 using System.Linq;
@@ -141,6 +141,8 @@ namespace FamidashEditor
             Directory.CreateDirectory(configFolder);
         }
         
+        
+
         // Use just the filename (not full path) to allow sharing configs
         string tmxFileName = Path.GetFileName(tmxFilePath);
         string configFileName = tmxFileName + ".cfg";
@@ -1362,7 +1364,18 @@ namespace FamidashEditor
             // Live preview while dialog open (match bg/ground/tile tint behavior)
             var initialColor = playerTint;
             var initialEnabled = playerTintEnabled;
-            Action<Color> handler = (c) => { playerTint = c; playerTintEnabled = true; Redraw(); };
+            Action<Color> handler = (c) => {
+                playerTint = c;
+                playerTintEnabled = true;
+                // Clear tinted sprite caches and scaled tile caches so live preview updates
+                try { ClearTintedCaches(); } catch { }
+                try { scaledTileCaches.Clear(); } catch { }
+                // Rebuild tiles and sprites immediately so the map updates live
+                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                // Refresh palette preview
+                try { PopulateTilesPanel(); } catch { }
+            };
             dlg.ColorChanged += handler;
             var res = dlg.ShowDialog();
             dlg.ColorChanged -= handler;
@@ -4596,6 +4609,62 @@ namespace FamidashEditor
             }
         }
 
+        // Create an ImageSource that uses the toned image for colors but
+        // replaces any pixels where the original (base) image has G >= 180
+        // with the provided player tint. Returns toned image if toned is null.
+        private ImageSource? CreatePlayerReplacedFromBaseAndToned(ImageSource? baseSrc, ImageSource? tonedSrc, Color tint)
+        {
+            if (baseSrc == null && tonedSrc == null) return null;
+            try
+            {
+                var baseBs = baseSrc as BitmapSource;
+                var tonedBs = tonedSrc as BitmapSource ?? baseBs;
+                if (tonedBs == null) return baseSrc;
+                var convBase = baseBs != null ? new FormatConvertedBitmap(baseBs, PixelFormats.Bgra32, null, 0) : null;
+                var convToned = new FormatConvertedBitmap(tonedBs, PixelFormats.Bgra32, null, 0);
+                int w = convToned.PixelWidth, h = convToned.PixelHeight;
+                if (w <= 0 || h <= 0) return tonedSrc;
+                int stride = w * 4;
+                var basePixels = new byte[h * stride];
+                var tonedPixels = new byte[h * stride];
+                if (convBase != null)
+                {
+                    convBase.CopyPixels(basePixels, stride, 0);
+                }
+                convToned.CopyPixels(tonedPixels, stride, 0);
+
+                byte pr = tint.R, pg = tint.G, pb = tint.B;
+                for (int i = 0; i + 3 < tonedPixels.Length; i += 4)
+                {
+                    byte a = (convBase != null) ? basePixels[i + 3] : tonedPixels[i + 3];
+                    byte baseG = (convBase != null) ? basePixels[i + 1] : tonedPixels[i + 1];
+                    if (a != 0 && baseG >= 180)
+                    {
+                        tonedPixels[i + 0] = pb;
+                        tonedPixels[i + 1] = pg;
+                        tonedPixels[i + 2] = pr;
+                    }
+                }
+
+                var wb = new WriteableBitmap(w, h, convToned.DpiX, convToned.DpiY, PixelFormats.Bgra32, null);
+                wb.WritePixels(new Int32Rect(0, 0, w, h), tonedPixels, stride, 0);
+                wb.Freeze();
+                return wb;
+            }
+            catch { return tonedSrc ?? baseSrc; }
+        }
+
+        // Helper: check whether a tile index is in the player-replacement set
+        private bool IsPlayerReplacementTile(int tileIdx)
+        {
+            return (
+                (tileIdx >= 0x0C && tileIdx <= 0x0F) ||
+                (tileIdx >= 0x13 && tileIdx <= 0x14) ||
+                (tileIdx >= 0x80 && tileIdx <= 0x81) ||
+                (tileIdx >= 0x84 && tileIdx <= 0x87)
+            );
+        }
+
         private void PopulateTilesPanel()
         {
             if (TilesPanel == null) return;
@@ -4604,8 +4673,28 @@ namespace FamidashEditor
             int idx = 0;
             foreach (var src in tileImages)
             {
-                // prefer tinted tiles in the left palette when available
-                var paletteSrc = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[idx] : src;
+                // prefer tinted tiles in the left palette when available, except for
+                // the special player-replacement tiles which must show the player
+                // tinted green pixels while preserving toned colors for non-green.
+                ImageSource? paletteSrc = null;
+                bool isPlayerTile = IsPlayerReplacementTile(idx);
+                var baseSrc = (idx < tileImages.Length) ? tileImages[idx] : src;
+                var tonedSrc = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[idx] : null;
+                if (isPlayerTile)
+                {
+                    if (playerTintEnabled && baseSrc != null)
+                    {
+                        paletteSrc = CreatePlayerReplacedFromBaseAndToned(baseSrc, tonedSrc ?? baseSrc, playerTint);
+                    }
+                    else
+                    {
+                        paletteSrc = tonedSrc ?? baseSrc;
+                    }
+                }
+                else
+                {
+                    paletteSrc = tonedSrc ?? src;
+                }
                 
                 // Debug: check if specific tiles have valid sources
                 if ((idx == 34 || idx == 36) && paletteSrc == null)
@@ -5761,10 +5850,22 @@ namespace FamidashEditor
                 // Handle regular tiles (indices 0-255)
                 else if (tileIdx >= 0 && tileIdx < 256)
                 {
-                    // Prefer tinted tiles when available
-                    src = (tileTonedImages != null && tileIdx < tileTonedImages.Length) 
-                        ? tileTonedImages[tileIdx] as ImageSource 
-                        : (tileIdx < tileImages.Length ? tileImages[tileIdx] as ImageSource : null);
+                    // For a small set of tiles we must apply player-color replacement
+                    // to the green-ish pixels (while preserving the tile-toned colors
+                    // for non-green pixels). Use the helper that composes base + toned.
+                    if (IsPlayerReplacementTile(tileIdx) && playerTintEnabled)
+                    {
+                        ImageSource? baseSrc = (tileIdx < tileImages.Length) ? tileImages[tileIdx] as ImageSource : null;
+                        ImageSource? tonedSrc = (tileTonedImages != null && tileIdx < tileTonedImages.Length) ? tileTonedImages[tileIdx] as ImageSource : null;
+                        src = CreatePlayerReplacedFromBaseAndToned(baseSrc, tonedSrc ?? baseSrc, playerTint);
+                    }
+                    else
+                    {
+                        // Prefer tinted tiles when available
+                        src = (tileTonedImages != null && tileIdx < tileTonedImages.Length)
+                            ? tileTonedImages[tileIdx] as ImageSource
+                            : (tileIdx < tileImages.Length ? tileImages[tileIdx] as ImageSource : null);
+                    }
                 }
                 
                 // Debug: log if specific tiles fail to get source
