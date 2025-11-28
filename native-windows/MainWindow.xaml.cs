@@ -6189,13 +6189,47 @@ namespace FamidashEditor
                     // Update the sprite using the locked version
                     UpdateSpriteBitmapAtLocked(x, y, spriteIdx, scale, pad, spritePixelW, spritePixelH, dpi);
                     
-                    // Mark the dirty region
+                    // Mark the dirty region. Compute the same visual nudges and render size
+                    // as the locked renderer so the dirty rect covers the actual pixels written.
                     int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
                     int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
                     int destX = Math.Max(0, padPxX + x * spritePixelW);
                     int destY = Math.Max(0, padPxY + y * spritePixelH);
-                    int dirtyWidth = Math.Min(spritePixelW, cachedPixelWidth - destX);
-                    int dirtyHeight = Math.Min(spritePixelH, cachedPixelHeight - destY);
+
+                    // Determine animated/custom index to compute multi-tile or chain sizes
+                    int animatedIdx = GetAnimatedSpriteIndex(spriteIdx);
+                    int renderWidth = spritePixelW;
+                    int renderHeight = spritePixelH;
+                    bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3029);
+                    if (isMultiTilePortal)
+                    {
+                        if (animatedIdx >= 3000 && animatedIdx <= 3010)
+                        {
+                            renderWidth = (spritePixelW * 3) / 2;
+                            renderHeight = spritePixelH * 3;
+                        }
+                        else
+                        {
+                            renderWidth = spritePixelW * 3;
+                            renderHeight = spritePixelH * 2;
+                        }
+                    }
+                    // Chains (custom indices 2126/2127) are taller (1.5 tiles)
+                    if (!isMultiTilePortal && (animatedIdx == 2126 || animatedIdx == 2127))
+                    {
+                        renderHeight = (spritePixelH * 3) / 2;
+                    }
+
+                    // Apply the same preview-mode nudges used by the locked renderer
+                    if (previewMode && spriteIdx == 0x2D)
+                    {
+                        double oneTileScaled = TileSize * (ZoomSlider != null ? ZoomSlider.Value : 1.0) * dpi.DpiScaleY;
+                        int totalShift = (int)Math.Round(oneTileScaled * 1.5);
+                        destY = Math.Max(0, destY - totalShift);
+                    }
+
+                    int dirtyWidth = Math.Min(renderWidth, cachedPixelWidth - destX);
+                    int dirtyHeight = Math.Min(renderHeight, Math.Max(0, cachedPixelHeight - destY));
                     spritesWb.AddDirtyRect(new Int32Rect(destX, destY, dirtyWidth, dirtyHeight));
                 }
             }
@@ -6334,11 +6368,15 @@ namespace FamidashEditor
                                 }
                             }
                             
-                            // Mark this batch area as dirty
+                            // Mark this batch area as dirty. Expand the top by one tile to account
+                            // for preview-mode vertical nudges (e.g. chains that hang upward by 1 tile).
                             int minY = batchStart / mapWidth;
                             int maxY = (batchEnd - 1) / mapWidth;
-                            int dirtyHeight = (maxY - minY + 1) * spritePixelH;
-                            spritesWb.AddDirtyRect(new Int32Rect(0, (int)(minY * spritePixelH + pad * dpi.DpiScaleY), cachedPixelWidth, Math.Min(dirtyHeight, cachedPixelHeight)));
+                            // Include one extra tile above the batch to capture sprites shifted upward
+                            int dirtyTopTile = Math.Max(0, minY - 1);
+                            int dirtyHeight = (maxY - dirtyTopTile + 1) * spritePixelH;
+                            int dirtyTopPx = (int)(dirtyTopTile * spritePixelH + pad * dpi.DpiScaleY);
+                            spritesWb.AddDirtyRect(new Int32Rect(0, dirtyTopPx, cachedPixelWidth, Math.Min(dirtyHeight, cachedPixelHeight - dirtyTopPx)));
                         }
                         finally
                         {
@@ -6635,15 +6673,16 @@ namespace FamidashEditor
                 int destX = Math.Max(0, padPxX + x * spritePixelW);
                 int destY = Math.Max(0, padPxY + y * spritePixelH);
 
-                // Shift the chain preview up so it visually hangs from above.
-                // Apply an initial full-tile shift, plus an additional offset that is
-                // half a tile at 1x zoom (8px) and a full tile at >=2x zoom (16px).
+                // Shift certain decoration previews up so they visually hang from above.
+                // Chains: normal chain (0x2D) continues to hang a bit higher (1.5 tiles shift).
+                // The upside-down chain (0x3D) previously nudged up by 1 tile (16px); remove
+                // that upward nudge so 0x3D renders at its natural tile origin instead.
                 if (previewMode && spriteIdx == 0x2D)
                 {
-                    // Use scaled tile size so the visual offset is uniform across zoom levels.
                     double oneTileScaled = TileSize * scale * dpi.DpiScaleY; // e.g. 16*scale*dpi
-                    // Move up by 1.5 tiles (1 + 0.5) in the same coordinate space as destY
-                    int totalShift = (int)Math.Round(oneTileScaled * 1.5);
+                    // Use a smaller hang offset so the chain doesn't move up too far.
+                    // Previously 1.5 tiles; reduce to 0.5 tiles to correct over-shift.
+                    int totalShift = (int)Math.Round(oneTileScaled * 0.5);
                     destY = Math.Max(0, destY - totalShift);
                 }
                 
@@ -6775,7 +6814,7 @@ namespace FamidashEditor
                     }
                 }
 
-                // Treat chain decorations (custom indices 2126/2127) as 1.5 tiles tall (24px if TileSize==16)
+                // Treat chain decorations (custom indices 2126/2127) as 1.5 tiles tall
                 if (!isMultiTilePortal && (animatedIdx == 2126 || animatedIdx == 2127))
                 {
                     renderHeight = (spritePixelH * 3) / 2; // 1.5 tiles tall
