@@ -489,6 +489,11 @@ namespace FamidashEditor
     private BitmapSource[]? poleShortFrame2;
     private BitmapSource[]? poleShortUpsideDownFrame1; // sprite 0x3C
     private BitmapSource[]? poleShortUpsideDownFrame2;
+    // New short pole decorations (left/right) two-frame previews
+    private BitmapSource[]? poleLeftShortFrame1; // sprite 0x38
+    private BitmapSource[]? poleLeftShortFrame2;
+    private BitmapSource[]? poleRightShortFrame1; // sprite 0x39
+    private BitmapSource[]? poleRightShortFrame2;
     // Chain decorations (single-frame preview-only)
     private BitmapSource[]? chainFrame1; // sprite 0x2D
     private BitmapSource[]? chainUpsideDownFrame1; // sprite 0x3D
@@ -571,7 +576,7 @@ namespace FamidashEditor
     // Lock for thread-safe access to the tinted caches when precomputing on background threads
     private readonly object tintedCacheLock = new object();
     // Decoration sprite ids that should receive player tinting
-    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D };
+    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x38, 0x39 };
     // Portal debug log path (initialized at startup)
     private string? portalDebugPath = null;
 
@@ -1609,6 +1614,8 @@ namespace FamidashEditor
             anyOrbFramesAvailable = anyOrbFramesAvailable || (xFrame1 != null && xFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleShortFrame1 != null && poleShortFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleLeftShortFrame1 != null && poleLeftShortFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleRightShortFrame1 != null && poleRightShortFrame2 != null);
 
             if (spritesWb != null && anyOrbFramesAvailable)
             {
@@ -1638,7 +1645,7 @@ namespace FamidashEditor
                             // Dash/teleport/spider two-frame sprites
                             spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
                             // Star and other decoration sprites
-                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C)
+                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39)
                         {
                             hasAnimatedOrbs = true;
                             if (animationFrame % 60 == 0)
@@ -1687,7 +1694,7 @@ namespace FamidashEditor
                                         // New dash orb sprites
                                         spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
                                         // Decorations
-                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C)
+                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39)
                                 {
                                     UpdateSpriteBitmapAtLocked(x, y, spriteIdx, scale, mapViewportPadding, spritePixelW, spritePixelH, dpi);
                                 }
@@ -1927,6 +1934,8 @@ namespace FamidashEditor
             if (originalIndex == 0x37) return GetTwoFrameCustomIndex(2120); // x decoration (2120/2121)
             if (originalIndex == 0x2C) return GetTwoFrameCustomIndex(2122); // pole short (2122/2123)
             if (originalIndex == 0x3C) return GetTwoFrameCustomIndex(2124); // pole short upside-down (2124/2125)
+            if (originalIndex == 0x38) return GetTwoFrameCustomIndex(2128); // pole-left-short (2128/2129)
+            if (originalIndex == 0x39) return GetTwoFrameCustomIndex(2130); // pole-right-short (2130/2131)
             if (originalIndex == 0x36) return GetTwoFrameCustomIndex(2110); // star (2110/2111)
             // Chain decorations (preview-only, single-frame)
             if (originalIndex == 0x2D) return 2126; // chain (2126)
@@ -2537,6 +2546,26 @@ namespace FamidashEditor
                 {
                     case 2122: return poleShortFrame1?[0];
                     case 2123: return poleShortFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Pole left short: 2128-2129 (sprite 0x38)
+            if (customIndex >= 2128 && customIndex <= 2129)
+            {
+                switch (customIndex)
+                {
+                    case 2128: return poleLeftShortFrame1?[0];
+                    case 2129: return poleLeftShortFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Pole right short: 2130-2131 (sprite 0x39)
+            if (customIndex >= 2130 && customIndex <= 2131)
+            {
+                switch (customIndex)
+                {
+                    case 2130: return poleRightShortFrame1?[0];
+                    case 2131: return poleRightShortFrame2?[0];
                     default: return null;
                 }
             }
@@ -3948,6 +3977,9 @@ namespace FamidashEditor
                 LoadTwoFrameOrb("x", ref xFrame1, ref xFrame2); // sprite 0x37
                 LoadTwoFrameOrb("pole-short", ref poleShortFrame1, ref poleShortFrame2); // sprite 0x2C
                 LoadTwoFrameOrb("pole-short-upsidedown", ref poleShortUpsideDownFrame1, ref poleShortUpsideDownFrame2); // sprite 0x3C
+                // New short pole left/right decorations
+                LoadTwoFrameOrb("pole-left-short", ref poleLeftShortFrame1, ref poleLeftShortFrame2); // sprite 0x38
+                LoadTwoFrameOrb("pole-right-short", ref poleRightShortFrame1, ref poleRightShortFrame2); // sprite 0x39
                 // Chain decorations (single-frame preview-only)
                 try
                 {
