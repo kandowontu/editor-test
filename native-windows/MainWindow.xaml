@@ -116,7 +116,7 @@
                 <MenuItem Header="_Options">
                     <MenuItem x:Name="MenuOptionLegacyTriggers" Header="Legacy Trigger Load/Save" IsCheckable="True" IsChecked="False" />
                         <MenuItem x:Name="MenuOptionSwapMouseWheel" Header="Swap Mouse Wheel Scroll" IsCheckable="True" IsChecked="False" />
-                        <MenuItem x:Name="MenuOptionInvertPinch" Header="Invert Pinch Gesture" IsCheckable="True" IsChecked="True" />
+                        <MenuItem x:Name="MenuOptionInvertPinch" Header="Invert Wheel/Pinch Zoom" IsCheckable="True" IsChecked="True" />
                     <MenuItem x:Name="MenuColorEditorBackground" Header="Editor Background Color..." />
                     <MenuItem x:Name="MenuColorPlayerTint" Header="Player Color..." />
                     <MenuItem Header="Level Options">

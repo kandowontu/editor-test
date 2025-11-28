@@ -1321,7 +1321,11 @@ namespace FamidashEditor
                 // use a multiplicative zoom per mouse wheel notch (120 delta = one notch)
                 // Invert sign so wheel-up zooms in and wheel-down zooms out
                 double factorPerNotch = 1.1; // 10% per notch
-                double factor = Math.Pow(factorPerNotch, -e.Delta / 120.0);
+                // Respect user preference: the menu option now means "Invert Wheel/Pinch Zoom".
+                // Its checked state should invert the behavior compared to the old default.
+                // Choose sign so that when the option is CHECKED the behavior is inverted relative to before.
+                double sign = invertPinchGesture ? -1.0 : 1.0;
+                double factor = Math.Pow(factorPerNotch, sign * e.Delta / 120.0);
                 double newScale = oldScale * factor;
                 // clamp to slider limits
                 newScale = Math.Max(ZoomSlider.Minimum, Math.Min(ZoomSlider.Maximum, newScale));
@@ -9237,10 +9241,11 @@ namespace FamidashEditor
                 ratio = e.DeltaManipulation.Scale.X;
             }
             lastManipulationCumulativeScale = cumulative;
-            // Respect user preference to invert pinch behavior
+            // Respect user preference: when the option is CHECKED the behavior should be inverted
+            // (user requested the meaning to flip). So invert the ratio only when the setting is OFF.
             try
             {
-                if (invertPinchGesture)
+                if (!invertPinchGesture)
                 {
                     if (Math.Abs(ratio) > 1e-12) ratio = 1.0 / ratio;
                 }
