@@ -115,6 +115,9 @@
     <EmbeddedResource Include="..\src\renderer\assets\ground.bmp">
       <LogicalName>ground.bmp</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="..\src\renderer\assets\noparallax.bmp">
+      <LogicalName>noparallax.bmp</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="..\gravity-down-downwards-portal.png" />
     <EmbeddedResource Include="..\gravity-down-upwards-portal.png" />
     <EmbeddedResource Include="..\gravity-up-downwards-portal.png" />

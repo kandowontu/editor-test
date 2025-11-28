@@ -31,6 +31,11 @@ namespace FamidashEditor
     private int[] sprites = Array.Empty<int>(); // separate layer for sprites
     // Legacy trigger offset option (default off)
     private bool useLegacyTriggerOffset = false;
+    // Preview option: hide color triggers in preview mode
+    private bool hideColorTriggers = false;
+    // Per-level option: replace parallax background with noparallax.bmp when true
+    private bool noParallaxBg = false;
+    private bool swapMouseWheelScroll = false; // when true, swap shift/no-modifier wheel scroll behavior
     // default grid darkness: much lighter so grid lines are subtle over dark backgrounds
     private double gridDarkness = 0.18;
     private Brush mapBackground = new SolidColorBrush(Color.FromRgb(59,59,59));
@@ -130,8 +135,74 @@ namespace FamidashEditor
         public byte TileTintR { get; set; } = 255;
         public byte TileTintG { get; set; } = 255;
         public byte TileTintB { get; set; } = 255;
+        public bool NoParallaxBg { get; set; } = false;
     }
     
+    // Apply the current noParallaxBg setting by selecting the appropriate parallax bitmap
+    // and slicing it so subsequent background rebuilds use the desired image.
+    private void ApplyParallaxChoice()
+    {
+        try
+        {
+            // If per-level override is requested, try to load embedded noparallax first
+            if (noParallaxBg)
+            {
+                var emb = LoadEmbeddedImage("noparallax.bmp");
+                if (emb != null)
+                {
+                    parallaxBitmap = emb;
+                    SliceParallax();
+                    backgroundDirty = true;
+                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    try { Dispatcher.Invoke(() => Redraw()); } catch { }
+                    return;
+                }
+
+                // If embedded resource not found, try to find a noparallax file on disk in common locations
+                try
+                {
+                    var candidates = new List<string>();
+                    var repoRoot = FindRepoRootFor("famidash.bmp");
+                    if (!string.IsNullOrEmpty(repoRoot)) candidates.Add(Path.Combine(repoRoot, "src", "renderer", "assets", "noparallax.bmp"));
+                    // older/layout variant
+                    if (!string.IsNullOrEmpty(repoRoot)) candidates.Add(Path.Combine(repoRoot, "src", "render", "assets", "noparallax.bmp"));
+                    candidates.Add(Path.Combine(AppContext.BaseDirectory, "assets", "noparallax.bmp"));
+                    candidates.Add(Path.Combine(AppContext.BaseDirectory, "noparallax.bmp"));
+                    foreach (var cand in candidates)
+                    {
+                        try { if (!string.IsNullOrEmpty(cand) && File.Exists(cand)) { LoadParallax(cand); backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } return; } } catch { }
+                    }
+                }
+                catch { }
+            }
+
+            // Otherwise, prefer any loaded parallax source (from TMX); if not available, fall back to embedded parallax
+                if (!string.IsNullOrEmpty(loadedParallaxSource) && File.Exists(loadedParallaxSource))
+            {
+                LoadParallax(loadedParallaxSource);
+            }
+            else
+            {
+                var emb = LoadEmbeddedImage("parallax.bmp");
+                if (emb != null)
+                {
+                    parallaxBitmap = emb;
+                    SliceParallax();
+                }
+                else
+                {
+                    parallaxBitmap = null;
+                    parallaxImages = null;
+                }
+            }
+
+            backgroundDirty = true;
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            try { Dispatcher.Invoke(() => Redraw()); } catch { }
+        }
+        catch { }
+    }
+
     private string GetConfigPath(string tmxFilePath)
     {
         // Store configs in Documents/Famidash Editor/
@@ -167,11 +238,14 @@ namespace FamidashEditor
                 GroundTintB = groundTint.B,
                 TileTintR = tileTint.R,
                 TileTintG = tileTint.G,
-                TileTintB = tileTint.B
+                    TileTintB = tileTint.B,
+                    NoParallaxBg = noParallaxBg
             };
 
             string configPath = GetConfigPath(tmxFilePath);
-            string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+            // Serialize and write the config file
+            var opts = new JsonSerializerOptions { WriteIndented = true };
+            string json = JsonSerializer.Serialize(config, opts);
             File.WriteAllText(configPath, json);
 
             System.Diagnostics.Debug.WriteLine($"Saved config to: {configPath}");
@@ -199,6 +273,9 @@ namespace FamidashEditor
                     backgroundTint = Color.FromRgb(config.BackgroundTintR, config.BackgroundTintG, config.BackgroundTintB);
                     groundTint = Color.FromRgb(config.GroundTintR, config.GroundTintG, config.GroundTintB);
                     tileTint = Color.FromRgb(config.TileTintR, config.TileTintG, config.TileTintB);
+                    // Apply loaded no-parallax setting (default false when absent in file)
+                    try { noParallaxBg = config.NoParallaxBg; } catch { noParallaxBg = false; }
+                    if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
                     
                     // Update tinted images
                     UpdateParallaxTint();
@@ -207,6 +284,8 @@ namespace FamidashEditor
                     
                     System.Diagnostics.Debug.WriteLine($"Loaded config from: {configPath}");
                     if (StatusText != null) StatusText.Text = $"Loaded tint config for {Path.GetFileName(tmxFilePath)}";
+                    // Ensure the parallax choice reflects the loaded config
+                    try { ApplyParallaxChoice(); } catch { }
                 }
             }
             else
@@ -225,6 +304,11 @@ namespace FamidashEditor
                 
                 // Mark background dirty to force rebuild of parallax/ground without tints
                 backgroundDirty = true;
+                // Default: noParallax option absent -> unchecked and render parallax
+                noParallaxBg = false;
+                if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
+
+                try { ApplyParallaxChoice(); } catch { }
                 
                 // Clear tile caches and rebuild tiles without tint
                 try { scaledTileCaches.Clear(); } catch { }
@@ -977,6 +1061,54 @@ namespace FamidashEditor
                     SaveSettingsWithTriggerOption();
                 };
             }
+            // Swap Mouse Wheel Scroll (global user preference)
+            if (MenuOptionSwapMouseWheel != null)
+            {
+                MenuOptionSwapMouseWheel.Checked += (s, e) =>
+                {
+                    swapMouseWheelScroll = true;
+                    SaveSettingsWithTriggerOption();
+                };
+                MenuOptionSwapMouseWheel.Unchecked += (s, e) =>
+                {
+                    swapMouseWheelScroll = false;
+                    SaveSettingsWithTriggerOption();
+                };
+            }
+            // Hide color triggers preview option
+            if (MenuOptionHideColorTriggers != null)
+            {
+                MenuOptionHideColorTriggers.Checked += (s, e) =>
+                {
+                    hideColorTriggers = true;
+                    SaveSettingsWithTriggerOption();
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                };
+                MenuOptionHideColorTriggers.Unchecked += (s, e) =>
+                {
+                    hideColorTriggers = false;
+                    SaveSettingsWithTriggerOption();
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                };
+            }
+            // No Parallax BG (per-level) option
+            if (MenuOptionNoParallax != null)
+            {
+                MenuOptionNoParallax.Checked += (s, e) =>
+                {
+                    noParallaxBg = true;
+                    // save to per-level config immediately if a file is loaded
+                    try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                    // Apply choice and rebuild background to apply change immediately
+                    try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
+                };
+                MenuOptionNoParallax.Unchecked += (s, e) =>
+                {
+                    noParallaxBg = false;
+                    try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                    try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
+                };
+            }
             
             if (UndoButton != null) UndoButton.Click += (s, e) => Undo();
             if (RedoButton != null) RedoButton.Click += (s, e) => Redo();
@@ -1155,25 +1287,41 @@ namespace FamidashEditor
                 return;
             }
             
-            // Shift+Wheel = Vertical scrolling
+            // Shift+Wheel and No-modifier Wheel behavior may be swapped per user preference
             if (Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift))
             {
                 e.Handled = true;
-                // e.Delta: positive = wheel up, negative = wheel down
-                // We want positive delta to scroll up (decrease offset)
                 double scrollAmount = e.Delta * 0.5; // Scale down for smoother scrolling
-                double newOffset = MapScrollViewer.VerticalOffset - scrollAmount;
-                MapScrollViewer.ScrollToVerticalOffset(newOffset);
+                if (!swapMouseWheelScroll)
+                {
+                    // Default: Shift+Wheel = Vertical scrolling
+                    double newOffset = MapScrollViewer.VerticalOffset - scrollAmount;
+                    MapScrollViewer.ScrollToVerticalOffset(newOffset);
+                }
+                else
+                {
+                    // Swapped: Shift+Wheel = Horizontal scrolling
+                    double newHorizontalOffset = MapScrollViewer.HorizontalOffset - scrollAmount;
+                    MapScrollViewer.ScrollToHorizontalOffset(newHorizontalOffset);
+                }
                 return;
             }
-            
-            // No modifiers (Wheel alone) = Horizontal scrolling
+
+            // No modifiers (Wheel alone) behavior
             e.Handled = true;
-            // e.Delta: positive = wheel up, negative = wheel down
-            // We want positive delta to scroll right (increase offset)
-            double horizontalScrollAmount = e.Delta * 0.5; // Scale down for smoother scrolling
-            double newHorizontalOffset = MapScrollViewer.HorizontalOffset - horizontalScrollAmount;
-            MapScrollViewer.ScrollToHorizontalOffset(newHorizontalOffset);
+            double baseScrollAmount = e.Delta * 0.5; // Scale down for smoother scrolling
+            if (!swapMouseWheelScroll)
+            {
+                // Default: Wheel alone = Horizontal scrolling
+                double newHorizontalOffset = MapScrollViewer.HorizontalOffset - baseScrollAmount;
+                MapScrollViewer.ScrollToHorizontalOffset(newHorizontalOffset);
+            }
+            else
+            {
+                // Swapped: Wheel alone = Vertical scrolling
+                double newOffset = MapScrollViewer.VerticalOffset - baseScrollAmount;
+                MapScrollViewer.ScrollToVerticalOffset(newOffset);
+            }
         }
 
         private void ResizeMap(int newWidth, int newHeight)
@@ -1640,7 +1788,7 @@ namespace FamidashEditor
                             spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
                             spriteIdx == 0x52 || spriteIdx == 0x53 || // Red pad down/up
                             spriteIdx == 0x0A || spriteIdx == 0x0C || // Yellow pad down/up
-                            spriteIdx == 0x0D || spriteIdx == 0x0E || // Blue pad down/up
+                            spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0xFD || spriteIdx == 0xFE || // Blue pad down/up (+ aliases)
                             spriteIdx == 0x25 || spriteIdx == 0x26 || // Pink pad down/up
                             // Dash/teleport/spider two-frame sprites
                             spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
@@ -1685,6 +1833,8 @@ namespace FamidashEditor
                                     spriteIdx == 0x0C || // Yellow pad up
                                     spriteIdx == 0x0D || // Blue pad down
                                     spriteIdx == 0x0E || // Blue pad up
+                                    spriteIdx == 0xFD || // Blue pad down (alias)
+                                    spriteIdx == 0xFE || // Blue pad up   (alias)
                                     spriteIdx == 0x25 || // Pink pad down
                                         spriteIdx == 0x26 || // Pink pad up
                                         spriteIdx == 0x7A || // White orb
@@ -1956,7 +2106,7 @@ namespace FamidashEditor
             bool isCoin = (originalIndex == 0x07 || originalIndex == 0x1A || originalIndex == 0x1B);
             // Pads (preview-only): 0x52 red-pad-down, 0x53 red-pad-up, 0x0A yellow-pad-down, 0x0C yellow-pad-up,
             // 0x0D blue-pad-down, 0x0E blue-pad-up, 0x25 pink-pad-down, 0x26 pink-pad-up
-            bool isPad = (originalIndex == 0x52 || originalIndex == 0x53 || originalIndex == 0x0A || originalIndex == 0x0C || originalIndex == 0x0D || originalIndex == 0x0E || originalIndex == 0x25 || originalIndex == 0x26);
+            bool isPad = (originalIndex == 0x52 || originalIndex == 0x53 || originalIndex == 0x0A || originalIndex == 0x0C || originalIndex == 0x0D || originalIndex == 0x0E || originalIndex == 0x25 || originalIndex == 0x26 || originalIndex == 0xFD || originalIndex == 0xFE);
             
             if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb || isPad || isWhiteOrb || isCoin)
             {
@@ -2034,6 +2184,8 @@ namespace FamidashEditor
                         case 0x0C: baseIndex = 2044; break; // yellow-pad-up
                         case 0x0D: baseIndex = 2048; break; // blue-pad-down
                         case 0x0E: baseIndex = 2052; break; // blue-pad-up
+                        case 0xFD: baseIndex = 2048; break; // blue-pad-down (alias 0xFD)
+                        case 0xFE: baseIndex = 2052; break; // blue-pad-up   (alias 0xFE)
                         case 0x25: baseIndex = 2056; break; // pink-pad-down
                         case 0x26: baseIndex = 2060; break; // pink-pad-up
                         default: baseIndex = 2032; break;
@@ -3560,6 +3712,12 @@ namespace FamidashEditor
                         var b = (byte)bt[3].GetInt32();
                         backgroundTint = Color.FromArgb(a, r, g, b);
                     }
+                    // per-level: no parallax background
+                    if (doc.RootElement.TryGetProperty("noParallaxBg", out var npb))
+                    {
+                        try { noParallaxBg = npb.GetBoolean(); } catch { noParallaxBg = false; }
+                        if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
+                    }
                     // optional ground tint (RGBA)
                     if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
                     {
@@ -3576,6 +3734,15 @@ namespace FamidashEditor
                         if (MenuOptionLegacyTriggers != null)
                         {
                             MenuOptionLegacyTriggers.IsChecked = useLegacyTriggerOffset;
+                        }
+                    }
+                    // optional hide color triggers setting
+                    if (doc.RootElement.TryGetProperty("hideColorTriggers", out var hct))
+                    {
+                        try { hideColorTriggers = hct.GetBoolean(); } catch { hideColorTriggers = false; }
+                        if (MenuOptionHideColorTriggers != null)
+                        {
+                            MenuOptionHideColorTriggers.IsChecked = hideColorTriggers;
                         }
                     }
                     // optional grid darkness (double)
@@ -3601,6 +3768,12 @@ namespace FamidashEditor
                     {
                         try { playerTintEnabled = pce.GetBoolean(); } catch { playerTintEnabled = false; }
                     }
+                    // optional swap mouse wheel behavior
+                    if (doc.RootElement.TryGetProperty("swapMouseWheelScroll", out var smw))
+                    {
+                        try { swapMouseWheelScroll = smw.GetBoolean(); } catch { swapMouseWheelScroll = false; }
+                        if (MenuOptionSwapMouseWheel != null) MenuOptionSwapMouseWheel.IsChecked = swapMouseWheelScroll;
+                    }
                 }
             }
             catch { }
@@ -3620,6 +3793,8 @@ namespace FamidashEditor
                     backgroundTint = new int[] { backgroundTint.A, backgroundTint.R, backgroundTint.G, backgroundTint.B },
                     groundTint = new int[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B },
                     useLegacyTriggerOffset = useLegacyTriggerOffset,
+                    swapMouseWheelScroll = swapMouseWheelScroll,
+                    hideColorTriggers = hideColorTriggers,
                     playerColor = new int[] { playerTint.A, playerTint.R, playerTint.G, playerTint.B },
                     playerColorEnabled = playerTintEnabled,
                     gridDarkness = gridDarkness
@@ -3875,12 +4050,21 @@ namespace FamidashEditor
                     if (StatusText != null) StatusText.Text = "Loaded sprites from embedded resources";
                 }
                 
-                var embeddedParallax = LoadEmbeddedImage("parallax.bmp");
+                BitmapSource? embeddedParallax = null;
+                if (noParallaxBg)
+                {
+                    embeddedParallax = LoadEmbeddedImage("noparallax.bmp");
+                    if (embeddedParallax != null && StatusText != null) StatusText.Text = "Loaded noparallax from embedded resources";
+                }
+                if (embeddedParallax == null)
+                {
+                    embeddedParallax = LoadEmbeddedImage("parallax.bmp");
+                    if (embeddedParallax != null && StatusText != null) StatusText.Text = "Loaded parallax from embedded resources";
+                }
                 if (embeddedParallax != null)
                 {
                     parallaxBitmap = embeddedParallax;
                     SliceParallax();
-                    if (StatusText != null) StatusText.Text = "Loaded parallax from embedded resources";
                 }
                 
                 var embeddedGround = LoadEmbeddedImage("ground.bmp");
@@ -5337,43 +5521,39 @@ namespace FamidashEditor
             
             // Use the full parallax bitmap (not individual tiles)
             BitmapSource sourceImage = parallaxBitmap;
-            
+
             // Apply tint if needed (check if background tint is active)
             if (backgroundTint.A != 0)
             {
-                // Decide whether to do a full replacement (replace visible/non-black pixels)
-                // or a hue/saturation shift. Full replacement is desirable for neutral grays
-                // (low saturation) and near-black/near-white swatches where HSL-shifting
-                // produces little or undesirable change.
-                // Always apply exact RGB replacement for parallax: replace visible non-black pixels with tint
                 var tintedImages = CreateRgbReplacedImages(new ImageSource[] { parallaxBitmap }, backgroundTint);
                 if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
                 {
                     sourceImage = tinted;
                 }
             }
-            
-            // Use DrawImage loop like ground - it scales correctly and performs well
+
+            // Use DrawImage loop like ground - align tiles to device pixels to avoid seams
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
-                // Calculate the scaled tile size (same formula as ground)
-                double tileWidthDiu = (sourceImage.PixelWidth / dpi.DpiScaleX) * scale;
-                double tileHeightDiu = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
-                
-                // Use full padded dimensions for parallax (it should tile across the entire map)
+                // Compute tile size in device pixels (integral) to avoid fractional placement
+                int tilePixelW = (int)Math.Max(1, Math.Round(sourceImage.PixelWidth * scale));
+                int tilePixelH = (int)Math.Max(1, Math.Round(sourceImage.PixelHeight * scale));
+
+                // Full render area in device-independent units
                 double renderW = pixelPaddedWidth / dpi.DpiScaleX;
                 double renderH = pixelPaddedHeight / dpi.DpiScaleY;
-                
-                // Calculate how many tiles we need to fill the entire area
-                int tilesWide = (int)Math.Ceiling(renderW / tileWidthDiu) + 2;
-                int tilesHigh = (int)Math.Ceiling(renderH / tileHeightDiu) + 2;
-                
-                // Align starting position with padding
-                double startX = -(pad % tileWidthDiu);
-                double startY = -(pad % tileHeightDiu);
-                
-                // Calculate ground area to avoid overlap
+
+                // Convert pad to device pixels and compute integer-aligned start offset
+                int padPix = (int)Math.Round(pad * dpi.DpiScaleX);
+                int startXPix = -(padPix % tilePixelW);
+                int startYPix = -(padPix % tilePixelH);
+
+                // How many tiles we need (tilePixel based)
+                int tilesWide = (int)Math.Ceiling((double)pixelPaddedWidth / tilePixelW) + 2;
+                int tilesHigh = (int)Math.Ceiling((double)pixelPaddedHeight / tilePixelH) + 2;
+
+                // Calculate ground area in DIU to avoid overlap
                 double groundHeight = 0.0;
                 if (groundBitmap != null && groundImages != null && groundImages.Length > 0)
                 {
@@ -5381,21 +5561,31 @@ namespace FamidashEditor
                 }
                 double groundStartY = mapHeight * TileSize * scale + pad;
                 double groundEndY = groundStartY + groundHeight;
-                
-                // Draw the parallax tiles (limited area for performance)
-                for (int ty = 0; ty < tilesHigh; ty++)
+
+                // Use an ImageBrush with TileMode.Tile to avoid manual tiling seams
+                double tileDiuW = (sourceImage.PixelWidth / dpi.DpiScaleX) * scale;
+                double tileDiuH = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
+
+                var brush = new ImageBrush(sourceImage)
                 {
-                    for (int tx = 0; tx < tilesWide; tx++)
-                    {
-                        double x = startX + (tx * tileWidthDiu);
-                        double y = startY + (ty * tileHeightDiu);
-                        
-                        // Skip tiles that are completely within the ground area
-                        if (groundHeight > 0 && y >= groundStartY && y + tileHeightDiu <= groundEndY)
-                            continue;
-                        
-                        dc.DrawImage(sourceImage, new Rect(x, y, tileWidthDiu, tileHeightDiu));
-                    }
+                    TileMode = TileMode.Tile,
+                    Viewport = new Rect(0, 0, tileDiuW, tileDiuH),
+                    ViewportUnits = BrushMappingMode.Absolute,
+                    Stretch = Stretch.Fill
+                };
+
+                // Use nearest-neighbor scaling to avoid blending edges when scaling
+                RenderOptions.SetBitmapScalingMode(dv, BitmapScalingMode.NearestNeighbor);
+
+                // Draw parallax area above ground only (so ground drawn later covers it)
+                if (groundHeight > 0)
+                {
+                    double topH = Math.Max(0.0, groundStartY);
+                    dc.DrawRectangle(brush, null, new Rect(0, 0, renderW, topH));
+                }
+                else
+                {
+                    dc.DrawRectangle(brush, null, new Rect(0, 0, renderW, renderH));
                 }
             }
             
@@ -6820,6 +7010,9 @@ namespace FamidashEditor
                 }
                 
                 if (sprite == null) return;
+                // If preview-mode hiding of color triggers is enabled and this sprite is such a trigger,
+                // skip rendering so it behaves as if disappeared.
+                if (previewMode && hideColorTriggers && IsColorTriggerSprite(spriteIdx)) return;
                 
                 // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3029)
                 // Extend the range to 3029 so that the speed-3x/4x preview sprites (3027/3028)
@@ -7371,6 +7564,25 @@ namespace FamidashEditor
                     try { portalsWb.Unlock(); } catch { }
                 }
             }
+        }
+
+        // Return true if a sprite id is considered a color-trigger decoration to be hidden when the
+        // "Hide Color Triggers" preview option is active.
+        private bool IsColorTriggerSprite(int spriteIdx)
+        {
+            // Ranges: 0x80-0x8C, 0x8F, 0x90-0x9C, 0x9F, 0xA0-0xAC, 0xAE-0xAF, 0xB0-0xBF, 0xC0-0xCC, 0xCF, 0xD0-0xDC, 0xE0-0xEC
+            if (spriteIdx >= 0x80 && spriteIdx <= 0x8C) return true;
+            if (spriteIdx == 0x8F) return true;
+            if (spriteIdx >= 0x90 && spriteIdx <= 0x9C) return true;
+            if (spriteIdx == 0x9F) return true;
+            if (spriteIdx >= 0xA0 && spriteIdx <= 0xAC) return true;
+            if (spriteIdx >= 0xAE && spriteIdx <= 0xAF) return true;
+            if (spriteIdx >= 0xB0 && spriteIdx <= 0xBF) return true;
+            if (spriteIdx >= 0xC0 && spriteIdx <= 0xCC) return true;
+            if (spriteIdx == 0xCF) return true;
+            if (spriteIdx >= 0xD0 && spriteIdx <= 0xDC) return true;
+            if (spriteIdx >= 0xE0 && spriteIdx <= 0xEC) return true;
+            return false;
         }
 
         private void CanvasHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -8321,33 +8533,62 @@ namespace FamidashEditor
             // If neither layer is active, treat both as active for erase operations
             bool effectiveTilesActive = tilesLayerActive || (!tilesLayerActive && !spritesLayerActive);
             bool effectiveSpritesActive = spritesLayerActive || (!tilesLayerActive && !spritesLayerActive);
-
-            // Tile layer
-            var tileAction = new TileChangeAction();
-            if (effectiveTilesActive)
+            // If the user has a sparse selection (selectionSet), erase only those indices.
+            if (selectionSet != null && selectionSet.Count > 0)
             {
-                for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                var tileAction = new TileChangeAction();
+                var spriteAction = new SpriteChangeAction();
+
+                foreach (var idx in selectionSet)
                 {
-                    int idx = (selY + yy) * mapWidth + (selX + xx);
-                    int old = tiles[idx]; if (old != -1) tileAction.Add(idx, old, -1);
-                    tiles[idx] = -1;
+                    if (idx < 0 || idx >= tiles.Length) continue;
+                    if (effectiveTilesActive)
+                    {
+                        int old = tiles[idx]; if (old != -1) tileAction.Add(idx, old, -1);
+                        tiles[idx] = -1;
+                    }
+                    if (effectiveSpritesActive)
+                    {
+                        int olds = sprites[idx]; if (olds != -1) spriteAction.Add(idx, olds, -1);
+                        sprites[idx] = -1;
+                    }
                 }
+
                 if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
-                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-            }
-
-            // Sprite layer
-            var spriteAction = new SpriteChangeAction();
-            if (effectiveSpritesActive)
-            {
-                for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
-                {
-                    int idx = (selY + yy) * mapWidth + (selX + xx);
-                    int old = sprites[idx]; if (old != -1) spriteAction.Add(idx, old, -1);
-                    sprites[idx] = -1;
-                }
                 if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+
+                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                 try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            }
+            else
+            {
+                // Tile layer (rectangular selection)
+                var tileAction = new TileChangeAction();
+                if (effectiveTilesActive)
+                {
+                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                    {
+                        int idx = (selY + yy) * mapWidth + (selX + xx);
+                        int old = tiles[idx]; if (old != -1) tileAction.Add(idx, old, -1);
+                        tiles[idx] = -1;
+                    }
+                    if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                }
+
+                // Sprite layer (rectangular selection)
+                var spriteAction = new SpriteChangeAction();
+                if (effectiveSpritesActive)
+                {
+                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                    {
+                        int idx = (selY + yy) * mapWidth + (selX + xx);
+                        int old = sprites[idx]; if (old != -1) spriteAction.Add(idx, old, -1);
+                        sprites[idx] = -1;
+                    }
+                    if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                }
             }
 
             ClearSelection();

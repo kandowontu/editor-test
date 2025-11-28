@@ -113,16 +113,21 @@
                     <MenuItem x:Name="MenuToolUndo" Header="_Undo" InputGestureText="Ctrl+Z" />
                     <MenuItem x:Name="MenuToolRedo" Header="_Redo" InputGestureText="Ctrl+Y" />
                 </MenuItem>
-                <MenuItem Header="_Colors">
-                    <MenuItem x:Name="MenuColorEditorBackground" Header="_Editor Background Color..." />
-                    <Separator />
-                    <MenuItem x:Name="MenuColorBackgroundTint" Header="_Background Tint..." />
-                    <MenuItem x:Name="MenuColorGroundTint" Header="_Ground Tint..." />
-                    <MenuItem x:Name="MenuColorTileTint" Header="_Tile Tint..." />
-                    <MenuItem x:Name="MenuColorPlayerTint" Header="_Player Color..." />
-                </MenuItem>
                 <MenuItem Header="_Options">
                     <MenuItem x:Name="MenuOptionLegacyTriggers" Header="Legacy Trigger Load/Save" IsCheckable="True" IsChecked="False" />
+                        <MenuItem x:Name="MenuOptionSwapMouseWheel" Header="Swap Mouse Wheel Scroll" IsCheckable="True" IsChecked="False" />
+                    <MenuItem x:Name="MenuColorEditorBackground" Header="Editor Background Color..." />
+                    <MenuItem x:Name="MenuColorPlayerTint" Header="Player Color..." />
+                    <MenuItem Header="Level Options">
+                        <MenuItem x:Name="MenuColorBackgroundTint" Header="Background Tint..." />
+                        <MenuItem x:Name="MenuColorGroundTint" Header="Ground Tint..." />
+                        <MenuItem x:Name="MenuColorTileTint" Header="Tile Tint..." />
+                        <Separator />
+                        <MenuItem x:Name="MenuOptionNoParallax" Header="No Parallax BG" IsCheckable="True" IsChecked="False" />
+                    </MenuItem>
+                    <MenuItem Header="Preview Mode Options">
+                        <MenuItem x:Name="MenuOptionHideColorTriggers" Header="Hide Color Triggers" IsCheckable="True" IsChecked="False" />
+                    </MenuItem>
                 </MenuItem>
             </Menu>
             
