@@ -9237,6 +9237,15 @@ namespace FamidashEditor
                 ratio = e.DeltaManipulation.Scale.X;
             }
             lastManipulationCumulativeScale = cumulative;
+            // Respect user preference to invert pinch behavior
+            try
+            {
+                if (invertPinchGesture)
+                {
+                    if (Math.Abs(ratio) > 1e-12) ratio = 1.0 / ratio;
+                }
+            }
+            catch { }
             
             bool handledAny = false;
             // Handle translation (two-finger swipe) as scrolling. Map horizontal translation according
