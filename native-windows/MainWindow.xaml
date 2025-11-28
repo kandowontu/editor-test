@@ -116,6 +116,7 @@
                 <MenuItem Header="_Options">
                     <MenuItem x:Name="MenuOptionLegacyTriggers" Header="Legacy Trigger Load/Save" IsCheckable="True" IsChecked="False" />
                         <MenuItem x:Name="MenuOptionSwapMouseWheel" Header="Swap Mouse Wheel Scroll" IsCheckable="True" IsChecked="False" />
+                        <MenuItem x:Name="MenuOptionInvertPinch" Header="Invert Pinch Gesture" IsCheckable="True" IsChecked="True" />
                     <MenuItem x:Name="MenuColorEditorBackground" Header="Editor Background Color..." />
                     <MenuItem x:Name="MenuColorPlayerTint" Header="Player Color..." />
                     <MenuItem Header="Level Options">
@@ -192,8 +193,9 @@
             <TextBlock Text="Grid darkness:" VerticalAlignment="Center" Margin="4,0"/>
             <Slider x:Name="GridDarknessSlider" Minimum="0" Maximum="1" Value="0.18" Width="200" Focusable="False" />
             <TextBlock Text="Zoom:" VerticalAlignment="Center" Margin="12,0,4,0"/>
-            <Slider x:Name="ZoomSlider" Minimum="1" Maximum="4" Value="1" Width="200" TickFrequency="1" IsSnapToTickEnabled="True" Focusable="False" />
-            <TextBlock x:Name="ZoomLevelLabel" Text="1x" VerticalAlignment="Center" Margin="4,0" Width="24" />
+            <Slider x:Name="ZoomSlider" Minimum="1" Maximum="4" Value="1" Width="200" Focusable="False" />
+            <TextBlock x:Name="ZoomLevelLabel" Text="1.00x" VerticalAlignment="Center" Margin="6,0,0,0" Width="56" />
+
         </StackPanel>
 
         <ScrollViewer x:Name="MapScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" 
@@ -209,7 +211,8 @@
                 <Image x:Name="GridImage" />
                 <Canvas x:Name="CanvasHost" Background="Transparent">
                     <!-- Hover rectangle: shown while mouse is over a tile -->
-                    <Rectangle x:Name="HoverRect" Fill="#28FFFF00" Stroke="Yellow" StrokeThickness="2" Visibility="Collapsed" IsHitTestVisible="False" />
+                    <Rectangle x:Name="HoverRect" Fill="#28FFFF00" Stroke="Yellow" StrokeThickness="1" Visibility="Collapsed" IsHitTestVisible="False" SnapsToDevicePixels="True" />
+                    <Border x:Name="HoverBorder" Background="#28FFFF00" BorderBrush="Yellow" BorderThickness="1" Visibility="Collapsed" IsHitTestVisible="False" SnapsToDevicePixels="True" />
                         <!-- Selection overlay canvas: contains individual rectangle overlays for each selected tile -->
                         <Canvas x:Name="SelectionOverlay" IsHitTestVisible="False" />
                         <!-- Ghost image shown while dragging a selection -->

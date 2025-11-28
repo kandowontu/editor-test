@@ -12,6 +12,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Shapes = System.Windows.Shapes;
+using System.Windows.Interop;
 
 namespace FamidashEditor
 {
@@ -36,6 +37,10 @@ namespace FamidashEditor
     // Per-level option: replace parallax background with noparallax.bmp when true
     private bool noParallaxBg = false;
     private bool swapMouseWheelScroll = false; // when true, swap shift/no-modifier wheel scroll behavior
+    private bool invertPinchGesture = true; // if true, invert pinch scale (device-dependent)
+    private bool pinchDirectionDetected = false;
+    private double lastManipulationCumulativeScale = 1.0;
+    private bool manipulationActive = false;
     // default grid darkness: much lighter so grid lines are subtle over dark backgrounds
     private double gridDarkness = 0.18;
     private Brush mapBackground = new SolidColorBrush(Color.FromRgb(59,59,59));
@@ -385,6 +390,17 @@ namespace FamidashEditor
     // Throttle timers for expensive events
     private System.Windows.Threading.DispatcherTimer? sizeChangedThrottleTimer;
     private System.Windows.Threading.DispatcherTimer? zoomThrottleTimer;
+    private System.Windows.Threading.DispatcherTimer? zoomCommitTimer;
+    private bool deferZoomRebuild = false;
+    // Anchor used to preserve the world point under the cursor during zoom commit
+    private bool hasZoomAnchor = false;
+    private double zoomAnchorMapX = 0.0;
+    private double zoomAnchorMapY = 0.0;
+    private double zoomAnchorViewportX = 0.0;
+    private double zoomAnchorViewportY = 0.0;
+    // The Y offset applied to the grid image at commit time; applied to overlays as well
+    private double gridRenderShiftY = 0.0;
+    private int gridRenderShiftYPx = 0;
     // Preview mode for animations (saws, etc.)
     private bool previewMode = false;
     private int animationFrame = 0; // Increments each frame, used to determine animation states
@@ -811,41 +827,31 @@ namespace FamidashEditor
             // Wire up window closing event to prompt for unsaved changes
             Closing += Window_Closing;
 
-            // Throttle zoom changes with longer delay to batch rapid changes
+            // Zoom slider handling: preview via quick transform, commit full render on release or after 1s idle
             if (ZoomSlider != null)
             {
                 bool isZoomSliderPressed = false;
-                
+
                 zoomThrottleTimer = new System.Windows.Threading.DispatcherTimer
                 {
-                    Interval = TimeSpan.FromMilliseconds(150) // Increased from 50ms
+                    Interval = TimeSpan.FromMilliseconds(150)
                 };
                 zoomThrottleTimer.Tick += (s, e) =>
                 {
                     zoomThrottleTimer?.Stop();
-                    // Only redraw if slider is not being dragged
-                    if (!isZoomSliderPressed)
+                    if (!isZoomSliderPressed && !deferZoomRebuild)
                     {
                         Redraw();
-                        // Reset hover tracking so it updates at new scale
-                        lastHoverX = -1;
-                        lastHoverY = -1;
+                        lastHoverX = -1; lastHoverY = -1;
                     }
                 };
-                
-                // Track mouse down/up on slider thumb
-                ZoomSlider.PreviewMouseLeftButtonDown += (s, e) =>
+
+                // Commit timer: wait for 1s of inactivity (wheel) or used to delay commit
+                zoomCommitTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                zoomCommitTimer.Tick += (s, e) =>
                 {
-                    isZoomSliderPressed = true;
-                };
-                
-                ZoomSlider.PreviewMouseLeftButtonUp += (s, e) =>
-                {
-                    isZoomSliderPressed = false;
-                    // Trigger immediate redraw on mouse release with loading dialog
-                    zoomThrottleTimer?.Stop();
-                    
-                    // Show rendering dialog
+                    zoomCommitTimer?.Stop();
+                    deferZoomRebuild = false;
                     LoadingWindow? zoomLoadingWindow = null;
                     try
                     {
@@ -853,37 +859,83 @@ namespace FamidashEditor
                         zoomLoadingWindow.SetMessage("Rendering zoom...");
                         zoomLoadingWindow.Show();
                         Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
-                        
-                        Redraw();
-                        lastHoverX = -1;
-                        lastHoverY = -1;
+                        CommitZoom();
                     }
-                    finally
-                    {
-                        if (zoomLoadingWindow != null)
-                        {
-                            zoomLoadingWindow.Close();
-                        }
-                    }
+                    finally { if (zoomLoadingWindow != null) zoomLoadingWindow.Close(); }
                 };
-                
+
+                // Track mouse down/up on slider thumb
+                ZoomSlider.PreviewMouseLeftButtonDown += (s, e) =>
+                {
+                    isZoomSliderPressed = true;
+                    // record current mouse viewport point as anchor
+                    try
+                    {
+                        if (MapScrollViewer != null)
+                        {
+                            var mp = Mouse.GetPosition(MapScrollViewer);
+                            zoomAnchorViewportX = mp.X; zoomAnchorViewportY = mp.Y;
+                            double hp = MapScrollViewer.HorizontalOffset; double vp = MapScrollViewer.VerticalOffset;
+                            double contentX = hp + mp.X; double contentY = vp + mp.Y;
+                            double oldScale = (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                            double pad = mapViewportPadding;
+                            zoomAnchorMapX = (contentX - pad) / (TileSize * oldScale);
+                            zoomAnchorMapY = (contentY - pad) / (TileSize * oldScale);
+                            hasZoomAnchor = true;
+                        }
+                    } catch { hasZoomAnchor = false; }
+                };
+                ZoomSlider.PreviewMouseLeftButtonUp += (s, e) =>
+                {
+                    isZoomSliderPressed = false;
+                    // Stop any pending commit timer and do an immediate full render with dialog
+                    zoomCommitTimer?.Stop();
+                    LoadingWindow? zoomLoadingWindow = null;
+                    try
+                    {
+                        zoomLoadingWindow = new LoadingWindow { Owner = this };
+                        zoomLoadingWindow.SetMessage("Rendering zoom...");
+                        zoomLoadingWindow.Show();
+                        Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+                        deferZoomRebuild = false;
+                        // CommitZoom will respect the stored zoom anchor if present
+                        CommitZoom();
+                    }
+                    finally { if (zoomLoadingWindow != null) zoomLoadingWindow.Close(); }
+                };
+
                 ZoomSlider.ValueChanged += (s, e) =>
                 {
-                    // Stop any pending throttled redraw
-                    zoomThrottleTimer?.Stop();
-                    
-                    // Update zoom level label immediately
-                    if (ZoomLevelLabel != null)
-                        ZoomLevelLabel.Text = $"{(int)e.NewValue}x";
-                    
-                    // Immediate visual feedback: scale the images temporarily while waiting for redraw
+                    // Update visible numeric zoom label
+                    try { if (ZoomLevelLabel != null) ZoomLevelLabel.Text = $"{(ZoomSlider!=null?ZoomSlider.Value:1.0):0.00}x"; } catch { }
+                    // Provide immediate visual feedback by scaling existing images
                     UpdateQuickZoomTransform();
-                    
-                    // Only start throttle timer if not currently dragging
-                    // (on release, we'll do immediate redraw instead)
+
+                    // During interaction, defer full rebuild
+                    deferZoomRebuild = true;
+
+                    // If the slider is not actively being dragged, start the 1s commit timer
                     if (!isZoomSliderPressed)
                     {
-                        zoomThrottleTimer?.Start();
+                        // capture current mouse position as an anchor for non-drag wheel/keyboard changes
+                        try
+                        {
+                            if (MapScrollViewer != null)
+                            {
+                                var mp = Mouse.GetPosition(MapScrollViewer);
+                                zoomAnchorViewportX = mp.X; zoomAnchorViewportY = mp.Y;
+                                double hp = MapScrollViewer.HorizontalOffset; double vp = MapScrollViewer.VerticalOffset;
+                                double contentX = hp + mp.X; double contentY = vp + mp.Y;
+                                double oldScale = (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                                double pad = mapViewportPadding;
+                                zoomAnchorMapX = (contentX - pad) / (TileSize * oldScale);
+                                zoomAnchorMapY = (contentY - pad) / (TileSize * oldScale);
+                                hasZoomAnchor = true;
+                            }
+                        } catch { hasZoomAnchor = false; }
+
+                        zoomCommitTimer?.Stop();
+                        zoomCommitTimer?.Start();
                     }
                 };
             }
@@ -900,6 +952,14 @@ namespace FamidashEditor
                 CanvasHost.MouseLeave += CanvasHost_MouseLeave;
                 CanvasHost.MouseRightButtonDown += CanvasHost_MouseRightButtonDown;
                 CanvasHost.PreviewMouseWheel += CanvasHost_PreviewMouseWheel;
+            }
+            // Also handle wheel at ScrollViewer level so Ctrl+wheel zoom never falls through to scrolling
+            if (MapScrollViewer != null)
+            {
+                MapScrollViewer.PreviewMouseWheel += (s, e) =>
+                {
+                    try { CanvasHost_PreviewMouseWheel(MapScrollViewer, e); } catch { }
+                };
             }
 
             // Add MouseUp handler to TilesPanel to catch mouse releases that escape individual tile images
@@ -946,6 +1006,17 @@ namespace FamidashEditor
                             AdjustPaletteSizes();
                             Redraw();
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
+                    // Install a native window hook to capture horizontal mouse wheel (WM_MOUSEHWHEEL)
+                    try
+                    {
+                        var helper = new WindowInteropHelper(this);
+                        var src = HwndSource.FromHwnd(helper.Handle);
+                        if (src != null)
+                        {
+                            src.AddHook(NativeWindowProc);
+                        }
+                    }
+                    catch { }
                 };
             // Redraw when the viewport or scrollviewer size changes so the visible image updates.
             if (MapScrollViewer != null)
@@ -1074,6 +1145,12 @@ namespace FamidashEditor
                     swapMouseWheelScroll = false;
                     SaveSettingsWithTriggerOption();
                 };
+            }
+            // Invert pinch gesture option (some devices report inverted scale)
+            if (MenuOptionInvertPinch != null)
+            {
+                MenuOptionInvertPinch.Checked += (s, e) => { invertPinchGesture = true; SaveSettingsWithTriggerOption(); };
+                MenuOptionInvertPinch.Unchecked += (s, e) => { invertPinchGesture = false; SaveSettingsWithTriggerOption(); };
             }
             // Hide color triggers preview option
             if (MenuOptionHideColorTriggers != null)
@@ -1216,7 +1293,12 @@ namespace FamidashEditor
             this.PreviewKeyUp += MainWindow_PreviewKeyUp;
             
             // pinch zoom support
-            if (MapScrollViewer != null) MapScrollViewer.ManipulationDelta += MapScrollViewer_ManipulationDelta;
+            if (MapScrollViewer != null)
+            {
+                MapScrollViewer.ManipulationStarting += MapScrollViewer_ManipulationStarting;
+                MapScrollViewer.ManipulationCompleted += MapScrollViewer_ManipulationCompleted;
+                MapScrollViewer.ManipulationDelta += MapScrollViewer_ManipulationDelta;
+            }
         }
 
         // Ctrl + Mouse Wheel inside the canvas -> zoom in/out while keeping the point under cursor stable
@@ -1232,16 +1314,17 @@ namespace FamidashEditor
             {
                 if (ZoomSlider == null) return;
                 e.Handled = true;
+                // Ensure canvas keeps focus so subsequent wheel events remain routed here
+                try { if (CanvasHost != null) { CanvasHost.Focus(); Keyboard.Focus(CanvasHost); } } catch { }
 
                 double oldScale = ZoomSlider.Value;
                 // use a multiplicative zoom per mouse wheel notch (120 delta = one notch)
+                // Invert sign so wheel-up zooms in and wheel-down zooms out
                 double factorPerNotch = 1.1; // 10% per notch
-                double factor = Math.Pow(factorPerNotch, e.Delta / 120.0);
+                double factor = Math.Pow(factorPerNotch, -e.Delta / 120.0);
                 double newScale = oldScale * factor;
                 // clamp to slider limits
                 newScale = Math.Max(ZoomSlider.Minimum, Math.Min(ZoomSlider.Maximum, newScale));
-                // Snap to nearest integer
-                newScale = Math.Round(newScale);
                 if (Math.Abs(newScale - oldScale) < 1e-6) return;
 
                 // Determine mouse position in viewport coordinates
@@ -1256,6 +1339,9 @@ namespace FamidashEditor
                 // map world coordinate (tile-space) under cursor
                 double mapX = (contentX - mapViewportPadding) / (TileSize * oldScale);
                 double mapY = (contentY - mapViewportPadding) / (TileSize * oldScale);
+
+                // Record zoom anchor so CommitZoom can preserve the point under the cursor
+                try { zoomAnchorViewportX = mouseVp.X; zoomAnchorViewportY = mouseVp.Y; zoomAnchorMapX = mapX; zoomAnchorMapY = mapY; hasZoomAnchor = true; } catch { hasZoomAnchor = false; }
 
                 // apply new zoom value
                 ZoomSlider.Value = newScale;
@@ -1281,9 +1367,9 @@ namespace FamidashEditor
                 // Ensure we don't allow scrolling past the bottom of the ground after zoom
                 ClampScrollOffsets();
 
-                // rebuild caches if needed and redraw
-                try { EnsureLayerBitmaps(newScale, mapViewportPadding, mapWidth * TileSize * newScale, mapHeight * TileSize * newScale, (mapWidth * TileSize * newScale) + mapViewportPadding * 2, (mapHeight * TileSize * newScale) + mapViewportPadding * 2, cachedPixelWidth, cachedPixelHeight); } catch { }
-                Redraw();
+                // Defer heavy rebuild until wheel has been idle for 1s
+                try { deferZoomRebuild = true; UpdateQuickZoomTransform(); } catch { }
+                try { zoomCommitTimer?.Stop(); zoomCommitTimer?.Start(); } catch { }
                 return;
             }
             
@@ -3774,6 +3860,12 @@ namespace FamidashEditor
                         try { swapMouseWheelScroll = smw.GetBoolean(); } catch { swapMouseWheelScroll = false; }
                         if (MenuOptionSwapMouseWheel != null) MenuOptionSwapMouseWheel.IsChecked = swapMouseWheelScroll;
                     }
+                    // optional invert pinch gesture setting
+                    if (doc.RootElement.TryGetProperty("invertPinchGesture", out var ipg))
+                    {
+                        try { invertPinchGesture = ipg.GetBoolean(); } catch { invertPinchGesture = true; }
+                        if (MenuOptionInvertPinch != null) MenuOptionInvertPinch.IsChecked = invertPinchGesture;
+                    }
                 }
             }
             catch { }
@@ -3794,6 +3886,7 @@ namespace FamidashEditor
                     groundTint = new int[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B },
                     useLegacyTriggerOffset = useLegacyTriggerOffset,
                     swapMouseWheelScroll = swapMouseWheelScroll,
+                    invertPinchGesture = invertPinchGesture,
                     hideColorTriggers = hideColorTriggers,
                     playerColor = new int[] { playerTint.A, playerTint.R, playerTint.G, playerTint.B },
                     playerColorEnabled = playerTintEnabled,
@@ -5826,8 +5919,137 @@ namespace FamidashEditor
                 if (GroundImage != null) GroundImage.LayoutTransform = scaleTransform;
                 if (TilesImage != null) TilesImage.LayoutTransform = scaleTransform;
                 if (GridImage != null) GridImage.LayoutTransform = scaleTransform;
-                if (CanvasHost != null) CanvasHost.LayoutTransform = scaleTransform;
             }
+        }
+
+        private void CommitZoom()
+        {
+            // Clear any temporary transforms applied during preview
+            try
+            {
+                if (BackgroundImage != null) BackgroundImage.LayoutTransform = Transform.Identity;
+                if (ParallaxImage != null)
+                {
+                    if (parallaxTransform != null) ParallaxImage.RenderTransform = parallaxTransform; else ParallaxImage.RenderTransform = Transform.Identity;
+                    ParallaxImage.LayoutTransform = Transform.Identity;
+                }
+                if (GroundImage != null) GroundImage.LayoutTransform = Transform.Identity;
+                if (TilesImage != null) TilesImage.LayoutTransform = Transform.Identity;
+                if (GridImage != null) GridImage.LayoutTransform = Transform.Identity;
+                if (CanvasHost != null) CanvasHost.LayoutTransform = Transform.Identity;
+            }
+            catch { }
+            // Stop any pending commit timer and clear defer flag
+            try { zoomCommitTimer?.Stop(); } catch { }
+            deferZoomRebuild = false;
+
+            // Trigger a full redraw which will ensure layer bitmaps are recreated at the current scale
+            try { Redraw(); } catch { }
+
+            // Allow layout/measure/render to complete so ActualWidth/Height and Viewport sizes are up-to-date
+            try { Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Render); } catch { }
+
+            // If we have a zoom anchor, compute new scroll offsets so the same world point remains under the same viewport point
+            if (hasZoomAnchor && MapScrollViewer != null)
+            {
+                try
+                {
+                    double newScale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    double pad = mapViewportPadding;
+                    double newContentX = pad + zoomAnchorMapX * TileSize * newScale;
+                    double newContentY = pad + zoomAnchorMapY * TileSize * newScale;
+                    double newH = newContentX - zoomAnchorViewportX;
+                    double newV = newContentY - zoomAnchorViewportY;
+                    double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
+                    double maxV = Math.Max(0, (CanvasHost.ActualHeight) - MapScrollViewer.ViewportHeight);
+                    newH = Math.Max(0, Math.Min(maxH, newH));
+                    newV = Math.Max(0, Math.Min(maxV, newV));
+                    MapScrollViewer.ScrollToHorizontalOffset(newH);
+                    MapScrollViewer.ScrollToVerticalOffset(newV);
+                }
+                catch { }
+            }
+
+            // Clamp offsets and update parallax transform after redraw
+            try { ClampScrollOffsets(); } catch { }
+            // Snap offsets to device pixels so rendered layers and overlays align exactly
+            try { SnapScrollOffsetsToDevicePixels(); } catch { }
+            try { UpdateParallaxTransform(); } catch { }
+
+            // clear anchor after commit
+            hasZoomAnchor = false;
+            // Device-pixel align the grid image so its bottom line matches the ground top
+            try
+            {
+                if (GridImage != null)
+                {
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    double pad = mapViewportPadding;
+                    // Compute tile pixel heights as BuildGridBitmap does
+                    int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                    int padPx = (int)Math.Round(pad * dpi.DpiScaleY);
+                    // Grid bottom in DIU according to grid's pixel placement
+                    double gridBottomDiu = (padPx + mapHeight * tilePixelH) / dpi.DpiScaleY;
+                    // Ground top in DIU (ideal continuous)
+                    double groundTopDiu = pad + mapHeight * TileSize * scale;
+                    // Delta to move grid so its bottom matches ground top
+                    double delta = groundTopDiu - gridBottomDiu;
+                    // Round the delta to device pixels and apply that integer-pixel shift to the grid.
+                    var dpiForGrid = dpi; // already obtained above
+                    int shiftPx = (int)Math.Round(delta * dpiForGrid.DpiScaleY);
+                    if (Math.Abs(shiftPx) > 0)
+                    {
+                        double appliedDelta = shiftPx / dpiForGrid.DpiScaleY;
+                        var tt = new TranslateTransform(0, appliedDelta);
+                        GridImage.RenderTransform = tt;
+                        // Also apply same integer-pixel Y shift to image layers so tiles/sprites align with grid
+                        try { if (TilesImage != null) TilesImage.RenderTransform = tt; } catch { }
+                        try { if (SpritesImage != null) SpritesImage.RenderTransform = tt; } catch { }
+                        try { if (PortalsImage != null) PortalsImage.RenderTransform = tt; } catch { }
+                        gridRenderShiftY = appliedDelta;
+                        gridRenderShiftYPx = shiftPx;
+                    }
+                    else
+                    {
+                        GridImage.RenderTransform = Transform.Identity;
+                        try { if (TilesImage != null) TilesImage.RenderTransform = Transform.Identity; } catch { }
+                        try { if (SpritesImage != null) SpritesImage.RenderTransform = Transform.Identity; } catch { }
+                        try { if (PortalsImage != null) PortalsImage.RenderTransform = Transform.Identity; } catch { }
+                        gridRenderShiftY = 0.0;
+                        gridRenderShiftYPx = 0;
+                    }
+                }
+            }
+            catch { }
+
+            lastHoverX = -1; lastHoverY = -1;
+            try { this.Activate(); } catch { }
+        }
+
+        // Snap ScrollViewer offsets to integer device pixels to ensure layers align
+        private void SnapScrollOffsetsToDevicePixels()
+        {
+            try
+            {
+                if (MapScrollViewer == null || CanvasHost == null) return;
+                var dpi = VisualTreeHelper.GetDpi(this);
+                double h = MapScrollViewer.HorizontalOffset;
+                double v = MapScrollViewer.VerticalOffset;
+                // Convert to device pixels, round, convert back to DIU
+                double hPix = Math.Round(h * dpi.DpiScaleX);
+                double vPix = Math.Round(v * dpi.DpiScaleY);
+                double newH = hPix / dpi.DpiScaleX;
+                double newV = vPix / dpi.DpiScaleY;
+                // Clamp to valid ranges
+                double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
+                double maxV = Math.Max(0, (CanvasHost.ActualHeight) - MapScrollViewer.ViewportHeight);
+                newH = Math.Max(0, Math.Min(maxH, newH));
+                newV = Math.Max(0, Math.Min(maxV, newV));
+                MapScrollViewer.ScrollToHorizontalOffset(newH);
+                MapScrollViewer.ScrollToVerticalOffset(newV);
+            }
+            catch { }
         }
 
         // Prevent the ScrollViewer from scrolling below the last visible ground row.
@@ -7617,12 +7839,8 @@ namespace FamidashEditor
             // Move tool: begin dragging if we have an existing selection, otherwise pick tile/sprite under cursor
             if (MoveTool != null && MoveTool.IsChecked == true)
             {
-                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-                double pad = mapViewportPadding;
-                double relX = pos.X - pad;
-                double relY = pos.Y - pad;
-                int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
-                int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+                var t = ViewportPointToTile(pos);
+                int x = t.x; int y = t.y;
                 if (selectionSet != null && selectionSet.Count > 0)
                 {
                     // start drag-move of selection
@@ -7654,12 +7872,8 @@ namespace FamidashEditor
             // Erase tool: if there's a selection and user clicks inside it, erase selection
             if (EraseTool != null && EraseTool.IsChecked == true && selTiles != null && selW > 0 && selH > 0)
             {
-                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-                double pad = mapViewportPadding;
-                double relX = pos.X - pad;
-                double relY = pos.Y - pad;
-                int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
-                int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+                var t = ViewportPointToTile(pos);
+                int x = t.x; int y = t.y;
                 if (x >= selX && x < selX + selW && y >= selY && y < selY + selH)
                 {
                     // Erase on the active layers (tiles/sprites). Use unified handler so both layers
@@ -7696,12 +7910,8 @@ namespace FamidashEditor
             if (selectionSet.Count > 0)
             {
                 var pos = e.GetPosition(CanvasHost);
-                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-                double pad = mapViewportPadding;
-                double relX = pos.X - pad;
-                double relY = pos.Y - pad;
-                int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
-                int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+                var tt = ViewportPointToTile(pos);
+                int x = tt.x; int y = tt.y;
                 int idx = y * mapWidth + x;
                 
                 // If Select or MagicWand tool active and clicked outside selection, clear it
@@ -7839,12 +8049,8 @@ namespace FamidashEditor
 
         private void StartPaintingAt(Point pos)
         {
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
-            double relX = pos.X - pad;
-            double relY = pos.Y - pad;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+            var tt = ViewportPointToTile(pos);
+            int x = tt.x; int y = tt.y;
 
             // For Fill tool, perform flood-fill on click and do not start drag-painting
             if (FillTool != null && FillTool.IsChecked == true)
@@ -7954,12 +8160,8 @@ namespace FamidashEditor
         private void StartSelectionAt(Point pos)
         {
             if (CanvasHost == null) return;
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
-            double relX = pos.X - pad;
-            double relY = pos.Y - pad;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+            var tt = ViewportPointToTile(pos);
+            int x = tt.x; int y = tt.y;
             isSelecting = true;
             selectStartX = x; selectStartY = y;
             // Show initial preview selection rectangle
@@ -8221,8 +8423,8 @@ namespace FamidashEditor
             // If this was just a click (not a drag) outside the current selection, deselect
             if (!hasMouseMoved && selectionSet.Count > 0)
             {
-                int clickX = Math.Max(0, Math.Min(mapWidth - 1, (int)((pos.X - pad) / (TileSize * scale))));
-                int clickY = Math.Max(0, Math.Min(mapHeight - 1, (int)((pos.Y - pad) / (TileSize * scale))));
+                var ct = ViewportPointToTile(pos);
+                int clickX = ct.x; int clickY = ct.y;
                 int clickedIdx = clickY * mapWidth + clickX;
                 if (!selectionSet.Contains(clickedIdx))
                 {
@@ -8234,11 +8436,18 @@ namespace FamidashEditor
                 }
             }
             
-            // compute final destination tile coords from ghost position
+            // compute final destination tile coords from ghost position using integer-pixel math
             double left = Canvas.GetLeft(GhostImage);
             double top = Canvas.GetTop(GhostImage);
-            int destX = (int)Math.Round((left - pad) / (TileSize * scale));
-            int destY = (int)Math.Round((top - pad) / (TileSize * scale));
+            var dpiGhost = VisualTreeHelper.GetDpi(this);
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpiGhost.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpiGhost.DpiScaleY));
+            int padPxX = (int)Math.Round(pad * dpiGhost.DpiScaleX);
+            int padPxY = (int)Math.Round(pad * dpiGhost.DpiScaleY);
+            int leftPx = (int)Math.Round((left) * dpiGhost.DpiScaleX);
+            int topPx = (int)Math.Round((top) * dpiGhost.DpiScaleY);
+            int destX = (leftPx - padPxX + tilePixelW/2) / tilePixelW;
+            int destY = (topPx - padPxY + tilePixelH/2) / tilePixelH;
             // clamp
             if (destX < 0) destX = 0; if (destY < 0) destY = 0;
             if (destX + selW > mapWidth) destX = mapWidth - selW;
@@ -8255,12 +8464,8 @@ namespace FamidashEditor
         private void UpdateSelectionTo(Point pos)
         {
             if (!isSelecting) return;
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
-            double relX = pos.X - pad;
-            double relY = pos.Y - pad;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+            var tt = ViewportPointToTile(pos);
+            int x = tt.x; int y = tt.y;
             int minX = Math.Min(selectStartX, x), minY = Math.Min(selectStartY, y);
             int maxX = Math.Max(selectStartX, x), maxY = Math.Max(selectStartY, y);
             // During drag-selection, show a temporary preview bounding box
@@ -8273,22 +8478,30 @@ namespace FamidashEditor
             SelectionOverlay.Children.Clear();
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             double pad = mapViewportPadding;
-            double tileSize = TileSize * scale;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            // Use the same integer-pixel math as BuildGridBitmap so overlays align exactly
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
 
             if (previewMode)
             {
                 // During drag-selection, show a simple bounding rectangle preview
-                var rect = new Shapes.Rectangle
+                    var rect = new Shapes.Rectangle
                 {
                     Fill = SelectionFillBrush,
-                    Stroke = SelectionStrokeBrush,
-                    StrokeThickness = 2,
-                    Width = w * tileSize,
-                    Height = h * tileSize,
+                        Stroke = SelectionStrokeBrush,
+                        StrokeThickness = 1,
+                    Width = (double)(w * tilePixelW) / dpi.DpiScaleX,
+                    Height = (double)(h * tilePixelH) / dpi.DpiScaleY,
                     IsHitTestVisible = false
                 };
-                Canvas.SetLeft(rect, x * tileSize + pad);
-                Canvas.SetTop(rect, y * tileSize + pad);
+                double left = (padPxX + x * tilePixelW) / dpi.DpiScaleX;
+                double top = (padPxY + y * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY;
+                try { rect.StrokeThickness = 1.0 / dpi.DpiScaleX; rect.SnapsToDevicePixels = true; } catch { }
+                Canvas.SetLeft(rect, left);
+                Canvas.SetTop(rect, top);
                 SelectionOverlay.Children.Add(rect);
             }
             else
@@ -8302,13 +8515,16 @@ namespace FamidashEditor
                     {
                         Fill = SelectionFillBrush,
                         Stroke = SelectionStrokeBrush,
-                        StrokeThickness = 2,
-                        Width = tileSize,
-                        Height = tileSize,
+                        StrokeThickness = 1,
+                        Width = (double)tilePixelW / dpi.DpiScaleX,
+                        Height = (double)tilePixelH / dpi.DpiScaleY,
                         IsHitTestVisible = false
                     };
-                    Canvas.SetLeft(rect, tx * tileSize + pad);
-                    Canvas.SetTop(rect, ty * tileSize + pad);
+                    double left = (padPxX + tx * tilePixelW) / dpi.DpiScaleX;
+                    double top = (padPxY + ty * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY;
+                    try { rect.StrokeThickness = 1.0 / dpi.DpiScaleX; rect.SnapsToDevicePixels = true; } catch { }
+                    Canvas.SetLeft(rect, left);
+                    Canvas.SetTop(rect, top);
                     SelectionOverlay.Children.Add(rect);
                 }
             }
@@ -8597,12 +8813,8 @@ namespace FamidashEditor
 
         private void ContinuePaintingAt(Point pos)
         {
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
-            double relX = pos.X - pad;
-            double relY = pos.Y - pad;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+            var tt = ViewportPointToTile(pos);
+            int x = tt.x; int y = tt.y;
             // avoid repainting the same cell repeatedly
             if (x == lastPaintX && y == lastPaintY) return;
             DoPaintAt(x, y);
@@ -8865,10 +9077,9 @@ namespace FamidashEditor
             int x = -1, y = -1;
             if (inBounds)
             {
-                double relX = p.X - pad;
-                double relY = p.Y - pad;
-                x = Math.Max(0, Math.Min(mapWidth - 1, (int)(relX / (TileSize * scale))));
-                y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
+                // Use the same integer-device-pixel mapping used everywhere else
+                var tt = ViewportPointToTile(p);
+                x = tt.x; y = tt.y;
             }
             
             // Only update if position changed
@@ -8878,20 +9089,47 @@ namespace FamidashEditor
             
             if (StatusText != null) StatusText.Text = inBounds ? $"Coords: {x}, {y}" : string.Empty;
 
-            // Position hover rectangle (offset by padding)
+            // Position hover rectangle (offset by padding) - align to device pixels
             try
             {
                 if (HoverRect != null)
                 {
                     if (inBounds)
                     {
-                        double left = x * TileSize * scale + pad;
-                        double top = y * TileSize * scale + pad;
-                        double size = TileSize * scale;
-                        HoverRect.Width = size; HoverRect.Height = size;
-                        Canvas.SetLeft(HoverRect, left);
-                        Canvas.SetTop(HoverRect, top);
-                        HoverRect.Visibility = Visibility.Visible;
+                        var dpi = VisualTreeHelper.GetDpi(this);
+                        // Use same integer-pixel math as grid: compute tile pixel size and pad in pixels
+                        int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                        int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                        int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
+                        int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
+                        // Compute left/top/size in device pixels and round to integer pixels
+                        int leftPx = padPxX + x * tilePixelW;
+                        int topPx = padPxY + y * tilePixelH + gridRenderShiftYPx;
+                        int sizePx = tilePixelH;
+                        // Convert back to DIU after rounding (ensures pixel-aligned edges)
+                        double left = (double)leftPx / dpi.DpiScaleX;
+                        double top = (double)topPx / dpi.DpiScaleY;
+                        double size = (double)sizePx / dpi.DpiScaleY;
+                        // Hide the Rectangle hover (legacy) and use the Border hover which draws border inside
+                        try { if (HoverRect != null) HoverRect.Visibility = Visibility.Collapsed; } catch { }
+                        if (HoverBorder != null)
+                        {
+                            double strokeDiu = 1.0 / dpi.DpiScaleX;
+                            double outerLeft = left - strokeDiu;
+                            double outerTop = top - strokeDiu;
+                            double outerWidth = size + (2.0 * strokeDiu);
+                            double outerHeight = size + (2.0 * strokeDiu);
+                            try
+                            {
+                                HoverBorder.BorderThickness = new Thickness(strokeDiu);
+                                HoverBorder.Width = outerWidth;
+                                HoverBorder.Height = outerHeight;
+                                Canvas.SetLeft(HoverBorder, outerLeft);
+                                Canvas.SetTop(HoverBorder, outerTop);
+                                HoverBorder.Visibility = Visibility.Visible;
+                            }
+                            catch { }
+                        }
                     }
                     else
                     {
@@ -8900,6 +9138,71 @@ namespace FamidashEditor
                 }
             }
             catch { }
+        }
+
+        // Convert a viewport point (relative to MapScrollViewer) to tile coordinates using
+        // the same integer device-pixel math as the grid/tiles rendering.
+        private (int x, int y) ViewportPointToTile(Point vp)
+        {
+            if (MapScrollViewer == null) return (-1, -1);
+            var dpi = VisualTreeHelper.GetDpi(this);
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+
+            // `vp` is expected to be in CanvasHost/content coordinates (device-independent units).
+            // Use it directly as content DIU coordinates rather than adding ScrollViewer offsets
+            // (callers pass CanvasHost positions via e.GetPosition(CanvasHost)).
+            double contentDiuX = vp.X;
+            double contentDiuY = vp.Y;
+            // Convert to device pixels and round to nearest device pixel so we match the grid rendering which uses integer pixels
+            double contentPxX = Math.Round(contentDiuX * dpi.DpiScaleX);
+            double contentPxY = Math.Round(contentDiuY * dpi.DpiScaleY);
+            // Account for any integer-pixel grid Y shift applied during CommitZoom
+            int shiftY = gridRenderShiftYPx;
+            // Compute tile indices using post-rounding device-pixel math then floor to integer tile index.
+            int tx = (int)Math.Floor((contentPxX - padPxX) / (double)tilePixelW + 1e-9);
+            int ty = (int)Math.Floor((contentPxY - padPxY - shiftY) / (double)tilePixelH + 1e-9);
+            if (tx < 0) tx = 0; if (tx >= mapWidth) tx = mapWidth - 1;
+            if (ty < 0) ty = 0; if (ty >= mapHeight) ty = mapHeight - 1;
+            return (tx, ty);
+        }
+
+        // Native window hook for horizontal mouse wheel (WM_MOUSEHWHEEL = 0x020E)
+        private IntPtr NativeWindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            const int WM_MOUSEHWHEEL = 0x020E;
+            if (msg == WM_MOUSEHWHEEL)
+            {
+                try
+                {
+                    // HIWORD of wParam contains the wheel delta (signed short)
+                    int w = wParam.ToInt32();
+                    short delta = (short)(w >> 16);
+                    // Scale down for smoother scrolling similar to vertical wheel handling
+                    double scrollAmount = delta * 0.5;
+                    if (MapScrollViewer != null)
+                    {
+                        if (!swapMouseWheelScroll)
+                        {
+                            // Default: horizontal wheel -> vertical scrolling
+                            double newOffset = MapScrollViewer.VerticalOffset - scrollAmount;
+                            MapScrollViewer.ScrollToVerticalOffset(newOffset);
+                        }
+                        else
+                        {
+                            // Swapped: horizontal wheel -> horizontal scrolling
+                            double newH = MapScrollViewer.HorizontalOffset - scrollAmount;
+                            MapScrollViewer.ScrollToHorizontalOffset(newH);
+                        }
+                        handled = true;
+                    }
+                }
+                catch { }
+            }
+            return IntPtr.Zero;
         }
 
         private void CanvasHost_MouseLeave(object sender, MouseEventArgs e)
@@ -8920,23 +9223,257 @@ namespace FamidashEditor
         {
             // Handle pinch zoom gestures
             if (ZoomSlider == null) return;
-            
-            // Get the scale change from the pinch gesture
-            double scaleChange = e.DeltaManipulation.Scale.X; // or Y, they should be the same for uniform scaling
-            
-            if (scaleChange != 1.0)
+            // Compute per-event scale ratio using cumulative scale so we correctly detect spread vs pinch
+            double cumulative = e.CumulativeManipulation.Scale.X;
+            double ratio = 1.0;
+            if (manipulationActive)
             {
-                // Calculate new zoom value
-                double currentZoom = ZoomSlider.Value;
-                double newZoom = currentZoom * scaleChange;
-                
-                // Clamp to slider min/max
+                // ratio > 1 => spread, ratio < 1 => pinch
+                if (lastManipulationCumulativeScale <= 0) lastManipulationCumulativeScale = 1.0;
+                ratio = cumulative / lastManipulationCumulativeScale;
+            }
+            else
+            {
+                ratio = e.DeltaManipulation.Scale.X;
+            }
+            lastManipulationCumulativeScale = cumulative;
+            
+            bool handledAny = false;
+            // Handle translation (two-finger swipe) as scrolling. Map horizontal translation according
+            // to user preference: default (swapMouseWheelScroll==false) maps horizontal swipe -> vertical scroll.
+            var translation = e.DeltaManipulation.Translation;
+            if (Math.Abs(translation.X) > 0.0)
+            {
+                double tx = translation.X;
+                // Use a scaling factor to match wheel smoothness
+                double scrollAmount = tx * 1.0;
+                if (!swapMouseWheelScroll)
+                {
+                    double newV = MapScrollViewer.VerticalOffset - scrollAmount;
+                    MapScrollViewer.ScrollToVerticalOffset(newV);
+                }
+                else
+                {
+                    double newH = MapScrollViewer.HorizontalOffset - scrollAmount;
+                    MapScrollViewer.ScrollToHorizontalOffset(newH);
+                }
+                handledAny = true;
+            }
+            if (Math.Abs(translation.Y) > 0.0)
+            {
+                double ty = translation.Y;
+                double scrollAmount = ty * 1.0;
+                // Vertical translation maps to vertical scroll always
+                double newV = MapScrollViewer.VerticalOffset - scrollAmount;
+                MapScrollViewer.ScrollToVerticalOffset(newV);
+                handledAny = true;
+            }
+
+            if (Math.Abs(ratio - 1.0) > 1e-9)
+            {
+                // Pinch/spread: use per-event ratio computed from cumulative manipulation so spread increases zoom
+                double oldScale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double newZoom = oldScale * ratio;
+                // clamp
                 if (newZoom < ZoomSlider.Minimum) newZoom = ZoomSlider.Minimum;
                 if (newZoom > ZoomSlider.Maximum) newZoom = ZoomSlider.Maximum;
-                
-                ZoomSlider.Value = newZoom;
+
+                // Preserve anchor under cursor using integer device-pixel math so overlays stay aligned
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"[PINCH] pinchDirectionDetected={pinchDirectionDetected} invertPinchGesture={invertPinchGesture} ratio={ratio}");
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    var mouseVp = Mouse.GetPosition(MapScrollViewer);
+                    double hp = MapScrollViewer.HorizontalOffset;
+                    double vp = MapScrollViewer.VerticalOffset;
+
+                    // Tile pixel sizes and padding in device pixels (match rendering code)
+                    int tilePixelW_old = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleX));
+                    int tilePixelH_old = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleY));
+                    int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                    int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+
+                    // Content position under cursor in device pixels
+                    double contentPxX = (hp + mouseVp.X) * dpi.DpiScaleX;
+                    double contentPxY = (vp + mouseVp.Y) * dpi.DpiScaleY;
+
+                    // Map coordinates in tile-space (fractional) based on old tile pixels
+                    double mapX = (contentPxX - padPxX) / (double)tilePixelW_old;
+                    double mapY = (contentPxY - padPxY) / (double)tilePixelH_old;
+
+                    // Record zoom anchor (viewport and map coords) so CommitZoom can preserve the point under cursor
+                    try { zoomAnchorViewportX = mouseVp.X; zoomAnchorViewportY = mouseVp.Y; zoomAnchorMapX = mapX; zoomAnchorMapY = mapY; hasZoomAnchor = true; } catch { hasZoomAnchor = false; }
+
+                    // New tile pixel sizes for newZoom
+                    int tilePixelW_new = Math.Max(1, (int)Math.Ceiling(TileSize * newZoom * dpi.DpiScaleX));
+                    int tilePixelH_new = Math.Max(1, (int)Math.Ceiling(TileSize * newZoom * dpi.DpiScaleY));
+
+                    // Compute new content position in device pixels and round to integer pixels
+                    double newContentPxX_d = padPxX + mapX * tilePixelW_new;
+                    double newContentPxY_d = padPxY + mapY * tilePixelH_new;
+                    int newContentPxX = (int)Math.Round(newContentPxX_d);
+                    int newContentPxY = (int)Math.Round(newContentPxY_d);
+
+                    // Emit debug info to Output window and brief UI status to help reproduction
+                    try
+                    {
+                        string dbg = $"pinch sc={ratio:F3} old={oldScale:F3} new={newZoom:F3} pxOld=({(int)contentPxX},{(int)contentPxY}) map=({mapX:F3},{mapY:F3}) pxNew=({newContentPxX},{newContentPxY})";
+                        System.Diagnostics.Debug.WriteLine("[PINCH-DETAIL] " + dbg);
+                        if (StatusText != null) StatusText.Text = dbg;
+                        try
+                        {
+                            var line = DateTime.UtcNow.ToString("o") + " " + dbg + Environment.NewLine;
+                            // Try app base dir first
+                            string? logPath = null;
+                            try
+                            {
+                                var dir = AppContext.BaseDirectory;
+                                var candidate = System.IO.Path.Combine(dir, "pinch-debug.log");
+                                System.IO.File.AppendAllText(candidate, line);
+                                logPath = candidate;
+                            }
+                            catch (Exception ex1)
+                            {
+                                System.Diagnostics.Debug.WriteLine("[PINCH-LOG] base dir write failed: " + ex1.Message);
+                                try
+                                {
+                                    var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                                    var folder = System.IO.Path.Combine(appData, "FamidashEditor");
+                                    System.IO.Directory.CreateDirectory(folder);
+                                    var candidate = System.IO.Path.Combine(folder, "pinch-debug.log");
+                                    System.IO.File.AppendAllText(candidate, line);
+                                    logPath = candidate;
+                                }
+                                catch (Exception ex2)
+                                {
+                                    System.Diagnostics.Debug.WriteLine("[PINCH-LOG] LocalAppData write failed: " + ex2.Message);
+                                    try
+                                    {
+                                        var tmp = System.IO.Path.GetTempPath();
+                                        var candidate = System.IO.Path.Combine(tmp, "pinch-debug.log");
+                                        System.IO.File.AppendAllText(candidate, line);
+                                        logPath = candidate;
+                                    }
+                                    catch (Exception ex3)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine("[PINCH-LOG] Temp write failed: " + ex3.Message);
+                                        logPath = null;
+                                    }
+                                }
+                            }
+                            if (!string.IsNullOrEmpty(logPath))
+                            {
+                                try { if (StatusText != null) StatusText.Text = "Wrote pinch log to: " + logPath; } catch { }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine("[PINCH-LOG] final write failed: " + ex.Message);
+                        }
+                    }
+                    catch { }
+
+                    // Record zoom anchor so CommitZoom can preserve the point under the cursor
+                    try { zoomAnchorViewportX = mouseVp.X; zoomAnchorViewportY = mouseVp.Y; zoomAnchorMapX = mapX; zoomAnchorMapY = mapY; hasZoomAnchor = true; } catch { hasZoomAnchor = false; }
+                    // Apply new zoom value
+                    if (ZoomSlider != null) ZoomSlider.Value = newZoom;
+
+                    // Convert new content pixel position back to DIU and compute scroll offsets so cursor remains over same world point
+                    double newContentX = (double)newContentPxX / dpi.DpiScaleX;
+                    double newContentY = (double)newContentPxY / dpi.DpiScaleY;
+                    double newH = newContentX - mouseVp.X;
+                    double newV = newContentY - mouseVp.Y;
+
+                    double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
+                    double maxV = Math.Max(0, (CanvasHost.ActualHeight) - MapScrollViewer.ViewportHeight);
+                    newH = Math.Max(0, Math.Min(maxH, newH));
+                    newV = Math.Max(0, Math.Min(maxV, newV));
+
+                    MapScrollViewer.ScrollToHorizontalOffset(newH);
+                    MapScrollViewer.ScrollToVerticalOffset(newV);
+
+                    // Mirror wheel behavior: defer full rebuild and show quick-zoom transform
+                    try { deferZoomRebuild = true; UpdateQuickZoomTransform(); } catch { }
+                    try { zoomCommitTimer?.Stop(); zoomCommitTimer?.Start(); } catch { }
+
+                    // Snap offsets and update so overlays sync immediately
+                    try { SnapScrollOffsetsToDevicePixels(); } catch { }
+                    try { UpdateParallaxTransform(); } catch { }
+                    try { UpdateCoords(Mouse.GetPosition(CanvasHost)); } catch { }
+
+                    // Additionally, explicitly align the hover overlay to the computed tile
+                    try
+                    {
+                        // Compute tile indices using the post-zoom integer device-pixel content position
+                        int tx = (int)Math.Floor((newContentPxX - padPxX) / (double)tilePixelW_new + 1e-9);
+                        int ty = (int)Math.Floor((newContentPxY - padPxY) / (double)tilePixelH_new + 1e-9);
+                        if (tx < 0) tx = 0; if (tx >= mapWidth) tx = mapWidth - 1;
+                        if (ty < 0) ty = 0; if (ty >= mapHeight) ty = mapHeight - 1;
+                        lastHoverX = tx; lastHoverY = ty;
+                        if (HoverBorder != null)
+                        {
+                            // compute hover position in device pixels using new tile pixel sizes
+                            int leftPx = padPxX + tx * tilePixelW_new;
+                            int topPx = padPxY + ty * tilePixelH_new + gridRenderShiftYPx;
+                            int sizePx = tilePixelH_new;
+                            double left = (double)leftPx / dpi.DpiScaleX;
+                            double top = (double)topPx / dpi.DpiScaleY;
+                            double size = (double)sizePx / dpi.DpiScaleY;
+                            double strokeDiu = 1.0 / dpi.DpiScaleX;
+                            double outerLeft = left - strokeDiu;
+                            double outerTop = top - strokeDiu;
+                            double outerWidth = size + (2.0 * strokeDiu);
+                            double outerHeight = size + (2.0 * strokeDiu);
+                            try
+                            {
+                                HoverBorder.BorderThickness = new Thickness(strokeDiu);
+                                HoverBorder.Width = outerWidth;
+                                HoverBorder.Height = outerHeight;
+                                Canvas.SetLeft(HoverBorder, outerLeft);
+                                Canvas.SetTop(HoverBorder, outerTop);
+                                HoverBorder.Visibility = Visibility.Visible;
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+                }
+                catch
+                {
+                    if (ZoomSlider != null) ZoomSlider.Value = newZoom;
+                    try { deferZoomRebuild = true; UpdateQuickZoomTransform(); } catch { }
+                    try { zoomCommitTimer?.Stop(); zoomCommitTimer?.Start(); } catch { }
+                }
+                handledAny = true;
+            }
+
+            if (handledAny)
+            {
                 e.Handled = true;
             }
+        }
+
+        private void MapScrollViewer_ManipulationStarting(object? sender, ManipulationStartingEventArgs e)
+        {
+            try
+            {
+                e.Mode = ManipulationModes.Scale | ManipulationModes.Translate;
+                lastManipulationCumulativeScale = 1.0;
+                manipulationActive = true;
+            }
+            catch { }
+        }
+
+        private void MapScrollViewer_ManipulationCompleted(object? sender, ManipulationCompletedEventArgs e)
+        {
+            try
+            {
+                manipulationActive = false;
+                lastManipulationCumulativeScale = 1.0;
+                // Ensure UI overlays sync after manipulation
+                try { UpdateCoords(Mouse.GetPosition(CanvasHost)); } catch { }
+            }
+            catch { }
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
