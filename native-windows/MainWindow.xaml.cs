@@ -329,6 +329,13 @@ namespace FamidashEditor
     private BitmapSource? spiderPortalSprite; // for sprite 0x17 (spider-portal.png)
     private BitmapSource? swingcopterPortalSprite; // for sprite 0x4B (swingcopter-portal.png)
     private BitmapSource? ninjaPortalSprite; // for sprite 0x58 (ninja-portal.png)
+    // Speed portal preview sprites (single-frame replacements)
+    private BitmapSource? speed05xPortalSprite; // sprite 0x14
+    private BitmapSource? speed1xPortalSprite;  // sprite 0x15
+    private BitmapSource? speed2xPortalSprite;  // sprite 0x16
+    private BitmapSource? speed3xPortalSprite;  // sprite 0x20
+    private BitmapSource? speed4xPortalSprite;  // sprite 0x21
+    private BitmapSource? speedSpecialPortalSprite; // sprite 0x6D
     // Additional new portals
     private BitmapSource? dualPortalSprite; // for sprite 0x22 (dual-portal.png)
     private BitmapSource? singlePortalSprite; // for sprite 0x23 (single-portal.png)
@@ -1770,7 +1777,9 @@ namespace FamidashEditor
                      spriteIdx == 0x08 || spriteIdx == 0x09 ||
                      // Horizontal gravity portals
                      spriteIdx == 0x10 || spriteIdx == 0x11 || spriteIdx == 0x12 || spriteIdx == 0x13 ||
-                         spriteIdx == 0x22 || spriteIdx == 0x23 ||
+                             spriteIdx == 0x22 || spriteIdx == 0x23 ||
+                         // Speed portal preview replacements
+                         spriteIdx == 0x14 || spriteIdx == 0x15 || spriteIdx == 0x16 || spriteIdx == 0x20 || spriteIdx == 0x21 || spriteIdx == 0x6D ||
                      // Additional gravity-X portal sprite IDs (preview replacements)
                      spriteIdx == 0x5F || spriteIdx == 0x60 || spriteIdx == 0x61 || spriteIdx == 0x62 || spriteIdx == 0x63;
         }
@@ -1798,6 +1807,12 @@ namespace FamidashEditor
                 0x08 => gravityDownPortalSprite,
                 0x09 => gravityUpPortalSprite,
                 0x58 => ninjaPortalSprite,
+                0x14 => speed05xPortalSprite,
+                0x15 => speed1xPortalSprite,
+                0x16 => speed2xPortalSprite,
+                0x20 => speed3xPortalSprite,
+                0x21 => speed4xPortalSprite,
+                0x6D => speedSpecialPortalSprite,
                 0x10 => gravityDownDownwardsPortalSprite,
                 0x11 => gravityDownUpwardsPortalSprite,
                 0x12 => gravityUpDownwardsPortalSprite,
@@ -1844,6 +1859,13 @@ namespace FamidashEditor
             {
                 return 3008; // Ninja portal
             }
+            // Speed portal preview mappings: treat as tall portals (1.5x3)
+            if (originalIndex == 0x14) return 3024; // speed-05x
+            if (originalIndex == 0x15) return 3025; // speed-1x
+            if (originalIndex == 0x16) return 3026; // speed-2x
+            if (originalIndex == 0x20) return 3027; // speed-3x
+            if (originalIndex == 0x21) return 3028; // speed-4x
+            if (originalIndex == 0x6D) return 3029; // speed-special
             if (originalIndex == 0x08)
             {
                 return 3009; // Gravity down portal
@@ -2153,6 +2175,13 @@ namespace FamidashEditor
             if (customIndex == 3021) return gravity2ThirdXPortalSprite;
             if (customIndex == 3022) return gravity2XPortalSprite;
             if (customIndex == 3023) return gravity1XPortalSprite;
+            // Speed portal custom indices
+            if (customIndex == 3024) return speed05xPortalSprite;
+            if (customIndex == 3025) return speed1xPortalSprite;
+            if (customIndex == 3026) return speed2xPortalSprite;
+            if (customIndex == 3027) return speed3xPortalSprite;
+            if (customIndex == 3028) return speed4xPortalSprite;
+            if (customIndex == 3029) return speedSpecialPortalSprite;
             
             if (customIndex >= 2000 && customIndex <= 2011)
             {
@@ -2819,6 +2848,13 @@ namespace FamidashEditor
                     // New mini and growth portal preview images (placed in workspace root)
                     miniPortalSprite = LoadPortalSprite("mini-portal.png");
                     growthPortalSprite = LoadPortalSprite("growth-portal.png");
+                // Speed portal preview images
+                speed05xPortalSprite = LoadPortalSprite("speed-05x.png");
+                speed1xPortalSprite = LoadPortalSprite("speed-1x.png");
+                speed2xPortalSprite = LoadPortalSprite("speed-2x.png");
+                speed3xPortalSprite = LoadPortalSprite("speed-3x.png");
+                speed4xPortalSprite = LoadPortalSprite("speed-4x.png");
+                speedSpecialPortalSprite = LoadPortalSprite("speed-special.png");
                 // Additional gravity-strength X-axis portals
                     gravity1ThirdXPortalSprite = LoadPortalSprite("gravity-1-3rd-x-portal.png");
                     gravity1HalfXPortalSprite = LoadPortalSprite("gravity-1-half-x-portal.png");
@@ -7049,12 +7085,18 @@ namespace FamidashEditor
             {
                 destY = Math.Max(0, destY - spritePixelH);
             }
+            // Speed portal previews should start one tile higher so they visually hang
+            // from the tile above similar to other portal previews.
+            if (previewMode && (spriteIdx == 0x14 || spriteIdx == 0x15 || spriteIdx == 0x16 || spriteIdx == 0x20 || spriteIdx == 0x21 || spriteIdx == 0x6D))
+            {
+                destY = Math.Max(0, destY - spritePixelH);
+            }
 
             int renderWidth = spritePixelW;
             int renderHeight = spritePixelH;
             int portalAnimatedIdx = GetAnimatedSpriteIndex(spriteIdx);
-            // Treat custom portal indices up through 3023 as multi-tile portals
-            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3023);
+            // Treat custom portal indices up through 3029 as multi-tile portals (extended for speed portals)
+            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3029);
             if (portalIsMulti)
             {
                 // Standard tall portals (3000-3010) are 1.5 tiles × 3 tiles

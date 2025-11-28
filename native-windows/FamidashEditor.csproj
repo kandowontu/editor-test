@@ -176,5 +176,12 @@
     <!-- Chain preview decorations -->
     <EmbeddedResource Include="..\chain.png" />
     <EmbeddedResource Include="..\chain-upsidedown.png" />
+    <!-- Speed portal preview assets -->
+    <EmbeddedResource Include="..\speed-05x.png" />
+    <EmbeddedResource Include="..\speed-1x.png" />
+    <EmbeddedResource Include="..\speed-2x.png" />
+    <EmbeddedResource Include="..\speed-3x.png" />
+    <EmbeddedResource Include="..\speed-4x.png" />
+    <EmbeddedResource Include="..\speed-special.png" />
   </ItemGroup>
 </Project>
