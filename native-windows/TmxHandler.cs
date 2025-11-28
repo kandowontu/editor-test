@@ -246,6 +246,9 @@ namespace FamidashEditor
                     exportTarget = (string?)export.Attribute("target");
                     exportFormat = (string?)export.Attribute("format") ?? "csv";
                 }
+
+                // Optional deco set stored in editor settings
+                // deco set element handled when constructing return object below
             }
 
             return new TmxLevel
@@ -271,7 +274,9 @@ namespace FamidashEditor
                 GroundOffsetY = groundOffsetY,
                 GroundRepeatX = groundRepeatX,
                 HasGroundLayer = groundLayer != null,
-                LoadCollisionMessages = collisionMessages.Count > 0 ? string.Join("\n", collisionMessages) : null
+                LoadCollisionMessages = collisionMessages.Count > 0 ? string.Join("\n", collisionMessages) : null,
+                // read deco set if present
+                DecoSet = editorSettings?.Element("decoset")?.Attribute("name")?.Value ?? "deco1"
             };
         }
 
@@ -309,6 +314,12 @@ namespace FamidashEditor
                 new XAttribute("target", level.ExportTarget ?? "export.csv"),
                 new XAttribute("format", level.ExportFormat)
             ));
+
+            // Deco set element (editor-level preview selection)
+            if (!string.IsNullOrEmpty(level.DecoSet))
+            {
+                editorSettings.Add(new XElement("decoset", new XAttribute("name", level.DecoSet)));
+            }
             
             map.Add(editorSettings);
 
@@ -621,6 +632,9 @@ namespace FamidashEditor
         public bool ParallaxRepeatX { get; set; } = true;
         public bool ParallaxRepeatY { get; set; } = true;
         public bool HasParallaxLayer { get; set; } = false; // Track if parallax existed in loaded file
+
+        // Decoration/spriteset selection for preview rendering
+        public string? DecoSet { get; set; } = "deco1";
         
         // Ground layer properties
         public string? GroundSource { get; set; }

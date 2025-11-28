@@ -101,6 +101,7 @@ namespace FamidashEditor
     private double loadedGroundOffsetY = 432;
     private bool loadedGroundRepeatX = true;
     private bool loadedHasGroundLayer = false;
+    private string loadedDecoSet = "deco1";
     private int paletteTileSize = 16;
     private int paletteSpriteSize = 16;
     // Painting state for drag-to-draw
@@ -131,16 +132,18 @@ namespace FamidashEditor
     // Configuration file support for per-TMX settings
     private class TmxConfig
     {
-        public byte BackgroundTintR { get; set; } = 255;
-        public byte BackgroundTintG { get; set; } = 255;
-        public byte BackgroundTintB { get; set; } = 255;
-        public byte GroundTintR { get; set; } = 255;
-        public byte GroundTintG { get; set; } = 255;
-        public byte GroundTintB { get; set; } = 255;
-        public byte TileTintR { get; set; } = 255;
-        public byte TileTintG { get; set; } = 255;
-        public byte TileTintB { get; set; } = 255;
+        // Tint components are nullable so they are only written when explicitly set.
+        public byte? BackgroundTintR { get; set; }
+        public byte? BackgroundTintG { get; set; }
+        public byte? BackgroundTintB { get; set; }
+        public byte? GroundTintR { get; set; }
+        public byte? GroundTintG { get; set; }
+        public byte? GroundTintB { get; set; }
+        public byte? TileTintR { get; set; }
+        public byte? TileTintG { get; set; }
+        public byte? TileTintB { get; set; }
         public bool NoParallaxBg { get; set; } = false;
+        public string? DecoSet { get; set; } = "deco1";
     }
     
     // Apply the current noParallaxBg setting by selecting the appropriate parallax bitmap
@@ -158,7 +161,7 @@ namespace FamidashEditor
                     parallaxBitmap = emb;
                     SliceParallax();
                     backgroundDirty = true;
-                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { Redraw(); }
                     try { Dispatcher.Invoke(() => Redraw()); } catch { }
                     return;
                 }
@@ -168,30 +171,42 @@ namespace FamidashEditor
                 {
                     var candidates = new List<string>();
                     var repoRoot = FindRepoRootFor("famidash.bmp");
-                    if (!string.IsNullOrEmpty(repoRoot)) candidates.Add(Path.Combine(repoRoot, "src", "renderer", "assets", "noparallax.bmp"));
-                    // older/layout variant
-                    if (!string.IsNullOrEmpty(repoRoot)) candidates.Add(Path.Combine(repoRoot, "src", "render", "assets", "noparallax.bmp"));
+                    if (!string.IsNullOrEmpty(repoRoot))
+                    {
+                        candidates.Add(Path.Combine(repoRoot, "src", "renderer", "assets", "noparallax.bmp"));
+                        candidates.Add(Path.Combine(repoRoot, "src", "render", "assets", "noparallax.bmp"));
+                    }
                     candidates.Add(Path.Combine(AppContext.BaseDirectory, "assets", "noparallax.bmp"));
                     candidates.Add(Path.Combine(AppContext.BaseDirectory, "noparallax.bmp"));
+
                     foreach (var cand in candidates)
                     {
-                        try { if (!string.IsNullOrEmpty(cand) && File.Exists(cand)) { LoadParallax(cand); backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } return; } } catch { }
+                        try
+                        {
+                            if (!string.IsNullOrEmpty(cand) && File.Exists(cand))
+                            {
+                                LoadParallax(cand);
+                                backgroundDirty = true;
+                                try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { Redraw(); }
+                                return;
+                            }
+                        }
+                        catch { }
                     }
                 }
                 catch { }
             }
-
             // Otherwise, prefer any loaded parallax source (from TMX); if not available, fall back to embedded parallax
-                if (!string.IsNullOrEmpty(loadedParallaxSource) && File.Exists(loadedParallaxSource))
+            if (!string.IsNullOrEmpty(loadedParallaxSource) && File.Exists(loadedParallaxSource))
             {
                 LoadParallax(loadedParallaxSource);
             }
             else
             {
-                var emb = LoadEmbeddedImage("parallax.bmp");
-                if (emb != null)
+                var emb2 = LoadEmbeddedImage("parallax.bmp");
+                if (emb2 != null)
                 {
-                    parallaxBitmap = emb;
+                    parallaxBitmap = emb2;
                     SliceParallax();
                 }
                 else
@@ -202,10 +217,21 @@ namespace FamidashEditor
             }
 
             backgroundDirty = true;
-            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { Redraw(); }
             try { Dispatcher.Invoke(() => Redraw()); } catch { }
         }
         catch { }
+        }
+
+    // Helpers to safely read ScrollViewer viewport size when it may be null
+    private double SafeViewportWidth()
+    {
+        try { return MapScrollViewer?.ViewportWidth ?? MapScrollViewer?.ActualWidth ?? 0.0; } catch { return 0.0; }
+    }
+
+    private double SafeViewportHeight()
+    {
+        try { return MapScrollViewer?.ViewportHeight ?? MapScrollViewer?.ActualHeight ?? 0.0; } catch { return 0.0; }
     }
 
     private string GetConfigPath(string tmxFilePath)
@@ -233,23 +259,49 @@ namespace FamidashEditor
     {
         try
         {
-            var config = new TmxConfig
+            var config = new TmxConfig();
+
+            // Only write tint components when a tint is actively set (alpha != 0)
+            try
             {
-                BackgroundTintR = backgroundTint.R,
-                BackgroundTintG = backgroundTint.G,
-                BackgroundTintB = backgroundTint.B,
-                GroundTintR = groundTint.R,
-                GroundTintG = groundTint.G,
-                GroundTintB = groundTint.B,
-                TileTintR = tileTint.R,
-                TileTintG = tileTint.G,
-                    TileTintB = tileTint.B,
-                    NoParallaxBg = noParallaxBg
-            };
+                if (backgroundTint.A != 0)
+                {
+                    config.BackgroundTintR = backgroundTint.R;
+                    config.BackgroundTintG = backgroundTint.G;
+                    config.BackgroundTintB = backgroundTint.B;
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (groundTint.A != 0)
+                {
+                    config.GroundTintR = groundTint.R;
+                    config.GroundTintG = groundTint.G;
+                    config.GroundTintB = groundTint.B;
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (tileTint.A != 0)
+                {
+                    config.TileTintR = tileTint.R;
+                    config.TileTintG = tileTint.G;
+                    config.TileTintB = tileTint.B;
+                }
+            }
+            catch { }
+
+            // Always persist these explicit options
+            config.NoParallaxBg = noParallaxBg;
+            config.DecoSet = loadedDecoSet;
 
             string configPath = GetConfigPath(tmxFilePath);
-            // Serialize and write the config file
-            var opts = new JsonSerializerOptions { WriteIndented = true };
+            // Serialize and write the config file, omitting nulls
+            var opts = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
             string json = JsonSerializer.Serialize(config, opts);
             File.WriteAllText(configPath, json);
 
@@ -274,19 +326,47 @@ namespace FamidashEditor
                 
                 if (config != null)
                 {
-                    // Apply loaded tints
-                    backgroundTint = Color.FromRgb(config.BackgroundTintR, config.BackgroundTintG, config.BackgroundTintB);
-                    groundTint = Color.FromRgb(config.GroundTintR, config.GroundTintG, config.GroundTintB);
-                    tileTint = Color.FromRgb(config.TileTintR, config.TileTintG, config.TileTintB);
+                    // Apply loaded tints only when the components are present in the config
+                    try
+                    {
+                        if (config.BackgroundTintR.HasValue && config.BackgroundTintG.HasValue && config.BackgroundTintB.HasValue)
+                        {
+                            backgroundTint = Color.FromRgb(config.BackgroundTintR.Value, config.BackgroundTintG.Value, config.BackgroundTintB.Value);
+                        }
+                    }
+                    catch { }
+
+                    try
+                    {
+                        if (config.GroundTintR.HasValue && config.GroundTintG.HasValue && config.GroundTintB.HasValue)
+                        {
+                            groundTint = Color.FromRgb(config.GroundTintR.Value, config.GroundTintG.Value, config.GroundTintB.Value);
+                        }
+                    }
+                    catch { }
+
+                    try
+                    {
+                        if (config.TileTintR.HasValue && config.TileTintG.HasValue && config.TileTintB.HasValue)
+                        {
+                            tileTint = Color.FromRgb(config.TileTintR.Value, config.TileTintG.Value, config.TileTintB.Value);
+                        }
+                    }
+                    catch { }
+
                     // Apply loaded no-parallax setting (default false when absent in file)
                     try { noParallaxBg = config.NoParallaxBg; } catch { noParallaxBg = false; }
                     if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
-                    
-                    // Update tinted images
+
+                    // Apply deco set if present
+                    try { loadedDecoSet = string.IsNullOrEmpty(config.DecoSet) ? "deco1" : config.DecoSet; } catch { loadedDecoSet = "deco1"; }
+                    if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet}";
+
+                    // Update tinted images for any tints that were applied
                     UpdateParallaxTint();
                     UpdateGroundTint();
                     UpdateTileTint();
-                    
+
                     System.Diagnostics.Debug.WriteLine($"Loaded config from: {configPath}");
                     if (StatusText != null) StatusText.Text = $"Loaded tint config for {Path.GetFileName(tmxFilePath)}";
                     // Ensure the parallax choice reflects the loaded config
@@ -323,6 +403,10 @@ namespace FamidashEditor
                 try { PopulateTilesPanel(); } catch { }
                 
                 System.Diagnostics.Debug.WriteLine($"No config found at: {configPath}, using defaults");
+                // default deco set when no config is present
+                loadedDecoSet = "deco1";
+                // Write out a default config immediately so first-load creates .cfg with deco1
+                try { SaveTmxConfig(tmxFilePath); } catch { }
             }
         }
         catch (Exception ex)
@@ -333,6 +417,7 @@ namespace FamidashEditor
             backgroundTint = Color.FromArgb(0, 0, 0, 0);
             groundTint = Color.FromArgb(0, 0, 0, 0);
             tileTint = Color.FromArgb(0, 0, 0, 0);
+                loadedDecoSet = "deco1";
             
             // Clear toned images to use originals
             parallaxTonedImages = null;
@@ -875,7 +960,7 @@ namespace FamidashEditor
                         {
                             var mp = Mouse.GetPosition(MapScrollViewer);
                             zoomAnchorViewportX = mp.X; zoomAnchorViewportY = mp.Y;
-                            double hp = MapScrollViewer.HorizontalOffset; double vp = MapScrollViewer.VerticalOffset;
+                            double hp = MapScrollViewer?.HorizontalOffset ?? 0; double vp = MapScrollViewer?.VerticalOffset ?? 0;
                             double contentX = hp + mp.X; double contentY = vp + mp.Y;
                             double oldScale = (ZoomSlider!=null?ZoomSlider.Value:1.0);
                             double pad = mapViewportPadding;
@@ -924,7 +1009,7 @@ namespace FamidashEditor
                             {
                                 var mp = Mouse.GetPosition(MapScrollViewer);
                                 zoomAnchorViewportX = mp.X; zoomAnchorViewportY = mp.Y;
-                                double hp = MapScrollViewer.HorizontalOffset; double vp = MapScrollViewer.VerticalOffset;
+                                double hp = MapScrollViewer?.HorizontalOffset ?? 0; double vp = MapScrollViewer?.VerticalOffset ?? 0;
                                 double contentX = hp + mp.X; double contentY = vp + mp.Y;
                                 double oldScale = (ZoomSlider!=null?ZoomSlider.Value:1.0);
                                 double pad = mapViewportPadding;
@@ -939,6 +1024,7 @@ namespace FamidashEditor
                     }
                 };
             }
+            if (SetOptionsButton != null) SetOptionsButton.Click += (s, e) => SetOptionsButton_Click(s, e);
             if (GridDarknessSlider != null) GridDarknessSlider.ValueChanged += GridDarknessSlider_ValueChanged;
             if (SaveButton != null) SaveButton.Click += SaveButton_Click;
             if (LoadButton != null) LoadButton.Click += LoadButton_Click;
@@ -1333,8 +1419,8 @@ namespace FamidashEditor
 
                 // Determine mouse position in viewport coordinates
                 var mouseVp = e.GetPosition(MapScrollViewer);
-                double hp = MapScrollViewer.HorizontalOffset;
-                double vp = MapScrollViewer.VerticalOffset;
+                double hp = (MapScrollViewer?.HorizontalOffset ?? 0);
+                double vp = (MapScrollViewer?.VerticalOffset ?? 0);
 
                 // Content coordinate under cursor before zoom
                 double contentX = hp + mouseVp.X;
@@ -1348,7 +1434,7 @@ namespace FamidashEditor
                 try { zoomAnchorViewportX = mouseVp.X; zoomAnchorViewportY = mouseVp.Y; zoomAnchorMapX = mapX; zoomAnchorMapY = mapY; hasZoomAnchor = true; } catch { hasZoomAnchor = false; }
 
                 // apply new zoom value
-                ZoomSlider.Value = newScale;
+                if (ZoomSlider != null) ZoomSlider.Value = newScale;
 
                 // compute new content coordinate for same world point
                 double newContentX = mapViewportPadding + mapX * TileSize * newScale;
@@ -1359,14 +1445,17 @@ namespace FamidashEditor
                 double newV = newContentY - mouseVp.Y;
 
                 // clamp offsets to valid ranges
-                double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
-                double maxV = Math.Max(0, (CanvasHost.ActualHeight) - MapScrollViewer.ViewportHeight);
+                double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
+                double maxV = Math.Max(0, (CanvasHost?.ActualHeight ?? 0) - SafeViewportHeight());
                 newH = Math.Max(0, Math.Min(maxH, newH));
                 newV = Math.Max(0, Math.Min(maxV, newV));
 
                 // apply offsets
-                MapScrollViewer.ScrollToHorizontalOffset(newH);
-                MapScrollViewer.ScrollToVerticalOffset(newV);
+                if (MapScrollViewer != null)
+                {
+                    MapScrollViewer?.ScrollToHorizontalOffset(newH);
+                    MapScrollViewer?.ScrollToVerticalOffset(newV);
+                }
 
                 // Ensure we don't allow scrolling past the bottom of the ground after zoom
                 ClampScrollOffsets();
@@ -1385,14 +1474,14 @@ namespace FamidashEditor
                 if (!swapMouseWheelScroll)
                 {
                     // Default: Shift+Wheel = Vertical scrolling
-                    double newOffset = MapScrollViewer.VerticalOffset - scrollAmount;
-                    MapScrollViewer.ScrollToVerticalOffset(newOffset);
+                    double newOffset = (MapScrollViewer?.VerticalOffset ?? 0) - scrollAmount;
+                    MapScrollViewer?.ScrollToVerticalOffset(newOffset);
                 }
                 else
                 {
                     // Swapped: Shift+Wheel = Horizontal scrolling
-                    double newHorizontalOffset = MapScrollViewer.HorizontalOffset - scrollAmount;
-                    MapScrollViewer.ScrollToHorizontalOffset(newHorizontalOffset);
+                    double newHorizontalOffset = (MapScrollViewer?.HorizontalOffset ?? 0) - scrollAmount;
+                    MapScrollViewer?.ScrollToHorizontalOffset(newHorizontalOffset);
                 }
                 return;
             }
@@ -1403,14 +1492,14 @@ namespace FamidashEditor
             if (!swapMouseWheelScroll)
             {
                 // Default: Wheel alone = Horizontal scrolling
-                double newHorizontalOffset = MapScrollViewer.HorizontalOffset - baseScrollAmount;
-                MapScrollViewer.ScrollToHorizontalOffset(newHorizontalOffset);
+                double newHorizontalOffset = (MapScrollViewer?.HorizontalOffset ?? 0) - baseScrollAmount;
+                MapScrollViewer?.ScrollToHorizontalOffset(newHorizontalOffset);
             }
             else
             {
                 // Swapped: Wheel alone = Vertical scrolling
-                double newOffset = MapScrollViewer.VerticalOffset - baseScrollAmount;
-                MapScrollViewer.ScrollToVerticalOffset(newOffset);
+                double newOffset = (MapScrollViewer?.VerticalOffset ?? 0) - baseScrollAmount;
+                MapScrollViewer?.ScrollToVerticalOffset(newOffset);
             }
         }
 
@@ -1702,12 +1791,12 @@ namespace FamidashEditor
             try
             {
                 if (MapScrollViewer == null) return;
-                double scale = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
+                double scale = ZoomSlider?.Value ?? 1.0;
                 double pad = mapViewportPadding;
-                double viewLeft = MapScrollViewer.HorizontalOffset;
-                double viewTop = MapScrollViewer.VerticalOffset;
-                double viewRight = viewLeft + MapScrollViewer.ViewportWidth;
-                double viewBottom = viewTop + MapScrollViewer.ViewportHeight;
+                double viewLeft = (MapScrollViewer?.HorizontalOffset ?? 0);
+                double viewTop = (MapScrollViewer?.VerticalOffset ?? 0);
+                double viewRight = viewLeft + SafeViewportWidth();
+                double viewBottom = viewTop + SafeViewportHeight();
 
                 int lx = (int)Math.Floor((viewLeft - pad) / (TileSize * scale));
                 int rx = (int)Math.Floor((viewRight - pad) / (TileSize * scale));
@@ -5448,8 +5537,8 @@ namespace FamidashEditor
             if (MapScrollViewer != null)
             {
                 // Use ViewportWidth/Height when available; fall back to ActualWidth/Height.
-                double vpw = MapScrollViewer.ViewportWidth > 0 ? MapScrollViewer.ViewportWidth : MapScrollViewer.ActualWidth;
-                double vph = MapScrollViewer.ViewportHeight > 0 ? MapScrollViewer.ViewportHeight : MapScrollViewer.ActualHeight;
+                double vpw = SafeViewportWidth();
+                double vph = SafeViewportHeight();
                 if (!double.IsNaN(vpw) && vpw > displayFullW) displayFullW = vpw;
                 if (!double.IsNaN(vph) && vph > displayFullH) displayFullH = vph;
             }
@@ -5758,8 +5847,8 @@ namespace FamidashEditor
             double viewportH = pixelPaddedHeight / dpi.DpiScaleY;
             if (MapScrollViewer != null)
             {
-                double vpw = MapScrollViewer.ViewportWidth;
-                double vph = MapScrollViewer.ViewportHeight;
+                double vpw = SafeViewportWidth();
+                double vph = SafeViewportHeight();
                 if (!double.IsNaN(vpw) && vpw > 0) viewportW = vpw;
                 if (!double.IsNaN(vph) && vph > 0) viewportH = vph;
             }
@@ -5888,8 +5977,8 @@ namespace FamidashEditor
             if (MapScrollViewer == null) return;
             if (parallaxRtb == null) return;
             // Camera offsets in content coordinates (pixels)
-            double camOffsetX = MapScrollViewer.HorizontalOffset;
-            double camOffsetY = MapScrollViewer.VerticalOffset;
+            double camOffsetX = (MapScrollViewer?.HorizontalOffset ?? 0);
+            double camOffsetY = (MapScrollViewer?.VerticalOffset ?? 0);
             double shiftX = camOffsetX * (1.0 - ParallaxRatio);
             double shiftY = camOffsetY * (1.0 - ParallaxRatio);
             if (parallaxTransform == null) parallaxTransform = new TranslateTransform(shiftX, shiftY);
@@ -5958,18 +6047,18 @@ namespace FamidashEditor
             {
                 try
                 {
-                    double newScale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    double newScale = ZoomSlider?.Value ?? 1.0;
                     double pad = mapViewportPadding;
                     double newContentX = pad + zoomAnchorMapX * TileSize * newScale;
                     double newContentY = pad + zoomAnchorMapY * TileSize * newScale;
                     double newH = newContentX - zoomAnchorViewportX;
                     double newV = newContentY - zoomAnchorViewportY;
-                    double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
-                    double maxV = Math.Max(0, (CanvasHost.ActualHeight) - MapScrollViewer.ViewportHeight);
+                    double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
+                    double maxV = Math.Max(0, (CanvasHost?.ActualHeight ?? 0) - SafeViewportHeight());
                     newH = Math.Max(0, Math.Min(maxH, newH));
                     newV = Math.Max(0, Math.Min(maxV, newV));
-                    MapScrollViewer.ScrollToHorizontalOffset(newH);
-                    MapScrollViewer.ScrollToVerticalOffset(newV);
+                    MapScrollViewer?.ScrollToHorizontalOffset(newH);
+                    MapScrollViewer?.ScrollToVerticalOffset(newV);
                 }
                 catch { }
             }
@@ -6038,20 +6127,20 @@ namespace FamidashEditor
             {
                 if (MapScrollViewer == null || CanvasHost == null) return;
                 var dpi = VisualTreeHelper.GetDpi(this);
-                double h = MapScrollViewer.HorizontalOffset;
-                double v = MapScrollViewer.VerticalOffset;
+                double h = (MapScrollViewer?.HorizontalOffset ?? 0);
+                double v = (MapScrollViewer?.VerticalOffset ?? 0);
                 // Convert to device pixels, round, convert back to DIU
                 double hPix = Math.Round(h * dpi.DpiScaleX);
                 double vPix = Math.Round(v * dpi.DpiScaleY);
                 double newH = hPix / dpi.DpiScaleX;
                 double newV = vPix / dpi.DpiScaleY;
                 // Clamp to valid ranges
-                double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
-                double maxV = Math.Max(0, (CanvasHost.ActualHeight) - MapScrollViewer.ViewportHeight);
+                    double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
+                double maxV = Math.Max(0, (CanvasHost?.ActualHeight ?? 0) - SafeViewportHeight());
                 newH = Math.Max(0, Math.Min(maxH, newH));
                 newV = Math.Max(0, Math.Min(maxV, newV));
-                MapScrollViewer.ScrollToHorizontalOffset(newH);
-                MapScrollViewer.ScrollToVerticalOffset(newV);
+                MapScrollViewer?.ScrollToHorizontalOffset(newH);
+                MapScrollViewer?.ScrollToVerticalOffset(newV);
             }
             catch { }
         }
@@ -6063,7 +6152,7 @@ namespace FamidashEditor
         {
             if (MapScrollViewer == null) return;
             // Compute the padded full height (map + ground + parallax padding) using current zoom
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double scale = ZoomSlider?.Value ?? 1.0;
             double pad = mapViewportPadding;
             double fullH = mapHeight * TileSize * scale;
             
@@ -6080,11 +6169,11 @@ namespace FamidashEditor
             double paddedFullH = fullH + pad * 2.0;
 
             // compute maximum allowed vertical offset so viewport bottom <= paddedFullH
-            double maxAllowedV = Math.Max(0.0, paddedFullH - MapScrollViewer.ViewportHeight);
+            double maxAllowedV = Math.Max(0.0, paddedFullH - SafeViewportHeight());
             // If the current VerticalOffset is larger than allowed, snap it back
-            if (MapScrollViewer.VerticalOffset > maxAllowedV + 1e-6)
+            if ((MapScrollViewer?.VerticalOffset ?? 0) > maxAllowedV + 1e-6)
             {
-                MapScrollViewer.ScrollToVerticalOffset(maxAllowedV);
+                MapScrollViewer?.ScrollToVerticalOffset(maxAllowedV);
             }
         }
 
@@ -9192,14 +9281,14 @@ namespace FamidashEditor
                         if (!swapMouseWheelScroll)
                         {
                             // Default: horizontal wheel -> vertical scrolling
-                            double newOffset = MapScrollViewer.VerticalOffset - scrollAmount;
-                            MapScrollViewer.ScrollToVerticalOffset(newOffset);
+                            double newOffset = (MapScrollViewer?.VerticalOffset ?? 0) - scrollAmount;
+                            MapScrollViewer?.ScrollToVerticalOffset(newOffset);
                         }
                         else
                         {
                             // Swapped: horizontal wheel -> horizontal scrolling
-                            double newH = MapScrollViewer.HorizontalOffset - scrollAmount;
-                            MapScrollViewer.ScrollToHorizontalOffset(newH);
+                            double newH = (MapScrollViewer?.HorizontalOffset ?? 0) - scrollAmount;
+                            MapScrollViewer?.ScrollToHorizontalOffset(newH);
                         }
                         handled = true;
                     }
@@ -9263,13 +9352,13 @@ namespace FamidashEditor
                 double scrollAmount = tx * 1.0;
                 if (!swapMouseWheelScroll)
                 {
-                    double newV = MapScrollViewer.VerticalOffset - scrollAmount;
-                    MapScrollViewer.ScrollToVerticalOffset(newV);
+                    double newV = (MapScrollViewer?.VerticalOffset ?? 0) - scrollAmount;
+                    MapScrollViewer?.ScrollToVerticalOffset(newV);
                 }
                 else
                 {
-                    double newH = MapScrollViewer.HorizontalOffset - scrollAmount;
-                    MapScrollViewer.ScrollToHorizontalOffset(newH);
+                    double newH = (MapScrollViewer?.HorizontalOffset ?? 0) - scrollAmount;
+                    MapScrollViewer?.ScrollToHorizontalOffset(newH);
                 }
                 handledAny = true;
             }
@@ -9278,19 +9367,21 @@ namespace FamidashEditor
                 double ty = translation.Y;
                 double scrollAmount = ty * 1.0;
                 // Vertical translation maps to vertical scroll always
-                double newV = MapScrollViewer.VerticalOffset - scrollAmount;
-                MapScrollViewer.ScrollToVerticalOffset(newV);
+                double newV = (MapScrollViewer?.VerticalOffset ?? 0) - scrollAmount;
+                MapScrollViewer?.ScrollToVerticalOffset(newV);
                 handledAny = true;
             }
 
             if (Math.Abs(ratio - 1.0) > 1e-9)
             {
                 // Pinch/spread: use per-event ratio computed from cumulative manipulation so spread increases zoom
-                double oldScale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double oldScale = ZoomSlider?.Value ?? 1.0;
                 double newZoom = oldScale * ratio;
                 // clamp
-                if (newZoom < ZoomSlider.Minimum) newZoom = ZoomSlider.Minimum;
-                if (newZoom > ZoomSlider.Maximum) newZoom = ZoomSlider.Maximum;
+                double minZoom = ZoomSlider?.Minimum ?? 1.0;
+                double maxZoom = ZoomSlider?.Maximum ?? 4.0;
+                if (newZoom < minZoom) newZoom = minZoom;
+                if (newZoom > maxZoom) newZoom = maxZoom;
 
                 // Preserve anchor under cursor using integer device-pixel math so overlays stay aligned
                 try
@@ -9298,8 +9389,8 @@ namespace FamidashEditor
                     System.Diagnostics.Debug.WriteLine($"[PINCH] pinchDirectionDetected={pinchDirectionDetected} invertPinchGesture={invertPinchGesture} ratio={ratio}");
                     var dpi = VisualTreeHelper.GetDpi(this);
                     var mouseVp = Mouse.GetPosition(MapScrollViewer);
-                    double hp = MapScrollViewer.HorizontalOffset;
-                    double vp = MapScrollViewer.VerticalOffset;
+                    double hp = (MapScrollViewer?.HorizontalOffset ?? 0);
+                    double vp = (MapScrollViewer?.VerticalOffset ?? 0);
 
                     // Tile pixel sizes and padding in device pixels (match rendering code)
                     int tilePixelW_old = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleX));
@@ -9398,13 +9489,13 @@ namespace FamidashEditor
                     double newH = newContentX - mouseVp.X;
                     double newV = newContentY - mouseVp.Y;
 
-                    double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
-                    double maxV = Math.Max(0, (CanvasHost.ActualHeight) - MapScrollViewer.ViewportHeight);
+                    double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
+                    double maxV = Math.Max(0, (CanvasHost?.ActualHeight ?? 0) - SafeViewportHeight());
                     newH = Math.Max(0, Math.Min(maxH, newH));
                     newV = Math.Max(0, Math.Min(maxV, newV));
 
-                    MapScrollViewer.ScrollToHorizontalOffset(newH);
-                    MapScrollViewer.ScrollToVerticalOffset(newV);
+                    MapScrollViewer?.ScrollToHorizontalOffset(newH);
+                    MapScrollViewer?.ScrollToVerticalOffset(newV);
 
                     // Mirror wheel behavior: defer full rebuild and show quick-zoom transform
                     try { deferZoomRebuild = true; UpdateQuickZoomTransform(); } catch { }
@@ -9531,6 +9622,7 @@ namespace FamidashEditor
                             GroundOffsetY = loadedGroundOffsetY,
                             GroundRepeatX = loadedGroundRepeatX,
                             HasGroundLayer = loadedHasGroundLayer
+                            , DecoSet = loadedDecoSet
                         };
                         var saveCollisionMessages = TmxHandler.SaveTmx(target, tmxLevel, useLegacyTriggerOffset);
                         if (!string.IsNullOrEmpty(saveCollisionMessages))
@@ -9594,7 +9686,8 @@ namespace FamidashEditor
                             GroundSource = loadedGroundSource,
                             GroundOffsetY = loadedGroundOffsetY,
                             GroundRepeatX = loadedGroundRepeatX,
-                            HasGroundLayer = loadedHasGroundLayer
+                            HasGroundLayer = loadedHasGroundLayer,
+                            DecoSet = loadedDecoSet
                         };
                         var saveCollisionMessages = TmxHandler.SaveTmx(dlg.FileName, tmxLevel, useLegacyTriggerOffset);
                         if (!string.IsNullOrEmpty(saveCollisionMessages))
@@ -9675,11 +9768,11 @@ namespace FamidashEditor
                             try
                             {
                                 // Fine-scroll 2 pixels per tick when Shift+Arrow is held
-                                double newH = MapScrollViewer.HorizontalOffset + shiftArrowScrollDir * 2.0;
+                                double newH = (MapScrollViewer?.HorizontalOffset ?? 0) + shiftArrowScrollDir * 2.0;
                                 if (newH < 0) newH = 0;
-                                double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
+                                double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
                                 if (newH > maxH) newH = maxH;
-                                MapScrollViewer.ScrollToHorizontalOffset(newH);
+                                MapScrollViewer?.ScrollToHorizontalOffset(newH);
                             }
                             catch { }
                         };
@@ -9700,11 +9793,11 @@ namespace FamidashEditor
                 if (MapScrollViewer != null)
                 {
                     double coarseDelta = 32.0; // coarse scroll amount in pixels
-                    double newH = MapScrollViewer.HorizontalOffset + (e.Key == Key.Right ? coarseDelta : -coarseDelta);
+                    double newH = (MapScrollViewer?.HorizontalOffset ?? 0) + (e.Key == Key.Right ? coarseDelta : -coarseDelta);
                     if (newH < 0) newH = 0;
-                    double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
+                    double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
                     if (newH > maxH) newH = maxH;
-                    MapScrollViewer.ScrollToHorizontalOffset(newH);
+                    MapScrollViewer?.ScrollToHorizontalOffset(newH);
                     e.Handled = true; return;
                 }
             }
@@ -9769,6 +9862,33 @@ namespace FamidashEditor
                     shiftArrowScrollTimer = null;
                     shiftArrowScrollDir = 0;
                 }
+            }
+        }
+
+        private void SetOptionsButton_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var dlg = new SetOptionsWindow(loadedDecoSet) { Owner = this };
+                bool? res = dlg.ShowDialog();
+                if (res == true)
+                {
+                    string newDeco = dlg.SelectedDeco ?? "deco1";
+                    if (newDeco != loadedDecoSet)
+                    {
+                        loadedDecoSet = newDeco;
+                        // Save to per-level config without prompting
+                        try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                        if (StatusText != null) StatusText.Text = $"Deco set saved: {loadedDecoSet}";
+                        // Trigger a rebuild of sprites preview so change takes effect in preview mode
+                        try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+                        try { Redraw(); } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("SetOptions dialog failed: " + ex.Message);
             }
         }
 
@@ -10033,6 +10153,8 @@ namespace FamidashEditor
                         loadedGroundOffsetY = tmxLevel.GroundOffsetY;
                         loadedGroundRepeatX = tmxLevel.GroundRepeatX;
                         loadedHasGroundLayer = tmxLevel.HasGroundLayer;
+                        // Load deco set from TMX if present; config file may override when LoadTmxConfig runs
+                        try { loadedDecoSet = string.IsNullOrEmpty(tmxLevel.DecoSet) ? "deco1" : tmxLevel.DecoSet; } catch { loadedDecoSet = "deco1"; }
                         
                         // Note: Parallax and ground image sources are loaded but not automatically applied
                         // You may want to add logic here to load the actual images if needed
@@ -10133,8 +10255,8 @@ namespace FamidashEditor
                         // Snap to show ground at bottom (barely visible) and left side
                         if (MapScrollViewer != null)
                         {
-                            MapScrollViewer.UpdateLayout(); // Ensure layout is updated
-                            MapScrollViewer.ScrollToLeftEnd();
+                            MapScrollViewer?.UpdateLayout(); // Ensure layout is updated
+                            MapScrollViewer?.ScrollToLeftEnd();
                             
                             // Scroll to show the first 3 rows of ground
                             double zoomScale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
@@ -10146,15 +10268,15 @@ namespace FamidashEditor
                             
                             // Position viewport so the top of ground is visible, showing 3 rows of ground
                             // We want the viewport bottom to align with groundStart + 3 tiles
-                            double viewportHeight = MapScrollViewer.ViewportHeight;
+                            double viewportHeight = SafeViewportHeight();
                             double targetOffset = groundStartY + (tilePixelHeight * 3) - viewportHeight;
                             
                             // Clamp to valid scroll range
                             if (targetOffset < 0) targetOffset = 0;
-                            double maxScroll = MapScrollViewer.ScrollableHeight;
+                            double maxScroll = MapScrollViewer?.ScrollableHeight ?? 0.0;
                             if (targetOffset > maxScroll) targetOffset = maxScroll;
                             
-                            MapScrollViewer.ScrollToVerticalOffset(targetOffset);
+                            MapScrollViewer?.ScrollToVerticalOffset(targetOffset);
                         }
                         
                         if (StatusText != null) StatusText.Text = $"Loaded {Path.GetFileName(dlg.FileName)} ({mapWidth}x{mapHeight})";
@@ -10167,7 +10289,7 @@ namespace FamidashEditor
 
                         // Ensure sprites bitmap is rebuilt after loading TMX so sprites appear
                         // even when the map size/scale did not change (avoid needing a preview toggle).
-                        try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+                        try { RebuildAllSpritesBitmap(ZoomSlider?.Value ?? 1.0, mapViewportPadding); } catch { }
                     }
                     else
                     {
