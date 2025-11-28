@@ -17,6 +17,9 @@ namespace FamidashEditor
 {
     public partial class MainWindow : Window
     {
+    // Timer used to perform continuous 1-px fine scrolling while Shift+Left/Right are held
+    private System.Windows.Threading.DispatcherTimer? shiftArrowScrollTimer = null;
+    private int shiftArrowScrollDir = 0; // -1 = left, +1 = right
     private bool initialLeftSizingDone = false;
     private bool suppressManualTileChange = false;
     private bool suppressManualSpriteChange = false;
@@ -140,7 +143,7 @@ namespace FamidashEditor
         {
             Directory.CreateDirectory(configFolder);
         }
-        
+
         
 
         // Use just the filename (not full path) to allow sharing configs
@@ -833,6 +836,8 @@ namespace FamidashEditor
                 {
                     // Ensure initial layout completes before the first redraw so measurements are accurate.
                     LoadAssetsOnStart();
+                    // Ensure palette UI reflects default active layer (tiles) on startup
+                    try { UpdatePaletteHighlight(); } catch { }
                     // Run left-column sizing and palette sizing after layout has run so ActualWidth/measure are available.
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
@@ -1070,6 +1075,8 @@ namespace FamidashEditor
         if (MagicWandTool != null) MagicWandTool.Checked += Tool_Checked;
             // keyboard shortcuts for undo/redo
             this.PreviewKeyDown += MainWindow_PreviewKeyDown;
+            // Handle key up for stopping continuous Shift+arrow scrolling
+            this.PreviewKeyUp += MainWindow_PreviewKeyUp;
             
             // pinch zoom support
             if (MapScrollViewer != null) MapScrollViewer.ManipulationDelta += MapScrollViewer_ManipulationDelta;
@@ -6071,19 +6078,61 @@ namespace FamidashEditor
                                         int portalRenderWidth = spritePixelW;
                                         int portalRenderHeight = spritePixelH;
                                         int portalAnimatedIdx = GetAnimatedSpriteIndex(checkSpriteId);
-                                        bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3016);
+                                        // Extend portal mapping up through 3029 like elsewhere so speed portals are handled
+                                        bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3029);
+
+                                        // Apply preview-mode vertical nudges for selected portal types (skip 0.5x/1x/special)
+                                        if (previewMode)
+                                        {
+                                            if (checkSpriteId == 0x16)
+                                            {
+                                                int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
+                                                portalDestY = Math.Max(0, portalDestY - nudgePixels);
+                                            }
+                                            else if (checkSpriteId == 0x20 || checkSpriteId == 0x21)
+                                            {
+                                                int nudgePixels = (int)Math.Round(2.0 * dpi.DpiScaleY);
+                                                portalDestY = Math.Max(0, portalDestY - nudgePixels);
+                                            }
+                                        }
+
                                         if (portalIsMulti)
                                         {
+                                            // Standard tall portals (3000-3010) are 1.5 tiles × 3 tiles
                                             if (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3010)
                                             {
                                                 portalRenderWidth = (spritePixelW * 3) / 2;  // 1.5 tiles wide
+                                                portalRenderHeight = spritePixelH * 3;      // 3 tiles tall
+                                            }
+                                            // Horizontal gravity portals (3011-3014 and 3019-3023) are 3 tiles × 2 tiles
+                                            else if ((portalAnimatedIdx >= 3011 && portalAnimatedIdx <= 3014) || (portalAnimatedIdx >= 3019 && portalAnimatedIdx <= 3023))
+                                            {
+                                                portalRenderWidth = spritePixelW * 3;
+                                                portalRenderHeight = spritePixelH * 2;
+                                            }
+                                            // 3x/4x speed portals (3027/3028): 2 tiles tall, width based on source PNG scaling
+                                            else if (portalAnimatedIdx == 3027 || portalAnimatedIdx == 3028)
+                                            {
+                                                portalRenderWidth = Math.Min(cachedPixelWidth, (int)Math.Round(spritePixelW * (double)portalSprite.PixelWidth / (double)TileSize));
+                                                portalRenderHeight = spritePixelH * 2;
+                                            }
+                                            // 2x preview (3026): 1.5 tiles wide × 2 tiles tall
+                                            else if (portalAnimatedIdx == 3026)
+                                            {
+                                                portalRenderWidth = (spritePixelW * 3) / 2;
+                                                portalRenderHeight = spritePixelH * 2;
+                                            }
+                                            // 0.5x, 1x, special (3024/3025/3029): single tile wide, tall height
+                                            else if (portalAnimatedIdx == 3024 || portalAnimatedIdx == 3025 || portalAnimatedIdx == 3029)
+                                            {
+                                                portalRenderWidth = spritePixelW;
                                                 portalRenderHeight = spritePixelH * 3;
                                             }
                                             else
                                             {
-                                                // Horizontal gravity portals: 3 tiles wide, 2 tiles tall
-                                                portalRenderWidth = spritePixelW * 3;
-                                                portalRenderHeight = spritePixelH * 2;
+                                                // Fallback to standard tall portal sizing
+                                                portalRenderWidth = (spritePixelW * 3) / 2;
+                                                portalRenderHeight = spritePixelH * 3;
                                             }
                                         }
                                         
@@ -6701,8 +6750,10 @@ namespace FamidashEditor
                 
                 if (sprite == null) return;
                 
-                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3023)
-                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3023);
+                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3029)
+                // Extend the range to 3029 so that the speed-3x/4x preview sprites (3027/3028)
+                // are treated as portal layer rendering and not drawn into the sprites layer
+                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3029);
                 int renderHeight = spritePixelH;
                 int renderWidth = spritePixelW;
 
@@ -7072,6 +7123,18 @@ namespace FamidashEditor
                 return;
             }
 
+            // Read source portal image dimensions and pixels early so we can choose proper render sizing
+            int srcWidth = portalSprite.PixelWidth;
+            int srcHeight = portalSprite.PixelHeight;
+            if (srcWidth <= 0 || srcHeight <= 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"WARNING: Portal sprite invalid size for idx=0x{spriteIdx:X2}: {srcWidth}x{srcHeight}");
+                return;
+            }
+            int srcStride = srcWidth * 4;
+            byte[] srcPixels = new byte[srcHeight * srcStride];
+            portalSprite.CopyPixels(srcPixels, srcStride, 0);
+
             // Calculate pixel position
             int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
             int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
@@ -7085,11 +7148,25 @@ namespace FamidashEditor
             {
                 destY = Math.Max(0, destY - spritePixelH);
             }
-            // Speed portal previews should start one tile higher so they visually hang
-            // from the tile above similar to other portal previews.
-            if (previewMode && (spriteIdx == 0x14 || spriteIdx == 0x15 || spriteIdx == 0x16 || spriteIdx == 0x20 || spriteIdx == 0x21 || spriteIdx == 0x6D))
+            // Speed portal previews: most should start one tile higher so they visually hang
+            // from the tile above similar to other portal previews. However, the 3x/4x
+            // speed previews (sprite 0x20 and 0x21) render better when shifted down
+            // by one tile instead of up. Keep other speed previews shifted up.
+            if (previewMode)
             {
-                destY = Math.Max(0, destY - spritePixelH);
+                // Keep nudges for 2x and 3x/4x portals only; skip 0.5x/1x/special (0x14/0x15/0x6D)
+                if (spriteIdx == 0x16 || spriteIdx == 0x14 || spriteIdx == 0x15 || spriteIdx == 0x6D)
+                {
+                    // 2x, and also 0.5x/1x/special speed portals: nudge up 6 logical pixels, scaled by DPI
+                    int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
+                    destY = Math.Max(0, destY - nudgePixels);
+                }
+                else if (spriteIdx == 0x20 || spriteIdx == 0x21)
+                {
+                    // 3x/4x speed portals: small nudge up of 2 logical pixels, scaled by DPI
+                    int nudgePixels = (int)Math.Round(2.0 * dpi.DpiScaleY);
+                    destY = Math.Max(0, destY - nudgePixels);
+                }
             }
 
             int renderWidth = spritePixelW;
@@ -7097,6 +7174,10 @@ namespace FamidashEditor
             int portalAnimatedIdx = GetAnimatedSpriteIndex(spriteIdx);
             // Treat custom portal indices up through 3029 as multi-tile portals (extended for speed portals)
             bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3029);
+            // Special-case for 3x/4x speed portals (3027/3028): they should be two tiles tall
+            // and their horizontal pixel width should follow the source PNG width rather than
+            // being forced to a single tile width.
+            bool portalIsSpeed34 = (portalAnimatedIdx == 3027 || portalAnimatedIdx == 3028);
             if (portalIsMulti)
             {
                 // Standard tall portals (3000-3010) are 1.5 tiles × 3 tiles
@@ -7111,6 +7192,26 @@ namespace FamidashEditor
                     renderWidth = spritePixelW * 3;
                     renderHeight = spritePixelH * 2;
                 }
+                // 3x and 4x speed portals (3027/3028) are only 2 tiles tall; size horizontally to source PNG
+                else if (portalIsSpeed34)
+                {
+                    renderWidth = Math.Min(cachedPixelWidth, (int)Math.Round(spritePixelW * (double)srcWidth / (double)TileSize));
+                    renderHeight = spritePixelH * 2;
+                }
+                // 0.5x and 1x and special speed previews (3024/3025/3029) should only occupy
+                // a single tile horizontally but keep the tall height. The 2x preview (3026)
+                // is an exception: it should be 1.5 tiles wide and 2 tiles tall.
+                else if (portalAnimatedIdx == 3026)
+                {
+                    renderWidth = (spritePixelW * 3) / 2; // 1.5 tiles wide
+                    renderHeight = spritePixelH * 2; // 2 tiles tall
+                }
+                else if (portalAnimatedIdx == 3024 || portalAnimatedIdx == 3025 || portalAnimatedIdx == 3029)
+                {
+                    // 0.5x, 1x and special speed portals: render as single tile wide by 2 tiles tall
+                    renderWidth = spritePixelW; // single tile wide
+                    renderHeight = spritePixelH * 2; // 2 tiles tall
+                }
                 // New dual/single portals (3015,3016): treat like standard tall portals (1.5×3)
                 else
                 {
@@ -7119,17 +7220,7 @@ namespace FamidashEditor
                 }
             }
 
-            int srcWidth = portalSprite.PixelWidth;
-            int srcHeight = portalSprite.PixelHeight;
-            if (srcWidth <= 0 || srcHeight <= 0)
-            {
-                System.Diagnostics.Debug.WriteLine($"WARNING: Portal sprite invalid size for idx=0x{spriteIdx:X2}: {srcWidth}x{srcHeight}");
-                return;
-            }
-
-            int srcStride = srcWidth * 4;
-            byte[] srcPixels = new byte[srcHeight * srcStride];
-            portalSprite.CopyPixels(srcPixels, srcStride, 0);
+            
 
             int copyWidth = Math.Min(renderWidth, cachedPixelWidth - destX);
             int copyHeight = Math.Min(renderHeight, cachedPixelHeight - destY);
@@ -7288,7 +7379,9 @@ namespace FamidashEditor
                 int y = Math.Max(0, Math.Min(mapHeight - 1, (int)(relY / (TileSize * scale))));
                 if (x >= selX && x < selX + selW && y >= selY && y < selY + selH)
                 {
-                    EraseSelection();
+                    // Erase on the active layers (tiles/sprites). Use unified handler so both layers
+                    // are removed when both are active, or if no layer is marked active treat both as active.
+                    EraseSelectedLayers();
                     return;
                 }
             }
@@ -8154,10 +8247,13 @@ namespace FamidashEditor
         private void EraseSelectedLayers()
         {
             if (selW <= 0 || selH <= 0) return;
+            // If neither layer is active, treat both as active for erase operations
+            bool effectiveTilesActive = tilesLayerActive || (!tilesLayerActive && !spritesLayerActive);
+            bool effectiveSpritesActive = spritesLayerActive || (!tilesLayerActive && !spritesLayerActive);
 
             // Tile layer
             var tileAction = new TileChangeAction();
-            if (tilesLayerActive)
+            if (effectiveTilesActive)
             {
                 for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
                 {
@@ -8171,7 +8267,7 @@ namespace FamidashEditor
 
             // Sprite layer
             var spriteAction = new SpriteChangeAction();
-            if (spritesLayerActive)
+            if (effectiveSpritesActive)
             {
                 for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
                 {
@@ -8531,108 +8627,284 @@ namespace FamidashEditor
             }
         }
 
+        private void SaveButton_Click(object sender, RoutedEventArgs e)
+        {
+            // If we already have a current file path, perform a silent save to that path.
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                try
+                {
+                    string target = currentFilePath;
+                    string ext = Path.GetExtension(target).ToLower();
+
+                    if (ext == ".tmx")
+                    {
+                        string? exportTarget = loadedExportTarget;
+                        if (string.IsNullOrEmpty(exportTarget))
+                        {
+                            exportTarget = Path.ChangeExtension(Path.GetFileName(target), ".csv");
+                        }
+                        int chunkHeight = loadedHasEditorSettings ? loadedChunkHeight : mapHeight;
+                        var tmxLevel = new TmxLevel
+                        {
+                            Width = mapWidth,
+                            Height = mapHeight,
+                            Tiles = tiles,
+                            Sprites = sprites,
+                            TilesetSource = loadedTilesetSource ?? "../../../GRAPHICS/famidash.bmp",
+                            SpritesetSource = loadedSpritesetSource ?? "../../../GRAPHICS/sprites.png",
+                            HasEditorSettings = true,
+                            ChunkWidth = loadedChunkWidth,
+                            ChunkHeight = chunkHeight,
+                            ExportTarget = loadedExportTarget,
+                            ExportFormat = loadedExportFormat,
+                            ParallaxSource = loadedParallaxSource,
+                            ParallaxX = loadedParallaxX,
+                            ParallaxY = loadedParallaxY,
+                            ParallaxRepeatX = loadedParallaxRepeatX,
+                            ParallaxRepeatY = loadedParallaxRepeatY,
+                            HasParallaxLayer = loadedHasParallaxLayer,
+                            GroundSource = loadedGroundSource,
+                            GroundOffsetY = loadedGroundOffsetY,
+                            GroundRepeatX = loadedGroundRepeatX,
+                            HasGroundLayer = loadedHasGroundLayer
+                        };
+                        var saveCollisionMessages = TmxHandler.SaveTmx(target, tmxLevel, useLegacyTriggerOffset);
+                        if (!string.IsNullOrEmpty(saveCollisionMessages))
+                        {
+                            MessageBox.Show("Sprite collision adjustments during save:\n\n" + saveCollisionMessages,
+                                "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                    }
+                    else
+                    {
+                        var model = new LevelModel { Width = mapWidth, Height = mapHeight, Tiles = tiles };
+                        File.WriteAllText(target, JsonSerializer.Serialize(model));
+                    }
+
+                    hasUnsavedChanges = false;
+                    if (StatusText != null) StatusText.Text = "Saved " + target;
+                }
+                catch (Exception ex)
+                {
+                    if (StatusText != null) StatusText.Text = "Save failed: " + ex.Message;
+                }
+
+                return;
+            }
+
+            // No current file path -> fall back to Save As dialog
+            var dlg = new SaveFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*", DefaultExt = "tmx" };
+            if (dlg.ShowDialog(this) == true)
+            {
+                try
+                {
+                    string ext = Path.GetExtension(dlg.FileName).ToLower();
+
+                    if (ext == ".tmx")
+                    {
+                        string? exportTarget = loadedExportTarget;
+                        if (string.IsNullOrEmpty(exportTarget))
+                        {
+                            exportTarget = Path.ChangeExtension(Path.GetFileName(dlg.FileName), ".csv");
+                        }
+                        int chunkHeight = loadedHasEditorSettings ? loadedChunkHeight : mapHeight;
+                        var tmxLevel = new TmxLevel
+                        {
+                            Width = mapWidth,
+                            Height = mapHeight,
+                            Tiles = tiles,
+                            Sprites = sprites,
+                            TilesetSource = loadedTilesetSource ?? "../../../GRAPHICS/famidash.bmp",
+                            SpritesetSource = loadedSpritesetSource ?? "../../../GRAPHICS/sprites.png",
+                            HasEditorSettings = true,
+                            ChunkWidth = loadedChunkWidth,
+                            ChunkHeight = chunkHeight,
+                            ExportTarget = loadedExportTarget,
+                            ExportFormat = loadedExportFormat,
+                            ParallaxSource = loadedParallaxSource,
+                            ParallaxX = loadedParallaxX,
+                            ParallaxY = loadedParallaxY,
+                            ParallaxRepeatX = loadedParallaxRepeatX,
+                            ParallaxRepeatY = loadedParallaxRepeatY,
+                            HasParallaxLayer = loadedHasParallaxLayer,
+                            GroundSource = loadedGroundSource,
+                            GroundOffsetY = loadedGroundOffsetY,
+                            GroundRepeatX = loadedGroundRepeatX,
+                            HasGroundLayer = loadedHasGroundLayer
+                        };
+                        var saveCollisionMessages = TmxHandler.SaveTmx(dlg.FileName, tmxLevel, useLegacyTriggerOffset);
+                        if (!string.IsNullOrEmpty(saveCollisionMessages))
+                        {
+                            MessageBox.Show("Sprite collision adjustments during save:\n\n" + saveCollisionMessages,
+                                "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                    }
+                    else
+                    {
+                        var model = new LevelModel { Width = mapWidth, Height = mapHeight, Tiles = tiles };
+                        File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(model));
+                    }
+
+                    currentFilePath = dlg.FileName;
+                    hasUnsavedChanges = false;
+                    if (StatusText != null) StatusText.Text = "Saved " + dlg.FileName;
+                }
+                catch (Exception ex)
+                {
+                    if (StatusText != null) StatusText.Text = "Save failed: " + ex.Message;
+                }
+            }
+        }
         private void MainWindow_PreviewKeyDown(object? sender, KeyEventArgs e)
         {
-            // Ctrl+Z = undo, Ctrl+Y = redo
-            if ((Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)) && e.Key == Key.Z)
-            {
-                Undo(); e.Handled = true; return;
-            }
-            if ((Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)) && e.Key == Key.Y)
-            {
-                Redo(); e.Handled = true; return;
-            }
-            
-            // Arrow key scrolling - check all held keys to allow diagonal movement
-            if (MapScrollViewer == null) return;
-            
-            bool isShiftPressed = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
-            double scrollAmount = isShiftPressed ? 4 : 32; // 4px with Shift, 32px normally
-            
-            bool handled = false;
-            
-            if (Keyboard.IsKeyDown(Key.Left))
-            {
-                MapScrollViewer.ScrollToHorizontalOffset(MapScrollViewer.HorizontalOffset - scrollAmount);
-                handled = true;
-            }
-            if (Keyboard.IsKeyDown(Key.Right))
-            {
-                MapScrollViewer.ScrollToHorizontalOffset(MapScrollViewer.HorizontalOffset + scrollAmount);
-                handled = true;
-            }
-            if (Keyboard.IsKeyDown(Key.Up))
-            {
-                MapScrollViewer.ScrollToVerticalOffset(MapScrollViewer.VerticalOffset - scrollAmount);
-                handled = true;
-            }
-            if (Keyboard.IsKeyDown(Key.Down))
-            {
-                MapScrollViewer.ScrollToVerticalOffset(MapScrollViewer.VerticalOffset + scrollAmount);
-                handled = true;
-            }
-            
-            if (handled)
-                e.Handled = true;
+            // Capture modifier state
+            var mods = System.Windows.Input.Keyboard.Modifiers;
 
-            // Keyboard shortcuts: Open/Save/New/Save As
-            if ((Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)) && e.Key == Key.O)
+            // Ctrl-based shortcuts
+            if ((mods & ModifierKeys.Control) != 0)
             {
-                // Ctrl+O -> Open TMX
-                LoadButton_Click(this, new RoutedEventArgs()); e.Handled = true; return;
-            }
-            if ((Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)) && e.Key == Key.S)
-            {
-                // Ctrl+S without Alt -> Save
-                if (!(Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt)))
+                // Ctrl+Z -> Undo, Ctrl+Shift+Z or Ctrl+Y -> Redo
+                if (e.Key == Key.Z)
                 {
-                    SaveButton_Click(this, new RoutedEventArgs()); e.Handled = true; return;
+                    if ((mods & ModifierKeys.Shift) != 0)
+                    {
+                        try { Redo(); } catch { }
+                    }
+                    else
+                    {
+                        try { Undo(); } catch { }
+                    }
+                    e.Handled = true; return;
+                }
+
+                if (e.Key == Key.Y)
+                {
+                    try { Redo(); } catch { }
+                    e.Handled = true; return;
+                }
+
+                if (e.Key == Key.O)
+                {
+                    try { LoadButton_Click(this, new RoutedEventArgs()); } catch { }
+                    e.Handled = true; return;
+                }
+
+                if (e.Key == Key.N)
+                {
+                    try { NewMenuItem_Click(this, new RoutedEventArgs()); } catch { }
+                    e.Handled = true; return;
                 }
             }
-            if ((Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)) && (Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt)) && e.Key == Key.S)
+
+            // Shift + Left/Right -> start continuous fine horizontal scrolling (1 px per tick)
+            if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0 && (e.Key == Key.Left || e.Key == Key.Right))
+            {
+                if (MapScrollViewer != null)
+                {
+                    shiftArrowScrollDir = (e.Key == Key.Right) ? 1 : -1;
+                    if (shiftArrowScrollTimer == null)
+                    {
+                        shiftArrowScrollTimer = new System.Windows.Threading.DispatcherTimer();
+                        shiftArrowScrollTimer.Interval = TimeSpan.FromMilliseconds(16); // ~60Hz
+                        shiftArrowScrollTimer.Tick += (s, ev) =>
+                        {
+                            try
+                            {
+                                // Fine-scroll 2 pixels per tick when Shift+Arrow is held
+                                double newH = MapScrollViewer.HorizontalOffset + shiftArrowScrollDir * 2.0;
+                                if (newH < 0) newH = 0;
+                                double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
+                                if (newH > maxH) newH = maxH;
+                                MapScrollViewer.ScrollToHorizontalOffset(newH);
+                            }
+                            catch { }
+                        };
+                        shiftArrowScrollTimer.Start();
+                    }
+                    e.Handled = true; return;
+                }
+            }
+
+            // Tool shortcuts (single-key, no Ctrl/Alt unless noted)
+            if (e.Key == Key.P || e.Key == Key.B)
+            {
+                if (PlaceTool != null) { PlaceTool.IsChecked = true; e.Handled = true; return; }
+            }
+            // Left/Right alone -> coarse scroll (when no modifiers pressed)
+            if ((mods & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0 && (e.Key == Key.Left || e.Key == Key.Right))
+            {
+                if (MapScrollViewer != null)
+                {
+                    double coarseDelta = 32.0; // coarse scroll amount in pixels
+                    double newH = MapScrollViewer.HorizontalOffset + (e.Key == Key.Right ? coarseDelta : -coarseDelta);
+                    if (newH < 0) newH = 0;
+                    double maxH = Math.Max(0, (CanvasHost.ActualWidth) - MapScrollViewer.ViewportWidth);
+                    if (newH > maxH) newH = maxH;
+                    MapScrollViewer.ScrollToHorizontalOffset(newH);
+                    e.Handled = true; return;
+                }
+            }
+            if (e.Key == Key.M)
+            {
+                if (MoveTool != null) MoveTool.IsChecked = true; e.Handled = true; return;
+            }
+            if (e.Key == Key.E)
+            {
+                if (EraseTool != null) EraseTool.IsChecked = true; e.Handled = true; return;
+            }
+            if (e.Key == Key.F)
+            {
+                if (FillTool != null) FillTool.IsChecked = true; e.Handled = true; return;
+            }
+
+            // Save / Select behavior on S: Ctrl+S = Save, Ctrl+Alt+S = Save As, plain S = Select (only if no modifiers)
+            if (e.Key == Key.S)
             {
                 // Ctrl+Alt+S -> Save As
-                MenuFileSaveAs_Click(this, new RoutedEventArgs()); e.Handled = true; return;
-            }
-            if ((Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)) && e.Key == Key.N)
-            {
-                // Ctrl+N -> New
-                NewMenuItem_Click(this, new RoutedEventArgs()); e.Handled = true; return;
+                if ((mods & (ModifierKeys.Control | ModifierKeys.Alt)) == (ModifierKeys.Control | ModifierKeys.Alt))
+                {
+                    try { MenuFileSaveAs_Click(this, new RoutedEventArgs()); } catch { }
+                    e.Handled = true; return;
+                }
+
+                // Ctrl+S -> Save
+                if ((mods & ModifierKeys.Control) != 0)
+                {
+                    try { SaveButton_Click(this, new RoutedEventArgs()); } catch { }
+                    e.Handled = true; return;
+                }
+
+                // Only activate Select when no Ctrl/Alt modifiers are present
+                if ((mods & (ModifierKeys.Control | ModifierKeys.Alt)) == 0)
+                {
+                    if (SelectTool != null) { SelectTool.IsChecked = true; e.Handled = true; return; }
+                }
             }
 
-            // Delete key: erase selected tiles/sprites depending on active layers
+            // Delete -> erase selection on active layers
             if (e.Key == Key.Delete)
             {
-                EraseSelectedLayers(); e.Handled = true; return;
+                try { EraseSelectedLayers(); } catch { }
+                e.Handled = true; return;
             }
 
-            // Single-key tool shortcuts (no Ctrl)
-            if (!Keyboard.IsKeyDown(Key.LeftCtrl) && !Keyboard.IsKeyDown(Key.RightCtrl))
+            if (e.Key == Key.W)
             {
-                if (e.Key == Key.B)
+                if (MagicWandTool != null) MagicWandTool.IsChecked = true; e.Handled = true; return;
+            }
+        }
+
+        private void MainWindow_PreviewKeyUp(object? sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.LeftShift || e.Key == Key.RightShift)
+            {
+                // stop continuous shift-arrow scrolling
+                if (shiftArrowScrollTimer != null)
                 {
-                    if (PlaceTool != null) PlaceTool.IsChecked = true; e.Handled = true; return;
-                }
-                if (e.Key == Key.M)
-                {
-                    if (MoveTool != null) MoveTool.IsChecked = true; e.Handled = true; return;
-                }
-                if (e.Key == Key.E)
-                {
-                    if (EraseTool != null) EraseTool.IsChecked = true; e.Handled = true; return;
-                }
-                if (e.Key == Key.F)
-                {
-                    if (FillTool != null) FillTool.IsChecked = true; e.Handled = true; return;
-                }
-                if (e.Key == Key.S)
-                {
-                    // Only activate Select when not used as Ctrl+S (save handled above)
-                    if (SelectTool != null) SelectTool.IsChecked = true; e.Handled = true; return;
-                }
-                if (e.Key == Key.W)
-                {
-                    if (MagicWandTool != null) MagicWandTool.IsChecked = true; e.Handled = true; return;
+                    try { shiftArrowScrollTimer.Stop(); } catch { }
+                    shiftArrowScrollTimer = null;
+                    shiftArrowScrollDir = 0;
                 }
             }
         }
@@ -8793,86 +9065,7 @@ namespace FamidashEditor
             }
         }
 
-        private void SaveButton_Click(object sender, RoutedEventArgs e)
-        {
-            var dlg = new SaveFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*", DefaultExt = "tmx" };
-            
-            // Use current file path if we have one
-            if (!string.IsNullOrEmpty(currentFilePath))
-            {
-                dlg.FileName = currentFilePath;
-            }
-            
-            if (dlg.ShowDialog(this) == true)
-            {
-                try
-                {
-                    string ext = Path.GetExtension(dlg.FileName).ToLower();
-                    
-                    if (ext == ".tmx")
-                    {
-                        // Determine export target - use loaded value or generate default from filename
-                        string? exportTarget = loadedExportTarget;
-                        if (string.IsNullOrEmpty(exportTarget))
-                        {
-                            // Default: use same filename as TMX but with .csv extension
-                            exportTarget = Path.ChangeExtension(Path.GetFileName(dlg.FileName), ".csv");
-                        }
-                        
-                        // Determine chunk height - use loaded value or default to map height
-                        int chunkHeight = loadedHasEditorSettings ? loadedChunkHeight : mapHeight;
-                        
-                        // Save as TMX format with separate tiles and sprites
-                        var tmxLevel = new TmxLevel
-                        {
-                            Width = mapWidth,
-                            Height = mapHeight,
-                            Tiles = tiles,
-                            Sprites = sprites,
-                            TilesetSource = loadedTilesetSource ?? "../../../GRAPHICS/famidash.bmp",
-                            SpritesetSource = loadedSpritesetSource ?? "../../../GRAPHICS/sprites.png",
-                            HasEditorSettings = true, // Always include editor settings
-                            ChunkWidth = loadedChunkWidth,
-                            ChunkHeight = chunkHeight,
-                            ExportTarget = exportTarget,
-                            ExportFormat = loadedExportFormat,
-                            ParallaxSource = loadedParallaxSource,
-                            ParallaxX = loadedParallaxX,
-                            ParallaxY = loadedParallaxY,
-                            ParallaxRepeatX = loadedParallaxRepeatX,
-                            ParallaxRepeatY = loadedParallaxRepeatY,
-                            HasParallaxLayer = loadedHasParallaxLayer,
-                            GroundSource = loadedGroundSource,
-                            GroundOffsetY = loadedGroundOffsetY,
-                            GroundRepeatX = loadedGroundRepeatX,
-                            HasGroundLayer = loadedHasGroundLayer
-                        };
-                        var saveCollisionMessages = TmxHandler.SaveTmx(dlg.FileName, tmxLevel, useLegacyTriggerOffset);
-                        
-                        // Show collision messages if any
-                        if (!string.IsNullOrEmpty(saveCollisionMessages))
-                        {
-                            MessageBox.Show("Sprite collision adjustments during save:\n\n" + saveCollisionMessages, 
-                                "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
-                        }
-                    }
-                    else
-                    {
-                        // Save as JSON format
-                        var model = new LevelModel { Width = mapWidth, Height = mapHeight, Tiles = tiles };
-                        File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(model));
-                    }
-                    
-                    currentFilePath = dlg.FileName;
-                    hasUnsavedChanges = false;
-                    if (StatusText != null) StatusText.Text = "Saved " + dlg.FileName;
-                }
-                catch (Exception ex)
-                {
-                    if (StatusText != null) StatusText.Text = "Save failed: " + ex.Message;
-                }
-            }
-        }
+        
 
         private void MenuFileSaveAs_Click(object? sender, RoutedEventArgs e)
         {
@@ -9105,9 +9298,13 @@ namespace FamidashEditor
                         
                         // Load and apply saved tint configuration
                         LoadTmxConfig(dlg.FileName);
-                        
+
                         // Redraw to apply the loaded tints
                         Redraw();
+
+                        // Ensure sprites bitmap is rebuilt after loading TMX so sprites appear
+                        // even when the map size/scale did not change (avoid needing a preview toggle).
+                        try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
                     }
                     else
                     {
