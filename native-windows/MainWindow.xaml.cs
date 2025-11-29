@@ -4719,6 +4719,43 @@ namespace FamidashEditor
                 }
             }
 
+            // Also look for an actual .fms project in the repo root or app base and prefer it for playback
+            try
+            {
+                string? fmsCandidate = null;
+                var fmsCandidates = new System.Collections.Generic.List<string>
+                {
+                    System.IO.Path.Combine(AppContext.BaseDirectory, "the album.fms"),
+                    System.IO.Path.Combine(Environment.CurrentDirectory, "the album.fms")
+                };
+                if (!string.IsNullOrEmpty(repoRoot))
+                {
+                    fmsCandidates.Add(System.IO.Path.Combine(repoRoot, "the album.fms"));
+                    fmsCandidates.Add(System.IO.Path.Combine(repoRoot, "native-windows", "the album.fms"));
+                }
+                // Also check for any *.fms files at repo root
+                if (!string.IsNullOrEmpty(repoRoot))
+                {
+                    try
+                    {
+                        foreach (var f in Directory.EnumerateFiles(repoRoot, "*.fms", SearchOption.TopDirectoryOnly)) fmsCandidates.Add(f);
+                    }
+                    catch { }
+                }
+
+                foreach (var c in fmsCandidates)
+                {
+                    try { if (!string.IsNullOrEmpty(c) && File.Exists(c)) { fmsCandidate = c; break; } } catch { }
+                }
+
+                if (!string.IsNullOrEmpty(fmsCandidate))
+                {
+                    albumTxtPath = fmsCandidate; // reuse variable: it can be .txt or .fms; Play checks extension
+                    try { if (StatusText != null) StatusText.Text = $"Found .fms for playback: {Path.GetFileName(fmsCandidate)}"; } catch { }
+                }
+            }
+            catch { }
+
             // Populate combo
             FamiTrackCombo.Items.Clear();
             if (parsed.Count > 0)
