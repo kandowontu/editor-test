@@ -960,6 +960,34 @@ namespace FamidashEditor
             // Wire main toolbar Play/Stop buttons (only toolbar controls should drive playback)
             try { if (PlayFamiButton != null) PlayFamiButton.Click += PlayFamiButton_Click; } catch { }
             try { if (StopFamiButton != null) StopFamiButton.Click += StopFamiButton_Click; } catch { }
+
+            // Background warm-up: load FamiStudio assemblies and warm the in-process renderer/audio device
+            try
+            {
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        // Prefer any explicit configured path
+                        if (!string.IsNullOrEmpty(famiStudioPath) && Directory.Exists(famiStudioPath) && !famiIntegration.IsLoaded)
+                        {
+                            try { famiIntegration.LoadFromFolder(famiStudioPath); } catch { }
+                        }
+
+                        // Look for a local .fms next to the repo root or the album txt path
+                        string? probeFms = null;
+                        var repoFms = Path.Combine(Environment.CurrentDirectory, "the album.fms");
+                        if (File.Exists(repoFms)) probeFms = repoFms;
+                        if (string.IsNullOrEmpty(probeFms) && !string.IsNullOrEmpty(albumTxtPath) && Path.GetExtension(albumTxtPath).Equals(".fms", StringComparison.OrdinalIgnoreCase)) probeFms = albumTxtPath;
+                        if (!string.IsNullOrEmpty(probeFms) && File.Exists(probeFms))
+                        {
+                            try { famiIntegration.WarmAndPrime(probeFms); } catch { }
+                        }
+                    }
+                    catch { }
+                });
+            }
+            catch { }
             
             // Wire up window closing event to prompt for unsaved changes
             Closing += Window_Closing;

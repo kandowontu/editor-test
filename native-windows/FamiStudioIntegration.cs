@@ -15,7 +15,7 @@ namespace FamidashEditor
         private AssemblyLoadContext? alc;
         private string? famiFolder;
         private WaveOutEvent? output;
-        private AudioFileReader? reader;
+        private WaveStream? reader;
         private string? lastTempWav;
         public string? StatusMessage { get; private set; }
         public bool IsLoaded => alc != null;
@@ -397,28 +397,65 @@ namespace FamidashEditor
                         var playType = asm.GetTypes().FirstOrDefault(t => t.Name.ToLower().Contains("player") || t.Name.ToLower().Contains("audio"));
                         if (playType != null)
                         {
-                            var method = playType.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance).FirstOrDefault(mi => mi.Name.ToLower().Contains("export") || mi.Name.ToLower().Contains("render") || mi.Name.ToLower().Contains("play"));
-                            if (method != null)
-                            {
-                                var parameters = method.GetParameters();
-                                object? inst = null;
-                                if (!method.IsStatic)
-                                {
-                                    inst = Activator.CreateInstance(playType);
-                                }
+                            // Prefer any in-process method that can render to a Stream or return byte[] before falling back to file-based export
+                            var candidates = playType.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance)
+                                .Where(mi => mi.Name.ToLower().Contains("export") || mi.Name.ToLower().Contains("render") || mi.Name.ToLower().Contains("play"))
+                                .ToList();
 
-                                if (parameters.Length == 3 && parameters[0].ParameterType == typeof(string) && parameters[1].ParameterType == typeof(int) && parameters[2].ParameterType == typeof(string))
+                            object? inst = null;
+                            foreach (var method in candidates)
+                            {
+                                try
                                 {
-                                    string tmp = Path.Combine(Path.GetTempPath(), $"fms_play_{Guid.NewGuid()}.wav");
-                                    method.Invoke(inst, new object[] { fmsPath, trackIndex, tmp });
-                                    if (File.Exists(tmp))
+                                    var parameters = method.GetParameters();
+                                    if (!method.IsStatic && inst == null) inst = Activator.CreateInstance(playType);
+
+                                    // signature: (string path, int index, Stream outStream)
+                                    if (parameters.Length == 3 && parameters[0].ParameterType == typeof(string) && parameters[1].ParameterType == typeof(int) && typeof(Stream).IsAssignableFrom(parameters[2].ParameterType))
                                     {
-                                        PlayWav(tmp);
-                                        lastTempWav = tmp;
-                                        StatusMessage = "Playing via in-process export";
-                                        return;
+                                        using (var ms = new MemoryStream())
+                                        {
+                                            method.Invoke(inst, new object[] { fmsPath, trackIndex, ms });
+                                            if (ms.Length > 0)
+                                            {
+                                                ms.Position = 0;
+                                                PlayWavStream(ms);
+                                                StatusMessage = "Playing via in-process stream export";
+                                                return;
+                                            }
+                                        }
+                                    }
+
+                                    // signature: (string path, int index) returning byte[]
+                                    if (parameters.Length == 2 && parameters[0].ParameterType == typeof(string) && parameters[1].ParameterType == typeof(int) && method.ReturnType == typeof(byte[]))
+                                    {
+                                        var bytes = method.Invoke(inst, new object[] { fmsPath, trackIndex }) as byte[];
+                                        if (bytes != null && bytes.Length > 0)
+                                        {
+                                            using (var ms = new MemoryStream(bytes))
+                                            {
+                                                PlayWavStream(ms);
+                                                StatusMessage = "Playing via in-process byte[] export";
+                                                return;
+                                            }
+                                        }
+                                    }
+
+                                    // Fallback to file-based third-parameter signature (string outpath)
+                                    if (parameters.Length == 3 && parameters[0].ParameterType == typeof(string) && parameters[1].ParameterType == typeof(int) && parameters[2].ParameterType == typeof(string))
+                                    {
+                                        string tmp = Path.Combine(Path.GetTempPath(), $"fms_play_{Guid.NewGuid()}.wav");
+                                        method.Invoke(inst, new object[] { fmsPath, trackIndex, tmp });
+                                        if (File.Exists(tmp))
+                                        {
+                                            PlayWav(tmp);
+                                            lastTempWav = tmp;
+                                            StatusMessage = "Playing via in-process export";
+                                            return;
+                                        }
                                     }
                                 }
+                                catch { /* try next candidate */ }
                             }
                         }
                     }
@@ -451,25 +488,13 @@ namespace FamidashEditor
                 RedirectStandardError = true
             };
 
-            string stdout = "", stderr = "";
             using (var p = Process.Start(psi2))
             {
                 if (p == null) throw new Exception("Failed to start FamiStudio CLI");
-                try
-                {
-                    // Read output (blocking read with timeout)
-                    stdout = p.StandardOutput.ReadToEnd();
-                    stderr = p.StandardError.ReadToEnd();
-                }
-                catch { }
                 p.WaitForExit(15000);
             }
 
-            if (!File.Exists(tmpWav))
-            {
-                StatusMessage = "CLI export failed" + (string.IsNullOrEmpty(stderr) ? "" : (": " + stderr.Trim()));
-                throw new Exception("Export failed or produced no WAV: " + stderr);
-            }
+            if (!File.Exists(tmpWav)) throw new Exception("Export failed or produced no WAV");
 
             PlayWav(tmpWav);
             lastTempWav = tmpWav;
@@ -478,7 +503,43 @@ namespace FamidashEditor
 
         private void PlayWav(string wavPath)
         {
-            reader = new AudioFileReader(wavPath);
+            try
+            {
+                reader = new AudioFileReader(wavPath);
+            }
+            catch
+            {
+                reader = new WaveFileReader(wavPath);
+            }
+            output = new WaveOutEvent();
+            output.Init(reader);
+            output.PlaybackStopped += (s, e) =>
+            {
+                try { reader?.Dispose(); } catch { }
+                try { output?.Dispose(); } catch { }
+                reader = null; output = null;
+                if (lastTempWav != null)
+                {
+                    try { File.Delete(lastTempWav); } catch { }
+                    lastTempWav = null;
+                }
+            };
+
+            output.Play();
+        }
+
+        private void PlayWavStream(Stream wavStream)
+        {
+            try { if (wavStream.CanSeek) wavStream.Position = 0; } catch { }
+            try
+            {
+                reader = new WaveFileReader(wavStream);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("In-process render did not produce a WAV stream: " + ex.Message);
+            }
+
             output = new WaveOutEvent();
             output.Init(reader);
             output.PlaybackStopped += (s, e) =>
@@ -509,6 +570,86 @@ namespace FamidashEditor
             try { if (lastTempWav != null && File.Exists(lastTempWav)) File.Delete(lastTempWav); } catch { }
             lastTempWav = null;
             StatusMessage = "Stopped";
+        }
+
+        // Warm up FamiStudio in-process API and audio device to reduce first-play latency.
+        // This will attempt to ensure assemblies are loaded, enumerate tracks, and perform
+        // a minimal in-process render into a MemoryStream (but not play it) to JIT and warm audio.
+        public void WarmAndPrime(string fmsPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(fmsPath) || !File.Exists(fmsPath)) return;
+
+                // Ensure assemblies are loaded if we have a configured famiFolder
+                try { if (!IsLoaded && !string.IsNullOrEmpty(famiFolder) && Directory.Exists(famiFolder)) LoadFromFolder(famiFolder); } catch { }
+
+                // Enumerate tracks to warm loaders and any data parsing
+                try { var _ = EnumerateTracks(fmsPath); } catch { }
+
+                // Try an in-process render to MemoryStream to JIT render path and warm audio pipeline
+                if (alc != null)
+                {
+                    foreach (var asm in alc.Assemblies)
+                    {
+                        var playType = asm.GetTypes().FirstOrDefault(t => t.Name.ToLower().Contains("player") || t.Name.ToLower().Contains("audio"));
+                        if (playType == null) continue;
+
+                        var methods = playType.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance)
+                            .Where(mi => mi.Name.ToLower().Contains("export") || mi.Name.ToLower().Contains("render") || mi.Name.ToLower().Contains("play"))
+                            .ToList();
+
+                        object? inst = null;
+                        foreach (var method in methods)
+                        {
+                            try
+                            {
+                                var parameters = method.GetParameters();
+                                if (!method.IsStatic && inst == null) inst = Activator.CreateInstance(playType);
+
+                                if (parameters.Length == 3 && parameters[0].ParameterType == typeof(string) && parameters[1].ParameterType == typeof(int) && typeof(Stream).IsAssignableFrom(parameters[2].ParameterType))
+                                {
+                                    using (var ms = new MemoryStream())
+                                    {
+                                        method.Invoke(inst, new object[] { fmsPath, 0, ms });
+                                        if (ms.Length > 0)
+                                        {
+                                            try
+                                            {
+                                                ms.Position = 0;
+                                                using var wf = new WaveFileReader(ms);
+                                                using var wo = new WaveOutEvent();
+                                                wo.Init(wf);
+                                            }
+                                            catch { }
+                                            return;
+                                        }
+                                    }
+                                }
+
+                                if (parameters.Length == 2 && parameters[0].ParameterType == typeof(string) && parameters[1].ParameterType == typeof(int) && method.ReturnType == typeof(byte[]))
+                                {
+                                    var ret = method.Invoke(inst, new object[] { fmsPath, 0 }) as byte[];
+                                    if (ret != null && ret.Length > 0)
+                                    {
+                                        try
+                                        {
+                                            using var ms = new MemoryStream(ret);
+                                            using var wf = new WaveFileReader(ms);
+                                            using var wo = new WaveOutEvent();
+                                            wo.Init(wf);
+                                        }
+                                        catch { }
+                                        return;
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
             }
+            catch { }
         }
     }
+}
