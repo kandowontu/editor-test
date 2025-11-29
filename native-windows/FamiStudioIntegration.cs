@@ -78,13 +78,38 @@ namespace FamidashEditor
                                 if (project != null)
                                 {
                                     var songsObj = prop.GetValue(project);
-                                    if (songsObj is System.Collections.IEnumerable songs)
+                                    if (songsObj is System.Collections.IEnumerable songs && !(songsObj is string))
                                     {
                                         var list = new List<string>();
                                         int idx = 0;
                                         foreach (var s in songs)
                                         {
-                                            list.Add($"Song {idx}");
+                                            if (s == null) { idx++; continue; }
+                                            var stype = s.GetType();
+                                            // Filter out objects that are clearly not songs (e.g. samples). Prefer types with 'song' in their name
+                                            var tname = stype.Name ?? "";
+                                            if (!tname.ToLowerInvariant().Contains("song")) { idx++; continue; }
+
+                                            string? name = null;
+                                            var nameProp = stype.GetProperty("Name") ?? stype.GetProperty("Title") ?? stype.GetProperty("SongName");
+                                            if (nameProp != null)
+                                            {
+                                                try { name = nameProp.GetValue(s)?.ToString(); } catch { name = null; }
+                                            }
+                                            if (string.IsNullOrEmpty(name))
+                                            {
+                                                var f = stype.GetField("Name") ?? stype.GetField("Title");
+                                                if (f != null)
+                                                {
+                                                    try { name = f.GetValue(s)?.ToString(); } catch { name = null; }
+                                                }
+                                            }
+                                            if (string.IsNullOrEmpty(name))
+                                            {
+                                                try { name = s.ToString(); } catch { name = null; }
+                                            }
+                                            if (string.IsNullOrEmpty(name)) name = $"Song {idx}";
+                                            list.Add(name!);
                                             idx++;
                                         }
                                         StatusMessage = $"Found {list.Count} tracks via in-process API";
@@ -126,7 +151,10 @@ namespace FamidashEditor
                 return list;
             }
 
-            for (int i = 0; i < maxTracks; i++)
+            // Probe up to a high cap but stop after several consecutive misses to handle large song counts.
+            int maxCap = Math.Max(maxTracks, 512);
+            int consecutiveMisses = 0;
+            for (int i = 0; i < maxCap; i++)
             {
                 string tmp = Path.Combine(Path.GetTempPath(), $"fms_probe_{Guid.NewGuid()}.wav");
                 try
@@ -146,13 +174,37 @@ namespace FamidashEditor
                         p.WaitForExit(3000);
                         if (File.Exists(tmp) && new FileInfo(tmp).Length > 100)
                         {
-                            list.Add($"Song {i}");
+                            // Check exported wav duration to avoid picking up short samples. Require at least 0.5s length.
+                            try
+                            {
+                                using var afr = new AudioFileReader(tmp);
+                                var dur = afr.TotalTime.TotalSeconds;
+                                if (dur >= 0.5)
+                                {
+                                    list.Add($"Song {i}");
+                                    consecutiveMisses = 0;
+                                }
+                                else
+                                {
+                                    // short file -> likely a sample, skip
+                                    consecutiveMisses++;
+                                }
+                            }
+                            catch
+                            {
+                                // If we can't read the WAV, be conservative and treat it as a miss
+                                consecutiveMisses++;
+                            }
+
                             try { File.Delete(tmp); } catch { }
+                            if (consecutiveMisses >= 12) break;
                             continue;
                         }
                         else
                         {
                             try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+                            consecutiveMisses++;
+                            if (consecutiveMisses >= 12) break;
                             continue;
                         }
                     }
