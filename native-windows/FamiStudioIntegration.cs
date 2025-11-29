@@ -451,13 +451,25 @@ namespace FamidashEditor
                 RedirectStandardError = true
             };
 
+            string stdout = "", stderr = "";
             using (var p = Process.Start(psi2))
             {
                 if (p == null) throw new Exception("Failed to start FamiStudio CLI");
+                try
+                {
+                    // Read output (blocking read with timeout)
+                    stdout = p.StandardOutput.ReadToEnd();
+                    stderr = p.StandardError.ReadToEnd();
+                }
+                catch { }
                 p.WaitForExit(15000);
             }
 
-            if (!File.Exists(tmpWav)) throw new Exception("Export failed or produced no WAV");
+            if (!File.Exists(tmpWav))
+            {
+                StatusMessage = "CLI export failed" + (string.IsNullOrEmpty(stderr) ? "" : (": " + stderr.Trim()));
+                throw new Exception("Export failed or produced no WAV: " + stderr);
+            }
 
             PlayWav(tmpWav);
             lastTempWav = tmpWav;
