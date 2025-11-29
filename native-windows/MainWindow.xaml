@@ -119,8 +119,10 @@
                         <MenuItem x:Name="MenuOptionInvertPinch" Header="Invert Wheel/Pinch Zoom" IsCheckable="True" IsChecked="True" />
                     <MenuItem x:Name="MenuColorEditorBackground" Header="Editor Background Color..." />
                     <MenuItem x:Name="MenuColorPlayerTint" Header="Player Color..." />
-                    <MenuItem Header="FMS Player">
+                    <MenuItem Header="FamiStudio">
                         <MenuItem x:Name="MenuOpenFmsPlayer" Header="Open FMS Player..." />
+                        <MenuItem x:Name="MenuConfigureFamiStudio" Header="Configure FamiStudio..." />
+                        <MenuItem x:Name="MenuScanFamiStudioTracks" Header="Scan FamiStudio Tracks..." />
                     </MenuItem>
                     <MenuItem Header="Level Options">
                         <MenuItem x:Name="MenuColorBackgroundTint" Header="Background Tint..." />
@@ -178,6 +180,9 @@
                     <Button x:Name="RedoButton" Margin="4,0,0,0" ToolTip="Redo (Ctrl+Y)">Redo</Button>
                     <Separator Margin="8,0" />
                     <CheckBox x:Name="PreviewModeCheckbox" Content="Preview Mode" VerticalAlignment="Center" Margin="4,0" ToolTip="Enable animated previews (saws, etc.)" />
+                    <ComboBox x:Name="FamiTrackCombo" Width="260" Margin="8,0" VerticalAlignment="Center" IsEditable="False"/>
+                    <Button x:Name="PlayFamiButton" Content="Play" Margin="4,0" Width="52" />
+                    <Button x:Name="StopFamiButton" Content="Stop" Margin="2,0" Width="52" />
                 </ToolBar>
             </ToolBarTray>
 

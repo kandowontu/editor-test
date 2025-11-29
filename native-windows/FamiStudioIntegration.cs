@@ -59,80 +59,210 @@ namespace FamidashEditor
 
         public List<string> EnumerateTracks(string fmsPath)
         {
-            if (alc == null) return new List<string>();
+            // If this is a FamiStudio text export, parse it directly for song names.
+            try
+            {
+                if (fmsPath != null && Path.GetExtension(fmsPath).Equals(".txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    var txtList = ParseFamiStudioTextExport(fmsPath);
+                    if (txtList != null && txtList.Count > 0)
+                    {
+                        StatusMessage = $"Found {txtList.Count} tracks via text export";
+                        return txtList;
+                    }
+                }
+            }
+            catch { }
+
+            var result = new List<string>();
+            if (alc == null) return result;
 
             try
             {
+                // Try to locate and invoke a loader to get a project object
+                object? project = null;
                 foreach (var asm in alc.Assemblies)
                 {
                     var types = asm.GetTypes();
+
+                    // Search for static/instance methods that look like loaders
                     foreach (var t in types)
                     {
-                        var prop = t.GetProperty("Songs") ?? t.GetProperty("SongCount");
-                        if (prop != null)
+                        var methods = t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance);
+                        foreach (var m in methods)
                         {
-                            MethodInfo? loader = types.SelectMany(tt => tt.GetMethods(BindingFlags.Public | BindingFlags.Static)).FirstOrDefault(mi => mi.Name.ToLower().Contains("load") && mi.GetParameters().Length == 1 && mi.GetParameters()[0].ParameterType == typeof(string));
-                            if (loader != null)
+                            var ps = m.GetParameters();
+                            if (ps.Length == 1 && ps[0].ParameterType == typeof(string))
                             {
-                                var project = loader.Invoke(null, new object[] { fmsPath });
-                                if (project != null)
+                                var mname = m.Name.ToLowerInvariant();
+                                if (mname.Contains("load") || mname.Contains("open") || mname.Contains("fromfile") || mname.Contains("loadproject"))
                                 {
-                                    var songsObj = prop.GetValue(project);
-                                    if (songsObj is System.Collections.IEnumerable songs && !(songsObj is string))
+                                    try
                                     {
-                                        var list = new List<string>();
-                                        int idx = 0;
-                                        foreach (var s in songs)
+                                        if (m.IsStatic)
+                                            project = m.Invoke(null, new object[] { fmsPath });
+                                        else
                                         {
-                                            if (s == null) { idx++; continue; }
-                                            var stype = s.GetType();
-                                            // Filter out objects that are clearly not songs (e.g. samples). Prefer types with 'song' in their name
-                                            var tname = stype.Name ?? "";
-                                            if (!tname.ToLowerInvariant().Contains("song")) { idx++; continue; }
-
-                                            string? name = null;
-                                            var nameProp = stype.GetProperty("Name") ?? stype.GetProperty("Title") ?? stype.GetProperty("SongName");
-                                            if (nameProp != null)
-                                            {
-                                                try { name = nameProp.GetValue(s)?.ToString(); } catch { name = null; }
-                                            }
-                                            if (string.IsNullOrEmpty(name))
-                                            {
-                                                var f = stype.GetField("Name") ?? stype.GetField("Title");
-                                                if (f != null)
-                                                {
-                                                    try { name = f.GetValue(s)?.ToString(); } catch { name = null; }
-                                                }
-                                            }
-                                            if (string.IsNullOrEmpty(name))
-                                            {
-                                                try { name = s.ToString(); } catch { name = null; }
-                                            }
-                                            if (string.IsNullOrEmpty(name)) name = $"Song {idx}";
-                                            list.Add(name!);
-                                            idx++;
+                                            var inst = Activator.CreateInstance(t);
+                                            project = m.Invoke(inst, new object[] { fmsPath });
                                         }
-                                        StatusMessage = $"Found {list.Count} tracks via in-process API";
-                                        return list;
                                     }
-                                    else if (prop.PropertyType == typeof(int))
-                                    {
-                                        int count = (int)prop.GetValue(project)!;
-                                        var list = Enumerable.Range(0, count).Select(i => $"Song {i}").ToList();
-                                        StatusMessage = $"Found {list.Count} tracks via in-process API";
-                                        return list;
-                                    }
+                                    catch { project = null; }
+                                    if (project != null) break;
                                 }
                             }
+                        }
+                        if (project != null) break;
+                    }
+                    if (project != null) break;
+
+                    // Fallback: try constructors that accept a string
+                    foreach (var t in types)
+                    {
+                        try
+                        {
+                            var ctor = t.GetConstructor(new Type[] { typeof(string) });
+                            if (ctor != null)
+                            {
+                                try { project = ctor.Invoke(new object[] { fmsPath }); } catch { project = null; }
+                                if (project != null) break;
+                            }
+                        }
+                        catch { }
+                    }
+                    if (project != null) break;
+                }
+
+                if (project == null) return result;
+
+                var projectType = project.GetType();
+
+                // Try to get a songs collection
+                object? songsObj = null;
+                var songsProp = projectType.GetProperty("Songs") ?? projectType.GetProperty("SongList") ?? projectType.GetProperty("Tracks");
+                if (songsProp != null) songsObj = songsProp.GetValue(project);
+                else
+                {
+                    var method = projectType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+                        .FirstOrDefault(mi => typeof(System.Collections.IEnumerable).IsAssignableFrom(mi.ReturnType) && mi.GetParameters().Length == 0);
+                    if (method != null)
+                    {
+                        try { songsObj = method.Invoke(project, null); } catch { songsObj = null; }
+                    }
+                }
+
+                if (songsObj is System.Collections.IEnumerable songs && !(songsObj is string))
+                {
+                    // Determine a string property to use as the song name by inspecting first element
+                    string? namePropName = null;
+                    Type? elemType = null;
+                    foreach (var s in songs)
+                    {
+                        if (s == null) continue;
+                        elemType = s.GetType();
+                        var nameProp = elemType.GetProperty("Name") ?? elemType.GetProperty("Title") ?? elemType.GetProperty("SongName") ?? elemType.GetProperty("DisplayName");
+                        if (nameProp != null && nameProp.PropertyType == typeof(string)) { namePropName = nameProp.Name; break; }
+
+                        var stringProps = elemType.GetProperties().Where(pp => pp.PropertyType == typeof(string));
+                        foreach (var pp in stringProps)
+                        {
+                            var pn = pp.Name.ToLowerInvariant();
+                            if (pn.Contains("name") || pn.Contains("title") || pn.Contains("display")) { namePropName = pp.Name; break; }
+                        }
+                        if (!string.IsNullOrEmpty(namePropName)) break;
+
+                        try { var ts = s.ToString(); if (!string.IsNullOrEmpty(ts) && ts.Length < 128 && Regex.IsMatch(ts, "[A-Za-z0-9]")) { namePropName = "__tostring"; break; } } catch { }
+                        break;
+                    }
+
+                    int idx = 0;
+                    foreach (var s in songs)
+                    {
+                        if (s == null) { idx++; continue; }
+                        string name = null!;
+                        if (!string.IsNullOrEmpty(namePropName) && namePropName != "__tostring")
+                        {
+                            try { var pn = elemType!.GetProperty(namePropName); if (pn != null) name = pn.GetValue(s)?.ToString() ?? ""; } catch { name = null; }
+                        }
+                        else if (namePropName == "__tostring")
+                        {
+                            try { name = s.ToString(); } catch { name = null; }
+                        }
+
+                        if (string.IsNullOrEmpty(name)) name = $"Song {idx}";
+                        result.Add(name);
+                        idx++;
+                    }
+
+                    StatusMessage = $"Found {result.Count} tracks via in-process API";
+                    return result;
+                }
+
+                // Fallback: use an integer count if available
+                var countProp = projectType.GetProperty("SongCount") ?? projectType.GetProperty("TrackCount") ?? projectType.GetProperty("SongsCount");
+                if (countProp != null && countProp.PropertyType == typeof(int))
+                {
+                    int count = Convert.ToInt32(countProp.GetValue(project));
+                    var list = Enumerable.Range(0, count).Select(i => $"Song {i}").ToList();
+                    StatusMessage = $"Found {list.Count} tracks via in-process API";
+                    return list;
+                }
+            }
+            catch { }
+
+            return result;
+        }
+
+        // Parse a FamiStudio "text export" file. The format is a line-based token file where
+        // entities appear like: Song Name="..." ...  or DPCMSample Name="..." ...
+        // We attempt to extract Song names robustly across versions.
+        public List<string> ParseFamiStudioTextExport(string path)
+        {
+            var result = new List<string>();
+            if (!File.Exists(path)) return result;
+
+            string[] lines;
+            try { lines = File.ReadAllLines(path); } catch { return result; }
+
+            var nameRegex = new System.Text.RegularExpressions.Regex("Name\\s*=\\s*\"([^\"]+)\"", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            // Parse by locating 'Song' tokens and extracting the nearest Name attribute within that Song block.
+            // This preserves the order of songs as they appear in the file and avoids capturing instruments/samples.
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                var trimmed = line.TrimStart();
+                // Identify top-level Song token (either "Song" alone or "Song " followed by attributes)
+                if (trimmed.StartsWith("Song", StringComparison.OrdinalIgnoreCase) && (trimmed.Length == 4 || char.IsWhiteSpace(trimmed[4]) || trimmed[4] == '\t'))
+                {
+                    // Search this line and a bounded number of subsequent lines for Name="..." inside this Song block.
+                    // Stop searching the block if we encounter another top-level token (non-indented line starting with a word).
+                    string? found = null;
+                    for (int j = i; j < Math.Min(lines.Length, i + 24); j++)
+                    {
+                        var lj = lines[j];
+                        if (j > i)
+                        {
+                            // if this line is a new top-level token (no leading whitespace) and not a continuation, break
+                            if (lj.Length > 0 && !char.IsWhiteSpace(lj[0]))
+                            {
+                                // If this new token is itself a Song, we still allow processing it by breaking so outer loop will handle it.
+                                break;
+                            }
+                        }
+
+                        var m = nameRegex.Match(lj);
+                        if (m.Success)
+                        {
+                            found = m.Groups[1].Value.Trim();
+                            if (!string.IsNullOrEmpty(found) && !result.Contains(found)) result.Add(found);
+                            break;
                         }
                     }
                 }
             }
-            catch
-            {
-            }
 
-            return new List<string>();
+            return result;
         }
 
         public List<string> ProbeTracksViaCli(string fmsPath, int maxTracks = 32)

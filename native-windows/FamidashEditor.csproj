@@ -17,12 +17,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
-  <!-- Include the album fms from repository root so it's available in builds and output -->
-  <ItemGroup>
-    <Content Include="..\the album.fms">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
+  <!-- Removed .fms from project: we now work exclusively with the FamiStudio text export (the album.txt) -->
   
   <ItemGroup>
     <!-- Include app config for DLL probing -->
@@ -209,6 +204,16 @@
     <EmbeddedResource Include="..\speed-3x.png" />
     <EmbeddedResource Include="..\speed-4x.png" />
     <EmbeddedResource Include="..\speed-special.png" />
+  </ItemGroup>
+  <!-- If present, copy pre-parsed FamiStudio album JSON and probe results into the build output
+       so the runtime (launched from bin) can find them without additional configuration. -->
+  <ItemGroup>
+    <None Include="fami-album-parsed.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="fami-probe-result.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.1.0" />
