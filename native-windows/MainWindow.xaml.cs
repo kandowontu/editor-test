@@ -4758,11 +4758,59 @@ namespace FamidashEditor
 
             // Populate combo
             FamiTrackCombo.Items.Clear();
+            // Try to load a precomputed mapping from song name -> playable index
+            System.Collections.Generic.Dictionary<string, int>? nameToIndex = null;
+            try
+            {
+                var mapCandidates = new[] {
+                    Path.Combine(AppContext.BaseDirectory, "fami-song-index-map.json"),
+                    Path.Combine(Environment.CurrentDirectory, "fami-song-index-map.json"),
+                    Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory) ?? AppContext.BaseDirectory, "native-windows", "fami-song-index-map.json"),
+                    Path.Combine(AppContext.BaseDirectory, "..", "native-windows", "fami-song-index-map.json")
+                };
+                foreach (var mc in mapCandidates)
+                {
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(mc) && File.Exists(mc))
+                        {
+                            var txt = File.ReadAllText(mc);
+                            var arr = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>>(txt);
+                            if (arr != null)
+                            {
+                                nameToIndex = new System.Collections.Generic.Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                                foreach (var d in arr)
+                                {
+                                    if (d.TryGetValue("name", out var on) && d.TryGetValue("index", out var oi))
+                                    {
+                                        var n = on?.ToString();
+                                        if (int.TryParse(oi?.ToString() ?? "", out var ii) && !string.IsNullOrEmpty(n))
+                                        {
+                                            if (!nameToIndex.ContainsKey(n)) nameToIndex[n] = ii;
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { nameToIndex = null; }
+
             if (parsed.Count > 0)
             {
                 for (int i = 0; i < parsed.Count; i++)
                 {
-                    var item = new System.Windows.Controls.ComboBoxItem() { Content = parsed[i], Tag = i };
+                    int tagIndex = i;
+                    try
+                    {
+                        if (nameToIndex != null && nameToIndex.TryGetValue(parsed[i], out var mapped)) tagIndex = mapped;
+                    }
+                    catch { }
+
+                    var item = new System.Windows.Controls.ComboBoxItem() { Content = parsed[i], Tag = tagIndex };
                     FamiTrackCombo.Items.Add(item);
                 }
                 FamiTrackCombo.SelectedIndex = 0;
@@ -4814,7 +4862,35 @@ namespace FamidashEditor
             {
                 try
                 {
-                    famiIntegration.PlayTrack(albumTxtPath!, idx);
+                    string fpath = albumTxtPath!;
+                    // If we have an actual .fms and the in-process integration is available, map selected name to the real index
+                    if (File.Exists(fpath) && Path.GetExtension(fpath).Equals(".fms", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            // Ensure famiIntegration has loaded the FamiStudio assemblies if a path is configured
+                            if (!famiIntegration.IsLoaded && !string.IsNullOrEmpty(famiStudioPath) && Directory.Exists(famiStudioPath))
+                            {
+                                famiIntegration.LoadFromFolder(famiStudioPath);
+                            }
+
+                            var names = famiIntegration.EnumerateTracks(fpath);
+                            if (names != null && names.Count > 0)
+                            {
+                                // If the combo has a selected item with a string, try to match by name
+                                string? selectedName = null;
+                                if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cb && cb.Content != null) selectedName = cb.Content.ToString();
+                                if (!string.IsNullOrEmpty(selectedName))
+                                {
+                                    int mapped = names.FindIndex(n => string.Equals(n, selectedName, StringComparison.OrdinalIgnoreCase));
+                                    if (mapped >= 0) idx = mapped;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+
+                    famiIntegration.PlayTrack(fpath, idx);
                 }
                 catch (Exception ex)
                 {
