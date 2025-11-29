@@ -951,6 +951,7 @@ namespace FamidashEditor
         public MainWindow()
         {
             InitializeComponent();
+            MenuOpenFmsPlayer.Click += MenuOpenFmsPlayer_Click;
             LoadSettings();
             
             // Wire up window closing event to prompt for unsaved changes
@@ -1449,6 +1450,20 @@ namespace FamidashEditor
                 MapScrollViewer.ManipulationStarting += MapScrollViewer_ManipulationStarting;
                 MapScrollViewer.ManipulationCompleted += MapScrollViewer_ManipulationCompleted;
                 MapScrollViewer.ManipulationDelta += MapScrollViewer_ManipulationDelta;
+            }
+        }
+
+        private void MenuOpenFmsPlayer_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var w = new FmsPlayerWindow();
+                w.Owner = this;
+                w.Show();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Failed to open FMS Player: " + ex.Message);
             }
         }
 

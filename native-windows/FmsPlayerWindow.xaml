@@ -1,0 +1,25 @@
+<Window x:Class="FamidashEditor.FmsPlayerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="FMS Player" Height="160" Width="360">
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,8">
+            <Button x:Name="BtnOpen" Width="80" Margin="0,0,8,0">Open FMS</Button>
+            <TextBlock x:Name="TxtPath" VerticalAlignment="Center" TextWrapping="Wrap" Width="240" />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0,0,0,8">
+            <ComboBox x:Name="ComboTracks" Width="220" Margin="0,0,8,0" />
+            <Button x:Name="BtnPlay" Width="60" Margin="0,0,8,0">Play</Button>
+            <Button x:Name="BtnStop" Width="60">Stop</Button>
+        </StackPanel>
+
+        <TextBlock x:Name="TxtStatus" Grid.Row="2" Foreground="Gray" TextWrapping="Wrap" />
+    </Grid>
+</Window>
