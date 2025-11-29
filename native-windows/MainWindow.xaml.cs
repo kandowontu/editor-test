@@ -51,6 +51,7 @@ namespace FamidashEditor
     private bool hideColorTriggers = false;
     // Per-level option: replace parallax background with noparallax.bmp when true
     private bool noParallaxBg = false;
+    private bool suppressNoParallaxHandler = false;
     private bool swapMouseWheelScroll = false; // when true, swap shift/no-modifier wheel scroll behavior
     private bool invertPinchGesture = true; // if true, invert pinch scale (device-dependent)
     private bool pinchDirectionDetected = false;
@@ -116,7 +117,9 @@ namespace FamidashEditor
     private double loadedGroundOffsetY = 432;
     private bool loadedGroundRepeatX = true;
     private bool loadedHasGroundLayer = false;
-    private string loadedDecoSet = "deco1";
+    private string loadedDecoSet = "DECO1";
+    private string loadedBlockSet = "BLOCKSA";
+    private string loadedSpikeSet = "SPIKESA";
     private int paletteTileSize = 16;
     private int paletteSpriteSize = 16;
     // Painting state for drag-to-draw
@@ -158,7 +161,9 @@ namespace FamidashEditor
         public byte? TileTintG { get; set; }
         public byte? TileTintB { get; set; }
         public bool NoParallaxBg { get; set; } = false;
-        public string? DecoSet { get; set; } = "deco1";
+        public string? DecoSet { get; set; } = "DECO1";
+        public string? BlockSet { get; set; } = "BLOCKSA";
+        public string? SpikeSet { get; set; } = "SPIKESA";
     }
     
     // Apply the current noParallaxBg setting by selecting the appropriate parallax bitmap
@@ -315,6 +320,8 @@ namespace FamidashEditor
             // Always persist these explicit options
             config.NoParallaxBg = noParallaxBg;
             config.DecoSet = loadedDecoSet;
+            config.BlockSet = loadedBlockSet;
+            config.SpikeSet = loadedSpikeSet;
 
             string configPath = GetConfigPath(tmxFilePath);
             // Serialize and write the config file, omitting nulls
@@ -376,8 +383,11 @@ namespace FamidashEditor
                     if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
 
                     // Apply deco set if present
-                    try { loadedDecoSet = string.IsNullOrEmpty(config.DecoSet) ? "deco1" : config.DecoSet; } catch { loadedDecoSet = "deco1"; }
-                    if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet}";
+                    try { loadedDecoSet = string.IsNullOrEmpty(config.DecoSet) ? "DECO1" : config.DecoSet; } catch { loadedDecoSet = "DECO1"; }
+                    // Apply block/spike sets if present
+                    try { loadedBlockSet = string.IsNullOrEmpty(config.BlockSet) ? "BLOCKSA" : config.BlockSet; } catch { loadedBlockSet = "BLOCKSA"; }
+                    try { loadedSpikeSet = string.IsNullOrEmpty(config.SpikeSet) ? "SPIKESA" : config.SpikeSet; } catch { loadedSpikeSet = "SPIKESA"; }
+                    if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet} block:{loadedBlockSet} spike:{loadedSpikeSet}";
 
                     // Update tinted images for any tints that were applied
                     UpdateParallaxTint();
@@ -420,8 +430,10 @@ namespace FamidashEditor
                 try { PopulateTilesPanel(); } catch { }
                 
                 System.Diagnostics.Debug.WriteLine($"No config found at: {configPath}, using defaults");
-                // default deco set when no config is present
-                loadedDecoSet = "deco1";
+                // default deco/block/spike sets when no config is present
+                loadedDecoSet = "DECO1";
+                loadedBlockSet = "BLOCKSA";
+                loadedSpikeSet = "SPIKESA";
                 // Write out a default config immediately so first-load creates .cfg with deco1
                 try { SaveTmxConfig(tmxFilePath); } catch { }
             }
@@ -1295,6 +1307,7 @@ namespace FamidashEditor
             {
                 MenuOptionNoParallax.Checked += (s, e) =>
                 {
+                    if (suppressNoParallaxHandler) return;
                     noParallaxBg = true;
                     // save to per-level config immediately if a file is loaded
                     try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
@@ -1303,6 +1316,7 @@ namespace FamidashEditor
                 };
                 MenuOptionNoParallax.Unchecked += (s, e) =>
                 {
+                    if (suppressNoParallaxHandler) return;
                     noParallaxBg = false;
                     try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
                     try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
@@ -8212,11 +8226,24 @@ namespace FamidashEditor
             if (MenuToolWand != null) MenuToolWand.IsChecked = (tb == MagicWandTool);
 
             // When switching to certain tools, reset draw mode back to Tile by default
-            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == MagicWandTool)
+            // Include FillTool so selecting Fill also activates the Tile draw mode
+            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == MagicWandTool || tb == FillTool)
             {
                 if (DrawTileButton != null) DrawTileButton.IsChecked = true;
                 currentDrawMode = DrawMode.Tile;
             }
+
+            // When Select, Move or MagicWand tools are active, grey-out (disable)
+            // the non-tile drawing shape controls so only Tile remains usable.
+            // Also disable shape tools when Fill is active
+            bool disableShapes = (tb == SelectTool || tb == MoveTool || tb == MagicWandTool || tb == FillTool);
+            if (DrawLineButton != null) DrawLineButton.IsEnabled = !disableShapes;
+            if (DrawSquareButton != null) DrawSquareButton.IsEnabled = !disableShapes;
+            if (DrawCircleButton != null) DrawCircleButton.IsEnabled = !disableShapes;
+            if (DrawTriangleButton != null) DrawTriangleButton.IsEnabled = !disableShapes;
+            if (DrawPolygonButton != null) DrawPolygonButton.IsEnabled = !disableShapes;
+            if (HollowCheckBox != null) HollowCheckBox.IsEnabled = !disableShapes;
+            if (BrushThicknessSlider != null) BrushThicknessSlider.IsEnabled = !disableShapes;
         }
 
         private void DrawModeButton_Checked(object? sender, RoutedEventArgs e)
@@ -9245,11 +9272,15 @@ namespace FamidashEditor
                 int rx = Math.Abs(ex - sx), ry = Math.Abs(ey - sy);
                 int r = Math.Max(1, Math.Max(rx, ry) + 1);
                 int cx = sx, cy = sy;
+                // For circles, treat the minimum brush thickness as one tick higher.
+                // This ensures the smallest brush setting still produces a complete circle.
+                int effThickness = thickness;
+                if (effThickness <= 1) effThickness = 2;
                 // Use center between sx,ex and sy,ey
                 cx = (sx + ex) / 2; cy = (sy + ey) / 2;
                 if (hollowShape)
                 {
-                    int t = Math.Max(1, thickness);
+                    int t = Math.Max(1, effThickness);
                     int innerR = Math.Max(0, r - t + 1);
                     int r2 = r * r; int inner2 = innerR * innerR;
                     for (int y = cy - r; y <= cy + r; y++) for (int x = cx - r; x <= cx + r; x++)
@@ -10729,27 +10760,72 @@ namespace FamidashEditor
         {
             try
             {
-                var dlg = new SetOptionsWindow(loadedDecoSet) { Owner = this };
+                var dlg = new SetOptionsWindow(loadedDecoSet, loadedBlockSet, loadedSpikeSet) { Owner = this };
                 bool? res = dlg.ShowDialog();
-                if (res == true)
-                {
-                    string newDeco = dlg.SelectedDeco ?? "deco1";
-                    if (newDeco != loadedDecoSet)
+                    if (res == true)
                     {
-                        loadedDecoSet = newDeco;
-                        // Save to per-level config without prompting
-                        try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
-                        if (StatusText != null) StatusText.Text = $"Deco set saved: {loadedDecoSet}";
-                        // Trigger a rebuild of sprites preview so change takes effect in preview mode
-                        try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
-                        try { Redraw(); } catch { }
+                        string newDeco = dlg.SelectedDeco ?? "DECO1";
+                        string newBlock = dlg.SelectedBlockSet ?? "BLOCKSA";
+                        string newSpike = dlg.SelectedSpikeSet ?? "SPIKESA";
+                        bool changed = false;
+                        if (newDeco != loadedDecoSet)
+                        {
+                            loadedDecoSet = newDeco; changed = true;
+                            if (StatusText != null) StatusText.Text = $"Deco set saved: {loadedDecoSet}";
+                            try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+                        }
+                        if (newBlock != loadedBlockSet)
+                        {
+                            loadedBlockSet = newBlock; changed = true;
+                            if (StatusText != null) StatusText.Text = $"Block set saved: {loadedBlockSet}";
+                        }
+                        if (newSpike != loadedSpikeSet)
+                        {
+                            loadedSpikeSet = newSpike; changed = true;
+                            if (StatusText != null) StatusText.Text = $"Spike set saved: {loadedSpikeSet}";
+                        }
+                        if (changed)
+                        {
+                            // Save to per-level config without prompting
+                            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                            try { Redraw(); } catch { }
+                        }
                     }
-                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine("SetOptions dialog failed: " + ex.Message);
             }
+        }
+
+        // Programmatic setter to ensure SetOptionsWindow toggles behave identically
+        public void SetNoParallax(bool enabled)
+        {
+            try
+            {
+                suppressNoParallaxHandler = true;
+                noParallaxBg = enabled;
+                if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = enabled;
+                try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
+            }
+            finally { suppressNoParallaxHandler = false; }
+        }
+
+        // Public wrappers so child dialogs can invoke the tint pickers on the main window
+        public void ShowBackgroundTintPicker()
+        {
+            try { BgTintButton_Click(this, new RoutedEventArgs()); } catch { }
+        }
+
+        public void ShowGroundTintPicker()
+        {
+            try { GroundTintButton_Click(this, new RoutedEventArgs()); } catch { }
+        }
+
+        public void ShowTileTintPicker()
+        {
+            try { TileTintButton_Click(this, new RoutedEventArgs()); } catch { }
         }
 
         private void Undo()
