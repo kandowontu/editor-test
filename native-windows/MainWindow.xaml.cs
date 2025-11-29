@@ -8199,6 +8199,13 @@ namespace FamidashEditor
             if (MenuToolFill != null) MenuToolFill.IsChecked = (tb == FillTool);
             if (MenuToolSelect != null) MenuToolSelect.IsChecked = (tb == SelectTool);
             if (MenuToolWand != null) MenuToolWand.IsChecked = (tb == MagicWandTool);
+
+            // When switching to certain tools, reset draw mode back to Tile by default
+            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == SelectTool || tb == MagicWandTool)
+            {
+                if (DrawTileButton != null) DrawTileButton.IsChecked = true;
+                currentDrawMode = DrawMode.Tile;
+            }
         }
 
         private void DrawModeButton_Checked(object? sender, RoutedEventArgs e)
@@ -9127,38 +9134,45 @@ namespace FamidashEditor
                 int apexX = (minx + maxx) / 2;
                 int apexY = miny;
                 int baseY = maxy;
-                int height = Math.Max(1, baseY - apexY);
-                for (int y = apexY; y <= baseY; y++)
+                // Filled triangle: rasterize scanlines between apex and base
+                if (!hollowShape)
                 {
-                    double t = (double)(y - apexY) / (double)height;
-                    int span = (int)Math.Round((maxx - minx) * t);
-                    int cx = apexX;
-                    int left = Math.Max(minx, cx - span / 2 - (thickness-1));
-                    int right = Math.Min(maxx, cx + span / 2 + (thickness-1));
-                    for (int x = left; x <= right; x++)
+                    int height = Math.Max(1, baseY - apexY);
+                    for (int y = apexY; y <= baseY; y++)
                     {
-                        if (!hollowShape)
+                        double t = (double)(y - apexY) / (double)height;
+                        int span = (int)Math.Round((maxx - minx + 1) * t);
+                        int cx = apexX;
+                        int left = Math.Max(minx, cx - span / 2 - (thickness - 1));
+                        int right = Math.Min(maxx, cx + span / 2 + (thickness - 1));
+                        for (int x = left; x <= right; x++)
                         {
                             if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) list.Add((x, y));
                         }
-                        else
-                        {
-                            int innerSpan = Math.Max(0, span - (thickness * 2));
-                            int innerLeft = Math.Max(minx, cx - innerSpan / 2);
-                            int innerRight = Math.Min(maxx, cx + innerSpan / 2);
-                            if (x < innerLeft || x > innerRight)
-                            {
-                                if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) list.Add((x, y));
-                            }
-                        }
                     }
+                    return list;
                 }
+
+                // Hollow triangle: draw three edged segments (apex->left base, apex->right base, base left->base right)
+                var edges = new System.Collections.Generic.HashSet<(int x, int y)>();
+                int leftBase = minx; int rightBase = maxx;
+                // apex -> left base
+                var seg1 = ComputeDrawTileList(apexX, apexY, leftBase, baseY, DrawMode.Line, thickness);
+                foreach (var s in seg1) edges.Add(s);
+                // apex -> right base
+                var seg2 = ComputeDrawTileList(apexX, apexY, rightBase, baseY, DrawMode.Line, thickness);
+                foreach (var s in seg2) edges.Add(s);
+                // base left -> base right
+                var seg3 = ComputeDrawTileList(leftBase, baseY, rightBase, baseY, DrawMode.Line, thickness);
+                foreach (var s in seg3) edges.Add(s);
+
+                list.AddRange(edges);
                 return list;
             }
             if (mode == DrawMode.Circle)
             {
                 int rx = Math.Abs(ex - sx), ry = Math.Abs(ey - sy);
-                int r = Math.Max(rx, ry);
+                int r = Math.Max(1, Math.Max(rx, ry) + 1);
                 int cx = sx, cy = sy;
                 // Use center between sx,ex and sy,ey
                 cx = (sx + ex) / 2; cy = (sy + ey) / 2;
@@ -9192,42 +9206,88 @@ namespace FamidashEditor
                 if (!isDeferredDrawing) return;
                 var list = ComputeDrawTileList(drawStartX, drawStartY, drawCurrentX, drawCurrentY, currentDrawMode, brushThickness);
                 if (list.Count == 0) { isDeferredDrawing = false; ClearDeferredPreview(); if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture(); return; }
+
+                // If EraseTool is active, perform erasure on the shape.
+                if (EraseTool != null && EraseTool.IsChecked == true)
+                {
+                    var eraseTileAction = new TileChangeAction();
+                    var eraseSpriteAction = new SpriteChangeAction();
+                    foreach (var (tx, ty) in list)
+                    {
+                        int idx = ty * mapWidth + tx;
+                        if (tilesLayerActive)
+                        {
+                            int old = tiles[idx]; if (old != -1) { eraseTileAction.Add(idx, old, -1); tiles[idx] = -1; }
+                        }
+                        if (spritesLayerActive)
+                        {
+                            int oldS = sprites[idx]; if (oldS != -1) { eraseSpriteAction.Add(idx, oldS, -1); sprites[idx] = -1; }
+                        }
+                    }
+                    if (!eraseTileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseTileAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    if (!eraseSpriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseSpriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    isDeferredDrawing = false; drawStartX = drawStartY = drawCurrentX = drawCurrentY = -1; ClearDeferredPreview(); if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
+                    return;
+                }
+
+                // If SelectTool is active, convert the shape into a selection (additive with Ctrl)
+                if (SelectTool != null && SelectTool.IsChecked == true)
+                {
+                    bool isCtrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+                    var newIndices = new System.Collections.Generic.HashSet<int>();
+                    foreach (var (tx, ty) in list)
+                    {
+                        int idx = ty * mapWidth + tx; newIndices.Add(idx);
+                    }
+                    if (!isCtrl)
+                    {
+                        selectionSet.Clear();
+                    }
+                    foreach (var idx in newIndices) selectionSet.Add(idx);
+
+                    // Build selX/selY/selW/selH and selTiles/selSprites representing bounding box of selectionSet
+                    if (selectionSet.Count == 0)
+                    {
+                        ClearSelection();
+                    }
+                    else
+                    {
+                        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+                        foreach (var i in selectionSet) { int sx = i % mapWidth, sy = i / mapWidth; if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy; }
+                        selX = minX; selY = minY; selW = maxX - minX + 1; selH = maxY - minY + 1;
+                        selTiles = new int[selW * selH]; selSprites = new int[selW * selH];
+                        for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                        {
+                            int gidx = (selY + yy) * mapWidth + (selX + xx);
+                            if (selectionSet.Contains(gidx)) { selTiles[yy * selW + xx] = tilesLayerActive ? tiles[gidx] : -1; selSprites[yy * selW + xx] = spritesLayerActive ? sprites[gidx] : -1; }
+                            else { selTiles[yy * selW + xx] = -1; selSprites[yy * selW + xx] = -1; }
+                        }
+                        UpdateSelectionVisuals(selX, selY, selW, selH);
+                    }
+
+                    isDeferredDrawing = false; drawStartX = drawStartY = drawCurrentX = drawCurrentY = -1; ClearDeferredPreview(); if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
+                    return;
+                }
+
+                // Default: place into active layers using selected tile/sprite
                 var tileAction = new TileChangeAction();
                 var spriteAction = new SpriteChangeAction();
                 foreach (var (tx, ty) in list)
                 {
                     int idx = ty * mapWidth + tx;
-                    // Tiles
                     if (tilesLayerActive && selectedTile >= 0)
                     {
-                        int old = tiles[idx];
-                        int neu = selectedTile;
-                        if (old != neu)
-                        {
-                            tileAction.Add(idx, old, neu);
-                            tiles[idx] = neu;
-                        }
+                        int old = tiles[idx]; int neu = selectedTile; if (old != neu) { tileAction.Add(idx, old, neu); tiles[idx] = neu; }
                     }
-                    // Sprites
                     if (spritesLayerActive && selectedSprite >= 0)
                     {
-                        int oldS = sprites[idx];
-                        int neuS = selectedSprite;
-                        if (oldS != neuS)
-                        {
-                            spriteAction.Add(idx, oldS, neuS);
-                            sprites[idx] = neuS;
-                        }
+                        int oldS = sprites[idx]; int neuS = selectedSprite; if (oldS != neuS) { spriteAction.Add(idx, oldS, neuS); sprites[idx] = neuS; }
                     }
                 }
-                if (!tileAction.IsEmpty() && !suppressUndoRecording)
-                {
-                    undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true;
-                }
-                if (!spriteAction.IsEmpty() && !suppressUndoRecording)
-                {
-                    undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true;
-                }
+                if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
                 try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                 try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
             }
@@ -9252,8 +9312,19 @@ namespace FamidashEditor
                 try { ghostSrc = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[selectedTile] : tileImages[selectedTile]; } catch { ghostSrc = null; }
             }
             if (spritesLayerActive && selectedSprite >= 0 && spriteImages != null) ghostSrc = spriteImages[selectedSprite];
-            if (ghostSrc == null) return;
             var dpiScaleX = dpi.DpiScaleX; var dpiScaleY = dpi.DpiScaleY;
+            if (ghostSrc == null)
+            {
+                // No image to render; draw translucent yellow/red rectangles for preview (erase/selection modes)
+                foreach (var (tx, ty) in tilesPreview)
+                {
+                    var rect = new Shapes.Rectangle { Width = (double)tilePixelW / dpiScaleX, Height = (double)tilePixelH / dpiScaleY, Fill = new SolidColorBrush(Color.FromArgb(96, 255, 255, 0)), Stroke = Brushes.Transparent, IsHitTestVisible = false };
+                    Canvas.SetLeft(rect, (padPxX + tx * tilePixelW) / dpiScaleX);
+                    Canvas.SetTop(rect, (padPxY + ty * tilePixelH) / dpiScaleY + gridRenderShiftY);
+                    SelectionOverlay.Children.Add(rect);
+                }
+                return;
+            }
             foreach (var (tx, ty) in tilesPreview)
             {
                 var img = new Image { Source = ghostSrc, Width = (double)tilePixelW / dpiScaleX, Height = (double)tilePixelH / dpiScaleY, Opacity = 0.5, IsHitTestVisible = false };
@@ -9369,8 +9440,9 @@ namespace FamidashEditor
                 for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
                 {
                     int sIdx = (selY + yy) * mapWidth + (selX + xx);
-                    int srcVal = selTiles[yy * selW + xx];
-                    if (!targetSet.Contains(sIdx) && srcVal != -1) finalTiles[sIdx] = -1;
+                    // If this selection was a sparse/wand selection, prefer selectionSet membership to determine whether to clear
+                    bool srcWasSelected = (selectionSet != null && selectionSet.Count > 0) ? selectionSet.Contains(sIdx) : (selTiles[yy * selW + xx] != -1);
+                    if (!targetSet.Contains(sIdx) && srcWasSelected) finalTiles[sIdx] = -1;
                 }
 
                 // Build TileChangeAction from differences
@@ -10360,6 +10432,13 @@ namespace FamidashEditor
         {
             // Capture modifier state
             var mods = System.Windows.Input.Keyboard.Modifiers;
+
+            // ESC cancels polygon construction
+            if (e.Key == Key.Escape && isConstructingPolygon)
+            {
+                CancelPolygon();
+                e.Handled = true; return;
+            }
 
             // Ctrl-based shortcuts
             if ((mods & ModifierKeys.Control) != 0)

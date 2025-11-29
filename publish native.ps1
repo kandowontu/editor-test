@@ -1,0 +1,1 @@
+dotnet publish "c:\Editor Test\native-windows\FamidashEditor.csproj" -c Release -r win-x64 -o "c:\Editor Test\native-windows\published" --self-contained true -p:PublishSingleFile=false
