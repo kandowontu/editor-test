@@ -286,6 +286,8 @@ namespace FamidashEditor
                 }
             }
             catch { }
+        
+        
 
             try
             {
@@ -1194,6 +1196,8 @@ namespace FamidashEditor
             if (HollowCheckBox != null) HollowCheckBox.Checked += (s,e)=>{ hollowShape = true; if (isDeferredDrawing||isConstructingPolygon) UpdateDeferredPreview(); };
             if (HollowCheckBox != null) HollowCheckBox.Unchecked += (s,e)=>{ hollowShape = false; if (isDeferredDrawing||isConstructingPolygon) UpdateDeferredPreview(); };
             if (BrushThicknessSlider != null) BrushThicknessSlider.ValueChanged += (s,e)=>{ brushThickness = (int)Math.Max(1, Math.Round(e.NewValue)); if (isDeferredDrawing||isConstructingPolygon) UpdateDeferredPreview(); };
+            // Initialize last-known selection to avoid immediate cancellation of polygons
+            lastKnownSelectedTile = selectedTile; lastKnownSelectedSprite = selectedSprite;
             // Sprite slider: when user changes sprite slider, mark manual and update sprite sizes.
             if (SpriteSizeSlider != null) SpriteSizeSlider.ValueChanged += (s, ev) =>
             {
@@ -8022,14 +8026,16 @@ namespace FamidashEditor
                 // Polygon mode: add vertex on click, finalize on double-click
                 if (currentDrawMode == DrawMode.Polygon)
                 {
-                    polygonPoints.Add((tt.x, tt.y));
+                        // Only add vertex if click is inside the map area
+                        if (!IsPointInsideMap(pos)) { return; }
+                        polygonPoints.Add((tt.x, tt.y));
                     isConstructingPolygon = true;
                     drawCurrentX = tt.x; drawCurrentY = tt.y;
                     if (CanvasHost != null) CanvasHost.CaptureMouse();
                     UpdateDeferredPreview();
                     if (e.ClickCount >= 2 && polygonPoints.Count >= 3)
                     {
-                        CommitPolygon();
+                            CommitPolygon();
                     }
                     return;
                 }
@@ -8044,6 +8050,19 @@ namespace FamidashEditor
 
             // Default: place/erase painting behavior
             StartPaintingAt(pos);
+        }
+
+        private bool IsPointInsideMap(Point pos)
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            double mapW = mapWidth * TileSize * scale;
+            double mapH = mapHeight * TileSize * scale;
+            // pos is in CanvasHost DIU coordinates
+            if (pos.X < pad || pos.Y < pad) return false;
+            if (pos.X > pad + mapW || pos.Y > pad + mapH) return false;
+            return true;
         }
 
         private void CanvasHost_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -8787,10 +8806,32 @@ namespace FamidashEditor
 
         private void CommitPolygon()
         {
+            #pragma warning disable CS8602
             try
             {
                 if (polygonPoints == null || polygonPoints.Count < 3) { polygonPoints.Clear(); isConstructingPolygon = false; return; }
-                var list = GetFilledPolygonTiles(polygonPoints);
+                var list = new System.Collections.Generic.List<(int x, int y)>();
+                if (!hollowShape)
+                {
+                    list = GetFilledPolygonTiles(polygonPoints);
+                }
+                else
+                {
+                    var set = new System.Collections.Generic.HashSet<(int x, int y)>();
+                    for (int i = 0; i + 1 < polygonPoints.Count; i++)
+                    {
+                        var a = polygonPoints[i]; var b = polygonPoints[i + 1];
+                        var seg = ComputeDrawTileList(a.x, a.y, b.x, b.y, DrawMode.Line, brushThickness);
+                        foreach (var t in seg) set.Add(t);
+                    }
+                    if (polygonPoints.Count >= 3)
+                    {
+                        var a = polygonPoints[polygonPoints.Count - 1]; var b = polygonPoints[0];
+                        var seg = ComputeDrawTileList(a.x, a.y, b.x, b.y, DrawMode.Line, brushThickness);
+                        foreach (var t in seg) set.Add(t);
+                    }
+                    list.AddRange(set);
+                }
                 if (list.Count == 0) { polygonPoints.Clear(); isConstructingPolygon = false; return; }
 
                 var tileAction = new TileChangeAction();
@@ -8817,6 +8858,7 @@ namespace FamidashEditor
                 try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                 try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
             }
+            #pragma warning restore CS8602
             catch { }
             finally
             {
@@ -8931,6 +8973,9 @@ namespace FamidashEditor
                     var l = new Shapes.Line { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Stroke = Brushes.Yellow, StrokeThickness = 1, IsHitTestVisible = false };
                     try { l.StrokeThickness = 1.0 / dpi.DpiScaleX; l.SnapsToDevicePixels = true; } catch { }
                     SelectionOverlay.Children.Add(l);
+                    // Also draw ghost tiles for line
+                    var lineTiles = ComputeDrawTileList(drawStartX, drawStartY, drawCurrentX, drawCurrentY, DrawMode.Line, brushThickness);
+                    DrawGhostTiles(lineTiles, tilePixelW, tilePixelH, padPxX, padPxY, dpi);
                     return;
                 }
 
@@ -8945,6 +8990,8 @@ namespace FamidashEditor
                     Canvas.SetLeft(rect, left);
                     Canvas.SetTop(rect, top);
                     SelectionOverlay.Children.Add(rect);
+                    var squareTiles = ComputeDrawTileList(drawStartX, drawStartY, drawCurrentX, drawCurrentY, DrawMode.Square, brushThickness);
+                    DrawGhostTiles(squareTiles, tilePixelW, tilePixelH, padPxX, padPxY, dpi);
                     return;
                 }
 
@@ -8965,6 +9012,8 @@ namespace FamidashEditor
                     poly.Points.Add(new System.Windows.Point(apexX, apexY));
                     try { poly.StrokeThickness = 1.0 / dpi.DpiScaleX; poly.SnapsToDevicePixels = true; } catch { }
                     SelectionOverlay.Children.Add(poly);
+                    var triTiles = ComputeDrawTileList(Math.Min(drawStartX, drawCurrentX), Math.Min(drawStartY, drawCurrentY), Math.Max(drawStartX, drawCurrentX), Math.Max(drawStartY, drawCurrentY), DrawMode.Triangle, brushThickness);
+                    DrawGhostTiles(triTiles, tilePixelW, tilePixelH, padPxX, padPxY, dpi);
                     return;
                 }
 
