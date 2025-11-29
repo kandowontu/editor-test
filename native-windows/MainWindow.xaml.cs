@@ -9243,6 +9243,26 @@ namespace FamidashEditor
             try { if (SelectionOverlay != null) SelectionOverlay.Children.Clear(); } catch { }
         }
 
+        private void DrawGhostTiles(System.Collections.Generic.List<(int x, int y)> tilesPreview, int tilePixelW, int tilePixelH, int padPxX, int padPxY, DpiScale dpi)
+        {
+            if (tilesPreview == null || tilesPreview.Count == 0) return;
+            ImageSource? ghostSrc = null;
+            if (tilesLayerActive && selectedTile >= 0 && tileImages != null)
+            {
+                try { ghostSrc = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[selectedTile] : tileImages[selectedTile]; } catch { ghostSrc = null; }
+            }
+            if (spritesLayerActive && selectedSprite >= 0 && spriteImages != null) ghostSrc = spriteImages[selectedSprite];
+            if (ghostSrc == null) return;
+            var dpiScaleX = dpi.DpiScaleX; var dpiScaleY = dpi.DpiScaleY;
+            foreach (var (tx, ty) in tilesPreview)
+            {
+                var img = new Image { Source = ghostSrc, Width = (double)tilePixelW / dpiScaleX, Height = (double)tilePixelH / dpiScaleY, Opacity = 0.5, IsHitTestVisible = false };
+                Canvas.SetLeft(img, (padPxX + tx * tilePixelW) / dpiScaleX);
+                Canvas.SetTop(img, (padPxY + ty * tilePixelH) / dpiScaleY + gridRenderShiftY);
+                SelectionOverlay.Children.Add(img);
+            }
+        }
+
         private void EndSelection()
         {
             if (!isSelecting) return;
