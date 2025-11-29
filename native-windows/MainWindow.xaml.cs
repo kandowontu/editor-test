@@ -8852,29 +8852,73 @@ namespace FamidashEditor
                 }
                 if (list.Count == 0) { polygonPoints.Clear(); isConstructingPolygon = false; return; }
 
-                var tileAction = new TileChangeAction();
-                var spriteAction = new SpriteChangeAction();
-
-                foreach (var (tx, ty) in list)
+                // Handle tool-specific commit behavior: Erase, Select, or Place
+                if (EraseTool != null && EraseTool.IsChecked == true)
                 {
-                    int idx = ty * mapWidth + tx;
-                    if (tilesLayerActive && selectedTile >= 0)
+                    var eraseTileAction = new TileChangeAction();
+                    var eraseSpriteAction = new SpriteChangeAction();
+                    foreach (var (tx, ty) in list)
                     {
-                        int old = tiles[idx]; int neu = selectedTile;
-                        if (old != neu) { tileAction.Add(idx, old, neu); tiles[idx] = neu; }
+                        int idx = ty * mapWidth + tx;
+                        if (tilesLayerActive)
+                        {
+                            int old = tiles[idx]; if (old != -1) { eraseTileAction.Add(idx, old, -1); tiles[idx] = -1; }
+                        }
+                        if (spritesLayerActive)
+                        {
+                            int oldS = sprites[idx]; if (oldS != -1) { eraseSpriteAction.Add(idx, oldS, -1); sprites[idx] = -1; }
+                        }
                     }
-                    if (spritesLayerActive && selectedSprite >= 0)
+                    if (!eraseTileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseTileAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    if (!eraseSpriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseSpriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                }
+                else if (SelectTool != null && SelectTool.IsChecked == true)
+                {
+                    bool isCtrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+                    var newIndices = new System.Collections.Generic.HashSet<int>();
+                    foreach (var (tx, ty) in list) newIndices.Add(ty * mapWidth + tx);
+                    if (!isCtrl) selectionSet.Clear();
+                    foreach (var idx in newIndices) selectionSet.Add(idx);
+
+                    if (selectionSet.Count == 0) { ClearSelection(); }
+                    else
                     {
-                        int oldS = sprites[idx]; int neuS = selectedSprite;
-                        if (oldS != neuS) { spriteAction.Add(idx, oldS, neuS); sprites[idx] = neuS; }
+                        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+                        foreach (var i in selectionSet) { int sx = i % mapWidth, sy = i / mapWidth; if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy; }
+                        selX = minX; selY = minY; selW = maxX - minX + 1; selH = maxY - minY + 1;
+                        selTiles = new int[selW * selH]; selSprites = new int[selW * selH];
+                        for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                        {
+                            int gidx = (selY + yy) * mapWidth + (selX + xx);
+                            if (selectionSet.Contains(gidx)) { selTiles[yy * selW + xx] = tilesLayerActive ? tiles[gidx] : -1; selSprites[yy * selW + xx] = spritesLayerActive ? sprites[gidx] : -1; }
+                            else { selTiles[yy * selW + xx] = -1; selSprites[yy * selW + xx] = -1; }
+                        }
+                        UpdateSelectionVisuals(selX, selY, selW, selH);
                     }
                 }
-
-                if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
-                if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
-
-                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                else
+                {
+                    var tileAction = new TileChangeAction();
+                    var spriteAction = new SpriteChangeAction();
+                    foreach (var (tx, ty) in list)
+                    {
+                        int idx = ty * mapWidth + tx;
+                        if (tilesLayerActive && selectedTile >= 0)
+                        {
+                            int old = tiles[idx]; int neu = selectedTile; if (old != neu) { tileAction.Add(idx, old, neu); tiles[idx] = neu; }
+                        }
+                        if (spritesLayerActive && selectedSprite >= 0)
+                        {
+                            int oldS = sprites[idx]; int neuS = selectedSprite; if (oldS != neuS) { spriteAction.Add(idx, oldS, neuS); sprites[idx] = neuS; }
+                        }
+                    }
+                    if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                }
             }
             #pragma warning restore CS8602
             catch { }
@@ -9334,25 +9378,57 @@ namespace FamidashEditor
         private void DrawGhostTiles(System.Collections.Generic.List<(int x, int y)> tilesPreview, int tilePixelW, int tilePixelH, int padPxX, int padPxY, DpiScale dpi)
         {
             if (tilesPreview == null || tilesPreview.Count == 0) return;
-            ImageSource? ghostSrc = null;
-            if (tilesLayerActive && selectedTile >= 0 && tileImages != null)
-            {
-                try { ghostSrc = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[selectedTile] : tileImages[selectedTile]; } catch { ghostSrc = null; }
-            }
-            if (spritesLayerActive && selectedSprite >= 0 && spriteImages != null) ghostSrc = spriteImages[selectedSprite];
             var dpiScaleX = dpi.DpiScaleX; var dpiScaleY = dpi.DpiScaleY;
-            if (ghostSrc == null)
+
+            // If erase is active, always draw erase overlay (do not show tile images)
+            if (EraseTool != null && EraseTool.IsChecked == true)
             {
-                // No image to render; draw translucent yellow/red rectangles for preview (erase/selection modes)
+                var eraseBrush = new SolidColorBrush(Color.FromArgb(160, 220, 64, 64));
                 foreach (var (tx, ty) in tilesPreview)
                 {
-                    var rect = new Shapes.Rectangle { Width = (double)tilePixelW / dpiScaleX, Height = (double)tilePixelH / dpiScaleY, Fill = new SolidColorBrush(Color.FromArgb(96, 255, 255, 0)), Stroke = Brushes.Transparent, IsHitTestVisible = false };
+                    var rect = new Shapes.Rectangle { Width = (double)tilePixelW / dpiScaleX, Height = (double)tilePixelH / dpiScaleY, Fill = eraseBrush, Stroke = Brushes.Transparent, IsHitTestVisible = false };
                     Canvas.SetLeft(rect, (padPxX + tx * tilePixelW) / dpiScaleX);
                     Canvas.SetTop(rect, (padPxY + ty * tilePixelH) / dpiScaleY + gridRenderShiftY);
                     SelectionOverlay.Children.Add(rect);
                 }
                 return;
             }
+
+            // If select is active, prefer selection overlay
+            if (SelectTool != null && SelectTool.IsChecked == true)
+            {
+                var selBrush = new SolidColorBrush(Color.FromArgb(120, 64, 160, 255));
+                foreach (var (tx, ty) in tilesPreview)
+                {
+                    var rect = new Shapes.Rectangle { Width = (double)tilePixelW / dpiScaleX, Height = (double)tilePixelH / dpiScaleY, Fill = selBrush, Stroke = Brushes.Transparent, IsHitTestVisible = false };
+                    Canvas.SetLeft(rect, (padPxX + tx * tilePixelW) / dpiScaleX);
+                    Canvas.SetTop(rect, (padPxY + ty * tilePixelH) / dpiScaleY + gridRenderShiftY);
+                    SelectionOverlay.Children.Add(rect);
+                }
+                return;
+            }
+
+            // Otherwise attempt to show the actual tile/sprite ghost image
+            ImageSource? ghostSrc = null;
+            if (tilesLayerActive && selectedTile >= 0 && tileImages != null)
+            {
+                try { ghostSrc = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[selectedTile] : tileImages[selectedTile]; } catch { ghostSrc = null; }
+            }
+            if (spritesLayerActive && selectedSprite >= 0 && spriteImages != null) ghostSrc = spriteImages[selectedSprite];
+
+            if (ghostSrc == null)
+            {
+                var fallback = new SolidColorBrush(Color.FromArgb(96, 255, 255, 0));
+                foreach (var (tx, ty) in tilesPreview)
+                {
+                    var rect = new Shapes.Rectangle { Width = (double)tilePixelW / dpiScaleX, Height = (double)tilePixelH / dpiScaleY, Fill = fallback, Stroke = Brushes.Transparent, IsHitTestVisible = false };
+                    Canvas.SetLeft(rect, (padPxX + tx * tilePixelW) / dpiScaleX);
+                    Canvas.SetTop(rect, (padPxY + ty * tilePixelH) / dpiScaleY + gridRenderShiftY);
+                    SelectionOverlay.Children.Add(rect);
+                }
+                return;
+            }
+
             foreach (var (tx, ty) in tilesPreview)
             {
                 var img = new Image { Source = ghostSrc, Width = (double)tilePixelW / dpiScaleX, Height = (double)tilePixelH / dpiScaleY, Opacity = 0.5, IsHitTestVisible = false };
