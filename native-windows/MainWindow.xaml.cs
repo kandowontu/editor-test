@@ -4729,12 +4729,14 @@ namespace FamidashEditor
                     FamiTrackCombo.Items.Add(item);
                 }
                 FamiTrackCombo.SelectedIndex = 0;
+                try { if (StatusText != null) StatusText.Text = $"Loaded {parsed.Count} names from {(foundJson != null ? Path.GetFileName(foundJson) : (albumTxtPath != null ? Path.GetFileName(albumTxtPath) : "unknown"))}"; } catch { }
             }
             else
             {
                 // no names found - leave empty but add placeholders so dropdown shows size
                 for (int i = 0; i < 8; i++) FamiTrackCombo.Items.Add(new System.Windows.Controls.ComboBoxItem() { Content = $"Song {i}", Tag = i });
                 if (FamiTrackCombo.Items.Count > 0) FamiTrackCombo.SelectedIndex = 0;
+                try { if (StatusText != null) StatusText.Text = "No parsed song names found"; } catch { }
             }
         }
 
