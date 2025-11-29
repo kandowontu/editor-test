@@ -9526,45 +9526,78 @@ namespace FamidashEditor
             // Prepare final values map and record changes compared to current tiles
             if (hasAnyTiles)
             {
-                var finalTiles = (int[])tiles.Clone();
-                var changedTiles = new TileChangeAction();
-
-                // Apply selection tile values to final at destination (only where selection contained tiles)
-                for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                // If this was a sparse/wand selection, only move the selected indices rather than the entire rectangle
+                if (selectionSet != null && selectionSet.Count > 0)
                 {
-                    int val = selTiles[yy * selW + xx];
-                    if (val == -1) continue; // do not overwrite target when selection cell was empty
-                    int dIdx = (destY + yy) * mapWidth + (destX + xx);
-                    finalTiles[dIdx] = val;
-                }
+                    var finalTiles = (int[])tiles.Clone();
+                    var changedTiles = new TileChangeAction();
+                    var srcToDest = new System.Collections.Generic.List<(int srcIdx, int dstIdx)>();
 
-                // Clear original source tile cells unless they are also targets for the selection (i.e., overlapping move)
-                var targetSet = new HashSet<int>();
-                for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++) targetSet.Add((destY + yy) * mapWidth + (destX + xx));
-                for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                    foreach (var sIdx in selectionSet)
+                    {
+                        // compute relative coords inside selection rectangle
+                        int sx = sIdx % mapWidth; int sy = sIdx / mapWidth;
+                        int relX = sx - selX; int relY = sy - selY;
+                        if (relX < 0 || relX >= selW || relY < 0 || relY >= selH) continue;
+                        int val = selTiles[relY * selW + relX];
+                        if (val == -1) continue; // don't place transparent cells
+                        int dstIdx = (destY + relY) * mapWidth + (destX + relX);
+                        if (dstIdx < 0 || dstIdx >= finalTiles.Length) continue;
+                        finalTiles[dstIdx] = val;
+                        srcToDest.Add((sIdx, dstIdx));
+                    }
+
+                    // Clear source indices that were selected and not overlapping destination
+                    var destSet = new HashSet<int>(srcToDest.ConvertAll(t => t.dstIdx));
+                    foreach (var (sIdx, _) in srcToDest)
+                    {
+                        if (!destSet.Contains(sIdx))
+                        {
+                            finalTiles[sIdx] = -1;
+                        }
+                        else
+                        {
+                            // If source and dest are different indices and source wasn't overwritten by another destination, clear source
+                            if (!destSet.Contains(sIdx)) finalTiles[sIdx] = -1;
+                        }
+                    }
+
+                    // Build TileChangeAction from differences
+                    for (int i = 0; i < finalTiles.Length; i++) if (finalTiles[i] != tiles[i]) changedTiles.Add(i, tiles[i], finalTiles[i]);
+                    if (!changedTiles.IsEmpty() && !suppressUndoRecording) { undoStack.Push(changedTiles); redoStack.Clear(); hasUnsavedChanges = true; }
+                    tiles = finalTiles;
+                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                }
+                else
                 {
-                    int sIdx = (selY + yy) * mapWidth + (selX + xx);
-                    // If this selection was a sparse/wand selection, prefer selectionSet membership to determine whether to clear
-                    bool srcWasSelected = (selectionSet != null && selectionSet.Count > 0) ? selectionSet.Contains(sIdx) : (selTiles[yy * selW + xx] != -1);
-                    if (!targetSet.Contains(sIdx) && srcWasSelected) finalTiles[sIdx] = -1;
-                }
+                    var finalTiles = (int[])tiles.Clone();
+                    var changedTiles = new TileChangeAction();
 
-                // Build TileChangeAction from differences
-                for (int i = 0; i < finalTiles.Length; i++)
-                {
-                    if (finalTiles[i] != tiles[i]) changedTiles.Add(i, tiles[i], finalTiles[i]);
-                }
+                    // Apply selection tile values to final at destination (only where selection contained tiles)
+                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                    {
+                        int val = selTiles[yy * selW + xx];
+                        if (val == -1) continue; // do not overwrite target when selection cell was empty
+                        int dIdx = (destY + yy) * mapWidth + (destX + xx);
+                        finalTiles[dIdx] = val;
+                    }
 
-                if (!changedTiles.IsEmpty() && !suppressUndoRecording)
-                {
-                    undoStack.Push(changedTiles);
-                    redoStack.Clear();
-                    hasUnsavedChanges = true;
-                }
+                    // Clear original source tile cells unless they are also targets for the selection (i.e., overlapping move)
+                    var targetSet = new HashSet<int>();
+                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++) targetSet.Add((destY + yy) * mapWidth + (destX + xx));
+                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                    {
+                        int sIdx = (selY + yy) * mapWidth + (selX + xx);
+                        bool srcWasSelected = (selTiles[yy * selW + xx] != -1);
+                        if (!targetSet.Contains(sIdx) && srcWasSelected) finalTiles[sIdx] = -1;
+                    }
 
-                // Commit final tile state
-                tiles = finalTiles;
-                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    // Build TileChangeAction from differences
+                    for (int i = 0; i < finalTiles.Length; i++) if (finalTiles[i] != tiles[i]) changedTiles.Add(i, tiles[i], finalTiles[i]);
+                    if (!changedTiles.IsEmpty() && !suppressUndoRecording) { undoStack.Push(changedTiles); redoStack.Clear(); hasUnsavedChanges = true; }
+                    tiles = finalTiles;
+                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                }
             }
             
             // Check if selSprites has any non-empty values
