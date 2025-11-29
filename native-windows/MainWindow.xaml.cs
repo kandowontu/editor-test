@@ -713,6 +713,11 @@ namespace FamidashEditor
     private BitmapSource[]? poleLeftMediumFrame2;
     private BitmapSource[]? poleRightMediumFrame1; // sprite 0x3F
     private BitmapSource[]? poleRightMediumFrame2;
+    // Pole-medium (1.5 tiles tall) decorative replacements for sprite 0x2C/0x3C
+    private BitmapSource[]? poleMediumFrame1; // sprite 0x2C uses custom indices 2122/2123
+    private BitmapSource[]? poleMediumFrame2;
+    private BitmapSource[]? poleMediumUpsideDownFrame1; // sprite 0x3C uses custom indices 2124/2125
+    private BitmapSource[]? poleMediumUpsideDownFrame2;
     // Chain decorations (single-frame preview-only)
     private BitmapSource[]? chainFrame1; // sprite 0x2D
     private BitmapSource[]? chainUpsideDownFrame1; // sprite 0x3D
@@ -795,7 +800,7 @@ namespace FamidashEditor
     // Lock for thread-safe access to the tinted caches when precomputing on background threads
     private readonly object tintedCacheLock = new object();
     // Decoration sprite ids that should receive player tinting
-    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x38, 0x39 };
+    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B };
     // Portal debug log path (initialized at startup)
     private string? portalDebugPath = null;
 
@@ -1996,6 +2001,8 @@ namespace FamidashEditor
             anyOrbFramesAvailable = anyOrbFramesAvailable || (xFrame1 != null && xFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleShortFrame1 != null && poleShortFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleMediumFrame1 != null && poleMediumFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleMediumUpsideDownFrame1 != null && poleMediumUpsideDownFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleLeftShortFrame1 != null && poleLeftShortFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleLeftMediumFrame1 != null && poleLeftMediumFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleRightShortFrame1 != null && poleRightShortFrame2 != null);
@@ -2014,6 +2021,7 @@ namespace FamidashEditor
                     for (int xx = vMinX; xx <= vMaxX; xx++)
                     {
                         int spriteIdx = sprites[yy * mapWidth + xx];
+                        // Animated two-frame sprites and decorations that participate in preview animation
                         if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
                             spriteIdx == 0x05 || // Blue
                             spriteIdx == 0x06 || // Pink
@@ -2028,8 +2036,8 @@ namespace FamidashEditor
                             spriteIdx == 0x25 || spriteIdx == 0x26 || // Pink pad down/up
                             // Dash/teleport/spider two-frame sprites
                             spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
-                            // Star and other decoration sprites
-                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F)
+                            // Decorations
+                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F || spriteIdx == 0x2B || spriteIdx == 0x3B)
                         {
                             hasAnimatedOrbs = true;
                             if (animationFrame % 60 == 0)
@@ -2080,7 +2088,7 @@ namespace FamidashEditor
                                         // New dash orb sprites
                                         spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
                                         // Decorations
-                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F)
+                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F || spriteIdx == 0x2B || spriteIdx == 0x3B)
                                 {
                                     UpdateSpriteBitmapAtLocked(x, y, spriteIdx, scale, mapViewportPadding, spritePixelW, spritePixelH, dpi);
                                 }
@@ -2324,6 +2332,9 @@ namespace FamidashEditor
             if (originalIndex == 0x39) return GetTwoFrameCustomIndex(2130); // pole-right-short (2130/2131)
             if (originalIndex == 0x3E) return GetTwoFrameCustomIndex(2132); // pole-left-medium (2132/2133)
             if (originalIndex == 0x3F) return GetTwoFrameCustomIndex(2134); // pole-right-medium (2134/2135)
+            // New mapping: medium pole replacements for 0x2B/0x3B use custom indices 2136/2138
+            if (originalIndex == 0x2B) return GetTwoFrameCustomIndex(2136); // pole-medium (2136/2137)
+            if (originalIndex == 0x3B) return GetTwoFrameCustomIndex(2138); // pole-medium upside-down (2138/2139)
             if (originalIndex == 0x36) return GetTwoFrameCustomIndex(2110); // star (2110/2111)
             // Chain decorations (preview-only, single-frame)
             if (originalIndex == 0x2D) return 2126; // chain (2126)
@@ -2986,6 +2997,26 @@ namespace FamidashEditor
                 {
                     case 2124: return poleShortUpsideDownFrame1?[0];
                     case 2125: return poleShortUpsideDownFrame2?[0];
+                    default: return null;
+                }
+            }
+
+            // Pole-medium custom indices for 0x2B/0x3B: 2136-2139
+            if (customIndex >= 2136 && customIndex <= 2137)
+            {
+                switch (customIndex)
+                {
+                    case 2136: return poleMediumFrame1?[0];
+                    case 2137: return poleMediumFrame2?[0];
+                    default: return null;
+                }
+            }
+            if (customIndex >= 2138 && customIndex <= 2139)
+            {
+                switch (customIndex)
+                {
+                    case 2138: return poleMediumUpsideDownFrame1?[0];
+                    case 2139: return poleMediumUpsideDownFrame2?[0];
                     default: return null;
                 }
             }
@@ -4429,6 +4460,9 @@ namespace FamidashEditor
                 // New short pole left/right decorations
                 LoadTwoFrameOrb("pole-left-short", ref poleLeftShortFrame1, ref poleLeftShortFrame2); // sprite 0x38
                 LoadTwoFrameOrb("pole-right-short", ref poleRightShortFrame1, ref poleRightShortFrame2); // sprite 0x39
+                // Pole-medium replacements for 0x2C/0x3C preview (1.5 tiles tall)
+                LoadTwoFrameOrb("pole-medium", ref poleMediumFrame1, ref poleMediumFrame2); // sprite 0x2C -> custom 2122/2123
+                LoadTwoFrameOrb("pole-medium-upsidedown", ref poleMediumUpsideDownFrame1, ref poleMediumUpsideDownFrame2); // sprite 0x3C -> custom 2124/2125
                     // Medium pole replacements (if provided as embedded assets)
                     LoadTwoFrameOrb("pole-left-medium", ref poleLeftMediumFrame1, ref poleLeftMediumFrame2); // sprite 0x3E
                     LoadTwoFrameOrb("pole-right-medium", ref poleRightMediumFrame1, ref poleRightMediumFrame2); // sprite 0x3F
@@ -7312,6 +7346,17 @@ namespace FamidashEditor
                     int totalShift = (int)Math.Round(oneTileScaled * 0.5);
                     destY = Math.Max(0, destY - totalShift);
                 }
+                // Shift pole-medium (sprite 0x2B) upwards by half a tile so it visually aligns
+                // with surrounding decorations when previewing.
+                if (previewMode && spriteIdx == 0x2B)
+                {
+                    try
+                    {
+                        int halfShift = (int)Math.Round(spritePixelH * 0.5);
+                        destY = Math.Max(0, destY - halfShift);
+                    }
+                    catch { }
+                }
                 
                 // Bounds check
                 if (destX >= cachedPixelWidth || destY >= cachedPixelHeight) return;
@@ -7448,6 +7493,14 @@ namespace FamidashEditor
                 if (!isMultiTilePortal && (animatedIdx == 2126 || animatedIdx == 2127))
                 {
                     renderHeight = (spritePixelH * 3) / 2; // 1.5 tiles tall
+                }
+
+                // Treat pole-medium decorations for sprites 0x2B/0x3B (custom indices 2136-2139)
+                // as 1.5 tiles tall (vertical) and 1 tile wide.
+                if (!isMultiTilePortal && (animatedIdx == 2136 || animatedIdx == 2137 || animatedIdx == 2138 || animatedIdx == 2139))
+                {
+                    renderHeight = (spritePixelH * 3) / 2; // 1.5 tiles tall
+                    renderWidth = spritePixelW; // 1 tile wide
                 }
 
                 // Treat medium pole decorations (custom indices 2132/2133 and 2134/2135)
