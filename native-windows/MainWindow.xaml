@@ -178,6 +178,21 @@
                 </ToolBar>
             </ToolBarTray>
 
+            <!-- Shape drawing toolbar -->
+            <ToolBarTray DockPanel.Dock="Top">
+                <ToolBar>
+                    <ToggleButton x:Name="DrawTileButton" Margin="2" IsChecked="True">Tile</ToggleButton>
+                    <ToggleButton x:Name="DrawLineButton" Margin="2">Line</ToggleButton>
+                    <ToggleButton x:Name="DrawSquareButton" Margin="2">Square</ToggleButton>
+                    <ToggleButton x:Name="DrawCircleButton" Margin="2">Circle</ToggleButton>
+                    <ToggleButton x:Name="DrawTriangleButton" Margin="2">Triangle</ToggleButton>
+                    <ToggleButton x:Name="DrawPolygonButton" Margin="2">Polygon</ToggleButton>
+                    <CheckBox x:Name="HollowCheckBox" Content="Hollow" VerticalAlignment="Center" Margin="12,0" />
+                    <TextBlock Text="Brush:" VerticalAlignment="Center" Margin="8,0,2,0" />
+                    <Slider x:Name="BrushThicknessSlider" Minimum="1" Maximum="7" Value="1" Width="120" VerticalAlignment="Center" />
+                </ToolBar>
+            </ToolBarTray>
+
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="4">
             <Button x:Name="SaveButton" Content="Save" Margin="2" ToolTip="Save TMX (Ctrl+S)" />
             <Button x:Name="LoadButton" Content="Open" Margin="2" ToolTip="Open TMX (Ctrl+O)" />

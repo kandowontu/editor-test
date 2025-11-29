@@ -18,6 +18,15 @@ namespace FamidashEditor
 {
     public partial class MainWindow : Window
     {
+        private enum DrawMode { Tile, Line, Square, Circle, Triangle, Polygon, None }
+        private DrawMode currentDrawMode = DrawMode.Tile;
+        private bool hollowShape = false;
+        private int brushThickness = 1;
+
+        // Deferred draw state
+        private bool isDeferredDrawing = false;
+        private int drawStartX = -1, drawStartY = -1;
+        private int drawCurrentX = -1, drawCurrentY = -1;
     // Timer used to perform continuous 1-px fine scrolling while Shift+Left/Right are held
     private System.Windows.Threading.DispatcherTimer? shiftArrowScrollTimer = null;
     private int shiftArrowScrollDir = 0; // -1 = left, +1 = right
@@ -1163,6 +1172,23 @@ namespace FamidashEditor
                     }
                 }
             };
+
+            // Wire up draw mode controls
+            if (DrawTileButton != null) DrawTileButton.Checked += DrawModeButton_Checked;
+            if (DrawLineButton != null) DrawLineButton.Checked += DrawModeButton_Checked;
+            if (DrawSquareButton != null) DrawSquareButton.Checked += DrawModeButton_Checked;
+            if (DrawCircleButton != null) DrawCircleButton.Checked += DrawModeButton_Checked;
+            if (DrawTriangleButton != null) DrawTriangleButton.Checked += DrawModeButton_Checked;
+            if (DrawPolygonButton != null) DrawPolygonButton.Checked += DrawModeButton_Checked;
+            if (DrawTileButton != null) DrawTileButton.Unchecked += DrawModeButton_Unchecked;
+            if (DrawLineButton != null) DrawLineButton.Unchecked += DrawModeButton_Unchecked;
+            if (DrawSquareButton != null) DrawSquareButton.Unchecked += DrawModeButton_Unchecked;
+            if (DrawCircleButton != null) DrawCircleButton.Unchecked += DrawModeButton_Unchecked;
+            if (DrawTriangleButton != null) DrawTriangleButton.Unchecked += DrawModeButton_Unchecked;
+            if (DrawPolygonButton != null) DrawPolygonButton.Unchecked += DrawModeButton_Unchecked;
+            if (HollowCheckBox != null) HollowCheckBox.Checked += (s,e)=>{ hollowShape = true; UpdateDeferredPreview(); };
+            if (HollowCheckBox != null) HollowCheckBox.Unchecked += (s,e)=>{ hollowShape = false; UpdateDeferredPreview(); };
+            if (BrushThicknessSlider != null) BrushThicknessSlider.ValueChanged += (s,e)=>{ brushThickness = (int)Math.Max(1, Math.Round(e.NewValue)); UpdateDeferredPreview(); };
             // Sprite slider: when user changes sprite slider, mark manual and update sprite sizes.
             if (SpriteSizeSlider != null) SpriteSizeSlider.ValueChanged += (s, ev) =>
             {
@@ -7976,6 +8002,17 @@ namespace FamidashEditor
                 }
             }
 
+            // If a draw mode (other than Tile) is active, start deferred drawing
+            if (currentDrawMode != DrawMode.Tile)
+            {
+                var tt = ViewportPointToTile(pos);
+                drawStartX = tt.x; drawStartY = tt.y; drawCurrentX = drawStartX; drawCurrentY = drawStartY;
+                isDeferredDrawing = true;
+                if (CanvasHost != null) CanvasHost.CaptureMouse();
+                UpdateDeferredPreview();
+                return;
+            }
+
             // Default: place/erase painting behavior
             StartPaintingAt(pos);
         }
@@ -7999,6 +8036,16 @@ namespace FamidashEditor
                 return;
             }
             
+            // If we were doing a deferred draw, finalize it now
+            if (isDeferredDrawing)
+            {
+                var pos = e.GetPosition(CanvasHost);
+                var tt = ViewportPointToTile(pos);
+                drawCurrentX = tt.x; drawCurrentY = tt.y;
+                CommitDeferredDraw();
+                return;
+            }
+
             // Handle single click - check if we should deselect
             if (selectionSet.Count > 0)
             {
@@ -8056,6 +8103,16 @@ namespace FamidashEditor
             if (isPainting && e.LeftButton == MouseButtonState.Pressed)
             {
                 ContinuePaintingAt(pos);
+                return;
+            }
+
+            // If performing a deferred draw, update preview
+            if (isDeferredDrawing && e.LeftButton == MouseButtonState.Pressed)
+            {
+                var tt = ViewportPointToTile(pos);
+                drawCurrentX = tt.x; drawCurrentY = tt.y;
+                UpdateDeferredPreview();
+                return;
             }
         }
 
@@ -8078,6 +8135,33 @@ namespace FamidashEditor
             if (MenuToolFill != null) MenuToolFill.IsChecked = (tb == FillTool);
             if (MenuToolSelect != null) MenuToolSelect.IsChecked = (tb == SelectTool);
             if (MenuToolWand != null) MenuToolWand.IsChecked = (tb == MagicWandTool);
+        }
+
+        private void DrawModeButton_Checked(object? sender, RoutedEventArgs e)
+        {
+            // Keep only one draw mode checked at a time
+            var btn = sender as ToggleButton;
+            if (btn == null) return;
+            var all = new[] { DrawTileButton, DrawLineButton, DrawSquareButton, DrawCircleButton, DrawTriangleButton, DrawPolygonButton };
+            foreach (var b in all) if (b != btn) b.IsChecked = false;
+
+            if (btn == DrawTileButton) currentDrawMode = DrawMode.Tile;
+            else if (btn == DrawLineButton) currentDrawMode = DrawMode.Line;
+            else if (btn == DrawSquareButton) currentDrawMode = DrawMode.Square;
+            else if (btn == DrawCircleButton) currentDrawMode = DrawMode.Circle;
+            else if (btn == DrawTriangleButton) currentDrawMode = DrawMode.Triangle;
+            else if (btn == DrawPolygonButton) currentDrawMode = DrawMode.Polygon;
+            else currentDrawMode = DrawMode.None;
+        }
+
+        private void DrawModeButton_Unchecked(object? sender, RoutedEventArgs e)
+        {
+            // If the unchecked button was the currently selected, revert to Tile
+            var btn = sender as ToggleButton; if (btn == null) return;
+            if (!(DrawTileButton.IsChecked == true || DrawLineButton.IsChecked == true || DrawSquareButton.IsChecked == true || DrawCircleButton.IsChecked == true || DrawTriangleButton.IsChecked == true || DrawPolygonButton.IsChecked == true))
+            {
+                if (DrawTileButton != null) DrawTileButton.IsChecked = true;
+            }
         }
 
         private void FloodFill(int sx, int sy, int target, int replacement)
@@ -8621,6 +8705,202 @@ namespace FamidashEditor
                     SelectionOverlay.Children.Add(rect);
                 }
             }
+        }
+
+        private void UpdateDeferredPreview()
+        {
+            try
+            {
+                if (SelectionOverlay == null) return;
+                SelectionOverlay.Children.Clear();
+                var dpi = VisualTreeHelper.GetDpi(this);
+                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+
+                var tilesToPreview = ComputeDrawTileList(drawStartX, drawStartY, drawCurrentX, drawCurrentY, currentDrawMode, brushThickness);
+                foreach (var (tx, ty) in tilesToPreview)
+                {
+                    double left = (double)(padPxX + tx * tilePixelW) / dpi.DpiScaleX;
+                    double top = (double)(padPxY + ty * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY;
+                    double size = (double)tilePixelW / dpi.DpiScaleX;
+                    var rect = new Shapes.Rectangle { Width = size, Height = size, Stroke = Brushes.Yellow, StrokeThickness = 1, Fill = Brushes.Transparent, IsHitTestVisible = false };
+                    try { rect.StrokeThickness = 1.0 / dpi.DpiScaleX; rect.SnapsToDevicePixels = true; } catch { }
+                    Canvas.SetLeft(rect, left);
+                    Canvas.SetTop(rect, top);
+                    SelectionOverlay.Children.Add(rect);
+                }
+            }
+            catch { }
+        }
+
+        private System.Collections.Generic.List<(int x, int y)> ComputeDrawTileList(int sx, int sy, int ex, int ey, DrawMode mode, int thickness)
+        {
+            var list = new System.Collections.Generic.List<(int x, int y)>();
+            if (sx < 0 || sy < 0 || ex < 0 || ey < 0) return list;
+            if (mode == DrawMode.Tile)
+            {
+                int half = (thickness - 1) / 2;
+                for (int dy = -half; dy <= half; dy++) for (int dx = -half; dx <= half; dx++)
+                {
+                    int tx = sx + dx; int ty = sy + dy;
+                    if (tx >= 0 && tx < mapWidth && ty >= 0 && ty < mapHeight) list.Add((tx, ty));
+                }
+                return list;
+            }
+            if (mode == DrawMode.Line)
+            {
+                int x0 = sx, y0 = sy, x1 = ex, y1 = ey;
+                int dx = Math.Abs(x1 - x0), sxSign = x0 < x1 ? 1 : -1;
+                int dy = -Math.Abs(y1 - y0), sySign = y0 < y1 ? 1 : -1;
+                int err = dx + dy;
+                while (true)
+                {
+                    int half = (thickness - 1) / 2;
+                    for (int oy = -half; oy <= half; oy++) for (int ox = -half; ox <= half; ox++)
+                    {
+                        int tx = x0 + ox; int ty = y0 + oy;
+                        if (tx >= 0 && tx < mapWidth && ty >= 0 && ty < mapHeight) list.Add((tx, ty));
+                    }
+                    if (x0 == x1 && y0 == y1) break;
+                    int e2 = 2 * err;
+                    if (e2 >= dy) { err += dy; x0 += sxSign; }
+                    if (e2 <= dx) { err += dx; y0 += sySign; }
+                }
+                return list;
+            }
+            int minx = Math.Min(sx, ex), maxx = Math.Max(sx, ex);
+            int miny = Math.Min(sy, ey), maxy = Math.Max(sy, ey);
+            if (mode == DrawMode.Square)
+            {
+                if (hollowShape)
+                {
+                    int t = Math.Max(1, thickness);
+                    for (int y = miny; y <= maxy; y++) for (int x = minx; x <= maxx; x++)
+                    {
+                        bool onBorder = (x - minx < t) || (maxx - x < t) || (y - miny < t) || (maxy - y < t);
+                        if (onBorder && x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) list.Add((x, y));
+                    }
+                }
+                else
+                {
+                    for (int y = miny; y <= maxy; y++) for (int x = minx; x <= maxx; x++)
+                    {
+                        if (thickness <= 1) { if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) list.Add((x, y)); }
+                        else
+                        {
+                            int half = (thickness - 1) / 2;
+                            for (int oy = -half; oy <= half; oy++) for (int ox = -half; ox <= half; ox++)
+                            {
+                                int tx = x + ox; int ty = y + oy;
+                                if (tx >= 0 && tx < mapWidth && ty >= 0 && ty < mapHeight) list.Add((tx, ty));
+                            }
+                        }
+                    }
+                }
+                return list;
+            }
+            if (mode == DrawMode.Triangle || mode == DrawMode.Polygon)
+            {
+                // Build an isosceles triangle within the rectangle defined by (sx,sy) and (ex,ey).
+                int apexX = (minx + maxx) / 2;
+                int apexY = miny;
+                int baseY = maxy;
+                int height = Math.Max(1, baseY - apexY);
+                for (int y = apexY; y <= baseY; y++)
+                {
+                    double t = (double)(y - apexY) / (double)height;
+                    int span = (int)Math.Round((maxx - minx) * t);
+                    int cx = apexX;
+                    int left = Math.Max(minx, cx - span / 2 - (thickness-1));
+                    int right = Math.Min(maxx, cx + span / 2 + (thickness-1));
+                    for (int x = left; x <= right; x++)
+                    {
+                        if (!hollowShape)
+                        {
+                            if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) list.Add((x, y));
+                        }
+                        else
+                        {
+                            int innerSpan = Math.Max(0, span - (thickness * 2));
+                            int innerLeft = Math.Max(minx, cx - innerSpan / 2);
+                            int innerRight = Math.Min(maxx, cx + innerSpan / 2);
+                            if (x < innerLeft || x > innerRight)
+                            {
+                                if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) list.Add((x, y));
+                            }
+                        }
+                    }
+                }
+                return list;
+            }
+            if (mode == DrawMode.Circle)
+            {
+                int rx = Math.Abs(ex - sx), ry = Math.Abs(ey - sy);
+                int r = Math.Max(rx, ry);
+                int cx = sx, cy = sy;
+                // Use center between sx,ex and sy,ey
+                cx = (sx + ex) / 2; cy = (sy + ey) / 2;
+                if (hollowShape)
+                {
+                    int t = Math.Max(1, thickness);
+                    int innerR = Math.Max(0, r - t + 1);
+                    int r2 = r * r; int inner2 = innerR * innerR;
+                    for (int y = cy - r; y <= cy + r; y++) for (int x = cx - r; x <= cx + r; x++)
+                    {
+                        int dxp = x - cx, dyp = y - cy; int d2 = dxp * dxp + dyp * dyp;
+                        if (d2 <= r2 && d2 >= inner2) if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) list.Add((x, y));
+                    }
+                }
+                else
+                {
+                    for (int y = cy - r; y <= cy + r; y++) for (int x = cx - r; x <= cx + r; x++)
+                    {
+                        int dxp = x - cx, dyp = y - cy; if (dxp * dxp + dyp * dyp <= r * r) if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) list.Add((x, y));
+                    }
+                }
+                return list;
+            }
+            return list;
+        }
+
+        private void CommitDeferredDraw()
+        {
+            try
+            {
+                if (!isDeferredDrawing) return;
+                var list = ComputeDrawTileList(drawStartX, drawStartY, drawCurrentX, drawCurrentY, currentDrawMode, brushThickness);
+                if (list.Count == 0) { isDeferredDrawing = false; ClearDeferredPreview(); if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture(); return; }
+                var action = new TileChangeAction();
+                foreach (var (tx, ty) in list)
+                {
+                    int idx = ty * mapWidth + tx;
+                    int old = tiles[idx];
+                    int neu = selectedTile >= 0 ? selectedTile : -1;
+                    if (tilesLayerActive && neu >= 0 && old != neu)
+                    {
+                        action.Add(idx, old, neu);
+                        tiles[idx] = neu;
+                    }
+                }
+                if (!action.IsEmpty() && !suppressUndoRecording)
+                {
+                    undoStack.Push(action); redoStack.Clear(); hasUnsavedChanges = true;
+                }
+                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            }
+            catch { }
+            finally
+            {
+                isDeferredDrawing = false; ClearDeferredPreview(); if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
+            }
+        }
+
+        private void ClearDeferredPreview()
+        {
+            try { if (SelectionOverlay != null) SelectionOverlay.Children.Clear(); } catch { }
         }
 
         private void EndSelection()
