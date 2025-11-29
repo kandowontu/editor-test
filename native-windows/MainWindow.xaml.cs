@@ -960,6 +960,8 @@ namespace FamidashEditor
             // Wire main toolbar Play/Stop buttons (only toolbar controls should drive playback)
             try { if (PlayFamiButton != null) PlayFamiButton.Click += PlayFamiButton_Click; } catch { }
             try { if (StopFamiButton != null) StopFamiButton.Click += StopFamiButton_Click; } catch { }
+            // Wire configure FamiStudio menu
+            try { if (MenuConfigureFamiStudio != null) MenuConfigureFamiStudio.Click += MenuConfigureFamiStudio_Click; } catch { }
 
             // Background warm-up: load FamiStudio assemblies and warm the in-process renderer/audio device
             try
@@ -4148,6 +4150,20 @@ namespace FamidashEditor
                         {
                             try { famiIntegration.LoadFromFolder(famiStudioPath); } catch { }
                         }
+                        else
+                        {
+                            // If not configured, check the common Program Files location and use it automatically if present
+                            try
+                            {
+                                var defaultPf = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "FamiStudio");
+                                if (Directory.Exists(defaultPf))
+                                {
+                                    famiStudioPath = defaultPf;
+                                    try { famiIntegration.LoadFromFolder(famiStudioPath); } catch { }
+                                }
+                            }
+                            catch { }
+                        }
                     }
                 }
             }
@@ -4173,7 +4189,8 @@ namespace FamidashEditor
                     hideColorTriggers = hideColorTriggers,
                     playerColor = new int[] { playerTint.A, playerTint.R, playerTint.G, playerTint.B },
                     playerColorEnabled = playerTintEnabled,
-                    gridDarkness = gridDarkness
+                    gridDarkness = gridDarkness,
+                    famistudioPath = string.IsNullOrEmpty(famiStudioPath) ? null : famiStudioPath
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
                 var dir = AppContext.BaseDirectory;
@@ -4999,6 +5016,33 @@ namespace FamidashEditor
         {
             try { var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze(); groundBitmap = bi; SliceGround(); if (StatusText != null) StatusText.Text = "Loaded ground: " + Path.GetFileName(path); }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Ground load failed: " + ex.Message; }
+        }
+
+        private void MenuConfigureFamiStudio_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                using var dlg = new System.Windows.Forms.FolderBrowserDialog();
+                dlg.Description = "Select the FamiStudio installation folder (contains FamiStudio.exe / FamiStudio.dll)";
+                if (!string.IsNullOrEmpty(famiStudioPath) && Directory.Exists(famiStudioPath)) dlg.SelectedPath = famiStudioPath;
+                var res = dlg.ShowDialog();
+                if (res == System.Windows.Forms.DialogResult.OK || res == System.Windows.Forms.DialogResult.Yes)
+                {
+                    var sel = dlg.SelectedPath;
+                    if (!string.IsNullOrEmpty(sel) && Directory.Exists(sel))
+                    {
+                        famiStudioPath = sel;
+                        try { famiIntegration.LoadFromFolder(famiStudioPath); } catch (Exception ex) { System.Windows.MessageBox.Show(this, "Failed to load FamiStudio: " + ex.Message, "FamiStudio Load", MessageBoxButton.OK, MessageBoxImage.Error); }
+                        // Save new setting
+                        try { var c = mapBackground is SolidColorBrush sb ? sb.Color : Color.FromRgb(59, 59, 59); SaveSettings(c); } catch { }
+                        try { if (StatusText != null) StatusText.Text = "Configured FamiStudio: " + Path.GetFileName(famiStudioPath); } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { System.Windows.MessageBox.Show(this, "Failed to configure FamiStudio: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error); } catch { }
+            }
         }
 
         private void SliceTileset()

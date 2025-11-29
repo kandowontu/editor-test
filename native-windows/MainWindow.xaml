@@ -179,9 +179,9 @@
                     <Button x:Name="RedoButton" Margin="4,0,0,0" ToolTip="Redo (Ctrl+Y)">Redo</Button>
                     <Separator Margin="8,0" />
                     <CheckBox x:Name="PreviewModeCheckbox" Content="Preview Mode" VerticalAlignment="Center" Margin="4,0" ToolTip="Enable animated previews (saws, etc.)" />
-                    <ComboBox x:Name="FamiTrackCombo" Width="260" Margin="8,0" VerticalAlignment="Center" IsEditable="False"/>
-                    <Button x:Name="PlayFamiButton" Content="Play" Margin="4,0" Width="52" />
-                    <Button x:Name="StopFamiButton" Content="Stop" Margin="2,0" Width="52" />
+                    <ComboBox x:Name="FamiTrackCombo" Width="220" Margin="8,0" VerticalAlignment="Center" IsEditable="False"/>
+                    <Button x:Name="PlayFamiButton" Content="▶" Margin="4,0" Width="36" ToolTip="Play" FontSize="14" />
+                    <Button x:Name="StopFamiButton" Content="⏹" Margin="2,0" Width="36" ToolTip="Stop" FontSize="14" />
                 </ToolBar>
             </ToolBarTray>
 
