@@ -4748,6 +4748,18 @@ namespace FamidashEditor
                 return;
             }
 
+            // If the path we have is a text export, the FamiStudio CLI cannot export playable WAVs from it.
+            // Playback requires a real .fms project file (or an in-process project loaded from FamiStudio assemblies).
+            try
+            {
+                if (Path.GetExtension(albumTxtPath).Equals(".txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    System.Windows.MessageBox.Show(this, "The loaded album is a FamiStudio text export (.txt). Playback requires the original .fms project or using FamiStudio itself.\n\nPlease configure the path to a .fms file or open a .fms via the FMS Player.", "Play Not Available", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+            }
+            catch { }
+
             int idx = -1;
             if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t)
             {
