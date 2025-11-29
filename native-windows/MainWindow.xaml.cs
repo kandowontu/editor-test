@@ -32,6 +32,7 @@ namespace FamidashEditor
         private bool isConstructingPolygon = false;
         private int lastKnownSelectedTile = -2;
         private int lastKnownSelectedSprite = -2;
+        private System.DateTime lastInputAction = System.DateTime.MinValue;
     // Timer used to perform continuous 1-px fine scrolling while Shift+Left/Right are held
     private System.Windows.Threading.DispatcherTimer? shiftArrowScrollTimer = null;
     private int shiftArrowScrollDir = 0; // -1 = left, +1 = right
@@ -7962,15 +7963,23 @@ namespace FamidashEditor
             // Select tool: support Ctrl+click to toggle single-tile selection, or drag to rectangle-select
             if (SelectTool != null && SelectTool.IsChecked == true)
             {
-                // Ctrl+click toggles the tile under cursor
-                if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
+                // If a non-Tile draw mode is active allow deferred draw-based selection (circle/line/polygon/etc.)
+                if (currentDrawMode != DrawMode.Tile)
                 {
-                    ToggleSelectionAt(pos);
+                    // fall through to deferred-draw handling below
+                }
+                else
+                {
+                    // Ctrl+click toggles the tile under cursor
+                    if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
+                    {
+                        ToggleSelectionAt(pos);
+                        return;
+                    }
+                    // otherwise start rectangle selection
+                    StartSelectionAt(pos);
                     return;
                 }
-                // otherwise start rectangle selection
-                StartSelectionAt(pos);
-                return;
             }
             // Move tool: begin dragging if we have an existing selection, otherwise pick tile/sprite under cursor
             if (MoveTool != null && MoveTool.IsChecked == true)
@@ -8022,6 +8031,8 @@ namespace FamidashEditor
             // If a draw mode (other than Tile) is active, start deferred drawing or polygon construction
             if (currentDrawMode != DrawMode.Tile)
             {
+                // debounce: ignore very quick repeated clicks after a recent commit
+                if ((System.DateTime.Now - lastInputAction).TotalMilliseconds < 200) return;
                 var tt = ViewportPointToTile(pos);
                 // Polygon mode: add vertex on click, finalize on double-click
                 if (currentDrawMode == DrawMode.Polygon)
@@ -8201,7 +8212,7 @@ namespace FamidashEditor
             if (MenuToolWand != null) MenuToolWand.IsChecked = (tb == MagicWandTool);
 
             // When switching to certain tools, reset draw mode back to Tile by default
-            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == SelectTool || tb == MagicWandTool)
+            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == MagicWandTool)
             {
                 if (DrawTileButton != null) DrawTileButton.IsChecked = true;
                 currentDrawMode = DrawMode.Tile;
@@ -8870,6 +8881,7 @@ namespace FamidashEditor
             finally
             {
                 polygonPoints.Clear(); isConstructingPolygon = false; ClearDeferredPreview(); if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
+                lastInputAction = System.DateTime.Now;
             }
         }
 
@@ -8964,6 +8976,21 @@ namespace FamidashEditor
                                 Canvas.SetLeft(img, (padPxX + gx * tilePixelW) / dpi.DpiScaleX);
                                 Canvas.SetTop(img, (padPxY + gy * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY);
                                 SelectionOverlay.Children.Add(img);
+                            }
+                        }
+                        else
+                        {
+                            // Draw erase/select specific overlay colors when no image available
+                            var overlayColor = (EraseTool != null && EraseTool.IsChecked == true) ? Color.FromArgb(128, 220, 64, 64)
+                                                : (SelectTool != null && SelectTool.IsChecked == true) ? Color.FromArgb(96, 64, 160, 255)
+                                                : Color.FromArgb(96, 255, 255, 0);
+                            var brush = new SolidColorBrush(overlayColor);
+                            foreach (var (gx, gy) in ghostList)
+                            {
+                                var rect = new Shapes.Rectangle { Width = (double)tilePixelW / dpi.DpiScaleX, Height = (double)tilePixelH / dpi.DpiScaleY, Fill = brush, Stroke = Brushes.Transparent, IsHitTestVisible = false };
+                                Canvas.SetLeft(rect, (padPxX + gx * tilePixelW) / dpi.DpiScaleX);
+                                Canvas.SetTop(rect, (padPxY + gy * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY);
+                                SelectionOverlay.Children.Add(rect);
                             }
                         }
                     }
@@ -9295,6 +9322,7 @@ namespace FamidashEditor
             finally
             {
                 isDeferredDrawing = false; drawStartX = drawStartY = drawCurrentX = drawCurrentY = -1; ClearDeferredPreview(); if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
+                lastInputAction = System.DateTime.Now;
             }
         }
 
@@ -9523,7 +9551,7 @@ namespace FamidashEditor
                 int oldIdx = (selY + yy) * mapWidth + (selX + xx);
                 int newIdx = (destY + yy) * mapWidth + (destX + xx);
                 // if the source cell was part of selectionSet (i.e., non-empty before move), include its destination
-                if (/* check source was selected */ selectionSet.Contains(oldIdx)) newSelection.Add(newIdx);
+                if (selectionSet != null && selectionSet.Contains(oldIdx)) newSelection.Add(newIdx);
             }
             selectionSet = newSelection;
             // update selX/selY to the new top-left
