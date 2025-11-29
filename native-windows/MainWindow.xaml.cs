@@ -954,10 +954,12 @@ namespace FamidashEditor
         public MainWindow()
         {
             InitializeComponent();
-            MenuOpenFmsPlayer.Click += MenuOpenFmsPlayer_Click;
             LoadSettings();
             // Attempt to populate the FamiStudio track combo from a pre-parsed JSON or the album TXT
             try { TryLoadFamiAlbumParsedJson(); } catch { }
+            // Wire main toolbar Play/Stop buttons (only toolbar controls should drive playback)
+            try { if (PlayFamiButton != null) PlayFamiButton.Click += PlayFamiButton_Click; } catch { }
+            try { if (StopFamiButton != null) StopFamiButton.Click += StopFamiButton_Click; } catch { }
             
             // Wire up window closing event to prompt for unsaved changes
             Closing += Window_Closing;
@@ -974,8 +976,6 @@ namespace FamidashEditor
                 zoomThrottleTimer.Tick += (s, e) =>
                 {
                     zoomThrottleTimer?.Stop();
-                    try { if (PlayFamiButton != null) PlayFamiButton.Click += PlayFamiButton_Click; } catch { }
-                    try { if (StopFamiButton != null) StopFamiButton.Click += StopFamiButton_Click; } catch { }
                     if (!isZoomSliderPressed && !deferZoomRebuild)
                     {
                         Redraw();
@@ -1462,16 +1462,8 @@ namespace FamidashEditor
 
         private void MenuOpenFmsPlayer_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                var w = new FmsPlayerWindow();
-                w.Owner = this;
-                w.Show();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("Failed to open FMS Player: " + ex.Message);
-            }
+            // FMS Player UI removed. This handler should no longer be reachable.
+            try { System.Diagnostics.Debug.WriteLine("MenuOpenFmsPlayer_Click called but the menu item was removed."); } catch { }
         }
 
         // Ctrl + Mouse Wheel inside the canvas -> zoom in/out while keeping the point under cursor stable

@@ -120,7 +120,6 @@
                     <MenuItem x:Name="MenuColorEditorBackground" Header="Editor Background Color..." />
                     <MenuItem x:Name="MenuColorPlayerTint" Header="Player Color..." />
                     <MenuItem Header="FamiStudio">
-                        <MenuItem x:Name="MenuOpenFmsPlayer" Header="Open FMS Player..." />
                         <MenuItem x:Name="MenuConfigureFamiStudio" Header="Configure FamiStudio..." />
                         <MenuItem x:Name="MenuScanFamiStudioTracks" Header="Scan FamiStudio Tracks..." />
                     </MenuItem>
