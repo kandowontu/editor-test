@@ -119,6 +119,9 @@
                         <MenuItem x:Name="MenuOptionInvertPinch" Header="Invert Wheel/Pinch Zoom" IsCheckable="True" IsChecked="True" />
                     <MenuItem x:Name="MenuColorEditorBackground" Header="Editor Background Color..." />
                     <MenuItem x:Name="MenuColorPlayerTint" Header="Player Color..." />
+                    <MenuItem Header="FMS Player">
+                        <MenuItem x:Name="MenuOpenFmsPlayer" Header="Open FMS Player..." />
+                    </MenuItem>
                     <MenuItem Header="Level Options">
                         <MenuItem x:Name="MenuColorBackgroundTint" Header="Background Tint..." />
                         <MenuItem x:Name="MenuColorGroundTint" Header="Ground Tint..." />

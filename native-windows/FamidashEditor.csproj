@@ -203,4 +203,7 @@
     <EmbeddedResource Include="..\speed-4x.png" />
     <EmbeddedResource Include="..\speed-special.png" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.1.0" />
+  </ItemGroup>
 </Project>
