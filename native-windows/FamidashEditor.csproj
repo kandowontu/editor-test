@@ -180,6 +180,10 @@
     <EmbeddedResource Include="..\pole-left-short-frame2.png" />
     <EmbeddedResource Include="..\pole-right-short-frame1.png" />
     <EmbeddedResource Include="..\pole-right-short-frame2.png" />
+    <EmbeddedResource Include="..\pole-left-medium-frame1.png" />
+    <EmbeddedResource Include="..\pole-left-medium-frame2.png" />
+    <EmbeddedResource Include="..\pole-right-medium-frame1.png" />
+    <EmbeddedResource Include="..\pole-right-medium-frame2.png" />
     <!-- Chain preview decorations -->
     <EmbeddedResource Include="..\chain.png" />
     <EmbeddedResource Include="..\chain-upsidedown.png" />

@@ -708,6 +708,11 @@ namespace FamidashEditor
     private BitmapSource[]? poleLeftShortFrame2;
     private BitmapSource[]? poleRightShortFrame1; // sprite 0x39
     private BitmapSource[]? poleRightShortFrame2;
+    // Medium pole replacements (sprite 0x3E/0x3F)
+    private BitmapSource[]? poleLeftMediumFrame1; // sprite 0x3E
+    private BitmapSource[]? poleLeftMediumFrame2;
+    private BitmapSource[]? poleRightMediumFrame1; // sprite 0x3F
+    private BitmapSource[]? poleRightMediumFrame2;
     // Chain decorations (single-frame preview-only)
     private BitmapSource[]? chainFrame1; // sprite 0x2D
     private BitmapSource[]? chainUpsideDownFrame1; // sprite 0x3D
@@ -1992,7 +1997,9 @@ namespace FamidashEditor
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleShortFrame1 != null && poleShortFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleLeftShortFrame1 != null && poleLeftShortFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleLeftMediumFrame1 != null && poleLeftMediumFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleRightShortFrame1 != null && poleRightShortFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleRightMediumFrame1 != null && poleRightMediumFrame2 != null);
 
             if (spritesWb != null && anyOrbFramesAvailable)
             {
@@ -2022,7 +2029,7 @@ namespace FamidashEditor
                             // Dash/teleport/spider two-frame sprites
                             spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
                             // Star and other decoration sprites
-                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39)
+                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F)
                         {
                             hasAnimatedOrbs = true;
                             if (animationFrame % 60 == 0)
@@ -2073,7 +2080,7 @@ namespace FamidashEditor
                                         // New dash orb sprites
                                         spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
                                         // Decorations
-                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39)
+                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F)
                                 {
                                     UpdateSpriteBitmapAtLocked(x, y, spriteIdx, scale, mapViewportPadding, spritePixelW, spritePixelH, dpi);
                                 }
@@ -2315,6 +2322,8 @@ namespace FamidashEditor
             if (originalIndex == 0x3C) return GetTwoFrameCustomIndex(2124); // pole short upside-down (2124/2125)
             if (originalIndex == 0x38) return GetTwoFrameCustomIndex(2128); // pole-left-short (2128/2129)
             if (originalIndex == 0x39) return GetTwoFrameCustomIndex(2130); // pole-right-short (2130/2131)
+            if (originalIndex == 0x3E) return GetTwoFrameCustomIndex(2132); // pole-left-medium (2132/2133)
+            if (originalIndex == 0x3F) return GetTwoFrameCustomIndex(2134); // pole-right-medium (2134/2135)
             if (originalIndex == 0x36) return GetTwoFrameCustomIndex(2110); // star (2110/2111)
             // Chain decorations (preview-only, single-frame)
             if (originalIndex == 0x2D) return 2126; // chain (2126)
@@ -2940,6 +2949,16 @@ namespace FamidashEditor
                     default: return null;
                 }
             }
+            // Pole left medium: 2132-2133 (sprite 0x3E)
+            if (customIndex >= 2132 && customIndex <= 2133)
+            {
+                switch (customIndex)
+                {
+                    case 2132: return poleLeftMediumFrame1?[0];
+                    case 2133: return poleLeftMediumFrame2?[0];
+                    default: return null;
+                }
+            }
             // Pole right short: 2130-2131 (sprite 0x39)
             if (customIndex >= 2130 && customIndex <= 2131)
             {
@@ -2947,6 +2966,16 @@ namespace FamidashEditor
                 {
                     case 2130: return poleRightShortFrame1?[0];
                     case 2131: return poleRightShortFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Pole right medium: 2134-2135 (sprite 0x3F)
+            if (customIndex >= 2134 && customIndex <= 2135)
+            {
+                switch (customIndex)
+                {
+                    case 2134: return poleRightMediumFrame1?[0];
+                    case 2135: return poleRightMediumFrame2?[0];
                     default: return null;
                 }
             }
@@ -4400,6 +4429,9 @@ namespace FamidashEditor
                 // New short pole left/right decorations
                 LoadTwoFrameOrb("pole-left-short", ref poleLeftShortFrame1, ref poleLeftShortFrame2); // sprite 0x38
                 LoadTwoFrameOrb("pole-right-short", ref poleRightShortFrame1, ref poleRightShortFrame2); // sprite 0x39
+                    // Medium pole replacements (if provided as embedded assets)
+                    LoadTwoFrameOrb("pole-left-medium", ref poleLeftMediumFrame1, ref poleLeftMediumFrame2); // sprite 0x3E
+                    LoadTwoFrameOrb("pole-right-medium", ref poleRightMediumFrame1, ref poleRightMediumFrame2); // sprite 0x3F
                 // Chain decorations (single-frame preview-only)
                 try
                 {
@@ -7417,10 +7449,43 @@ namespace FamidashEditor
                 {
                     renderHeight = (spritePixelH * 3) / 2; // 1.5 tiles tall
                 }
+
+                // Treat medium pole decorations (custom indices 2132/2133 and 2134/2135)
+                // as 1.5 tiles tall. Additionally, the left-medium pole (original sprite 0x3E)
+                // should be anchored so its right side aligns with the anchor tile; compute
+                // a desired destination X based on source width so it expands leftwards.
+                int desiredDestX = destX; // may be adjusted below for left-medium
+                if (!isMultiTilePortal && (animatedIdx == 2132 || animatedIdx == 2133 || animatedIdx == 2134 || animatedIdx == 2135))
+                {
+                    // Medium poles are 1 tile tall and 1.5 tiles wide
+                    renderWidth = (spritePixelW * 3) / 2; // 1.5 tiles wide
+                    renderHeight = spritePixelH; // 1 tile tall
+                    // For left-medium (sprite 0x3E) align the right side with anchor tile
+                    if (spriteIdx == 0x3E)
+                    {
+                        // Align right side: desiredDestX will be computed after we know the source width
+                    }
+                    else if (spriteIdx == 0x3F)
+                    {
+                        // Right-medium keeps normal anchor (left of tile)
+                        desiredDestX = destX;
+                    }
+                }
                 
                 // Calculate the actual size we need to render
                 int srcWidth = sprite.PixelWidth;
                 int srcHeight = sprite.PixelHeight;
+
+                // If this is the left-medium pole, we can now compute desiredDestX using the actual source width
+                if (!isMultiTilePortal && (animatedIdx == 2132 || animatedIdx == 2133 || animatedIdx == 2134 || animatedIdx == 2135) && spriteIdx == 0x3E)
+                {
+                    try
+                    {
+                        // Shift left by half a tile relative to the anchor tile
+                        desiredDestX = destX - (int)Math.Round(spritePixelW * 0.5);
+                    }
+                    catch { desiredDestX = destX; }
+                }
                 
                 // Sanity check dimensions
                 if (srcWidth <= 0 || srcHeight <= 0 || spritePixelW <= 0 || spritePixelH <= 0)
@@ -7437,14 +7502,20 @@ namespace FamidashEditor
                 IntPtr pBackBuffer = spritesWb.BackBuffer;
                 if (pBackBuffer == IntPtr.Zero) return;
                 int backBufferStride = spritesWb.BackBufferStride;
-                
+
+                // To support sprites that may expand left of the anchor (negative desiredDestX),
+                // compute a drawing X and a source X start offset. drawX is clamped to >=0
+                // and srcXStart is the number of source columns to skip when destX < 0.
+                int drawX = Math.Max(0, desiredDestX);
+                int srcXStart = drawX - desiredDestX; // zero when desiredDestX >= 0
+
                 // Clear the rendering area
                 // For portals: clear their full area
                 // For regular sprites: clear only their tile, but also re-render any portal underneath first
                 unsafe
                 {
-                    int clearWidth = Math.Min(isMultiTilePortal ? renderWidth : spritePixelW, cachedPixelWidth - destX);
-                    int clearHeight = Math.Min(renderHeight, cachedPixelHeight - destY);
+                    int clearWidth = Math.Min(renderWidth - srcXStart, Math.Max(0, cachedPixelWidth - drawX));
+                    int clearHeight = Math.Min(renderHeight, Math.Max(0, cachedPixelHeight - destY));
 
                     // If this is a regular sprite and portals exist underneath, copy portal pixels into spritesWb first
                     // so that animated sprites (orbs) can clear/re-render each frame correctly while preserving portals.
@@ -7454,7 +7525,7 @@ namespace FamidashEditor
                         {
                             int portalStride = portalsWb.BackBufferStride;
                             byte[] portalBuf = new byte[clearHeight * portalStride];
-                            Int32Rect srcRect = new Int32Rect(destX, destY, clearWidth, clearHeight);
+                            Int32Rect srcRect = new Int32Rect(drawX, destY, clearWidth, clearHeight);
                             portalsWb.CopyPixels(srcRect, portalBuf, portalStride, 0);
 
                             // Copy portal pixels into spritesWb back buffer
@@ -7464,7 +7535,7 @@ namespace FamidashEditor
                             {
                                 for (int row = 0; row < clearHeight; row++)
                                 {
-                                    long destOffset = (destY + row) * spritesBackBufferStride + destX * 4;
+                                    long destOffset = (destY + row) * spritesBackBufferStride + drawX * 4;
                                     byte* destPtr = (byte*)spritesBackBuffer.ToPointer() + destOffset;
                                     int srcRowOffset = row * portalStride;
                                     for (int col = 0; col < clearWidth * 4; col++)
@@ -7513,7 +7584,7 @@ namespace FamidashEditor
                     {
                         for (int row = 0; row < clearHeight; row++)
                         {
-                            long destOffset = (destY + row) * backBufferStride + destX * 4;
+                            long destOffset = (destY + row) * backBufferStride + drawX * 4;
                             byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
                             
                             for (int col = 0; col < clearWidth; col++)
@@ -7541,7 +7612,7 @@ namespace FamidashEditor
                 // Direct copy fast-path: only use for non-custom, single-tile sprites at 1x scale/DPI.
                 // Custom preview sprites (animatedIdx >= 2000) must go through the scaling branch
                 // so they can be rendered at 1.5 tiles tall when appropriate (e.g. chains).
-                if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && !isMultiTilePortal && animatedIdx < 2000)
+                    if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && !isMultiTilePortal && animatedIdx < 2000)
                 {
                     // Direct copy - no scaling (only for single-tile sprites)
                     int copyWidth = Math.Min(srcWidth, cachedPixelWidth - destX);
@@ -7652,11 +7723,11 @@ namespace FamidashEditor
                             for (int col = 0; col < copyWidth; col++)
                             {
                                 // Map destination pixel back to source pixel (nearest neighbor)
-                                int srcX = Math.Min((int)(col / scaleX), srcWidth - 1);
+                                int srcX = Math.Min((int)((col + srcXStart) / scaleX), srcWidth - 1);
                                 int srcY = Math.Min((int)(row / scaleY), srcHeight - 1);
                                 int srcOffset = srcY * srcStride + srcX * 4;
                                 
-                                long destOffset = (destY + row) * backBufferStride + (destX + col) * 4;
+                                long destOffset = (destY + row) * backBufferStride + (drawX + col) * 4;
                                 byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
                                 
                                 byte srcAlpha = srcPixels[srcOffset + 3];
