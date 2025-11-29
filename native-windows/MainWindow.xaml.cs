@@ -18,6 +18,9 @@ namespace FamidashEditor
 {
     public partial class MainWindow : Window
     {
+        private FamiStudioIntegration famiIntegration = new FamiStudioIntegration();
+        private string? famiStudioPath = null;
+        private string? albumTxtPath = null;
         private enum DrawMode { Tile, Line, Square, Circle, Triangle, Polygon, None }
         private DrawMode currentDrawMode = DrawMode.Tile;
         private bool hollowShape = false;
@@ -953,6 +956,8 @@ namespace FamidashEditor
             InitializeComponent();
             MenuOpenFmsPlayer.Click += MenuOpenFmsPlayer_Click;
             LoadSettings();
+            // Attempt to populate the FamiStudio track combo from a pre-parsed JSON or the album TXT
+            try { TryLoadFamiAlbumParsedJson(); } catch { }
             
             // Wire up window closing event to prompt for unsaved changes
             Closing += Window_Closing;
@@ -969,6 +974,8 @@ namespace FamidashEditor
                 zoomThrottleTimer.Tick += (s, e) =>
                 {
                     zoomThrottleTimer?.Stop();
+                    try { if (PlayFamiButton != null) PlayFamiButton.Click += PlayFamiButton_Click; } catch { }
+                    try { if (StopFamiButton != null) StopFamiButton.Click += StopFamiButton_Click; } catch { }
                     if (!isZoomSliderPressed && !deferZoomRebuild)
                     {
                         Redraw();
@@ -4113,6 +4120,15 @@ namespace FamidashEditor
                         try { invertPinchGesture = ipg.GetBoolean(); } catch { invertPinchGesture = true; }
                         if (MenuOptionInvertPinch != null) MenuOptionInvertPinch.IsChecked = invertPinchGesture;
                     }
+                    // optional famistudio path
+                    if (doc.RootElement.TryGetProperty("famistudioPath", out var fsPath))
+                    {
+                        try { famiStudioPath = fsPath.GetString(); } catch { famiStudioPath = null; }
+                        if (!string.IsNullOrEmpty(famiStudioPath))
+                        {
+                            try { famiIntegration.LoadFromFolder(famiStudioPath); } catch { }
+                        }
+                    }
                 }
             }
             catch { }
@@ -4635,6 +4651,134 @@ namespace FamidashEditor
                 System.Diagnostics.Debug.WriteLine($"Error loading embedded resource {resourceName}: {ex.Message}");
                 return null;
             }
+        }
+
+        private void TryLoadFamiAlbumParsedJson()
+        {
+            if (FamiTrackCombo == null) return;
+
+            var jsonCandidates = new System.Collections.Generic.List<string>
+            {
+                System.IO.Path.Combine(AppContext.BaseDirectory, "fami-album-parsed.json"),
+                System.IO.Path.Combine(Environment.CurrentDirectory, "fami-album-parsed.json")
+            };
+
+            var repoRoot = FindRepoRootFor("the album.txt");
+            if (!string.IsNullOrEmpty(repoRoot))
+            {
+                jsonCandidates.Add(System.IO.Path.Combine(repoRoot, "fami-album-parsed.json"));
+                jsonCandidates.Add(System.IO.Path.Combine(repoRoot, "native-windows", "fami-album-parsed.json"));
+            }
+
+            string? foundJson = null;
+            foreach (var c in jsonCandidates)
+            {
+                try { if (!string.IsNullOrEmpty(c) && File.Exists(c)) { foundJson = c; break; } } catch { }
+            }
+
+            System.Collections.Generic.List<string> parsed = new System.Collections.Generic.List<string>();
+
+            if (foundJson != null)
+            {
+                try
+                {
+                    var txt = File.ReadAllText(foundJson);
+                    using var doc = System.Text.Json.JsonDocument.Parse(txt);
+                    if (doc.RootElement.TryGetProperty("parsedNames", out var pn) && pn.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        foreach (var el in pn.EnumerateArray()) parsed.Add(el.GetString() ?? "");
+                    }
+                }
+                catch { }
+            }
+
+            // If no parsed JSON found, try to parse the album TXT directly
+            if (parsed.Count == 0)
+            {
+                string? txtPath = null;
+                var txtCandidates = new System.Collections.Generic.List<string>
+                {
+                    System.IO.Path.Combine(AppContext.BaseDirectory, "the album.txt"),
+                    System.IO.Path.Combine(Environment.CurrentDirectory, "the album.txt")
+                };
+                if (!string.IsNullOrEmpty(repoRoot))
+                {
+                    txtCandidates.Add(System.IO.Path.Combine(repoRoot, "the album.txt"));
+                    txtCandidates.Add(System.IO.Path.Combine(repoRoot, "native-windows", "the album.txt"));
+                }
+
+                foreach (var c in txtCandidates)
+                {
+                    try { if (!string.IsNullOrEmpty(c) && File.Exists(c)) { txtPath = c; break; } } catch { }
+                }
+
+                if (txtPath != null)
+                {
+                    albumTxtPath = txtPath;
+                    try { parsed = famiIntegration.ParseFamiStudioTextExport(txtPath); } catch { parsed = new System.Collections.Generic.List<string>(); }
+                }
+            }
+
+            // Populate combo
+            FamiTrackCombo.Items.Clear();
+            if (parsed.Count > 0)
+            {
+                for (int i = 0; i < parsed.Count; i++)
+                {
+                    var item = new System.Windows.Controls.ComboBoxItem() { Content = parsed[i], Tag = i };
+                    FamiTrackCombo.Items.Add(item);
+                }
+                FamiTrackCombo.SelectedIndex = 0;
+            }
+            else
+            {
+                // no names found - leave empty but add placeholders so dropdown shows size
+                for (int i = 0; i < 8; i++) FamiTrackCombo.Items.Add(new System.Windows.Controls.ComboBoxItem() { Content = $"Song {i}", Tag = i });
+                if (FamiTrackCombo.Items.Count > 0) FamiTrackCombo.SelectedIndex = 0;
+            }
+        }
+
+        private async void PlayFamiButton_Click(object? sender, RoutedEventArgs e)
+        {
+            if (albumTxtPath == null)
+            {
+                System.Windows.MessageBox.Show(this, "No album.txt found to play.", "Play", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            int idx = -1;
+            if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t)
+            {
+                idx = t;
+            }
+            else if (FamiTrackCombo?.SelectedIndex >= 0) idx = FamiTrackCombo.SelectedIndex;
+
+            if (idx < 0)
+            {
+                System.Windows.MessageBox.Show(this, "No track selected.", "Play", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            await System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    famiIntegration.PlayTrack(albumTxtPath!, idx);
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() => System.Windows.MessageBox.Show(this, "Play failed: " + ex.Message, "Play Error", MessageBoxButton.OK, MessageBoxImage.Error));
+                }
+            });
+        }
+
+        private void StopFamiButton_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                famiIntegration.Stop();
+            }
+            catch { }
         }
 
         // Initialize a reliable portal debug log path and create the file with a header.
