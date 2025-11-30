@@ -514,6 +514,9 @@ namespace FamidashEditor
     // Cache hover position to avoid redundant updates
     private int lastHoverX = -1;
     private int lastHoverY = -1;
+    // Cache last explicit click tile (used as paste anchor)
+    private int lastClickX = -1;
+    private int lastClickY = -1;
     // Throttle timers for expensive events
     private System.Windows.Threading.DispatcherTimer? sizeChangedThrottleTimer;
     private System.Windows.Threading.DispatcherTimer? zoomThrottleTimer;
@@ -1396,8 +1399,8 @@ namespace FamidashEditor
             if (CopyButton != null) CopyButton.Click += (s, e) => CopySelection();
             if (CutButton != null) CutButton.Click += (s, e) => CutSelection();
             if (PasteButton != null) PasteButton.Click += (s, e) => {
-                int dx = (selW > 0 && selH > 0) ? selX : lastHoverX;
-                int dy = (selW > 0 && selH > 0) ? selY : lastHoverY;
+                int dx = (selW > 0 && selH > 0) ? selX : (lastClickX >= 0 ? lastClickX : lastHoverX);
+                int dy = (selW > 0 && selH > 0) ? selY : (lastClickY >= 0 ? lastClickY : lastHoverY);
                 if (dx >= 0 && dy >= 0) PasteClipboardAt(dx, dy);
             };
             
@@ -8658,9 +8661,16 @@ namespace FamidashEditor
         {
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
-            
+
             // Track mouse down position and reset movement flag
             mouseDownPosition = pos;
+            // Record explicit click anchor (tile under the click) when inside map
+            try
+            {
+                var ttClick = ViewportPointToTile(pos);
+                if (IsPointInsideMap(pos)) { lastClickX = ttClick.x; lastClickY = ttClick.y; } else { lastClickX = -1; lastClickY = -1; }
+            }
+            catch { lastClickX = -1; lastClickY = -1; }
             hasMouseMoved = false;
             
             // Magic Wand tool: select connected region of same tile
@@ -11497,9 +11507,9 @@ namespace FamidashEditor
 
                 if (e.Key == Key.V)
                 {
-                    int dx = (selW > 0 && selH > 0) ? selX : lastHoverX;
-                    int dy = (selW > 0 && selH > 0) ? selY : lastHoverY;
-                    try { if (dx >= 0 && dy >= 0) PasteClipboardAt(dx, dy); } catch { }
+                    int dx = (selW > 0 && selH > 0) ? selX : (lastClickX >= 0 ? lastClickX : lastHoverX);
+                    int dy = (selW > 0 && selH > 0) ? selY : (lastClickY >= 0 ? lastClickY : lastHoverY);
+                        try { if (dx >= 0 && dy >= 0) PasteClipboardAt(dx, dy); } catch { }
                     e.Handled = true; return;
                 }
 
