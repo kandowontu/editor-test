@@ -747,6 +747,11 @@ namespace FamidashEditor
     // Chain decorations (single-frame preview-only)
     private BitmapSource[]? chainFrame1; // sprite 0x2D
     private BitmapSource[]? chainUpsideDownFrame1; // sprite 0x3D
+    // New single-frame decoration previews (spikes)
+    private BitmapSource[]? decoSpikesFrame1; // sprite 0x2E
+    private BitmapSource[]? decoSpikesUpsideDownFrame1; // sprite 0x2F
+    private BitmapSource[]? decoSpikesSmallFrame1; // sprite 0x30
+    private BitmapSource[]? decoSpikesSmallUpsideDownFrame1; // sprite 0x31
     // Random frame offsets for each sprite position to desynchronize animations
     private Dictionary<int, int> spriteFrameOffsets = new Dictionary<int, int>();
     private Random spriteAnimationRandom = new Random();
@@ -826,7 +831,7 @@ namespace FamidashEditor
     // Lock for thread-safe access to the tinted caches when precomputing on background threads
     private readonly object tintedCacheLock = new object();
     // Decoration sprite ids that should receive player tinting
-    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
+    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
     // Portal debug log path (initialized at startup)
     private string? portalDebugPath = null;
 
@@ -2422,6 +2427,11 @@ namespace FamidashEditor
             // Chain decorations (preview-only, single-frame)
             if (originalIndex == 0x2D) return 2126; // chain (2126)
             if (originalIndex == 0x3D) return 2127; // chain-upsidedown (2127)
+            // Deco spikes (single-frame preview-only)
+            if (originalIndex == 0x2E) return 2148; // deco-spikes (2148)
+            if (originalIndex == 0x2F) return 2149; // deco-spikes-upsidedown (2149)
+            if (originalIndex == 0x30) return 2150; // deco-spikes-small (2150)
+            if (originalIndex == 0x31) return 2151; // deco-spikes-small-upsidedown (2151)
             if (originalIndex == 0x52)
             {
             }
@@ -3155,6 +3165,11 @@ namespace FamidashEditor
             {
                 return chainUpsideDownFrame1?[0];
             }
+            // Deco spikes single-frame decorations
+            if (customIndex == 2148) { return decoSpikesFrame1?[0]; }
+            if (customIndex == 2149) { return decoSpikesUpsideDownFrame1?[0]; }
+            if (customIndex == 2150) { return decoSpikesSmallFrame1?[0]; }
+            if (customIndex == 2151) { return decoSpikesSmallUpsideDownFrame1?[0]; }
             
             return null;
         }
@@ -4665,6 +4680,102 @@ namespace FamidashEditor
                             var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
                             chainUpsideDownFrame1 = new BitmapSource[1];
                             chainUpsideDownFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                        }
+                    }
+                }
+                catch { }
+                // Load deco spikes (single-frame preview-only)
+                try
+                {
+                    var s = LoadEmbeddedImage("deco-spikes.png");
+                    if (s != null)
+                    {
+                        decoSpikesFrame1 = new BitmapSource[1];
+                        decoSpikesFrame1[0] = new FormatConvertedBitmap(s, PixelFormats.Pbgra32, null, 0);
+                    }
+                    else
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var p = Path.Combine(baseDir, "deco-spikes.png");
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "deco-spikes.png"); if (File.Exists(rp)) p = rp; }
+                        if (File.Exists(p))
+                        {
+                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
+                            decoSpikesFrame1 = new BitmapSource[1];
+                            decoSpikesFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var s2 = LoadEmbeddedImage("deco-spikes-upsidedown.png");
+                    if (s2 != null)
+                    {
+                        decoSpikesUpsideDownFrame1 = new BitmapSource[1];
+                        decoSpikesUpsideDownFrame1[0] = new FormatConvertedBitmap(s2, PixelFormats.Pbgra32, null, 0);
+                    }
+                    else
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var p = Path.Combine(baseDir, "deco-spikes-upsidedown.png");
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "deco-spikes-upsidedown.png"); if (File.Exists(rp)) p = rp; }
+                        if (File.Exists(p))
+                        {
+                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
+                            decoSpikesUpsideDownFrame1 = new BitmapSource[1];
+                            decoSpikesUpsideDownFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var s3 = LoadEmbeddedImage("deco-spikes-small.png");
+                    if (s3 != null)
+                    {
+                        decoSpikesSmallFrame1 = new BitmapSource[1];
+                        decoSpikesSmallFrame1[0] = new FormatConvertedBitmap(s3, PixelFormats.Pbgra32, null, 0);
+                    }
+                    else
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var p = Path.Combine(baseDir, "deco-spikes-small.png");
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "deco-spikes-small.png"); if (File.Exists(rp)) p = rp; }
+                        if (File.Exists(p))
+                        {
+                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
+                            decoSpikesSmallFrame1 = new BitmapSource[1];
+                            decoSpikesSmallFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var s4 = LoadEmbeddedImage("deco-spikes-small-upsidedown.png");
+                    if (s4 != null)
+                    {
+                        decoSpikesSmallUpsideDownFrame1 = new BitmapSource[1];
+                        decoSpikesSmallUpsideDownFrame1[0] = new FormatConvertedBitmap(s4, PixelFormats.Pbgra32, null, 0);
+                    }
+                    else
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var p = Path.Combine(baseDir, "deco-spikes-small-upsidedown.png");
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "deco-spikes-small-upsidedown.png"); if (File.Exists(rp)) p = rp; }
+                        if (File.Exists(p))
+                        {
+                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
+                            decoSpikesSmallUpsideDownFrame1 = new BitmapSource[1];
+                            decoSpikesSmallUpsideDownFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
                         }
                     }
                 }
