@@ -7747,6 +7747,8 @@ namespace FamidashEditor
             {
                 spritesWb.Unlock();
             }
+            // Ensure overlay reflects any change to this single sprite cell
+            try { UpdateIncompatibleOverlay(); } catch { }
         }
 
         // Fast version of UpdateTileBitmapAt that works with a locked WriteableBitmap
@@ -7896,6 +7898,8 @@ namespace FamidashEditor
                 }
                 
                 System.Diagnostics.Debug.WriteLine($"RebuildAllSpritesBitmap: Complete");
+                // After rebuilding the full sprites layer, update the incompatibility overlay
+                try { Dispatcher.Invoke(() => UpdateIncompatibleOverlay()); } catch { }
             }
             catch (Exception ex)
             {
@@ -9557,14 +9561,22 @@ namespace FamidashEditor
 
                 if (spriteAt >= 0)
                 {
-                    // pick sprite under cursor
-                    selectedSprite = spriteAt;
-                    selectedTile = -1;
-                    spritesLayerActive = true;
-                    tilesLayerActive = false;
-                    // activate place tool for immediate placement
-                    try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
-                    pickedSomething = true;
+                    // If lock is enabled and this sprite is in the disabled list, ignore right-click selection
+                    if (lockSpritesToSet && disabledSprites.Contains(spriteAt))
+                    {
+                        // do not pick this sprite
+                    }
+                    else
+                    {
+                        // pick sprite under cursor
+                        selectedSprite = spriteAt;
+                        selectedTile = -1;
+                        spritesLayerActive = true;
+                        tilesLayerActive = false;
+                        // activate place tool for immediate placement
+                        try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
+                        pickedSomething = true;
+                    }
                 }
                 else if (tileAt >= 0)
                 {
