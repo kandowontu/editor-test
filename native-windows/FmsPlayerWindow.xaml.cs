@@ -46,7 +46,7 @@ namespace FamidashEditor
             TxtStatus.Text = fami.StatusMessage ?? "";
         }
 
-        private async void BtnOpen_Click(object? sender, RoutedEventArgs e)
+        private void BtnOpen_Click(object? sender, RoutedEventArgs e)
         {
             var dlg = new OpenFileDialog();
             dlg.Filter = "FamiStudio files (*.fms)|*.fms|All files|*.*";

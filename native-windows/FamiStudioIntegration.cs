@@ -8,6 +8,8 @@ using System.Runtime.Loader;
 using System.Text.RegularExpressions;
 using NAudio.Wave;
 
+#pragma warning disable CS8601,CS8600
+
 namespace FamidashEditor
 {
     public class FamiStudioIntegration
@@ -99,13 +101,14 @@ namespace FamidashEditor
                                 {
                                     try
                                     {
-                                        if (m.IsStatic)
-                                            project = m.Invoke(null, new object[] { fmsPath });
-                                        else
-                                        {
-                                            var inst = Activator.CreateInstance(t);
-                                            project = m.Invoke(inst, new object[] { fmsPath });
-                                        }
+                                                if (m.IsStatic)
+                                                    project = m.Invoke(null, new object[] { fmsPath });
+                                                else
+                                                {
+                                                    var inst = Activator.CreateInstance(t);
+                                                    if (inst != null)
+                                                        project = m.Invoke(inst, new object[] { fmsPath });
+                                                }
                                     }
                                     catch { project = null; }
                                     if (project != null) break;
@@ -143,7 +146,7 @@ namespace FamidashEditor
                 if (songsProp != null) songsObj = songsProp.GetValue(project);
                 else
                 {
-                    var method = projectType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+                    System.Reflection.MethodInfo? method = projectType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
                         .FirstOrDefault(mi => typeof(System.Collections.IEnumerable).IsAssignableFrom(mi.ReturnType) && mi.GetParameters().Length == 0);
                     if (method != null)
                     {
@@ -202,7 +205,9 @@ namespace FamidashEditor
                 var countProp = projectType.GetProperty("SongCount") ?? projectType.GetProperty("TrackCount") ?? projectType.GetProperty("SongsCount");
                 if (countProp != null && countProp.PropertyType == typeof(int))
                 {
-                    int count = Convert.ToInt32(countProp.GetValue(project));
+                    var raw = countProp.GetValue(project);
+                    if (raw == null) return result;
+                    int count = Convert.ToInt32(raw);
                     var list = Enumerable.Range(0, count).Select(i => $"Song {i}").ToList();
                     StatusMessage = $"Found {list.Count} tracks via in-process API";
                     return list;
@@ -394,7 +399,7 @@ namespace FamidashEditor
                 {
                     foreach (var asm in alc.Assemblies)
                     {
-                        var playType = asm.GetTypes().FirstOrDefault(t => t.Name.ToLower().Contains("player") || t.Name.ToLower().Contains("audio"));
+                        Type? playType = asm.GetTypes().FirstOrDefault(t => t.Name.ToLower().Contains("player") || t.Name.ToLower().Contains("audio"));
                         if (playType != null)
                         {
                             // Prefer any in-process method that can render to a Stream or return byte[] before falling back to file-based export
@@ -592,7 +597,7 @@ namespace FamidashEditor
                 {
                     foreach (var asm in alc.Assemblies)
                     {
-                        var playType = asm.GetTypes().FirstOrDefault(t => t.Name.ToLower().Contains("player") || t.Name.ToLower().Contains("audio"));
+                        Type? playType = asm.GetTypes().FirstOrDefault(t => t.Name.ToLower().Contains("player") || t.Name.ToLower().Contains("audio"));
                         if (playType == null) continue;
 
                         var methods = playType.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance)
