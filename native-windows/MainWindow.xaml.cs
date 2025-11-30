@@ -5895,6 +5895,24 @@ namespace FamidashEditor
                         UpdatePaletteHighlight();
                         ((Image)s).CaptureMouse();
                     }
+
+                    // Right-click: make this the active selected tile and activate tile layer
+                    img.MouseRightButtonDown += (s, e) => {
+                        int clickedTile = (int)((Image)s).Tag;
+                        selectedTile = clickedTile;
+                        selectedTiles = new List<int> { clickedTile };
+                        selectionWidth = 1;
+                        selectionHeight = 1;
+                        selectedSprite = -1;
+                        tilesLayerActive = true;
+                        spritesLayerActive = false;
+                        // Activate brush/place tool and tile draw mode so it's ready for placement
+                        try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
+                        try { if (DrawTileButton != null) DrawTileButton.IsChecked = true; } catch { }
+                        UpdatePaletteHighlight();
+                        try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
+                        e.Handled = true;
+                    };
                 };
                 
                 // Mouse move updates selection
@@ -5997,6 +6015,24 @@ namespace FamidashEditor
                     }
                     
                     UpdatePaletteHighlight();
+                };
+
+                // Right-click: make this the active selected sprite and activate sprite layer
+                img.MouseRightButtonDown += (s, e) => {
+                    int clickedSprite = (int)((Image)s).Tag;
+                    selectedSprite = clickedSprite;
+                    selectedTile = -1;
+                    selectedTiles = new List<int>();
+                    selectionWidth = 1;
+                    selectionHeight = 1;
+                    spritesLayerActive = true;
+                    tilesLayerActive = false;
+                    // Activate brush/place tool so sprite placement is ready
+                    try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
+                    // Keep draw mode as Tile but ensure the Place tool is active
+                    UpdatePaletteHighlight();
+                    try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
+                    e.Handled = true;
                 };
                 
                 // Update ID indicator on hover
@@ -9127,7 +9163,50 @@ namespace FamidashEditor
             // Show ghost preview of selected tile when brush/tile are active
             try
             {
-                if (PlaceTool != null && PlaceTool.IsChecked == true && DrawTileButton != null && DrawTileButton.IsChecked == true && selectedTile >= 0 && tileImages != null && GhostImage != null)
+                // Prefer sprite ghost when sprite layer is active and a sprite is selected
+                if (PlaceTool != null && PlaceTool.IsChecked == true && spritesLayerActive && selectedSprite >= 0 && spriteImages != null && GhostImage != null)
+                {
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                    int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                    int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                    int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                    var tt = ViewportPointToTile(pos);
+                    int tx = tt.x; int ty = tt.y;
+                    if (tx >= 0 && ty >= 0)
+                    {
+                        int leftPx = padPxX + tx * tilePixelW;
+                        int topPx = padPxY + ty * tilePixelH + gridRenderShiftYPx;
+                        double left = (double)leftPx / dpi.DpiScaleX;
+                        double top = (double)topPx / dpi.DpiScaleY;
+                        // If showing sprite ghost, attempt to size according to sprite image natural size in tiles
+                        ImageSource spriteSrc = spriteImages[selectedSprite];
+                        double diuPerTileX = (double)tilePixelW / dpi.DpiScaleX;
+                        double diuPerTileY = (double)tilePixelH / dpi.DpiScaleY;
+                        int widthTiles = 1, heightTiles = 1;
+                        if (spriteSrc is BitmapSource bs)
+                        {
+                            widthTiles = Math.Max(1, (int)Math.Round(bs.PixelWidth / (double)TileSize));
+                            heightTiles = Math.Max(1, (int)Math.Round(bs.PixelHeight / (double)TileSize));
+                        }
+                        double widthDiu = widthTiles * diuPerTileX;
+                        double heightDiu = heightTiles * diuPerTileY;
+                        GhostImage.Source = spriteSrc;
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(GhostImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                        GhostImage.Width = widthDiu;
+                        GhostImage.Height = heightDiu;
+                        Canvas.SetLeft(GhostImage, left);
+                        Canvas.SetTop(GhostImage, top);
+                        GhostImage.Visibility = Visibility.Visible;
+                        GhostImage.Opacity = 0.6;
+                    }
+                    else
+                    {
+                        GhostImage.Visibility = Visibility.Collapsed;
+                    }
+                }
+                else if (PlaceTool != null && PlaceTool.IsChecked == true && DrawTileButton != null && DrawTileButton.IsChecked == true && selectedTile >= 0 && tileImages != null && GhostImage != null)
                 {
                     var dpi = VisualTreeHelper.GetDpi(this);
                     double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
@@ -9293,6 +9372,52 @@ namespace FamidashEditor
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
             UpdateCoords(pos);
+
+            try
+            {
+                var tt = ViewportPointToTile(pos);
+                int x = tt.x, y = tt.y;
+                if (x < 0 || y < 0) return;
+                int idx = y * mapWidth + x;
+
+                // Prefer picking a sprite if one exists at this location
+                int spriteAt = (idx >= 0 && idx < sprites.Length) ? sprites[idx] : -1;
+                int tileAt = (idx >= 0 && idx < tiles.Length) ? tiles[idx] : -1;
+
+                bool pickedSomething = false;
+
+                if (spriteAt >= 0)
+                {
+                    // pick sprite under cursor
+                    selectedSprite = spriteAt;
+                    selectedTile = -1;
+                    spritesLayerActive = true;
+                    tilesLayerActive = false;
+                    // activate place tool for immediate placement
+                    try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
+                    pickedSomething = true;
+                }
+                else if (tileAt >= 0)
+                {
+                    selectedTile = tileAt;
+                    selectedTiles = new List<int> { tileAt };
+                    selectedSprite = -1;
+                    tilesLayerActive = true;
+                    spritesLayerActive = false;
+                    // Activate place tool and ensure tile draw mode
+                    try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
+                    try { if (DrawTileButton != null) DrawTileButton.IsChecked = true; } catch { }
+                    pickedSomething = true;
+                }
+
+                if (pickedSomething)
+                {
+                    UpdatePaletteHighlight();
+                    try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
+                    e.Handled = true;
+                }
+            }
+            catch { }
         }
 
         private void StartPaintingAt(Point pos)
