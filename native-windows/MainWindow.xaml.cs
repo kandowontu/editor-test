@@ -1320,6 +1320,13 @@ namespace FamidashEditor
             if (MenuToolFill != null) MenuToolFill.Click += (s, e) => { if (FillTool != null) FillTool.IsChecked = true; };
             if (MenuToolSelect != null) MenuToolSelect.Click += (s, e) => { if (SelectTool != null) SelectTool.IsChecked = true; };
             if (MenuToolWand != null) MenuToolWand.Click += (s, e) => { if (MagicWandTool != null) MagicWandTool.IsChecked = true; };
+            if (MenuEditCopy != null) MenuEditCopy.Click += (s, e) => CopySelection();
+            if (MenuEditCut != null) MenuEditCut.Click += (s, e) => CutSelection();
+            if (MenuEditPaste != null) MenuEditPaste.Click += (s, e) => {
+                int dx = (selW > 0 && selH > 0) ? selX : (lastClickX >= 0 ? lastClickX : lastHoverX);
+                int dy = (selW > 0 && selH > 0) ? selY : (lastClickY >= 0 ? lastClickY : lastHoverY);
+                if (dx >= 0 && dy >= 0) PasteClipboardAt(dx, dy);
+            };
             if (MenuToolUndo != null) MenuToolUndo.Click += (s, e) => Undo();
             if (MenuToolRedo != null) MenuToolRedo.Click += (s, e) => Redo();
             

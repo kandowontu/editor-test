@@ -112,6 +112,10 @@
                     <MenuItem x:Name="MenuToolSelect" Header="_Select" IsCheckable="True" InputGestureText="S" />
                     <MenuItem x:Name="MenuToolWand" Header="_Magic Wand" IsCheckable="True" InputGestureText="W" />
                     <Separator />
+                    <MenuItem x:Name="MenuEditCut" Header="Cu_t" InputGestureText="Ctrl+X" />
+                    <MenuItem x:Name="MenuEditCopy" Header="_Copy" InputGestureText="Ctrl+C" />
+                    <MenuItem x:Name="MenuEditPaste" Header="_Paste" InputGestureText="Ctrl+V" />
+                    <Separator />
                     <MenuItem x:Name="MenuToolUndo" Header="_Undo" InputGestureText="Ctrl+Z" />
                     <MenuItem x:Name="MenuToolRedo" Header="_Redo" InputGestureText="Ctrl+Y" />
                 </MenuItem>
