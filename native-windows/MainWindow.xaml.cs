@@ -20,6 +20,9 @@ namespace FamidashEditor
     {
         private FamiStudioIntegration famiIntegration = new FamiStudioIntegration();
         private string? famiStudioPath = null;
+        // Set to true when a precomputed name->index mapping is loaded from disk so
+        // we prefer that mapping over any in-process remapping at play-time.
+        private bool mappingLoadedFromFile = false;
         private string? albumTxtPath = null;
         private enum DrawMode { Tile, Line, Square, Circle, Triangle, Polygon, None }
         private DrawMode currentDrawMode = DrawMode.Tile;
@@ -4813,9 +4816,9 @@ namespace FamidashEditor
                         {
                             var txt = File.ReadAllText(mc);
                             var arr = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>>(txt);
-                            if (arr != null)
+                                if (arr != null)
                             {
-                                nameToIndex = new System.Collections.Generic.Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                                    nameToIndex = new System.Collections.Generic.Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                                 foreach (var d in arr)
                                 {
                                     if (d.TryGetValue("name", out var on) && d.TryGetValue("index", out var oi))
@@ -4825,6 +4828,7 @@ namespace FamidashEditor
                                         {
                                             if (!nameToIndex.ContainsKey(n)) nameToIndex[n] = ii;
                                         }
+                                        mappingLoadedFromFile = true;
                                     }
                                 }
                                 break;
@@ -4850,6 +4854,7 @@ namespace FamidashEditor
                     var item = new System.Windows.Controls.ComboBoxItem() { Content = parsed[i], Tag = tagIndex };
                     FamiTrackCombo.Items.Add(item);
                 }
+                // Combo population complete
                 FamiTrackCombo.SelectedIndex = 0;
                 try { if (StatusText != null) StatusText.Text = $"Loaded {parsed.Count} names from {(foundJson != null ? Path.GetFileName(foundJson) : (albumTxtPath != null ? Path.GetFileName(albumTxtPath) : "unknown"))}"; } catch { }
             }
@@ -4911,18 +4916,26 @@ namespace FamidashEditor
                                 famiIntegration.LoadFromFolder(famiStudioPath);
                             }
 
-                            var names = famiIntegration.EnumerateTracks(fpath);
-                            if (names != null && names.Count > 0)
+                            // If we have loaded a precomputed mapping from disk, prefer it — do not override via
+                            // in-process enumeration at play-time. This avoids mismatches when the runtime FamiStudio
+                            // assemblies (on the target machine) differ from the source tool used to build mappings.
+                            if (!mappingLoadedFromFile)
                             {
-                                // If the combo has a selected item with a string, try to match by name
-                                string? selectedName = null;
-                                if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cb && cb.Content != null) selectedName = cb.Content.ToString();
-                                if (!string.IsNullOrEmpty(selectedName))
+                                var names = famiIntegration.EnumerateTracks(fpath);
+                                if (names != null && names.Count > 0)
                                 {
-                                    int mapped = names.FindIndex(n => string.Equals(n, selectedName, StringComparison.OrdinalIgnoreCase));
-                                    if (mapped >= 0) idx = mapped;
+                                    // If the combo has a selected item with a string, try to match by name
+                                    string? selectedName = null;
+                                    if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cb && cb.Content != null) selectedName = cb.Content.ToString();
+                                    if (!string.IsNullOrEmpty(selectedName))
+                                    {
+                                        int mapped = names.FindIndex(n => string.Equals(n, selectedName, StringComparison.OrdinalIgnoreCase));
+                                        if (mapped >= 0) idx = mapped;
+                                    }
                                 }
                             }
+
+                            // No play-time diagnostics in release build
                         }
                         catch { }
                     }

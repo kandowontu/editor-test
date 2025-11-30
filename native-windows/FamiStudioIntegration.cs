@@ -392,6 +392,7 @@ namespace FamidashEditor
         public void PlayTrack(string fmsPath, int trackIndex)
         {
             Stop();
+            // No PlayTrack diagnostic logging
 
             if (alc != null)
             {
