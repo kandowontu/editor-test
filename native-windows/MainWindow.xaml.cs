@@ -177,6 +177,130 @@ namespace FamidashEditor
         public string? DecoSet { get; set; } = "DECO1";
         public string? BlockSet { get; set; } = "BLOCKSA";
         public string? SpikeSet { get; set; } = "SPIKESA";
+        public bool LockSpritesToSet { get; set; } = false;
+    }
+
+    // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
+    private HashSet<int> disabledSprites = new HashSet<int>();
+    private bool lockSpritesToSet = false;
+    public bool LockSpritesToSet => lockSpritesToSet;
+
+    // Public setter used by dialogs so behavior applies identically
+        public void SetLockSpritesToSet(bool enabled, string? decoOverride = null)
+    {
+        try
+        {
+                lockSpritesToSet = enabled;
+                // Persist as a global editor setting
+                try { SaveSettingsWithTriggerOption(); } catch { }
+                ApplyLockSpritesToSet(decoOverride);
+        }
+        catch { }
+    }
+
+    // Compute disabled sprite list from the current loadedDecoSet and update UI overlays
+    private void ApplyLockSpritesToSet(string? decoOverride = null)
+    {
+        disabledSprites.Clear();
+        if (!lockSpritesToSet) {
+            // Remove overlays
+            try { if (IncompatibleOverlay != null) IncompatibleOverlay.Children.Clear(); } catch { }
+            // Rebuild palette to remove disable visuals
+            try { PopulateSpritesPanel(); } catch { }
+            return;
+        }
+
+        // Determine which deco set to use for computing disabled sprites (normalize and accept minor variants)
+        string decoToUse = (decoOverride ?? loadedDecoSet ?? "").ToUpperInvariant().Trim();
+        // Remove non-alphanumeric characters for robust matching (e.g. "deco 1", "deco_1")
+        string decoNorm = new string(decoToUse.Where(c => char.IsLetterOrDigit(c)).ToArray());
+        // Based on the selected deco set, compute the disabled sprite IDs (ranges inclusive)
+        // Check EXTRAS first to avoid accidental matches with DECO
+        if (decoNorm.Contains("EXTRA"))
+        {
+            // EXTRASPRITES1 -> ranges 0x2A–0x35 and 0x37–0x3F and 0x4A
+            for (int i = 0x2A; i <= 0x35; i++) disabledSprites.Add(i);
+            for (int i = 0x37; i <= 0x3F; i++) disabledSprites.Add(i);
+            disabledSprites.Add(0x4A);
+        }
+        else if (decoNorm.Contains("DECOCLOUD") || decoNorm.Contains("DECO1") || decoNorm.StartsWith("DECO"))
+        {
+            // DECO1 / DECOCLOUD share the same disabled list
+            int[] list = new int[] { 0x4E, 0x4F, 0x66, 0x67, 0x68, 0x69, 0x4C, 0x4D, 0x50, 0x51, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x6E, 0x79, 0x17, 0x4B, 0x58 };
+            foreach (var v in list) disabledSprites.Add(v);
+        }
+
+        // Update palette visuals and deselect if current selection invalid
+        try { PopulateSpritesPanel(); } catch { }
+        if (selectedSprite >= 0 && disabledSprites.Contains(selectedSprite))
+        {
+            selectedSprite = -1;
+            try { UpdatePaletteHighlight(); } catch { }
+        }
+
+        // Update map overlays indicating incompatibilities
+        try { UpdateIncompatibleOverlay(); } catch { }
+    }
+
+    private void UpdateIncompatibleOverlay()
+    {
+        if (IncompatibleOverlay == null || CanvasHost == null) return;
+        IncompatibleOverlay.Children.Clear();
+        if (!lockSpritesToSet) return;
+        if (spriteImages == null || sprites == null) return;
+
+        try
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+
+            for (int y = 0; y < mapHeight; y++)
+            {
+                for (int x = 0; x < mapWidth; x++)
+                {
+                    int idx = y * mapWidth + x;
+                    int sidx = sprites[idx];
+                    if (sidx >= 0 && disabledSprites.Contains(sidx))
+                    {
+                        var rect = new Shapes.Rectangle
+                        {
+                            Width = (double)tilePixelW / dpi.DpiScaleX,
+                            Height = (double)tilePixelH / dpi.DpiScaleY,
+                            Fill = new SolidColorBrush(Color.FromArgb(0xC0, 0xFF, 0xFF, 0xFF)),
+                            Stroke = Brushes.Black,
+                            StrokeThickness = 1,
+                            IsHitTestVisible = false
+                        };
+                        double left = (padPxX + x * tilePixelW) / dpi.DpiScaleX;
+                        double top = (padPxY + y * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY;
+                        Canvas.SetLeft(rect, left);
+                        Canvas.SetTop(rect, top);
+                        IncompatibleOverlay.Children.Add(rect);
+
+                        var txt = new TextBlock
+                        {
+                            Text = "!",
+                            FontWeight = FontWeights.Bold,
+                            Foreground = Brushes.Black,
+                            FontSize = Math.Max(12, tilePixelH / dpi.DpiScaleY / 2),
+                            IsHitTestVisible = false
+                        };
+                        // Center the text inside rect
+                        txt.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                        double tx = left + ((double)tilePixelW / dpi.DpiScaleX - txt.DesiredSize.Width) / 2.0;
+                        double ty = top + ((double)tilePixelH / dpi.DpiScaleY - txt.DesiredSize.Height) / 2.0;
+                        Canvas.SetLeft(txt, tx);
+                        Canvas.SetTop(txt, ty);
+                        IncompatibleOverlay.Children.Add(txt);
+                    }
+                }
+            }
+        }
+        catch { }
     }
     
     // Apply the current noParallaxBg setting by selecting the appropriate parallax bitmap
@@ -400,6 +524,7 @@ namespace FamidashEditor
                     // Apply block/spike sets if present
                     try { loadedBlockSet = string.IsNullOrEmpty(config.BlockSet) ? "BLOCKSA" : config.BlockSet; } catch { loadedBlockSet = "BLOCKSA"; }
                     try { loadedSpikeSet = string.IsNullOrEmpty(config.SpikeSet) ? "SPIKESA" : config.SpikeSet; } catch { loadedSpikeSet = "SPIKESA"; }
+                    // LockSpritesToSet is now a global editor setting; per-TMX configs no longer contain it
                     if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet} block:{loadedBlockSet} spike:{loadedSpikeSet}";
 
                     // Update tinted images for any tints that were applied
@@ -449,6 +574,7 @@ namespace FamidashEditor
                 loadedSpikeSet = "SPIKESA";
                 // Write out a default config immediately so first-load creates .cfg with deco1
                 try { SaveTmxConfig(tmxFilePath); } catch { }
+                try { ApplyLockSpritesToSet(); } catch { }
             }
         }
         catch (Exception ex)
@@ -1348,6 +1474,14 @@ namespace FamidashEditor
                     useLegacyTriggerOffset = false; 
                     SaveSettingsWithTriggerOption();
                 };
+            }
+            // Global lock sprites option in main Options menu
+            if (MenuOptionLockSprites != null)
+            {
+                // Initialize checked state from loaded settings
+                MenuOptionLockSprites.IsChecked = lockSpritesToSet;
+                MenuOptionLockSprites.Checked += (s, e) => { try { SetLockSpritesToSet(true); } catch { } };
+                MenuOptionLockSprites.Unchecked += (s, e) => { try { SetLockSpritesToSet(false); } catch { } };
             }
             // Swap Mouse Wheel Scroll (global user preference)
             if (MenuOptionSwapMouseWheel != null)
@@ -4206,6 +4340,11 @@ namespace FamidashEditor
                             MenuOptionHideColorTriggers.IsChecked = hideColorTriggers;
                         }
                     }
+                    // optional lock-sprites global setting
+                    if (doc.RootElement.TryGetProperty("lockSpritesToSet", out var ls))
+                    {
+                        try { lockSpritesToSet = ls.GetBoolean(); } catch { lockSpritesToSet = false; }
+                    }
                     // optional grid darkness (double)
                     if (doc.RootElement.TryGetProperty("gridDarkness", out var gd))
                     {
@@ -4271,6 +4410,9 @@ namespace FamidashEditor
             {
                 // Ensure any previous tinted caches are cleared so they don't reference stale tints
                 ClearTintedCaches();
+                // Apply lock state if present in global settings (sprites may not yet be loaded, but ApplyLockSpritesToSet
+                // will re-run when sprites are loaded elsewhere)
+                try { ApplyLockSpritesToSet(); } catch { }
             }
         }
 
@@ -4286,6 +4428,7 @@ namespace FamidashEditor
                     swapMouseWheelScroll = swapMouseWheelScroll,
                     invertPinchGesture = invertPinchGesture,
                     hideColorTriggers = hideColorTriggers,
+                    lockSpritesToSet = lockSpritesToSet,
                     playerColor = new int[] { playerTint.A, playerTint.R, playerTint.G, playerTint.B },
                     playerColorEnabled = playerTintEnabled,
                     gridDarkness = gridDarkness,
@@ -4539,6 +4682,7 @@ namespace FamidashEditor
                     spritesBitmap = embeddedSprites;
                     SliceSpriteset();
                     PopulateSpritesPanel();
+                    try { ApplyLockSpritesToSet(); } catch { }
                     if (StatusText != null) StatusText.Text = "Loaded sprites from embedded resources";
                 }
                 
@@ -5210,6 +5354,7 @@ namespace FamidashEditor
             {
                 var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze();
                 spritesBitmap = bi; SliceSpriteset(); PopulateSpritesPanel(); if (StatusText != null) StatusText.Text = "Loaded sprites: " + Path.GetFileName(path);
+                try { ApplyLockSpritesToSet(); } catch { }
             }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Sprites load failed: " + ex.Message; }
         }
@@ -5993,12 +6138,12 @@ namespace FamidashEditor
             {
                 var img = new Image { Source = src, Width = paletteSpriteSize, Height = paletteSpriteSize, Stretch = Stretch.Fill, Tag = idx };
                 RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
-                img.MouseLeftButtonDown += (s, e) => { 
+                img.MouseLeftButtonDown += (s, e) => {
                     int clickedSprite = (int)((Image)s).Tag;
-                    
+                    // If locking active and this sprite is disabled, ignore clicks
+                    if (lockSpritesToSet && disabledSprites.Contains(clickedSprite)) { e.Handled = true; return; }
                     // Check if Ctrl is held for multi-layer selection
                     bool isCtrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
-                    
                     // Only allow multi-layer if a single tile is selected (not multiple tiles)
                     if (isCtrl && selectedTile >= 0 && selectedTiles.Count == 1)
                     {
@@ -6020,7 +6165,6 @@ namespace FamidashEditor
                         tilesLayerActive = false;
                         if (StatusText != null) StatusText.Text = "Selected sprite " + selectedSprite;
                     }
-                    
                     UpdatePaletteHighlight();
                 };
 
@@ -6073,7 +6217,23 @@ namespace FamidashEditor
                     }
                 };
                 
-                var border = new Border { Child = img, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedSprite ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedSprite ? new Thickness(2) : new Thickness(0)) };
+                // If this sprite is disabled by deco-lock, show overlay and prevent selection
+                bool isDisabled = lockSpritesToSet && disabledSprites.Contains(idx);
+                FrameworkElement childElement = img;
+                if (isDisabled)
+                {
+                    var grid = new Grid();
+                    grid.Children.Add(img);
+                    var cover = new System.Windows.Shapes.Rectangle { Fill = new SolidColorBrush(Color.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), IsHitTestVisible = false };
+                    grid.Children.Add(cover);
+                    var xlbl = new TextBlock { Text = "X", FontWeight = FontWeights.Bold, Foreground = Brushes.Black, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+                    grid.Children.Add(xlbl);
+                    childElement = grid;
+                    // Make image non-interactive
+                    img.IsEnabled = false;
+                }
+
+                var border = new Border { Child = childElement, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedSprite ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedSprite ? new Thickness(2) : new Thickness(0)), IsEnabled = !isDisabled };
                 SpritesPanel.Items.Add(border);
                 idx++;
             }
@@ -6414,6 +6574,7 @@ namespace FamidashEditor
                 CanvasHost.Width = displayFullW; CanvasHost.Height = displayFullH;
                 CanvasHost.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
+            try { UpdateIncompatibleOverlay(); } catch { }
         }
 
         private void Redraw() => DrawMap();
@@ -6929,6 +7090,7 @@ namespace FamidashEditor
 
             lastHoverX = -1; lastHoverY = -1;
             try { this.Activate(); } catch { }
+            try { UpdateIncompatibleOverlay(); } catch { }
         }
 
         // Snap ScrollViewer offsets to integer device pixels to ensure layers align
@@ -11989,6 +12151,8 @@ namespace FamidashEditor
                             loadedDecoSet = newDeco; changed = true;
                             if (StatusText != null) StatusText.Text = $"Deco set saved: {loadedDecoSet}";
                             try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+                            // If lock is enabled, re-apply disabled sprites immediately for the new deco
+                            try { if (lockSpritesToSet) ApplyLockSpritesToSet(); } catch { }
                         }
                         if (newBlock != loadedBlockSet)
                         {
@@ -12006,6 +12170,10 @@ namespace FamidashEditor
                             try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
                             try { Redraw(); } catch { }
                         }
+                        // Also persist lock sprites option if dialog changed it (dialog wires owner on toggle but ensure saved)
+                        try {
+                            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                        } catch { }
                     }
             }
             catch (Exception ex)

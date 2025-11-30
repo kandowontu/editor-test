@@ -7,6 +7,7 @@ namespace FamidashEditor
         public string SelectedDeco { get; private set; } = "DECO1";
         public string SelectedBlockSet { get; private set; } = "BLOCKSA";
         public string SelectedSpikeSet { get; private set; } = "SPIKESA";
+        public bool LockSpritesToSet { get; private set; } = false;
         public SetOptionsWindow(string current, string currentBlock, string currentSpike)
         {
             InitializeComponent();
@@ -81,6 +82,26 @@ namespace FamidashEditor
                         NoParallaxCheckBox.IsChecked = (opt != null && opt.IsChecked == true);
                         NoParallaxCheckBox.Checked += (ss, ee) => { try { if (this.Owner is MainWindow mw2) mw2.SetNoParallax(true); } catch { } };
                         NoParallaxCheckBox.Unchecked += (ss, ee) => { try { if (this.Owner is MainWindow mw2) mw2.SetNoParallax(false); } catch { } };
+                    }
+                    // Initialize LockSprites checkbox and wire immediate updates to owner
+                    if (this.Owner is MainWindow mw2 && LockSpritesCheckBox != null)
+                    {
+                        try { LockSpritesCheckBox.IsChecked = mw2.LockSpritesToSet; } catch { LockSpritesCheckBox.IsChecked = false; }
+                        LockSpritesCheckBox.Checked += (ss, ee) => { try { if (this.Owner is MainWindow mw3) { var selected = (DecoCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; mw3.SetLockSpritesToSet(true, selected); LockSpritesToSet = true; } } catch { } };
+                        LockSpritesCheckBox.Unchecked += (ss, ee) => { try { if (this.Owner is MainWindow mw3) { var selected = (DecoCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; mw3.SetLockSpritesToSet(false, selected); LockSpritesToSet = false; } } catch { } };
+
+                        // When the deco selection changes in this dialog, apply lock immediately if owner has lock enabled
+                        DecoCombo.SelectionChanged += (ss, ee) => {
+                            try {
+                                var sel = (DecoCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
+                                // Update own SelectedDeco for OK
+                                if (!string.IsNullOrEmpty(sel)) SelectedDeco = sel;
+                                if (this.Owner is MainWindow mw4 && mw4.LockSpritesToSet)
+                                {
+                                    mw4.SetLockSpritesToSet(mw4.LockSpritesToSet, sel);
+                                }
+                            } catch { }
+                        };
                     }
                 }
                 catch { }

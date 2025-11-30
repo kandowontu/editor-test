@@ -135,6 +135,7 @@
                         <MenuItem x:Name="MenuColorTileTint" Header="Tile Tint..." />
                         <Separator />
                         <MenuItem x:Name="MenuOptionNoParallax" Header="No Parallax BG" IsCheckable="True" IsChecked="False" />
+                        <MenuItem x:Name="MenuOptionLockSprites" Header="Lock sprites to usable set" IsCheckable="True" IsChecked="False" />
                     </MenuItem>
                     <MenuItem Header="Preview Mode Options">
                         <MenuItem x:Name="MenuOptionHideColorTriggers" Header="Hide Color Triggers" IsCheckable="True" IsChecked="False" />
@@ -249,6 +250,7 @@
                     <Border x:Name="HoverBorder" Background="#28FFFF00" BorderBrush="Yellow" BorderThickness="1" Visibility="Collapsed" IsHitTestVisible="False" SnapsToDevicePixels="True" />
                         <!-- Selection overlay canvas: contains individual rectangle overlays for each selected tile -->
                         <Canvas x:Name="SelectionOverlay" IsHitTestVisible="False" />
+                            <Canvas x:Name="IncompatibleOverlay" IsHitTestVisible="False" />
                         <!-- Ghost image shown while dragging a selection -->
                         <Image x:Name="GhostImage" Visibility="Collapsed" IsHitTestVisible="False" Opacity="0.75" />
                 </Canvas>

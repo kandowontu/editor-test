@@ -9,12 +9,13 @@
         </Grid.ColumnDefinitions>
 
         <StackPanel Grid.Column="0">
-            <TextBlock Text="Deco Set:" Margin="0,0,0,6" />
+            <TextBlock Text="Sprite/Deco Set:" Margin="0,0,0,6" />
             <ComboBox x:Name="DecoCombo" Width="220" HorizontalAlignment="Left">
                 <ComboBoxItem Content="DECO1" />
                 <ComboBoxItem Content="DECOCLOUD" />
                 <ComboBoxItem Content="EXTRASPRITES1" />
             </ComboBox>
+            <CheckBox x:Name="LockSpritesCheckBox" Content="Lock sprites to currently usable set" Margin="0,6,0,0" Width="260" HorizontalAlignment="Left" />
             <TextBlock Text="Block Set:" Margin="0,8,0,6" />
             <ComboBox x:Name="BlockCombo" Width="220" HorizontalAlignment="Left">
                 <ComboBoxItem Content="BLOCKSA" />
