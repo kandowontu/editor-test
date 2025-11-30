@@ -2209,6 +2209,27 @@ namespace FamidashEditor
         private int GetAnimatedTileIndex(int originalIndex)
         {
             if (!previewMode) return originalIndex;
+
+            // Preview remaps: map special preview-only tile indices to existing tiles so they render identically
+            int mapped = originalIndex;
+            switch (originalIndex)
+            {
+                case 0xE0: mapped = 0x30; break;
+                case 0xE1: mapped = 0x24; break;
+                case 0xE2: mapped = 0x28; break;
+                case 0xE4: mapped = 0x32; break;
+                case 0xE5: mapped = 0x25; break;
+                case 0xE6:
+                case 0xE7: mapped = 0x10; break;
+                case 0xDD:
+                case 0xDE: mapped = 0x10; break;
+                case 0xD9:
+                case 0xDA: mapped = 0x11; break;
+                case 0xDB:
+                case 0xDC: mapped = 0x1B; break;
+                case 0xFD: mapped = 0x26; break;
+            }
+            if (mapped != originalIndex) originalIndex = mapped;
             
             // Check if this is one of the saw tiles (0x08-0x0B)
             if (originalIndex >= 0x08 && originalIndex <= 0x0B)
@@ -2322,6 +2343,10 @@ namespace FamidashEditor
         private int GetAnimatedSpriteIndex(int originalIndex)
         {
             if (!previewMode) return originalIndex;
+
+            // Preview aliasing: treat these non-orb sprites as orbs in preview mode
+            if (originalIndex == 0x7B) originalIndex = 0x05; // behave like blue orb
+            if (originalIndex == 0x7C) originalIndex = 0x27; // behave like green orb
             
             // Check if this is a portal sprite
             if (originalIndex == 0x00) return 3000; // Cube portal
@@ -5893,15 +5918,31 @@ namespace FamidashEditor
                 img.MouseEnter += (s, e) => {
                     int hoveredTile = (int)((Image)s).Tag;
                     if (TileIdIndicator != null)
-                        TileIdIndicator.Text = $"ID: 0x{hoveredTile:X2} ({hoveredTile})";
+                        TileIdIndicator.Text = $"0x{hoveredTile:X2}";
+                    if (TileSelectedPreviewImage != null && tileImages != null && hoveredTile >= 0 && hoveredTile < tileImages.Length)
+                    {
+                        TileSelectedPreviewImage.Source = tileImages[hoveredTile];
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(TileSelectedPreviewImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                    }
                 };
                 
                 img.MouseLeave += (s, e) => {
                     // Show selected tile when not hovering
                     if (TileIdIndicator != null && selectedTile >= 0)
-                        TileIdIndicator.Text = $"Selected: 0x{selectedTile:X2} ({selectedTile})";
+                        TileIdIndicator.Text = $"0x{selectedTile:X2}";
                     else if (TileIdIndicator != null)
                         TileIdIndicator.Text = "";
+                    if (TileSelectedPreviewImage != null)
+                    {
+                        if (selectedTile >= 0 && tileImages != null && selectedTile < tileImages.Length)
+                        {
+                            TileSelectedPreviewImage.Source = tileImages[selectedTile];
+                        }
+                        else
+                        {
+                            TileSelectedPreviewImage.Source = null;
+                        }
+                    }
                 };
                 
                 var border = new Border { 
@@ -5962,15 +6003,31 @@ namespace FamidashEditor
                 img.MouseEnter += (s, e) => {
                     int hoveredSprite = (int)((Image)s).Tag;
                     if (SpriteIdIndicator != null)
-                        SpriteIdIndicator.Text = $"ID: 0x{hoveredSprite:X2} ({hoveredSprite})";
+                        SpriteIdIndicator.Text = $"0x{hoveredSprite:X2}";
+                    if (SpriteSelectedPreviewImage != null && spriteImages != null && hoveredSprite >= 0 && hoveredSprite < spriteImages.Length)
+                    {
+                        SpriteSelectedPreviewImage.Source = spriteImages[hoveredSprite];
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(SpriteSelectedPreviewImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                    }
                 };
                 
                 img.MouseLeave += (s, e) => {
                     // Show selected sprite when not hovering
                     if (SpriteIdIndicator != null && selectedSprite >= 0)
-                        SpriteIdIndicator.Text = $"Selected: 0x{selectedSprite:X2} ({selectedSprite})";
+                        SpriteIdIndicator.Text = $"0x{selectedSprite:X2}";
                     else if (SpriteIdIndicator != null)
                         SpriteIdIndicator.Text = "";
+                    if (SpriteSelectedPreviewImage != null)
+                    {
+                        if (selectedSprite >= 0 && spriteImages != null && selectedSprite < spriteImages.Length)
+                        {
+                            SpriteSelectedPreviewImage.Source = spriteImages[selectedSprite];
+                        }
+                        else
+                        {
+                            SpriteSelectedPreviewImage.Source = null;
+                        }
+                    }
                 };
                 
                 var border = new Border { Child = img, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedSprite ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedSprite ? new Thickness(2) : new Thickness(0)) };
@@ -6032,6 +6089,11 @@ namespace FamidashEditor
             if (selectedTiles.Count > 0)
             {
                 selectedTile = selectedTiles[0];
+                if (TileSelectedPreviewImage != null && tileImages != null && selectedTile >= 0 && selectedTile < tileImages.Length)
+                {
+                    TileSelectedPreviewImage.Source = tileImages[selectedTile];
+                    try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(TileSelectedPreviewImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                }
                 if (StatusText != null)
                 {
                     if (selectedTiles.Count == 1)
@@ -6101,18 +6163,42 @@ namespace FamidashEditor
             if (TileIdIndicator != null)
             {
                 if (selectedTile >= 0)
-                    TileIdIndicator.Text = $"Selected: 0x{selectedTile:X2} ({selectedTile})";
+                    TileIdIndicator.Text = $"0x{selectedTile:X2}";
                 else
                     TileIdIndicator.Text = "";
+                if (TileSelectedPreviewImage != null)
+                {
+                    if (selectedTile >= 0 && tileImages != null && selectedTile < tileImages.Length)
+                    {
+                        TileSelectedPreviewImage.Source = tileImages[selectedTile];
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(TileSelectedPreviewImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                    }
+                    else
+                    {
+                        TileSelectedPreviewImage.Source = null;
+                    }
+                }
             }
             
             // Update sprite ID indicator
             if (SpriteIdIndicator != null)
             {
                 if (selectedSprite >= 0)
-                    SpriteIdIndicator.Text = $"Selected: 0x{selectedSprite:X2} ({selectedSprite})";
+                    SpriteIdIndicator.Text = $"0x{selectedSprite:X2}";
                 else
                     SpriteIdIndicator.Text = "";
+                if (SpriteSelectedPreviewImage != null)
+                {
+                    if (selectedSprite >= 0 && spriteImages != null && selectedSprite < spriteImages.Length)
+                    {
+                        SpriteSelectedPreviewImage.Source = spriteImages[selectedSprite];
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(SpriteSelectedPreviewImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                    }
+                    else
+                    {
+                        SpriteSelectedPreviewImage.Source = null;
+                    }
+                }
             }
         }
 
@@ -8255,37 +8341,46 @@ namespace FamidashEditor
                 {
                     int clearWidth = Math.Min(renderWidth - srcXStart, Math.Max(0, cachedPixelWidth - drawX));
                     int clearHeight = Math.Min(renderHeight, Math.Max(0, cachedPixelHeight - destY));
+                    if (clearWidth <= 0 || clearHeight <= 0) return;
 
-                    // If this is a regular sprite and portals exist underneath, copy portal pixels into spritesWb first
-                    // so that animated sprites (orbs) can clear/re-render each frame correctly while preserving portals.
-                    if (!isMultiTilePortal && previewMode && portalsWb != null)
-                    {
-                        try
+                        // If this is a regular sprite and portals exist underneath, copy portal pixels into spritesWb first
+                        // so that animated sprites (orbs) can clear/re-render each frame correctly while preserving portals.
+                        if (!isMultiTilePortal && previewMode && portalsWb != null)
                         {
-                            int portalStride = portalsWb.BackBufferStride;
-                            byte[] portalBuf = new byte[clearHeight * portalStride];
-                            Int32Rect srcRect = new Int32Rect(drawX, destY, clearWidth, clearHeight);
-                            portalsWb.CopyPixels(srcRect, portalBuf, portalStride, 0);
-
-                            // Copy portal pixels into spritesWb back buffer
-                            IntPtr spritesBackBuffer = spritesWb.BackBuffer;
-                            int spritesBackBufferStride = spritesWb.BackBufferStride;
-                            unsafe
+                            try
                             {
-                                for (int row = 0; row < clearHeight; row++)
+                                int portalStride = portalsWb.BackBufferStride;
+                                if (portalStride <= 0) throw new Exception("invalid portal stride");
+                                byte[] portalBuf = new byte[clearHeight * portalStride];
+                                Int32Rect srcRect = new Int32Rect(drawX, destY, clearWidth, clearHeight);
+                                portalsWb.CopyPixels(srcRect, portalBuf, portalStride, 0);
+
+                                // Copy portal pixels into spritesWb back buffer
+                                IntPtr spritesBackBuffer = spritesWb.BackBuffer;
+                                int spritesBackBufferStride = spritesWb.BackBufferStride;
+                                if (spritesBackBuffer != IntPtr.Zero && spritesBackBufferStride > 0)
                                 {
-                                    long destOffset = (destY + row) * spritesBackBufferStride + drawX * 4;
-                                    byte* destPtr = (byte*)spritesBackBuffer.ToPointer() + destOffset;
-                                    int srcRowOffset = row * portalStride;
-                                    for (int col = 0; col < clearWidth * 4; col++)
+                                    unsafe
                                     {
-                                        destPtr[col] = portalBuf[srcRowOffset + col];
+                                        int maxRowBytes = Math.Max(0, spritesBackBufferStride - drawX * 4);
+                                        for (int row = 0; row < clearHeight; row++)
+                                        {
+                                            long destOffset = (destY + row) * spritesBackBufferStride + drawX * 4;
+                                            byte* destPtr = (byte*)spritesBackBuffer.ToPointer() + destOffset;
+                                            int srcRowOffset = row * portalStride;
+                                            int copyBytes = Math.Min(clearWidth * 4, portalBuf.Length - srcRowOffset);
+                                            copyBytes = Math.Min(copyBytes, maxRowBytes);
+                                            if (copyBytes <= 0) continue;
+                                            for (int b = 0; b < copyBytes; b++)
+                                            {
+                                                destPtr[b] = portalBuf[srcRowOffset + b];
+                                            }
+                                        }
                                     }
                                 }
                             }
+                            catch { /* swallow portal copy failures to avoid crashing the UI */ }
                         }
-                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Rebuild portal copy failed at ({x},{y}): {ex.Message}"); }
-                    }
                     
                     
                     
@@ -8321,20 +8416,28 @@ namespace FamidashEditor
                     // Clear the area only if needed
                     if (shouldClear)
                     {
-                        for (int row = 0; row < clearHeight; row++)
+                        try
                         {
-                            long destOffset = (destY + row) * backBufferStride + drawX * 4;
-                            byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
-                            
-                            for (int col = 0; col < clearWidth; col++)
+                            int maxRowPixels = Math.Max(0, (backBufferStride / 4) - drawX);
+                            int rowsToClear = Math.Min(clearHeight, Math.Max(0, cachedPixelHeight - destY));
+                            int colsToClear = Math.Min(clearWidth, Math.Max(0, cachedPixelWidth - drawX));
+                            for (int row = 0; row < rowsToClear; row++)
                             {
-                                int pixelOffset = col * 4;
-                                destPtr[pixelOffset + 0] = 0; // B
-                                destPtr[pixelOffset + 1] = 0; // G
-                                destPtr[pixelOffset + 2] = 0; // R
-                                destPtr[pixelOffset + 3] = 0; // A (transparent)
+                                long destOffset = (destY + row) * backBufferStride + drawX * 4;
+                                byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                                int pixelsThisRow = Math.Min(colsToClear, maxRowPixels);
+                                if (pixelsThisRow <= 0) continue;
+                                for (int col = 0; col < pixelsThisRow; col++)
+                                {
+                                    int pixelOffset = col * 4;
+                                    destPtr[pixelOffset + 0] = 0; // B
+                                    destPtr[pixelOffset + 1] = 0; // G
+                                    destPtr[pixelOffset + 2] = 0; // R
+                                    destPtr[pixelOffset + 3] = 0; // A (transparent)
+                                }
                             }
                         }
+                        catch { /* swallow clearing failures */ }
                     }
                     
                     // Portals are now rendered into a dedicated `portalsWb` layer beneath sprites; sprites do not need
@@ -9020,6 +9123,48 @@ namespace FamidashEditor
                 UpdateDeferredPreview();
                 return;
             }
+
+            // Show ghost preview of selected tile when brush/tile are active
+            try
+            {
+                if (PlaceTool != null && PlaceTool.IsChecked == true && DrawTileButton != null && DrawTileButton.IsChecked == true && selectedTile >= 0 && tileImages != null && GhostImage != null)
+                {
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                    int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                    int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                    int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                    var tt = ViewportPointToTile(pos);
+                    int tx = tt.x; int ty = tt.y;
+                    if (tx >= 0 && ty >= 0)
+                    {
+                        int leftPx = padPxX + tx * tilePixelW;
+                        int topPx = padPxY + ty * tilePixelH + gridRenderShiftYPx;
+                        double left = (double)leftPx / dpi.DpiScaleX;
+                        double top = (double)topPx / dpi.DpiScaleY;
+                        double widthDiu = (double)tilePixelW / dpi.DpiScaleX;
+                        double heightDiu = (double)tilePixelH / dpi.DpiScaleY;
+                        GhostImage.Source = tileImages[selectedTile];
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(GhostImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                        GhostImage.Width = widthDiu;
+                        GhostImage.Height = heightDiu;
+                        Canvas.SetLeft(GhostImage, left);
+                        Canvas.SetTop(GhostImage, top);
+                        GhostImage.Visibility = Visibility.Visible;
+                        GhostImage.Opacity = 0.6;
+                    }
+                    else
+                    {
+                        GhostImage.Visibility = Visibility.Collapsed;
+                    }
+                }
+                else if (GhostImage != null)
+                {
+                    GhostImage.Visibility = Visibility.Collapsed;
+                }
+            }
+            catch { if (GhostImage != null) GhostImage.Visibility = Visibility.Collapsed; }
         }
 
         private void Tool_Checked(object? sender, RoutedEventArgs e)
