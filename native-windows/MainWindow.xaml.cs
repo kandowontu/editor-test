@@ -99,6 +99,13 @@ namespace FamidashEditor
     private int selectionHeight = 1; // Height of the selection grid
     private bool isSelectingMultipleTiles = false; // Track if user is dragging in tile palette
     private System.Windows.Point? tileSelectionStart = null; // Starting point for multi-select
+    // Copy/Cut/Paste clipboard (rectangular with optional mask for sparse selections)
+    private int[]? clipboardTiles = null;
+    private int[]? clipboardSprites = null;
+    private bool[]? clipboardMask = null; // true == cell was part of original selection
+    private int clipboardW = 0;
+    private int clipboardH = 0;
+    private bool clipboardHasData = false;
     // Layer selection state - can select both layers simultaneously for tools
     private bool tilesLayerActive = true;
     private bool spritesLayerActive = false;
@@ -1386,6 +1393,13 @@ namespace FamidashEditor
             
             if (UndoButton != null) UndoButton.Click += (s, e) => Undo();
             if (RedoButton != null) RedoButton.Click += (s, e) => Redo();
+            if (CopyButton != null) CopyButton.Click += (s, e) => CopySelection();
+            if (CutButton != null) CutButton.Click += (s, e) => CutSelection();
+            if (PasteButton != null) PasteButton.Click += (s, e) => {
+                int dx = (selW > 0 && selH > 0) ? selX : lastHoverX;
+                int dy = (selW > 0 && selH > 0) ? selY : lastHoverY;
+                if (dx >= 0 && dy >= 0) PasteClipboardAt(dx, dy);
+            };
             
             // Preview mode checkbox and timer
             if (PreviewModeCheckbox != null)
@@ -10538,6 +10552,94 @@ namespace FamidashEditor
             if (StatusText != null) StatusText.Text = "Erased selection on active layers";
         }
 
+        // Copy current selection into the internal clipboard
+        private void CopySelection()
+        {
+            if (selW <= 0 || selH <= 0) return;
+            clipboardW = selW; clipboardH = selH;
+            clipboardTiles = new int[clipboardW * clipboardH];
+            clipboardSprites = new int[clipboardW * clipboardH];
+            clipboardMask = new bool[clipboardW * clipboardH];
+            clipboardHasData = false;
+
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            {
+                int sIdx = (selY + yy) * mapWidth + (selX + xx);
+                int ti = selTiles != null ? selTiles[yy * selW + xx] : -1;
+                int si = selSprites != null ? selSprites[yy * selW + xx] : -1;
+                clipboardTiles[yy * clipboardW + xx] = ti;
+                clipboardSprites[yy * clipboardW + xx] = si;
+                bool wasSelected = (selectionSet != null && selectionSet.Contains(sIdx)) || ti != -1 || si != -1;
+                clipboardMask[yy * clipboardW + xx] = wasSelected;
+                if (wasSelected) clipboardHasData = true;
+            }
+            if (StatusText != null) StatusText.Text = clipboardHasData ? "Copied selection" : "Copied (empty)";
+        }
+
+        // Cut = copy then erase selected layers (honor active layers)
+        private void CutSelection()
+        {
+            CopySelection();
+            try { EraseSelectedLayers(); } catch { }
+            if (StatusText != null) StatusText.Text = "Cut selection";
+        }
+
+        // Paste clipboard at destination tile coordinate (top-left)
+        private void PasteClipboardAt(int destX, int destY)
+        {
+            if (!clipboardHasData || clipboardTiles == null || clipboardSprites == null || clipboardMask == null) return;
+            if (destX < 0 || destY < 0) return;
+
+            var tileAction = new TileChangeAction();
+            var spriteAction = new SpriteChangeAction();
+
+            for (int yy = 0; yy < clipboardH; yy++)
+            {
+                for (int xx = 0; xx < clipboardW; xx++)
+                {
+                    if (!clipboardMask[yy * clipboardW + xx]) continue; // only paste cells that were part of original selection
+                    int dX = destX + xx; int dY = destY + yy;
+                    if (dX < 0 || dX >= mapWidth || dY < 0 || dY >= mapHeight) continue;
+                    int dIdx = dY * mapWidth + dX;
+                    int tVal = clipboardTiles[yy * clipboardW + xx];
+                    int sVal = clipboardSprites[yy * clipboardW + xx];
+                    if (tVal != -1)
+                    {
+                        int old = tiles[dIdx]; if (old != tVal) tileAction.Add(dIdx, old, tVal);
+                        tiles[dIdx] = tVal;
+                    }
+                    if (sVal != -1)
+                    {
+                        int old = sprites[dIdx]; if (old != sVal) spriteAction.Add(dIdx, old, sVal);
+                        sprites[dIdx] = sVal;
+                    }
+                }
+            }
+
+            if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
+            if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+
+            // Update selection to pasted rectangle
+            ClearSelection();
+            selW = clipboardW; selH = clipboardH; selX = destX; selY = destY;
+            selTiles = (int[])clipboardTiles.Clone();
+            selSprites = (int[])clipboardSprites.Clone();
+            selectionSet.Clear();
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            {
+                if (clipboardMask[yy * clipboardW + xx])
+                {
+                    int idx = (selY + yy) * mapWidth + (selX + xx);
+                    selectionSet.Add(idx);
+                }
+            }
+            UpdateSelectionVisuals(selX, selY, selW, selH);
+            if (StatusText != null) StatusText.Text = "Pasted clipboard";
+        }
+
         private void ContinuePaintingAt(Point pos)
         {
             var tt = ViewportPointToTile(pos);
@@ -11372,6 +11474,32 @@ namespace FamidashEditor
                     {
                         try { Undo(); } catch { }
                     }
+                    e.Handled = true; return;
+                }
+
+                if (e.Key == Key.Y)
+                {
+                    try { Redo(); } catch { }
+                    e.Handled = true; return;
+                }
+
+                if (e.Key == Key.C)
+                {
+                    try { CopySelection(); } catch { }
+                    e.Handled = true; return;
+                }
+
+                if (e.Key == Key.X)
+                {
+                    try { CutSelection(); } catch { }
+                    e.Handled = true; return;
+                }
+
+                if (e.Key == Key.V)
+                {
+                    int dx = (selW > 0 && selH > 0) ? selX : lastHoverX;
+                    int dy = (selW > 0 && selH > 0) ? selY : lastHoverY;
+                    try { if (dx >= 0 && dy >= 0) PasteClipboardAt(dx, dy); } catch { }
                     e.Handled = true; return;
                 }
 

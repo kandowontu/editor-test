@@ -175,8 +175,7 @@
                             <TextBlock Text="Wand" Margin="4,0" />
                         </StackPanel>
                     </ToggleButton>
-                    <Button x:Name="UndoButton" Margin="8,0,0,0" ToolTip="Undo (Ctrl+Z)">Undo</Button>
-                    <Button x:Name="RedoButton" Margin="4,0,0,0" ToolTip="Redo (Ctrl+Y)">Redo</Button>
+                    <!-- Undo/Redo moved next to brush controls -->
                     <Separator Margin="8,0" />
                     <CheckBox x:Name="PreviewModeCheckbox" Content="Preview Mode" VerticalAlignment="Center" Margin="4,0" ToolTip="Enable animated previews (saws, etc.)" />
                     <ComboBox x:Name="FamiTrackCombo" Width="220" Margin="8,0" VerticalAlignment="Center" IsEditable="False"/>
@@ -197,6 +196,12 @@
                     <CheckBox x:Name="HollowCheckBox" Content="Hollow" VerticalAlignment="Center" Margin="12,0" />
                     <TextBlock Text="Brush:" VerticalAlignment="Center" Margin="8,0,2,0" />
                     <Slider x:Name="BrushThicknessSlider" Minimum="1" Maximum="7" Value="1" Width="120" VerticalAlignment="Center" IsSnapToTickEnabled="True" TickFrequency="1" SmallChange="1" LargeChange="1"/>
+                    <Button x:Name="UndoButton" Margin="8,0,0,0" ToolTip="Undo (Ctrl+Z)">Undo</Button>
+                    <Button x:Name="RedoButton" Margin="4,0,0,0" ToolTip="Redo (Ctrl+Y)">Redo</Button>
+                    <Separator Margin="8,0" />
+                    <Button x:Name="CutButton" Margin="4,0" ToolTip="Cut (Ctrl+X)">Cut</Button>
+                    <Button x:Name="CopyButton" Margin="4,0" ToolTip="Copy (Ctrl+C)">Copy</Button>
+                    <Button x:Name="PasteButton" Margin="4,0" ToolTip="Paste (Ctrl+V)">Paste</Button>
                 </ToolBar>
             </ToolBarTray>
 
