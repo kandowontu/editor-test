@@ -10634,210 +10634,150 @@ namespace FamidashEditor
             if (destX + selW > mapWidth) destX = mapWidth - selW;
             if (destY + selH > mapHeight) destY = mapHeight - selH;
 
-            // Check if selTiles has any non-empty values
-            bool hasAnyTiles = false;
-            for (int i = 0; i < selTiles.Length; i++)
+            // Build atomic final state for both tiles and sprites, then apply deletions for both layers,
+            // then apply placements for both layers. This avoids inter-layer or overlapping-source/dest races
+            // where an item could be moved and later accidentally cleared.
+
+            var finalTiles = (int[])tiles.Clone();
+            var finalSprites = (int[])sprites.Clone();
+            var tileChanges = new TileChangeAction();
+            var spriteChanges = new SpriteChangeAction();
+
+            // Helper to determine whether a selection cell should be considered (sparse selection vs full rect)
+            bool useSparse = (selectionSet != null && selectionSet.Count > 0);
+
+            // First pass: collect mappings from source->dest for tiles and sprites (respecting sparse selection)
+            var tileMappings = new System.Collections.Generic.List<(int src, int dst, int val)>();
+            var spriteMappings = new System.Collections.Generic.List<(int src, int dst, int val)>();
+            for (int yy = 0; yy < selH; yy++)
             {
-                if (selTiles[i] != -1) { hasAnyTiles = true; break; }
-            }
-
-            // Prepare final values map and record changes compared to current tiles
-            if (hasAnyTiles)
-            {
-                // If this was a sparse/wand selection, only move the selected indices rather than the entire rectangle
-                if (selectionSet != null && selectionSet.Count > 0)
+                for (int xx = 0; xx < selW; xx++)
                 {
-                    var finalTiles = (int[])tiles.Clone();
-                    var changedTiles = new TileChangeAction();
-                    var srcToDest = new System.Collections.Generic.List<(int srcIdx, int dstIdx)>();
+                    int srcIdx = (selY + yy) * mapWidth + (selX + xx);
+                    if (srcIdx < 0 || srcIdx >= tiles.Length) continue;
+                    if (useSparse && (selectionSet == null || !selectionSet.Contains(srcIdx))) continue;
 
-                    foreach (var sIdx in selectionSet)
-                    {
-                        // compute relative coords inside selection rectangle
-                        int sx = sIdx % mapWidth; int sy = sIdx / mapWidth;
-                        int relX = sx - selX; int relY = sy - selY;
-                        if (relX < 0 || relX >= selW || relY < 0 || relY >= selH) continue;
-                        int val = selTiles[relY * selW + relX];
-                        if (val == -1) continue; // don't place transparent cells
-                        int dstIdx = (destY + relY) * mapWidth + (destX + relX);
-                        if (dstIdx < 0 || dstIdx >= finalTiles.Length) continue;
-                        finalTiles[dstIdx] = val;
-                        // ensure the source tile is cleared in the final state (delete-first semantics)
-                        if (dstIdx != sIdx) finalTiles[sIdx] = -1;
-                        srcToDest.Add((sIdx, dstIdx));
-                    }
-                        // Build list of changes by comparing finalTiles vs current tiles
-                        var delList = new System.Collections.Generic.List<int>();
-                        var putList = new System.Collections.Generic.List<int>();
-                        for (int i = 0; i < finalTiles.Length; i++)
-                        {
-                            if (finalTiles[i] != tiles[i])
-                            {
-                                if (finalTiles[i] == -1) delList.Add(i); else putList.Add(i);
-                                changedTiles.Add(i, tiles[i], finalTiles[i]);
-                            }
-                        }
-
-                        // Apply deletions first (delete-first semantics)
-                        foreach (var idx in delList)
-                        {
-                            tiles[idx] = -1;
-                        }
-
-                        // Rebuild to make deletions visible
-                        try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-
-                        // Apply placements
-                        foreach (var idx in putList)
-                        {
-                            tiles[idx] = finalTiles[idx];
-                        }
-
-                        if (!changedTiles.IsEmpty() && !suppressUndoRecording) { undoStack.Push(changedTiles); redoStack.Clear(); hasUnsavedChanges = true; }
-                        try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-                }
-                else
-                {
-                    var finalTiles = (int[])tiles.Clone();
-                    var changedTiles = new TileChangeAction();
-
-                    // First, clear source tile cells that should be deleted (delete-first)
-                    var targetSet = new HashSet<int>();
-                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++) targetSet.Add((destY + yy) * mapWidth + (destX + xx));
-                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
-                    {
-                        int sIdx = (selY + yy) * mapWidth + (selX + xx);
-                        int srcVal = selTiles[yy * selW + xx];
-                        if (!targetSet.Contains(sIdx) && srcVal != -1)
-                        {
-                            int old = tiles[sIdx];
-                            if (old != -1)
-                            {
-                                changedTiles.Add(sIdx, old, -1);
-                                tiles[sIdx] = -1;
-                            }
-                        }
-                    }
-
-                    // Rebuild now so clears are visible before placements
-                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-
-                    // Now apply selection tile values to destination
-                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                    if (tilesLayerActive)
                     {
                         int val = selTiles[yy * selW + xx];
-                        if (val == -1) continue; // do not overwrite target when selection cell was empty
-                        int dIdx = (destY + yy) * mapWidth + (destX + xx);
-                        int old = tiles[dIdx];
-                        if (old != val)
+                        if (val != -1)
                         {
-                            changedTiles.Add(dIdx, old, val);
-                            tiles[dIdx] = val;
-                        }
-                    }
-
-                    if (!changedTiles.IsEmpty() && !suppressUndoRecording) { undoStack.Push(changedTiles); redoStack.Clear(); hasUnsavedChanges = true; }
-                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-                }
-            }
-            
-            // Check if selSprites has any non-empty values
-            bool hasAnySprites = false;
-            if (selSprites != null)
-            {
-                for (int i = 0; i < selSprites.Length; i++)
-                {
-                    if (selSprites[i] != -1) { hasAnySprites = true; break; }
-                }
-            }
-            
-            // Handle sprites if selSprites exists and has content
-            if (hasAnySprites && selSprites != null)
-            {
-                var finalSprites = (int[])sprites.Clone();
-                var changedSprites = new SpriteChangeAction();
-                
-                // Apply selection sprite values to final at destination (only where selection contained sprites)
-                for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
-                {
-                    int val = selSprites[yy * selW + xx];
-                    if (val == -1) continue;
-                    int sIdx = (selY + yy) * mapWidth + (selX + xx);
-                    int dIdx = (destY + yy) * mapWidth + (destX + xx);
-                    if (dIdx >= 0 && dIdx < finalSprites.Length)
-                    {
-                        finalSprites[dIdx] = val;
-                        // clear the source in the final state to avoid duplication
-                        if (dIdx != sIdx) finalSprites[sIdx] = -1;
-                    }
-                }
-
-                // (source clears are handled with delete-first semantics below)
-
-                // Build SpriteChangeAction from differences
-                var delList = new System.Collections.Generic.List<int>();
-                var putList = new System.Collections.Generic.List<int>();
-                for (int i = 0; i < finalSprites.Length; i++)
-                {
-                    if (finalSprites[i] != sprites[i])
-                    {
-                        if (finalSprites[i] == -1) delList.Add(i); else putList.Add(i);
-                        changedSprites.Add(i, sprites[i], finalSprites[i]);
-                    }
-                }
-
-                try
-                {
-                    double scale = (ZoomSlider != null ? ZoomSlider.Value : 1.0);
-
-                    // Clear pixel footprints and apply deletions first
-                    foreach (var idx in delList)
-                    {
-                        int old = sprites[idx];
-                        if (old != -1)
-                        {
-                            int animated = GetAnimatedSpriteIndex(old);
-                            int sx = idx % mapWidth; int sy = idx / mapWidth;
-                            int fminX = sx - 1; int fmaxX = sx + 1; int fminY = sy - 2; int fmaxY = sy + 2;
-                            if (animated >= 3000 && animated <= 3029)
+                            int dstIdx = (destY + yy) * mapWidth + (destX + xx);
+                            if (dstIdx >= 0 && dstIdx < finalTiles.Length)
                             {
-                                if (animated >= 3011 && animated <= 3014)
-                                {
-                                    fminX = sx; fmaxX = sx + 2; fminY = sy; fmaxY = sy + 1;
-                                }
-                                else
-                                {
-                                    fminX = sx; fmaxX = sx + 1; fminY = sy; fmaxY = sy + 2;
-                                }
+                                tileMappings.Add((srcIdx, dstIdx, val));
                             }
-                            fminX = Math.Max(0, fminX); fminY = Math.Max(0, fminY); fmaxX = Math.Min(mapWidth - 1, fmaxX); fmaxY = Math.Min(mapHeight - 1, fmaxY);
-                            ClearPortalsBitmapTileRect(fminX, fminY, fmaxX, fmaxY, scale, mapViewportPadding);
-                            ClearSpritesBitmapTileRect(fminX, fminY, fmaxX, fmaxY, scale, mapViewportPadding);
                         }
-                        sprites[idx] = -1;
                     }
 
-                    // Rebuild so deletions are visible
-                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-
-                    // Apply placements
-                    foreach (var idx in putList)
+                    if (selSprites != null && spritesLayerActive)
                     {
-                        sprites[idx] = finalSprites[idx];
+                        int sval = selSprites[yy * selW + xx];
+                        if (sval != -1)
+                        {
+                            int sDstIdx = (destY + yy) * mapWidth + (destX + xx);
+                            if (sDstIdx >= 0 && sDstIdx < finalSprites.Length)
+                            {
+                                spriteMappings.Add((srcIdx, sDstIdx, sval));
+                            }
+                        }
                     }
-
-                    if (!changedSprites.IsEmpty() && !suppressUndoRecording)
-                    {
-                        undoStack.Push(changedSprites);
-                        redoStack.Clear();
-                        hasUnsavedChanges = true;
-                    }
-
-                    // Final rebuild
-                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
                 }
-                catch { }
             }
+
+            // Build destination sets so we don't clear a source that is also a destination of some mapping
+            var tileDstSet = new System.Collections.Generic.HashSet<int>();
+            foreach (var m in tileMappings) tileDstSet.Add(m.dst);
+            var spriteDstSet = new System.Collections.Generic.HashSet<int>();
+            foreach (var m in spriteMappings) spriteDstSet.Add(m.dst);
+
+            // Apply mappings to finals: set destinations first, then clear sources only if source is not a destination
+            foreach (var m in tileMappings)
+            {
+                finalTiles[m.dst] = m.val;
+            }
+            foreach (var m in tileMappings)
+            {
+                if (m.dst != m.src && !tileDstSet.Contains(m.src)) finalTiles[m.src] = -1;
+            }
+
+            foreach (var m in spriteMappings)
+            {
+                finalSprites[m.dst] = m.val;
+            }
+            foreach (var m in spriteMappings)
+            {
+                if (m.dst != m.src && !spriteDstSet.Contains(m.src)) finalSprites[m.src] = -1;
+            }
+
+            // Build del/put lists for tiles and sprites by comparing final vs current
+            var delTiles = new System.Collections.Generic.List<int>();
+            var putTiles = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < finalTiles.Length; i++)
+            {
+                if (finalTiles[i] != tiles[i])
+                {
+                    if (finalTiles[i] == -1) delTiles.Add(i); else putTiles.Add(i);
+                    tileChanges.Add(i, tiles[i], finalTiles[i]);
+                }
+            }
+
+            var delSprites = new System.Collections.Generic.List<int>();
+            var putSprites = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < finalSprites.Length; i++)
+            {
+                if (finalSprites[i] != sprites[i])
+                {
+                    if (finalSprites[i] == -1) delSprites.Add(i); else putSprites.Add(i);
+                    spriteChanges.Add(i, sprites[i], finalSprites[i]);
+                }
+            }
+
+            // Apply deletions for both layers first
+            foreach (var idx in delTiles) tiles[idx] = -1;
+            foreach (var idx in delSprites)
+            {
+                // For sprites, clear the pixel footprints for affected indices
+                int old = sprites[idx];
+                if (old != -1)
+                {
+                    int animated = GetAnimatedSpriteIndex(old);
+                    int sx = idx % mapWidth; int sy = idx / mapWidth;
+                    int fminX = sx - 1; int fmaxX = sx + 1; int fminY = sy - 2; int fmaxY = sy + 2;
+                    if (animated >= 3000 && animated <= 3029)
+                    {
+                        if (animated >= 3011 && animated <= 3014)
+                        {
+                            fminX = sx; fmaxX = sx + 2; fminY = sy; fmaxY = sy + 1;
+                        }
+                        else
+                        {
+                            fminX = sx; fmaxX = sx + 1; fminY = sy; fmaxY = sy + 2;
+                        }
+                    }
+                    fminX = Math.Max(0, fminX); fminY = Math.Max(0, fminY); fmaxX = Math.Min(mapWidth - 1, fmaxX); fmaxY = Math.Min(mapHeight - 1, fmaxY);
+                    ClearPortalsBitmapTileRect(fminX, fminY, fmaxX, fmaxY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                    ClearSpritesBitmapTileRect(fminX, fminY, fmaxX, fmaxY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                }
+                sprites[idx] = -1;
+            }
+
+            // Rebuild both layers so deletions are visible
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+
+            // Apply placements for both layers
+            foreach (var idx in putTiles) tiles[idx] = finalTiles[idx];
+            foreach (var idx in putSprites) sprites[idx] = finalSprites[idx];
+
+            if (!tileChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileChanges); redoStack.Clear(); hasUnsavedChanges = true; }
+            if (!spriteChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteChanges); redoStack.Clear(); hasUnsavedChanges = true; }
+
+            // Final rebuild
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            
+            
             
             // Update selection to new destination: preserve sparse selection membership only for cells that were selected
             var newSelection = new System.Collections.Generic.HashSet<int>();
