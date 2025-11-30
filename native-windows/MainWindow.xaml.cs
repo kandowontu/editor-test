@@ -694,6 +694,11 @@ namespace FamidashEditor
     // Star decoration 2-frame preview animation (sprite 0x36)
     private BitmapSource[]? starFrame1;
     private BitmapSource[]? starFrame2;
+    // New decorations: pulsing ball (0x49) and music note (0x4A)
+    private BitmapSource[]? pulsingBallFrame1;
+    private BitmapSource[]? pulsingBallFrame2;
+    private BitmapSource[]? musicNoteFrame1;
+    private BitmapSource[]? musicNoteFrame2;
     // Additional decoration two-frame preview animations
     private BitmapSource[]? diamondFrame1; // sprite 0x32
     private BitmapSource[]? diamondFrame2;
@@ -811,7 +816,7 @@ namespace FamidashEditor
     // Lock for thread-safe access to the tinted caches when precomputing on background threads
     private readonly object tintedCacheLock = new object();
     // Decoration sprite ids that should receive player tinting
-    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A };
+    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
     // Portal debug log path (initialized at startup)
     private string? portalDebugPath = null;
 
@@ -2046,6 +2051,8 @@ namespace FamidashEditor
 
             // Include star two-frame preview frames and additional decorations
             anyOrbFramesAvailable = anyOrbFramesAvailable || (starFrame1 != null && starFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (pulsingBallFrame1 != null && pulsingBallFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (musicNoteFrame1 != null && musicNoteFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (diamondFrame1 != null && diamondFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (diamondHalfFrame1 != null && diamondHalfFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (questionMarkFrame1 != null && questionMarkFrame2 != null);
@@ -2090,8 +2097,8 @@ namespace FamidashEditor
                             spriteIdx == 0x25 || spriteIdx == 0x26 || // Pink pad down/up
                             // Dash/teleport/spider two-frame sprites
                             spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
-                            // Decorations
-                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F || spriteIdx == 0x2B || spriteIdx == 0x3B || spriteIdx == 0x2A || spriteIdx == 0x3A)
+                            // Decorations (including new pulsing/music decorations)
+                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F || spriteIdx == 0x2B || spriteIdx == 0x3B || spriteIdx == 0x2A || spriteIdx == 0x3A || spriteIdx == 0x49 || spriteIdx == 0x4A)
                         {
                             hasAnimatedOrbs = true;
                             if (animationFrame % 60 == 0)
@@ -2141,8 +2148,8 @@ namespace FamidashEditor
                                         spriteIdx == 0x1B || // Coin types
                                         // New dash orb sprites
                                         spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
-                                        // Decorations
-                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F || spriteIdx == 0x2B || spriteIdx == 0x3B || spriteIdx == 0x2A || spriteIdx == 0x3A)
+                                        // Decorations (including pulsing ball 0x49 and music note 0x4A)
+                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F || spriteIdx == 0x2B || spriteIdx == 0x3B || spriteIdx == 0x2A || spriteIdx == 0x3A || spriteIdx == 0x49 || spriteIdx == 0x4A)
                                 {
                                     UpdateSpriteBitmapAtLocked(x, y, spriteIdx, scale, mapViewportPadding, spritePixelW, spritePixelH, dpi);
                                 }
@@ -2392,6 +2399,9 @@ namespace FamidashEditor
             if (originalIndex == 0x2A) return GetTwoFrameCustomIndex(2140); // pole-long (2140/2141)
             if (originalIndex == 0x3A) return GetTwoFrameCustomIndex(2142); // pole-long upside-down (2142/2143)
             if (originalIndex == 0x36) return GetTwoFrameCustomIndex(2110); // star (2110/2111)
+            // New decorations mapping: pulsing ball (0x49) and music note (0x4A)
+            if (originalIndex == 0x49) return GetTwoFrameCustomIndex(2144); // pulsing ball (2144/2145)
+            if (originalIndex == 0x4A) return GetTwoFrameCustomIndex(2146); // music note (2146/2147)
             // Chain decorations (preview-only, single-frame)
             if (originalIndex == 0x2D) return 2126; // chain (2126)
             if (originalIndex == 0x3D) return 2127; // chain-upsidedown (2127)
@@ -3073,6 +3083,28 @@ namespace FamidashEditor
                 {
                     case 2142: return poleLongUpsideDownFrame1?[0];
                     case 2143: return poleLongUpsideDownFrame2?[0];
+                    default: return null;
+                }
+            }
+
+            // Pulsing ball two-frame preview: 2144-2145 (sprite 0x49)
+            if (customIndex >= 2144 && customIndex <= 2145)
+            {
+                switch (customIndex)
+                {
+                    case 2144: return pulsingBallFrame1?[0];
+                    case 2145: return pulsingBallFrame2?[0];
+                    default: return null;
+                }
+            }
+
+            // Music note two-frame preview: 2146-2147 (sprite 0x4A)
+            if (customIndex >= 2146 && customIndex <= 2147)
+            {
+                switch (customIndex)
+                {
+                    case 2146: return musicNoteFrame1?[0];
+                    case 2147: return musicNoteFrame2?[0];
                     default: return null;
                 }
             }
@@ -4549,6 +4581,9 @@ namespace FamidashEditor
                 LoadTwoFrameOrb("spider-orb-upwards", ref spiderOrbUpFrame1, ref spiderOrbUpFrame2);
                 // Star two-frame preview animation (sprite 0x36)
                 LoadTwoFrameOrb("star", ref starFrame1, ref starFrame2);
+                // New decorations two-frame previews
+                LoadTwoFrameOrb("pulsing-ball", ref pulsingBallFrame1, ref pulsingBallFrame2); // sprite 0x49
+                LoadTwoFrameOrb("music-note", ref musicNoteFrame1, ref musicNoteFrame2); // sprite 0x4A
                 // Additional decoration two-frame previews
                 LoadTwoFrameOrb("diamond", ref diamondFrame1, ref diamondFrame2); // sprite 0x32
                 LoadTwoFrameOrb("diamond-half", ref diamondHalfFrame1, ref diamondHalfFrame2); // sprite 0x33
@@ -7707,8 +7742,8 @@ namespace FamidashEditor
             // Set the position key for random frame offsets (unique per position on map)
             currentSpritePositionKey = y * mapWidth + x;
             
-            // Debug: Log when we're updating an orb or coin (periodic)
-              if ((spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
+                        // Debug: Log when we're updating an orb or coin (periodic)
+                            if ((spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
                   spriteIdx == 0x05 || // Blue
                   spriteIdx == 0x06 || // Pink
                   spriteIdx == 0x27 || // Green
@@ -7716,7 +7751,7 @@ namespace FamidashEditor
                   spriteIdx == 0x44 || // Black
                   spriteIdx == 0x7A || // White
                   spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
-                  spriteIdx == 0x36) && animationFrame % 60 == 0)
+                                    spriteIdx == 0x36 || spriteIdx == 0x49 || spriteIdx == 0x4A) && animationFrame % 60 == 0)
             {
                 System.Diagnostics.Debug.WriteLine($"UpdateSpriteBitmapAtLocked: Updating animated sprite 0x{spriteIdx:X2} at ({x},{y}), previewMode={previewMode}");
             }
@@ -7786,7 +7821,7 @@ namespace FamidashEditor
                     sprite = GetCustomAnimationSprite(animatedIdx);
 
                     // Lightweight diagnostic: sample first pixel of pad frames to detect per-frame changes
-                    if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26 || spriteIdx == 0x7A || spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || spriteIdx == 0x36))
+                    if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26 || spriteIdx == 0x7A || spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || spriteIdx == 0x36 || spriteIdx == 0x49 || spriteIdx == 0x4A))
                     {
                         try
                         {

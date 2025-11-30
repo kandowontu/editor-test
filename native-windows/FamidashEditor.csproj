@@ -196,6 +196,11 @@
     <EmbeddedResource Include="..\pole-long-upsidedown-frame2.png" />
     <!-- Chain preview decorations -->
     <EmbeddedResource Include="..\chain.png" />
+    <!-- New decorations: pulsing ball and music note two-frame previews -->
+    <EmbeddedResource Include="..\pulsing-ball-frame1.png" />
+    <EmbeddedResource Include="..\pulsing-ball-frame2.png" />
+    <EmbeddedResource Include="..\music-note-frame1.png" />
+    <EmbeddedResource Include="..\music-note-frame2.png" />
     <EmbeddedResource Include="..\chain-upsidedown.png" />
     <!-- Speed portal preview assets -->
     <EmbeddedResource Include="..\speed-05x.png" />
