@@ -1874,7 +1874,7 @@ namespace FamidashEditor
                     // Apply choice and rebuild background to apply change immediately
                     try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
                     // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
-                    try { if (lockSpritesToSet) { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } } catch { }
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } catch { }
                 };
                 MenuOptionNoParallax.Unchecked += (s, e) =>
                 {
@@ -1883,7 +1883,7 @@ namespace FamidashEditor
                     try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
                     try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
                     // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
-                    try { if (lockSpritesToSet) { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } } catch { }
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } catch { }
                 };
             }
             
@@ -12921,6 +12921,8 @@ namespace FamidashEditor
                 try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
                 // If accurate tileset swapping is enabled, reapply so the correct tileset (Slopesa vs SlopesNone) is selected
                 try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+                // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
+                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } catch { }
             }
             finally { suppressNoParallaxHandler = false; }
         }
