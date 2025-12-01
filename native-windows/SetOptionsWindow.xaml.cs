@@ -7,6 +7,14 @@ using System.Text.RegularExpressions;
 
 namespace FamidashEditor
 {
+    // Shared data class for sprite offset entries from JSON
+    public class ObjectOffsetEntry
+    {
+        public object? coordinates { get; set; } // Can be [int, int] or [[int, int], [int, int], ...]
+        public int? offsetX { get; set; }
+        public int? offsetY { get; set; }
+    }
+
     public partial class SetOptionsWindow : Window
     {
         public string SelectedDeco { get; private set; } = "DECO1";
@@ -310,6 +318,13 @@ namespace FamidashEditor
                     dataChanged = true;
                 }
 
+                // Apply sprite object offsets
+                if (levelData.objectOffsets != null && levelData.objectOffsets.Length > 0)
+                {
+                    mainWindow.ApplySpriteOffsets(levelData.objectOffsets);
+                    dataChanged = true;
+                }
+
                 if (dataChanged)
                 {
                     // Save to level-specific config file
@@ -384,6 +399,7 @@ namespace FamidashEditor
             public string? blockSet { get; set; }
             public string? sawSet { get; set; }
             public bool? parallaxDisable { get; set; }
+            public ObjectOffsetEntry[]? objectOffsets { get; set; }
         }
     }
 }

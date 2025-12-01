@@ -254,6 +254,9 @@
                             <Canvas x:Name="IncompatibleOverlay" IsHitTestVisible="False" />
                         <!-- Ghost image shown while dragging a selection -->
                         <Image x:Name="GhostImage" Visibility="Collapsed" IsHitTestVisible="False" Opacity="0.75" />
+                        <!-- Offset sprite tooltip overlay -->
+                        <Rectangle x:Name="OffsetGhostTile" Fill="Transparent" Stroke="#88FFFFFF" StrokeThickness="1" StrokeDashArray="2,2" Visibility="Collapsed" IsHitTestVisible="False" />
+                        <TextBlock x:Name="OffsetTooltipText" Visibility="Collapsed" IsHitTestVisible="False" Background="#DD000000" Foreground="White" Padding="4,2" FontSize="10" />
                 </Canvas>
             </Grid>
         </ScrollViewer>

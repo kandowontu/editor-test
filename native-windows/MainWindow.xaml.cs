@@ -51,6 +51,10 @@ namespace FamidashEditor
     private int mapHeight = 27;
     private int[] tiles = Array.Empty<int>();
     private int[] sprites = Array.Empty<int>(); // separate layer for sprites
+    // Sprite pixel offsets: key is (y * mapWidth + x), value is (offsetX, offsetY) in pixels
+    // NOTE: These offsets are for VISUAL RENDERING ONLY. They are loaded from JSON metadata
+    // but are NOT saved to TMX files. Sprites are always saved at their grid anchor positions.
+    private Dictionary<int, (int offsetX, int offsetY)> spritePixelOffsets = new Dictionary<int, (int offsetX, int offsetY)>();
     // Legacy trigger offset option (default off)
     private bool useLegacyTriggerOffset = false;
     // Preview option: hide color triggers in preview mode
@@ -2174,6 +2178,10 @@ namespace FamidashEditor
             mapWidth = newWidth; mapHeight = newHeight; 
             tiles = newTiles;
             sprites = newSprites;
+            
+            // Clear all sprite pixel offsets since coordinates have changed
+            spritePixelOffsets.Clear();
+            
             if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
             
@@ -8877,6 +8885,17 @@ namespace FamidashEditor
                 int destX = Math.Max(0, padPxX + x * spritePixelW);
                 int destY = Math.Max(0, padPxY + y * spritePixelH);
 
+                // Apply sprite pixel offsets from JSON metadata (if any)
+                int posKey = y * mapWidth + x;
+                if (spritePixelOffsets.TryGetValue(posKey, out var offset))
+                {
+                    // Scale the offset by the current scale and DPI
+                    int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
+                    int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
+                    destX += scaledOffsetX;
+                    destY += scaledOffsetY;
+                }
+
                 // Shift certain decoration previews up so they visually hang from above.
                 // Chains: normal chain (0x2D) continues to hang a bit higher (1.5 tiles shift).
                 // The upside-down chain (0x3D) previously nudged up by 1 tile (16px); remove
@@ -9486,6 +9505,43 @@ namespace FamidashEditor
                         }
                     }
                 }
+                
+                // Draw visual indicator for offset sprites (when not in preview mode)
+                if (!previewMode && spritePixelOffsets.ContainsKey(posKey))
+                {
+                    try
+                    {
+                        // Draw a small white box in the bottom-right corner of the sprite tile
+                        int indicatorSize = Math.Max(3, (int)Math.Round(4 * scale * dpi.DpiScaleX));
+                        int indicatorX = destX + spritePixelW - indicatorSize - 1;
+                        int indicatorY = destY + spritePixelH - indicatorSize - 1;
+                        
+                        unsafe
+                        {
+                            for (int iy = 0; iy < indicatorSize; iy++)
+                            {
+                                int screenY = indicatorY + iy;
+                                if (screenY < 0 || screenY >= cachedPixelHeight) continue;
+                                
+                                for (int ix = 0; ix < indicatorSize; ix++)
+                                {
+                                    int screenX = indicatorX + ix;
+                                    if (screenX < 0 || screenX >= cachedPixelWidth) continue;
+                                    
+                                    long destOffset = screenY * backBufferStride + screenX * 4;
+                                    byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                                    
+                                    // White color
+                                    destPtr[0] = 255; // B
+                                    destPtr[1] = 255; // G
+                                    destPtr[2] = 255; // R
+                                    destPtr[3] = 255; // A
+                                }
+                            }
+                        }
+                    }
+                    catch { /* ignore indicator drawing failures */ }
+                }
             }
             catch (Exception ex)
             {
@@ -9526,6 +9582,17 @@ namespace FamidashEditor
             int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
             int destX = Math.Max(0, padPxX + x * spritePixelW);
             int destY = Math.Max(0, padPxY + y * spritePixelH);
+
+            // Apply sprite pixel offsets from JSON metadata (if any)
+            int posKey = y * mapWidth + x;
+            if (spritePixelOffsets.TryGetValue(posKey, out var offset))
+            {
+                // Scale the offset by the current scale and DPI
+                int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
+                int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
+                destX += scaledOffsetX;
+                destY += scaledOffsetY;
+            }
 
             // Special-case: in preview mode, certain horizontal gravity portal previews
             // should be visually shifted up by one tile (16px) to align correctly.
@@ -9974,6 +10041,71 @@ namespace FamidashEditor
             }
             
             UpdateCoords(pos);
+            
+            // Check if hovering over an offset sprite and show tooltip
+            try
+            {
+                if (!previewMode && OffsetGhostTile != null && OffsetTooltipText != null)
+                {
+                    var tt = ViewportPointToTile(pos);
+                    int tx = tt.x; int ty = tt.y;
+                    
+                    if (tx >= 0 && tx < mapWidth && ty >= 0 && ty < mapHeight)
+                    {
+                        int posKey = ty * mapWidth + tx;
+                        
+                        if (spritePixelOffsets.TryGetValue(posKey, out var offset) && sprites[posKey] != -1)
+                        {
+                            // Show the ghost tile at the original position
+                            var dpi = VisualTreeHelper.GetDpi(this);
+                            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                            
+                            // Original position (before offset)
+                            int leftPx = padPxX + tx * tilePixelW;
+                            int topPx = padPxY + ty * tilePixelH + gridRenderShiftYPx;
+                            double left = (double)leftPx / dpi.DpiScaleX;
+                            double top = (double)topPx / dpi.DpiScaleY;
+                            double widthDiu = (double)tilePixelW / dpi.DpiScaleX;
+                            double heightDiu = (double)tilePixelH / dpi.DpiScaleY;
+                            
+                            OffsetGhostTile.Width = widthDiu;
+                            OffsetGhostTile.Height = heightDiu;
+                            Canvas.SetLeft(OffsetGhostTile, left);
+                            Canvas.SetTop(OffsetGhostTile, top);
+                            OffsetGhostTile.Visibility = Visibility.Visible;
+                            
+                            // Show tooltip text with offset information
+                            string tooltipText = $"Offset: X={offset.offsetX:+#;-#;0} Y={offset.offsetY:+#;-#;0}";
+                            OffsetTooltipText.Text = tooltipText;
+                            
+                            // Position tooltip near the cursor
+                            Canvas.SetLeft(OffsetTooltipText, pos.X + 15);
+                            Canvas.SetTop(OffsetTooltipText, pos.Y + 15);
+                            OffsetTooltipText.Visibility = Visibility.Visible;
+                        }
+                        else
+                        {
+                            OffsetGhostTile.Visibility = Visibility.Collapsed;
+                            OffsetTooltipText.Visibility = Visibility.Collapsed;
+                        }
+                    }
+                    else
+                    {
+                        OffsetGhostTile.Visibility = Visibility.Collapsed;
+                        OffsetTooltipText.Visibility = Visibility.Collapsed;
+                    }
+                }
+            }
+            catch
+            {
+                if (OffsetGhostTile != null) OffsetGhostTile.Visibility = Visibility.Collapsed;
+                if (OffsetTooltipText != null) OffsetTooltipText.Visibility = Visibility.Collapsed;
+            }
+            
             // If actively selecting, update the selection rectangle
             if (isDraggingSelection && e.LeftButton == MouseButtonState.Pressed)
             {
@@ -11664,7 +11796,16 @@ namespace FamidashEditor
 
             // Apply placements for both layers
             foreach (var idx in putTiles) tiles[idx] = finalTiles[idx];
-            foreach (var idx in putSprites) sprites[idx] = finalSprites[idx];
+            foreach (var idx in putSprites)
+            {
+                sprites[idx] = finalSprites[idx];
+                
+                // Clear any pixel offset when moving sprites (force grid snapping)
+                if (spritePixelOffsets.ContainsKey(idx))
+                {
+                    spritePixelOffsets.Remove(idx);
+                }
+            }
 
             if (!tileChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileChanges); redoStack.Clear(); hasUnsavedChanges = true; }
             if (!spriteChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteChanges); redoStack.Clear(); hasUnsavedChanges = true; }
@@ -11972,6 +12113,12 @@ namespace FamidashEditor
                         if (previewMode && IsPortalSprite(neu))
                         {
                             placedPortal = true;
+                        }
+                        
+                        // Clear any pixel offset when placing/replacing a sprite (force grid snapping)
+                        if (spritePixelOffsets.ContainsKey(idx))
+                        {
+                            spritePixelOffsets.Remove(idx);
                         }
                         
                         if (!suppressUndoRecording)
@@ -12925,6 +13072,84 @@ namespace FamidashEditor
                 try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } catch { }
             }
             finally { suppressNoParallaxHandler = false; }
+        }
+
+        public void ApplySpriteOffsets(ObjectOffsetEntry[] offsetEntries)
+        {
+            try
+            {
+                // Clear existing offsets
+                spritePixelOffsets.Clear();
+
+                foreach (var entry in offsetEntries)
+                {
+                    if (entry == null) continue;
+                    
+                    int ox = entry.offsetX ?? 0;
+                    int oy = entry.offsetY ?? 0;
+                    
+                    // Skip if no offsets defined
+                    if (ox == 0 && oy == 0)
+                        continue;
+                    
+                    // Parse coordinates
+                    if (entry.coordinates != null)
+                    {
+                        // Handle JsonElement coordinates
+                        if (entry.coordinates is JsonElement coordsJson)
+                        {
+                            if (coordsJson.ValueKind == JsonValueKind.Array)
+                            {
+                                var coordArray = coordsJson.EnumerateArray().ToList();
+                                
+                                // Check if first element is an array (nested coords) or a number (single coord)
+                                if (coordArray.Count > 0)
+                                {
+                                    var first = coordArray[0];
+                                    if (first.ValueKind == JsonValueKind.Array)
+                                    {
+                                        // Multiple coordinates: [[x,y], [x,y], ...]
+                                        foreach (var coord in coordArray)
+                                        {
+                                            var xy = coord.EnumerateArray().ToList();
+                                            if (xy.Count >= 2)
+                                            {
+                                                int x = xy[0].GetInt32();
+                                                int y = xy[1].GetInt32();
+                                                int key = y * mapWidth + x;
+                                                spritePixelOffsets[key] = (ox, oy);
+                                            }
+                                        }
+                                    }
+                                    else if (first.ValueKind == JsonValueKind.Number)
+                                    {
+                                        // Single coordinate: [x, y]
+                                        if (coordArray.Count >= 2)
+                                        {
+                                            int x = coordArray[0].GetInt32();
+                                            int y = coordArray[1].GetInt32();
+                                            int key = y * mapWidth + x;
+                                            spritePixelOffsets[key] = (ox, oy);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Trigger a redraw to apply the offsets
+                try
+                {
+                    RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
+                    Redraw();
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error applying sprite offsets: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         // Public wrappers so child dialogs can invoke the tint pickers on the main window
