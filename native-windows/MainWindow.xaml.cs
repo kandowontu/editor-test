@@ -1874,7 +1874,7 @@ namespace FamidashEditor
                     // Apply choice and rebuild background to apply change immediately
                     try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
                     // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
-                    try { if (lockSpritesToSet) { ApplyLockSpritesToSet(); Redraw(); } } catch { }
+                    try { if (lockSpritesToSet) { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } } catch { }
                 };
                 MenuOptionNoParallax.Unchecked += (s, e) =>
                 {
@@ -1883,7 +1883,7 @@ namespace FamidashEditor
                     try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
                     try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
                     // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
-                    try { if (lockSpritesToSet) { ApplyLockSpritesToSet(); Redraw(); } } catch { }
+                    try { if (lockSpritesToSet) { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } } catch { }
                 };
             }
             
