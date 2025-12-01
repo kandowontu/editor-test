@@ -324,6 +324,13 @@ namespace FamidashEditor
                     mainWindow.ApplySpriteOffsets(levelData.objectOffsets);
                     dataChanged = true;
                 }
+                
+                // Set song selection
+                if (!string.IsNullOrEmpty(levelData.songID))
+                {
+                    mainWindow.SetSongFromMetadata(levelData.songID);
+                    dataChanged = true;
+                }
 
                 if (dataChanged)
                 {
@@ -400,6 +407,7 @@ namespace FamidashEditor
             public string? sawSet { get; set; }
             public bool? parallaxDisable { get; set; }
             public ObjectOffsetEntry[]? objectOffsets { get; set; }
+            public string? songID { get; set; }
         }
     }
 }

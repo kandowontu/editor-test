@@ -159,6 +159,7 @@ namespace FamidashEditor
         public Color BackgroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
         public Color GroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
         public Color TileTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
+        public string? SelectedSong { get; set; } = null;
     }
     
     private List<FileTabData> openFiles = new List<FileTabData>();
@@ -237,6 +238,7 @@ namespace FamidashEditor
         public string? BlockSet { get; set; } = "BLOCKSA";
         public string? SpikeSet { get; set; } = "SPIKESA";
         public bool LockSpritesToSet { get; set; } = false;
+        public string? SelectedSong { get; set; } = null;
     }
 
     // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
@@ -246,6 +248,44 @@ namespace FamidashEditor
     // When true, prefer external per-set tileset PNGs (if available) and swap famidash.bmp at runtime
     private bool showAccurateTileset = false;
     public bool ShowAccurateTileset => showAccurateTileset;
+    
+    // Helper function to normalize song names for mapping
+    private string NormalizeSongName(string songName)
+    {
+        if (string.IsNullOrEmpty(songName)) return "";
+        // Replace spaces with underscores, lowercase everything, strip special symbols
+        var normalized = songName.ToLowerInvariant()
+            .Replace(' ', '_')
+            .Replace("-", "")
+            .Replace("'", "")
+            .Replace("!", "")
+            .Replace("?", "")
+            .Replace(".", "")
+            .Replace(",", "")
+            .Replace(":", "")
+            .Replace(";", "")
+            .Replace("(", "")
+            .Replace(")", "")
+            .Replace("[", "")
+            .Replace("]", "")
+            .Replace("{", "")
+            .Replace("}", "")
+            .Replace("&", "")
+            .Replace("#", "")
+            .Replace("@", "")
+            .Replace("$", "")
+            .Replace("%", "")
+            .Replace("^", "")
+            .Replace("*", "")
+            .Replace("+", "")
+            .Replace("=", "")
+            .Replace("/", "")
+            .Replace("\\", "")
+            .Replace("|", "")
+            .Replace("<", "")
+            .Replace(">", "");
+        return normalized;
+    }
 
     // Public setter used by dialogs so behavior applies identically
         public void SetLockSpritesToSet(bool enabled, string? decoOverride = null)
@@ -704,6 +744,16 @@ namespace FamidashEditor
             config.DecoSet = loadedDecoSet;
             config.BlockSet = loadedBlockSet;
             config.SpikeSet = loadedSpikeSet;
+            
+            // Save currently selected song
+            try
+            {
+                if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Content != null)
+                {
+                    config.SelectedSong = cbi.Content.ToString();
+                }
+            }
+            catch { }
 
             string configPath = GetConfigPath(tmxFilePath);
             // Serialize and write the config file, omitting nulls
@@ -820,6 +870,26 @@ namespace FamidashEditor
                     try { loadedBlockSet = string.IsNullOrEmpty(config.BlockSet) ? "BLOCKSA" : config.BlockSet; } catch { loadedBlockSet = "BLOCKSA"; }
                     try { loadedSpikeSet = string.IsNullOrEmpty(config.SpikeSet) ? "SPIKESA" : config.SpikeSet; } catch { loadedSpikeSet = "SPIKESA"; }
                     // LockSpritesToSet is now a global editor setting; per-TMX configs no longer contain it
+                    
+                    // Apply selected song if present
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(config.SelectedSong) && FamiTrackCombo != null)
+                        {
+                            // Try to find and select the song in the combo box
+                            for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                            {
+                                if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                                    item.Content?.ToString() == config.SelectedSong)
+                                {
+                                    FamiTrackCombo.SelectedIndex = i;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                    
                     if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet} block:{loadedBlockSet} spike:{loadedSpikeSet}";
 
                     // Update tinted images for all tints (whether from config or reloaded from global)
@@ -5299,6 +5369,9 @@ namespace FamidashEditor
         {
             if (index < 0 || index >= openFiles.Count) return;
             
+            // Stop music player when closing a tab
+            try { famiIntegration.Stop(); } catch { }
+            
             var tabData = openFiles[index];
             
             // Check for unsaved changes
@@ -5466,6 +5539,25 @@ namespace FamidashEditor
                     groundTint = tabData.GroundTint;
                     tileTint = tabData.TileTint;
                     
+                    // Restore selected song
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(tabData.SelectedSong) && FamiTrackCombo != null)
+                        {
+                            // Try to find and select the song in the combo box
+                            for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                            {
+                                if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                                    item.Content?.ToString() == tabData.SelectedSong)
+                                {
+                                    FamiTrackCombo.SelectedIndex = i;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                    
                     // Update NoParallax menu checkbox
                     if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
                     
@@ -5531,6 +5623,16 @@ namespace FamidashEditor
             tabData.BackgroundTint = backgroundTint;
             tabData.GroundTint = groundTint;
             tabData.TileTint = tileTint;
+            
+            // Save selected song
+            try
+            {
+                if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Content != null)
+                {
+                    tabData.SelectedSong = cbi.Content.ToString();
+                }
+            }
+            catch { }
         }
 
         private void FileTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -6463,6 +6565,19 @@ namespace FamidashEditor
         private void TryLoadFamiAlbumParsedJson()
         {
             if (FamiTrackCombo == null) return;
+            
+            // Hook up selection changed event to auto-save song choice
+            FamiTrackCombo.SelectionChanged += (s, e) =>
+            {
+                try
+                {
+                    if (!string.IsNullOrEmpty(currentFilePath))
+                    {
+                        SaveTmxConfig(currentFilePath);
+                    }
+                }
+                catch { }
+            };
 
             var jsonCandidates = new System.Collections.Generic.List<string>
             {
@@ -6621,8 +6736,18 @@ namespace FamidashEditor
                     var item = new System.Windows.Controls.ComboBoxItem() { Content = parsed[i], Tag = tagIndex };
                     FamiTrackCombo.Items.Add(item);
                 }
-                // Combo population complete
-                FamiTrackCombo.SelectedIndex = 0;
+                // Combo population complete - default to "Stereo Madness" if available
+                int defaultIndex = 0;
+                for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                {
+                    if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                        item.Content?.ToString()?.Equals("Stereo Madness", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        defaultIndex = i;
+                        break;
+                    }
+                }
+                FamiTrackCombo.SelectedIndex = defaultIndex;
                 try { if (StatusText != null) StatusText.Text = $"Loaded {parsed.Count} names from {(foundJson != null ? Path.GetFileName(foundJson) : (albumTxtPath != null ? Path.GetFileName(albumTxtPath) : "unknown"))}"; } catch { }
             }
             else
@@ -14247,6 +14372,24 @@ namespace FamidashEditor
             try { PopulateTilesPanel(); } catch { }
             try { PopulateSpritesPanel(); } catch { }
             
+            // Set default song to Stereo Madness
+            try
+            {
+                if (FamiTrackCombo != null)
+                {
+                    for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                    {
+                        if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                            item.Content?.ToString()?.Equals("Stereo Madness", StringComparison.OrdinalIgnoreCase) == true)
+                        {
+                            FamiTrackCombo.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { }
+            
             // Clear undo/redo stacks
             undoStack.Clear();
             redoStack.Clear();
@@ -14265,6 +14408,14 @@ namespace FamidashEditor
             // Rebuild sprites layer and redraw the map
             try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
             Redraw();
+            
+            // Restore focus to main window
+            try
+            {
+                this.Activate();
+                this.Focus();
+            }
+            catch { }
         }
 
         private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -14416,6 +14567,58 @@ namespace FamidashEditor
                             loadedWidth = model.Width;
                             loadedHeight = model.Height;
                             loadedTiles = model.Tiles;
+                            
+                            // Try to extract and match songID from JSON
+                            try
+                            {
+                                var doc = System.Text.Json.JsonDocument.Parse(json);
+                                if (doc.RootElement.TryGetProperty("songID", out var songIdProp))
+                                {
+                                    string? songId = songIdProp.GetString();
+                                    if (!string.IsNullOrEmpty(songId) && FamiTrackCombo != null)
+                                    {
+                                        // Strip "song_" prefix if present
+                                        if (songId.StartsWith("song_", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            songId = songId.Substring(5);
+                                        }
+                                        
+                                        // Normalize the songID to match against song list
+                                        string normalizedSongId = NormalizeSongName(songId);
+                                        
+                                        // Try to find matching song in combo
+                                        bool foundSong = false;
+                                        for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                                        {
+                                            if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && item.Content != null)
+                                            {
+                                                string normalizedItemName = NormalizeSongName(item.Content.ToString() ?? "");
+                                                if (normalizedItemName == normalizedSongId)
+                                                {
+                                                    FamiTrackCombo.SelectedIndex = i;
+                                                    foundSong = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        
+                                        // If song not found, default to Stereo Madness
+                                        if (!foundSong)
+                                        {
+                                            for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                                            {
+                                                if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                                                    item.Content?.ToString()?.Equals("Stereo Madness", StringComparison.OrdinalIgnoreCase) == true)
+                                                {
+                                                    FamiTrackCombo.SelectedIndex = i;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
                         }
                     }
                     
@@ -14683,6 +14886,54 @@ namespace FamidashEditor
             if (!string.IsNullOrEmpty(currentFilePath))
             {
                 SaveTmxConfig(currentFilePath);
+            }
+        }
+        catch { }
+    }
+    
+    public void SetSongFromMetadata(string songId)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(songId) || FamiTrackCombo == null) return;
+            
+            // Strip "song_" prefix if present
+            if (songId.StartsWith("song_", StringComparison.OrdinalIgnoreCase))
+            {
+                songId = songId.Substring(5);
+            }
+            
+            // Normalize the songID to match against song list
+            string normalizedSongId = NormalizeSongName(songId);
+            
+            // Try to find matching song in combo
+            bool foundSong = false;
+            for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+            {
+                if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && item.Content != null)
+                {
+                    string normalizedItemName = NormalizeSongName(item.Content.ToString() ?? "");
+                    if (normalizedItemName == normalizedSongId)
+                    {
+                        FamiTrackCombo.SelectedIndex = i;
+                        foundSong = true;
+                        break;
+                    }
+                }
+            }
+            
+            // If song not found, default to Stereo Madness
+            if (!foundSong)
+            {
+                for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                {
+                    if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                        item.Content?.ToString()?.Equals("Stereo Madness", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        FamiTrackCombo.SelectedIndex = i;
+                        break;
+                    }
+                }
             }
         }
         catch { }
