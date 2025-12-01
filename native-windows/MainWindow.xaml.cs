@@ -9511,10 +9511,11 @@ namespace FamidashEditor
                 {
                     try
                     {
-                        // Draw a small white box in the bottom-right corner of the sprite tile
-                        int indicatorSize = Math.Max(3, (int)Math.Round(4 * scale * dpi.DpiScaleX));
-                        int indicatorX = destX + spritePixelW - indicatorSize - 1;
-                        int indicatorY = destY + spritePixelH - indicatorSize - 1;
+                        // Draw a small white box in the bottom-right corner of the shifted sprite tile
+                        int indicatorSize = Math.Max(4, (int)Math.Round(6 * scale * dpi.DpiScaleX));
+                        // Position at bottom-right of the actual rendered sprite (which includes offset)
+                        int indicatorX = destX + spritePixelW - indicatorSize - 2;
+                        int indicatorY = destY + spritePixelH - indicatorSize - 2;
                         
                         unsafe
                         {
@@ -10047,53 +10048,75 @@ namespace FamidashEditor
             {
                 if (!previewMode && OffsetGhostTile != null && OffsetTooltipText != null)
                 {
-                    var tt = ViewportPointToTile(pos);
-                    int tx = tt.x; int ty = tt.y;
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                    int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                    int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                    int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
                     
-                    if (tx >= 0 && tx < mapWidth && ty >= 0 && ty < mapHeight)
+                    // Convert mouse position to pixel coordinates
+                    int mousePxX = (int)Math.Round(pos.X * dpi.DpiScaleX);
+                    int mousePxY = (int)Math.Round(pos.Y * dpi.DpiScaleY);
+                    
+                    bool foundOffset = false;
+                    
+                    // Check all sprites with offsets to see if mouse is over any shifted sprite
+                    foreach (var kvp in spritePixelOffsets)
                     {
-                        int posKey = ty * mapWidth + tx;
+                        int posKey = kvp.Key;
+                        var offset = kvp.Value;
                         
-                        if (spritePixelOffsets.TryGetValue(posKey, out var offset) && sprites[posKey] != -1)
+                        if (sprites[posKey] == -1) continue;
+                        
+                        int tx = posKey % mapWidth;
+                        int ty = posKey / mapWidth;
+                        
+                        // Calculate shifted sprite bounds
+                        int origLeftPx = padPxX + tx * tilePixelW;
+                        int origTopPx = padPxY + ty * tilePixelH + gridRenderShiftYPx;
+                        int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
+                        int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
+                        int shiftedLeftPx = origLeftPx + scaledOffsetX;
+                        int shiftedTopPx = origTopPx + scaledOffsetY;
+                        int shiftedRightPx = shiftedLeftPx + tilePixelW;
+                        int shiftedBottomPx = shiftedTopPx + tilePixelH;
+                        
+                        // Check if mouse is within shifted sprite bounds
+                        if (mousePxX >= shiftedLeftPx && mousePxX < shiftedRightPx &&
+                            mousePxY >= shiftedTopPx && mousePxY < shiftedBottomPx)
                         {
-                            // Show the ghost tile at the original position
-                            var dpi = VisualTreeHelper.GetDpi(this);
-                            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-                            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
-                            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
-                            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
-                            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                            foundOffset = true;
                             
-                            // Original position (before offset)
-                            int leftPx = padPxX + tx * tilePixelW;
-                            int topPx = padPxY + ty * tilePixelH + gridRenderShiftYPx;
-                            double left = (double)leftPx / dpi.DpiScaleX;
-                            double top = (double)topPx / dpi.DpiScaleY;
+                            // Show ghost tile at original position
+                            double origLeft = (double)origLeftPx / dpi.DpiScaleX;
+                            double origTop = (double)origTopPx / dpi.DpiScaleY;
                             double widthDiu = (double)tilePixelW / dpi.DpiScaleX;
                             double heightDiu = (double)tilePixelH / dpi.DpiScaleY;
                             
                             OffsetGhostTile.Width = widthDiu;
                             OffsetGhostTile.Height = heightDiu;
-                            Canvas.SetLeft(OffsetGhostTile, left);
-                            Canvas.SetTop(OffsetGhostTile, top);
+                            Canvas.SetLeft(OffsetGhostTile, origLeft);
+                            Canvas.SetTop(OffsetGhostTile, origTop);
                             OffsetGhostTile.Visibility = Visibility.Visible;
                             
-                            // Show tooltip text with offset information
+                            // Show tooltip at shifted sprite location
+                            double shiftedLeft = (double)shiftedLeftPx / dpi.DpiScaleX;
+                            double shiftedTop = (double)shiftedTopPx / dpi.DpiScaleY;
+                            
                             string tooltipText = $"Offset: X={offset.offsetX:+#;-#;0} Y={offset.offsetY:+#;-#;0}";
                             OffsetTooltipText.Text = tooltipText;
                             
-                            // Position tooltip near the cursor
-                            Canvas.SetLeft(OffsetTooltipText, pos.X + 15);
-                            Canvas.SetTop(OffsetTooltipText, pos.Y + 15);
+                            // Position tooltip at the shifted sprite location
+                            Canvas.SetLeft(OffsetTooltipText, shiftedLeft + widthDiu + 5);
+                            Canvas.SetTop(OffsetTooltipText, shiftedTop);
                             OffsetTooltipText.Visibility = Visibility.Visible;
-                        }
-                        else
-                        {
-                            OffsetGhostTile.Visibility = Visibility.Collapsed;
-                            OffsetTooltipText.Visibility = Visibility.Collapsed;
+                            
+                            break; // Only show one tooltip at a time
                         }
                     }
-                    else
+                    
+                    if (!foundOffset)
                     {
                         OffsetGhostTile.Visibility = Visibility.Collapsed;
                         OffsetTooltipText.Visibility = Visibility.Collapsed;
