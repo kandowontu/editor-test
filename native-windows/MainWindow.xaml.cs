@@ -78,6 +78,10 @@ namespace FamidashEditor
     private Color backgroundTint = Color.FromArgb(0, 0, 0, 0);
     private Color groundTint = Color.FromArgb(0, 0, 0, 0);
     private Color tileTint = Color.FromArgb(0, 0, 0, 0);
+    // Default tints from global settings (used when 'Set as default' is checked)
+    private Color defaultBackgroundTint = Color.FromArgb(255, 0, 23, 116);
+    private Color defaultGroundTint = Color.FromArgb(255, 0, 23, 116);
+    private Color defaultTileTint = Color.FromArgb(255, 0, 23, 116);
     // Player tint (applied to decoration pixels that are not black/transparent)
     private Color playerTint = Color.FromArgb(0, 0, 0, 0);
     // Whether player tinting is enabled (user-selected). Default: disabled.
@@ -120,6 +124,48 @@ namespace FamidashEditor
     // Track changes and current file
     private string? currentFilePath = null;
     private bool hasUnsavedChanges = false;
+    
+    // Multiple file tabs management
+    private class FileTabData
+    {
+        public string? FilePath { get; set; }
+        public int[] Tiles { get; set; } = Array.Empty<int>();
+        public int[] Sprites { get; set; } = Array.Empty<int>();
+        public Dictionary<int, (int offsetX, int offsetY)> SpritePixelOffsets { get; set; } = new Dictionary<int, (int, int)>();
+        public int MapWidth { get; set; } = 200;
+        public int MapHeight { get; set; } = 27;
+        public bool HasUnsavedChanges { get; set; } = false;
+        public string? LoadedTilesetSource { get; set; }
+        public string? LoadedSpritesetSource { get; set; }
+        public bool LoadedHasEditorSettings { get; set; }
+        public int LoadedChunkWidth { get; set; } = 16;
+        public int LoadedChunkHeight { get; set; } = 27;
+        public string? LoadedExportTarget { get; set; }
+        public string LoadedExportFormat { get; set; } = "csv";
+        public string? LoadedParallaxSource { get; set; }
+        public double LoadedParallaxX { get; set; } = 0.9;
+        public double LoadedParallaxY { get; set; } = 0.9;
+        public bool LoadedParallaxRepeatX { get; set; } = true;
+        public bool LoadedParallaxRepeatY { get; set; } = true;
+        public bool LoadedHasParallaxLayer { get; set; }
+        public string? LoadedGroundSource { get; set; }
+        public double LoadedGroundOffsetY { get; set; } = 432;
+        public bool LoadedGroundRepeatX { get; set; } = true;
+        public bool LoadedHasGroundLayer { get; set; }
+        public string LoadedDecoSet { get; set; } = "DECO1";
+        public string LoadedBlockSet { get; set; } = "BLOCKSA";
+        public string LoadedSpikeSet { get; set; } = "SPIKESA";
+        public bool NoParallaxBg { get; set; }
+        public Color BackgroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
+        public Color GroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
+        public Color TileTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
+    }
+    
+    private List<FileTabData> openFiles = new List<FileTabData>();
+    private int currentFileIndex = -1;
+    private List<string> recentFiles = new List<string>();
+    private const int MaxRecentFiles = 10;
+    
     // Store loaded TMX metadata to preserve when saving
     private string? loadedTilesetSource = null;
     private string? loadedSpritesetSource = null;
@@ -1424,6 +1470,14 @@ namespace FamidashEditor
         {
             InitializeComponent();
             LoadSettings();
+            LoadRecentFiles();
+            
+            // Initialize default map before creating tab
+            InitDefaultMap();
+            
+            // Create initial tab for new/untitled map
+            CreateNewTab(null);
+            
             // Attempt to populate the FamiStudio track combo from a pre-parsed JSON or the album TXT
             try { TryLoadFamiAlbumParsedJson(); } catch { }
             // Wire main toolbar Play/Stop buttons (only toolbar controls should drive playback)
@@ -1627,6 +1681,7 @@ namespace FamidashEditor
                     
                     // Ensure initial layout completes before the first redraw so measurements are accurate.
                     LoadAssetsOnStart();
+                    
                     // If the user previously enabled accurate tileset switching, attempt to apply it now
                     try { if (showAccurateTileset) SetShowAccurateTileset(true); } catch { }
                     // Ensure palette UI reflects default active layer (tiles) on startup
@@ -1648,6 +1703,12 @@ namespace FamidashEditor
                                 UpdateTilesPanelWidth();
                             }
                             AdjustPaletteSizes();
+                            
+                            // Apply tints from settings after everything is initialized
+                            UpdateParallaxTint();
+                            UpdateGroundTint();
+                            UpdateTileTint();
+                            
                             Redraw();
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
                     // Install a native window hook to capture horizontal mouse wheel (WM_MOUSEHWHEEL)
@@ -1766,6 +1827,7 @@ namespace FamidashEditor
             if (MenuFileSave != null) MenuFileSave.Click += SaveButton_Click;
             if (MenuFileSaveAs != null) MenuFileSaveAs.Click += MenuFileSaveAs_Click;
             if (MenuFileLoad != null) MenuFileLoad.Click += LoadButton_Click;
+            if (MenuFileClose != null) MenuFileClose.Click += MenuFileClose_Click;
             
             if (MenuToolPlace != null) MenuToolPlace.Click += (s, e) => { if (PlaceTool != null) PlaceTool.IsChecked = true; };
             if (MenuToolMove != null) MenuToolMove.Click += (s, e) => { if (MoveTool != null) MoveTool.IsChecked = true; };
@@ -2263,6 +2325,7 @@ namespace FamidashEditor
                 // Persist as editor default if user checked 'Set as default'
                 if (dlg.SetAsDefault)
                 {
+                    defaultBackgroundTint = backgroundTint;
                     try { SaveSettingsWithTriggerOption(); } catch { }
                 }
 
@@ -2303,6 +2366,7 @@ namespace FamidashEditor
                 // Persist as editor default if user checked 'Set as default'
                 if (dlg.SetAsDefault)
                 {
+                    defaultGroundTint = groundTint;
                     try { SaveSettingsWithTriggerOption(); } catch { }
                 }
 
@@ -2341,6 +2405,7 @@ namespace FamidashEditor
                 // Persist as editor default if user checked 'Set as default'
                 if (dlg.SetAsDefault)
                 {
+                    defaultTileTint = tileTint;
                     try { SaveSettingsWithTriggerOption(); } catch { }
                 }
 
@@ -4885,6 +4950,7 @@ namespace FamidashEditor
                         var g = (byte)bt[2].GetInt32();
                         var b = (byte)bt[3].GetInt32();
                         backgroundTint = Color.FromArgb(a, r, g, b);
+                        defaultBackgroundTint = backgroundTint; // Store as default
                     }
                     // per-level: no parallax background
                     if (doc.RootElement.TryGetProperty("noParallaxBg", out var npb))
@@ -4900,6 +4966,7 @@ namespace FamidashEditor
                         var g = (byte)gt[2].GetInt32();
                         var b = (byte)gt[3].GetInt32();
                         groundTint = Color.FromArgb(a, r, g, b);
+                        defaultGroundTint = groundTint; // Store as default
                     }
                     // optional tile tint (RGBA)
                     if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
@@ -4909,6 +4976,7 @@ namespace FamidashEditor
                         var g = (byte)tt[2].GetInt32();
                         var b = (byte)tt[3].GetInt32();
                         tileTint = Color.FromArgb(a, r, g, b);
+                        defaultTileTint = tileTint; // Store as default
                     }
                     // optional legacy trigger offset
                     if (doc.RootElement.TryGetProperty("useLegacyTriggerOffset", out var lto))
@@ -5039,9 +5107,9 @@ namespace FamidashEditor
                 var obj = new {
                     version = 2,
                     background = new int[] { c.A, c.R, c.G, c.B },
-                    backgroundTint = new int[] { backgroundTint.A, backgroundTint.R, backgroundTint.G, backgroundTint.B },
-                    groundTint = new int[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B },
-                    tileTint = new int[] { tileTint.A, tileTint.R, tileTint.G, tileTint.B },
+                    backgroundTint = new int[] { defaultBackgroundTint.A, defaultBackgroundTint.R, defaultBackgroundTint.G, defaultBackgroundTint.B },
+                    groundTint = new int[] { defaultGroundTint.A, defaultGroundTint.R, defaultGroundTint.G, defaultGroundTint.B },
+                    tileTint = new int[] { defaultTileTint.A, defaultTileTint.R, defaultTileTint.G, defaultTileTint.B },
                     useLegacyTriggerOffset = useLegacyTriggerOffset,
                     swapMouseWheelScroll = swapMouseWheelScroll,
                     invertPinchGesture = invertPinchGesture,
@@ -5079,6 +5147,559 @@ namespace FamidashEditor
             sprites = Enumerable.Repeat(-1, mapWidth * mapHeight).ToArray();
             if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+        }
+
+        private void CreateNewTab(string? filePath = null)
+        {
+            var tabData = new FileTabData
+            {
+                FilePath = filePath,
+                Tiles = tiles.ToArray(),
+                Sprites = sprites.ToArray(),
+                SpritePixelOffsets = new Dictionary<int, (int, int)>(spritePixelOffsets),
+                MapWidth = mapWidth,
+                MapHeight = mapHeight,
+                HasUnsavedChanges = hasUnsavedChanges,
+                LoadedTilesetSource = loadedTilesetSource,
+                LoadedSpritesetSource = loadedSpritesetSource,
+                LoadedHasEditorSettings = loadedHasEditorSettings,
+                LoadedChunkWidth = loadedChunkWidth,
+                LoadedChunkHeight = loadedChunkHeight,
+                LoadedExportTarget = loadedExportTarget,
+                LoadedExportFormat = loadedExportFormat,
+                LoadedParallaxSource = loadedParallaxSource,
+                LoadedParallaxX = loadedParallaxX,
+                LoadedParallaxY = loadedParallaxY,
+                LoadedParallaxRepeatX = loadedParallaxRepeatX,
+                LoadedParallaxRepeatY = loadedParallaxRepeatY,
+                LoadedHasParallaxLayer = loadedHasParallaxLayer,
+                LoadedGroundSource = loadedGroundSource,
+                LoadedGroundOffsetY = loadedGroundOffsetY,
+                LoadedGroundRepeatX = loadedGroundRepeatX,
+                LoadedHasGroundLayer = loadedHasGroundLayer,
+                LoadedDecoSet = loadedDecoSet,
+                LoadedBlockSet = loadedBlockSet,
+                LoadedSpikeSet = loadedSpikeSet,
+                NoParallaxBg = noParallaxBg,
+                BackgroundTint = backgroundTint,
+                GroundTint = groundTint,
+                TileTint = tileTint
+            };
+            
+            openFiles.Add(tabData);
+            currentFileIndex = openFiles.Count - 1;
+            
+            // Create tab with close button
+            var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
+            var headerText = new TextBlock 
+            { 
+                Text = filePath != null ? System.IO.Path.GetFileName(filePath) : "Untitled",
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var closeButton = new Button
+            {
+                Content = "×",
+                Width = 16,
+                Height = 16,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Cursor = Cursors.Hand,
+                Tag = currentFileIndex
+            };
+            closeButton.Click += CloseTab_Click;
+            
+            headerPanel.Children.Add(headerText);
+            headerPanel.Children.Add(closeButton);
+            
+            var tab = new TabItem
+            {
+                Header = headerPanel,
+                Tag = currentFileIndex
+            };
+            
+            // Insert before the + tab if it exists
+            int insertIndex = FileTabControl.Items.Count;
+            if (insertIndex > 0 && FileTabControl.Items[insertIndex - 1] is TabItem lastTab && lastTab.Tag?.ToString() == "NEW")
+            {
+                insertIndex--;
+            }
+            FileTabControl.Items.Insert(insertIndex, tab);
+            FileTabControl.SelectedItem = tab;
+            
+            // Ensure + tab exists
+            EnsureNewTabButton();
+        }
+
+        private void EnsureNewTabButton()
+        {
+            // Check if + tab already exists
+            bool hasNewTabButton = false;
+            foreach (TabItem item in FileTabControl.Items)
+            {
+                if (item.Tag?.ToString() == "NEW")
+                {
+                    hasNewTabButton = true;
+                    break;
+                }
+            }
+            
+            if (!hasNewTabButton)
+            {
+                var newTab = new TabItem
+                {
+                    Header = "+",
+                    Tag = "NEW",
+                    Width = 30
+                };
+                FileTabControl.Items.Add(newTab);
+            }
+        }
+
+        private void CloseTab_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true; // Prevent tab selection
+            
+            if (sender is Button button && button.Tag is int index)
+            {
+                CloseTabAtIndex(index);
+            }
+        }
+
+        private void CloseTabAtIndex(int index)
+        {
+            if (index < 0 || index >= openFiles.Count) return;
+            
+            var tabData = openFiles[index];
+            
+            // Check for unsaved changes
+            if (tabData.HasUnsavedChanges)
+            {
+                var fileName = tabData.FilePath != null ? System.IO.Path.GetFileName(tabData.FilePath) : "Untitled";
+                var result = MessageBox.Show(
+                    $"Save changes to {fileName}?",
+                    "Unsaved Changes",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+                
+                if (result == MessageBoxResult.Cancel)
+                {
+                    return;
+                }
+                else if (result == MessageBoxResult.Yes)
+                {
+                    // Switch to that tab and save
+                    SwitchToTab(index);
+                    SaveButton_Click(this, new RoutedEventArgs());
+                    if (hasUnsavedChanges) return; // User cancelled save
+                }
+            }
+            
+            // Remove the tab
+            openFiles.RemoveAt(index);
+            
+            // Find and remove the UI tab
+            for (int i = 0; i < FileTabControl.Items.Count; i++)
+            {
+                if (FileTabControl.Items[i] is TabItem tab && tab.Tag is int tabIndex && tabIndex == index)
+                {
+                    FileTabControl.Items.RemoveAt(i);
+                    break;
+                }
+            }
+            
+            // Update tags for remaining tabs
+            for (int i = 0; i < FileTabControl.Items.Count; i++)
+            {
+                if (FileTabControl.Items[i] is TabItem tab && tab.Tag is int tabIndex && tabIndex > index)
+                {
+                    tab.Tag = tabIndex - 1;
+                    // Update close button tag too
+                    if (tab.Header is StackPanel panel && panel.Children[1] is Button btn)
+                    {
+                        btn.Tag = tabIndex - 1;
+                    }
+                }
+            }
+            
+            // If we closed the current tab, switch to another
+            if (currentFileIndex == index)
+            {
+                if (openFiles.Count > 0)
+                {
+                    int newIndex = Math.Min(index, openFiles.Count - 1);
+                    SwitchToTab(newIndex);
+                }
+                else
+                {
+                    // No tabs left, create a new one
+                    NewMenuItem_Click(this, new RoutedEventArgs());
+                }
+            }
+            else if (currentFileIndex > index)
+            {
+                currentFileIndex--;
+            }
+        }
+
+        private void MenuFileClose_Click(object sender, RoutedEventArgs e)
+        {
+            if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+            {
+                CloseTabAtIndex(currentFileIndex);
+            }
+        }
+
+        private async void SwitchToTab(int index)
+        {
+            if (index < 0 || index >= openFiles.Count) return;
+            
+            // Show loading indicator
+            LoadingWindow? loadingWindow = null;
+            try
+            {
+                loadingWindow = new LoadingWindow { Owner = this };
+                loadingWindow.SetMessage("Tab rendering, please wait...");
+                loadingWindow.Show();
+                
+                // Allow UI to update
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            }
+            catch { }
+            
+            try
+            {
+                // Save current tab state
+                if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                {
+                    SaveCurrentTabState();
+                }
+                
+                // Load new tab state
+                currentFileIndex = index;
+                var tabData = openFiles[index];
+                
+                tiles = tabData.Tiles.ToArray();
+                sprites = tabData.Sprites.ToArray();
+                spritePixelOffsets = new Dictionary<int, (int, int)>(tabData.SpritePixelOffsets);
+                mapWidth = tabData.MapWidth;
+                mapHeight = tabData.MapHeight;
+                hasUnsavedChanges = tabData.HasUnsavedChanges;
+                currentFilePath = tabData.FilePath;
+                
+                if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
+                if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+                
+                // Load TMX config for this file to get level-specific tints and settings
+                // This will set all the loaded* variables from the config file
+                if (!string.IsNullOrEmpty(tabData.FilePath) && System.IO.File.Exists(tabData.FilePath))
+                {
+                    try 
+                    { 
+                        LoadTmxConfig(tabData.FilePath);
+                        
+                        // Reapply tileset if accurate tileset mode is enabled
+                        if (showAccurateTileset)
+                        {
+                            try { SetShowAccurateTileset(true); } catch { }
+                        }
+                        
+                        // Save the loaded config values back to tab data so they persist
+                        SaveCurrentTabState();
+                    } 
+                    catch { }
+                }
+                else
+                {
+                    // No file, restore all metadata from tab data
+                    loadedTilesetSource = tabData.LoadedTilesetSource;
+                    loadedSpritesetSource = tabData.LoadedSpritesetSource;
+                    loadedHasEditorSettings = tabData.LoadedHasEditorSettings;
+                    loadedChunkWidth = tabData.LoadedChunkWidth;
+                    loadedChunkHeight = tabData.LoadedChunkHeight;
+                    loadedExportTarget = tabData.LoadedExportTarget;
+                    loadedExportFormat = tabData.LoadedExportFormat;
+                    loadedParallaxSource = tabData.LoadedParallaxSource;
+                    loadedParallaxX = tabData.LoadedParallaxX;
+                    loadedParallaxY = tabData.LoadedParallaxY;
+                    loadedParallaxRepeatX = tabData.LoadedParallaxRepeatX;
+                    loadedParallaxRepeatY = tabData.LoadedParallaxRepeatY;
+                    loadedHasParallaxLayer = tabData.LoadedHasParallaxLayer;
+                    loadedGroundSource = tabData.LoadedGroundSource;
+                    loadedGroundOffsetY = tabData.LoadedGroundOffsetY;
+                    loadedGroundRepeatX = tabData.LoadedGroundRepeatX;
+                    loadedHasGroundLayer = tabData.LoadedHasGroundLayer;
+                    loadedDecoSet = tabData.LoadedDecoSet;
+                    loadedBlockSet = tabData.LoadedBlockSet;
+                    loadedSpikeSet = tabData.LoadedSpikeSet;
+                    noParallaxBg = tabData.NoParallaxBg;
+                    backgroundTint = tabData.BackgroundTint;
+                    groundTint = tabData.GroundTint;
+                    tileTint = tabData.TileTint;
+                    
+                    // Update NoParallax menu checkbox
+                    if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
+                    
+                    // Rebuild tinted images
+                    UpdateParallaxTint();
+                    UpdateGroundTint();
+                    UpdateTileTint();
+                }
+                
+                // Update locked sprites if that option is enabled
+                if (lockSpritesToSet && MenuOptionLockSprites != null)
+                {
+                    MenuOptionLockSprites.IsChecked = lockSpritesToSet;
+                }
+                
+                // Mark background dirty and clear caches
+                backgroundDirty = true;
+                try { scaledTileCaches.Clear(); } catch { }
+                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                
+                Redraw();
+            }
+            finally
+            {
+                // Close loading indicator
+                try { loadingWindow?.Close(); } catch { }
+            }
+        }
+
+        private void SaveCurrentTabState()
+        {
+            if (currentFileIndex < 0 || currentFileIndex >= openFiles.Count) return;
+            
+            var tabData = openFiles[currentFileIndex];
+            tabData.Tiles = tiles.ToArray();
+            tabData.Sprites = sprites.ToArray();
+            tabData.SpritePixelOffsets = new Dictionary<int, (int, int)>(spritePixelOffsets);
+            tabData.MapWidth = mapWidth;
+            tabData.MapHeight = mapHeight;
+            tabData.HasUnsavedChanges = hasUnsavedChanges;
+            tabData.FilePath = currentFilePath;
+            tabData.LoadedTilesetSource = loadedTilesetSource;
+            tabData.LoadedSpritesetSource = loadedSpritesetSource;
+            tabData.LoadedHasEditorSettings = loadedHasEditorSettings;
+            tabData.LoadedChunkWidth = loadedChunkWidth;
+            tabData.LoadedChunkHeight = loadedChunkHeight;
+            tabData.LoadedExportTarget = loadedExportTarget;
+            tabData.LoadedExportFormat = loadedExportFormat;
+            tabData.LoadedParallaxSource = loadedParallaxSource;
+            tabData.LoadedParallaxX = loadedParallaxX;
+            tabData.LoadedParallaxY = loadedParallaxY;
+            tabData.LoadedParallaxRepeatX = loadedParallaxRepeatX;
+            tabData.LoadedParallaxRepeatY = loadedParallaxRepeatY;
+            tabData.LoadedHasParallaxLayer = loadedHasParallaxLayer;
+            tabData.LoadedGroundSource = loadedGroundSource;
+            tabData.LoadedGroundOffsetY = loadedGroundOffsetY;
+            tabData.LoadedGroundRepeatX = loadedGroundRepeatX;
+            tabData.LoadedHasGroundLayer = loadedHasGroundLayer;
+            tabData.LoadedDecoSet = loadedDecoSet;
+            tabData.LoadedBlockSet = loadedBlockSet;
+            tabData.LoadedSpikeSet = loadedSpikeSet;
+            tabData.NoParallaxBg = noParallaxBg;
+            tabData.BackgroundTint = backgroundTint;
+            tabData.GroundTint = groundTint;
+            tabData.TileTint = tileTint;
+        }
+
+        private void FileTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (FileTabControl.SelectedItem is TabItem tab)
+            {
+                if (tab.Tag?.ToString() == "NEW")
+                {
+                    // Clicked the + tab, create new file
+                    NewMenuItem_Click(this, new RoutedEventArgs());
+                }
+                else if (tab.Tag is int index)
+                {
+                    SwitchToTab(index);
+                }
+            }
+        }
+
+        private void AddToRecentFiles(string filePath)
+        {
+            recentFiles.Remove(filePath);
+            recentFiles.Insert(0, filePath);
+            if (recentFiles.Count > MaxRecentFiles)
+            {
+                recentFiles.RemoveAt(MaxRecentFiles);
+            }
+            SaveRecentFiles();
+            UpdateRecentFilesMenu();
+        }
+
+        private void UpdateRecentFilesMenu()
+        {
+            if (MenuFileRecent == null) return;
+            
+            MenuFileRecent.Items.Clear();
+            
+            if (recentFiles.Count == 0)
+            {
+                var emptyItem = new MenuItem { Header = "(No recent files)", IsEnabled = false };
+                MenuFileRecent.Items.Add(emptyItem);
+                return;
+            }
+            
+            for (int i = 0; i < recentFiles.Count; i++)
+            {
+                var filePath = recentFiles[i];
+                var menuItem = new MenuItem
+                {
+                    Header = $"_{i + 1}  {System.IO.Path.GetFileName(filePath)}",
+                    Tag = filePath,
+                    ToolTip = filePath
+                };
+                menuItem.Click += RecentFile_Click;
+                MenuFileRecent.Items.Add(menuItem);
+            }
+        }
+
+        private void RecentFile_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem menuItem && menuItem.Tag is string filePath)
+            {
+                if (System.IO.File.Exists(filePath))
+                {
+                    LoadTMXFile(filePath);
+                }
+                else
+                {
+                    MessageBox.Show($"File not found: {filePath}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    recentFiles.Remove(filePath);
+                    SaveRecentFiles();
+                    UpdateRecentFilesMenu();
+                }
+            }
+        }
+
+        private void LoadTMXFile(string filePath)
+        {
+            // Simulate clicking the load button with the file path
+            LoadingWindow? loadingWindow = null;
+            try
+            {
+                string ext = Path.GetExtension(filePath).ToLower();
+                int loadedWidth = 0;
+                int loadedHeight = 0;
+                int[]? loadedTiles = null;
+                int[]? loadedSprites = null;
+                
+                if (ext == ".tmx")
+                {
+                    // Show loading dialog
+                    loadingWindow = new LoadingWindow { Owner = this };
+                    loadingWindow.SetMessage("Loading TMX file...\\nThis may take a while on larger maps.");
+                    loadingWindow.Show();
+                    
+                    // Force UI update
+                    Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+                    
+                    // Load TMX format
+                    var tmxLevel = TmxHandler.LoadTmx(filePath, useLegacyTriggerOffset);
+                    loadedWidth = tmxLevel.Width;
+                    loadedHeight = tmxLevel.Height;
+                    loadedTiles = tmxLevel.Tiles;
+                    loadedSprites = tmxLevel.Sprites;
+                    
+                    // Store TMX metadata
+                    loadedTilesetSource = tmxLevel.TilesetSource;
+                    loadedSpritesetSource = tmxLevel.SpritesetSource;
+                    loadedHasEditorSettings = tmxLevel.HasEditorSettings;
+                    loadedChunkWidth = tmxLevel.ChunkWidth;
+                    loadedChunkHeight = tmxLevel.ChunkHeight;
+                    loadedExportTarget = tmxLevel.ExportTarget;
+                    loadedExportFormat = tmxLevel.ExportFormat;
+                    loadedParallaxSource = tmxLevel.ParallaxSource;
+                    loadedParallaxX = tmxLevel.ParallaxX;
+                    loadedParallaxY = tmxLevel.ParallaxY;
+                    loadedParallaxRepeatX = tmxLevel.ParallaxRepeatX;
+                    loadedParallaxRepeatY = tmxLevel.ParallaxRepeatY;
+                    loadedHasParallaxLayer = tmxLevel.HasParallaxLayer;
+                    loadedGroundSource = tmxLevel.GroundSource;
+                    loadedGroundOffsetY = tmxLevel.GroundOffsetY;
+                    loadedGroundRepeatX = tmxLevel.GroundRepeatX;
+                    loadedHasGroundLayer = tmxLevel.HasGroundLayer;
+                    loadedDecoSet = string.IsNullOrEmpty(tmxLevel.DecoSet) ? "deco1" : tmxLevel.DecoSet;
+                }
+                
+                if (loadedWidth > 0 && loadedHeight > 0 && loadedTiles != null)
+                {
+                    suppressUndoRecording = true;
+                    mapWidth = loadedWidth;
+                    mapHeight = loadedHeight;
+                    tiles = loadedTiles;
+                    sprites = loadedSprites ?? Enumerable.Repeat(-1, loadedWidth * loadedHeight).ToArray();
+                    
+                    if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
+                    if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+                    
+                    ClearSelection();
+                    undoStack.Clear();
+                    redoStack.Clear();
+                    suppressUndoRecording = false;
+                    
+                    currentFilePath = filePath;
+                    hasUnsavedChanges = false;
+                    
+                    AddToRecentFiles(filePath);
+                    CreateNewTab(filePath);
+                    
+                    Redraw();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading file: {ex.Message}", "Load Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (loadingWindow != null)
+                {
+                    loadingWindow.Close();
+                }
+            }
+        }
+
+        private void SaveRecentFiles()
+        {
+            try
+            {
+                var dir = AppContext.BaseDirectory;
+                var path = System.IO.Path.Combine(dir, "recent-files.json");
+                var json = System.Text.Json.JsonSerializer.Serialize(recentFiles);
+                System.IO.File.WriteAllText(path, json);
+            }
+            catch { }
+        }
+
+        private void LoadRecentFiles()
+        {
+            try
+            {
+                var dir = AppContext.BaseDirectory;
+                var path = System.IO.Path.Combine(dir, "recent-files.json");
+                if (System.IO.File.Exists(path))
+                {
+                    var json = System.IO.File.ReadAllText(path);
+                    var loaded = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json);
+                    if (loaded != null)
+                    {
+                        recentFiles = loaded.Where(f => System.IO.File.Exists(f)).Take(MaxRecentFiles).ToList();
+                    }
+                }
+            }
+            catch { }
+            UpdateRecentFilesMenu();
         }
 
         private void SetTileboardPosition(string position)
@@ -10128,7 +10749,7 @@ namespace FamidashEditor
             // Check if hovering over an offset sprite and show tooltip
             try
             {
-                if (!previewMode && OffsetGhostTile != null && OffsetTooltipText != null)
+                if (!previewMode && OffsetGhostContainer != null && OffsetTooltipContainer != null)
                 {
                     var dpi = VisualTreeHelper.GetDpi(this);
                     double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
@@ -10141,7 +10762,8 @@ namespace FamidashEditor
                     int mousePxX = (int)Math.Round(pos.X * dpi.DpiScaleX);
                     int mousePxY = (int)Math.Round(pos.Y * dpi.DpiScaleY);
                     
-                    bool foundOffset = false;
+                    // Find all sprites that overlap at mouse position
+                    var overlappingSprites = new List<(int posKey, int spriteId, (int offsetX, int offsetY) offset, int origLeftPx, int origTopPx, int shiftedLeftPx, int shiftedTopPx)>();
                     
                     // Check all sprites with offsets to see if mouse is over any shifted sprite
                     foreach (var kvp in spritePixelOffsets)
@@ -10168,47 +10790,90 @@ namespace FamidashEditor
                         if (mousePxX >= shiftedLeftPx && mousePxX < shiftedRightPx &&
                             mousePxY >= shiftedTopPx && mousePxY < shiftedBottomPx)
                         {
-                            foundOffset = true;
-                            
-                            // Show ghost tile at original position
-                            double origLeft = (double)origLeftPx / dpi.DpiScaleX;
-                            double origTop = (double)origTopPx / dpi.DpiScaleY;
-                            double widthDiu = (double)tilePixelW / dpi.DpiScaleX;
-                            double heightDiu = (double)tilePixelH / dpi.DpiScaleY;
-                            
-                            OffsetGhostTile.Width = widthDiu;
-                            OffsetGhostTile.Height = heightDiu;
-                            Canvas.SetLeft(OffsetGhostTile, origLeft);
-                            Canvas.SetTop(OffsetGhostTile, origTop);
-                            OffsetGhostTile.Visibility = Visibility.Visible;
-                            
-                            // Show tooltip at shifted sprite location
-                            double shiftedLeft = (double)shiftedLeftPx / dpi.DpiScaleX;
-                            double shiftedTop = (double)shiftedTopPx / dpi.DpiScaleY;
-                            
-                            string tooltipText = $"Offset: X={offset.offsetX:+#;-#;0} Y={offset.offsetY:+#;-#;0}";
-                            OffsetTooltipText.Text = tooltipText;
-                            
-                            // Position tooltip at the shifted sprite location
-                            Canvas.SetLeft(OffsetTooltipText, shiftedLeft + widthDiu + 5);
-                            Canvas.SetTop(OffsetTooltipText, shiftedTop);
-                            OffsetTooltipText.Visibility = Visibility.Visible;
-                            
-                            break; // Only show one tooltip at a time
+                            overlappingSprites.Add((posKey, sprites[posKey], offset, origLeftPx, origTopPx, shiftedLeftPx, shiftedTopPx));
                         }
                     }
                     
-                    if (!foundOffset)
+                    if (overlappingSprites.Count > 0)
                     {
-                        OffsetGhostTile.Visibility = Visibility.Collapsed;
-                        OffsetTooltipText.Visibility = Visibility.Collapsed;
+                        // Clear previous ghost tiles and tooltips
+                        OffsetGhostContainer.Children.Clear();
+                        OffsetTooltipContainer.Children.Clear();
+                        
+                        double currentTooltipY = (double)overlappingSprites[0].shiftedTopPx / dpi.DpiScaleY;
+                        double widthDiu = (double)tilePixelW / dpi.DpiScaleX;
+                        double heightDiu = (double)tilePixelH / dpi.DpiScaleY;
+                        
+                        foreach (var sprite in overlappingSprites)
+                        {
+                            // Show ghost tile at original position
+                            double origLeft = (double)sprite.origLeftPx / dpi.DpiScaleX;
+                            double origTop = (double)sprite.origTopPx / dpi.DpiScaleY;
+                            
+                            var ghostTile = new Shapes.Rectangle
+                            {
+                                Fill = Brushes.Transparent,
+                                Stroke = new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF)),
+                                StrokeThickness = 1,
+                                StrokeDashArray = new DoubleCollection { 2, 2 },
+                                Width = widthDiu,
+                                Height = heightDiu
+                            };
+                            Canvas.SetLeft(ghostTile, origLeft);
+                            Canvas.SetTop(ghostTile, origTop);
+                            OffsetGhostContainer.Children.Add(ghostTile);
+                            
+                            // Create tooltip with sprite icon
+                            var tooltipPanel = new StackPanel { Orientation = Orientation.Horizontal, Background = new SolidColorBrush(Color.FromArgb(0xDD, 0x00, 0x00, 0x00)) };
+                            
+                            // Add sprite icon if available
+                            if (spriteImages != null && sprite.spriteId >= 0 && sprite.spriteId < spriteImages.Length && spriteImages[sprite.spriteId] != null)
+                            {
+                                var icon = new Image
+                                {
+                                    Source = spriteImages[sprite.spriteId],
+                                    Width = 16,
+                                    Height = 16,
+                                    Margin = new Thickness(2)
+                                };
+                                tooltipPanel.Children.Add(icon);
+                            }
+                            
+                            // Add offset text
+                            string tooltipText = $"ID:{sprite.spriteId:X2} Offset: X={sprite.offset.offsetX:+#;-#;0} Y={sprite.offset.offsetY:+#;-#;0}";
+                            var textBlock = new TextBlock
+                            {
+                                Text = tooltipText,
+                                Foreground = Brushes.White,
+                                Padding = new Thickness(4, 2, 4, 2),
+                                FontSize = 10,
+                                VerticalAlignment = VerticalAlignment.Center
+                            };
+                            tooltipPanel.Children.Add(textBlock);
+                            
+                            // Position tooltip - stack them vertically at the shifted location
+                            double shiftedLeft = (double)sprite.shiftedLeftPx / dpi.DpiScaleX;
+                            Canvas.SetLeft(tooltipPanel, shiftedLeft + widthDiu + 5);
+                            Canvas.SetTop(tooltipPanel, currentTooltipY);
+                            OffsetTooltipContainer.Children.Add(tooltipPanel);
+                            
+                            currentTooltipY += 20; // Stack next tooltip below
+                        }
+                        
+                        OffsetGhostContainer.Visibility = Visibility.Visible;
+                        OffsetTooltipContainer.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        OffsetGhostContainer.Visibility = Visibility.Collapsed;
+                        OffsetTooltipContainer.Visibility = Visibility.Collapsed;
                     }
                 }
             }
             catch
             {
-                if (OffsetGhostTile != null) OffsetGhostTile.Visibility = Visibility.Collapsed;
-                if (OffsetTooltipText != null) OffsetTooltipText.Visibility = Visibility.Collapsed;
+                if (OffsetGhostContainer != null) OffsetGhostContainer.Visibility = Visibility.Collapsed;
+                if (OffsetTooltipContainer != null) OffsetTooltipContainer.Visibility = Visibility.Collapsed;
             }
             
             // If actively selecting, update the selection rectangle
@@ -13413,6 +14078,9 @@ namespace FamidashEditor
             // File path already cleared at the start
             hasUnsavedChanges = false;
             
+            // Create a new tab
+            CreateNewTab(null);
+            
             // Update UI
             if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
@@ -13599,6 +14267,45 @@ namespace FamidashEditor
                         // Update current file and clear dirty flag
                         currentFilePath = dlg.FileName;
                         hasUnsavedChanges = false;
+                        
+                        // Add to recent files
+                        AddToRecentFiles(dlg.FileName);
+                        
+                        // If current tab is untitled with no changes, replace it instead of creating new tab
+                        bool replaceCurrentTab = false;
+                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                        {
+                            var currentTab = openFiles[currentFileIndex];
+                            if (string.IsNullOrEmpty(currentTab.FilePath) && !currentTab.HasUnsavedChanges)
+                            {
+                                replaceCurrentTab = true;
+                            }
+                        }
+                        
+                        if (replaceCurrentTab)
+                        {
+                            // Update current tab
+                            SaveCurrentTabState();
+                            openFiles[currentFileIndex].FilePath = dlg.FileName;
+                            
+                            // Update tab header
+                            for (int i = 0; i < FileTabControl.Items.Count; i++)
+                            {
+                                if (FileTabControl.Items[i] is TabItem tab && tab.Tag is int idx && idx == currentFileIndex)
+                                {
+                                    if (tab.Header is StackPanel panel && panel.Children[0] is TextBlock txt)
+                                    {
+                                        txt.Text = System.IO.Path.GetFileName(dlg.FileName);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Always create a new tab for loaded files
+                            CreateNewTab(dlg.FileName);
+                        }
                         
                         // For large maps, defer the redraw to allow loading window to update
                         bool isLargeMap = (loadedWidth * loadedHeight) > 50000;

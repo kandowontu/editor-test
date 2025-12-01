@@ -102,6 +102,11 @@
                     <MenuItem x:Name="MenuFileSave" Header="_Save TMX" InputGestureText="Ctrl+S" />
                     <MenuItem x:Name="MenuFileSaveAs" Header="Save TMX As..." InputGestureText="Ctrl+Alt+S" />
                     <MenuItem x:Name="MenuFileLoad" Header="_Open TMX" InputGestureText="Ctrl+O" />
+                    <MenuItem x:Name="MenuFileRecent" Header="Open _Recent">
+                        <!-- Recent files will be populated dynamically -->
+                    </MenuItem>
+                    <Separator />
+                    <MenuItem x:Name="MenuFileClose" Header="_Close" InputGestureText="Ctrl+W" />
                     <Separator />
                 </MenuItem>
                 <MenuItem Header="_Tools">
@@ -150,6 +155,11 @@
                     </MenuItem>
                 </MenuItem>
             </Menu>
+            
+            <!-- Tab Control for multiple files -->
+            <TabControl x:Name="FileTabControl" DockPanel.Dock="Top" Height="30" SelectionChanged="FileTabControl_SelectionChanged">
+                <!-- Tabs will be added dynamically -->
+            </TabControl>
             
             <!-- Toolbar -->
             <ToolBarTray DockPanel.Dock="Top">
@@ -263,7 +273,12 @@
                         <Image x:Name="GhostImage" Visibility="Collapsed" IsHitTestVisible="False" Opacity="0.75" />
                         <!-- Offset sprite tooltip overlay -->
                         <Rectangle x:Name="OffsetGhostTile" Fill="Transparent" Stroke="#88FFFFFF" StrokeThickness="1" StrokeDashArray="2,2" Visibility="Collapsed" IsHitTestVisible="False" />
-                        <TextBlock x:Name="OffsetTooltipText" Visibility="Collapsed" IsHitTestVisible="False" Background="#DD000000" Foreground="White" Padding="4,2" FontSize="10" />
+                        <Canvas x:Name="OffsetTooltipContainer" Visibility="Collapsed" IsHitTestVisible="False">
+                            <!-- Multiple offset tooltips will be added here dynamically -->
+                        </Canvas>
+                        <Canvas x:Name="OffsetGhostContainer" Visibility="Collapsed" IsHitTestVisible="False">
+                            <!-- Multiple ghost tiles will be added here dynamically -->
+                        </Canvas>
                 </Canvas>
             </Grid>
         </ScrollViewer>
