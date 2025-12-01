@@ -235,20 +235,29 @@ namespace FamidashEditor
                     }
 
                     // Build expected suffix according to pattern you described:
-                    // {block}{spike}sawsa{noParallax?"slopesa":"slopesnone"}
-                    var suffix = noParallaxBg ? "Slopesa" : "SlopesNone";
+                    // {block}{spike}sawsa{noParallax?"Slopesa"/"SlopesA":"SlopesNone"}
+                    // Accept a couple of common casing/variant forms to be tolerant of filename differences.
+                    var pascalSuffixOn = "Slopesa"; // common Pascal form when NoParallax == true
+                    var pascalSuffixOnAlt = "SlopesA"; // alternate Pascal variant
+                    var pascalSuffixOff = "SlopesNone"; // when NoParallax == false
                     var pascalBlock = ToPascal(block ?? "");
                     var pascalSpike = ToPascal(spike ?? "");
 
                     var exactCandidates = new List<string>();
                     // Primary PascalCase form (e.g. BlocksaSpikesaSawsaSlopesa.png)
-                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{suffix}.png");
-                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{suffix}.PNG");
+                    // Try the preferred suffix first based on noParallaxBg, then fallbacks.
+                    var preferredPascal = noParallaxBg ? pascalSuffixOn : pascalSuffixOff;
+                    var alternatePascal = noParallaxBg ? pascalSuffixOnAlt : pascalSuffixOn;
+                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{preferredPascal}.png");
+                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{preferredPascal}.PNG");
+                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{alternatePascal}.png");
+                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{pascalSuffixOff}.png");
                     // Lowercase concatenated form (e.g. blocksaspikesasawsaslopesnone.png)
-                    exactCandidates.Add($"{(block??"").ToLowerInvariant()}{(spike??"").ToLowerInvariant()}sawsaslopes{(noParallaxBg?"a":"none")}.png");
-                    exactCandidates.Add($"{(block??"").ToLowerInvariant()}{(spike??"").ToLowerInvariant()}sawsaslopes{(noParallaxBg?"a":"none")}.PNG");
-                    // Another lowercase variant without repeated 's' where some files may be named blocksaspikesasawsa{suffix}
-                    exactCandidates.Add($"{(block??"").ToLowerInvariant()}{(spike??"").ToLowerInvariant()}sawsa{(noParallaxBg?"slopesa":"slopesnone")}.png");
+                    // Lowercase variants. Some filenames use 'sawsaslopesa' vs 'sawsa' patterns; include common permutations.
+                    var lowerBlockSpike = $"{(block??"").ToLowerInvariant()}{(spike??"").ToLowerInvariant()}";
+                    exactCandidates.Add($"{lowerBlockSpike}sawsa{(noParallaxBg?"slopesa":"slopesnone")}.png");
+                    exactCandidates.Add($"{lowerBlockSpike}sawsaslopesa.png");
+                    exactCandidates.Add($"{lowerBlockSpike}sawsaslopesnone.png");
 
                     // Candidate directories: prioritize explicit user folder, then app, repo
                     var candidates = new List<string>();
@@ -12678,6 +12687,8 @@ namespace FamidashEditor
                 if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = enabled;
                 try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
                 try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
+                // If accurate tileset swapping is enabled, reapply so the correct tileset (Slopesa vs SlopesNone) is selected
+                try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
             }
             finally { suppressNoParallaxHandler = false; }
         }
