@@ -672,12 +672,18 @@ namespace FamidashEditor
                 
                 if (config != null)
                 {
+                    // Track which tints are present in the config
+                    bool hasBackgroundTint = false;
+                    bool hasGroundTint = false;
+                    bool hasTileTint = false;
+                    
                     // Apply loaded tints only when the components are present in the config
                     try
                     {
                         if (config.BackgroundTintR.HasValue && config.BackgroundTintG.HasValue && config.BackgroundTintB.HasValue)
                         {
                             backgroundTint = Color.FromRgb(config.BackgroundTintR.Value, config.BackgroundTintG.Value, config.BackgroundTintB.Value);
+                            hasBackgroundTint = true;
                         }
                     }
                     catch { }
@@ -687,6 +693,7 @@ namespace FamidashEditor
                         if (config.GroundTintR.HasValue && config.GroundTintG.HasValue && config.GroundTintB.HasValue)
                         {
                             groundTint = Color.FromRgb(config.GroundTintR.Value, config.GroundTintG.Value, config.GroundTintB.Value);
+                            hasGroundTint = true;
                         }
                     }
                     catch { }
@@ -696,9 +703,52 @@ namespace FamidashEditor
                         if (config.TileTintR.HasValue && config.TileTintG.HasValue && config.TileTintB.HasValue)
                         {
                             tileTint = Color.FromRgb(config.TileTintR.Value, config.TileTintG.Value, config.TileTintB.Value);
+                            hasTileTint = true;
                         }
                     }
                     catch { }
+
+                    // If any tints are missing from the config, reload them from global defaults
+                    if (!hasBackgroundTint || !hasGroundTint || !hasTileTint)
+                    {
+                        try
+                        {
+                            var dir = AppContext.BaseDirectory;
+                            var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                            System.Diagnostics.Debug.WriteLine($"Reloading missing tints from: {settingsPath} (bg:{!hasBackgroundTint}, gnd:{!hasGroundTint}, tile:{!hasTileTint})");
+                            if (System.IO.File.Exists(settingsPath))
+                            {
+                                var txt = System.IO.File.ReadAllText(settingsPath);
+                                var doc = System.Text.Json.JsonDocument.Parse(txt);
+                                
+                                if (!hasBackgroundTint && doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                                {
+                                    backgroundTint = Color.FromArgb((byte)bt[0].GetInt32(), (byte)bt[1].GetInt32(), (byte)bt[2].GetInt32(), (byte)bt[3].GetInt32());
+                                    System.Diagnostics.Debug.WriteLine($"Reloaded backgroundTint: {backgroundTint}");
+                                }
+                                
+                                if (!hasGroundTint && doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                                {
+                                    groundTint = Color.FromArgb((byte)gt[0].GetInt32(), (byte)gt[1].GetInt32(), (byte)gt[2].GetInt32(), (byte)gt[3].GetInt32());
+                                    System.Diagnostics.Debug.WriteLine($"Reloaded groundTint: {groundTint}");
+                                }
+                                
+                                if (!hasTileTint && doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                                {
+                                    tileTint = Color.FromArgb((byte)tt[0].GetInt32(), (byte)tt[1].GetInt32(), (byte)tt[2].GetInt32(), (byte)tt[3].GetInt32());
+                                    System.Diagnostics.Debug.WriteLine($"Reloaded tileTint: {tileTint}");
+                                }
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Settings file not found at: {settingsPath}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error reloading missing tints: {ex.Message}");
+                        }
+                    }
 
                     // Apply loaded no-parallax setting (default false when absent in file)
                     try { noParallaxBg = config.NoParallaxBg; } catch { noParallaxBg = false; }
@@ -712,10 +762,15 @@ namespace FamidashEditor
                     // LockSpritesToSet is now a global editor setting; per-TMX configs no longer contain it
                     if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet} block:{loadedBlockSet} spike:{loadedSpikeSet}";
 
-                    // Update tinted images for any tints that were applied
+                    // Update tinted images for all tints (whether from config or reloaded from global)
                     UpdateParallaxTint();
                     UpdateGroundTint();
                     UpdateTileTint();
+                    
+                    // Force full rebuild with new tints
+                    backgroundDirty = true;
+                    try { scaledTileCaches.Clear(); } catch { }
+                    try { Redraw(); } catch { }
 
                     System.Diagnostics.Debug.WriteLine($"Loaded config from: {configPath}");
                     if (StatusText != null) StatusText.Text = $"Loaded tint config for {Path.GetFileName(tmxFilePath)}";
@@ -779,11 +834,12 @@ namespace FamidashEditor
 
                 try { ApplyParallaxChoice(); } catch { }
                 
-                // Clear tile caches and rebuild tiles without tint
+                // Force full rebuild with default tints
+                backgroundDirty = true;
                 try { scaledTileCaches.Clear(); } catch { }
-                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                try { Redraw(); } catch { }
                 
-                // Refresh tile palette to show untinted tiles
+                // Refresh tile palette to show tinted tiles
                 try { PopulateTilesPanel(); } catch { }
                 
                 System.Diagnostics.Debug.WriteLine($"No config found at: {configPath}, using defaults");
@@ -791,8 +847,8 @@ namespace FamidashEditor
                 loadedDecoSet = "DECO1";
                 loadedBlockSet = "BLOCKSA";
                 loadedSpikeSet = "SPIKESA";
-                // Write out a default config immediately so first-load creates .cfg with deco1
-                try { SaveTmxConfig(tmxFilePath); } catch { }
+                // Don't auto-save config here - let user make changes first
+                // Config will be saved when user changes settings or saves the TMX
                 try { ApplyLockSpritesToSet(); } catch { }
             }
         }
@@ -800,18 +856,34 @@ namespace FamidashEditor
         {
             System.Diagnostics.Debug.WriteLine($"Failed to load TMX config: {ex.Message}");
             
-            // Reset to defaults on error (transparent = no tint)
-            backgroundTint = Color.FromArgb(0, 0, 0, 0);
-            groundTint = Color.FromArgb(0, 0, 0, 0);
-            tileTint = Color.FromArgb(0, 0, 0, 0);
-                loadedDecoSet = "deco1";
+            // Reset to global defaults on error
+            try
+            {
+                var dir = AppContext.BaseDirectory;
+                var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                if (System.IO.File.Exists(settingsPath))
+                {
+                    var txt = System.IO.File.ReadAllText(settingsPath);
+                    var doc = System.Text.Json.JsonDocument.Parse(txt);
+                    
+                    if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                        backgroundTint = Color.FromArgb((byte)bt[0].GetInt32(), (byte)bt[1].GetInt32(), (byte)bt[2].GetInt32(), (byte)bt[3].GetInt32());
+                    
+                    if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                        groundTint = Color.FromArgb((byte)gt[0].GetInt32(), (byte)gt[1].GetInt32(), (byte)gt[2].GetInt32(), (byte)gt[3].GetInt32());
+                    
+                    if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                        tileTint = Color.FromArgb((byte)tt[0].GetInt32(), (byte)tt[1].GetInt32(), (byte)tt[2].GetInt32(), (byte)tt[3].GetInt32());
+                }
+            }
+            catch { }
             
-            // Clear toned images to use originals
-            parallaxTonedImages = null;
-            groundTonedImages = null;
-            tileTonedImages = null;
-            sawFrame1TilesTinted = null;
-            sawFrame2TilesTinted = null;
+            loadedDecoSet = "DECO1";
+            
+            // Update tints with defaults
+            UpdateParallaxTint();
+            UpdateGroundTint();
+            UpdateTileTint();
             
             // Mark background dirty to force rebuild
             backgroundDirty = true;
@@ -2657,12 +2729,12 @@ namespace FamidashEditor
                 case 0xDA: mapped = 0x11; break;
                 case 0xDB:
                 case 0xDC: mapped = 0x1B; break;
-                case 0xFC: mapped = 0x00; break;
+                case 0xFC: 
                 case 0xDF:
                 case 0xE3:
                 case 0xFE:
-                case 0xFD:
-                case 0xFF: mapped = 0x26; break;
+                case 0xFF: mapped = 0x00; break;
+                case 0xFD: mapped = 0x26; break;
 
             }
             if (mapped != originalIndex) originalIndex = mapped;
@@ -12937,6 +13009,10 @@ namespace FamidashEditor
                 // If No, continue with new without saving
             }
             
+            // CRITICAL: Clear file path FIRST before changing any settings
+            // Otherwise event handlers will save changed settings to the old file!
+            currentFilePath = "";
+            
             // Create a new 200x27 map
             mapWidth = 200;
             mapHeight = 27;
@@ -12945,23 +13021,38 @@ namespace FamidashEditor
             // Reset any per-position animation offsets so new empty map starts fresh
             try { spriteFrameOffsets.Clear(); } catch { }
             
-            // Reset tints to defaults (transparent = no tint)
-            backgroundTint = Color.FromArgb(0, 0, 0, 0);
-            groundTint = Color.FromArgb(0, 0, 0, 0);
-            tileTint = Color.FromArgb(0, 0, 0, 0);
+            // Load default tints from global settings instead of using transparent
+            try
+            {
+                var dir = AppContext.BaseDirectory;
+                var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                if (System.IO.File.Exists(settingsPath))
+                {
+                    var txt = System.IO.File.ReadAllText(settingsPath);
+                    var doc = System.Text.Json.JsonDocument.Parse(txt);
+                    
+                    if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                        backgroundTint = Color.FromArgb((byte)bt[0].GetInt32(), (byte)bt[1].GetInt32(), (byte)bt[2].GetInt32(), (byte)bt[3].GetInt32());
+                    
+                    if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                        groundTint = Color.FromArgb((byte)gt[0].GetInt32(), (byte)gt[1].GetInt32(), (byte)gt[2].GetInt32(), (byte)gt[3].GetInt32());
+                    
+                    if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                        tileTint = Color.FromArgb((byte)tt[0].GetInt32(), (byte)tt[1].GetInt32(), (byte)tt[2].GetInt32(), (byte)tt[3].GetInt32());
+                }
+            }
+            catch { }
+            
+            // Update tinted images with the loaded defaults
+            UpdateParallaxTint();
+            UpdateGroundTint();
+            UpdateTileTint();
             
             // Reset noParallaxBg to false (use parallax by default)
             noParallaxBg = false;
             if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
             
-            // Clear toned images to use originals
-            parallaxTonedImages = null;
-            groundTonedImages = null;
-            tileTonedImages = null;
-            sawFrame1TilesTinted = null;
-            sawFrame2TilesTinted = null;
-            
-            // Mark background dirty and clear tile caches to force rebuild without tints
+            // Mark background dirty and clear tile caches to force rebuild with default tints
             backgroundDirty = true;
             try { scaledTileCaches.Clear(); } catch { }
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
@@ -12974,8 +13065,7 @@ namespace FamidashEditor
             undoStack.Clear();
             redoStack.Clear();
             
-            // Reset file path and unsaved changes flag
-            currentFilePath = "";
+            // File path already cleared at the start
             hasUnsavedChanges = false;
             
             // Update UI
