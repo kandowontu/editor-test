@@ -7406,22 +7406,21 @@ namespace FamidashEditor
             TilesPanel.Items.Clear();
             if (tileImages == null) return;
             
-            // For TOP/BOTTOM position, rotate the tile layout: tile 0x00 at bottom-left, 0x01 above it, etc.
-            // For TOP: same rotation as BOTTOM since tiles flow upward in columns
-            // We need to reorder tiles so they appear in columns going up
+            // For TOP/BOTTOM position, rotate the tile layout to column-major order
+            // Tiles flow in columns: 0x00-0x0F in first column from top down, 0x10-0x1F in second column, etc.
             int[] displayOrder;
             if (tileboardPosition == "TOP" || tileboardPosition == "BOTTOM")
             {
                 // 16 columns × 16 rows = 256 tiles
                 // Original: row-major (0x00-0x0F in first row, 0x10-0x1F in second row, etc.)
-                // TOP/BOTTOM: column-major bottom-up (0x00 at bottom-left, 0x01 above it, ..., 0x0F at top-left, then 0x10 at bottom of second column)
+                // TOP/BOTTOM: column-major top-down (0x00 at top-left, 0x01 below it, ..., 0x0F at bottom-left, then 0x10 at top of second column)
                 displayOrder = new int[256];
                 for (int i = 0; i < 256; i++)
                 {
                     int col = i / 16;  // Which column (0-15)
                     int row = i % 16;  // Which row within column (0-15)
-                    // Bottom-up: flip the row (15-row instead of row)
-                    displayOrder[(15 - row) * 16 + col] = i;
+                    // Top-down: just map column-major to row-major grid
+                    displayOrder[row * 16 + col] = i;
                 }
             }
             else
@@ -10794,7 +10793,9 @@ namespace FamidashEditor
                     return;
                 }
 
-                // Other shapes: start drag-based deferred draw
+                // Other shapes: start drag-based deferred draw only if inside map
+                if (!IsPointInsideMap(pos)) { return; }
+                
                 drawStartX = tt.x; drawStartY = tt.y; drawCurrentX = drawStartX; drawCurrentY = drawStartY;
                 isDeferredDrawing = true;
                 if (CanvasHost != null) CanvasHost.CaptureMouse();
@@ -11392,6 +11393,9 @@ namespace FamidashEditor
 
         private void StartPaintingAt(Point pos)
         {
+            // Don't start painting if click is outside the map area
+            if (!IsPointInsideMap(pos)) return;
+            
             var tt = ViewportPointToTile(pos);
             int x = tt.x; int y = tt.y;
 
