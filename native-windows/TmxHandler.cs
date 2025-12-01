@@ -100,7 +100,8 @@ namespace FamidashEditor
                                         
                                         // Trigger sprites are stored 10 tiles to the right in TMX,
                                         // but displayed 10 tiles to the left in editor (unless legacy mode enabled)
-                                        if (!useLegacyTriggerOffset && IsTriggerSprite(spriteIdx))
+                                        bool isTrigger = !useLegacyTriggerOffset && IsTriggerSprite(spriteIdx);
+                                        if (isTrigger)
                                         {
                                             x -= 10; // Shift left
                                             if (x < 0) x = 0; // Clamp to left boundary instead of skipping
@@ -108,54 +109,63 @@ namespace FamidashEditor
                                         
                                         int newIdx = y * width + x;
                                         
-                                        // Check for collision and find nearest vertical neighbor if needed
+                                        // Handle collisions differently for triggers vs normal sprites
                                         if (newIdx >= 0 && newIdx < totalTiles)
                                         {
                                             if (sprites[newIdx] != -1)
                                             {
-                                                // Collision detected - find nearest vertical neighbor
-                                                int finalY = y;
-                                                bool foundSlot = false;
-                                                
-                                                // Search up and down alternately
-                                                for (int offset = 1; offset < height; offset++)
+                                                if (isTrigger)
                                                 {
-                                                    // Try below first
-                                                    int testY = y + offset;
-                                                    if (testY < height)
+                                                    // TRIGGER sprites: Move vertically to find empty slot
+                                                    int finalY = y;
+                                                    bool foundSlot = false;
+                                                    
+                                                    // Search up and down alternately - prefer moving down first
+                                                    for (int offset = 1; offset < height; offset++)
                                                     {
-                                                        int testIdx = testY * width + x;
-                                                        if (sprites[testIdx] == -1)
+                                                        // Try below first
+                                                        int testY = y + offset;
+                                                        if (testY < height)
                                                         {
-                                                            finalY = testY;
-                                                            foundSlot = true;
-                                                            break;
+                                                            int testIdx = testY * width + x;
+                                                            if (sprites[testIdx] == -1)
+                                                            {
+                                                                finalY = testY;
+                                                                foundSlot = true;
+                                                                break;
+                                                            }
+                                                        }
+                                                        
+                                                        // Try above
+                                                        testY = y - offset;
+                                                        if (testY >= 0)
+                                                        {
+                                                            int testIdx = testY * width + x;
+                                                            if (sprites[testIdx] == -1)
+                                                            {
+                                                                finalY = testY;
+                                                                foundSlot = true;
+                                                                break;
+                                                            }
                                                         }
                                                     }
                                                     
-                                                    // Try above
-                                                    testY = y - offset;
-                                                    if (testY >= 0)
+                                                    if (foundSlot)
                                                     {
-                                                        int testIdx = testY * width + x;
-                                                        if (sprites[testIdx] == -1)
-                                                        {
-                                                            finalY = testY;
-                                                            foundSlot = true;
-                                                            break;
-                                                        }
+                                                        collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Editor({x},{y}) COLLISION → Moved to ({x},{finalY})");
+                                                        newIdx = finalY * width + x;
                                                     }
-                                                }
-                                                
-                                                if (foundSlot)
-                                                {
-                                                    collisionMessages.Add($"Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) shifted to ({x},{y}) collides, moved to ({x},{finalY})");
-                                                    newIdx = finalY * width + x;
+                                                    else
+                                                    {
+                                                        collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Editor({x},{y}) COLLISION → No free slot - DROPPED");
+                                                        continue; // Skip this sprite
+                                                    }
                                                 }
                                                 else
                                                 {
-                                                    collisionMessages.Add($"Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) shifted to ({x},{y}) collides, no free vertical slot found - sprite dropped");
-                                                    continue; // Skip this sprite
+                                                    // NORMAL sprites: Overwrite existing sprite (normal sprites have priority)
+                                                    int existingSprite = sprites[newIdx];
+                                                    collisionMessages.Add($"NORMAL Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) OVERWRITES existing sprite 0x{existingSprite:X2} at ({x},{y})");
                                                 }
                                             }
                                             

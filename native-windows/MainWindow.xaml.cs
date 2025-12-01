@@ -239,6 +239,8 @@ namespace FamidashEditor
         public string? SpikeSet { get; set; } = "SPIKESA";
         public bool LockSpritesToSet { get; set; } = false;
         public string? SelectedSong { get; set; } = null;
+        // Sprite offsets: key is "x,y" and value is [offsetX, offsetY]
+        public Dictionary<string, int[]>? SpriteOffsets { get; set; } = null;
     }
 
     // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
@@ -755,6 +757,23 @@ namespace FamidashEditor
             }
             catch { }
 
+            // Save sprite offsets
+            try
+            {
+                if (spritePixelOffsets.Count > 0)
+                {
+                    config.SpriteOffsets = new Dictionary<string, int[]>();
+                    foreach (var kvp in spritePixelOffsets)
+                    {
+                        int x = kvp.Key % mapWidth;
+                        int y = kvp.Key / mapWidth;
+                        string key = $"{x},{y}";
+                        config.SpriteOffsets[key] = new int[] { kvp.Value.offsetX, kvp.Value.offsetY };
+                    }
+                }
+            }
+            catch { }
+
             string configPath = GetConfigPath(tmxFilePath);
             // Serialize and write the config file, omitting nulls
             var opts = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
@@ -890,6 +909,33 @@ namespace FamidashEditor
                     }
                     catch { }
                     
+                    // Load sprite offsets from config
+                    try
+                    {
+                        if (config.SpriteOffsets != null && config.SpriteOffsets.Count > 0)
+                        {
+                            spritePixelOffsets.Clear();
+                            foreach (var kvp in config.SpriteOffsets)
+                            {
+                                // Parse "x,y" key back to position index
+                                var parts = kvp.Key.Split(',');
+                                if (parts.Length == 2 && int.TryParse(parts[0], out int x) && int.TryParse(parts[1], out int y))
+                                {
+                                    int positionIndex = y * mapWidth + x;
+                                    if (kvp.Value.Length >= 2)
+                                    {
+                                        spritePixelOffsets[positionIndex] = (kvp.Value[0], kvp.Value[1]);
+                                    }
+                                }
+                            }
+                            System.Diagnostics.Debug.WriteLine($"Loaded {spritePixelOffsets.Count} sprite offsets from config");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error loading sprite offsets: {ex.Message}");
+                    }
+                    
                     if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet} block:{loadedBlockSet} spike:{loadedSpikeSet}";
 
                     // Update tinted images for all tints (whether from config or reloaded from global)
@@ -900,6 +946,20 @@ namespace FamidashEditor
                     // Force full rebuild with new tints
                     backgroundDirty = true;
                     try { scaledTileCaches.Clear(); } catch { }
+                    
+                    // Rebuild sprites to reflect the loaded deco set
+                    try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+                    
+                    // Apply accurate tileset based on loaded block/spike sets if enabled
+                    try 
+                    { 
+                        if (showAccurateTileset) 
+                        {
+                            SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); 
+                        }
+                    } 
+                    catch { }
+                    
                     try { Redraw(); } catch { }
 
                     System.Diagnostics.Debug.WriteLine($"Loaded config from: {configPath}");
@@ -5816,6 +5876,9 @@ namespace FamidashEditor
                     
                     currentFilePath = filePath;
                     hasUnsavedChanges = false;
+                    
+                    // Load TMX config to get tints and sets (must be done after currentFilePath is set)
+                    try { LoadTmxConfig(filePath); } catch { }
                     
                     AddToRecentFiles(filePath);
                     CreateNewTab(filePath);
@@ -11934,17 +11997,95 @@ namespace FamidashEditor
             if (!isDraggingSelection || GhostImage == null) return;
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             double pad = mapViewportPadding;
-            // desired top-left in canvas units
+            
+            // Check modifier keys and sprite-only mode
+            bool isShiftHeld = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+            bool isCtrlHeld = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            bool isSpritesOnly = spritesLayerActive && !tilesLayerActive;
+            
+            // desired top-left in canvas units (before snapping)
             double left = pos.X - dragOffset.X;
             double top = pos.Y - dragOffset.Y;
-            // clamp so selection stays within map extents (allow small padding)
+            
+            double snappedLeft, snappedTop;
+            
+            if (isShiftHeld && isCtrlHeld && isSpritesOnly)
+            {
+                // Single-pixel precision: work in native unscaled pixels
+                // Convert from display units to native pixels
+                double nativeLeft = (left - pad) / scale;
+                double nativeTop = (top - pad) / scale;
+                
+                // Snap to nearest native pixel
+                int snappedNativeX = (int)Math.Round(nativeLeft);
+                int snappedNativeY = (int)Math.Round(nativeTop);
+                
+                // Convert back to display units
+                snappedLeft = pad + snappedNativeX * scale;
+                snappedTop = pad + snappedNativeY * scale;
+            }
+            else if (isShiftHeld && isSpritesOnly)
+            {
+                // Half-grid snapping: work in half-tile units
+                double halfTileSize = TileSize / 2.0;
+                
+                // Convert from display units to half-tile units
+                double halfTileX = (left - pad) / scale / halfTileSize;
+                double halfTileY = (top - pad) / scale / halfTileSize;
+                
+                // Snap to nearest half-tile
+                int snappedHalfTileX = (int)Math.Round(halfTileX);
+                int snappedHalfTileY = (int)Math.Round(halfTileY);
+                
+                // Convert back to display units
+                snappedLeft = pad + snappedHalfTileX * halfTileSize * scale;
+                snappedTop = pad + snappedHalfTileY * halfTileSize * scale;
+            }
+            else
+            {
+                // Normal full-grid snapping: work in tile units
+                double tileX = (left - pad) / scale / TileSize;
+                double tileY = (top - pad) / scale / TileSize;
+                
+                // Snap to nearest tile
+                int snappedTileX = (int)Math.Round(tileX);
+                int snappedTileY = (int)Math.Round(tileY);
+                
+                // Convert back to display units
+                snappedLeft = pad + snappedTileX * TileSize * scale;
+                snappedTop = pad + snappedTileY * TileSize * scale;
+            }
+            
+            // clamp so selection stays within map extents
             double minLeft = pad; double minTop = pad;
             double maxLeft = pad + Math.Max(0, mapWidth * TileSize * scale - selW * TileSize * scale);
             double maxTop = pad + Math.Max(0, mapHeight * TileSize * scale - selH * TileSize * scale);
-            if (left < minLeft) left = minLeft; if (left > maxLeft) left = maxLeft;
-            if (top < minTop) top = minTop; if (top > maxTop) top = maxTop;
-            Canvas.SetLeft(GhostImage, left);
-            Canvas.SetTop(GhostImage, top);
+            if (snappedLeft < minLeft) snappedLeft = minLeft; if (snappedLeft > maxLeft) snappedLeft = maxLeft;
+            if (snappedTop < minTop) snappedTop = minTop; if (snappedTop > maxTop) snappedTop = maxTop;
+            
+            // Position ghost at snapped location
+            Canvas.SetLeft(GhostImage, snappedLeft);
+            Canvas.SetTop(GhostImage, snappedTop);
+            
+            // Show yellow box at snapped position
+            if (SelectionOverlay != null)
+            {
+                SelectionOverlay.Children.Clear();
+                double boxWidth = selW * TileSize * scale;
+                double boxHeight = selH * TileSize * scale;
+                var rect = new Shapes.Rectangle 
+                { 
+                    Width = boxWidth, 
+                    Height = boxHeight, 
+                    Stroke = Brushes.Yellow, 
+                    StrokeThickness = 2.0 / scale, 
+                    Fill = Brushes.Transparent, 
+                    IsHitTestVisible = false 
+                };
+                Canvas.SetLeft(rect, snappedLeft);
+                Canvas.SetTop(rect, snappedTop);
+                SelectionOverlay.Children.Add(rect);
+            }
         }
 
         private void EndDragMove(Point pos)
@@ -11973,6 +12114,11 @@ namespace FamidashEditor
                 }
             }
             
+            // Check modifier keys and sprite-only mode
+            bool isShiftHeld = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+            bool isCtrlHeld = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            bool isSpritesOnly = spritesLayerActive && !tilesLayerActive;
+            
             // compute final destination tile coords from ghost position using integer-pixel math
             double left = Canvas.GetLeft(GhostImage);
             double top = Canvas.GetTop(GhostImage);
@@ -11983,19 +12129,63 @@ namespace FamidashEditor
             int padPxY = (int)Math.Round(pad * dpiGhost.DpiScaleY);
             int leftPx = (int)Math.Round((left) * dpiGhost.DpiScaleX);
             int topPx = (int)Math.Round((top) * dpiGhost.DpiScaleY);
-            int destX = (leftPx - padPxX + tilePixelW/2) / tilePixelW;
-            int destY = (topPx - padPxY + tilePixelH/2) / tilePixelH;
+            
+            int destX, destY;
+            int pixelOffsetX = 0, pixelOffsetY = 0;
+            
+            if (isShiftHeld && isCtrlHeld && isSpritesOnly)
+            {
+                // Single-pixel precision: calculate exact pixel offsets relative to grid
+                // Convert display pixels back to native tile pixels
+                double scaledTileSize = TileSize * scale;
+                int nativeLeftPx = (int)Math.Round((leftPx - padPxX) / scale / dpiGhost.DpiScaleX);
+                int nativeTopPx = (int)Math.Round((topPx - padPxY) / scale / dpiGhost.DpiScaleY);
+                
+                // Determine which tile we're in and the pixel offset within that tile
+                destX = nativeLeftPx / TileSize;
+                destY = nativeTopPx / TileSize;
+                pixelOffsetX = nativeLeftPx % TileSize;
+                pixelOffsetY = nativeTopPx % TileSize;
+                
+                // Handle negative offsets (dragging left/up from grid)
+                if (pixelOffsetX < 0) { destX--; pixelOffsetX += TileSize; }
+                if (pixelOffsetY < 0) { destY--; pixelOffsetY += TileSize; }
+            }
+            else if (isShiftHeld && isSpritesOnly)
+            {
+                // Half-grid snapping for sprites: use half tile size for grid
+                int halfTilePixelW = tilePixelW / 2;
+                int halfTilePixelH = tilePixelH / 2;
+                
+                // Calculate which half-grid cell we're in
+                int halfGridX = (leftPx - padPxX + halfTilePixelW/2) / halfTilePixelW;
+                int halfGridY = (topPx - padPxY + halfTilePixelH/2) / halfTilePixelH;
+                
+                // Convert to tile coordinates and pixel offsets
+                destX = halfGridX / 2;
+                destY = halfGridY / 2;
+                pixelOffsetX = (halfGridX % 2) * (TileSize / 2);
+                pixelOffsetY = (halfGridY % 2) * (TileSize / 2);
+            }
+            else
+            {
+                // Normal full-grid snapping
+                destX = (leftPx - padPxX + tilePixelW/2) / tilePixelW;
+                destY = (topPx - padPxY + tilePixelH/2) / tilePixelH;
+            }
+            
             // clamp
             if (destX < 0) destX = 0; if (destY < 0) destY = 0;
             if (destX + selW > mapWidth) destX = mapWidth - selW;
             if (destY + selH > mapHeight) destY = mapHeight - selH;
 
-            // hide ghost
+            // hide ghost and yellow box
             GhostImage.Visibility = Visibility.Collapsed;
             GhostImage.Source = null;
+            if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
 
-            // commit move
-            MoveSelectionTo(destX, destY);
+            // commit move with optional pixel offset
+            MoveSelectionTo(destX, destY, pixelOffsetX, pixelOffsetY);
         }
 
         private void UpdateSelectionTo(Point pos)
@@ -12790,7 +12980,7 @@ namespace FamidashEditor
             if (StatusText != null) StatusText.Text = string.Empty;
         }
 
-        private void MoveSelectionTo(int destX, int destY)
+        private void MoveSelectionTo(int destX, int destY, int pixelOffsetX = 0, int pixelOffsetY = 0)
         {
             if (selTiles == null || selW <= 0 || selH <= 0) return;
             // clamp destination so selection fits
@@ -12936,10 +13126,19 @@ namespace FamidashEditor
             {
                 sprites[idx] = finalSprites[idx];
                 
-                // Clear any pixel offset when moving sprites (force grid snapping)
-                if (spritePixelOffsets.ContainsKey(idx))
+                // Apply or clear pixel offset based on whether offset was specified
+                if (pixelOffsetX != 0 || pixelOffsetY != 0)
                 {
-                    spritePixelOffsets.Remove(idx);
+                    // Apply the pixel offset to this sprite
+                    spritePixelOffsets[idx] = (pixelOffsetX, pixelOffsetY);
+                }
+                else
+                {
+                    // Clear any existing pixel offset (normal grid snapping)
+                    if (spritePixelOffsets.ContainsKey(idx))
+                    {
+                        spritePixelOffsets.Remove(idx);
+                    }
                 }
             }
 
@@ -14214,9 +14413,9 @@ namespace FamidashEditor
         {
             try
             {
-                // Clear existing offsets
+                // Clear existing offsets when loading from JSON - JSON data is authoritative
                 spritePixelOffsets.Clear();
-
+                
                 foreach (var entry in offsetEntries)
                 {
                     if (entry == null) continue;
@@ -14273,6 +14472,9 @@ namespace FamidashEditor
                         }
                     }
                 }
+                
+                // Save offsets to TMX config after applying JSON offsets
+                try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
                 
                 // Trigger a redraw to apply the offsets
                 try
