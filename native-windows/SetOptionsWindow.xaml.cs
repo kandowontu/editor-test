@@ -163,39 +163,20 @@ namespace FamidashEditor
         {
             try
             {
-                // Get the embedded JSON5 resource
+                // Read the JSON5 file from the application directory
                 var assembly = Assembly.GetExecutingAssembly();
-                var resourceName = "lvlset_HUGE_metadata.json5";
+                var appDirectory = Path.GetDirectoryName(assembly.Location);
+                var jsonFilePath = Path.Combine(appDirectory!, "lvlset_HUGE_metadata.json5");
                 
                 string json5Content;
-                Stream? stream = assembly.GetManifestResourceStream(resourceName);
                 
-                if (stream == null)
+                if (!File.Exists(jsonFilePath))
                 {
-                    // Try to find the resource by listing all available
-                    var availableResources = assembly.GetManifestResourceNames();
-                    foreach (var res in availableResources)
-                    {
-                        if (res.Contains("lvlset_HUGE_metadata"))
-                        {
-                            resourceName = res;
-                            stream = assembly.GetManifestResourceStream(resourceName);
-                            break;
-                        }
-                    }
-                }
-                
-                if (stream == null)
-                {
-                    MessageBox.Show("Embedded JSON metadata file not found.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"JSON metadata file not found at: {jsonFilePath}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
                 
-                using (stream)
-                using (StreamReader reader = new StreamReader(stream))
-                {
-                    json5Content = reader.ReadToEnd();
-                }
+                json5Content = File.ReadAllText(jsonFilePath);
 
                 // Convert JSON5 to standard JSON
                 string jsonContent;

@@ -226,10 +226,6 @@
     <EmbeddedResource Include="..\teleport-portal-horizontal-exit-downwards.png" />
     <EmbeddedResource Include="..\teleport-portal-enter.png" />
     <EmbeddedResource Include="..\teleport-portal-exit.png" />
-    <!-- Level metadata JSON5 -->
-    <EmbeddedResource Include="..\lvlset_HUGE_metadata.json5">
-      <LogicalName>lvlset_HUGE_metadata.json5</LogicalName>
-    </EmbeddedResource>
     <!-- Tileset variations -->
     <EmbeddedResource Include="..\tilesets\BlocksaSpikesaSawsaSlopesa.png" />
     <EmbeddedResource Include="..\tilesets\BlocksaSpikesaSawsaSlopesnone.png" />
@@ -263,6 +259,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="fami-probe-result.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Level metadata JSON5 - copy to output so it's editable -->
+    <None Include="..\lvlset_HUGE_metadata.json5">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
