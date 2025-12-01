@@ -725,20 +725,54 @@ namespace FamidashEditor
             }
             else
             {
-                // No config file - reset to defaults (transparent = no tint)
-                backgroundTint = Color.FromArgb(0, 0, 0, 0);
-                groundTint = Color.FromArgb(0, 0, 0, 0);
-                tileTint = Color.FromArgb(0, 0, 0, 0);
+                // No config file - reload global default tints from editor-settings.json
+                try
+                {
+                    var dir = AppContext.BaseDirectory;
+                    var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                    if (System.IO.File.Exists(settingsPath))
+                    {
+                        var txt = System.IO.File.ReadAllText(settingsPath);
+                        var doc = System.Text.Json.JsonDocument.Parse(txt);
+                        
+                        // Reload background tint from global settings
+                        if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                        {
+                            var a = (byte)bt[0].GetInt32();
+                            var r = (byte)bt[1].GetInt32();
+                            var g = (byte)bt[2].GetInt32();
+                            var b = (byte)bt[3].GetInt32();
+                            backgroundTint = Color.FromArgb(a, r, g, b);
+                        }
+                        
+                        // Reload ground tint from global settings
+                        if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                        {
+                            var a = (byte)gt[0].GetInt32();
+                            var r = (byte)gt[1].GetInt32();
+                            var g = (byte)gt[2].GetInt32();
+                            var b = (byte)gt[3].GetInt32();
+                            groundTint = Color.FromArgb(a, r, g, b);
+                        }
+                        
+                        // Reload tile tint from global settings
+                        if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                        {
+                            var a = (byte)tt[0].GetInt32();
+                            var r = (byte)tt[1].GetInt32();
+                            var g = (byte)tt[2].GetInt32();
+                            var b = (byte)tt[3].GetInt32();
+                            tileTint = Color.FromArgb(a, r, g, b);
+                        }
+                    }
+                }
+                catch { }
                 
-                // Don't call Update methods - just clear the toned images to use originals
-                parallaxTonedImages = null;
-                groundTonedImages = null;
-                tileTonedImages = null;
-                sawFrame1TilesTinted = null;
-                sawFrame2TilesTinted = null;
+                // Apply the reloaded tints
+                UpdateParallaxTint();
+                UpdateGroundTint();
+                UpdateTileTint();
                 
-                // Mark background dirty to force rebuild of parallax/ground without tints
-                backgroundDirty = true;
                 // Default: noParallax option absent -> unchecked and render parallax
                 noParallaxBg = false;
                 if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
@@ -2623,7 +2657,13 @@ namespace FamidashEditor
                 case 0xDA: mapped = 0x11; break;
                 case 0xDB:
                 case 0xDC: mapped = 0x1B; break;
-                case 0xFD: mapped = 0x26; break;
+                case 0xFC: mapped = 0x00; break;
+                case 0xDF:
+                case 0xE3:
+                case 0xFE:
+                case 0xFD:
+                case 0xFF: mapped = 0x26; break;
+
             }
             if (mapped != originalIndex) originalIndex = mapped;
             
@@ -4668,10 +4708,36 @@ namespace FamidashEditor
             {
                 var dir = AppContext.BaseDirectory;
                 var path = System.IO.Path.Combine(dir, "editor-settings.json");
+                
+                // If no settings file exists, create default one
+                if (!System.IO.File.Exists(path))
+                {
+                    var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                    System.IO.File.WriteAllText(path, defaultSettings);
+                }
+                
                 if (System.IO.File.Exists(path))
                 {
                     var txt = System.IO.File.ReadAllText(path);
                     var doc = System.Text.Json.JsonDocument.Parse(txt);
+                    
+                    // Check version - if not version 2, delete and recreate with defaults
+                    int version = 0;
+                    if (doc.RootElement.TryGetProperty("version", out var ver))
+                    {
+                        try { version = ver.GetInt32(); } catch { version = 0; }
+                    }
+                    
+                    if (version != 2)
+                    {
+                        // Old version - delete and recreate
+                        try { System.IO.File.Delete(path); } catch { }
+                        var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                        System.IO.File.WriteAllText(path, defaultSettings);
+                        txt = defaultSettings;
+                        doc = System.Text.Json.JsonDocument.Parse(txt);
+                    }
+                    
                     if (doc.RootElement.TryGetProperty("background", out var bg))
                     {
                         Color col;
@@ -4721,6 +4787,15 @@ namespace FamidashEditor
                         var g = (byte)gt[2].GetInt32();
                         var b = (byte)gt[3].GetInt32();
                         groundTint = Color.FromArgb(a, r, g, b);
+                    }
+                    // optional tile tint (RGBA)
+                    if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                    {
+                        var a = (byte)tt[0].GetInt32();
+                        var r = (byte)tt[1].GetInt32();
+                        var g = (byte)tt[2].GetInt32();
+                        var b = (byte)tt[3].GetInt32();
+                        tileTint = Color.FromArgb(a, r, g, b);
                     }
                     // optional legacy trigger offset
                     if (doc.RootElement.TryGetProperty("useLegacyTriggerOffset", out var lto))
@@ -4835,9 +4910,11 @@ namespace FamidashEditor
             try
             {
                 var obj = new {
+                    version = 2,
                     background = new int[] { c.A, c.R, c.G, c.B },
                     backgroundTint = new int[] { backgroundTint.A, backgroundTint.R, backgroundTint.G, backgroundTint.B },
                     groundTint = new int[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B },
+                    tileTint = new int[] { tileTint.A, tileTint.R, tileTint.G, tileTint.B },
                     useLegacyTriggerOffset = useLegacyTriggerOffset,
                     swapMouseWheelScroll = swapMouseWheelScroll,
                     invertPinchGesture = invertPinchGesture,
@@ -12872,6 +12949,10 @@ namespace FamidashEditor
             backgroundTint = Color.FromArgb(0, 0, 0, 0);
             groundTint = Color.FromArgb(0, 0, 0, 0);
             tileTint = Color.FromArgb(0, 0, 0, 0);
+            
+            // Reset noParallaxBg to false (use parallax by default)
+            noParallaxBg = false;
+            if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
             
             // Clear toned images to use originals
             parallaxTonedImages = null;
