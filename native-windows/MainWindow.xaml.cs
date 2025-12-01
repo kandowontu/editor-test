@@ -13101,6 +13101,31 @@ namespace FamidashEditor
                         // Load and apply saved tint configuration
                         LoadTmxConfig(dlg.FileName);
 
+                        // Apply tileset choice from TMX or per-level config
+                        try {
+                            // If TMX provided an explicit tileset source, prefer it
+                            if (!string.IsNullOrEmpty(loadedTilesetSource) && File.Exists(loadedTilesetSource))
+                            {
+                                LoadTileset(loadedTilesetSource);
+                                SliceTileset(); PopulateTilesPanel();
+                            }
+                            else if (showAccurateTileset)
+                            {
+                                // Apply accurate tileset based on loaded sets
+                                try { SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+                            }
+                            else
+                            {
+                                // Revert to embedded default
+                                var emb = LoadEmbeddedImage("famidash.bmp");
+                                if (emb != null)
+                                {
+                                    tilesetBitmap = emb;
+                                    SliceTileset(); PopulateTilesPanel();
+                                }
+                            }
+                        } catch { }
+
                         // Redraw to apply the loaded tints
                         Redraw();
 
