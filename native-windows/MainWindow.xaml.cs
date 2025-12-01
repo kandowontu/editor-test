@@ -55,6 +55,8 @@ namespace FamidashEditor
     private bool useLegacyTriggerOffset = false;
     // Preview option: hide color triggers in preview mode
     private bool hideColorTriggers = false;
+    // Preview option: hide all invisible sprites (user-configurable global setting)
+    private bool hideInvisibleSprites = false;
     // Per-level option: replace parallax background with noparallax.bmp when true
     private bool noParallaxBg = false;
     private bool suppressNoParallaxHandler = false;
@@ -63,6 +65,7 @@ namespace FamidashEditor
     private bool pinchDirectionDetected = false;
     private double lastManipulationCumulativeScale = 1.0;
     private bool manipulationActive = false;
+    // NOTE: 'MenuOptionHideInvisibleSprites' is declared in XAML (x:Name) and initialized by InitializeComponent.
     // default grid darkness: much lighter so grid lines are subtle over dark backgrounds
     private double gridDarkness = 0.18;
     private Brush mapBackground = new SolidColorBrush(Color.FromRgb(59,59,59));
@@ -142,6 +145,11 @@ namespace FamidashEditor
     // Track if mouse has moved since button down to distinguish click from drag
     private bool hasMouseMoved = false;
     private Point mouseDownPosition;
+    // Middle-click panning state
+    private bool isMiddlePanning = false;
+    private Point middlePanStart;
+    private double panStartHOffset = 0.0;
+    private double panStartVOffset = 0.0;
     // Selection state
     private bool isSelecting = false;
     private int selectStartX = -1, selectStartY = -1;
@@ -1278,6 +1286,8 @@ namespace FamidashEditor
                 CanvasHost.MouseLeftButtonDown += CanvasHost_MouseLeftButtonDown;
                 CanvasHost.MouseMove += CanvasHost_MouseMove;
                 CanvasHost.MouseLeftButtonUp += CanvasHost_MouseLeftButtonUp;
+                CanvasHost.MouseDown += CanvasHost_MouseDown;
+                CanvasHost.MouseUp += CanvasHost_MouseUp;
                 CanvasHost.MouseLeave += CanvasHost_MouseLeave;
                 CanvasHost.MouseRightButtonDown += CanvasHost_MouseRightButtonDown;
                 CanvasHost.PreviewMouseWheel += CanvasHost_PreviewMouseWheel;
@@ -1529,6 +1539,30 @@ namespace FamidashEditor
                     hideColorTriggers = false;
                     SaveSettingsWithTriggerOption();
                     try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                };
+            }
+            // Hide all invisible sprites (Preview Mode Options)
+            if (MenuOptionHideInvisibleSprites != null)
+            {
+                MenuOptionHideInvisibleSprites.Checked += (s, e) =>
+                {
+                    hideInvisibleSprites = true;
+                    SaveSettingsWithTriggerOption();
+                    // Only rebuild sprites immediately if preview mode is active to avoid flicker
+                    if (previewMode)
+                    {
+                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    }
+                };
+                MenuOptionHideInvisibleSprites.Unchecked += (s, e) =>
+                {
+                    hideInvisibleSprites = false;
+                    SaveSettingsWithTriggerOption();
+                    // Only rebuild sprites immediately if preview mode is active to avoid flicker
+                    if (previewMode)
+                    {
+                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    }
                 };
             }
             // No Parallax BG (per-level) option
@@ -4461,6 +4495,15 @@ namespace FamidashEditor
                             MenuOptionHideColorTriggers.IsChecked = hideColorTriggers;
                         }
                     }
+                    // optional hide invisible sprites setting (global)
+                    if (doc.RootElement.TryGetProperty("hideInvisibleSprites", out var his))
+                    {
+                        try { hideInvisibleSprites = his.GetBoolean(); } catch { hideInvisibleSprites = false; }
+                        if (MenuOptionHideInvisibleSprites != null)
+                        {
+                            MenuOptionHideInvisibleSprites.IsChecked = hideInvisibleSprites;
+                        }
+                    }
                     // optional lock-sprites global setting
                     if (doc.RootElement.TryGetProperty("lockSpritesToSet", out var ls))
                     {
@@ -4549,6 +4592,7 @@ namespace FamidashEditor
                     swapMouseWheelScroll = swapMouseWheelScroll,
                     invertPinchGesture = invertPinchGesture,
                     hideColorTriggers = hideColorTriggers,
+                    hideInvisibleSprites = hideInvisibleSprites,
                     lockSpritesToSet = lockSpritesToSet,
                     playerColor = new int[] { playerTint.A, playerTint.R, playerTint.G, playerTint.B },
                     playerColorEnabled = playerTintEnabled,
@@ -8591,6 +8635,9 @@ namespace FamidashEditor
                 // If preview-mode hiding of color triggers is enabled and this sprite is such a trigger,
                 // skip rendering so it behaves as if disappeared.
                 if (previewMode && hideColorTriggers && IsColorTriggerSprite(spriteIdx)) return;
+                // If preview-mode hiding of invisible sprites is enabled and this sprite is in that set,
+                // skip rendering so it behaves as if disappeared.
+                if (previewMode && hideInvisibleSprites && IsInvisibleSprite(spriteIdx)) return;
                 
                 // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3039)
                 // Extend the range to include the new custom mappings for horizontal teleport portals
@@ -9257,6 +9304,24 @@ namespace FamidashEditor
             return false;
         }
 
+        // Return true if a sprite id should be considered 'invisible' for the
+        // "Hide all invisible sprites" preview option. Includes explicit ids and ranges.
+        private bool IsInvisibleSprite(int spriteIdx)
+        {
+            if (spriteIdx == 0x0F) return true;
+            if (spriteIdx == 0x47 || spriteIdx == 0x48) return true;
+            if (spriteIdx == 0x6F) return true;
+            if (spriteIdx >= 0x70 && spriteIdx <= 0x78) return true;
+            if (spriteIdx == 0x7D) return true;
+            if (spriteIdx == 0x7F) return true;
+            if (spriteIdx == 0x8E) return true;
+            if (spriteIdx == 0x9E) return true;
+            if (spriteIdx >= 0xDD && spriteIdx <= 0xDF) return true;
+            if (spriteIdx >= 0xEE && spriteIdx <= 0xEF) return true;
+            if (spriteIdx >= 0xF0 && spriteIdx <= 0xFC) return true;
+            return false;
+        }
+
         private void CanvasHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (CanvasHost == null) return;
@@ -9460,6 +9525,26 @@ namespace FamidashEditor
         {
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
+
+            // If middle-button panning is active, handle scroll offsets and consume the move.
+            try
+            {
+                if (isMiddlePanning && MapScrollViewer != null && e.MiddleButton == MouseButtonState.Pressed)
+                {
+                    var cur = e.GetPosition(MapScrollViewer);
+                    double dx = cur.X - middlePanStart.X;
+                    double dy = cur.Y - middlePanStart.Y;
+                    double newH = panStartHOffset - dx;
+                    double newV = panStartVOffset - dy;
+                    // Clamp to valid ranges
+                    if (newH < 0) newH = 0;
+                    if (newV < 0) newV = 0;
+                    try { MapScrollViewer.ScrollToHorizontalOffset(newH); } catch { }
+                    try { MapScrollViewer.ScrollToVerticalOffset(newV); } catch { }
+                    return;
+                }
+            }
+            catch { }
             
             // Track if mouse has moved since button down (for click vs drag detection)
             if (e.LeftButton == MouseButtonState.Pressed && !hasMouseMoved)
@@ -9772,6 +9857,44 @@ namespace FamidashEditor
                 {
                     UpdatePaletteHighlight();
                     try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
+                    e.Handled = true;
+                }
+            }
+            catch { }
+        }
+
+        private void CanvasHost_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (CanvasHost == null || MapScrollViewer == null) return;
+            try
+            {
+                // Only start panning if middle button was pressed
+                if (e.MiddleButton == MouseButtonState.Pressed)
+                {
+                    isMiddlePanning = true;
+                    middlePanStart = e.GetPosition(MapScrollViewer);
+                    panStartHOffset = MapScrollViewer.HorizontalOffset;
+                    panStartVOffset = MapScrollViewer.VerticalOffset;
+                    // Capture mouse so we receive move/up events outside the canvas
+                    CanvasHost.CaptureMouse();
+                    Mouse.OverrideCursor = Cursors.ScrollAll;
+                    e.Handled = true;
+                }
+            }
+            catch { }
+        }
+
+        private void CanvasHost_MouseUp(object sender, MouseButtonEventArgs e)
+        {
+            if (CanvasHost == null) return;
+            try
+            {
+                // Stop panning on middle-button release
+                if (isMiddlePanning && e.MiddleButton == MouseButtonState.Released)
+                {
+                    isMiddlePanning = false;
+                    try { if (Mouse.Captured == CanvasHost) Mouse.Captured.ReleaseMouseCapture(); } catch { }
+                    Mouse.OverrideCursor = null;
                     e.Handled = true;
                 }
             }
