@@ -692,6 +692,11 @@ namespace FamidashEditor
     private BitmapSource? ninjaPortalSprite; // for sprite 0x58 (ninja-portal.png)
     private BitmapSource? teleportPortalEnterSprite; // for sprite 0x4E (teleport-portal-enter.png)
     private BitmapSource? teleportPortalExitSprite;  // for sprite 0x4F (teleport-portal-exit.png)
+    // Horizontal teleport portal preview replacements (3x1.5 tiles)
+    private BitmapSource? teleportPortalHorizontalEnterDownSprite;   // sprite 0x66
+    private BitmapSource? teleportPortalHorizontalExitUpSprite;      // sprite 0x67 (shift up 1 tile)
+    private BitmapSource? teleportPortalHorizontalEnterUpSprite;     // sprite 0x68 (shift up 1 tile)
+    private BitmapSource? teleportPortalHorizontalExitDownSprite;    // sprite 0x69
     // Speed portal preview sprites (single-frame replacements)
     private BitmapSource? speed05xPortalSprite; // sprite 0x14
     private BitmapSource? speed1xPortalSprite;  // sprite 0x15
@@ -2465,6 +2470,8 @@ namespace FamidashEditor
                              spriteIdx == 0x22 || spriteIdx == 0x23 ||
                          // Speed portal preview replacements
                          spriteIdx == 0x14 || spriteIdx == 0x15 || spriteIdx == 0x16 || spriteIdx == 0x20 || spriteIdx == 0x21 || spriteIdx == 0x6D ||
+                         // Horizontal teleport portals
+                         spriteIdx == 0x66 || spriteIdx == 0x67 || spriteIdx == 0x68 || spriteIdx == 0x69 ||
                      // Additional gravity-X portal sprite IDs (preview replacements)
                      spriteIdx == 0x5F || spriteIdx == 0x60 || spriteIdx == 0x61 || spriteIdx == 0x62 || spriteIdx == 0x63;
         }
@@ -2529,6 +2536,10 @@ namespace FamidashEditor
                 0x62 => gravity2XPortalSprite,
                 0x63 => gravity1XPortalSprite,
                 0x4B => swingcopterPortalSprite,
+                0x66 => teleportPortalHorizontalEnterDownSprite,
+                0x67 => teleportPortalHorizontalExitUpSprite,
+                0x68 => teleportPortalHorizontalEnterUpSprite,
+                0x69 => teleportPortalHorizontalExitDownSprite,
                 0x08 => gravityDownPortalSprite,
                 0x09 => gravityUpPortalSprite,
                 0x58 => ninjaPortalSprite,
@@ -2588,6 +2599,11 @@ namespace FamidashEditor
             // Teleport portal preview replacements (non-animated, tall portals)
             if (originalIndex == 0x4E) return 3000; // teleport-portal-enter
             if (originalIndex == 0x4F) return 3000; // teleport-portal-exit
+            // Horizontal teleport portal preview replacements (3 tiles wide x 1.5 tiles tall)
+            if (originalIndex == 0x66) return 3030; // teleport-portal-horizontal-enter-downwards
+            if (originalIndex == 0x67) return 3031; // teleport-portal-horizontal-exit-upwards (shift up 1 tile)
+            if (originalIndex == 0x68) return 3032; // teleport-portal-horizontal-enter-upwards (shift up 1 tile)
+            if (originalIndex == 0x69) return 3033; // teleport-portal-horizontal-exit-downwards
             if (originalIndex == 0x4B)
             {
                 return 3007; // Swingcopter portal (0x4B)
@@ -2914,6 +2930,11 @@ namespace FamidashEditor
             if (customIndex == 3008) return ninjaPortalSprite;
             if (customIndex == 3009) return gravityDownPortalSprite;
             if (customIndex == 3010) return gravityUpPortalSprite;
+            // Horizontal teleport portals custom indices (3030-3033)
+            if (customIndex == 3030) return teleportPortalHorizontalEnterDownSprite;
+            if (customIndex == 3031) return teleportPortalHorizontalExitUpSprite;
+            if (customIndex == 3032) return teleportPortalHorizontalEnterUpSprite;
+            if (customIndex == 3033) return teleportPortalHorizontalExitDownSprite;
             // Horizontal gravity portal custom indices
             if (customIndex == 3011) return gravityDownDownwardsPortalSprite;
             if (customIndex == 3012) return gravityDownUpwardsPortalSprite;
@@ -3714,6 +3735,11 @@ namespace FamidashEditor
                     // Teleport portal preview replacements (single-frame PNGs)
                     teleportPortalEnterSprite = LoadPortalSprite("teleport-portal-enter.png");
                     teleportPortalExitSprite = LoadPortalSprite("teleport-portal-exit.png");
+                    // Horizontal teleport portal preview assets (3 tiles wide x 1.5 tiles tall)
+                    teleportPortalHorizontalEnterDownSprite = LoadPortalSprite("teleport-portal-horizontal-enter-downwards.png");
+                    teleportPortalHorizontalExitUpSprite = LoadPortalSprite("teleport-portal-horizontal-exit-upwards.png");
+                    teleportPortalHorizontalEnterUpSprite = LoadPortalSprite("teleport-portal-horizontal-enter-upwards.png");
+                    teleportPortalHorizontalExitDownSprite = LoadPortalSprite("teleport-portal-horizontal-exit-downwards.png");
                 // Speed portal preview images
                 speed05xPortalSprite = LoadPortalSprite("speed-05x.png");
                 speed1xPortalSprite = LoadPortalSprite("speed-1x.png");
@@ -8425,6 +8451,17 @@ namespace FamidashEditor
                     }
                     catch { }
                 }
+
+                // Teleport horizontal portals 0x67/0x68 should be shifted up by one tile
+                if (previewMode && (spriteIdx == 0x67 || spriteIdx == 0x68))
+                {
+                    try
+                    {
+                        int oneTilePx = spritePixelH; // tile height in pixels at current scale/DPI
+                        destY = Math.Max(0, destY - oneTilePx);
+                    }
+                    catch { }
+                }
                 
                 // Bounds check
                 if (destX >= cachedPixelWidth || destY >= cachedPixelHeight) return;
@@ -8543,10 +8580,9 @@ namespace FamidashEditor
                 // skip rendering so it behaves as if disappeared.
                 if (previewMode && hideColorTriggers && IsColorTriggerSprite(spriteIdx)) return;
                 
-                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3029)
-                // Extend the range to 3029 so that the speed-3x/4x preview sprites (3027/3028)
-                // are treated as portal layer rendering and not drawn into the sprites layer
-                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3029);
+                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3039)
+                // Extend the range to include the new custom mappings for horizontal teleport portals
+                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3039);
                 int renderHeight = spritePixelH;
                 int renderWidth = spritePixelW;
 
@@ -8563,8 +8599,18 @@ namespace FamidashEditor
                     else
                     {
                         // Horizontal gravity portals: 3 tiles wide, 2 tiles tall
-                        renderWidth = spritePixelW * 3;
-                        renderHeight = spritePixelH * 2;
+                        // Special-case: horizontal teleport portals (3030-3033) are 3 tiles wide x 1.5 tiles tall
+                        if (animatedIdx >= 3030 && animatedIdx <= 3033)
+                        {
+                            renderWidth = spritePixelW * 3;                 // 3 tiles wide
+                            renderHeight = (spritePixelH * 3) / 2;          // 1.5 tiles tall
+                        }
+                        else
+                        {
+                            // Horizontal gravity portals: 3 tiles wide, 2 tiles tall
+                            renderWidth = spritePixelW * 3;
+                            renderHeight = spritePixelH * 2;
+                        }
                     }
                 }
 
@@ -9014,6 +9060,12 @@ namespace FamidashEditor
             {
                 destY = Math.Max(0, destY - spritePixelH);
             }
+            // Horizontal teleport portal previews 0x67/0x68 are designed to be shifted
+            // up by one tile so they visually align with the surrounding tiles.
+            if (previewMode && (spriteIdx == 0x67 || spriteIdx == 0x68))
+            {
+                destY = Math.Max(0, destY - spritePixelH);
+            }
             // Speed portal previews: most should start one tile higher so they visually hang
             // from the tile above similar to other portal previews. However, the 3x/4x
             // speed previews (sprite 0x20 and 0x21) render better when shifted down
@@ -9038,8 +9090,8 @@ namespace FamidashEditor
             int renderWidth = spritePixelW;
             int renderHeight = spritePixelH;
             int portalAnimatedIdx = GetAnimatedSpriteIndex(spriteIdx);
-            // Treat custom portal indices up through 3029 as multi-tile portals (extended for speed portals)
-            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3029);
+            // Treat custom portal indices 3000+ as multi-tile portals (include newly-added 3030-3033)
+            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3039);
             // Special-case for 3x/4x speed portals (3027/3028): they should be two tiles tall
             // and their horizontal pixel width should follow the source PNG width rather than
             // being forced to a single tile width.
@@ -9063,6 +9115,12 @@ namespace FamidashEditor
                 {
                     renderWidth = Math.Min(cachedPixelWidth, (int)Math.Round(spritePixelW * (double)srcWidth / (double)TileSize));
                     renderHeight = spritePixelH * 2;
+                }
+                // Horizontal teleport portals (3030-3033) are 3 tiles wide × 1.5 tiles tall
+                else if (portalAnimatedIdx >= 3030 && portalAnimatedIdx <= 3033)
+                {
+                    renderWidth = spritePixelW * 3; // 3 tiles wide
+                    renderHeight = (spritePixelH * 3) / 2; // 1.5 tiles tall
                 }
                 // 0.5x and 1x and special speed previews (3024/3025/3029) should only occupy
                 // a single tile horizontally but keep the tall height. The 2x preview (3026)

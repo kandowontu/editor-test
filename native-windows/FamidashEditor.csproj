@@ -214,6 +214,10 @@
     <EmbeddedResource Include="..\speed-3x.png" />
     <EmbeddedResource Include="..\speed-4x.png" />
     <EmbeddedResource Include="..\speed-special.png" />
+    <EmbeddedResource Include="..\teleport-portal-horizontal-enter-downwards.png" />
+    <EmbeddedResource Include="..\teleport-portal-horizontal-exit-upwards.png" />
+    <EmbeddedResource Include="..\teleport-portal-horizontal-enter-upwards.png" />
+    <EmbeddedResource Include="..\teleport-portal-horizontal-exit-downwards.png" />
     <EmbeddedResource Include="..\teleport-portal-enter.png" />
     <EmbeddedResource Include="..\teleport-portal-exit.png" />
   </ItemGroup>
