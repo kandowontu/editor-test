@@ -1,0 +1,5 @@
+res://scripts/PalettePanel.cs
+res://scripts/MainEditor.cs
+res://scripts/TilesetManager.cs
+res://scripts/MapData.cs
+res://scripts/MapCanvas.cs

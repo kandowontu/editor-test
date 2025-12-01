@@ -1,0 +1,17 @@
+63f7b34db8d8cdea90c76aacccf841ec
+::res://::1764562996
+BUILD_SUCCESS.md::TextFile::-1::1764561523::0::1::::<><><>0<>0<><>::
+icon.svg::CompressedTexture2D::7285384161973176083::1764560349::1764560627::1::::<><><>0<>0<>c80548ef85ac3d6430212af46fc5fe99<>res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex::
+IMPLEMENTATION_STATUS.md::TextFile::-1::1764561123::0::1::::<><><>0<>0<><>::
+QUICKSTART.md::TextFile::-1::1764560769::0::1::::<><><>0<>0<><>::
+README.md::TextFile::-1::1764560202::0::1::::<><><>0<>0<><>::
+::res://assets/::1764560215
+::res://scenes/::1764560325
+MainEditor.tscn::PackedScene::8762706580066132569::1764562452::0::1::::<><><>0<>0<><>::res://scripts/MainEditor.cs<>res://scripts/MapCanvas.cs<>res://scripts/PalettePanel.cs
+::res://scripts/::1764561200
+MainEditor.cs::CSharpScript::1158337284867224168::1764562913::0::1::::<>Control<><>0<>0<><>::
+MapCanvas.cs::CSharpScript::8197351173755686201::1764562734::0::1::::<>SubViewportContainer<><>0<>0<><>::
+MapData.cs::CSharpScript::3298429372641985831::1764560232::0::1::::<>GodotObject<><>0<>0<><>::
+PalettePanel.cs::CSharpScript::7158884987824253249::1764562607::0::1::::<>ScrollContainer<><>0<>0<><>::
+TilesetManager.cs::CSharpScript::355052993466330452::1764560274::0::1::::<>GodotObject<><>0<>0<><>::
+UndoRedo.cs::CSharpScript::1771121904097969211::1764560252::0::1::::<><><>0<>0<><>::
