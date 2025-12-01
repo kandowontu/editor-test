@@ -39,6 +39,6 @@ This editor has many features that place it above tiled for making famidash leve
 
 -More stuff I probably forgot
 
-
+*music playback requires Famistudio to be installed
 Famistudio playback only possible with BleuBleu and the repo https://github.com/BleuBleu/FamiStudio
 Full credits and copyrights to Famistudio 
