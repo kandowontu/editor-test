@@ -83,6 +83,36 @@ namespace FamidashEditor
                         NoParallaxCheckBox.Checked += (ss, ee) => { try { if (this.Owner is MainWindow mw2) mw2.SetNoParallax(true); } catch { } };
                         NoParallaxCheckBox.Unchecked += (ss, ee) => { try { if (this.Owner is MainWindow mw2) mw2.SetNoParallax(false); } catch { } };
                     }
+                    // Initialize Show Accurate Tileset checkbox and wire immediate updates to owner
+                    if (this.Owner is MainWindow mwAcc && ShowAccurateTilesetCheckBox != null)
+                    {
+                        try { ShowAccurateTilesetCheckBox.IsChecked = mwAcc.ShowAccurateTileset; } catch { ShowAccurateTilesetCheckBox.IsChecked = false; }
+                        ShowAccurateTilesetCheckBox.Checked += (ss, ee) => { try { if (this.Owner is MainWindow mw2) { var b = (BlockCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; var s2 = (SpikeCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; mw2.SetShowAccurateTileset(true, b, s2); } } catch { } };
+                        ShowAccurateTilesetCheckBox.Unchecked += (ss, ee) => { try { if (this.Owner is MainWindow mw2) { var b = (BlockCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; var s2 = (SpikeCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; mw2.SetShowAccurateTileset(false, b, s2); } } catch { } };
+                        // When block or spike selection changes, apply tileset immediately if option enabled
+                        SpikeCombo.SelectionChanged += (ss, ee) => {
+                            try {
+                                var sel = (SpikeCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
+                                if (!string.IsNullOrEmpty(sel)) SelectedSpikeSet = sel;
+                                if (this.Owner is MainWindow mw3 && mw3.ShowAccurateTileset)
+                                {
+                                    var b = (BlockCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
+                                    mw3.SetShowAccurateTileset(true, b, sel);
+                                }
+                            } catch { }
+                        };
+                        BlockCombo.SelectionChanged += (ss, ee) => {
+                            try {
+                                var sel = (BlockCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
+                                if (!string.IsNullOrEmpty(sel)) SelectedBlockSet = sel;
+                                if (this.Owner is MainWindow mw3 && mw3.ShowAccurateTileset)
+                                {
+                                    var s2 = (SpikeCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
+                                    mw3.SetShowAccurateTileset(true, sel, s2);
+                                }
+                            } catch { }
+                        };
+                    }
                     // Initialize LockSprites checkbox and wire immediate updates to owner
                     if (this.Owner is MainWindow mw2 && LockSpritesCheckBox != null)
                     {

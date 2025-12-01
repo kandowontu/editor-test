@@ -192,6 +192,9 @@ namespace FamidashEditor
     private HashSet<int> disabledSprites = new HashSet<int>();
     private bool lockSpritesToSet = false;
     public bool LockSpritesToSet => lockSpritesToSet;
+    // When true, prefer external per-set tileset PNGs (if available) and swap famidash.bmp at runtime
+    private bool showAccurateTileset = false;
+    public bool ShowAccurateTileset => showAccurateTileset;
 
     // Public setter used by dialogs so behavior applies identically
         public void SetLockSpritesToSet(bool enabled, string? decoOverride = null)
@@ -205,6 +208,169 @@ namespace FamidashEditor
         }
         catch { }
     }
+
+        // Public setter used by dialogs to enable/disable the accurate tileset swapping feature.
+        // When enabled, this will attempt to locate a matching PNG tileset for the current Block/Spike/NoParallax
+        // combination and load it. When disabled, it reverts to the default embedded/fallback tileset.
+        public void SetShowAccurateTileset(bool enabled, string? blockOverride = null, string? spikeOverride = null)
+        {
+            try
+            {
+                showAccurateTileset = enabled;
+                // persist as global editor setting
+                try { SaveSettingsWithTriggerOption(); } catch { }
+
+                if (showAccurateTileset)
+                {
+                    // Determine which block/spike to use
+                    var block = string.IsNullOrEmpty(blockOverride) ? loadedBlockSet : blockOverride;
+                    var spike = string.IsNullOrEmpty(spikeOverride) ? loadedSpikeSet : spikeOverride;
+
+                    // Helper: convert BLOCKSA -> Blocksa (Pascal-ish)
+                    string ToPascal(string s)
+                    {
+                        if (string.IsNullOrEmpty(s)) return s ?? "";
+                        var low = s.ToLowerInvariant();
+                        return char.ToUpperInvariant(low[0]) + low.Substring(1);
+                    }
+
+                    // Build expected suffix according to pattern you described:
+                    // {block}{spike}sawsa{noParallax?"slopesa":"slopesnone"}
+                    var suffix = noParallaxBg ? "Slopesa" : "SlopesNone";
+                    var pascalBlock = ToPascal(block ?? "");
+                    var pascalSpike = ToPascal(spike ?? "");
+
+                    var exactCandidates = new List<string>();
+                    // Primary PascalCase form (e.g. BlocksaSpikesaSawsaSlopesa.png)
+                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{suffix}.png");
+                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{suffix}.PNG");
+                    // Lowercase concatenated form (e.g. blocksaspikesasawsaslopesnone.png)
+                    exactCandidates.Add($"{(block??"").ToLowerInvariant()}{(spike??"").ToLowerInvariant()}sawsaslopes{(noParallaxBg?"a":"none")}.png");
+                    exactCandidates.Add($"{(block??"").ToLowerInvariant()}{(spike??"").ToLowerInvariant()}sawsaslopes{(noParallaxBg?"a":"none")}.PNG");
+                    // Another lowercase variant without repeated 's' where some files may be named blocksaspikesasawsa{suffix}
+                    exactCandidates.Add($"{(block??"").ToLowerInvariant()}{(spike??"").ToLowerInvariant()}sawsa{(noParallaxBg?"slopesa":"slopesnone")}.png");
+
+                    // Candidate directories: prioritize explicit user folder, then app, repo
+                    var candidates = new List<string>();
+                    // explicit path the user mentioned
+                    candidates.Add(Path.Combine(AppContext.BaseDirectory, "..")); // keep as general fallback
+                    // prioritize a tilesets folder at workspace root (common user location)
+                    candidates.Add(Path.Combine("C:\\Editor Test", "tilesets"));
+                    candidates.Add(Path.Combine(AppContext.BaseDirectory, "tilesets"));
+                    candidates.Add(AppContext.BaseDirectory);
+                    candidates.Add(Environment.CurrentDirectory);
+                    var repo = FindRepoRootFor("famidash.bmp");
+                    if (!string.IsNullOrEmpty(repo))
+                    {
+                        candidates.Add(Path.Combine(repo, "tilesets"));
+                        candidates.Add(repo);
+                    }
+
+                    string? found = null;
+                    // Try exact candidates first (deterministic)
+                    foreach (var dir in candidates)
+                    {
+                        try
+                        {
+                            if (string.IsNullOrEmpty(dir)) continue;
+                            if (!Directory.Exists(dir)) continue;
+                            foreach (var fname in exactCandidates)
+                            {
+                                var p = Path.Combine(dir, fname);
+                                if (File.Exists(p)) { found = p; break; }
+                            }
+                            if (!string.IsNullOrEmpty(found)) break;
+                        }
+                        catch { }
+                    }
+
+                    // If not found, use previous fuzzy search fallback (scan pngs for substrings)
+                    if (string.IsNullOrEmpty(found))
+                    {
+                        foreach (var dir in candidates)
+                        {
+                            try
+                            {
+                                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
+                                var files = Directory.GetFiles(dir, "*.png");
+                                int bestScore = 0;
+                                string? bestFile = null;
+                                foreach (var f in files)
+                                {
+                                    var name = Path.GetFileName(f).ToLowerInvariant();
+                                    int score = 0;
+                                    try { if (!string.IsNullOrEmpty(block) && name.Contains(block.ToLowerInvariant())) score += 2; } catch { }
+                                    try { if (!string.IsNullOrEmpty(spike) && name.Contains(spike.ToLowerInvariant())) score += 2; } catch { }
+                                    try { if (noParallaxBg && name.Contains("slopesa")) score += 2; } catch { }
+                                    try { if (!noParallaxBg && name.Contains("slopesnone")) score += 2; } catch { }
+                                    if (score > bestScore)
+                                    {
+                                        bestScore = score;
+                                        bestFile = f;
+                                    }
+                                }
+                                if (bestFile != null && bestScore >= 2)
+                                {
+                                    found = bestFile;
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(found))
+                    {
+                        LoadTileset(found);
+                        try { SliceTileset(); PopulateTilesPanel(); backgroundDirty = true; RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                        try { Dispatcher.Invoke(() => Redraw()); } catch { }
+                        return;
+                    }
+
+                    // Nothing found — keep current tileset
+                }
+                else
+                {
+                    // Disabled: revert to embedded famidash.bmp or any previously loaded flat tileset source
+                    try
+                    {
+                        // If a TMX provided an explicit tileset source, prefer it
+                        if (!string.IsNullOrEmpty(loadedTilesetSource) && File.Exists(loadedTilesetSource))
+                        {
+                            LoadTileset(loadedTilesetSource);
+                        }
+                        else
+                        {
+                            var emb = LoadEmbeddedImage("famidash.bmp");
+                            if (emb != null)
+                            {
+                                tilesetBitmap = emb;
+                                SliceTileset();
+                                PopulateTilesPanel();
+                            }
+                            else
+                            {
+                                // try to find a famidash.bmp/png file on disk
+                                var repo = FindRepoRootFor("famidash.bmp");
+                                var candidates = new List<string>();
+                                if (!string.IsNullOrEmpty(repo)) candidates.Add(Path.Combine(repo, "famidash.bmp"));
+                                candidates.Add(Path.Combine(AppContext.BaseDirectory, "famidash.bmp"));
+                                candidates.Add(Path.Combine(AppContext.BaseDirectory, "famidash.png"));
+                                foreach (var cand in candidates)
+                                {
+                                    try { if (!string.IsNullOrEmpty(cand) && File.Exists(cand)) { LoadTileset(cand); break; } } catch { }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    try { SliceTileset(); PopulateTilesPanel(); backgroundDirty = true; RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    try { Dispatcher.Invoke(() => Redraw()); } catch { }
+                }
+            }
+            catch { }
+        }
 
     // Compute disabled sprite list from the current loadedDecoSet and update UI overlays
     private void ApplyLockSpritesToSet(string? decoOverride = null)
@@ -1324,6 +1490,8 @@ namespace FamidashEditor
                 {
                     // Ensure initial layout completes before the first redraw so measurements are accurate.
                     LoadAssetsOnStart();
+                    // If the user previously enabled accurate tileset switching, attempt to apply it now
+                    try { if (showAccurateTileset) SetShowAccurateTileset(true); } catch { }
                     // Ensure palette UI reflects default active layer (tiles) on startup
                     try { UpdatePaletteHighlight(); } catch { }
                     // Run left-column sizing and palette sizing after layout has run so ActualWidth/measure are available.
@@ -4509,6 +4677,11 @@ namespace FamidashEditor
                     {
                         try { lockSpritesToSet = ls.GetBoolean(); } catch { lockSpritesToSet = false; }
                     }
+                    // optional show accurate tileset setting (global)
+                    if (doc.RootElement.TryGetProperty("showAccurateTileset", out var sat))
+                    {
+                        try { showAccurateTileset = sat.GetBoolean(); } catch { showAccurateTileset = false; }
+                    }
                     // optional grid darkness (double)
                     if (doc.RootElement.TryGetProperty("gridDarkness", out var gd))
                     {
@@ -4594,6 +4767,7 @@ namespace FamidashEditor
                     hideColorTriggers = hideColorTriggers,
                     hideInvisibleSprites = hideInvisibleSprites,
                     lockSpritesToSet = lockSpritesToSet,
+                    showAccurateTileset = showAccurateTileset,
                     playerColor = new int[] { playerTint.A, playerTint.R, playerTint.G, playerTint.B },
                     playerColorEnabled = playerTintEnabled,
                     gridDarkness = gridDarkness,
