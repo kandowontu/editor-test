@@ -214,6 +214,8 @@
     <EmbeddedResource Include="..\speed-3x.png" />
     <EmbeddedResource Include="..\speed-4x.png" />
     <EmbeddedResource Include="..\speed-special.png" />
+    <EmbeddedResource Include="..\teleport-portal-enter.png" />
+    <EmbeddedResource Include="..\teleport-portal-exit.png" />
   </ItemGroup>
   <!-- If present, copy pre-parsed FamiStudio album JSON and probe results into the build output
        so the runtime (launched from bin) can find them without additional configuration. -->

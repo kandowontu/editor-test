@@ -200,7 +200,7 @@ namespace FamidashEditor
 
     // Compute disabled sprite list from the current loadedDecoSet and update UI overlays
     private void ApplyLockSpritesToSet(string? decoOverride = null)
-    {
+        {
         disabledSprites.Clear();
         if (!lockSpritesToSet) {
             // Remove overlays
@@ -690,6 +690,8 @@ namespace FamidashEditor
     private BitmapSource? spiderPortalSprite; // for sprite 0x17 (spider-portal.png)
     private BitmapSource? swingcopterPortalSprite; // for sprite 0x4B (swingcopter-portal.png)
     private BitmapSource? ninjaPortalSprite; // for sprite 0x58 (ninja-portal.png)
+    private BitmapSource? teleportPortalEnterSprite; // for sprite 0x4E (teleport-portal-enter.png)
+    private BitmapSource? teleportPortalExitSprite;  // for sprite 0x4F (teleport-portal-exit.png)
     // Speed portal preview sprites (single-frame replacements)
     private BitmapSource? speed05xPortalSprite; // sprite 0x14
     private BitmapSource? speed1xPortalSprite;  // sprite 0x15
@@ -2242,7 +2244,7 @@ namespace FamidashEditor
 
                 // Check if we have any animated orb sprites in the visible area (fast scan)
                 bool hasAnimatedOrbs = false;
-                for (int yy = vMinY; yy <= vMaxY && !hasAnimatedOrbs; yy++)
+                        for (int yy = vMinY; yy <= vMaxY && !hasAnimatedOrbs; yy++)
                 {
                     for (int xx = vMinX; xx <= vMaxX; xx++)
                     {
@@ -2254,6 +2256,7 @@ namespace FamidashEditor
                             spriteIdx == 0x27 || // Green
                             spriteIdx == 0x28 || // Red
                             spriteIdx == 0x44 || // Black
+                            spriteIdx == 0x7B || spriteIdx == 0x7C || // 0x7B/0x7C mimic blue/green orb behavior
                             spriteIdx == 0x7A || // White
                             spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
                             spriteIdx == 0x52 || spriteIdx == 0x53 || // Red pad down/up
@@ -2297,6 +2300,7 @@ namespace FamidashEditor
                                     spriteIdx == 0x27 || // Green
                                     spriteIdx == 0x28 || // Red
                                     spriteIdx == 0x44 || // Black
+                                    spriteIdx == 0x7B || spriteIdx == 0x7C || // 0x7B/0x7C mimic blue/green orb behavior
                                         spriteIdx == 0x52 || // Red pad (preview-only)
                                     spriteIdx == 0x53 || // Red pad up
                                     spriteIdx == 0x0A || // Yellow pad down
@@ -2454,6 +2458,8 @@ namespace FamidashEditor
                      spriteIdx == 0x08 || spriteIdx == 0x09 ||
                      // Rainbow portal (new): treat 0x64 as a portal for preview rendering
                      spriteIdx == 0x64 ||
+                     // Teleport portal preview replacements
+                     spriteIdx == 0x4E || spriteIdx == 0x4F ||
                      // Horizontal gravity portals
                      spriteIdx == 0x10 || spriteIdx == 0x11 || spriteIdx == 0x12 || spriteIdx == 0x13 ||
                              spriteIdx == 0x22 || spriteIdx == 0x23 ||
@@ -2526,6 +2532,8 @@ namespace FamidashEditor
                 0x08 => gravityDownPortalSprite,
                 0x09 => gravityUpPortalSprite,
                 0x58 => ninjaPortalSprite,
+                0x4E => teleportPortalEnterSprite,
+                0x4F => teleportPortalExitSprite,
                 0x14 => speed05xPortalSprite,
                 0x15 => speed1xPortalSprite,
                 0x16 => speed2xPortalSprite,
@@ -2577,6 +2585,9 @@ namespace FamidashEditor
             {
                 return 3018; // Growth portal (new)
             }
+            // Teleport portal preview replacements (non-animated, tall portals)
+            if (originalIndex == 0x4E) return 3000; // teleport-portal-enter
+            if (originalIndex == 0x4F) return 3000; // teleport-portal-exit
             if (originalIndex == 0x4B)
             {
                 return 3007; // Swingcopter portal (0x4B)
@@ -3700,6 +3711,9 @@ namespace FamidashEditor
                     // New mini and growth portal preview images (placed in workspace root)
                     miniPortalSprite = LoadPortalSprite("mini-portal.png");
                     growthPortalSprite = LoadPortalSprite("growth-portal.png");
+                    // Teleport portal preview replacements (single-frame PNGs)
+                    teleportPortalEnterSprite = LoadPortalSprite("teleport-portal-enter.png");
+                    teleportPortalExitSprite = LoadPortalSprite("teleport-portal-exit.png");
                 // Speed portal preview images
                 speed05xPortalSprite = LoadPortalSprite("speed-05x.png");
                 speed1xPortalSprite = LoadPortalSprite("speed-1x.png");
