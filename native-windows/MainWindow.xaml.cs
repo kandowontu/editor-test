@@ -226,7 +226,9 @@ namespace FamidashEditor
         else if (decoNorm.Contains("DECOCLOUD") || decoNorm.Contains("DECO1") || decoNorm.StartsWith("DECO"))
         {
             // DECO1 / DECOCLOUD share the same disabled list
-            int[] list = new int[] { 0x4E, 0x4F, 0x66, 0x67, 0x68, 0x69, 0x4C, 0x4D, 0x50, 0x51, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x6E, 0x79, 0x17, 0x4B, 0x58 };
+            // Include 0x64 in the DECO disabled list so the rainbow portal replacement
+            // (0x64) is not selectable when locked to DECO1/DECOCLOUD. EXTRAS keeps it enabled.
+            int[] list = new int[] { 0x4E, 0x4F, 0x66, 0x67, 0x68, 0x69, 0x4C, 0x4D, 0x50, 0x51, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x6E, 0x79, 0x17, 0x4B, 0x58, 0x64 };
             foreach (var v in list) disabledSprites.Add(v);
         }
 
@@ -7669,7 +7671,7 @@ namespace FamidashEditor
                                             }
                                             else if (checkSpriteId == 0x20 || checkSpriteId == 0x21)
                                             {
-                                                int nudgePixels = (int)Math.Round(4.0 * dpi.DpiScaleY);
+                                                int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
                                                 portalDestY = Math.Max(0, portalDestY - nudgePixels);
                                             }
                                         }
@@ -8404,7 +8406,7 @@ namespace FamidashEditor
                 {
                     try
                     {
-                        int nudgePixels = (int)Math.Round(4.0 * dpi.DpiScaleY);
+                        int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
                         destY = Math.Max(0, destY - nudgePixels);
                     }
                     catch { }
@@ -9013,8 +9015,8 @@ namespace FamidashEditor
                 }
                 else if (spriteIdx == 0x20 || spriteIdx == 0x21)
                 {
-                    // 3x/4x speed portals: small nudge up of 4 logical pixels, scaled by DPI
-                    int nudgePixels = (int)Math.Round(4.0 * dpi.DpiScaleY);
+                    // 3x/4x speed portals: small nudge up of 6 logical pixels, scaled by DPI
+                    int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
                     destY = Math.Max(0, destY - nudgePixels);
                 }
             }
