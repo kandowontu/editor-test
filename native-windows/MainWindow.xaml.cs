@@ -67,7 +67,7 @@ namespace FamidashEditor
     private bool swapMouseWheelScroll = false; // when true, swap shift/no-modifier wheel scroll behavior
     private bool invertPinchGesture = true; // if true, invert pinch scale (device-dependent)
     private bool pinchDirectionDetected = false;
-    private string tileboardPosition = "LEFT"; // LEFT or RIGHT
+    private string tileboardPosition = "LEFT"; // LEFT, RIGHT, TOP, or BOTTOM
     private double lastManipulationCumulativeScale = 1.0;
     private bool manipulationActive = false;
     // NOTE: 'MenuOptionHideInvisibleSprites' is declared in XAML (x:Name) and initialized by InitializeComponent.
@@ -1898,6 +1898,8 @@ namespace FamidashEditor
             {
                 MenuTileboardLeft.Checked += (s, e) => {
                     if (MenuTileboardRight != null) MenuTileboardRight.IsChecked = false;
+                    if (MenuTileboardTop != null) MenuTileboardTop.IsChecked = false;
+                    if (MenuTileboardBottom != null) MenuTileboardBottom.IsChecked = false;
                     SetTileboardPosition("LEFT");
                 };
             }
@@ -1905,7 +1907,27 @@ namespace FamidashEditor
             {
                 MenuTileboardRight.Checked += (s, e) => {
                     if (MenuTileboardLeft != null) MenuTileboardLeft.IsChecked = false;
+                    if (MenuTileboardTop != null) MenuTileboardTop.IsChecked = false;
+                    if (MenuTileboardBottom != null) MenuTileboardBottom.IsChecked = false;
                     SetTileboardPosition("RIGHT");
+                };
+            }
+            if (MenuTileboardTop != null)
+            {
+                MenuTileboardTop.Checked += (s, e) => {
+                    if (MenuTileboardLeft != null) MenuTileboardLeft.IsChecked = false;
+                    if (MenuTileboardRight != null) MenuTileboardRight.IsChecked = false;
+                    if (MenuTileboardBottom != null) MenuTileboardBottom.IsChecked = false;
+                    SetTileboardPosition("TOP");
+                };
+            }
+            if (MenuTileboardBottom != null)
+            {
+                MenuTileboardBottom.Checked += (s, e) => {
+                    if (MenuTileboardLeft != null) MenuTileboardLeft.IsChecked = false;
+                    if (MenuTileboardRight != null) MenuTileboardRight.IsChecked = false;
+                    if (MenuTileboardTop != null) MenuTileboardTop.IsChecked = false;
+                    SetTileboardPosition("BOTTOM");
                 };
             }
             // Hide color triggers preview option
@@ -5063,6 +5085,8 @@ namespace FamidashEditor
                     // Don't apply position here - will be applied after window loads
                     if (MenuTileboardLeft != null) MenuTileboardLeft.IsChecked = (tileboardPosition == "LEFT");
                     if (MenuTileboardRight != null) MenuTileboardRight.IsChecked = (tileboardPosition == "RIGHT");
+                    if (MenuTileboardTop != null) MenuTileboardTop.IsChecked = (tileboardPosition == "TOP");
+                    if (MenuTileboardBottom != null) MenuTileboardBottom.IsChecked = (tileboardPosition == "BOTTOM");
                     
                     // optional famistudio path
                     if (doc.RootElement.TryGetProperty("famistudioPath", out var fsPath))
@@ -5704,9 +5728,34 @@ namespace FamidashEditor
 
         private void SetTileboardPosition(string position)
         {
+            string previousPosition = tileboardPosition;
             tileboardPosition = position;
+            
+            // When switching TO LEFT/RIGHT from TOP/BOTTOM, reset manual flags
+            if ((position == "LEFT" || position == "RIGHT") && 
+                (previousPosition == "TOP" || previousPosition == "BOTTOM"))
+            {
+                manualTileSize = false;
+                manualSpriteSize = false;
+            }
+            
             ApplyTileboardPosition();
             UpdateLeftColumnWidth(initial: false);
+            
+            // Repopulate tiles panel to apply correct tile order for new position
+            PopulateTilesPanel();
+            
+            // For LEFT/RIGHT positions, recalculate sizes as if app just opened
+            // For TOP/BOTTOM, don't change tile sizes
+            this.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (tileboardPosition == "LEFT" || tileboardPosition == "RIGHT")
+                {
+                    // Reset to startup behavior for LEFT/RIGHT
+                    Ensure16VisibleOnStartup();
+                }
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+            
             SaveSettingsWithTriggerOption();
         }
 
@@ -5714,25 +5763,103 @@ namespace FamidashEditor
         {
             if (RootGrid == null || RootGrid.ColumnDefinitions.Count < 3) return;
 
-            if (tileboardPosition == "RIGHT")
+            if (tileboardPosition == "TOP" || tileboardPosition == "BOTTOM")
             {
+                // TOP/BOTTOM: Use row-based layout instead of column-based
+                // First ensure we have row definitions
+                if (RootGrid.RowDefinitions.Count == 0)
+                {
+                    RootGrid.RowDefinitions.Clear();
+                    if (tileboardPosition == "TOP")
+                    {
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(260, GridUnitType.Pixel) });
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5, GridUnitType.Pixel) });
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                    }
+                    else // BOTTOM
+                    {
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5, GridUnitType.Pixel) });
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(260, GridUnitType.Pixel) });
+                    }
+                }
+                
+                // Clear column positioning
+                Grid.SetColumn(TileboardPanel, 0);
+                Grid.SetColumn(MainEditorPanel, 0);
+                Grid.SetColumnSpan(TileboardPanel, 3);
+                Grid.SetColumnSpan(MainEditorPanel, 3);
+                
+                // Set row positioning based on TOP or BOTTOM
+                if (tileboardPosition == "TOP")
+                {
+                    Grid.SetRow(TileboardPanel, 0);
+                    Grid.SetRow(MainEditorPanel, 2);
+                }
+                else // BOTTOM
+                {
+                    Grid.SetRow(MainEditorPanel, 0);
+                    Grid.SetRow(TileboardPanel, 2);
+                }
+                
+                // Hide vertical splitter when in TOP/BOTTOM mode
+                if (RootGrid.Children.Count > 2)
+                {
+                    var splitter = RootGrid.Children.OfType<GridSplitter>().FirstOrDefault();
+                    if (splitter != null) splitter.Visibility = Visibility.Collapsed;
+                }
+            }
+            else if (tileboardPosition == "RIGHT")
+            {
+                // Ensure rows are cleared for column-based layout
+                if (RootGrid.RowDefinitions.Count > 0)
+                {
+                    RootGrid.RowDefinitions.Clear();
+                }
+                Grid.SetRowSpan(TileboardPanel, 1);
+                Grid.SetRowSpan(MainEditorPanel, 1);
+                Grid.SetRow(TileboardPanel, 0);
+                Grid.SetRow(MainEditorPanel, 0);
+                
                 // Move panels: Main | Splitter | Tileboard
                 Grid.SetColumn(TileboardPanel, 2);
                 Grid.SetColumn(MainEditorPanel, 0);
+                Grid.SetColumnSpan(TileboardPanel, 1);
+                Grid.SetColumnSpan(MainEditorPanel, 1);
                 
-                // Set main editor to star sizing, tileboard will be sized by UpdateLeftColumnWidth
+                // Reset column widths to default
                 RootGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
-                // Column 2 width will be set by UpdateLeftColumnWidth
+                RootGrid.ColumnDefinitions[2].Width = new GridLength(260, GridUnitType.Pixel);
+                
+                // Show vertical splitter
+                var splitter = RootGrid.Children.OfType<GridSplitter>().FirstOrDefault();
+                if (splitter != null) splitter.Visibility = Visibility.Visible;
             }
             else // LEFT
             {
+                // Ensure rows are cleared for column-based layout
+                if (RootGrid.RowDefinitions.Count > 0)
+                {
+                    RootGrid.RowDefinitions.Clear();
+                }
+                Grid.SetRowSpan(TileboardPanel, 1);
+                Grid.SetRowSpan(MainEditorPanel, 1);
+                Grid.SetRow(TileboardPanel, 0);
+                Grid.SetRow(MainEditorPanel, 0);
+                
                 // Default: Tileboard | Splitter | Main
                 Grid.SetColumn(TileboardPanel, 0);
                 Grid.SetColumn(MainEditorPanel, 2);
+                Grid.SetColumnSpan(TileboardPanel, 1);
+                Grid.SetColumnSpan(MainEditorPanel, 1);
                 
-                // Set main editor to star sizing, tileboard will be sized by UpdateLeftColumnWidth
+                // Reset column widths to default
+                RootGrid.ColumnDefinitions[0].Width = new GridLength(260, GridUnitType.Pixel);
                 RootGrid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
-                // Column 0 width will be set by UpdateLeftColumnWidth
+                
+                // Show vertical splitter
+                var splitter = RootGrid.Children.OfType<GridSplitter>().FirstOrDefault();
+                if (splitter != null) splitter.Visibility = Visibility.Visible;
             }
         }
 
@@ -5744,6 +5871,26 @@ namespace FamidashEditor
             try
             {
                 if (RootGrid == null) return;
+                
+                // For TOP/BOTTOM position, adjust row height instead of column width
+                if (tileboardPosition == "TOP" || tileboardPosition == "BOTTOM")
+                {
+                    int tileboardRow = (tileboardPosition == "TOP") ? 0 : 2;
+                    if (RootGrid.RowDefinitions.Count > tileboardRow)
+                    {
+                        var row = RootGrid.RowDefinitions[tileboardRow];
+                        if (!manualTileSize)
+                        {
+                            double ts = paletteTileSize;
+                            double scrollbar = SystemParameters.VerticalScrollBarWidth; // Use vertical scrollbar width
+                            double padding = 12;
+                            // Height for tiles and sprites stacked horizontally
+                            double desired = Math.Max(160, ts * 8 + scrollbar + padding + 100); // Extra space for labels
+                            row.Height = new GridLength(desired, GridUnitType.Pixel);
+                        }
+                    }
+                    return;
+                }
                 
                 // Determine which column has the tileboard based on current position
                 int tileboardColumn = (tileboardPosition == "RIGHT") ? 2 : 0;
@@ -7258,9 +7405,35 @@ namespace FamidashEditor
             if (TilesPanel == null) return;
             TilesPanel.Items.Clear();
             if (tileImages == null) return;
-            int idx = 0;
-            foreach (var src in tileImages)
+            
+            // For TOP/BOTTOM position, rotate the tile layout: tile 0x00 at bottom-left, 0x01 above it, etc.
+            // For TOP: same rotation as BOTTOM since tiles flow upward in columns
+            // We need to reorder tiles so they appear in columns going up
+            int[] displayOrder;
+            if (tileboardPosition == "TOP" || tileboardPosition == "BOTTOM")
             {
+                // 16 columns × 16 rows = 256 tiles
+                // Original: row-major (0x00-0x0F in first row, 0x10-0x1F in second row, etc.)
+                // TOP/BOTTOM: column-major bottom-up (0x00 at bottom-left, 0x01 above it, ..., 0x0F at top-left, then 0x10 at bottom of second column)
+                displayOrder = new int[256];
+                for (int i = 0; i < 256; i++)
+                {
+                    int col = i / 16;  // Which column (0-15)
+                    int row = i % 16;  // Which row within column (0-15)
+                    // Bottom-up: flip the row (15-row instead of row)
+                    displayOrder[(15 - row) * 16 + col] = i;
+                }
+            }
+            else
+            {
+                // Normal order
+                displayOrder = Enumerable.Range(0, 256).ToArray();
+            }
+            
+            foreach (int idx in displayOrder)
+            {
+                if (idx >= tileImages.Length) continue;
+                var src = tileImages[idx];
                 // prefer tinted tiles in the left palette when available, except for
                 // the special player-replacement tiles which must show the player
                 // tinted green pixels while preserving toned colors for non-green.
@@ -7405,7 +7578,6 @@ namespace FamidashEditor
                 };
                 
                 TilesPanel.Items.Add(border);
-                idx++;
             }
         }
 
