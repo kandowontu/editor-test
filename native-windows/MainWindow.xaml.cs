@@ -2333,6 +2333,28 @@ namespace FamidashEditor
                         spritesWb.Unlock();
                     }
                 }
+            
+            // Also update visible portal regions so animated portals (including 0x64 rainbow)
+            // advance each preview tick instead of only when sprites change.
+            if (previewMode && portalsWb != null)
+            {
+                GetVisibleTileBounds(out int pMinX, out int pMaxX, out int pMinY, out int pMaxY);
+                bool hasPortals = false;
+                for (int yy = pMinY; yy <= pMaxY && !hasPortals; yy++)
+                {
+                    for (int xx = pMinX; xx <= pMaxX; xx++)
+                    {
+                        int sidx = sprites[yy * mapWidth + xx];
+                        if (IsPortalSprite(sidx)) { hasPortals = true; break; }
+                    }
+                }
+
+                if (hasPortals)
+                {
+                    // Rebuild a slightly expanded region to cover multi-tile portals
+                    QueueRebuildPortalsRegion(Math.Max(0, pMinX - 1), Math.Max(0, pMinY - 2), Math.Min(mapWidth - 1, pMaxX + 1), Math.Min(mapHeight - 1, pMaxY + 2));
+                }
+            }
             }
             else
             {
@@ -2428,6 +2450,8 @@ namespace FamidashEditor
                      spriteIdx == 0x03 || spriteIdx == 0x04 || spriteIdx == 0x24 ||
                      spriteIdx == 0x17 || spriteIdx == 0x18 || spriteIdx == 0x19 || spriteIdx == 0x4B || spriteIdx == 0x58 ||
                      spriteIdx == 0x08 || spriteIdx == 0x09 ||
+                     // Rainbow portal (new): treat 0x64 as a portal for preview rendering
+                     spriteIdx == 0x64 ||
                      // Horizontal gravity portals
                      spriteIdx == 0x10 || spriteIdx == 0x11 || spriteIdx == 0x12 || spriteIdx == 0x13 ||
                              spriteIdx == 0x22 || spriteIdx == 0x23 ||
@@ -2438,8 +2462,48 @@ namespace FamidashEditor
         }
         
         // Get the portal sprite bitmap for a given sprite ID
-        private BitmapSource? GetPortalSpriteForId(int spriteIdx)
+        // Optionally accepts a position key (y*mapWidth + x) so callers can request
+        // a per-position deterministic variant (used for the rainbow portal 0x64).
+        private BitmapSource? GetPortalSpriteForId(int spriteIdx, int positionKey = -1)
         {
+            // Rainbow portal (0x64) cycles through a specific ordered list of portal images.
+            if (spriteIdx == 0x64)
+            {
+                // Ordered list: cube, ship, ball, ufo, robot, wave, spider, swingcopter, ninja
+                BitmapSource?[] order = new BitmapSource?[]
+                {
+                    cubePortalSprite,
+                    shipPortalSprite,
+                    ballPortalSprite,
+                    ufoPortalSprite,
+                    robotPortalSprite,
+                    wavePortalSprite,
+                    spiderPortalSprite,
+                    swingcopterPortalSprite,
+                    ninjaPortalSprite
+                };
+
+                // If positionKey not provided, fall back to cube portal
+                if (positionKey < 0)
+                {
+                    return cubePortalSprite;
+                }
+
+                int len = order.Length;
+                if (len == 0) return null;
+
+                // Deterministic per-position start offset using Knuth multiplicative hash
+                uint seed = (uint)positionKey;
+                uint offset = (uint)((seed * 2654435761u) % (uint)len);
+
+                // Advance based on global animationFrame so portals animate over time
+                int frameAdvance = 0;
+                try { frameAdvance = (animationFrame / 8) % len; } catch { frameAdvance = 0; }
+
+                int idx = (int)((offset + (uint)frameAdvance) % (uint)len);
+                return order[idx];
+            }
+
             return spriteIdx switch
             {
                 0x00 => cubePortalSprite,
@@ -2491,6 +2555,9 @@ namespace FamidashEditor
             
             // Check if this is a portal sprite
             if (originalIndex == 0x00) return 3000; // Cube portal
+            // Treat 0x64 as the rainbow portal which should be rendered using the
+            // same sizing as standard tall portals (map it to 3000 for sizing).
+            if (originalIndex == 0x64) return 3000; // Rainbow portal (cycles through portal images)
             if (originalIndex == 0x01) return 3001; // Ship portal
             if (originalIndex == 0x02) return 3002; // Ball portal
             if (originalIndex == 0x03) return 3003; // UFO portal
@@ -7579,7 +7646,8 @@ namespace FamidashEditor
                                     
                                     if (IsPortalSprite(checkSpriteId))
                                     {
-                                        var portalSprite = GetPortalSpriteForId(checkSpriteId);
+                                        int portalPosKey = checkY * mapWidth + checkX;
+                                        var portalSprite = GetPortalSpriteForId(checkSpriteId, portalPosKey);
                                         if (portalSprite == null) continue;
                                         
                                         // Found a portal! Calculate which part of it overlaps with our current tile
@@ -7601,7 +7669,7 @@ namespace FamidashEditor
                                             }
                                             else if (checkSpriteId == 0x20 || checkSpriteId == 0x21)
                                             {
-                                                int nudgePixels = (int)Math.Round(2.0 * dpi.DpiScaleY);
+                                                int nudgePixels = (int)Math.Round(4.0 * dpi.DpiScaleY);
                                                 portalDestY = Math.Max(0, portalDestY - nudgePixels);
                                             }
                                         }
@@ -8330,6 +8398,17 @@ namespace FamidashEditor
                     }
                     catch { }
                 }
+
+                // Small nudge for 3x/4x speed preview portals (sprite 0x20/0x21)
+                if (previewMode && (spriteIdx == 0x20 || spriteIdx == 0x21))
+                {
+                    try
+                    {
+                        int nudgePixels = (int)Math.Round(4.0 * dpi.DpiScaleY);
+                        destY = Math.Max(0, destY - nudgePixels);
+                    }
+                    catch { }
+                }
                 
                 // Bounds check
                 if (destX >= cachedPixelWidth || destY >= cachedPixelHeight) return;
@@ -8349,8 +8428,19 @@ namespace FamidashEditor
                 // Check if this is a custom animated sprite
                 if (animatedIdx >= 2000)
                 {
-                    // Request the custom animation sprite
-                    sprite = GetCustomAnimationSprite(animatedIdx);
+                    // Special-case: rainbow portal (original sprite 0x64) should be
+                    // provided by GetPortalSpriteForId so it can start at a per-position
+                    // randomized frame and cycle through the ordered portal images.
+                    if (spriteIdx == 0x64)
+                    {
+                        // currentSpritePositionKey was set earlier in this method
+                        sprite = GetPortalSpriteForId(spriteIdx, currentSpritePositionKey);
+                    }
+                    else
+                    {
+                        // Request the custom animation sprite
+                        sprite = GetCustomAnimationSprite(animatedIdx);
+                    }
 
                     // Lightweight diagnostic: sample first pixel of pad frames to detect per-frame changes
                     if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26 || spriteIdx == 0x7A || spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || spriteIdx == 0x36 || spriteIdx == 0x49 || spriteIdx == 0x4A))
@@ -8875,7 +8965,8 @@ namespace FamidashEditor
             if (spriteIdx < 0 || spriteIdx >= spriteImages.Length) return;
             if (!IsPortalSprite(spriteIdx)) return;
 
-            var portalSprite = GetPortalSpriteForId(spriteIdx);
+            int portalPosKey = y * mapWidth + x;
+            var portalSprite = GetPortalSpriteForId(spriteIdx, portalPosKey);
             if (portalSprite == null)
             {
                 System.Diagnostics.Debug.WriteLine($"WARNING: Portal sprite null for idx=0x{spriteIdx:X2} at ({x},{y})");
@@ -8922,8 +9013,8 @@ namespace FamidashEditor
                 }
                 else if (spriteIdx == 0x20 || spriteIdx == 0x21)
                 {
-                    // 3x/4x speed portals: small nudge up of 2 logical pixels, scaled by DPI
-                    int nudgePixels = (int)Math.Round(2.0 * dpi.DpiScaleY);
+                    // 3x/4x speed portals: small nudge up of 4 logical pixels, scaled by DPI
+                    int nudgePixels = (int)Math.Round(4.0 * dpi.DpiScaleY);
                     destY = Math.Max(0, destY - nudgePixels);
                 }
             }
