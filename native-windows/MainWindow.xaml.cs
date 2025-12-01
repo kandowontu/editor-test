@@ -688,6 +688,9 @@ namespace FamidashEditor
     private BitmapSource? wavePortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x24 in preview mode
     // New portal sprites added by the user
     private BitmapSource? spiderPortalSprite; // for sprite 0x17 (spider-portal.png)
+    // Spider pad preview sprites (single-tile, non-animated)
+    private BitmapSource? spiderPadSprite; // for sprite 0x56 (spider-pad.png)
+    private BitmapSource? spiderPadUpsideDownSprite; // for sprite 0x57 (spider-pad-upsidedown.png)
     private BitmapSource? swingcopterPortalSprite; // for sprite 0x4B (swingcopter-portal.png)
     private BitmapSource? ninjaPortalSprite; // for sprite 0x58 (ninja-portal.png)
     private BitmapSource? teleportPortalEnterSprite; // for sprite 0x4E (teleport-portal-enter.png)
@@ -2599,6 +2602,9 @@ namespace FamidashEditor
             // Teleport portal preview replacements (non-animated, tall portals)
             if (originalIndex == 0x4E) return 3000; // teleport-portal-enter
             if (originalIndex == 0x4F) return 3000; // teleport-portal-exit
+            // Spider pad preview replacements (single-frame, non-animated)
+            if (originalIndex == 0x56) return 2152; // spider-pad (0x56)
+            if (originalIndex == 0x57) return 2153; // spider-pad-upsidedown (0x57)
             // Horizontal teleport portal preview replacements (3 tiles wide x 1.5 tiles tall)
             if (originalIndex == 0x66) return 3030; // teleport-portal-horizontal-enter-downwards
             if (originalIndex == 0x67) return 3031; // teleport-portal-horizontal-exit-upwards (shift up 1 tile)
@@ -2935,6 +2941,9 @@ namespace FamidashEditor
             if (customIndex == 3031) return teleportPortalHorizontalExitUpSprite;
             if (customIndex == 3032) return teleportPortalHorizontalEnterUpSprite;
             if (customIndex == 3033) return teleportPortalHorizontalExitDownSprite;
+            // Spider pad static previews
+            if (customIndex == 2152) return spiderPadSprite;
+            if (customIndex == 2153) return spiderPadUpsideDownSprite;
             // Horizontal gravity portal custom indices
             if (customIndex == 3011) return gravityDownDownwardsPortalSprite;
             if (customIndex == 3012) return gravityDownUpwardsPortalSprite;
@@ -3735,6 +3744,9 @@ namespace FamidashEditor
                     // Teleport portal preview replacements (single-frame PNGs)
                     teleportPortalEnterSprite = LoadPortalSprite("teleport-portal-enter.png");
                     teleportPortalExitSprite = LoadPortalSprite("teleport-portal-exit.png");
+                        // Spider pad preview sprites (single-tile, non-animated)
+                        spiderPadSprite = LoadPortalSprite("spider-pad.png");
+                        spiderPadUpsideDownSprite = LoadPortalSprite("spider-pad-upsidedown.png");
                     // Horizontal teleport portal preview assets (3 tiles wide x 1.5 tiles tall)
                     teleportPortalHorizontalEnterDownSprite = LoadPortalSprite("teleport-portal-horizontal-enter-downwards.png");
                     teleportPortalHorizontalExitUpSprite = LoadPortalSprite("teleport-portal-horizontal-exit-upwards.png");
