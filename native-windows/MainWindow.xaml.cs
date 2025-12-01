@@ -930,6 +930,11 @@ namespace FamidashEditor
     private BitmapSource[]? coinFrame2;
     private BitmapSource[]? coinFrame3;
     private BitmapSource[]? coinFrame4;
+    // Mini coin animation frames (preview-only): 4 frames for sprite 0x6E
+    private BitmapSource[]? miniCoinFrame1;
+    private BitmapSource[]? miniCoinFrame2;
+    private BitmapSource[]? miniCoinFrame3;
+    private BitmapSource[]? miniCoinFrame4;
     // Red pad (preview-only) animation frames: 4 frames for sprite 0x52
     private BitmapSource[]? redPadFrame1;
     private BitmapSource[]? redPadFrame2;
@@ -2478,6 +2483,7 @@ namespace FamidashEditor
                             spriteIdx == 0x7B || spriteIdx == 0x7C || // 0x7B/0x7C mimic blue/green orb behavior
                             spriteIdx == 0x7A || // White
                             spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
+                            spriteIdx == 0x6E || // Mini coin
                             spriteIdx == 0x52 || spriteIdx == 0x53 || // Red pad down/up
                             spriteIdx == 0x0A || spriteIdx == 0x0C || // Yellow pad down/up
                             spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0xFD || spriteIdx == 0xFE || // Blue pad down/up (+ aliases)
@@ -2534,6 +2540,7 @@ namespace FamidashEditor
                                         spriteIdx == 0x07 || // Coin types
                                         spriteIdx == 0x1A ||
                                         spriteIdx == 0x1B || // Coin types
+                                        spriteIdx == 0x6E || // Mini coin
                                         // New dash orb sprites
                                         spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
                                         // Decorations (including pulsing ball 0x49 and music note 0x4A)
@@ -2609,6 +2616,7 @@ namespace FamidashEditor
                 case 0xE5: mapped = 0x25; break;
                 case 0xE6:
                 case 0xE7: mapped = 0x10; break;
+                case 0x8F: mapped = 0x2F; break;
                 case 0xDD:
                 case 0xDE: mapped = 0x10; break;
                 case 0xD9:
@@ -2909,6 +2917,7 @@ namespace FamidashEditor
             // Deco spikes (single-frame preview-only)
             if (originalIndex == 0x2E) return 2148; // deco-spikes (2148)
             if (originalIndex == 0x2F) return 2149; // deco-spikes-upsidedown (2149)
+            // (Removed earlier sprite-only mapping for 0x8F; tile mapping will be applied instead)
             if (originalIndex == 0x30) return 2150; // deco-spikes-small (2150)
             if (originalIndex == 0x31) return 2151; // deco-spikes-small-upsidedown (2151)
             if (originalIndex == 0x52)
@@ -2925,11 +2934,13 @@ namespace FamidashEditor
             bool isWhiteOrb = (originalIndex == 0x7A);
             // Coins: 0x07, 0x1A, 0x1B
             bool isCoin = (originalIndex == 0x07 || originalIndex == 0x1A || originalIndex == 0x1B);
+            // Mini coin (preview-only animation): sprite 0x6E
+            bool isMiniCoin = (originalIndex == 0x6E);
             // Pads (preview-only): 0x52 red-pad-down, 0x53 red-pad-up, 0x0A yellow-pad-down, 0x0C yellow-pad-up,
             // 0x0D blue-pad-down, 0x0E blue-pad-up, 0x25 pink-pad-down, 0x26 pink-pad-up
             bool isPad = (originalIndex == 0x52 || originalIndex == 0x53 || originalIndex == 0x0A || originalIndex == 0x0C || originalIndex == 0x0D || originalIndex == 0x0E || originalIndex == 0x25 || originalIndex == 0x26 || originalIndex == 0xFD || originalIndex == 0xFE);
             
-            if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb || isPad || isWhiteOrb || isCoin)
+            if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb || isPad || isWhiteOrb || isCoin || isMiniCoin)
             {
                 // 4-frame animation at 9/20 speed (slower than saws)
                 // Each sprite gets a random offset so they don't all sync
@@ -2957,6 +2968,11 @@ namespace FamidashEditor
                 // Red:    2024-2027 (1 sprite × 4 frames)
                 // Black:  2028-2031 (1 sprite × 4 frames)
                 
+                // Mini-coin handled here as its own 4-frame animation (custom indices 2400-2403)
+                if (isMiniCoin)
+                {
+                    return 2400 + frame;
+                }
                 if (isYellowOrb)
                 {
                     int spriteOffset = (originalIndex == 0x0B) ? 0 : (originalIndex == 0x1F) ? 1 : 2;
@@ -3392,6 +3408,19 @@ namespace FamidashEditor
                 {
                     return frameArray[spriteOffset];
                 }
+            }
+            else if (customIndex >= 2400 && customIndex <= 2403)
+            {
+                // Mini coin: 4 frames (2400-2403)
+                int frame = customIndex - 2400;
+                return frame switch
+                {
+                    0 => miniCoinFrame1?[0],
+                    1 => miniCoinFrame2?[0],
+                    2 => miniCoinFrame3?[0],
+                    3 => miniCoinFrame4?[0],
+                    _ => null
+                };
             }
             else if (customIndex >= 2076 && customIndex <= 2079)
             {
@@ -4197,6 +4226,45 @@ namespace FamidashEditor
         private void InitializeCoinAnimationFrames()
         {
             LoadCoinFrames(ref coinFrame1, ref coinFrame2, ref coinFrame3, ref coinFrame4);
+        }
+
+        private void InitializeMiniCoinAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("mini-coin-frame1.png");
+                var f2 = LoadEmbeddedImage("mini-coin-frame2.png");
+                var f3 = LoadEmbeddedImage("mini-coin-frame3.png");
+                var f4 = LoadEmbeddedImage("mini-coin-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var c1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var c2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var c3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var c4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    miniCoinFrame1 = new BitmapSource[1];
+                    miniCoinFrame2 = new BitmapSource[1];
+                    miniCoinFrame3 = new BitmapSource[1];
+                    miniCoinFrame4 = new BitmapSource[1];
+
+                    miniCoinFrame1[0] = c1;
+                    miniCoinFrame2[0] = c2;
+                    miniCoinFrame3[0] = c3;
+                    miniCoinFrame4[0] = c4;
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded mini-coin animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ mini-coin frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load mini-coin animation frames: {ex.Message}");
+            }
         }
 
         private void InitializeBlueOrbAnimationFrames()
@@ -5108,6 +5176,8 @@ namespace FamidashEditor
                 InitializeRedOrbAnimationFrames();
                 InitializeWhiteOrbAnimationFrames();
                 InitializeCoinAnimationFrames();
+                // Mini coin animation frames (preview-only)
+                InitializeMiniCoinAnimationFrames();
                 InitializeBlackOrbAnimationFrames();
                 // Initialize pad animation frames (preview-only)
                 InitializeRedPadAnimationFrames();

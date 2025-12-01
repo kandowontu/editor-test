@@ -77,6 +77,10 @@
     <EmbeddedResource Include="..\coin-frame2.png" />
     <EmbeddedResource Include="..\coin-frame3.png" />
     <EmbeddedResource Include="..\coin-frame4.png" />
+    <EmbeddedResource Include="..\mini-coin-frame1.png" />
+    <EmbeddedResource Include="..\mini-coin-frame2.png" />
+    <EmbeddedResource Include="..\mini-coin-frame3.png" />
+    <EmbeddedResource Include="..\mini-coin-frame4.png" />
     <EmbeddedResource Include="..\red-pad-up-frame1.png" />
     <EmbeddedResource Include="..\red-pad-up-frame2.png" />
     <EmbeddedResource Include="..\red-pad-up-frame3.png" />
