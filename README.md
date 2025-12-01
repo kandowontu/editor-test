@@ -2,16 +2,27 @@ Famidash Editor - by kandowontu
 
 Full disclosure, this editor is vibe coded, however, Famidash has absolutely no AI involved in its production or code.
 
+
+
 This editor has many features that place it above tiled for making famidash levels:
 
--Automatically shift all triggers 10 tiles left on load and 10 tiles right on save, so you place triggers where they should activate, not 10 tiles over. You'll recieve an informational popup if any clashes happen, and those sprites will be moved vertically one tile.
 
--Local level cfg files - saves music, background/ground/tile tints, parallax/no parallax settings, block/spike/deco set
+
+For new users, these 2 options are a must, as they will make sure you dont use incompatible sprites/tiles:
 
 -Lock sprites to currently usable set will show you only the sprites that will be able to show with your level setup
 
 -Show accurate tileset - shows you what every tile will actually appear as in-game with your current configuration
 
+
+
+Other options include:
+
+
+
+-Automatically shift all triggers 10 tiles left on load and 10 tiles right on save, so you place triggers where they should activate, not 10 tiles over. You'll recieve an informational popup if any clashes happen, and those sprites will be moved vertically one tile.
+
+-Local level cfg files - saves music, background/ground/tile tints, parallax/no parallax settings, block/spike/deco set
 
 -Preview Mode - replaces all sprite tiles with their in-game sprites, making it appear as it does in-game (this is heavily a wip)
 
@@ -40,5 +51,7 @@ This editor has many features that place it above tiled for making famidash leve
 -More stuff I probably forgot
 
 *music playback requires Famistudio to be installed
+
 Famistudio playback only possible with BleuBleu and the repo https://github.com/BleuBleu/FamiStudio
+
 Full credits and copyrights to Famistudio 
