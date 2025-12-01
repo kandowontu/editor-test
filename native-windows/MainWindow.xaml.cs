@@ -393,6 +393,15 @@ namespace FamidashEditor
             return;
         }
 
+        // Sprites 0x17, 0x4B, 0x58 are only disabled if parallax is ENABLED (noParallaxBg is false)
+        // These are disabled regardless of deco set when parallax is on
+        if (!noParallaxBg)
+        {
+            disabledSprites.Add(0x17);
+            disabledSprites.Add(0x4B);
+            disabledSprites.Add(0x58);
+        }
+
         // Determine which deco set to use for computing disabled sprites (normalize and accept minor variants)
         string decoToUse = (decoOverride ?? loadedDecoSet ?? "").ToUpperInvariant().Trim();
         // Remove non-alphanumeric characters for robust matching (e.g. "deco 1", "deco_1")
@@ -413,15 +422,6 @@ namespace FamidashEditor
             // (0x64) is not selectable when locked to DECO1/DECOCLOUD. EXTRAS keeps it enabled.
             int[] list = new int[] { 0x4E, 0x4F, 0x66, 0x67, 0x68, 0x69, 0x4C, 0x4D, 0x50, 0x51, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x6E, 0x79, 0x64 };
             foreach (var v in list) disabledSprites.Add(v);
-            
-            // Sprites 0x17, 0x4B, 0x58 are only disabled if parallax is ENABLED (noParallaxBg is false)
-            // When parallax is disabled, these sprites should remain available
-            if (!noParallaxBg)
-            {
-                disabledSprites.Add(0x17);
-                disabledSprites.Add(0x4B);
-                disabledSprites.Add(0x58);
-            }
         }
 
         // Update palette visuals and deselect if current selection invalid
