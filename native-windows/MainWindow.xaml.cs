@@ -13116,5 +13116,54 @@ namespace FamidashEditor
                 }
             }
         }
+
+    // Public API: apply a deco set immediately and save to per-level config
+    public void SetDecoSet(string deco)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(deco)) return;
+            if (deco == loadedDecoSet) return;
+            loadedDecoSet = deco;
+            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+            try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+            try { if (lockSpritesToSet) ApplyLockSpritesToSet(); } catch { }
+            try { Redraw(); } catch { }
+        }
+        catch { }
     }
+
+    // Public API: apply a block set immediately and save to per-level config
+    public void SetBlockSet(string block)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(block)) return;
+            if (block == loadedBlockSet) return;
+            loadedBlockSet = block;
+            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+            // If accurate tileset swapping is enabled, reapply to pick the matching tileset
+            try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+            try { Redraw(); } catch { }
+        }
+        catch { }
+    }
+
+    // Public API: apply a spike set immediately and save to per-level config
+    public void SetSpikeSet(string spike)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(spike)) return;
+            if (spike == loadedSpikeSet) return;
+            loadedSpikeSet = spike;
+            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+            // If accurate tileset swapping is enabled, reapply to pick the matching tileset
+            try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+            try { Redraw(); } catch { }
+        }
+        catch { }
+    }
+}
+
 }

@@ -94,10 +94,9 @@ namespace FamidashEditor
                             try {
                                 var sel = (SpikeCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
                                 if (!string.IsNullOrEmpty(sel)) SelectedSpikeSet = sel;
-                                if (this.Owner is MainWindow mw3 && mw3.ShowAccurateTileset)
+                                if (this.Owner is MainWindow mw3)
                                 {
-                                    var b = (BlockCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
-                                    mw3.SetShowAccurateTileset(true, b, sel);
+                                    mw3.SetSpikeSet(sel ?? "SPIKESA");
                                 }
                             } catch { }
                         };
@@ -105,10 +104,9 @@ namespace FamidashEditor
                             try {
                                 var sel = (BlockCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
                                 if (!string.IsNullOrEmpty(sel)) SelectedBlockSet = sel;
-                                if (this.Owner is MainWindow mw3 && mw3.ShowAccurateTileset)
+                                if (this.Owner is MainWindow mw3)
                                 {
-                                    var s2 = (SpikeCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
-                                    mw3.SetShowAccurateTileset(true, sel, s2);
+                                    mw3.SetBlockSet(sel ?? "BLOCKSA");
                                 }
                             } catch { }
                         };
@@ -120,15 +118,17 @@ namespace FamidashEditor
                         LockSpritesCheckBox.Checked += (ss, ee) => { try { if (this.Owner is MainWindow mw3) { var selected = (DecoCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; mw3.SetLockSpritesToSet(true, selected); LockSpritesToSet = true; } } catch { } };
                         LockSpritesCheckBox.Unchecked += (ss, ee) => { try { if (this.Owner is MainWindow mw3) { var selected = (DecoCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; mw3.SetLockSpritesToSet(false, selected); LockSpritesToSet = false; } } catch { } };
 
-                        // When the deco selection changes in this dialog, apply lock immediately if owner has lock enabled
+                        // When the deco selection changes in this dialog, apply immediately and save to per-level config
                         DecoCombo.SelectionChanged += (ss, ee) => {
                             try {
                                 var sel = (DecoCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
                                 // Update own SelectedDeco for OK
                                 if (!string.IsNullOrEmpty(sel)) SelectedDeco = sel;
-                                if (this.Owner is MainWindow mw4 && mw4.LockSpritesToSet)
+                                if (this.Owner is MainWindow mw4)
                                 {
-                                    mw4.SetLockSpritesToSet(mw4.LockSpritesToSet, sel);
+                                    mw4.SetDecoSet(sel ?? "DECO1");
+                                    // If lock is enabled, re-apply disabled sprites for the new deco
+                                    if (mw4.LockSpritesToSet) mw4.SetLockSpritesToSet(mw4.LockSpritesToSet, sel);
                                 }
                             } catch { }
                         };
