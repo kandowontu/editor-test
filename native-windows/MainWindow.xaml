@@ -19,7 +19,7 @@
         </Grid.ColumnDefinitions>
 
         <!-- Left palettes -->
-        <Grid Grid.Column="0" Margin="4">
+        <Grid x:Name="TileboardPanel" Grid.Column="0" Margin="4">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -94,7 +94,7 @@
     <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#33000000" ShowsPreview="False"/>
 
         <!-- Main area -->
-        <DockPanel Grid.Column="2">
+        <DockPanel x:Name="MainEditorPanel" Grid.Column="2">
             <!-- Menu Bar -->
             <Menu DockPanel.Dock="Top">
                 <MenuItem Header="_File">
@@ -120,10 +120,17 @@
                     <MenuItem x:Name="MenuToolRedo" Header="_Redo" InputGestureText="Ctrl+Y" />
                 </MenuItem>
                 <MenuItem Header="_Options">
-                    <MenuItem x:Name="MenuOptionLegacyTriggers" Header="Legacy Trigger Load/Save" IsCheckable="True" IsChecked="False" />
+                    <MenuItem Header="Editor Options">
+                        <MenuItem x:Name="MenuOptionLegacyTriggers" Header="Legacy Trigger Load/Save" IsCheckable="True" IsChecked="False" />
                         <MenuItem x:Name="MenuOptionSwapMouseWheel" Header="Swap Mouse Wheel Scroll" IsCheckable="True" IsChecked="False" />
-                        <MenuItem x:Name="MenuOptionInvertPinch" Header="Invert Wheel/Pinch Zoom" IsCheckable="True" IsChecked="True" />
-                    <MenuItem x:Name="MenuColorEditorBackground" Header="Editor Background Color..." />
+                        <MenuItem x:Name="MenuOptionSwapPinch" Header="Swap Wheel/Pinch Zoom" IsCheckable="True" IsChecked="True" />
+                        <MenuItem x:Name="MenuColorEditorBackground" Header="Editor Background Color..." />
+                        <Separator />
+                        <MenuItem Header="Tileboard Position">
+                            <MenuItem x:Name="MenuTileboardLeft" Header="Left" IsCheckable="True" IsChecked="True" />
+                            <MenuItem x:Name="MenuTileboardRight" Header="Right" IsCheckable="True" IsChecked="False" />
+                        </MenuItem>
+                    </MenuItem>
                     <MenuItem x:Name="MenuColorPlayerTint" Header="Player Color..." />
                     <MenuItem Header="FamiStudio">
                         <MenuItem x:Name="MenuConfigureFamiStudio" Header="Configure FamiStudio..." />

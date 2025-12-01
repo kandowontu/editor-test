@@ -67,6 +67,7 @@ namespace FamidashEditor
     private bool swapMouseWheelScroll = false; // when true, swap shift/no-modifier wheel scroll behavior
     private bool invertPinchGesture = true; // if true, invert pinch scale (device-dependent)
     private bool pinchDirectionDetected = false;
+    private string tileboardPosition = "LEFT"; // LEFT or RIGHT
     private double lastManipulationCumulativeScale = 1.0;
     private bool manipulationActive = false;
     // NOTE: 'MenuOptionHideInvisibleSprites' is declared in XAML (x:Name) and initialized by InitializeComponent.
@@ -1621,6 +1622,9 @@ namespace FamidashEditor
             InitDefaultMap();
                 Loaded += (s, e) =>
                 {
+                    // Apply tileboard position FIRST, before any size calculations
+                    ApplyTileboardPosition();
+                    
                     // Ensure initial layout completes before the first redraw so measurements are accurate.
                     LoadAssetsOnStart();
                     // If the user previously enabled accurate tileset switching, attempt to apply it now
@@ -1821,10 +1825,26 @@ namespace FamidashEditor
                 };
             }
             // Invert pinch gesture option (some devices report inverted scale)
-            if (MenuOptionInvertPinch != null)
+            if (MenuOptionSwapPinch != null)
             {
-                MenuOptionInvertPinch.Checked += (s, e) => { invertPinchGesture = true; SaveSettingsWithTriggerOption(); };
-                MenuOptionInvertPinch.Unchecked += (s, e) => { invertPinchGesture = false; SaveSettingsWithTriggerOption(); };
+                MenuOptionSwapPinch.Checked += (s, e) => { invertPinchGesture = true; SaveSettingsWithTriggerOption(); };
+                MenuOptionSwapPinch.Unchecked += (s, e) => { invertPinchGesture = false; SaveSettingsWithTriggerOption(); };
+            }
+            
+            // Tileboard position handlers
+            if (MenuTileboardLeft != null)
+            {
+                MenuTileboardLeft.Checked += (s, e) => {
+                    if (MenuTileboardRight != null) MenuTileboardRight.IsChecked = false;
+                    SetTileboardPosition("LEFT");
+                };
+            }
+            if (MenuTileboardRight != null)
+            {
+                MenuTileboardRight.Checked += (s, e) => {
+                    if (MenuTileboardLeft != null) MenuTileboardLeft.IsChecked = false;
+                    SetTileboardPosition("RIGHT");
+                };
             }
             // Hide color triggers preview option
             if (MenuOptionHideColorTriggers != null)
@@ -4960,8 +4980,22 @@ namespace FamidashEditor
                     if (doc.RootElement.TryGetProperty("invertPinchGesture", out var ipg))
                     {
                         try { invertPinchGesture = ipg.GetBoolean(); } catch { invertPinchGesture = true; }
-                        if (MenuOptionInvertPinch != null) MenuOptionInvertPinch.IsChecked = invertPinchGesture;
+                        if (MenuOptionSwapPinch != null) MenuOptionSwapPinch.IsChecked = invertPinchGesture;
                     }
+                    
+                    // Load tileboard position (default to LEFT if not present)
+                    if (doc.RootElement.TryGetProperty("tileboardPosition", out var tbPosElem))
+                    {
+                        tileboardPosition = tbPosElem.GetString() ?? "LEFT";
+                    }
+                    else
+                    {
+                        tileboardPosition = "LEFT";
+                    }
+                    // Don't apply position here - will be applied after window loads
+                    if (MenuTileboardLeft != null) MenuTileboardLeft.IsChecked = (tileboardPosition == "LEFT");
+                    if (MenuTileboardRight != null) MenuTileboardRight.IsChecked = (tileboardPosition == "RIGHT");
+                    
                     // optional famistudio path
                     if (doc.RootElement.TryGetProperty("famistudioPath", out var fsPath))
                     {
@@ -5018,7 +5052,8 @@ namespace FamidashEditor
                     playerColor = new int[] { playerTint.A, playerTint.R, playerTint.G, playerTint.B },
                     playerColorEnabled = playerTintEnabled,
                     gridDarkness = gridDarkness,
-                    famistudioPath = string.IsNullOrEmpty(famiStudioPath) ? null : famiStudioPath
+                    famistudioPath = string.IsNullOrEmpty(famiStudioPath) ? null : famiStudioPath,
+                    tileboardPosition = tileboardPosition
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
                 var dir = AppContext.BaseDirectory;
@@ -5046,6 +5081,40 @@ namespace FamidashEditor
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
         }
 
+        private void SetTileboardPosition(string position)
+        {
+            tileboardPosition = position;
+            ApplyTileboardPosition();
+            UpdateLeftColumnWidth(initial: false);
+            SaveSettingsWithTriggerOption();
+        }
+
+        private void ApplyTileboardPosition()
+        {
+            if (RootGrid == null || RootGrid.ColumnDefinitions.Count < 3) return;
+
+            if (tileboardPosition == "RIGHT")
+            {
+                // Move panels: Main | Splitter | Tileboard
+                Grid.SetColumn(TileboardPanel, 2);
+                Grid.SetColumn(MainEditorPanel, 0);
+                
+                // Set main editor to star sizing, tileboard will be sized by UpdateLeftColumnWidth
+                RootGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+                // Column 2 width will be set by UpdateLeftColumnWidth
+            }
+            else // LEFT
+            {
+                // Default: Tileboard | Splitter | Main
+                Grid.SetColumn(TileboardPanel, 0);
+                Grid.SetColumn(MainEditorPanel, 2);
+                
+                // Set main editor to star sizing, tileboard will be sized by UpdateLeftColumnWidth
+                RootGrid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
+                // Column 0 width will be set by UpdateLeftColumnWidth
+            }
+        }
+
         // When initial=true, allow calling code to expand the window minimum width so the left column
         // can show 16 tiles across on first launch. For subsequent calls, avoid forcing the window
         // min/width so the user can shrink the window naturally.
@@ -5054,7 +5123,10 @@ namespace FamidashEditor
             try
             {
                 if (RootGrid == null) return;
-                var col = RootGrid.ColumnDefinitions[0];
+                
+                // Determine which column has the tileboard based on current position
+                int tileboardColumn = (tileboardPosition == "RIGHT") ? 2 : 0;
+                var col = RootGrid.ColumnDefinitions[tileboardColumn];
                 
                 // When in auto mode (not manual tile size), adjust column width to fit 16 tiles
                 // When manual, keep the column fixed and allow scrollbars
@@ -5065,13 +5137,13 @@ namespace FamidashEditor
                     double scrollbar = SystemParameters.VerticalScrollBarWidth;
                     double padding = 12;
                     double desired = Math.Max(160, ts * 16 + scrollbar + padding);
-                    // set the left column width to desired
+                    // set the tileboard column width to desired
                     col.Width = new GridLength(desired, GridUnitType.Pixel);
                 }
 
                 if (initial)
                 {
-                    // On first run, expand the window MinWidth so the left column is fully visible,
+                    // On first run, expand the window MinWidth so the tileboard column is fully visible,
                     // but avoid forcing the actual Window.Width (user should be able to resize freely).
                     double colWidth = col.ActualWidth > 0 ? col.ActualWidth : 260;
                     double splitterWidth = (RootGrid.ColumnDefinitions.Count > 1) ? RootGrid.ColumnDefinitions[1].ActualWidth : 5;
@@ -8373,13 +8445,23 @@ namespace FamidashEditor
             int copyHeight = Math.Min(tilePixelH, cachedPixelHeight - destY);
             int srcStride = tilePixelW * 4;
             
+            // Ensure we don't read past the source array bounds
+            int expectedSize = tilePixelH * srcStride;
+            if (srcPixels.Length < expectedSize)
+            {
+                // Source buffer is smaller than expected - clamp the copy height
+                copyHeight = Math.Min(copyHeight, srcPixels.Length / srcStride);
+            }
+            
             for (int row = 0; row < copyHeight; row++)
             {
                 int srcOffset = row * srcStride;
                 long destOffset = (destY + row) * backBufferStride + destX * 4;
                 byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
                 
-                for (int col = 0; col < copyWidth * 4; col++)
+                // Ensure we don't read past the end of this row
+                int maxCol = Math.Min(copyWidth * 4, srcPixels.Length - srcOffset);
+                for (int col = 0; col < maxCol; col++)
                 {
                     destPtr[col] = srcPixels[srcOffset + col];
                 }
