@@ -13270,6 +13270,24 @@ namespace FamidashEditor
         }
         catch { }
     }
+
+    // Helper methods for SetOptionsWindow JSON loading
+    public string GetCurrentTmxPath()
+    {
+        return currentFilePath ?? string.Empty;
+    }
+
+    public void SaveCurrentTmxConfig()
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                SaveTmxConfig(currentFilePath);
+            }
+        }
+        catch { }
+    }
 }
 
 }

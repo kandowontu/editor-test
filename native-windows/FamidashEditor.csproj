@@ -226,6 +226,35 @@
     <EmbeddedResource Include="..\teleport-portal-horizontal-exit-downwards.png" />
     <EmbeddedResource Include="..\teleport-portal-enter.png" />
     <EmbeddedResource Include="..\teleport-portal-exit.png" />
+    <!-- Level metadata JSON5 -->
+    <EmbeddedResource Include="..\lvlset_HUGE_metadata.json5">
+      <LogicalName>lvlset_HUGE_metadata.json5</LogicalName>
+    </EmbeddedResource>
+    <!-- Tileset variations -->
+    <EmbeddedResource Include="..\tilesets\BlocksaSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksaSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksaSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksaSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksaSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksaSpikescSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksbSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksbSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksbSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksbSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksbSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksbSpikescSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlockscSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlockscSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlockscSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlockscSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlockscSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlockscSpikescSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksdSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksdSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksdSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksdSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksdSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\tilesets\BlocksdSpikescSawsaSlopesnone.png" />
   </ItemGroup>
   <!-- If present, copy pre-parsed FamiStudio album JSON and probe results into the build output
        so the runtime (launched from bin) can find them without additional configuration. -->
