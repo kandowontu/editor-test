@@ -216,6 +216,8 @@ namespace FamidashEditor
     private Point dragStartMouse; // in CanvasHost coords
     private int dragOrigX = 0, dragOrigY = 0; // original selection top-left
     private Point dragOffset; // offset from mouse to selection top-left when dragging
+    private int ghostLogicalWidth = 0, ghostLogicalHeight = 0; // logical size of ghost bitmap
+    private double lastDragScale = 1.0; // last scale value during drag for zoom rescaling
     private int dragFinalTileX = 0, dragFinalTileY = 0; // final snapped tile position during drag
     private int dragFinalOffsetX = 0, dragFinalOffsetY = 0; // final snapped pixel offset during drag
     // Allow a small padded margin around the map so users can scroll slightly out-of-bounds
@@ -1136,6 +1138,7 @@ namespace FamidashEditor
     private System.Windows.Threading.DispatcherTimer? zoomThrottleTimer;
     private System.Windows.Threading.DispatcherTimer? zoomCommitTimer;
     private bool deferZoomRebuild = false;
+    private bool isSnappingZoom = false; // Flag to prevent recursion when snapping zoom to integer values
     // Anchor used to preserve the world point under the cursor during zoom commit
     private bool hasZoomAnchor = false;
     private double zoomAnchorMapX = 0.0;
@@ -1811,8 +1814,74 @@ namespace FamidashEditor
 
                 ZoomSlider.ValueChanged += (s, e) =>
                 {
+                    // Snap to integer zoom levels only (1x, 2x, 3x, 4x)
+                    if (ZoomSlider != null && !isSnappingZoom)
+                    {
+                        double rawValue = ZoomSlider.Value;
+                        int snappedValue = (int)Math.Round(rawValue);
+                        if (snappedValue < 1) snappedValue = 1;
+                        if (Math.Abs(rawValue - snappedValue) > 0.01)
+                        {
+                            isSnappingZoom = true;
+                            ZoomSlider.Value = snappedValue;
+                            isSnappingZoom = false;
+                            return; // Exit early, the snapped value will trigger another ValueChanged
+                        }
+                    }
+                    
                     // Update visible numeric zoom label
                     try { if (ZoomLevelLabel != null) ZoomLevelLabel.Text = $"{(ZoomSlider!=null?ZoomSlider.Value:1.0):0.00}x"; } catch { }
+                    
+                    // If dragging selection, update ghost size and drag offset for new zoom level
+                    if (isDraggingSelection && GhostImage != null && GhostImage.Source != null)
+                    {
+                        try
+                        {
+                            double oldScale = lastDragScale;
+                            double newScale = ZoomSlider?.Value ?? 1.0;
+                            var dpi = VisualTreeHelper.GetDpi(this);
+                            var mousePos = Mouse.GetPosition(CanvasHost);
+                            
+                            // Use same calculation as tile rendering
+                            int oldTilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleX));
+                            int oldTilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleY));
+                            int newTilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * newScale * dpi.DpiScaleX));
+                            int newTilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * newScale * dpi.DpiScaleY));
+                            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                            
+                            // Get current ghost position in logical pixels
+                            double oldLeft = Canvas.GetLeft(GhostImage);
+                            double oldTop = Canvas.GetTop(GhostImage);
+                            
+                            // Update ghost display size for new scale
+                            GhostImage.Width = (ghostLogicalWidth * newScale * dpi.DpiScaleX) / dpi.DpiScaleX;
+                            GhostImage.Height = (ghostLogicalHeight * newScale * dpi.DpiScaleY) / dpi.DpiScaleY;
+                            
+                            // Convert to physical pixels, then to tile coordinates
+                            int oldLeftPx = (int)Math.Round(oldLeft * dpi.DpiScaleX);
+                            int oldTopPx = (int)Math.Round(oldTop * dpi.DpiScaleY);
+                            double logicalTileX = (double)(oldLeftPx - padPxX) / oldTilePixelW;
+                            double logicalTileY = (double)(oldTopPx - padPxY) / oldTilePixelH;
+                            
+                            // Reposition at new scale using integer pixel math, then convert to logical
+                            int newLeftPx = padPxX + (int)Math.Round(logicalTileX * newTilePixelW);
+                            int newTopPx = padPxY + (int)Math.Round(logicalTileY * newTilePixelH);
+                            double newLeft = newLeftPx / dpi.DpiScaleX;
+                            double newTop = newTopPx / dpi.DpiScaleY;
+                            
+                            Canvas.SetLeft(GhostImage, newLeft);
+                            Canvas.SetTop(GhostImage, newTop);
+                            
+                            // Update stored scale for next zoom
+                            lastDragScale = newScale;
+                            
+                            // Recalculate drag offset for new scale
+                            dragOffset = new Point(mousePos.X - newLeft, mousePos.Y - newTop);
+                        }
+                        catch { }
+                    }
+                    
                     // Provide immediate visual feedback by scaling existing images
                     UpdateQuickZoomTransform();
 
@@ -12166,30 +12235,25 @@ namespace FamidashEditor
             
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             var dpi = VisualTreeHelper.GetDpi(this);
+            
+            // Use same calculation as tile rendering for exact alignment
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
 
-            // Calculate actual bounds including sprite pixel offsets from the saved selection data
-            int minOffsetX = 0, minOffsetY = 0, maxOffsetX = 0, maxOffsetY = 0;
-            foreach (var kvp in selSpriteOffsets)
-            {
-                minOffsetX = Math.Min(minOffsetX, kvp.Value.offsetX);
-                minOffsetY = Math.Min(minOffsetY, kvp.Value.offsetY);
-                maxOffsetX = Math.Max(maxOffsetX, kvp.Value.offsetX);
-                maxOffsetY = Math.Max(maxOffsetY, kvp.Value.offsetY);
-            }
-
-            // Build an image for the selection - size to include all offsets
-            // The bitmap needs to fit from minOffset to (selW-1)*TileSize + maxOffset + TileSize
-            int bitmapWidth = (selW * TileSize + maxOffsetX - minOffsetX);
-            int bitmapHeight = (selH * TileSize + maxOffsetY - minOffsetY);
-            int pixW = (int)Math.Ceiling(bitmapWidth * scale * dpi.DpiScaleX);
-            int pixH = (int)Math.Ceiling(bitmapHeight * scale * dpi.DpiScaleY);
+            // Build an image for the selection - simple approach: just draw what we have
+            int bitmapWidth = selW * TileSize;
+            int bitmapHeight = selH * TileSize;
+            
+            // Store logical dimensions for zoom updates
+            ghostLogicalWidth = bitmapWidth;
+            ghostLogicalHeight = bitmapHeight;
             
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
-                // Draw tiles first, offset by minOffset to ensure they fit in bitmap
+                // Draw tiles at their natural positions
                 for (int yy = 0; yy < selH; yy++)
                 {
                     for (int xx = 0; xx < selW; xx++)
@@ -12202,14 +12266,12 @@ namespace FamidashEditor
                             if (src == null) src = tileImages[val];
                             if (src != null)
                             {
-                                double x = (xx * TileSize - minOffsetX) * scale;
-                                double y = (yy * TileSize - minOffsetY) * scale;
-                                dc.DrawImage(src, new Rect(x, y, TileSize * scale, TileSize * scale));
+                                dc.DrawImage(src, new Rect(xx * TileSize, yy * TileSize, TileSize, TileSize));
                             }
                         }
                     }
                 }
-                // Draw sprites on top, including their pixel offsets from selection
+                // Draw sprites on top at their grid positions (ignore pixel offsets for ghost)
                 if (selSprites != null)
                 {
                     for (int yy = 0; yy < selH; yy++)
@@ -12222,26 +12284,14 @@ namespace FamidashEditor
                                 var src = spriteImages[val];
                                 if (src != null)
                                 {
-                                    // Get pixel offset from saved selection data
-                                    int localIdx = yy * selW + xx;
-                                    int offsetX = 0, offsetY = 0;
-                                    if (selSpriteOffsets.TryGetValue(localIdx, out var pixelOffset))
-                                    {
-                                        offsetX = pixelOffset.offsetX;
-                                        offsetY = pixelOffset.offsetY;
-                                    }
-                                    
-                                    // Adjust by minOffset to keep everything in bounds
-                                    double x = (xx * TileSize + offsetX - minOffsetX) * scale;
-                                    double y = (yy * TileSize + offsetY - minOffsetY) * scale;
-                                    dc.DrawImage(src, new Rect(x, y, TileSize * scale, TileSize * scale));
+                                    dc.DrawImage(src, new Rect(xx * TileSize, yy * TileSize, TileSize, TileSize));
                                 }
                             }
                         }
                     }
                 }
             }
-            var rtb = new RenderTargetBitmap(pixW, pixH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            var rtb = new RenderTargetBitmap(bitmapWidth, bitmapHeight, 96, 96, PixelFormats.Pbgra32);
             rtb.Render(dv);
             rtb.Freeze();
 
@@ -12255,11 +12305,14 @@ namespace FamidashEditor
             if (GhostImage != null && CanvasHost != null)
             {
                 GhostImage.Source = rtb;
-                GhostImage.Width = bitmapWidth * scale;
-                GhostImage.Height = bitmapHeight * scale;
-                // Position accounts for minOffset shift
-                double selLeft = (selX * TileSize + minOffsetX) * scale + mapViewportPadding;
-                double selTop = (selY * TileSize + minOffsetY) * scale + mapViewportPadding;
+                // Size in logical pixels (WPF converts bitmap DPI to display)
+                GhostImage.Width = (bitmapWidth * scale * dpi.DpiScaleX) / dpi.DpiScaleX;
+                GhostImage.Height = (bitmapHeight * scale * dpi.DpiScaleY) / dpi.DpiScaleY;
+                // Position using same integer calculation as tiles - convert back to logical
+                int selLeftPx = padPxX + selX * tilePixelW;
+                int selTopPx = padPxY + selY * tilePixelH;
+                double selLeft = selLeftPx / dpi.DpiScaleX;
+                double selTop = selTopPx / dpi.DpiScaleY;
                 Canvas.SetLeft(GhostImage, selLeft);
                 Canvas.SetTop(GhostImage, selTop);
                 GhostImage.Visibility = Visibility.Visible;
@@ -12269,6 +12322,7 @@ namespace FamidashEditor
             isDraggingSelection = true;
             dragStartMouse = pos;
             dragOrigX = selX; dragOrigY = selY;
+            lastDragScale = scale; // Store current scale for zoom rescaling
             // compute offset so the ghost follows the pointer at the same relative point
             // Use the actual ghost position (which includes minOffset)
             double ghostLeft = Canvas.GetLeft(GhostImage);
@@ -12281,7 +12335,16 @@ namespace FamidashEditor
         {
             if (!isDraggingSelection || GhostImage == null) return;
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            
+            // Calculate tile size in logical pixels (matching how tiles are actually positioned)
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            double logicalTileW = tilePixelW / dpi.DpiScaleX;
+            double logicalTileH = tilePixelH / dpi.DpiScaleY;
+            
+            int padPx = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+            double logicalPad = padPx / dpi.DpiScaleX;
             
             // Check modifier keys and sprite-only mode
             bool isShiftHeld = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
@@ -12298,55 +12361,48 @@ namespace FamidashEditor
             {
                 // Single-pixel precision: work in native unscaled pixels
                 // Convert from display units to native pixels
-                double nativeLeft = (left - pad) / scale;
-                double nativeTop = (top - pad) / scale;
+                double nativeLeft = (left - logicalPad) / scale;
+                double nativeTop = (top - logicalPad) / scale;
                 
                 // Snap to nearest native pixel
                 int snappedNativeX = (int)Math.Round(nativeLeft);
                 int snappedNativeY = (int)Math.Round(nativeTop);
                 
                 // Convert back to display units
-                snappedLeft = pad + snappedNativeX * scale;
-                snappedTop = pad + snappedNativeY * scale;
+                snappedLeft = logicalPad + snappedNativeX * scale;
+                snappedTop = logicalPad + snappedNativeY * scale;
             }
             else if (isShiftHeld && isSpritesOnly)
             {
-                // Half-grid snapping: work in half-tile units
-                double halfTileSize = TileSize / 2.0;
+                // Half-grid snapping: use half of the logical tile size
+                double halfTileW = logicalTileW / 2.0;
+                double halfTileH = logicalTileH / 2.0;
                 
-                // Convert from display units to half-tile units
-                double halfTileX = (left - pad) / scale / halfTileSize;
-                double halfTileY = (top - pad) / scale / halfTileSize;
+                int halfTileX = (int)Math.Round((left - logicalPad) / halfTileW);
+                int halfTileY = (int)Math.Round((top - logicalPad) / halfTileH);
                 
-                // Snap to nearest half-tile
-                int snappedHalfTileX = (int)Math.Round(halfTileX);
-                int snappedHalfTileY = (int)Math.Round(halfTileY);
-                
-                // Convert back to display units
-                snappedLeft = pad + snappedHalfTileX * halfTileSize * scale;
-                snappedTop = pad + snappedHalfTileY * halfTileSize * scale;
+                snappedLeft = logicalPad + halfTileX * halfTileW;
+                snappedTop = logicalPad + halfTileY * halfTileH;
             }
             else
             {
-                // Normal full-grid snapping: work in tile units
-                double tileX = (left - pad) / scale / TileSize;
-                double tileY = (top - pad) / scale / TileSize;
+                // Normal full-grid snapping: snap to logical tile boundaries
+                int tileX = (int)Math.Round((left - logicalPad) / logicalTileW);
+                int tileY = (int)Math.Round((top - logicalPad) / logicalTileH);
                 
-                // Snap to nearest tile
-                int snappedTileX = (int)Math.Round(tileX);
-                int snappedTileY = (int)Math.Round(tileY);
-                
-                // Convert back to display units
-                snappedLeft = pad + snappedTileX * TileSize * scale;
-                snappedTop = pad + snappedTileY * TileSize * scale;
+                snappedLeft = logicalPad + tileX * logicalTileW;
+                snappedTop = logicalPad + tileY * logicalTileH;
             }
             
             // clamp so selection stays within map extents
-            double minLeft = pad; double minTop = pad;
-            double maxLeft = pad + Math.Max(0, mapWidth * TileSize * scale - selW * TileSize * scale);
-            double maxTop = pad + Math.Max(0, mapHeight * TileSize * scale - selH * TileSize * scale);
-            if (snappedLeft < minLeft) snappedLeft = minLeft; if (snappedLeft > maxLeft) snappedLeft = maxLeft;
-            if (snappedTop < minTop) snappedTop = minTop; if (snappedTop > maxTop) snappedTop = maxTop;
+            double minLeft = logicalPad;
+            double minTop = logicalPad;
+            double maxLeft = logicalPad + Math.Max(0, mapWidth * logicalTileW - selW * logicalTileW);
+            double maxTop = logicalPad + Math.Max(0, mapHeight * logicalTileH - selH * logicalTileH);
+            if (snappedLeft < minLeft) snappedLeft = minLeft;
+            if (snappedLeft > maxLeft) snappedLeft = maxLeft;
+            if (snappedTop < minTop) snappedTop = minTop;
+            if (snappedTop > maxTop) snappedTop = maxTop;
             
             // Position ghost at snapped location
             Canvas.SetLeft(GhostImage, snappedLeft);
@@ -12354,8 +12410,8 @@ namespace FamidashEditor
             
             // Calculate and store final tile position and pixel offset for EndDragMove
             // Convert snapped position back to native coordinates
-            double finalNativeLeft = (snappedLeft - pad) / scale;
-            double finalNativeTop = (snappedTop - pad) / scale;
+            double finalNativeLeft = (snappedLeft - logicalPad) / scale;
+            double finalNativeTop = (snappedTop - logicalPad) / scale;
             
             // Account for minOffset - the ghost bitmap has sprites shifted by -minOffset
             // so the ghost position represents where (selX*TileSize + minOffsetX) should be
