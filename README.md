@@ -37,6 +37,9 @@ Other options include:
 -Attempt load from JSON will attempt to load the official settings from the lvlset_huge_metadata json5 file
 
 
+-Generate json shifts will generate and open a json segment you can directly paste into your main json file for building
+
+
 
 -Music selection for levels - pick a track and it will save to the local level cfg file
 
