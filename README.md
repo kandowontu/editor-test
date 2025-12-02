@@ -18,7 +18,7 @@ For new users, these 2 options are a must, as they will make sure you dont use i
 
 Other options include:
 
--Manual shifting of sprites - with the move tool, hold shift and drag a sprite to its position it will be shifted to. You can only do this once per sprite - double click the anchor tile with the move tool to reset this
+-Manual shifting of sprites - with the move tool, hold shift and drag a sprite to its position it will be shifted to snapped at half tile positions. For more precise control, hold shift+ctrl for pixel perfect shifting. This will generate json data soon.
 
 -Automatically shift all triggers 10 tiles left on load and 10 tiles right on save, so you place triggers where they should activate, not 10 tiles over. You'll recieve an informational popup if any clashes happen, and those sprites will be moved vertically one tile.
 
