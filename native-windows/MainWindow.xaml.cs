@@ -12043,9 +12043,10 @@ namespace FamidashEditor
             if (GhostImage != null && CanvasHost != null)
             {
                 GhostImage.Source = rtb;
-                GhostImage.Stretch = System.Windows.Media.Stretch.Fill;
-                GhostImage.Width = ghostWidth;
-                GhostImage.Height = ghostHeight;
+                // Don't set Width/Height - let the bitmap display at its native size
+                // The bitmap was created at the correct device pixel size
+                GhostImage.Width = double.NaN;
+                GhostImage.Height = double.NaN;
                 // Include pixel offsets in the initial position
                 double selLeft = (selX * TileSize + pixOffsetX) * scale + mapViewportPadding;
                 double selTop = (selY * TileSize + pixOffsetY) * scale + mapViewportPadding;
