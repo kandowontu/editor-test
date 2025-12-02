@@ -10987,16 +10987,58 @@ namespace FamidashEditor
                     StartDragMove(pos);
                     return;
                 }
+                
                 // If no selection, check the tile/sprite under cursor based on active layers
+                // For sprites, also check for sprites with pixel offsets that might be at the click position
+                int foundX = x, foundY = y;
                 int idx = y * mapWidth + x;
                 int tileVal = tilesLayerActive ? tiles[idx] : -1;
                 int spriteVal = spritesLayerActive ? sprites[idx] : -1;
                 
+                // If sprites layer is active and no sprite at exact tile, check nearby tiles for offset sprites
+                if (spritesLayerActive && spriteVal == -1)
+                {
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    int clickNativeX = (int)Math.Round((pos.X - mapViewportPadding) / scale);
+                    int clickNativeY = (int)Math.Round((pos.Y - mapViewportPadding) / scale);
+                    
+                    // Check adjacent tiles for sprites with offsets that overlap the click position
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int checkX = x + dx;
+                            int checkY = y + dy;
+                            if (checkX >= 0 && checkX < mapWidth && checkY >= 0 && checkY < mapHeight)
+                            {
+                                int checkIdx = checkY * mapWidth + checkX;
+                                if (sprites[checkIdx] != -1 && spritePixelOffsets.TryGetValue(checkIdx, out var offset))
+                                {
+                                    int spriteLeft = checkX * TileSize + offset.offsetX;
+                                    int spriteTop = checkY * TileSize + offset.offsetY;
+                                    int spriteRight = spriteLeft + TileSize;
+                                    int spriteBottom = spriteTop + TileSize;
+                                    
+                                    if (clickNativeX >= spriteLeft && clickNativeX < spriteRight &&
+                                        clickNativeY >= spriteTop && clickNativeY < spriteBottom)
+                                    {
+                                        foundX = checkX;
+                                        foundY = checkY;
+                                        spriteVal = sprites[checkIdx];
+                                        idx = checkIdx;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (spriteVal != -1) break;
+                    }
+                }
+                
                 if (tileVal != -1 || spriteVal != -1)
                 {
                     // create a 1x1 selection at this tile/sprite and begin dragging
-                    // Only include the layers that are active (not based on what exists)
-                    selX = x; selY = y; selW = 1; selH = 1;
+                    selX = foundX; selY = foundY; selW = 1; selH = 1;
                     selTiles = new int[1] { tileVal };
                     selSprites = new int[1] { spriteVal };
                     selectionSet!.Clear(); selectionSet.Add(idx);
@@ -11916,13 +11958,35 @@ namespace FamidashEditor
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
 
-            // Build an image for the selection (render scaled tiles and sprites into a RenderTargetBitmap)
-            int pixW = selW * tilePixelW;
-            int pixH = selH * tilePixelH;
+            // Calculate actual bounds including sprite pixel offsets
+            int minOffsetX = 0, minOffsetY = 0, maxOffsetX = 0, maxOffsetY = 0;
+            for (int yy = 0; yy < selH; yy++)
+            {
+                for (int xx = 0; xx < selW; xx++)
+                {
+                    int spriteIdx = (selY + yy) * mapWidth + (selX + xx);
+                    if (spritePixelOffsets.TryGetValue(spriteIdx, out var offset))
+                    {
+                        minOffsetX = Math.Min(minOffsetX, offset.offsetX);
+                        minOffsetY = Math.Min(minOffsetY, offset.offsetY);
+                        // Sprite extends from offset to offset+TileSize
+                        maxOffsetX = Math.Max(maxOffsetX, offset.offsetX);
+                        maxOffsetY = Math.Max(maxOffsetY, offset.offsetY);
+                    }
+                }
+            }
+
+            // Build an image for the selection - size to include all offsets
+            // The bitmap needs to fit from minOffset to (selW-1)*TileSize + maxOffset + TileSize
+            int bitmapWidth = (selW * TileSize + maxOffsetX - minOffsetX);
+            int bitmapHeight = (selH * TileSize + maxOffsetY - minOffsetY);
+            int pixW = (int)Math.Ceiling(bitmapWidth * scale * dpi.DpiScaleX);
+            int pixH = (int)Math.Ceiling(bitmapHeight * scale * dpi.DpiScaleY);
+            
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
-                // Draw tiles first
+                // Draw tiles first, offset by minOffset to ensure they fit in bitmap
                 for (int yy = 0; yy < selH; yy++)
                 {
                     for (int xx = 0; xx < selW; xx++)
@@ -11935,14 +11999,14 @@ namespace FamidashEditor
                             if (src == null) src = tileImages[val];
                             if (src != null)
                             {
-                                double x = xx * TileSize * scale;
-                                double y = yy * TileSize * scale;
+                                double x = (xx * TileSize - minOffsetX) * scale;
+                                double y = (yy * TileSize - minOffsetY) * scale;
                                 dc.DrawImage(src, new Rect(x, y, TileSize * scale, TileSize * scale));
                             }
                         }
                     }
                 }
-                // Draw sprites on top
+                // Draw sprites on top, including their pixel offsets
                 if (selSprites != null)
                 {
                     for (int yy = 0; yy < selH; yy++)
@@ -11955,8 +12019,18 @@ namespace FamidashEditor
                                 var src = spriteImages[val];
                                 if (src != null)
                                 {
-                                    double x = xx * TileSize * scale;
-                                    double y = yy * TileSize * scale;
+                                    // Check if this sprite has a pixel offset
+                                    int spriteIdx = (selY + yy) * mapWidth + (selX + xx);
+                                    int offsetX = 0, offsetY = 0;
+                                    if (spritePixelOffsets.TryGetValue(spriteIdx, out var pixelOffset))
+                                    {
+                                        offsetX = pixelOffset.offsetX;
+                                        offsetY = pixelOffset.offsetY;
+                                    }
+                                    
+                                    // Adjust by minOffset to keep everything in bounds
+                                    double x = (xx * TileSize + offsetX - minOffsetX) * scale;
+                                    double y = (yy * TileSize + offsetY - minOffsetY) * scale;
                                     dc.DrawImage(src, new Rect(x, y, TileSize * scale, TileSize * scale));
                                 }
                             }
@@ -11968,14 +12042,21 @@ namespace FamidashEditor
             rtb.Render(dv);
             rtb.Freeze();
 
+            // Hide hover rectangle and offset ghosts during drag
+            if (HoverRect != null) HoverRect.Visibility = Visibility.Collapsed;
+            if (HoverBorder != null) HoverBorder.Visibility = Visibility.Collapsed;
+            if (OffsetGhostContainer != null) OffsetGhostContainer.Visibility = Visibility.Collapsed;
+            if (OffsetTooltipContainer != null) OffsetTooltipContainer.Visibility = Visibility.Collapsed;
+
             // Set ghost image source and initial position
             if (GhostImage != null && CanvasHost != null)
             {
                 GhostImage.Source = rtb;
-                GhostImage.Width = selW * TileSize * scale;
-                GhostImage.Height = selH * TileSize * scale;
-                double selLeft = selX * TileSize * scale + mapViewportPadding;
-                double selTop = selY * TileSize * scale + mapViewportPadding;
+                GhostImage.Width = bitmapWidth * scale;
+                GhostImage.Height = bitmapHeight * scale;
+                // Position accounts for minOffset shift
+                double selLeft = (selX * TileSize + minOffsetX) * scale + mapViewportPadding;
+                double selTop = (selY * TileSize + minOffsetY) * scale + mapViewportPadding;
                 Canvas.SetLeft(GhostImage, selLeft);
                 Canvas.SetTop(GhostImage, selTop);
                 GhostImage.Visibility = Visibility.Visible;
@@ -12238,6 +12319,15 @@ namespace FamidashEditor
                 {
                     int tx = idx % mapWidth;
                     int ty = idx / mapWidth;
+                    
+                    // Check if this tile has a sprite with pixel offset
+                    int offsetX = 0, offsetY = 0;
+                    if (sprites[idx] != -1 && spritePixelOffsets.TryGetValue(idx, out var pixelOffset))
+                    {
+                        offsetX = pixelOffset.offsetX;
+                        offsetY = pixelOffset.offsetY;
+                    }
+                    
                     var rect = new Shapes.Rectangle
                     {
                         Fill = SelectionFillBrush,
@@ -12247,8 +12337,12 @@ namespace FamidashEditor
                         Height = (double)tilePixelH / dpi.DpiScaleY,
                         IsHitTestVisible = false
                     };
-                    double left = (padPxX + tx * tilePixelW) / dpi.DpiScaleX;
-                    double top = (padPxY + ty * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY;
+                    
+                    // Position includes sprite pixel offset (scaled)
+                    int scaledOffsetX = (int)Math.Round(offsetX * scale * dpi.DpiScaleX);
+                    int scaledOffsetY = (int)Math.Round(offsetY * scale * dpi.DpiScaleY);
+                    double left = (padPxX + tx * tilePixelW + scaledOffsetX) / dpi.DpiScaleX;
+                    double top = (padPxY + ty * tilePixelH + scaledOffsetY) / dpi.DpiScaleY + gridRenderShiftY;
                     try { rect.StrokeThickness = 1.0 / dpi.DpiScaleX; rect.SnapsToDevicePixels = true; } catch { }
                     Canvas.SetLeft(rect, left);
                     Canvas.SetTop(rect, top);
@@ -13632,7 +13726,8 @@ namespace FamidashEditor
             {
                 if (HoverRect != null)
                 {
-                    if (inBounds)
+                    // Don't show hover during drag
+                    if (inBounds && !isDraggingSelection)
                     {
                         var dpi = VisualTreeHelper.GetDpi(this);
                         // Use same integer-pixel math as grid: compute tile pixel size and pad in pixels
@@ -13672,6 +13767,7 @@ namespace FamidashEditor
                     else
                     {
                         HoverRect.Visibility = Visibility.Collapsed;
+                        if (HoverBorder != null) HoverBorder.Visibility = Visibility.Collapsed;
                     }
                 }
             }
