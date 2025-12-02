@@ -5791,13 +5791,13 @@ namespace FamidashEditor
             }
         }
 
-        private void RecentFile_Click(object sender, RoutedEventArgs e)
+        private async void RecentFile_Click(object sender, RoutedEventArgs e)
         {
             if (sender is MenuItem menuItem && menuItem.Tag is string filePath)
             {
                 if (System.IO.File.Exists(filePath))
                 {
-                    LoadTMXFile(filePath);
+                    await LoadTMXFileAsync(filePath);
                 }
                 else
                 {
@@ -5809,9 +5809,8 @@ namespace FamidashEditor
             }
         }
 
-        private void LoadTMXFile(string filePath)
+        private async Task LoadTMXFileAsync(string filePath)
         {
-            // Simulate clicking the load button with the file path
             LoadingWindow? loadingWindow = null;
             try
             {
@@ -5825,14 +5824,14 @@ namespace FamidashEditor
                 {
                     // Show loading dialog
                     loadingWindow = new LoadingWindow { Owner = this };
-                    loadingWindow.SetMessage("Loading TMX file...\\nThis may take a while on larger maps.");
+                    loadingWindow.SetMessage("Loading TMX file...\nThis may take a while on larger maps.");
                     loadingWindow.Show();
                     
-                    // Force UI update
-                    Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+                    // Force UI update and load on background thread
+                    await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
                     
-                    // Load TMX format
-                    var tmxLevel = TmxHandler.LoadTmx(filePath, useLegacyTriggerOffset);
+                    // Load TMX format on background thread
+                    var tmxLevel = await Task.Run(() => TmxHandler.LoadTmx(filePath, useLegacyTriggerOffset));
                     loadedWidth = tmxLevel.Width;
                     loadedHeight = tmxLevel.Height;
                     loadedTiles = tmxLevel.Tiles;
@@ -5885,6 +5884,13 @@ namespace FamidashEditor
                     CreateNewTab(filePath);
                     
                     Redraw();
+                    
+                    // Restore focus to main window
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        this.Activate();
+                        this.Focus();
+                    }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 }
             }
             catch (Exception ex)
@@ -12250,40 +12256,65 @@ namespace FamidashEditor
             if (isShiftHeld && isCtrlHeld && isSpritesOnly)
             {
                 // Single-pixel precision: calculate exact pixel offsets relative to grid
-                // Convert display pixels back to native tile pixels
-                double scaledTileSize = TileSize * scale;
-                int nativeLeftPx = (int)Math.Round((leftPx - padPxX) / scale / dpiGhost.DpiScaleX);
-                int nativeTopPx = (int)Math.Round((topPx - padPxY) / scale / dpiGhost.DpiScaleY);
+                // Convert display position back to native pixels
+                double nativeLeft = (left - pad) / scale;
+                double nativeTop = (top - pad) / scale;
                 
                 // Determine which tile we're in and the pixel offset within that tile
-                destX = nativeLeftPx / TileSize;
-                destY = nativeTopPx / TileSize;
-                pixelOffsetX = nativeLeftPx % TileSize;
-                pixelOffsetY = nativeTopPx % TileSize;
+                destX = (int)Math.Floor(nativeLeft / TileSize);
+                destY = (int)Math.Floor(nativeTop / TileSize);
+                pixelOffsetX = (int)Math.Round(nativeLeft - destX * TileSize);
+                pixelOffsetY = (int)Math.Round(nativeTop - destY * TileSize);
                 
-                // Handle negative offsets (dragging left/up from grid)
-                if (pixelOffsetX < 0) { destX--; pixelOffsetX += TileSize; }
-                if (pixelOffsetY < 0) { destY--; pixelOffsetY += TileSize; }
+                // Clamp offsets to valid range [0, TileSize)
+                if (pixelOffsetX < 0) pixelOffsetX = 0;
+                if (pixelOffsetY < 0) pixelOffsetY = 0;
+                if (pixelOffsetX >= TileSize) pixelOffsetX = TileSize - 1;
+                if (pixelOffsetY >= TileSize) pixelOffsetY = TileSize - 1;
             }
             else if (isShiftHeld && isSpritesOnly)
             {
-                // Half-grid snapping for sprites: use half tile size for grid
-                int halfTilePixelW = tilePixelW / 2;
-                int halfTilePixelH = tilePixelH / 2;
+                // Half-grid snapping: convert to native coordinates and snap to 8-pixel grid
+                double nativeLeft = (left - pad) / scale;
+                double nativeTop = (top - pad) / scale;
                 
-                // Calculate which half-grid cell we're in
-                int halfGridX = (leftPx - padPxX + halfTilePixelW/2) / halfTilePixelW;
-                int halfGridY = (topPx - padPxY + halfTilePixelH/2) / halfTilePixelH;
+                // Determine which tile and which half (0 or 8 pixel offset)
+                destX = (int)Math.Floor(nativeLeft / TileSize);
+                destY = (int)Math.Floor(nativeTop / TileSize);
                 
-                // Convert to tile coordinates and pixel offsets
-                destX = halfGridX / 2;
-                destY = halfGridY / 2;
-                pixelOffsetX = (halfGridX % 2) * (TileSize / 2);
-                pixelOffsetY = (halfGridY % 2) * (TileSize / 2);
+                double withinTileX = nativeLeft - destX * TileSize;
+                double withinTileY = nativeTop - destY * TileSize;
+                
+                // Round to nearest half-tile (0 or 8)
+                pixelOffsetX = (int)Math.Round(withinTileX / (TileSize / 2.0)) * (TileSize / 2);
+                pixelOffsetY = (int)Math.Round(withinTileY / (TileSize / 2.0)) * (TileSize / 2);
+                
+                // Clamp to 0 or 8
+                if (pixelOffsetX < 0) pixelOffsetX = 0;
+                if (pixelOffsetY < 0) pixelOffsetY = 0;
+                if (pixelOffsetX >= TileSize) pixelOffsetX = TileSize / 2;
+                if (pixelOffsetY >= TileSize) pixelOffsetY = TileSize / 2;
+            }
+            else if (isSpritesOnly)
+            {
+                // Sprites-only with no modifiers: pixel-perfect positioning
+                double nativeLeft = (left - pad) / scale;
+                double nativeTop = (top - pad) / scale;
+                
+                destX = (int)Math.Floor(nativeLeft / TileSize);
+                destY = (int)Math.Floor(nativeTop / TileSize);
+                pixelOffsetX = (int)Math.Round(nativeLeft - destX * TileSize);
+                pixelOffsetY = (int)Math.Round(nativeTop - destY * TileSize);
+                
+                // Clamp offsets to valid range
+                if (pixelOffsetX < 0) pixelOffsetX = 0;
+                if (pixelOffsetY < 0) pixelOffsetY = 0;
+                if (pixelOffsetX >= TileSize) pixelOffsetX = TileSize - 1;
+                if (pixelOffsetY >= TileSize) pixelOffsetY = TileSize - 1;
             }
             else
             {
-                // Normal full-grid snapping
+                // Normal full-grid snapping for tiles or mixed mode
                 destX = (leftPx - padPxX + tilePixelW/2) / tilePixelW;
                 destY = (topPx - padPxY + tilePixelH/2) / tilePixelH;
             }
@@ -13236,22 +13267,39 @@ namespace FamidashEditor
 
             // Apply placements for both layers
             foreach (var idx in putTiles) tiles[idx] = finalTiles[idx];
+            
+            // For sprites, we need to update pixel offsets even if the sprite didn't change tiles
+            // Collect all sprite indices that are part of the destination selection
+            var spriteIndicesInSelection = new System.Collections.Generic.HashSet<int>();
+            foreach (var m in spriteMappings)
+            {
+                spriteIndicesInSelection.Add(m.dst);
+            }
+            
             foreach (var idx in putSprites)
             {
                 sprites[idx] = finalSprites[idx];
-                
-                // Apply or clear pixel offset based on whether offset was specified
-                if (pixelOffsetX != 0 || pixelOffsetY != 0)
+            }
+            
+            // Update pixel offsets for ALL sprites in the destination selection area
+            // (even if they didn't move to a different tile)
+            foreach (var idx in spriteIndicesInSelection)
+            {
+                if (sprites[idx] != -1)
                 {
-                    // Apply the pixel offset to this sprite
-                    spritePixelOffsets[idx] = (pixelOffsetX, pixelOffsetY);
-                }
-                else
-                {
-                    // Clear any existing pixel offset (normal grid snapping)
-                    if (spritePixelOffsets.ContainsKey(idx))
+                    // Apply or clear pixel offset based on whether offset was specified
+                    if (pixelOffsetX != 0 || pixelOffsetY != 0)
                     {
-                        spritePixelOffsets.Remove(idx);
+                        // Apply the pixel offset to this sprite
+                        spritePixelOffsets[idx] = (pixelOffsetX, pixelOffsetY);
+                    }
+                    else
+                    {
+                        // Clear any existing pixel offset (normal grid snapping)
+                        if (spritePixelOffsets.ContainsKey(idx))
+                        {
+                            spritePixelOffsets.Remove(idx);
+                        }
                     }
                 }
             }
