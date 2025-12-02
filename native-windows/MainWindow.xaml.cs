@@ -176,6 +176,7 @@ namespace FamidashEditor
     private string? loadedExportTarget = null;
     private string loadedExportFormat = "csv";
     private string? loadedParallaxSource = null;
+    private string? originalParallaxSource = null; // Store original parallax, not affected by noParallax override
     private double loadedParallaxX = 0.9;
     private double loadedParallaxY = 0.9;
     private bool loadedParallaxRepeatX = true;
@@ -602,6 +603,8 @@ namespace FamidashEditor
     // and slicing it so subsequent background rebuilds use the desired image.
     private void ApplyParallaxChoice()
     {
+        bool parallaxLoaded = false;
+        
         try
         {
             // If per-level override is requested, try to load embedded noparallax first
@@ -612,68 +615,83 @@ namespace FamidashEditor
                 {
                     parallaxBitmap = emb;
                     SliceParallax();
-                    backgroundDirty = true;
-                    try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { Redraw(); }
-                    try { Dispatcher.Invoke(() => Redraw()); } catch { }
-                    return;
-                }
-
-                // If embedded resource not found, try to find a noparallax file on disk in common locations
-                try
-                {
-                    var candidates = new List<string>();
-                    var repoRoot = FindRepoRootFor("famidash.bmp");
-                    if (!string.IsNullOrEmpty(repoRoot))
-                    {
-                        candidates.Add(Path.Combine(repoRoot, "src", "renderer", "assets", "noparallax.bmp"));
-                        candidates.Add(Path.Combine(repoRoot, "src", "render", "assets", "noparallax.bmp"));
-                    }
-                    candidates.Add(Path.Combine(AppContext.BaseDirectory, "assets", "noparallax.bmp"));
-                    candidates.Add(Path.Combine(AppContext.BaseDirectory, "noparallax.bmp"));
-
-                    foreach (var cand in candidates)
-                    {
-                        try
-                        {
-                            if (!string.IsNullOrEmpty(cand) && File.Exists(cand))
-                            {
-                                LoadParallax(cand);
-                                backgroundDirty = true;
-                                try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { Redraw(); }
-                                return;
-                            }
-                        }
-                        catch { }
-                    }
-                }
-                catch { }
-            }
-            // Otherwise, prefer any loaded parallax source (from TMX); if not available, fall back to embedded parallax
-            if (!string.IsNullOrEmpty(loadedParallaxSource) && File.Exists(loadedParallaxSource))
-            {
-                LoadParallax(loadedParallaxSource);
-            }
-            else
-            {
-                var emb2 = LoadEmbeddedImage("parallax.bmp");
-                if (emb2 != null)
-                {
-                    parallaxBitmap = emb2;
-                    SliceParallax();
+                    parallaxLoaded = true;
                 }
                 else
                 {
-                    parallaxBitmap = null;
-                    parallaxImages = null;
+                    // If embedded resource not found, try to find a noparallax file on disk in common locations
+                    try
+                    {
+                        var candidates = new List<string>();
+                        var repoRoot = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repoRoot))
+                        {
+                            candidates.Add(Path.Combine(repoRoot, "src", "renderer", "assets", "noparallax.bmp"));
+                            candidates.Add(Path.Combine(repoRoot, "src", "render", "assets", "noparallax.bmp"));
+                        }
+                        candidates.Add(Path.Combine(AppContext.BaseDirectory, "assets", "noparallax.bmp"));
+                        candidates.Add(Path.Combine(AppContext.BaseDirectory, "noparallax.bmp"));
+
+                        foreach (var cand in candidates)
+                        {
+                            try
+                            {
+                                if (!string.IsNullOrEmpty(cand) && File.Exists(cand))
+                                {
+                                    LoadParallax(cand);
+                                    parallaxLoaded = true;
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
                 }
             }
-
-            backgroundDirty = true;
-            try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { Redraw(); }
-            try { Dispatcher.Invoke(() => Redraw()); } catch { }
+            else
+            {
+                // Load regular parallax - prefer original parallax source (from TMX); if not available, fall back to embedded parallax
+                if (!string.IsNullOrEmpty(originalParallaxSource) && File.Exists(originalParallaxSource))
+                {
+                    LoadParallax(originalParallaxSource);
+                    parallaxLoaded = true;
+                }
+                else if (!string.IsNullOrEmpty(loadedParallaxSource) && File.Exists(loadedParallaxSource))
+                {
+                    LoadParallax(loadedParallaxSource);
+                    parallaxLoaded = true;
+                }
+                else
+                {
+                    var emb2 = LoadEmbeddedImage("parallax.bmp");
+                    if (emb2 != null)
+                    {
+                        parallaxBitmap = emb2;
+                        SliceParallax();
+                        parallaxLoaded = true;
+                    }
+                    else
+                    {
+                        parallaxBitmap = null;
+                        parallaxImages = null;
+                    }
+                }
+            }
         }
         catch { }
-        }
+        
+        // Clear tint cache since we changed the parallax bitmap
+        parallaxTintCache.Clear();
+        
+        // Always rebuild background after changing parallax, even if load failed
+        backgroundDirty = true;
+        try 
+        { 
+            Dispatcher.Invoke(() => Redraw(), System.Windows.Threading.DispatcherPriority.Render);
+        } 
+        catch { }
+    }
 
     // Helpers to safely read ScrollViewer viewport size when it may be null
     private double SafeViewportWidth()
@@ -2266,6 +2284,53 @@ namespace FamidashEditor
                     SetTileboardPosition("BOTTOM");
                 };
             }
+            // Tileboard Hidden option (non-persistent UI state)
+            if (MenuTileboardHidden != null)
+            {
+                MenuTileboardHidden.Checked += (s, e) =>
+                {
+                    if (TileboardPanel != null)
+                    {
+                        TileboardPanel.Visibility = Visibility.Collapsed;
+                        // Expand map to fill space
+                        if (RootGrid != null && RootGrid.ColumnDefinitions.Count >= 3)
+                        {
+                            if (tileboardPosition == "LEFT")
+                            {
+                                RootGrid.ColumnDefinitions[0].Width = new GridLength(0);
+                                RootGrid.ColumnDefinitions[1].Width = new GridLength(0);
+                            }
+                            else if (tileboardPosition == "RIGHT")
+                            {
+                                RootGrid.ColumnDefinitions[1].Width = new GridLength(0);
+                                RootGrid.ColumnDefinitions[2].Width = new GridLength(0);
+                            }
+                            else if (RootGrid.RowDefinitions.Count >= 3) // TOP/BOTTOM
+                            {
+                                if (tileboardPosition == "TOP")
+                                {
+                                    RootGrid.RowDefinitions[0].Height = new GridLength(0);
+                                    RootGrid.RowDefinitions[1].Height = new GridLength(0);
+                                }
+                                else // BOTTOM
+                                {
+                                    RootGrid.RowDefinitions[1].Height = new GridLength(0);
+                                    RootGrid.RowDefinitions[2].Height = new GridLength(0);
+                                }
+                            }
+                        }
+                    }
+                };
+                MenuTileboardHidden.Unchecked += (s, e) =>
+                {
+                    if (TileboardPanel != null)
+                    {
+                        TileboardPanel.Visibility = Visibility.Visible;
+                        // Restore original layout
+                        ApplyTileboardPosition();
+                    }
+                };
+            }
             // Hide color triggers preview option
             if (MenuOptionHideColorTriggers != null)
             {
@@ -2316,18 +2381,18 @@ namespace FamidashEditor
                     // save to per-level config immediately if a file is loaded
                     try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
                     // Apply choice and rebuild background to apply change immediately
-                    try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
+                    ApplyParallaxChoice();
                     // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
-                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } catch { }
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
                 };
                 MenuOptionNoParallax.Unchecked += (s, e) =>
                 {
                     if (suppressNoParallaxHandler) return;
                     noParallaxBg = false;
                     try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
-                    try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
+                    ApplyParallaxChoice();
                     // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
-                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } catch { }
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
                 };
             }
             
@@ -6097,6 +6162,7 @@ namespace FamidashEditor
                     loadedExportTarget = tmxLevel.ExportTarget;
                     loadedExportFormat = tmxLevel.ExportFormat;
                     loadedParallaxSource = tmxLevel.ParallaxSource;
+                    originalParallaxSource = tmxLevel.ParallaxSource; // Save original
                     loadedParallaxX = tmxLevel.ParallaxX;
                     loadedParallaxY = tmxLevel.ParallaxY;
                     loadedParallaxRepeatX = tmxLevel.ParallaxRepeatX;
@@ -14999,11 +15065,11 @@ namespace FamidashEditor
                 noParallaxBg = enabled;
                 if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = enabled;
                 try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
-                try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
+                ApplyParallaxChoice();
                 // If accurate tileset swapping is enabled, reapply so the correct tileset (Slopesa vs SlopesNone) is selected
                 try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
                 // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
-                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); Redraw(); } catch { }
+                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
             }
             finally { suppressNoParallaxHandler = false; }
         }
@@ -15381,6 +15447,9 @@ namespace FamidashEditor
             var dlg = new OpenFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*" };
             if (dlg.ShowDialog(this) == true)
             {
+                // Reset zoom to 1.0x before loading to improve performance
+                if (ZoomSlider != null) ZoomSlider.Value = 1.0;
+                
                 LoadingWindow? loadingWindow = null;
                 try
                 {
@@ -15427,6 +15496,7 @@ namespace FamidashEditor
                         loadedExportTarget = tmxLevel.ExportTarget;
                         loadedExportFormat = tmxLevel.ExportFormat;
                         loadedParallaxSource = tmxLevel.ParallaxSource;
+                        originalParallaxSource = tmxLevel.ParallaxSource; // Save original
                         loadedParallaxX = tmxLevel.ParallaxX;
                         loadedParallaxY = tmxLevel.ParallaxY;
                         loadedParallaxRepeatX = tmxLevel.ParallaxRepeatX;

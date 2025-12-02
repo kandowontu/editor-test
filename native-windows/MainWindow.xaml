@@ -136,6 +136,8 @@
                             <MenuItem x:Name="MenuTileboardRight" Header="Right" IsCheckable="True" IsChecked="False" />
                             <MenuItem x:Name="MenuTileboardTop" Header="Top" IsCheckable="True" IsChecked="False" />
                             <MenuItem x:Name="MenuTileboardBottom" Header="Bottom" IsCheckable="True" IsChecked="False" />
+                            <Separator />
+                            <MenuItem x:Name="MenuTileboardHidden" Header="Hidden" IsCheckable="True" IsChecked="False" />
                         </MenuItem>
                     </MenuItem>
                     <MenuItem x:Name="MenuColorPlayerTint" Header="Player Color..." />
