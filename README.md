@@ -18,7 +18,7 @@ For new users, these 2 options are a must, as they will make sure you dont use i
 
 Other options include:
 
-
+-Manual shifting of sprites - with the move tool, hold shift and drag a sprite to its position it will be shifted to. You can only do this once per sprite - double click the anchor tile with the move tool to reset this
 
 -Automatically shift all triggers 10 tiles left on load and 10 tiles right on save, so you place triggers where they should activate, not 10 tiles over. You'll recieve an informational popup if any clashes happen, and those sprites will be moved vertically one tile.
 
@@ -32,7 +32,10 @@ Other options include:
 
 -Local level cfg files - saves music, background/ground/tile tints, parallax/no parallax settings, block/spike/deco set
 
+
+
 -Attempt load from JSON will attempt to load the official settings from the lvlset_huge_metadata json5 file
+
 
 
 -Music selection for levels - pick a track and it will save to the level data (soon)
