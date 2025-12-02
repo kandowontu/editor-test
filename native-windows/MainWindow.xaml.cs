@@ -208,12 +208,15 @@ namespace FamidashEditor
     private int selX = -1, selY = -1, selW = 0, selH = 0;
     private int[]? selTiles = null; // row-major selW * selH
     private int[]? selSprites = null; // row-major selW * selH
+    private Dictionary<int, (int offsetX, int offsetY)> selSpriteOffsets = new Dictionary<int, (int offsetX, int offsetY)>(); // sprite offsets for selection (local coords)
     private System.Collections.Generic.HashSet<int> selectionSet = new System.Collections.Generic.HashSet<int>();
     // Dragging selection state
     private bool isDraggingSelection = false;
     private Point dragStartMouse; // in CanvasHost coords
     private int dragOrigX = 0, dragOrigY = 0; // original selection top-left
     private Point dragOffset; // offset from mouse to selection top-left when dragging
+    private int dragFinalTileX = 0, dragFinalTileY = 0; // final snapped tile position during drag
+    private int dragFinalOffsetX = 0, dragFinalOffsetY = 0; // final snapped pixel offset during drag
     // Allow a small padded margin around the map so users can scroll slightly out-of-bounds
     private double mapViewportPadding = 64.0; // pixels on each side
     // Undo/redo support (unlimited)
@@ -11953,27 +11956,35 @@ namespace FamidashEditor
         private void StartDragMove(Point pos)
         {
             if (selTiles == null || selW <= 0 || selH <= 0) return;
+            
+            // Capture sprite offsets for the selection
+            selSpriteOffsets.Clear();
+            for (int yy = 0; yy < selH; yy++)
+            {
+                for (int xx = 0; xx < selW; xx++)
+                {
+                    int srcIdx = (selY + yy) * mapWidth + (selX + xx);
+                    if (selectionSet.Contains(srcIdx) && spritePixelOffsets.TryGetValue(srcIdx, out var pixOffset))
+                    {
+                        int localIdx = yy * selW + xx;
+                        selSpriteOffsets[localIdx] = pixOffset;
+                    }
+                }
+            }
+            
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             var dpi = VisualTreeHelper.GetDpi(this);
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
 
-            // Calculate actual bounds including sprite pixel offsets
+            // Calculate actual bounds including sprite pixel offsets from the saved selection data
             int minOffsetX = 0, minOffsetY = 0, maxOffsetX = 0, maxOffsetY = 0;
-            for (int yy = 0; yy < selH; yy++)
+            foreach (var kvp in selSpriteOffsets)
             {
-                for (int xx = 0; xx < selW; xx++)
-                {
-                    int spriteIdx = (selY + yy) * mapWidth + (selX + xx);
-                    if (spritePixelOffsets.TryGetValue(spriteIdx, out var offset))
-                    {
-                        minOffsetX = Math.Min(minOffsetX, offset.offsetX);
-                        minOffsetY = Math.Min(minOffsetY, offset.offsetY);
-                        // Sprite extends from offset to offset+TileSize
-                        maxOffsetX = Math.Max(maxOffsetX, offset.offsetX);
-                        maxOffsetY = Math.Max(maxOffsetY, offset.offsetY);
-                    }
-                }
+                minOffsetX = Math.Min(minOffsetX, kvp.Value.offsetX);
+                minOffsetY = Math.Min(minOffsetY, kvp.Value.offsetY);
+                maxOffsetX = Math.Max(maxOffsetX, kvp.Value.offsetX);
+                maxOffsetY = Math.Max(maxOffsetY, kvp.Value.offsetY);
             }
 
             // Build an image for the selection - size to include all offsets
@@ -12006,7 +12017,7 @@ namespace FamidashEditor
                         }
                     }
                 }
-                // Draw sprites on top, including their pixel offsets
+                // Draw sprites on top, including their pixel offsets from selection
                 if (selSprites != null)
                 {
                     for (int yy = 0; yy < selH; yy++)
@@ -12019,10 +12030,10 @@ namespace FamidashEditor
                                 var src = spriteImages[val];
                                 if (src != null)
                                 {
-                                    // Check if this sprite has a pixel offset
-                                    int spriteIdx = (selY + yy) * mapWidth + (selX + xx);
+                                    // Get pixel offset from saved selection data
+                                    int localIdx = yy * selW + xx;
                                     int offsetX = 0, offsetY = 0;
-                                    if (spritePixelOffsets.TryGetValue(spriteIdx, out var pixelOffset))
+                                    if (selSpriteOffsets.TryGetValue(localIdx, out var pixelOffset))
                                     {
                                         offsetX = pixelOffset.offsetX;
                                         offsetY = pixelOffset.offsetY;
@@ -12067,9 +12078,10 @@ namespace FamidashEditor
             dragStartMouse = pos;
             dragOrigX = selX; dragOrigY = selY;
             // compute offset so the ghost follows the pointer at the same relative point
-            double selLeftUnits = selX * TileSize * scale + mapViewportPadding;
-            double selTopUnits = selY * TileSize * scale + mapViewportPadding;
-            dragOffset = new Point(dragStartMouse.X - selLeftUnits, dragStartMouse.Y - selTopUnits);
+            // Use the actual ghost position (which includes minOffset)
+            double ghostLeft = Canvas.GetLeft(GhostImage);
+            double ghostTop = Canvas.GetTop(GhostImage);
+            dragOffset = new Point(dragStartMouse.X - ghostLeft, dragStartMouse.Y - ghostTop);
             if (CanvasHost != null) CanvasHost.CaptureMouse();
         }
 
@@ -12148,6 +12160,51 @@ namespace FamidashEditor
             Canvas.SetLeft(GhostImage, snappedLeft);
             Canvas.SetTop(GhostImage, snappedTop);
             
+            // Calculate and store final tile position and pixel offset for EndDragMove
+            // Convert snapped position back to native coordinates
+            double finalNativeLeft = (snappedLeft - pad) / scale;
+            double finalNativeTop = (snappedTop - pad) / scale;
+            
+            // Account for minOffset - the ghost bitmap has sprites shifted by -minOffset
+            // so the ghost position represents where (selX*TileSize + minOffsetX) should be
+            int minOffsetX = 0, minOffsetY = 0;
+            foreach (var kvp in selSpriteOffsets)
+            {
+                minOffsetX = Math.Min(minOffsetX, kvp.Value.offsetX);
+                minOffsetY = Math.Min(minOffsetY, kvp.Value.offsetY);
+            }
+            
+            // Adjust by minOffset to get the actual selection grid position
+            finalNativeLeft -= minOffsetX;
+            finalNativeTop -= minOffsetY;
+            
+            if (isShiftHeld && isCtrlHeld && isSpritesOnly)
+            {
+                // Pixel-perfect: calculate tile and offset
+                dragFinalTileX = (int)Math.Floor(finalNativeLeft / TileSize);
+                dragFinalTileY = (int)Math.Floor(finalNativeTop / TileSize);
+                dragFinalOffsetX = (int)Math.Round(finalNativeLeft - dragFinalTileX * TileSize);
+                dragFinalOffsetY = (int)Math.Round(finalNativeTop - dragFinalTileY * TileSize);
+            }
+            else if (isShiftHeld && isSpritesOnly)
+            {
+                // Half-grid: calculate tile and half-grid offset
+                dragFinalTileX = (int)Math.Floor(finalNativeLeft / TileSize);
+                dragFinalTileY = (int)Math.Floor(finalNativeTop / TileSize);
+                double withinTileX = finalNativeLeft - dragFinalTileX * TileSize;
+                double withinTileY = finalNativeTop - dragFinalTileY * TileSize;
+                dragFinalOffsetX = (int)Math.Round(withinTileX / (TileSize / 2.0)) * (TileSize / 2);
+                dragFinalOffsetY = (int)Math.Round(withinTileY / (TileSize / 2.0)) * (TileSize / 2);
+            }
+            else
+            {
+                // Full grid: no offset
+                dragFinalTileX = (int)Math.Round(finalNativeLeft / TileSize);
+                dragFinalTileY = (int)Math.Round(finalNativeTop / TileSize);
+                dragFinalOffsetX = 0;
+                dragFinalOffsetY = 0;
+            }
+            
             // Show yellow box at snapped position
             if (SelectionOverlay != null)
             {
@@ -12200,60 +12257,12 @@ namespace FamidashEditor
             bool isCtrlHeld = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
             bool isSpritesOnly = spritesLayerActive && !tilesLayerActive;
             
-            // compute final destination tile coords from ghost position using integer-pixel math
-            double left = Canvas.GetLeft(GhostImage);
-            double top = Canvas.GetTop(GhostImage);
-            var dpiGhost = VisualTreeHelper.GetDpi(this);
-            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpiGhost.DpiScaleX));
-            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpiGhost.DpiScaleY));
-            int padPxX = (int)Math.Round(pad * dpiGhost.DpiScaleX);
-            int padPxY = (int)Math.Round(pad * dpiGhost.DpiScaleY);
-            int leftPx = (int)Math.Round((left) * dpiGhost.DpiScaleX);
-            int topPx = (int)Math.Round((top) * dpiGhost.DpiScaleY);
-            
-            int destX, destY;
-            int pixelOffsetX = 0, pixelOffsetY = 0;
-            
-            if (isShiftHeld && isCtrlHeld && isSpritesOnly)
-            {
-                // Single-pixel precision: calculate exact pixel offsets relative to grid
-                // Convert display pixels back to native tile pixels
-                double scaledTileSize = TileSize * scale;
-                int nativeLeftPx = (int)Math.Round((leftPx - padPxX) / scale / dpiGhost.DpiScaleX);
-                int nativeTopPx = (int)Math.Round((topPx - padPxY) / scale / dpiGhost.DpiScaleY);
-                
-                // Determine which tile we're in and the pixel offset within that tile
-                destX = nativeLeftPx / TileSize;
-                destY = nativeTopPx / TileSize;
-                pixelOffsetX = nativeLeftPx % TileSize;
-                pixelOffsetY = nativeTopPx % TileSize;
-                
-                // Handle negative offsets (dragging left/up from grid)
-                if (pixelOffsetX < 0) { destX--; pixelOffsetX += TileSize; }
-                if (pixelOffsetY < 0) { destY--; pixelOffsetY += TileSize; }
-            }
-            else if (isShiftHeld && isSpritesOnly)
-            {
-                // Half-grid snapping for sprites: use half tile size for grid
-                int halfTilePixelW = tilePixelW / 2;
-                int halfTilePixelH = tilePixelH / 2;
-                
-                // Calculate which half-grid cell we're in
-                int halfGridX = (leftPx - padPxX + halfTilePixelW/2) / halfTilePixelW;
-                int halfGridY = (topPx - padPxY + halfTilePixelH/2) / halfTilePixelH;
-                
-                // Convert to tile coordinates and pixel offsets
-                destX = halfGridX / 2;
-                destY = halfGridY / 2;
-                pixelOffsetX = (halfGridX % 2) * (TileSize / 2);
-                pixelOffsetY = (halfGridY % 2) * (TileSize / 2);
-            }
-            else
-            {
-                // Normal full-grid snapping
-                destX = (leftPx - padPxX + tilePixelW/2) / tilePixelW;
-                destY = (topPx - padPxY + tilePixelH/2) / tilePixelH;
-            }
+            // Use the final position calculated during UpdateDragMoveTo
+            // This ensures the placement matches exactly where the ghost was shown
+            int destX = dragFinalTileX;
+            int destY = dragFinalTileY;
+            int pixelOffsetX = dragFinalOffsetX;
+            int pixelOffsetY = dragFinalOffsetY;
             
             // clamp
             if (destX < 0) destX = 0; if (destY < 0) destY = 0;
@@ -12266,7 +12275,9 @@ namespace FamidashEditor
             if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
 
             // commit move with optional pixel offset
-            MoveSelectionTo(destX, destY, pixelOffsetX, pixelOffsetY);
+            // Preserve offsets only when shift is held (sub-tile positioning mode)
+            bool preserveOffsets = isShiftHeld && isSpritesOnly;
+            MoveSelectionTo(destX, destY, pixelOffsetX, pixelOffsetY, preserveOffsets);
         }
 
         private void UpdateSelectionTo(Point pos)
@@ -13074,7 +13085,7 @@ namespace FamidashEditor
             if (StatusText != null) StatusText.Text = string.Empty;
         }
 
-        private void MoveSelectionTo(int destX, int destY, int pixelOffsetX = 0, int pixelOffsetY = 0)
+        private void MoveSelectionTo(int destX, int destY, int pixelOffsetX = 0, int pixelOffsetY = 0, bool preserveOffsets = false)
         {
             if (selTiles == null || selW <= 0 || selH <= 0) return;
             // clamp destination so selection fits
@@ -13208,6 +13219,11 @@ namespace FamidashEditor
                     ClearSpritesBitmapTileRect(fminX, fminY, fmaxX, fmaxY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
                 }
                 sprites[idx] = -1;
+                // Clear sprite pixel offset when deleting sprite from this position
+                if (spritePixelOffsets.ContainsKey(idx))
+                {
+                    spritePixelOffsets.Remove(idx);
+                }
             }
 
             // Rebuild both layers so deletions are visible
@@ -13216,22 +13232,67 @@ namespace FamidashEditor
 
             // Apply placements for both layers
             foreach (var idx in putTiles) tiles[idx] = finalTiles[idx];
+            
             foreach (var idx in putSprites)
             {
                 sprites[idx] = finalSprites[idx];
-                
-                // Apply or clear pixel offset based on whether offset was specified
-                if (pixelOffsetX != 0 || pixelOffsetY != 0)
+            }
+            
+            // Update sprite offsets for ALL sprites in the selection, not just ones that moved tiles
+            // This handles cases where sprite stays in same tile but offset changes (e.g., half-tile movement)
+            if (preserveOffsets && selSprites != null && spritesLayerActive)
+            {
+                for (int yy = 0; yy < selH; yy++)
                 {
-                    // Apply the pixel offset to this sprite
-                    spritePixelOffsets[idx] = (pixelOffsetX, pixelOffsetY);
-                }
-                else
-                {
-                    // Clear any existing pixel offset (normal grid snapping)
-                    if (spritePixelOffsets.ContainsKey(idx))
+                    for (int xx = 0; xx < selW; xx++)
                     {
-                        spritePixelOffsets.Remove(idx);
+                        int srcIdx = (selY + yy) * mapWidth + (selX + xx);
+                        if (srcIdx < 0 || srcIdx >= sprites.Length) continue;
+                        if (useSparse && (selectionSet == null || !selectionSet.Contains(srcIdx))) continue;
+                        
+                        int sval = selSprites[yy * selW + xx];
+                        if (sval == -1) continue; // No sprite in selection at this position
+                        
+                        int dstIdx = (destY + yy) * mapWidth + (destX + xx);
+                        if (dstIdx < 0 || dstIdx >= sprites.Length) continue;
+                        
+                        // Calculate the sprite's final offset
+                        int localIdx = yy * selW + xx;
+                        int origOffsetX = 0, origOffsetY = 0;
+                        if (selSpriteOffsets.TryGetValue(localIdx, out var origOffset))
+                        {
+                            origOffsetX = origOffset.offsetX;
+                            origOffsetY = origOffset.offsetY;
+                        }
+                        
+                        // Add the selection's sub-tile shift to get final offset
+                        int finalOffsetX = origOffsetX + pixelOffsetX;
+                        int finalOffsetY = origOffsetY + pixelOffsetY;
+                        
+                        // Set the offset
+                        if (finalOffsetX != 0 || finalOffsetY != 0)
+                        {
+                            spritePixelOffsets[dstIdx] = (finalOffsetX, finalOffsetY);
+                        }
+                        else if (spritePixelOffsets.ContainsKey(dstIdx))
+                        {
+                            spritePixelOffsets.Remove(dstIdx);
+                        }
+                    }
+                }
+            }
+            else if (!preserveOffsets && selSprites != null && spritesLayerActive)
+            {
+                // Grid snap mode - clear offsets for all sprites in selection
+                for (int yy = 0; yy < selH; yy++)
+                {
+                    for (int xx = 0; xx < selW; xx++)
+                    {
+                        int dstIdx = (destY + yy) * mapWidth + (destX + xx);
+                        if (dstIdx >= 0 && dstIdx < sprites.Length && spritePixelOffsets.ContainsKey(dstIdx))
+                        {
+                            spritePixelOffsets.Remove(dstIdx);
+                        }
                     }
                 }
             }
