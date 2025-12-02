@@ -25,6 +25,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     
+    <!-- Embed special audio as resource -->
+    <EmbeddedResource Include="..\fire.wav" />
+    
     <!-- Embed assets as resources -->
     <EmbeddedResource Include="..\saw-frame1.png" />
     <EmbeddedResource Include="..\saw-frame2.png" />

@@ -247,6 +247,8 @@ namespace FamidashEditor
         public string? SelectedSong { get; set; } = null;
         // Sprite offsets: key is "x,y" and value is [offsetX, offsetY]
         public Dictionary<string, int[]>? SpriteOffsets { get; set; } = null;
+        // Sprite anchors: key is "x,y" (sprite position) and value is [anchorTileX, anchorTileY]
+        public Dictionary<string, int[]>? SpriteAnchors { get; set; } = null;
     }
 
     // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
@@ -780,6 +782,23 @@ namespace FamidashEditor
             }
             catch { }
 
+            // Save sprite anchors
+            try
+            {
+                if (spriteAnchors.Count > 0)
+                {
+                    config.SpriteAnchors = new Dictionary<string, int[]>();
+                    foreach (var kvp in spriteAnchors)
+                    {
+                        int x = kvp.Key % mapWidth;
+                        int y = kvp.Key / mapWidth;
+                        string key = $"{x},{y}";
+                        config.SpriteAnchors[key] = new int[] { kvp.Value.anchorTileX, kvp.Value.anchorTileY };
+                    }
+                }
+            }
+            catch { }
+
             string configPath = GetConfigPath(tmxFilePath);
             // Serialize and write the config file, omitting nulls
             var opts = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
@@ -940,6 +959,33 @@ namespace FamidashEditor
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"Error loading sprite offsets: {ex.Message}");
+                    }
+
+                    // Load sprite anchors from config
+                    try
+                    {
+                        if (config.SpriteAnchors != null && config.SpriteAnchors.Count > 0)
+                        {
+                            spriteAnchors.Clear();
+                            foreach (var kvp in config.SpriteAnchors)
+                            {
+                                // Parse "x,y" key back to position index
+                                var parts = kvp.Key.Split(',');
+                                if (parts.Length == 2 && int.TryParse(parts[0], out int x) && int.TryParse(parts[1], out int y))
+                                {
+                                    int positionIndex = y * mapWidth + x;
+                                    if (kvp.Value.Length >= 2)
+                                    {
+                                        spriteAnchors[positionIndex] = (kvp.Value[0], kvp.Value[1]);
+                                    }
+                                }
+                            }
+                            System.Diagnostics.Debug.WriteLine($"Loaded {spriteAnchors.Count} sprite anchors from config");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error loading sprite anchors: {ex.Message}");
                     }
                     
                     if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet} block:{loadedBlockSet} spike:{loadedSpikeSet}";
@@ -1814,16 +1860,16 @@ namespace FamidashEditor
 
                 ZoomSlider.ValueChanged += (s, e) =>
                 {
-                    // Snap zoom to quarter intervals (1.0, 1.25, 1.5, 1.75, 2.0, etc.)
+                    // Snap zoom to quarter intervals (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, etc.)
                     if (ZoomSlider != null && !isSnappingZoom)
                     {
                         double rawValue = ZoomSlider.Value;
                         // Snap to quarter intervals for both slider and Ctrl+wheel
                         double snappedValue = Math.Round(rawValue * 4.0) / 4.0;
-                        if (snappedValue < 1.0) snappedValue = 1.0;
+                        if (snappedValue < 0.25) snappedValue = 0.25;
                         if (snappedValue > 4.0) snappedValue = 4.0;
                         
-                        if (Math.Abs(rawValue - snappedValue) > 0.01)
+                        if (Math.Abs(rawValue - snappedValue) > 0.001)
                         {
                             isSnappingZoom = true;
                             ZoomSlider.Value = snappedValue;
@@ -2423,24 +2469,30 @@ namespace FamidashEditor
             // Ctrl+Wheel = Zoom
             if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
             {
+                e.Handled = true; // Mark as handled first to prevent scrolling
                 if (ZoomSlider == null) return;
-                e.Handled = true;
+                
                 // Ensure canvas keeps focus so subsequent wheel events remain routed here
                 try { if (CanvasHost != null) { CanvasHost.Focus(); Keyboard.Focus(CanvasHost); } } catch { }
 
                 double oldScale = ZoomSlider.Value;
                 // use a multiplicative zoom per mouse wheel notch (120 delta = one notch)
                 // Invert sign so wheel-up zooms in and wheel-down zooms out
-                double factorPerNotch = 1.1; // 10% per notch
-                // Respect user preference: the menu option now means "Invert Wheel/Pinch Zoom".
-                // Its checked state should invert the behavior compared to the old default.
-                // Choose sign so that when the option is CHECKED the behavior is inverted relative to before.
                 double sign = invertPinchGesture ? -1.0 : 1.0;
-                double factor = Math.Pow(factorPerNotch, sign * e.Delta / 120.0);
-                double newScale = oldScale * factor;
-                // clamp to slider limits
-                newScale = Math.Max(ZoomSlider.Minimum, Math.Min(ZoomSlider.Maximum, newScale));
-                if (Math.Abs(newScale - oldScale) < 1e-6) return;
+                int notches = e.Delta / 120;
+                
+                // Move by quarter intervals (0.25) per notch for predictable behavior
+                double newScale = oldScale + (sign * notches * 0.25);
+                
+                // Clamp to valid range
+                if (newScale < 0.25) newScale = 0.25;
+                if (newScale > 4.0) newScale = 4.0;
+                
+                // Ensure it's snapped to quarter interval
+                newScale = Math.Round(newScale * 4.0) / 4.0;
+                
+                // Only proceed if zoom actually changed
+                if (Math.Abs(newScale - oldScale) < 0.001) return;
 
                 // Determine mouse position in viewport coordinates
                 var mouseVp = e.GetPosition(MapScrollViewer);
@@ -2458,8 +2510,10 @@ namespace FamidashEditor
                 // Record zoom anchor so CommitZoom can preserve the point under the cursor
                 try { zoomAnchorViewportX = mouseVp.X; zoomAnchorViewportY = mouseVp.Y; zoomAnchorMapX = mapX; zoomAnchorMapY = mapY; hasZoomAnchor = true; } catch { hasZoomAnchor = false; }
 
-                // apply new zoom value (will be snapped to quarter intervals by ValueChanged handler)
+                // Apply new zoom value (already snapped, so disable snapping in ValueChanged)
+                isSnappingZoom = true;
                 if (ZoomSlider != null) ZoomSlider.Value = newScale;
+                isSnappingZoom = false;
 
                 // compute new content coordinate for same world point
                 double newContentX = mapViewportPadding + mapX * TileSize * newScale;
@@ -11239,7 +11293,59 @@ namespace FamidashEditor
                 int x = t.x; int y = t.y;
                 if (selectionSet != null && selectionSet.Count > 0)
                 {
-                    // start drag-move of selection
+                    // Before starting drag, verify the clicked tile is actually in the selection
+                    // If not, check if we clicked on an offset sprite's visual footprint
+                    int clickIdx = y * mapWidth + x;
+                    if (!selectionSet.Contains(clickIdx) && spritesLayerActive)
+                    {
+                        // Click is outside selection - check if it's on an offset sprite's visual area
+                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        int clickNativeX = (int)Math.Round((pos.X - mapViewportPadding) / scale);
+                        int clickNativeY = (int)Math.Round((pos.Y - mapViewportPadding) / scale);
+                        
+                        // Check all tiles in selection for sprites whose visual footprint includes the click
+                        bool foundInSelection = false;
+                        for (int yy = 0; yy < selH && !foundInSelection; yy++)
+                        {
+                            for (int xx = 0; xx < selW && !foundInSelection; xx++)
+                            {
+                                int checkX = selX + xx;
+                                int checkY = selY + yy;
+                                int checkIdx = checkY * mapWidth + checkX;
+                                
+                                if (selectionSet.Contains(checkIdx) && sprites[checkIdx] != -1)
+                                {
+                                    int offsetX = 0, offsetY = 0;
+                                    if (spritePixelOffsets.TryGetValue(checkIdx, out var offset))
+                                    {
+                                        offsetX = offset.offsetX;
+                                        offsetY = offset.offsetY;
+                                    }
+                                    
+                                    int spriteLeft = checkX * TileSize + offsetX;
+                                    int spriteTop = checkY * TileSize + offsetY;
+                                    int spriteRight = spriteLeft + TileSize;
+                                    int spriteBottom = spriteTop + TileSize;
+                                    
+                                    if (clickNativeX >= spriteLeft && clickNativeX < spriteRight &&
+                                        clickNativeY >= spriteTop && clickNativeY < spriteBottom)
+                                    {
+                                        // Clicked on a sprite in the selection - this is valid
+                                        foundInSelection = true;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // If click wasn't on any sprite in selection, clear selection
+                        if (!foundInSelection)
+                        {
+                            ClearSelection();
+                            return;
+                        }
+                    }
+                    
+                    // start drag-move of selection (click was on selection or sprite's visual footprint)
                     StartDragMove(pos);
                     return;
                 }
@@ -11293,6 +11399,16 @@ namespace FamidashEditor
                 
                 if (tileVal != -1 || spriteVal != -1)
                 {
+                    // Double-click on a sprite with offset removes the offset
+                    if (e.ClickCount >= 2 && spriteVal != -1 && spritePixelOffsets.ContainsKey(idx))
+                    {
+                        spritePixelOffsets.Remove(idx);
+                        spriteAnchors.Remove(idx); // Also remove the anchor
+                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                        SaveCurrentTmxConfig();
+                        return;
+                    }
+                    
                     // create a 1x1 selection at this tile/sprite and begin dragging
                     selX = foundX; selY = foundY; selW = 1; selH = 1;
                     selTiles = new int[1] { tileVal };
@@ -11500,7 +11616,16 @@ namespace FamidashEditor
                         int tx = posKey % mapWidth;
                         int ty = posKey / mapWidth;
                         
-                        // Calculate shifted sprite bounds
+                        // Get anchor position for this sprite (if it exists)
+                        int anchorX = tx;
+                        int anchorY = ty;
+                        if (spriteAnchors.TryGetValue(posKey, out var anchor))
+                        {
+                            anchorX = anchor.anchorTileX;
+                            anchorY = anchor.anchorTileY;
+                        }
+                        
+                        // Calculate shifted sprite bounds (from current storage position)
                         int origLeftPx = padPxX + tx * tilePixelW;
                         int origTopPx = padPxY + ty * tilePixelH + gridRenderShiftYPx;
                         int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
@@ -11510,11 +11635,15 @@ namespace FamidashEditor
                         int shiftedRightPx = shiftedLeftPx + tilePixelW;
                         int shiftedBottomPx = shiftedTopPx + tilePixelH;
                         
+                        // Calculate anchor position for ghost tile display
+                        int anchorLeftPx = padPxX + anchorX * tilePixelW;
+                        int anchorTopPx = padPxY + anchorY * tilePixelH + gridRenderShiftYPx;
+                        
                         // Check if mouse is within shifted sprite bounds
                         if (mousePxX >= shiftedLeftPx && mousePxX < shiftedRightPx &&
                             mousePxY >= shiftedTopPx && mousePxY < shiftedBottomPx)
                         {
-                            overlappingSprites.Add((posKey, sprites[posKey], offset, origLeftPx, origTopPx, shiftedLeftPx, shiftedTopPx));
+                            overlappingSprites.Add((posKey, sprites[posKey], offset, anchorLeftPx, anchorTopPx, shiftedLeftPx, shiftedTopPx));
                         }
                     }
                     
@@ -11563,8 +11692,25 @@ namespace FamidashEditor
                                 tooltipPanel.Children.Add(icon);
                             }
                             
-                            // Add offset text
-                            string tooltipText = $"ID:{sprite.spriteId:X2} Offset: X={sprite.offset.offsetX:+#;-#;0} Y={sprite.offset.offsetY:+#;-#;0}";
+                            // Add offset text - show total offset from anchor, not from storage position
+                            int totalOffsetX = sprite.offset.offsetX;
+                            int totalOffsetY = sprite.offset.offsetY;
+                            
+                            // If there's an anchor, calculate the total movement from anchor
+                            if (spriteAnchors.TryGetValue(sprite.posKey, out var spriteAnchor))
+                            {
+                                // Calculate where the sprite currently is stored
+                                int storageTileX = sprite.posKey % mapWidth;
+                                int storageTileY = sprite.posKey / mapWidth;
+                                
+                                // Total offset = tile movement from anchor + sub-tile offset
+                                int tileDeltaX = storageTileX - spriteAnchor.anchorTileX;
+                                int tileDeltaY = storageTileY - spriteAnchor.anchorTileY;
+                                totalOffsetX = tileDeltaX * TileSize + sprite.offset.offsetX;
+                                totalOffsetY = tileDeltaY * TileSize + sprite.offset.offsetY;
+                            }
+                            
+                            string tooltipText = $"ID:{sprite.spriteId:X2} Offset: X={totalOffsetX:+#;-#;0} Y={totalOffsetY:+#;-#;0}";
                             var textBlock = new TextBlock
                             {
                                 Text = tooltipText,
@@ -12210,24 +12356,21 @@ namespace FamidashEditor
         {
             if (selTiles == null || selW <= 0 || selH <= 0) return;
             
-            // Capture sprite offsets and anchors for the selection
+            // Clear sprite offsets tracking for this drag
             selSpriteOffsets.Clear();
+            
+            // Set anchors for sprites in the selection
+            // Preserve existing anchors - only set new anchors for sprites without one
+            // This ensures the anchor always references the sprite's ORIGINAL position before any offsets
             for (int yy = 0; yy < selH; yy++)
             {
                 for (int xx = 0; xx < selW; xx++)
                 {
                     int srcIdx = (selY + yy) * mapWidth + (selX + xx);
-                    int localIdx = yy * selW + xx;
-                    
                     if (selectionSet.Contains(srcIdx))
                     {
-                        // Capture current offset if any
-                        if (spritePixelOffsets.TryGetValue(srcIdx, out var pixOffset))
-                        {
-                            selSpriteOffsets[localIdx] = pixOffset;
-                        }
-                        
-                        // Set anchor using absolute map coordinates if not already set
+                        // Only set anchor if this sprite doesn't have one yet
+                        // This preserves the original reference point across moves
                         if (!spriteAnchors.ContainsKey(srcIdx))
                         {
                             spriteAnchors[srcIdx] = (selX + xx, selY + yy);
@@ -12312,18 +12455,9 @@ namespace FamidashEditor
                 GhostImage.Width = (bitmapWidth * scale * dpi.DpiScaleX) / dpi.DpiScaleX;
                 GhostImage.Height = (bitmapHeight * scale * dpi.DpiScaleY) / dpi.DpiScaleY;
                 
-                // Account for existing sprite offsets when positioning ghost
-                int minOffsetX = 0, minOffsetY = 0;
-                foreach (var kvp in selSpriteOffsets)
-                {
-                    minOffsetX = Math.Min(minOffsetX, kvp.Value.offsetX);
-                    minOffsetY = Math.Min(minOffsetY, kvp.Value.offsetY);
-                }
-                
-                // Position using same integer calculation as tiles - convert back to logical
-                // Include the minimum sprite offset so ghost appears where sprites actually are
-                int selLeftPx = padPxX + selX * tilePixelW + (int)Math.Round(minOffsetX * scale * dpi.DpiScaleX);
-                int selTopPx = padPxY + selY * tilePixelH + (int)Math.Round(minOffsetY * scale * dpi.DpiScaleY);
+                // Position at tile boundary (no offset adjustment needed since we cleared offsets)
+                int selLeftPx = padPxX + selX * tilePixelW;
+                int selTopPx = padPxY + selY * tilePixelH;
                 double selLeft = selLeftPx / dpi.DpiScaleX;
                 double selTop = selTopPx / dpi.DpiScaleY;
                 Canvas.SetLeft(GhostImage, selLeft);
@@ -12422,23 +12556,10 @@ namespace FamidashEditor
             Canvas.SetTop(GhostImage, snappedTop);
             
             // Calculate and store final tile position and pixel offset for EndDragMove
-            // The ghost position represents where sprites visually appear (including existing offsets)
-            // We need to subtract the minOffset to get back to the base tile position
+            // The ghost position represents the final visual position where sprites should appear
+            // Convert to native coordinates - this gives us the absolute position
             double finalNativeLeft = (snappedLeft - logicalPad) / scale;
             double finalNativeTop = (snappedTop - logicalPad) / scale;
-            
-            // Get the minimum sprite offset that was added to ghost position
-            int minOffsetX = 0, minOffsetY = 0;
-            foreach (var kvp in selSpriteOffsets)
-            {
-                minOffsetX = Math.Min(minOffsetX, kvp.Value.offsetX);
-                minOffsetY = Math.Min(minOffsetY, kvp.Value.offsetY);
-            }
-            
-            // Subtract minOffset to get the selection's base tile position
-            // (the ghost was positioned with minOffset added, so we remove it to get tile coords)
-            finalNativeLeft -= minOffsetX;
-            finalNativeTop -= minOffsetY;
             
             if (isShiftHeld && isCtrlHeld && isSpritesOnly)
             {
@@ -13528,31 +13649,44 @@ namespace FamidashEditor
                         // Get anchor for this sprite
                         if (spriteAnchors.TryGetValue(srcIdx, out var anchor))
                         {
-                            // Calculate how many tiles we've moved from anchor
+                            // The offset needs to be relative to where the sprite is STORED (dstIdx),
+                            // not relative to the anchor. We need to calculate where the sprite should
+                            // APPEAR (relative to anchor) and then convert that to an offset from dstIdx.
+                            
                             int currentTileX = destX + xx;
                             int currentTileY = destY + yy;
+                            
+                            // Calculate how far we've moved from the anchor (in tiles + sub-tile pixels)
                             int tileDeltaX = currentTileX - anchor.anchorTileX;
                             int tileDeltaY = currentTileY - anchor.anchorTileY;
                             
-                            // Convert tile delta to pixel offset and add the sub-tile shift
-                            int finalOffsetX = (tileDeltaX * TileSize) + pixelOffsetX;
-                            int finalOffsetY = (tileDeltaY * TileSize) + pixelOffsetY;
+                            // The total movement in pixels is: tile movement + sub-tile offset from drag
+                            int totalMovementX = tileDeltaX * TileSize + pixelOffsetX;
+                            int totalMovementY = tileDeltaY * TileSize + pixelOffsetY;
                             
-                            // Set the offset
-                            if (finalOffsetX != 0 || finalOffsetY != 0)
-                            {
-                                spritePixelOffsets[dstIdx] = (finalOffsetX, finalOffsetY);
-                            }
-                            else if (spritePixelOffsets.ContainsKey(dstIdx))
-                            {
-                                spritePixelOffsets.Remove(dstIdx);
-                            }
+                            // Where should the sprite appear? At anchor + total movement
+                            int targetPixelX = anchor.anchorTileX * TileSize + totalMovementX;
+                            int targetPixelY = anchor.anchorTileY * TileSize + totalMovementY;
+                            
+                            // Where is the sprite actually stored?
+                            int storedPixelX = currentTileX * TileSize;
+                            int storedPixelY = currentTileY * TileSize;
+                            
+                            // Offset = where it should appear - where it's stored
+                            int offsetX = targetPixelX - storedPixelX;
+                            int offsetY = targetPixelY - storedPixelY;
+                            
+                            // Always set the offset if there's an anchor (even if offset is 0)
+                            // This ensures the hover tooltip and ghost indicator still work
+                            spritePixelOffsets[dstIdx] = (offsetX, offsetY);
                             
                             // Update anchor reference: remove from source, add to destination
-                            // but KEEP the original anchor tile coordinates (don't update them)
+                            // The anchor stays at its original position
                             if (srcIdx != dstIdx)
                             {
                                 spriteAnchors.Remove(srcIdx);
+                                // Verify we're preserving the anchor coordinates
+                                System.Diagnostics.Debug.WriteLine($"Transferring anchor from idx {srcIdx} to {dstIdx}, keeping coords ({anchor.anchorTileX}, {anchor.anchorTileY})");
                                 spriteAnchors[dstIdx] = anchor; // Keep original anchor coordinates
                             }
                         }
@@ -14969,6 +15103,19 @@ namespace FamidashEditor
         public void ShowTileTintPicker()
         {
             try { TileTintButton_Click(this, new RoutedEventArgs()); } catch { }
+        }
+
+        public int GetSpriteOffsetCount()
+        {
+            return spritePixelOffsets.Count;
+        }
+
+        public void RemoveAllSpriteOffsets()
+        {
+            spritePixelOffsets.Clear();
+            spriteAnchors.Clear(); // Also clear all anchors
+            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            SaveCurrentTmxConfig();
         }
 
         private void Undo()

@@ -99,6 +99,22 @@ namespace FamidashEditor
                 }
             };
 
+            // Wire up Remove Sprite Shifts button
+            RemoveSpriteShiftsButton.Click += (s, e) =>
+            {
+                try
+                {
+                    if (this.Owner is MainWindow mw)
+                    {
+                        RemoveAllSpriteShifts(mw);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error removing sprite shifts: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+
             // Owner is set by caller via object-initializer after constructor completes.
             // Wire up the NoParallax checkbox in Loaded so Owner is available.
             this.Loaded += (s, e) =>
@@ -342,6 +358,35 @@ namespace FamidashEditor
             catch (Exception ex)
             {
                 MessageBox.Show($"Error loading JSON: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void RemoveAllSpriteShifts(MainWindow mainWindow)
+        {
+            try
+            {
+                int count = mainWindow.GetSpriteOffsetCount();
+                if (count == 0)
+                {
+                    MessageBox.Show("No sprite shifts found on this map.", "Information", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                var result = MessageBox.Show(
+                    $"Are you sure you want to remove all {count} sprite shift(s) from this map?\n\nThis action cannot be undone.",
+                    "Confirm Remove Sprite Shifts",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    mainWindow.RemoveAllSpriteOffsets();
+                    MessageBox.Show($"Successfully removed {count} sprite shift(s).", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error removing sprite shifts: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
