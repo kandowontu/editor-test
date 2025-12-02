@@ -13,6 +13,9 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Shapes = System.Windows.Shapes;
 using System.Windows.Interop;
+using FamidashEditor.Editor.Models;
+using FamidashEditor.Editor.Core;
+using FamidashEditor.Editor.Rendering;
 
 namespace FamidashEditor
 {
@@ -24,7 +27,6 @@ namespace FamidashEditor
         // we prefer that mapping over any in-process remapping at play-time.
         private bool mappingLoadedFromFile = false;
         private string? albumTxtPath = null;
-        private enum DrawMode { Tile, Line, Square, Circle, Triangle, Polygon, None }
         private DrawMode currentDrawMode = DrawMode.Tile;
         private bool hollowShape = false;
         private int brushThickness = 1;
@@ -128,42 +130,6 @@ namespace FamidashEditor
     private bool hasUnsavedChanges = false;
     
     // Multiple file tabs management
-    private class FileTabData
-    {
-        public string? FilePath { get; set; }
-        public int[] Tiles { get; set; } = Array.Empty<int>();
-        public int[] Sprites { get; set; } = Array.Empty<int>();
-        public Dictionary<int, (int offsetX, int offsetY)> SpritePixelOffsets { get; set; } = new Dictionary<int, (int, int)>();
-        public int MapWidth { get; set; } = 200;
-        public int MapHeight { get; set; } = 27;
-        public bool HasUnsavedChanges { get; set; } = false;
-        public string? LoadedTilesetSource { get; set; }
-        public string? LoadedSpritesetSource { get; set; }
-        public bool LoadedHasEditorSettings { get; set; }
-        public int LoadedChunkWidth { get; set; } = 16;
-        public int LoadedChunkHeight { get; set; } = 27;
-        public string? LoadedExportTarget { get; set; }
-        public string LoadedExportFormat { get; set; } = "csv";
-        public string? LoadedParallaxSource { get; set; }
-        public double LoadedParallaxX { get; set; } = 0.9;
-        public double LoadedParallaxY { get; set; } = 0.9;
-        public bool LoadedParallaxRepeatX { get; set; } = true;
-        public bool LoadedParallaxRepeatY { get; set; } = true;
-        public bool LoadedHasParallaxLayer { get; set; }
-        public string? LoadedGroundSource { get; set; }
-        public double LoadedGroundOffsetY { get; set; } = 432;
-        public bool LoadedGroundRepeatX { get; set; } = true;
-        public bool LoadedHasGroundLayer { get; set; }
-        public string LoadedDecoSet { get; set; } = "DECO1";
-        public string LoadedBlockSet { get; set; } = "BLOCKSA";
-        public string LoadedSpikeSet { get; set; } = "SPIKESA";
-        public bool NoParallaxBg { get; set; }
-        public Color BackgroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
-        public Color GroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
-        public Color TileTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
-        public string? SelectedSong { get; set; } = null;
-    }
-    
     private List<FileTabData> openFiles = new List<FileTabData>();
     private int currentFileIndex = -1;
     private List<string> recentFiles = new List<string>();
@@ -230,31 +196,6 @@ namespace FamidashEditor
     private readonly Stack<IUndoAction> undoStack = new Stack<IUndoAction>();
     private readonly Stack<IUndoAction> redoStack = new Stack<IUndoAction>();
     
-    // Configuration file support for per-TMX settings
-    private class TmxConfig
-    {
-        // Tint components are nullable so they are only written when explicitly set.
-        public byte? BackgroundTintR { get; set; }
-        public byte? BackgroundTintG { get; set; }
-        public byte? BackgroundTintB { get; set; }
-        public byte? GroundTintR { get; set; }
-        public byte? GroundTintG { get; set; }
-        public byte? GroundTintB { get; set; }
-        public byte? TileTintR { get; set; }
-        public byte? TileTintG { get; set; }
-        public byte? TileTintB { get; set; }
-        public bool NoParallaxBg { get; set; } = false;
-        public string? DecoSet { get; set; } = "DECO1";
-        public string? BlockSet { get; set; } = "BLOCKSA";
-        public string? SpikeSet { get; set; } = "SPIKESA";
-        public bool LockSpritesToSet { get; set; } = false;
-        public string? SelectedSong { get; set; } = null;
-        // Sprite offsets: key is "x,y" and value is [offsetX, offsetY]
-        public Dictionary<string, int[]>? SpriteOffsets { get; set; } = null;
-        // Sprite anchors: key is "x,y" (sprite position) and value is [anchorTileX, anchorTileY]
-        public Dictionary<string, int[]>? SpriteAnchors { get; set; } = null;
-    }
-
     // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
     private HashSet<int> disabledSprites = new HashSet<int>();
     private bool lockSpritesToSet = false;
@@ -1176,7 +1117,6 @@ namespace FamidashEditor
     private WriteableBitmap? portalsWb = null; // new portal background layer (incremental updates)
     private WriteableBitmap? spritesWb = null;
     // Pre-scaled tile pixel caches keyed by integer scale key (scale*100)
-    private class ScaledTileCache { public byte[][] Pixels; public int TileW; public int TileH; public int Stride; public double Scale; public DpiScale Dpi; public ScaledTileCache(byte[][] pixels, int w, int h, int stride, double scale, DpiScale dpi) { Pixels = pixels; TileW = w; TileH = h; Stride = stride; Scale = scale; Dpi = dpi; } }
     private readonly Dictionary<int, ScaledTileCache> scaledTileCaches = new Dictionary<int, ScaledTileCache>();
     // Caches for single-tinted parallax/ground bitmaps keyed by (scaleKey<<32)|ARGB
     private readonly Dictionary<long, BitmapSource> parallaxTintCache = new Dictionary<long, BitmapSource>();
@@ -1456,73 +1396,6 @@ namespace FamidashEditor
     private int currentSpritePositionKey = 0; // Temp variable for passing position to GetAnimatedSpriteIndex
     // Caches for tinted decoration bitmaps (keyed by combined (id<<32)|ARGB)
     // Simple LRU cache to limit memory usage when storing tinted bitmaps
-    private class LruCache<TKey, TValue> where TKey : notnull
-    {
-        private readonly int capacity;
-        private readonly Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>> map = new Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>>();
-        private readonly LinkedList<KeyValuePair<TKey, TValue>> list = new LinkedList<KeyValuePair<TKey, TValue>>();
-
-        public LruCache(int capacity)
-        {
-            this.capacity = Math.Max(16, capacity);
-        }
-
-        public bool TryGetValue(TKey key, out TValue? value)
-        {
-            if (map.TryGetValue(key, out var node))
-            {
-                // move to front
-                list.Remove(node);
-                list.AddFirst(node);
-                value = node.Value.Value;
-                return true;
-            }
-            value = default;
-            return false;
-        }
-
-        public TValue? this[TKey key]
-        {
-            set { Put(key, value); }
-            get
-            {
-                if (TryGetValue(key, out var v)) return v;
-                return default;
-            }
-        }
-
-                public void Put(TKey key, TValue? value)
-        {
-            if (map.TryGetValue(key, out var node))
-            {
-                node.Value = new KeyValuePair<TKey, TValue>(key, value!);
-                list.Remove(node);
-                list.AddFirst(node);
-            }
-            else
-            {
-                var kv = new KeyValuePair<TKey, TValue>(key, value!);
-                var n = list.AddFirst(kv);
-                map[key] = n;
-                if (map.Count > capacity)
-                {
-                    var last = list.Last;
-                    if (last != null)
-                    {
-                        map.Remove(last.Value.Key);
-                        list.RemoveLast();
-                    }
-                }
-            }
-        }
-
-        public void Clear()
-        {
-            map.Clear();
-            list.Clear();
-        }
-    }
-
     private const int TintCacheCapacity = 512;
     private readonly LruCache<long, BitmapSource?> tintedSpriteCache = new LruCache<long, BitmapSource?>(TintCacheCapacity);
     private readonly LruCache<long, BitmapSource?> tintedCustomCache = new LruCache<long, BitmapSource?>(TintCacheCapacity);
