@@ -224,6 +224,22 @@ namespace FamidashEditor
                 }
             };
 
+            // Wire up Export Shift JSON button
+            ExportShiftJsonButton.Click += (s, e) =>
+            {
+                try
+                {
+                    if (this.Owner is MainWindow mw)
+                    {
+                        ExportShiftJson(mw);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error exporting shift JSON: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+
             // Owner is set by caller via object-initializer after constructor completes.
             // Wire up the NoParallax checkbox in Loaded so Owner is available.
             this.Loaded += (s, e) =>
@@ -465,6 +481,132 @@ namespace FamidashEditor
             catch (Exception ex)
             {
                 MessageBox.Show($"Error removing sprite shifts: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void ExportShiftJson(MainWindow mainWindow)
+        {
+            try
+            {
+                var offsets = mainWindow.GetSpriteOffsets();
+                if (offsets.Count == 0)
+                {
+                    MessageBox.Show("No sprite shifts found on this map.", "Information", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // Get map dimensions
+                int mapWidth = mainWindow.MapWidth;
+                int mapHeight = mainWindow.MapHeight;
+
+                // Group offsets by their offset values
+                var groupedOffsets = new Dictionary<(int offsetX, int offsetY), List<(int x, int y)>>();
+                
+                foreach (var kvp in offsets)
+                {
+                    int posIndex = kvp.Key;
+                    int x = posIndex % mapWidth;
+                    int y = posIndex / mapWidth;
+                    var offset = kvp.Value;
+                    
+                    var key = (offset.offsetX, offset.offsetY);
+                    if (!groupedOffsets.ContainsKey(key))
+                    {
+                        groupedOffsets[key] = new List<(int x, int y)>();
+                    }
+                    groupedOffsets[key].Add((x, y));
+                }
+
+                // Build JSON5 output
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("\t\t\tobjectOffsets: [");
+                
+                bool firstGroup = true;
+                foreach (var group in groupedOffsets)
+                {
+                    if (!firstGroup)
+                    {
+                        sb.AppendLine(",");
+                    }
+                    firstGroup = false;
+                    
+                    sb.AppendLine("\t\t\t\t{");
+                    
+                    // Write coordinates
+                    var coords = group.Value;
+                    if (coords.Count == 1)
+                    {
+                        // Single coordinate: [x, y]
+                        sb.AppendLine($"\t\t\t\t\tcoordinates: [{coords[0].x}, {coords[0].y}],");
+                    }
+                    else
+                    {
+                        // Multiple coordinates: [[x, y], [x, y], ...]
+                        sb.AppendLine("\t\t\t\t\tcoordinates: [");
+                        for (int i = 0; i < coords.Count; i++)
+                        {
+                            string separator = (i < coords.Count - 1) ? "," : "";
+                            sb.AppendLine($"\t\t\t\t\t\t[{coords[i].x}, {coords[i].y}]{separator}");
+                        }
+                        sb.AppendLine("\t\t\t\t\t],");
+                    }
+                    
+                    // Write offsets
+                    if (group.Key.offsetX != 0 && group.Key.offsetY != 0)
+                    {
+                        string offsetXStr = group.Key.offsetX >= 0 ? $"+{group.Key.offsetX}" : group.Key.offsetX.ToString();
+                        string offsetYStr = group.Key.offsetY >= 0 ? $"+{group.Key.offsetY}" : group.Key.offsetY.ToString();
+                        sb.AppendLine($"\t\t\t\t\toffsetY: {offsetYStr},");
+                        sb.AppendLine($"\t\t\t\t\toffsetX: {offsetXStr}");
+                    }
+                    else if (group.Key.offsetY != 0)
+                    {
+                        string offsetYStr = group.Key.offsetY >= 0 ? $"+{group.Key.offsetY}" : group.Key.offsetY.ToString();
+                        sb.AppendLine($"\t\t\t\t\toffsetY: {offsetYStr}");
+                    }
+                    else if (group.Key.offsetX != 0)
+                    {
+                        string offsetXStr = group.Key.offsetX >= 0 ? $"+{group.Key.offsetX}" : group.Key.offsetX.ToString();
+                        sb.AppendLine($"\t\t\t\t\toffsetX: {offsetXStr}");
+                    }
+                    
+                    sb.Append("\t\t\t\t}");
+                }
+                
+                sb.AppendLine();
+                sb.AppendLine("\t\t\t]");
+
+                // Get current TMX filename
+                string currentTmxPath = mainWindow.GetCurrentTmxPath();
+                string levelName = string.IsNullOrEmpty(currentTmxPath) ? "level" : Path.GetFileNameWithoutExtension(currentTmxPath);
+
+                // Save to Documents folder
+                string documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                string fileName = $"{levelName}_sprite_shifts.json5";
+                string filePath = Path.Combine(documentsPath, fileName);
+
+                File.WriteAllText(filePath, sb.ToString());
+
+                // Open the file automatically
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = filePath,
+                        UseShellExecute = true
+                    });
+                }
+                catch
+                {
+                    // If opening fails, just show the path
+                }
+
+                MessageBox.Show($"Exported {offsets.Count} sprite shift(s) to:\n{filePath}\n\nThe file has been opened in your default text editor.", 
+                    "Export Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error exporting shift JSON: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

@@ -262,6 +262,9 @@ namespace FamidashEditor
     // When true, prefer external per-set tileset PNGs (if available) and swap famidash.bmp at runtime
     private bool showAccurateTileset = false;
     public bool ShowAccurateTileset => showAccurateTileset;
+    // Public accessors for map dimensions
+    public int MapWidth => mapWidth;
+    public int MapHeight => mapHeight;
     
     // Helper function to normalize song names for mapping
     private string NormalizeSongName(string songName)
@@ -15245,6 +15248,11 @@ namespace FamidashEditor
         public int GetSpriteOffsetCount()
         {
             return spritePixelOffsets.Count;
+        }
+
+        public Dictionary<int, (int offsetX, int offsetY)> GetSpriteOffsets()
+        {
+            return new Dictionary<int, (int offsetX, int offsetY)>(spritePixelOffsets);
         }
 
         public void RemoveAllSpriteOffsets()
