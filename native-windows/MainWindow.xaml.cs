@@ -214,6 +214,7 @@ namespace FamidashEditor
     private Point dragStartMouse; // in CanvasHost coords
     private int dragOrigX = 0, dragOrigY = 0; // original selection top-left
     private Point dragOffset; // offset from mouse to selection top-left when dragging
+    private Point dragStartGhostPos; // ghost position when drag started (for relative snapping)
     // Allow a small padded margin around the map so users can scroll slightly out-of-bounds
     private double mapViewportPadding = 64.0; // pixels on each side
     // Undo/redo support (unlimited)
@@ -10983,25 +10984,76 @@ namespace FamidashEditor
                 int x = t.x; int y = t.y;
                 if (selectionSet != null && selectionSet.Count > 0)
                 {
+                    // Clear selection visuals immediately before starting drag
+                    if (SelectionOverlay != null)
+                    {
+                        SelectionOverlay.Children.Clear();
+                    }
                     // start drag-move of selection
                     StartDragMove(pos);
                     return;
                 }
+                
                 // If no selection, check the tile/sprite under cursor based on active layers
+                // For sprites, also check for sprites with pixel offsets that might visually overlap this position
+                int foundX = x, foundY = y;
                 int idx = y * mapWidth + x;
                 int tileVal = tilesLayerActive ? tiles[idx] : -1;
                 int spriteVal = spritesLayerActive ? sprites[idx] : -1;
+                
+                // If clicking on sprites layer and no sprite at exact tile, check for offset sprites nearby
+                if (spritesLayerActive && spriteVal == -1)
+                {
+                    // Convert click to native pixel coordinates
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    int clickPxX = (int)Math.Round((pos.X - mapViewportPadding) * dpi.DpiScaleX / scale);
+                    int clickPxY = (int)Math.Round((pos.Y - mapViewportPadding) * dpi.DpiScaleY / scale);
+                    
+                    // Check current tile and adjacent tiles for sprites with offsets
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int checkX = x + dx;
+                            int checkY = y + dy;
+                            if (checkX >= 0 && checkX < mapWidth && checkY >= 0 && checkY < mapHeight)
+                            {
+                                int checkIdx = checkY * mapWidth + checkX;
+                                if (sprites[checkIdx] != -1 && spritePixelOffsets.TryGetValue(checkIdx, out var offset))
+                                {
+                                    // Calculate sprite's actual pixel bounds
+                                    int spriteLeft = checkX * TileSize + offset.offsetX;
+                                    int spriteTop = checkY * TileSize + offset.offsetY;
+                                    int spriteRight = spriteLeft + TileSize;
+                                    int spriteBottom = spriteTop + TileSize;
+                                    
+                                    // Check if click is within this sprite's bounds
+                                    if (clickPxX >= spriteLeft && clickPxX < spriteRight &&
+                                        clickPxY >= spriteTop && clickPxY < spriteBottom)
+                                    {
+                                        foundX = checkX;
+                                        foundY = checkY;
+                                        spriteVal = sprites[checkIdx];
+                                        idx = checkIdx;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (spriteVal != -1) break;
+                    }
+                }
                 
                 if (tileVal != -1 || spriteVal != -1)
                 {
                     // create a 1x1 selection at this tile/sprite and begin dragging
                     // Only include the layers that are active (not based on what exists)
-                    selX = x; selY = y; selW = 1; selH = 1;
+                    selX = foundX; selY = foundY; selW = 1; selH = 1;
                     selTiles = new int[1] { tileVal };
                     selSprites = new int[1] { spriteVal };
                     selectionSet!.Clear(); selectionSet.Add(idx);
-                    // show selection visuals
-                    UpdateSelectionVisuals(selX, selY, selW, selH);
+                    // Don't show selection visuals here - StartDragMove will show the ghost and yellow box
                     StartDragMove(pos);
                     return;
                 }
@@ -11913,12 +11965,12 @@ namespace FamidashEditor
             if (selTiles == null || selW <= 0 || selH <= 0) return;
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             var dpi = VisualTreeHelper.GetDpi(this);
-            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
-            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
 
             // Build an image for the selection (render scaled tiles and sprites into a RenderTargetBitmap)
-            int pixW = selW * tilePixelW;
-            int pixH = selH * tilePixelH;
+            // Draw in device-independent units
+            double ghostWidth = selW * TileSize * scale;
+            double ghostHeight = selH * TileSize * scale;
+            
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
@@ -11964,18 +12016,39 @@ namespace FamidashEditor
                     }
                 }
             }
-            var rtb = new RenderTargetBitmap(pixW, pixH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            
+            // Create bitmap at appropriate pixel resolution
+            int pixelWidth = (int)Math.Ceiling(ghostWidth * dpi.DpiScaleX);
+            int pixelHeight = (int)Math.Ceiling(ghostHeight * dpi.DpiScaleY);
+            var rtb = new RenderTargetBitmap(pixelWidth, pixelHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
             rtb.Render(dv);
             rtb.Freeze();
+
+            // Clear the selection overlay visuals so we don't see duplicate yellow boxes during drag
+            if (SelectionOverlay != null)
+            {
+                SelectionOverlay.Children.Clear();
+            }
+
+            // Calculate initial ghost position - use pixel offsets if they exist for the top-left sprite
+            int topLeftIdx = selY * mapWidth + selX;
+            int pixOffsetX = 0, pixOffsetY = 0;
+            if (spritePixelOffsets.TryGetValue(topLeftIdx, out var offset))
+            {
+                pixOffsetX = offset.offsetX;
+                pixOffsetY = offset.offsetY;
+            }
 
             // Set ghost image source and initial position
             if (GhostImage != null && CanvasHost != null)
             {
                 GhostImage.Source = rtb;
-                GhostImage.Width = selW * TileSize * scale;
-                GhostImage.Height = selH * TileSize * scale;
-                double selLeft = selX * TileSize * scale + mapViewportPadding;
-                double selTop = selY * TileSize * scale + mapViewportPadding;
+                GhostImage.Stretch = System.Windows.Media.Stretch.Fill;
+                GhostImage.Width = ghostWidth;
+                GhostImage.Height = ghostHeight;
+                // Include pixel offsets in the initial position
+                double selLeft = (selX * TileSize + pixOffsetX) * scale + mapViewportPadding;
+                double selTop = (selY * TileSize + pixOffsetY) * scale + mapViewportPadding;
                 Canvas.SetLeft(GhostImage, selLeft);
                 Canvas.SetTop(GhostImage, selTop);
                 GhostImage.Visibility = Visibility.Visible;
@@ -11985,89 +12058,23 @@ namespace FamidashEditor
             isDraggingSelection = true;
             dragStartMouse = pos;
             dragOrigX = selX; dragOrigY = selY;
-            // compute offset so the ghost follows the pointer at the same relative point
-            double selLeftUnits = selX * TileSize * scale + mapViewportPadding;
-            double selTopUnits = selY * TileSize * scale + mapViewportPadding;
-            dragOffset = new Point(dragStartMouse.X - selLeftUnits, dragStartMouse.Y - selTopUnits);
+            
+            // Compute dragOffset: the offset from mouse click position to the ghost's top-left corner
+            // This preserves where within the ghost image the user clicked, so dragging maintains that relationship
+            double ghostLeft = Canvas.GetLeft(GhostImage);
+            double ghostTop = Canvas.GetTop(GhostImage);
+            
+            // Store the initial ghost position for relative snapping
+            dragStartGhostPos = new Point(ghostLeft, ghostTop);
+            
+            // The dragOffset is: mouse position - ghost top-left position
+            // During drag: new ghost position = mouse position - dragOffset
+            // This ensures the ghost's position relative to mouse stays constant
+            dragOffset = new Point(pos.X - ghostLeft, pos.Y - ghostTop);
+            
             if (CanvasHost != null) CanvasHost.CaptureMouse();
-        }
-
-        private void UpdateDragMoveTo(Point pos)
-        {
-            if (!isDraggingSelection || GhostImage == null) return;
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
             
-            // Check modifier keys and sprite-only mode
-            bool isShiftHeld = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
-            bool isCtrlHeld = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
-            bool isSpritesOnly = spritesLayerActive && !tilesLayerActive;
-            
-            // desired top-left in canvas units (before snapping)
-            double left = pos.X - dragOffset.X;
-            double top = pos.Y - dragOffset.Y;
-            
-            double snappedLeft, snappedTop;
-            
-            if (isShiftHeld && isCtrlHeld && isSpritesOnly)
-            {
-                // Single-pixel precision: work in native unscaled pixels
-                // Convert from display units to native pixels
-                double nativeLeft = (left - pad) / scale;
-                double nativeTop = (top - pad) / scale;
-                
-                // Snap to nearest native pixel
-                int snappedNativeX = (int)Math.Round(nativeLeft);
-                int snappedNativeY = (int)Math.Round(nativeTop);
-                
-                // Convert back to display units
-                snappedLeft = pad + snappedNativeX * scale;
-                snappedTop = pad + snappedNativeY * scale;
-            }
-            else if (isShiftHeld && isSpritesOnly)
-            {
-                // Half-grid snapping: work in half-tile units
-                double halfTileSize = TileSize / 2.0;
-                
-                // Convert from display units to half-tile units
-                double halfTileX = (left - pad) / scale / halfTileSize;
-                double halfTileY = (top - pad) / scale / halfTileSize;
-                
-                // Snap to nearest half-tile
-                int snappedHalfTileX = (int)Math.Round(halfTileX);
-                int snappedHalfTileY = (int)Math.Round(halfTileY);
-                
-                // Convert back to display units
-                snappedLeft = pad + snappedHalfTileX * halfTileSize * scale;
-                snappedTop = pad + snappedHalfTileY * halfTileSize * scale;
-            }
-            else
-            {
-                // Normal full-grid snapping: work in tile units
-                double tileX = (left - pad) / scale / TileSize;
-                double tileY = (top - pad) / scale / TileSize;
-                
-                // Snap to nearest tile
-                int snappedTileX = (int)Math.Round(tileX);
-                int snappedTileY = (int)Math.Round(tileY);
-                
-                // Convert back to display units
-                snappedLeft = pad + snappedTileX * TileSize * scale;
-                snappedTop = pad + snappedTileY * TileSize * scale;
-            }
-            
-            // clamp so selection stays within map extents
-            double minLeft = pad; double minTop = pad;
-            double maxLeft = pad + Math.Max(0, mapWidth * TileSize * scale - selW * TileSize * scale);
-            double maxTop = pad + Math.Max(0, mapHeight * TileSize * scale - selH * TileSize * scale);
-            if (snappedLeft < minLeft) snappedLeft = minLeft; if (snappedLeft > maxLeft) snappedLeft = maxLeft;
-            if (snappedTop < minTop) snappedTop = minTop; if (snappedTop > maxTop) snappedTop = maxTop;
-            
-            // Position ghost at snapped location
-            Canvas.SetLeft(GhostImage, snappedLeft);
-            Canvas.SetTop(GhostImage, snappedTop);
-            
-            // Show yellow box at snapped position
+            // Show initial yellow box at current ghost position (without moving the ghost)
             if (SelectionOverlay != null)
             {
                 SelectionOverlay.Children.Clear();
@@ -12078,12 +12085,118 @@ namespace FamidashEditor
                     Width = boxWidth, 
                     Height = boxHeight, 
                     Stroke = Brushes.Yellow, 
-                    StrokeThickness = 2.0 / scale, 
+                    StrokeThickness = 1.0, 
                     Fill = Brushes.Transparent, 
-                    IsHitTestVisible = false 
+                    IsHitTestVisible = false
                 };
-                Canvas.SetLeft(rect, snappedLeft);
-                Canvas.SetTop(rect, snappedTop);
+                Canvas.SetLeft(rect, ghostLeft);
+                Canvas.SetTop(rect, ghostTop);
+                SelectionOverlay.Children.Add(rect);
+            }
+        }
+
+        private void UpdateDragMoveTo(Point pos)
+        {
+            if (!isDraggingSelection || GhostImage == null) return;
+            
+            // If mouse hasn't moved from drag start, keep ghost at original position
+            const double epsilon = 0.1;
+            if (Math.Abs(pos.X - dragStartMouse.X) < epsilon && Math.Abs(pos.Y - dragStartMouse.Y) < epsilon)
+            {
+                return; // No movement, keep ghost where it was
+            }
+            
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            
+            // Check modifier keys and sprite-only mode
+            bool isShiftHeld = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+            bool isCtrlHeld = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            bool isSpritesOnly = spritesLayerActive && !tilesLayerActive;
+            
+            // Calculate where the ghost top-left should be based on mouse position and dragOffset
+            // dragOffset was set when drag started: mouse_click - ghost_topleft
+            // So: ghost_topleft = mouse_current - dragOffset
+            double rawLeft = pos.X - dragOffset.X;
+            double rawTop = pos.Y - dragOffset.Y;
+            
+            // Calculate the movement delta from the starting position
+            double deltaX = rawLeft - dragStartGhostPos.X;
+            double deltaY = rawTop - dragStartGhostPos.Y;
+            
+            // Apply snapping to the DELTA, not the absolute position
+            // This preserves the original position and only snaps the movement
+            double snappedDeltaX, snappedDeltaY;
+            
+            if (isShiftHeld && isCtrlHeld && isSpritesOnly)
+            {
+                // Shift+Ctrl in sprite mode: pixel-perfect mode, no snapping
+                snappedDeltaX = deltaX;
+                snappedDeltaY = deltaY;
+            }
+            else if (isShiftHeld && isSpritesOnly)
+            {
+                // Shift only in sprite mode: snap movement to half-grid (8-pixel boundaries)
+                double nativeDeltaX = deltaX / scale;
+                double nativeDeltaY = deltaY / scale;
+                double halfTile = TileSize / 2.0; // 8 pixels
+                double snappedNativeDeltaX = Math.Round(nativeDeltaX / halfTile) * halfTile;
+                double snappedNativeDeltaY = Math.Round(nativeDeltaY / halfTile) * halfTile;
+                snappedDeltaX = snappedNativeDeltaX * scale;
+                snappedDeltaY = snappedNativeDeltaY * scale;
+            }
+            else if (isSpritesOnly)
+            {
+                // No modifiers in sprite mode: pixel-perfect mode (free movement)
+                snappedDeltaX = deltaX;
+                snappedDeltaY = deltaY;
+            }
+            else
+            {
+                // Tile mode or mixed mode: snap movement to full grid (16-pixel boundaries)
+                double nativeDeltaX = deltaX / scale;
+                double nativeDeltaY = deltaY / scale;
+                double snappedNativeDeltaX = Math.Round(nativeDeltaX / TileSize) * TileSize;
+                double snappedNativeDeltaY = Math.Round(nativeDeltaY / TileSize) * TileSize;
+                snappedDeltaX = snappedNativeDeltaX * scale;
+                snappedDeltaY = snappedNativeDeltaY * scale;
+            }
+            
+            // Apply the snapped delta to the starting position
+            double finalLeft = dragStartGhostPos.X + snappedDeltaX;
+            double finalTop = dragStartGhostPos.Y + snappedDeltaY;
+            
+            // clamp so selection stays within map extents
+            double minLeft = pad;
+            double minTop = pad;
+            double maxLeft = pad + Math.Max(0, mapWidth * TileSize * scale - selW * TileSize * scale);
+            double maxTop = pad + Math.Max(0, mapHeight * TileSize * scale - selH * TileSize * scale);
+            if (finalLeft < minLeft) finalLeft = minLeft;
+            if (finalLeft > maxLeft) finalLeft = maxLeft;
+            if (finalTop < minTop) finalTop = minTop;
+            if (finalTop > maxTop) finalTop = maxTop;
+            
+            // Position ghost at calculated location
+            Canvas.SetLeft(GhostImage, finalLeft);
+            Canvas.SetTop(GhostImage, finalTop);
+            
+            // Show yellow box at exact same position as ghost
+            if (SelectionOverlay != null)
+            {
+                SelectionOverlay.Children.Clear();
+                double boxWidth = selW * TileSize * scale;
+                double boxHeight = selH * TileSize * scale;
+                var rect = new Shapes.Rectangle 
+                { 
+                    Width = boxWidth, 
+                    Height = boxHeight, 
+                    Stroke = Brushes.Yellow, 
+                    StrokeThickness = 1.0, 
+                    Fill = Brushes.Transparent, 
+                    IsHitTestVisible = false
+                };
+                Canvas.SetLeft(rect, finalLeft);
+                Canvas.SetTop(rect, finalTop);
                 SelectionOverlay.Children.Add(rect);
             }
         }
