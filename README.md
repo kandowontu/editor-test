@@ -38,7 +38,10 @@ Other options include:
 
 
 
--Music selection for levels - pick a track and it will save to the level data (soon)
+-Music selection for levels - pick a track and it will save to the local level cfg file
+
+-Local level cfg file also saves blockset, spikeset, spriteset, all json shifts, and no parallax setting
+
 
 
 -Cut/Copy/Paste, many draw tools (line, circle, square, triangle, polygon), thickness slider for these, hollow toggle box
