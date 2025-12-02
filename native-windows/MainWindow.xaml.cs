@@ -168,6 +168,7 @@ namespace FamidashEditor
     private int currentFileIndex = -1;
     private List<string> recentFiles = new List<string>();
     private const int MaxRecentFiles = 10;
+    private bool isHandlingNewTab = false;
     
     // Store loaded TMX metadata to preserve when saving
     private string? loadedTilesetSource = null;
@@ -6101,8 +6102,22 @@ namespace FamidashEditor
             {
                 if (tab.Tag?.ToString() == "NEW")
                 {
-                    // Clicked the + tab, create new file
-                    NewMenuItem_Click(this, new RoutedEventArgs());
+                    // Prevent re-entrancy when handling new tab creation
+                    if (isHandlingNewTab) return;
+                    
+                    isHandlingNewTab = true;
+                    try
+                    {
+                        // Clicked the + tab, create new file
+                        NewMenuItem_Click(this, new RoutedEventArgs());
+                        
+                        // CreateNewTab will select the newly created tab,
+                        // so we don't need to do anything else here
+                    }
+                    finally
+                    {
+                        isHandlingNewTab = false;
+                    }
                 }
                 else if (tab.Tag is int index)
                 {
