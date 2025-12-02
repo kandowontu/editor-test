@@ -2168,6 +2168,45 @@ namespace FamidashEditor
             };
             if (TilesPanel != null) TilesPanel.SizeChanged += (_, __) => AdjustPaletteSizes();
             if (SpritesPanel != null) SpritesPanel.SizeChanged += (_, __) => AdjustPaletteSizes();
+            
+            // Add shift+wheel horizontal scrolling for tile panels
+            if (TilesPanel != null)
+            {
+                TilesPanel.PreviewMouseWheel += (s, e) =>
+                {
+                    if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                    {
+                        // Get the ScrollViewer from the ListBox
+                        var scrollViewer = FindVisualChild<ScrollViewer>(TilesPanel);
+                        if (scrollViewer != null && scrollViewer.ComputedHorizontalScrollBarVisibility == Visibility.Visible)
+                        {
+                            // Apply invert pinch setting to horizontal scroll
+                            double delta = invertPinchGesture ? -e.Delta : e.Delta;
+                            scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset - delta / 3.0);
+                            e.Handled = true;
+                        }
+                    }
+                };
+            }
+            if (SpritesPanel != null)
+            {
+                SpritesPanel.PreviewMouseWheel += (s, e) =>
+                {
+                    if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                    {
+                        // Get the ScrollViewer from the ListBox
+                        var scrollViewer = FindVisualChild<ScrollViewer>(SpritesPanel);
+                        if (scrollViewer != null && scrollViewer.ComputedHorizontalScrollBarVisibility == Visibility.Visible)
+                        {
+                            // Apply invert pinch setting to horizontal scroll
+                            double delta = invertPinchGesture ? -e.Delta : e.Delta;
+                            scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset - delta / 3.0);
+                            e.Handled = true;
+                        }
+                    }
+                };
+            }
+            
             if (RootGrid != null) RootGrid.SizeChanged += (_, __) => 
             {
                 UpdateTilesPanelWidth();
@@ -15981,6 +16020,29 @@ namespace FamidashEditor
             MenuFileClose_Click(sender, e);
             e.Handled = true;
         }
+    }
+    
+    // Helper method to find a child of a specific type in the visual tree
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        if (parent == null) return null;
+        
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T typedChild)
+            {
+                return typedChild;
+            }
+            
+            var childOfChild = FindVisualChild<T>(child);
+            if (childOfChild != null)
+            {
+                return childOfChild;
+            }
+        }
+        
+        return null;
     }
 }
 
