@@ -209,6 +209,7 @@ namespace FamidashEditor
     private int[]? selTiles = null; // row-major selW * selH
     private int[]? selSprites = null; // row-major selW * selH
     private Dictionary<int, (int offsetX, int offsetY)> selSpriteOffsets = new Dictionary<int, (int offsetX, int offsetY)>(); // sprite offsets for selection (local coords)
+    private Dictionary<int, (int anchorTileX, int anchorTileY)> spriteAnchors = new Dictionary<int, (int anchorTileX, int anchorTileY)>(); // anchor tile positions for sprites (global map coords, persists across drags)
     private System.Collections.Generic.HashSet<int> selectionSet = new System.Collections.Generic.HashSet<int>();
     // Dragging selection state
     private bool isDraggingSelection = false;
@@ -5656,10 +5657,17 @@ namespace FamidashEditor
             
             try
             {
-                // Save current tab state
+                // Save current tab state and TMX config
                 if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
                 {
                     SaveCurrentTabState();
+                    
+                    // Auto-save TMX config to persist sprite offsets, tints, etc.
+                    var currentTab = openFiles[currentFileIndex];
+                    if (!string.IsNullOrEmpty(currentTab.FilePath) && Path.GetExtension(currentTab.FilePath).ToLower() == ".tmx")
+                    {
+                        try { SaveTmxConfig(currentTab.FilePath); } catch { }
+                    }
                 }
                 
                 // Load new tab state
@@ -9476,28 +9484,21 @@ namespace FamidashEditor
                                         // Found a portal! Calculate which part of it overlaps with our current tile
                                         int portalDestX = Math.Max(0, padPxX + checkX * spritePixelW);
                                         int portalDestY = Math.Max(0, padPxY + checkY * spritePixelH);
-                                        int portalRenderWidth = spritePixelW;
-                                        int portalRenderHeight = spritePixelH;
-                                        int portalAnimatedIdx = GetAnimatedSpriteIndex(checkSpriteId);
-                                        // Extend portal mapping up through 3029 like elsewhere so speed portals are handled
-                                        bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3029);
+                                        
+                        int portalRenderWidth = spritePixelW;
+                        int portalRenderHeight = spritePixelH;
+                        int portalAnimatedIdx = GetAnimatedSpriteIndex(checkSpriteId);
+                        // Extend portal mapping up through 3029 like elsewhere so speed portals are handled
+                        bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3029);
 
-                                        // Apply preview-mode vertical nudges for selected portal types (skip 0.5x/1x/special)
-                                        if (previewMode)
-                                        {
-                                            if (checkSpriteId == 0x16)
-                                            {
-                                                int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
-                                                portalDestY = Math.Max(0, portalDestY - nudgePixels);
-                                            }
-                                            else if (checkSpriteId == 0x20 || checkSpriteId == 0x21)
-                                            {
-                                                int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
-                                                portalDestY = Math.Max(0, portalDestY - nudgePixels);
-                                            }
-                                        }
-
-                                        if (portalIsMulti)
+                        // Apply sprite pixel offsets (user offset takes priority)
+                        if (spritePixelOffsets.TryGetValue(portalPosKey, out var portalOffset))
+                        {
+                            int scaledOffsetX = (int)Math.Round(portalOffset.offsetX * scale * dpi.DpiScaleX);
+                            int scaledOffsetY = (int)Math.Round(portalOffset.offsetY * scale * dpi.DpiScaleY);
+                            portalDestX += scaledOffsetX;
+                            portalDestY += scaledOffsetY;
+                        }                                        if (portalIsMulti)
                                         {
                                             // Standard tall portals (3000-3010) are 1.5 tiles × 3 tiles
                                             if (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3010)
@@ -9523,11 +9524,11 @@ namespace FamidashEditor
                                                 portalRenderWidth = (spritePixelW * 3) / 2;
                                                 portalRenderHeight = spritePixelH * 2;
                                             }
-                                            // 0.5x, 1x, special (3024/3025/3029): single tile wide, tall height
+                                            // 0.5x, 1x, special (3024/3025/3029): All speed portals are 2 tiles tall
                                             else if (portalAnimatedIdx == 3024 || portalAnimatedIdx == 3025 || portalAnimatedIdx == 3029)
                                             {
                                                 portalRenderWidth = spritePixelW;
-                                                portalRenderHeight = spritePixelH * 3;
+                                                portalRenderHeight = spritePixelH * 2;
                                             }
                                             else
                                             {
@@ -9781,14 +9782,32 @@ namespace FamidashEditor
                                 }
                             }
                             
-                            // Mark this batch area as dirty. Expand the top by one tile to account
-                            // for preview-mode vertical nudges (e.g. chains that hang upward by 1 tile).
+                            // Mark this batch area as dirty. Expand to account for:
+                            // 1) preview-mode vertical nudges (e.g. chains that hang upward by 1 tile)
+                            // 2) sprite pixel offsets that can shift sprites beyond their tile boundaries
                             int minY = batchStart / mapWidth;
                             int maxY = (batchEnd - 1) / mapWidth;
-                            // Include one extra tile above the batch to capture sprites shifted upward
-                            int dirtyTopTile = Math.Max(0, minY - 1);
-                            int dirtyHeight = (maxY - dirtyTopTile + 1) * spritePixelH;
-                            int dirtyTopPx = (int)(dirtyTopTile * spritePixelH + pad * dpi.DpiScaleY);
+                            
+                            // Calculate max sprite offset in this batch to expand dirty rect accordingly
+                            int maxOffsetUp = spritePixelH; // At least 1 tile for preview mode shifts
+                            int maxOffsetDown = 0;
+                            for (int i = batchStart; i < batchEnd; i++)
+                            {
+                                if (spritePixelOffsets.TryGetValue(i, out var offset))
+                                {
+                                    int scaledOffsetY = (int)Math.Round(Math.Abs(offset.offsetY) * scale * dpi.DpiScaleY);
+                                    if (offset.offsetY < 0)
+                                        maxOffsetUp = Math.Max(maxOffsetUp, scaledOffsetY);
+                                    else
+                                        maxOffsetDown = Math.Max(maxOffsetDown, scaledOffsetY);
+                                }
+                            }
+                            
+                            // Expand dirty rect to include offset sprites
+                            int dirtyTopTile = Math.Max(0, minY - (int)Math.Ceiling((double)maxOffsetUp / spritePixelH));
+                            int dirtyBottomTile = Math.Min(mapHeight - 1, maxY + (int)Math.Ceiling((double)maxOffsetDown / spritePixelH));
+                            int dirtyHeight = (dirtyBottomTile - dirtyTopTile + 1) * spritePixelH + maxOffsetUp + maxOffsetDown;
+                            int dirtyTopPx = Math.Max(0, (int)(dirtyTopTile * spritePixelH + pad * dpi.DpiScaleY - maxOffsetUp));
                             spritesWb.AddDirtyRect(new Int32Rect(0, dirtyTopPx, cachedPixelWidth, Math.Min(dirtyHeight, cachedPixelHeight - dirtyTopPx)));
                         }
                         finally
@@ -10896,49 +10915,29 @@ namespace FamidashEditor
             int destX = Math.Max(0, padPxX + x * spritePixelW);
             int destY = Math.Max(0, padPxY + y * spritePixelH);
 
-            // Apply sprite pixel offsets from JSON metadata (if any)
-            int posKey = y * mapWidth + x;
-            if (spritePixelOffsets.TryGetValue(posKey, out var offset))
+            // Special-case: in preview mode, certain horizontal gravity portal previews
+            // should be visually shifted up by one tile (16px) to align correctly.
+            // BUT: only apply these if the user hasn't set a custom offset
+            bool hasCustomOffset = spritePixelOffsets.ContainsKey(portalPosKey);
+            if (previewMode && !hasCustomOffset && (spriteIdx == 0x10 || spriteIdx == 0x12))
+            {
+                destY = Math.Max(0, destY - spritePixelH);
+            }
+            // Horizontal teleport portal previews 0x67/0x68 are designed to be shifted
+            // up by one tile so they visually align with the surrounding tiles.
+            if (previewMode && !hasCustomOffset && (spriteIdx == 0x67 || spriteIdx == 0x68))
+            {
+                destY = Math.Max(0, destY - spritePixelH);
+            }
+            
+            // Apply sprite pixel offsets (user offset takes priority)
+            if (spritePixelOffsets.TryGetValue(portalPosKey, out var offset))
             {
                 // Scale the offset by the current scale and DPI
                 int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
                 int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
                 destX += scaledOffsetX;
                 destY += scaledOffsetY;
-            }
-
-            // Special-case: in preview mode, certain horizontal gravity portal previews
-            // should be visually shifted up by one tile (16px) to align correctly.
-            // Apply for sprite IDs 0x10 and 0x12.
-            if (previewMode && (spriteIdx == 0x10 || spriteIdx == 0x12))
-            {
-                destY = Math.Max(0, destY - spritePixelH);
-            }
-            // Horizontal teleport portal previews 0x67/0x68 are designed to be shifted
-            // up by one tile so they visually align with the surrounding tiles.
-            if (previewMode && (spriteIdx == 0x67 || spriteIdx == 0x68))
-            {
-                destY = Math.Max(0, destY - spritePixelH);
-            }
-            // Speed portal previews: most should start one tile higher so they visually hang
-            // from the tile above similar to other portal previews. However, the 3x/4x
-            // speed previews (sprite 0x20 and 0x21) render better when shifted down
-            // by one tile instead of up. Keep other speed previews shifted up.
-            if (previewMode)
-            {
-                // Keep nudges for 2x and 3x/4x portals only; skip 0.5x/1x/special (0x14/0x15/0x6D)
-                if (spriteIdx == 0x16 || spriteIdx == 0x14 || spriteIdx == 0x15 || spriteIdx == 0x6D)
-                {
-                    // 2x, and also 0.5x/1x/special speed portals: nudge up 6 logical pixels, scaled by DPI
-                    int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
-                    destY = Math.Max(0, destY - nudgePixels);
-                }
-                else if (spriteIdx == 0x20 || spriteIdx == 0x21)
-                {
-                    // 3x/4x speed portals: small nudge up of 6 logical pixels, scaled by DPI
-                    int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
-                    destY = Math.Max(0, destY - nudgePixels);
-                }
             }
 
             int renderWidth = spritePixelW;
@@ -12139,17 +12138,28 @@ namespace FamidashEditor
         {
             if (selTiles == null || selW <= 0 || selH <= 0) return;
             
-            // Capture sprite offsets for the selection
+            // Capture sprite offsets and anchors for the selection
             selSpriteOffsets.Clear();
             for (int yy = 0; yy < selH; yy++)
             {
                 for (int xx = 0; xx < selW; xx++)
                 {
                     int srcIdx = (selY + yy) * mapWidth + (selX + xx);
-                    if (selectionSet.Contains(srcIdx) && spritePixelOffsets.TryGetValue(srcIdx, out var pixOffset))
+                    int localIdx = yy * selW + xx;
+                    
+                    if (selectionSet.Contains(srcIdx))
                     {
-                        int localIdx = yy * selW + xx;
-                        selSpriteOffsets[localIdx] = pixOffset;
+                        // Capture current offset if any
+                        if (spritePixelOffsets.TryGetValue(srcIdx, out var pixOffset))
+                        {
+                            selSpriteOffsets[localIdx] = pixOffset;
+                        }
+                        
+                        // Set anchor using absolute map coordinates if not already set
+                        if (!spriteAnchors.ContainsKey(srcIdx))
+                        {
+                            spriteAnchors[srcIdx] = (selX + xx, selY + yy);
+                        }
                     }
                 }
             }
@@ -13263,6 +13273,7 @@ namespace FamidashEditor
         {
             selTiles = null; selSprites = null; selW = 0; selH = 0; selX = selY = -1;
             selectionSet.Clear();
+            spriteAnchors.Clear(); // Clear anchors when selection is cleared
             if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
             if (StatusText != null) StatusText.Text = string.Empty;
         }
@@ -13444,27 +13455,47 @@ namespace FamidashEditor
                         int dstIdx = (destY + yy) * mapWidth + (destX + xx);
                         if (dstIdx < 0 || dstIdx >= sprites.Length) continue;
                         
-                        // Calculate the sprite's final offset
-                        int localIdx = yy * selW + xx;
-                        int origOffsetX = 0, origOffsetY = 0;
-                        if (selSpriteOffsets.TryGetValue(localIdx, out var origOffset))
+                        // Get anchor for this sprite
+                        if (spriteAnchors.TryGetValue(srcIdx, out var anchor))
                         {
-                            origOffsetX = origOffset.offsetX;
-                            origOffsetY = origOffset.offsetY;
+                            // Calculate how many tiles we've moved from anchor
+                            int currentTileX = destX + xx;
+                            int currentTileY = destY + yy;
+                            int tileDeltaX = currentTileX - anchor.anchorTileX;
+                            int tileDeltaY = currentTileY - anchor.anchorTileY;
+                            
+                            // Convert tile delta to pixel offset and add the sub-tile shift
+                            int finalOffsetX = (tileDeltaX * TileSize) + pixelOffsetX;
+                            int finalOffsetY = (tileDeltaY * TileSize) + pixelOffsetY;
+                            
+                            // Set the offset
+                            if (finalOffsetX != 0 || finalOffsetY != 0)
+                            {
+                                spritePixelOffsets[dstIdx] = (finalOffsetX, finalOffsetY);
+                            }
+                            else if (spritePixelOffsets.ContainsKey(dstIdx))
+                            {
+                                spritePixelOffsets.Remove(dstIdx);
+                            }
+                            
+                            // Move anchor to new position if sprite moved
+                            if (srcIdx != dstIdx)
+                            {
+                                spriteAnchors.Remove(srcIdx);
+                                spriteAnchors[dstIdx] = anchor;
+                            }
                         }
-                        
-                        // Add the selection's sub-tile shift to get final offset
-                        int finalOffsetX = origOffsetX + pixelOffsetX;
-                        int finalOffsetY = origOffsetY + pixelOffsetY;
-                        
-                        // Set the offset
-                        if (finalOffsetX != 0 || finalOffsetY != 0)
+                        else
                         {
-                            spritePixelOffsets[dstIdx] = (finalOffsetX, finalOffsetY);
-                        }
-                        else if (spritePixelOffsets.ContainsKey(dstIdx))
-                        {
-                            spritePixelOffsets.Remove(dstIdx);
+                            // No anchor - just use the pixel offset directly
+                            if (pixelOffsetX != 0 || pixelOffsetY != 0)
+                            {
+                                spritePixelOffsets[dstIdx] = (pixelOffsetX, pixelOffsetY);
+                            }
+                            else if (spritePixelOffsets.ContainsKey(dstIdx))
+                            {
+                                spritePixelOffsets.Remove(dstIdx);
+                            }
                         }
                     }
                 }
@@ -13493,6 +13524,12 @@ namespace FamidashEditor
 
             if (!tileChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileChanges); redoStack.Clear(); hasUnsavedChanges = true; }
             if (!spriteChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteChanges); redoStack.Clear(); hasUnsavedChanges = true; }
+
+            // Auto-save TMX config if sprite offsets were modified
+            if (!spriteChanges.IsEmpty() && !string.IsNullOrEmpty(currentFilePath))
+            {
+                try { SaveTmxConfig(currentFilePath); } catch { }
+            }
 
             // Final rebuild
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
@@ -14426,6 +14463,9 @@ namespace FamidashEditor
                             MessageBox.Show("Sprite collision adjustments during save:\n\n" + saveCollisionMessages,
                                 "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
+                        
+                        // Save TMX config (sprite offsets, tints, sets, etc.)
+                        try { SaveTmxConfig(target); } catch { }
                     }
                     else
                     {
@@ -14491,6 +14531,9 @@ namespace FamidashEditor
                             MessageBox.Show("Sprite collision adjustments during save:\n\n" + saveCollisionMessages,
                                 "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
+                        
+                        // Save TMX config (sprite offsets, tints, sets, etc.)
+                        try { SaveTmxConfig(dlg.FileName); } catch { }
                     }
                     else
                     {
@@ -15038,6 +15081,12 @@ namespace FamidashEditor
 
         private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            // Auto-save TMX config to preserve sprite offsets, tints, etc.
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                try { SaveTmxConfig(currentFilePath); } catch { }
+            }
+            
             // Prompt to save if there are unsaved changes
             if (hasUnsavedChanges)
             {
