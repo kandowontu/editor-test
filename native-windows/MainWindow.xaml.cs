@@ -5485,6 +5485,7 @@ namespace FamidashEditor
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
                 Cursor = Cursors.Hand,
+                Visibility = Visibility.Visible,
                 Tag = currentFileIndex
             };
             closeButton.Click += CloseTab_Click;
@@ -6025,7 +6026,34 @@ namespace FamidashEditor
                         {
                             if (FileTabControl.Items[i] is TabItem tabItem && tabItem.Tag is int tabFileIndex && tabFileIndex == currentFileIndex)
                             {
-                                tabItem.Header = System.IO.Path.GetFileName(filePath);
+                                // Create header panel with close button
+                                var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
+                                var headerText = new TextBlock 
+                                { 
+                                    Text = System.IO.Path.GetFileName(filePath),
+                                    Margin = new Thickness(0, 0, 8, 0),
+                                    VerticalAlignment = VerticalAlignment.Center
+                                };
+                                var closeButton = new Button
+                                {
+                                    Content = "×",
+                                    Width = 16,
+                                    Height = 16,
+                                    Padding = new Thickness(0),
+                                    Margin = new Thickness(0),
+                                    VerticalAlignment = VerticalAlignment.Center,
+                                    Background = Brushes.Transparent,
+                                    BorderThickness = new Thickness(0),
+                                    FontSize = 14,
+                                    FontWeight = FontWeights.Bold,
+                                    Cursor = Cursors.Hand,
+                                    Visibility = Visibility.Visible,
+                                    Tag = currentFileIndex
+                                };
+                                closeButton.Click += CloseTab_Click;
+                                headerPanel.Children.Add(headerText);
+                                headerPanel.Children.Add(closeButton);
+                                tabItem.Header = headerPanel;
                                 break;
                             }
                         }

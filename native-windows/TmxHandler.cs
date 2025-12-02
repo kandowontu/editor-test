@@ -59,6 +59,12 @@ namespace FamidashEditor
             // Track sprite collisions during loading
             var collisionMessages = new System.Collections.Generic.List<string>();
             
+            // Track which TMX positions have been processed to avoid duplicates from multiple layers
+            var processedPositions = new System.Collections.Generic.HashSet<int>();
+            
+            // First pass: collect all sprites with their intended positions (after trigger shift)
+            var spritesToPlace = new System.Collections.Generic.List<(int spriteIdx, int x, int y, int originalX, int originalY, bool isTrigger)>();
+            
             // Process tile layers separately
             // TMX uses GIDs: 0=empty, 1-256=famidash tileset, 257-512=sprites tileset
             // Convert to editor format: -1=empty, 0-255=famidash tiles, 0-255=sprites
@@ -92,6 +98,12 @@ namespace FamidashEditor
                                     {
                                         int spriteIdx = gid - 257;
                                         
+                                        // Skip if this TMX position was already processed from a previous layer
+                                        if (processedPositions.Contains(i))
+                                        {
+                                            continue;
+                                        }
+                                        
                                         // Calculate position in grid
                                         int y = i / width;
                                         int x = i % width;
@@ -107,70 +119,9 @@ namespace FamidashEditor
                                             if (x < 0) x = 0; // Clamp to left boundary instead of skipping
                                         }
                                         
-                                        int newIdx = y * width + x;
-                                        
-                                        // Handle collisions differently for triggers vs normal sprites
-                                        if (newIdx >= 0 && newIdx < totalTiles)
-                                        {
-                                            if (sprites[newIdx] != -1)
-                                            {
-                                                if (isTrigger)
-                                                {
-                                                    // TRIGGER sprites: Move vertically to find empty slot
-                                                    int finalY = y;
-                                                    bool foundSlot = false;
-                                                    
-                                                    // Search up and down alternately - prefer moving down first
-                                                    for (int offset = 1; offset < height; offset++)
-                                                    {
-                                                        // Try below first
-                                                        int testY = y + offset;
-                                                        if (testY < height)
-                                                        {
-                                                            int testIdx = testY * width + x;
-                                                            if (sprites[testIdx] == -1)
-                                                            {
-                                                                finalY = testY;
-                                                                foundSlot = true;
-                                                                break;
-                                                            }
-                                                        }
-                                                        
-                                                        // Try above
-                                                        testY = y - offset;
-                                                        if (testY >= 0)
-                                                        {
-                                                            int testIdx = testY * width + x;
-                                                            if (sprites[testIdx] == -1)
-                                                            {
-                                                                finalY = testY;
-                                                                foundSlot = true;
-                                                                break;
-                                                            }
-                                                        }
-                                                    }
-                                                    
-                                                    if (foundSlot)
-                                                    {
-                                                        collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Editor({x},{y}) COLLISION → Moved to ({x},{finalY})");
-                                                        newIdx = finalY * width + x;
-                                                    }
-                                                    else
-                                                    {
-                                                        collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Editor({x},{y}) COLLISION → No free slot - DROPPED");
-                                                        continue; // Skip this sprite
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    // NORMAL sprites: Overwrite existing sprite (normal sprites have priority)
-                                                    int existingSprite = sprites[newIdx];
-                                                    collisionMessages.Add($"NORMAL Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) OVERWRITES existing sprite 0x{existingSprite:X2} at ({x},{y})");
-                                                }
-                                            }
-                                            
-                                            sprites[newIdx] = spriteIdx;
-                                        }
+                                        // Add to list for collision resolution
+                                        spritesToPlace.Add((spriteIdx, x, y, originalX, originalY, isTrigger));
+                                        processedPositions.Add(i);
                                     }
                                 }
                                 else
@@ -186,6 +137,105 @@ namespace FamidashEditor
                     {
                         throw new Exception("Only CSV encoding is supported");
                     }
+                }
+            }
+            
+            // Separate normal sprites and trigger sprites
+            var normalSprites = spritesToPlace.Where(s => !s.isTrigger).ToList();
+            var triggerSprites = spritesToPlace.Where(s => s.isTrigger).ToList();
+            
+            // Sort both lists by position (top-to-bottom, left-to-right)
+            normalSprites.Sort((a, b) =>
+            {
+                int cmp = a.y.CompareTo(b.y);
+                if (cmp != 0) return cmp;
+                return a.x.CompareTo(b.x);
+            });
+            
+            triggerSprites.Sort((a, b) =>
+            {
+                int cmp = a.y.CompareTo(b.y);
+                if (cmp != 0) return cmp;
+                return a.x.CompareTo(b.x);
+            });
+            
+            // First pass: place all normal sprites (they can overwrite anything)
+            foreach (var (spriteIdx, x, y, originalX, originalY, isTrigger) in normalSprites)
+            {
+                int newIdx = y * width + x;
+                
+                if (newIdx >= 0 && newIdx < totalTiles)
+                {
+                    if (sprites[newIdx] != -1)
+                    {
+                        int existingSprite = sprites[newIdx];
+                        collisionMessages.Add($"NORMAL Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) OVERWRITES existing sprite 0x{existingSprite:X2} at ({x},{y})");
+                    }
+                    
+                    sprites[newIdx] = spriteIdx;
+                }
+            }
+            
+            // Second pass: place trigger sprites and resolve collisions
+            // Second pass: place trigger sprites and resolve collisions
+            foreach (var (spriteIdx, x, y, originalX, originalY, isTrigger) in triggerSprites)
+            {
+                int newIdx = y * width + x;
+                
+                // Handle collisions for trigger sprites
+                if (newIdx >= 0 && newIdx < totalTiles)
+                {
+                    if (sprites[newIdx] != -1)
+                    {
+                        // TRIGGER sprites: Move vertically to find empty slot
+                        int collidingSprite = sprites[newIdx];
+                        int finalY = y;
+                        bool foundSlot = false;
+                        
+                        // Search up and down alternately - prefer moving down first
+                        // Keep searching until we find an actually empty slot
+                        for (int offset = 1; offset < height; offset++)
+                        {
+                            // Try below first
+                            int testY = y + offset;
+                            if (testY < height)
+                            {
+                                int testIdx = testY * width + x;
+                                if (sprites[testIdx] == -1)
+                                {
+                                    finalY = testY;
+                                    foundSlot = true;
+                                    break;
+                                }
+                            }
+                            
+                            // Try above
+                            testY = y - offset;
+                            if (testY >= 0)
+                            {
+                                int testIdx = testY * width + x;
+                                if (sprites[testIdx] == -1)
+                                {
+                                    finalY = testY;
+                                    foundSlot = true;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (foundSlot)
+                        {
+                            collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Editor({x},{y}) COLLISION with 0x{collidingSprite:X2} → Moved to ({x},{finalY})");
+                            newIdx = finalY * width + x;
+                        }
+                        else
+                        {
+                            collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Editor({x},{y}) COLLISION → No free slot - DROPPED");
+                            continue; // Skip this sprite
+                        }
+                    }
+                    
+                    sprites[newIdx] = spriteIdx;
                 }
             }
 
