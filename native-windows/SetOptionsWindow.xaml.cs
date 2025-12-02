@@ -21,9 +21,24 @@ namespace FamidashEditor
         public string SelectedBlockSet { get; private set; } = "BLOCKSA";
         public string SelectedSpikeSet { get; private set; } = "SPIKESA";
         public bool LockSpritesToSet { get; private set; } = false;
+        
+        // Store original values for cancel functionality
+        private string originalDeco = "DECO1";
+        private string originalBlockSet = "BLOCKSA";
+        private string originalSpikeSet = "SPIKESA";
+        private bool originalLockSprites = false;
+        private bool originalShowAccurateTileset = false;
+        private bool originalNoParallax = false;
+        
         public SetOptionsWindow(string current, string currentBlock, string currentSpike)
         {
             InitializeComponent();
+            
+            // Store original values for cancel functionality
+            originalDeco = current;
+            originalBlockSet = currentBlock;
+            originalSpikeSet = currentSpike;
+            
             // select current
             foreach (var item in DecoCombo.Items)
             {
@@ -50,12 +65,106 @@ namespace FamidashEditor
                 }
             }
             OkButton.Click += (s, e) => {
+                // Apply all changes when OK is clicked
                 if (DecoCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi2) SelectedDeco = (string)cbi2.Content;
                 if (BlockCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi3) SelectedBlockSet = (string)cbi3.Content;
                 if (SpikeCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi4) SelectedSpikeSet = (string)cbi4.Content;
+                
+                // Apply changes to MainWindow
+                if (this.Owner is MainWindow mw)
+                {
+                    // Apply deco set
+                    if (SelectedDeco != originalDeco)
+                    {
+                        mw.SetDecoSet(SelectedDeco);
+                    }
+                    
+                    // Apply block set
+                    if (SelectedBlockSet != originalBlockSet)
+                    {
+                        mw.SetBlockSet(SelectedBlockSet);
+                    }
+                    
+                    // Apply spike set
+                    if (SelectedSpikeSet != originalSpikeSet)
+                    {
+                        mw.SetSpikeSet(SelectedSpikeSet);
+                    }
+                    
+                    // Apply lock sprites setting
+                    if (LockSpritesCheckBox?.IsChecked == true)
+                    {
+                        mw.SetLockSpritesToSet(true, SelectedDeco);
+                    }
+                    else if (LockSpritesCheckBox?.IsChecked == false && originalLockSprites)
+                    {
+                        mw.SetLockSpritesToSet(false, SelectedDeco);
+                    }
+                    
+                    // Apply show accurate tileset
+                    if (ShowAccurateTilesetCheckBox?.IsChecked != originalShowAccurateTileset)
+                    {
+                        mw.SetShowAccurateTileset(ShowAccurateTilesetCheckBox?.IsChecked == true, SelectedBlockSet, SelectedSpikeSet);
+                    }
+                    
+                    // Apply no parallax setting
+                    if (NoParallaxCheckBox?.IsChecked != originalNoParallax)
+                    {
+                        mw.SetNoParallax(NoParallaxCheckBox?.IsChecked == true);
+                    }
+                    
+                    // Save config
+                    mw.SaveCurrentTmxConfig();
+                }
+                
                 this.DialogResult = true;
             };
-            CancelButton.Click += (s, e) => { this.DialogResult = false; };
+            CancelButton.Click += (s, e) => {
+                // Revert all changes when Cancel is clicked
+                if (this.Owner is MainWindow mw)
+                {
+                    // Revert deco set
+                    if (DecoCombo.SelectedItem is System.Windows.Controls.ComboBoxItem currentDeco && 
+                        (string)currentDeco.Content != originalDeco)
+                    {
+                        mw.SetDecoSet(originalDeco);
+                    }
+                    
+                    // Revert block set
+                    if (BlockCombo.SelectedItem is System.Windows.Controls.ComboBoxItem currentBlock && 
+                        (string)currentBlock.Content != originalBlockSet)
+                    {
+                        mw.SetBlockSet(originalBlockSet);
+                    }
+                    
+                    // Revert spike set
+                    if (SpikeCombo.SelectedItem is System.Windows.Controls.ComboBoxItem currentSpike && 
+                        (string)currentSpike.Content != originalSpikeSet)
+                    {
+                        mw.SetSpikeSet(originalSpikeSet);
+                    }
+                    
+                    // Revert lock sprites
+                    if (LockSpritesCheckBox?.IsChecked != originalLockSprites)
+                    {
+                        mw.SetLockSpritesToSet(originalLockSprites, originalDeco);
+                    }
+                    
+                    // Revert show accurate tileset
+                    if (ShowAccurateTilesetCheckBox?.IsChecked != originalShowAccurateTileset)
+                    {
+                        mw.SetShowAccurateTileset(originalShowAccurateTileset, originalBlockSet, originalSpikeSet);
+                    }
+                    
+                    // Revert no parallax
+                    if (NoParallaxCheckBox?.IsChecked != originalNoParallax)
+                    {
+                        mw.SetNoParallax(originalNoParallax);
+                    }
+                }
+                
+                this.DialogResult = false;
+            };
 
             // Wire quick tint buttons to call methods on owner MainWindow
             BgTintButton.Click += (s, e) =>
@@ -124,59 +233,28 @@ namespace FamidashEditor
                     if (this.Owner is MainWindow mw && NoParallaxCheckBox != null)
                     {
                         var opt = mw.MenuOptionNoParallax;
-                        NoParallaxCheckBox.IsChecked = (opt != null && opt.IsChecked == true);
-                        NoParallaxCheckBox.Checked += (ss, ee) => { try { if (this.Owner is MainWindow mw2) mw2.SetNoParallax(true); } catch { } };
-                        NoParallaxCheckBox.Unchecked += (ss, ee) => { try { if (this.Owner is MainWindow mw2) mw2.SetNoParallax(false); } catch { } };
+                        originalNoParallax = (opt != null && opt.IsChecked == true);
+                        NoParallaxCheckBox.IsChecked = originalNoParallax;
+                        // Note: No immediate handlers - changes applied only on OK
                     }
-                    // Initialize Show Accurate Tileset checkbox and wire immediate updates to owner
+                    // Initialize Show Accurate Tileset checkbox
                     if (this.Owner is MainWindow mwAcc && ShowAccurateTilesetCheckBox != null)
                     {
-                        try { ShowAccurateTilesetCheckBox.IsChecked = mwAcc.ShowAccurateTileset; } catch { ShowAccurateTilesetCheckBox.IsChecked = false; }
-                        ShowAccurateTilesetCheckBox.Checked += (ss, ee) => { try { if (this.Owner is MainWindow mw2) { var b = (BlockCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; var s2 = (SpikeCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; mw2.SetShowAccurateTileset(true, b, s2); } } catch { } };
-                        ShowAccurateTilesetCheckBox.Unchecked += (ss, ee) => { try { if (this.Owner is MainWindow mw2) { var b = (BlockCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; var s2 = (SpikeCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; mw2.SetShowAccurateTileset(false, b, s2); } } catch { } };
-                        // When block or spike selection changes, apply tileset immediately if option enabled
-                        SpikeCombo.SelectionChanged += (ss, ee) => {
-                            try {
-                                var sel = (SpikeCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
-                                if (!string.IsNullOrEmpty(sel)) SelectedSpikeSet = sel;
-                                if (this.Owner is MainWindow mw3)
-                                {
-                                    mw3.SetSpikeSet(sel ?? "SPIKESA");
-                                }
-                            } catch { }
-                        };
-                        BlockCombo.SelectionChanged += (ss, ee) => {
-                            try {
-                                var sel = (BlockCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
-                                if (!string.IsNullOrEmpty(sel)) SelectedBlockSet = sel;
-                                if (this.Owner is MainWindow mw3)
-                                {
-                                    mw3.SetBlockSet(sel ?? "BLOCKSA");
-                                }
-                            } catch { }
-                        };
+                        try { originalShowAccurateTileset = mwAcc.ShowAccurateTileset; } catch { originalShowAccurateTileset = false; }
+                        ShowAccurateTilesetCheckBox.IsChecked = originalShowAccurateTileset;
+                        // Note: No immediate handlers - changes applied only on OK
                     }
-                    // Initialize LockSprites checkbox and wire immediate updates to owner
+                    // Initialize LockSprites checkbox
                     if (this.Owner is MainWindow mw2 && LockSpritesCheckBox != null)
                     {
-                        try { LockSpritesCheckBox.IsChecked = mw2.LockSpritesToSet; } catch { LockSpritesCheckBox.IsChecked = false; }
-                        LockSpritesCheckBox.Checked += (ss, ee) => { try { if (this.Owner is MainWindow mw3) { var selected = (DecoCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; mw3.SetLockSpritesToSet(true, selected); LockSpritesToSet = true; } } catch { } };
-                        LockSpritesCheckBox.Unchecked += (ss, ee) => { try { if (this.Owner is MainWindow mw3) { var selected = (DecoCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string; mw3.SetLockSpritesToSet(false, selected); LockSpritesToSet = false; } } catch { } };
-
-                        // When the deco selection changes in this dialog, apply immediately and save to per-level config
-                        DecoCombo.SelectionChanged += (ss, ee) => {
-                            try {
-                                var sel = (DecoCombo.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string;
-                                // Update own SelectedDeco for OK
-                                if (!string.IsNullOrEmpty(sel)) SelectedDeco = sel;
-                                if (this.Owner is MainWindow mw4)
-                                {
-                                    mw4.SetDecoSet(sel ?? "DECO1");
-                                    // If lock is enabled, re-apply disabled sprites for the new deco
-                                    if (mw4.LockSpritesToSet) mw4.SetLockSpritesToSet(mw4.LockSpritesToSet, sel);
-                                }
-                            } catch { }
-                        };
+                        try { originalLockSprites = mw2.LockSpritesToSet; } catch { originalLockSprites = false; }
+                        LockSpritesCheckBox.IsChecked = originalLockSprites;
+                        LockSpritesToSet = originalLockSprites;
+                        // Note: No immediate handlers - changes applied only on OK
+                        
+                        // Track changes to LockSpritesToSet property for when OK is clicked
+                        LockSpritesCheckBox.Checked += (ss, ee) => { LockSpritesToSet = true; };
+                        LockSpritesCheckBox.Unchecked += (ss, ee) => { LockSpritesToSet = false; };
                     }
                 }
                 catch { }

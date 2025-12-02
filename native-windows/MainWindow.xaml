@@ -127,6 +127,7 @@
                 <MenuItem Header="_Options">
                     <MenuItem Header="Editor Options">
                         <MenuItem x:Name="MenuOptionLegacyTriggers" Header="Legacy Trigger Load/Save" IsCheckable="True" IsChecked="False" />
+                        <MenuItem x:Name="MenuOptionSuppressCollisionMessages" Header="Suppress Collision Messages" IsCheckable="True" IsChecked="True" />
                         <MenuItem x:Name="MenuOptionSwapMouseWheel" Header="Swap Mouse Wheel Scroll" IsCheckable="True" IsChecked="False" />
                         <MenuItem x:Name="MenuOptionSwapPinch" Header="Swap Wheel/Pinch Zoom" IsCheckable="True" IsChecked="True" />
                         <MenuItem x:Name="MenuColorEditorBackground" Header="Editor Background Color..." />

@@ -61,6 +61,8 @@ namespace FamidashEditor
     private bool hideColorTriggers = false;
     // Preview option: hide all invisible sprites (user-configurable global setting)
     private bool hideInvisibleSprites = false;
+    // Editor option: suppress collision messages during TMX load/save (default true)
+    private bool suppressCollisionMessages = true;
     // Per-level option: replace parallax background with noparallax.bmp when true
     private bool noParallaxBg = false;
     private bool suppressNoParallaxHandler = false;
@@ -186,6 +188,7 @@ namespace FamidashEditor
     private double loadedGroundOffsetY = 432;
     private bool loadedGroundRepeatX = true;
     private bool loadedHasGroundLayer = false;
+    private bool isTileboardHidden = false; // Track tileboard hidden state
     private string loadedDecoSet = "DECO1";
     private string loadedBlockSet = "BLOCKSA";
     private string loadedSpikeSet = "SPIKESA";
@@ -495,13 +498,14 @@ namespace FamidashEditor
             return;
         }
 
-        // Sprites 0x17, 0x4B, 0x58 are only disabled if parallax is ENABLED (noParallaxBg is false)
+        // Sprites 0x17, 0x4B, 0x58, 0x64 are only disabled if parallax is ENABLED (noParallaxBg is false)
         // These are disabled regardless of deco set when parallax is on
         if (!noParallaxBg)
         {
             disabledSprites.Add(0x17);
             disabledSprites.Add(0x4B);
             disabledSprites.Add(0x58);
+            disabledSprites.Add(0x64);
         }
 
         // Determine which deco set to use for computing disabled sprites (normalize and accept minor variants)
@@ -520,9 +524,8 @@ namespace FamidashEditor
         else if (decoNorm.Contains("DECOCLOUD") || decoNorm.Contains("DECO1") || decoNorm.StartsWith("DECO"))
         {
             // DECO1 / DECOCLOUD share the same disabled list
-            // Include 0x64 in the DECO disabled list so the rainbow portal replacement
-            // (0x64) is not selectable when locked to DECO1/DECOCLOUD. EXTRAS keeps it enabled.
-            int[] list = new int[] { 0x4E, 0x4F, 0x66, 0x67, 0x68, 0x69, 0x4C, 0x4D, 0x50, 0x51, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x6E, 0x79, 0x64 };
+            // Rainbow portal (0x64) is now controlled by parallax state, not deco set
+            int[] list = new int[] { 0x4E, 0x4F, 0x66, 0x67, 0x68, 0x69, 0x4C, 0x4D, 0x50, 0x51, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x6E, 0x79 };
             foreach (var v in list) disabledSprites.Add(v);
         }
 
@@ -603,8 +606,6 @@ namespace FamidashEditor
     // and slicing it so subsequent background rebuilds use the desired image.
     private void ApplyParallaxChoice()
     {
-        bool parallaxLoaded = false;
-        
         try
         {
             // If per-level override is requested, try to load embedded noparallax first
@@ -615,7 +616,6 @@ namespace FamidashEditor
                 {
                     parallaxBitmap = emb;
                     SliceParallax();
-                    parallaxLoaded = true;
                 }
                 else
                 {
@@ -639,7 +639,6 @@ namespace FamidashEditor
                                 if (!string.IsNullOrEmpty(cand) && File.Exists(cand))
                                 {
                                     LoadParallax(cand);
-                                    parallaxLoaded = true;
                                     break;
                                 }
                             }
@@ -655,12 +654,10 @@ namespace FamidashEditor
                 if (!string.IsNullOrEmpty(originalParallaxSource) && File.Exists(originalParallaxSource))
                 {
                     LoadParallax(originalParallaxSource);
-                    parallaxLoaded = true;
                 }
                 else if (!string.IsNullOrEmpty(loadedParallaxSource) && File.Exists(loadedParallaxSource))
                 {
                     LoadParallax(loadedParallaxSource);
-                    parallaxLoaded = true;
                 }
                 else
                 {
@@ -669,7 +666,6 @@ namespace FamidashEditor
                     {
                         parallaxBitmap = emb2;
                         SliceParallax();
-                        parallaxLoaded = true;
                     }
                     else
                     {
@@ -1036,6 +1032,8 @@ namespace FamidashEditor
                     if (StatusText != null) StatusText.Text = $"Loaded tint config for {Path.GetFileName(tmxFilePath)}";
                     // Ensure the parallax choice reflects the loaded config
                     try { ApplyParallaxChoice(); } catch { }
+                    // Update sprite locking since 0x17, 0x4B, 0x58, 0x64 depend on parallax state
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
                 }
             }
             else
@@ -1109,7 +1107,8 @@ namespace FamidashEditor
                 loadedSpikeSet = "SPIKESA";
                 // Don't auto-save config here - let user make changes first
                 // Config will be saved when user changes settings or saves the TMX
-                try { ApplyLockSpritesToSet(); } catch { }
+                // Update sprite locking since 0x17, 0x4B, 0x58, 0x64 depend on parallax state
+                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
             }
         }
         catch (Exception ex)
@@ -2289,9 +2288,15 @@ namespace FamidashEditor
             {
                 MenuTileboardHidden.Checked += (s, e) =>
                 {
+                    isTileboardHidden = true;
                     if (TileboardPanel != null)
                     {
                         TileboardPanel.Visibility = Visibility.Collapsed;
+                        
+                        // Hide the GridSplitter to prevent dragging
+                        var splitter = RootGrid?.Children.OfType<GridSplitter>().FirstOrDefault();
+                        if (splitter != null) splitter.Visibility = Visibility.Collapsed;
+                        
                         // Expand map to fill space
                         if (RootGrid != null && RootGrid.ColumnDefinitions.Count >= 3)
                         {
@@ -2323,10 +2328,11 @@ namespace FamidashEditor
                 };
                 MenuTileboardHidden.Unchecked += (s, e) =>
                 {
+                    isTileboardHidden = false;
                     if (TileboardPanel != null)
                     {
                         TileboardPanel.Visibility = Visibility.Visible;
-                        // Restore original layout
+                        // Restore original layout (this will also restore the GridSplitter visibility)
                         ApplyTileboardPosition();
                     }
                 };
@@ -2371,6 +2377,20 @@ namespace FamidashEditor
                     }
                 };
             }
+            // Suppress collision messages option
+            if (MenuOptionSuppressCollisionMessages != null)
+            {
+                MenuOptionSuppressCollisionMessages.Checked += (s, e) =>
+                {
+                    suppressCollisionMessages = true;
+                    SaveSettingsWithTriggerOption();
+                };
+                MenuOptionSuppressCollisionMessages.Unchecked += (s, e) =>
+                {
+                    suppressCollisionMessages = false;
+                    SaveSettingsWithTriggerOption();
+                };
+            }
             // No Parallax BG (per-level) option
             if (MenuOptionNoParallax != null)
             {
@@ -2391,7 +2411,7 @@ namespace FamidashEditor
                     noParallaxBg = false;
                     try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
                     ApplyParallaxChoice();
-                    // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
+                    // Update sprite locking since 0x17, 0x4B, 0x58, 0x64 depend on parallax state
                     try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
                 };
             }
@@ -5483,6 +5503,19 @@ namespace FamidashEditor
                     {
                         try { showAccurateTileset = sat.GetBoolean(); } catch { showAccurateTileset = false; }
                     }
+                    // optional suppress collision messages (defaults to true if not present)
+                    if (doc.RootElement.TryGetProperty("suppressCollisionMessages", out var scm))
+                    {
+                        try { suppressCollisionMessages = scm.GetBoolean(); } catch { suppressCollisionMessages = true; }
+                    }
+                    else
+                    {
+                        suppressCollisionMessages = true; // Default to true for new users
+                    }
+                    if (MenuOptionSuppressCollisionMessages != null)
+                    {
+                        MenuOptionSuppressCollisionMessages.IsChecked = suppressCollisionMessages;
+                    }
                     // optional grid darkness (double)
                     if (doc.RootElement.TryGetProperty("gridDarkness", out var gd))
                     {
@@ -5587,6 +5620,7 @@ namespace FamidashEditor
                     hideInvisibleSprites = hideInvisibleSprites,
                     lockSpritesToSet = lockSpritesToSet,
                     showAccurateTileset = showAccurateTileset,
+                    suppressCollisionMessages = suppressCollisionMessages,
                     playerColor = new int[] { playerTint.A, playerTint.R, playerTint.G, playerTint.B },
                     playerColorEnabled = playerTintEnabled,
                     gridDarkness = gridDarkness,
@@ -6142,8 +6176,8 @@ namespace FamidashEditor
                     loadedTiles = tmxLevel.Tiles;
                     loadedSprites = tmxLevel.Sprites;
                     
-                    // Show collision messages if any
-                    if (!string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
+                    // Show collision messages if any (unless suppressed)
+                    if (!suppressCollisionMessages && !string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
                     {
                         MessageBox.Show(this, "Sprite collision adjustments during load:\n\n" + tmxLevel.LoadCollisionMessages, 
                             "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -6352,6 +6386,40 @@ namespace FamidashEditor
         private void ApplyTileboardPosition()
         {
             if (RootGrid == null || RootGrid.ColumnDefinitions.Count < 3) return;
+            
+            // If tileboard is hidden, keep it hidden after layout changes
+            if (isTileboardHidden)
+            {
+                if (TileboardPanel != null) TileboardPanel.Visibility = Visibility.Collapsed;
+                var splitter = RootGrid.Children.OfType<GridSplitter>().FirstOrDefault();
+                if (splitter != null) splitter.Visibility = Visibility.Collapsed;
+                
+                // Keep columns/rows at 0
+                if (tileboardPosition == "LEFT")
+                {
+                    RootGrid.ColumnDefinitions[0].Width = new GridLength(0);
+                    RootGrid.ColumnDefinitions[1].Width = new GridLength(0);
+                }
+                else if (tileboardPosition == "RIGHT")
+                {
+                    RootGrid.ColumnDefinitions[1].Width = new GridLength(0);
+                    RootGrid.ColumnDefinitions[2].Width = new GridLength(0);
+                }
+                else if (RootGrid.RowDefinitions.Count >= 3)
+                {
+                    if (tileboardPosition == "TOP")
+                    {
+                        RootGrid.RowDefinitions[0].Height = new GridLength(0);
+                        RootGrid.RowDefinitions[1].Height = new GridLength(0);
+                    }
+                    else // BOTTOM
+                    {
+                        RootGrid.RowDefinitions[1].Height = new GridLength(0);
+                        RootGrid.RowDefinitions[2].Height = new GridLength(0);
+                    }
+                }
+                return;
+            }
 
             if (tileboardPosition == "TOP" || tileboardPosition == "BOTTOM")
             {
@@ -6461,6 +6529,9 @@ namespace FamidashEditor
             try
             {
                 if (RootGrid == null) return;
+                
+                // Don't adjust layout if tileboard is hidden
+                if (isTileboardHidden) return;
                 
                 // For TOP/BOTTOM position, adjust row height instead of column width
                 if (tileboardPosition == "TOP" || tileboardPosition == "BOTTOM")
@@ -9961,7 +10032,7 @@ namespace FamidashEditor
                                 {
                                     try
                                     {
-                                        if (idx == 0x17 || idx == 0x4B || idx == 0x58 || idx == 0x08 || idx == 0x09)
+                                        if (idx == 0x17 || idx == 0x4B || idx == 0x58 || idx == 0x64 || idx == 0x08 || idx == 0x09)
                                         {
                                             // (debug logging removed)
                                         }
@@ -14729,7 +14800,7 @@ namespace FamidashEditor
                             , DecoSet = loadedDecoSet
                         };
                         var saveCollisionMessages = TmxHandler.SaveTmx(target, tmxLevel, useLegacyTriggerOffset);
-                        if (!string.IsNullOrEmpty(saveCollisionMessages))
+                        if (!suppressCollisionMessages && !string.IsNullOrEmpty(saveCollisionMessages))
                         {
                             MessageBox.Show("Sprite collision adjustments during save:\n\n" + saveCollisionMessages,
                                 "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -14797,7 +14868,7 @@ namespace FamidashEditor
                             DecoSet = loadedDecoSet
                         };
                         var saveCollisionMessages = TmxHandler.SaveTmx(dlg.FileName, tmxLevel, useLegacyTriggerOffset);
-                        if (!string.IsNullOrEmpty(saveCollisionMessages))
+                        if (!suppressCollisionMessages && !string.IsNullOrEmpty(saveCollisionMessages))
                         {
                             MessageBox.Show("Sprite collision adjustments during save:\n\n" + saveCollisionMessages,
                                 "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -14910,8 +14981,8 @@ namespace FamidashEditor
                         {
                             try
                             {
-                                // Fine-scroll 2 pixels per tick when Shift+Arrow is held
-                                double newH = (MapScrollViewer?.HorizontalOffset ?? 0) + shiftArrowScrollDir * 2.0;
+                                // Fine-scroll 8 pixels per tick when Shift+Arrow is held
+                                double newH = (MapScrollViewer?.HorizontalOffset ?? 0) + shiftArrowScrollDir * 8.0;
                                 if (newH < 0) newH = 0;
                                 double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
                                 if (newH > maxH) newH = maxH;
@@ -15068,7 +15139,7 @@ namespace FamidashEditor
                 ApplyParallaxChoice();
                 // If accurate tileset swapping is enabled, reapply so the correct tileset (Slopesa vs SlopesNone) is selected
                 try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
-                // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
+                // Update sprite locking since 0x17, 0x4B, 0x58, 0x64 depend on parallax state
                 try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
             }
             finally { suppressNoParallaxHandler = false; }
@@ -15476,8 +15547,8 @@ namespace FamidashEditor
                         loadedTiles = tmxLevel.Tiles;
                         loadedSprites = tmxLevel.Sprites;
                         
-                        // Show collision messages if any
-                        if (!string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
+                        // Show collision messages if any (unless suppressed)
+                        if (!suppressCollisionMessages && !string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
                         {
                             MessageBox.Show(this, "Sprite collision adjustments during load:\n\n" + tmxLevel.LoadCollisionMessages, 
                                 "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
