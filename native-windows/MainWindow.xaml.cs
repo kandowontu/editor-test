@@ -1534,6 +1534,10 @@ namespace FamidashEditor
             public struct Change { public int Index; public int Old; public int New; }
             private readonly List<Change> changes = new List<Change>();
             private readonly Dictionary<int, int> indexMap = new Dictionary<int, int>();
+            
+            // Track sprite pixel offset changes
+            private readonly Dictionary<int, (int offsetX, int offsetY)?> oldOffsets = new Dictionary<int, (int offsetX, int offsetY)?>();
+            private readonly Dictionary<int, (int offsetX, int offsetY)?> newOffsets = new Dictionary<int, (int offsetX, int offsetY)?>();
 
             public void Add(int index, int oldVal, int newVal)
             {
@@ -1548,6 +1552,40 @@ namespace FamidashEditor
                     changes.Add(new Change { Index = index, Old = oldVal, New = newVal });
                 }
             }
+            
+            public void CaptureOffsets(MainWindow window)
+            {
+                // Capture current state of sprite offsets for all changed indices
+                oldOffsets.Clear();
+                foreach (var c in changes)
+                {
+                    if (window.spritePixelOffsets.TryGetValue(c.Index, out var offset))
+                    {
+                        oldOffsets[c.Index] = offset;
+                    }
+                    else
+                    {
+                        oldOffsets[c.Index] = null;
+                    }
+                }
+            }
+            
+            public void CaptureNewOffsets(MainWindow window)
+            {
+                // Capture final state of sprite offsets after changes
+                newOffsets.Clear();
+                foreach (var c in changes)
+                {
+                    if (window.spritePixelOffsets.TryGetValue(c.Index, out var offset))
+                    {
+                        newOffsets[c.Index] = offset;
+                    }
+                    else
+                    {
+                        newOffsets[c.Index] = null;
+                    }
+                }
+            }
 
             public bool IsEmpty() => changes.Count == 0;
 
@@ -1559,6 +1597,26 @@ namespace FamidashEditor
                 {
                     if (c.Index >= 0 && c.Index < sprites.Length) sprites[c.Index] = c.Old;
                 }
+                
+                // Restore old sprite offsets
+                foreach (var kvp in oldOffsets)
+                {
+                    if (kvp.Value.HasValue)
+                    {
+                        window.spritePixelOffsets[kvp.Key] = kvp.Value.Value;
+                    }
+                    else
+                    {
+                        window.spritePixelOffsets.Remove(kvp.Key);
+                    }
+                }
+                
+                // Rebuild sprites and update selection visuals
+                try { window.RebuildAllSpritesBitmap((window.ZoomSlider!=null?window.ZoomSlider.Value:1.0), window.mapViewportPadding); } catch { window.Redraw(); }
+                if (window.selectionSet != null && window.selectionSet.Count > 0)
+                {
+                    window.UpdateSelectionVisuals(window.selX, window.selY, window.selW, window.selH);
+                }
             }
 
             public void Redo(MainWindow window)
@@ -1568,6 +1626,26 @@ namespace FamidashEditor
                 foreach (var c in changes)
                 {
                     if (c.Index >= 0 && c.Index < sprites.Length) sprites[c.Index] = c.New;
+                }
+                
+                // Restore new sprite offsets
+                foreach (var kvp in newOffsets)
+                {
+                    if (kvp.Value.HasValue)
+                    {
+                        window.spritePixelOffsets[kvp.Key] = kvp.Value.Value;
+                    }
+                    else
+                    {
+                        window.spritePixelOffsets.Remove(kvp.Key);
+                    }
+                }
+                
+                // Rebuild sprites and update selection visuals
+                try { window.RebuildAllSpritesBitmap((window.ZoomSlider!=null?window.ZoomSlider.Value:1.0), window.mapViewportPadding); } catch { window.Redraw(); }
+                if (window.selectionSet != null && window.selectionSet.Count > 0)
+                {
+                    window.UpdateSelectionVisuals(window.selX, window.selY, window.selW, window.selH);
                 }
             }
         }
@@ -5813,7 +5891,28 @@ namespace FamidashEditor
 
         private void LoadTMXFile(string filePath)
         {
-            // Simulate clicking the load button with the file path
+            // Prompt to save if there are unsaved changes
+            if (hasUnsavedChanges)
+            {
+                var result = MessageBox.Show(
+                    "You have unsaved changes. Do you want to save before loading?",
+                    "Unsaved Changes",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+                
+                if (result == MessageBoxResult.Yes)
+                {
+                    SaveButton_Click(this, new RoutedEventArgs());
+                    // If user cancelled the save dialog, abort the load
+                    if (hasUnsavedChanges) return;
+                }
+                else if (result == MessageBoxResult.Cancel)
+                {
+                    return; // User cancelled the load operation
+                }
+                // If No, continue with load without saving
+            }
+            
             LoadingWindow? loadingWindow = null;
             try
             {
@@ -5827,7 +5926,7 @@ namespace FamidashEditor
                 {
                     // Show loading dialog
                     loadingWindow = new LoadingWindow { Owner = this };
-                    loadingWindow.SetMessage("Loading TMX file...\\nThis may take a while on larger maps.");
+                    loadingWindow.SetMessage("Loading TMX file...\nThis may take a while on larger maps.");
                     loadingWindow.Show();
                     
                     // Force UI update
@@ -5840,7 +5939,18 @@ namespace FamidashEditor
                     loadedTiles = tmxLevel.Tiles;
                     loadedSprites = tmxLevel.Sprites;
                     
-                    // Store TMX metadata
+                    // Show collision messages if any
+                    if (!string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
+                    {
+                        MessageBox.Show(this, "Sprite collision adjustments during load:\n\n" + tmxLevel.LoadCollisionMessages, 
+                            "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
+                        
+                        // Restore focus to main window after MessageBox
+                        this.Activate();
+                        this.Focus();
+                    }
+                    
+                    // Store TMX metadata to preserve when saving
                     loadedTilesetSource = tmxLevel.TilesetSource;
                     loadedSpritesetSource = tmxLevel.SpritesetSource;
                     loadedHasEditorSettings = tmxLevel.HasEditorSettings;
@@ -5858,11 +5968,13 @@ namespace FamidashEditor
                     loadedGroundOffsetY = tmxLevel.GroundOffsetY;
                     loadedGroundRepeatX = tmxLevel.GroundRepeatX;
                     loadedHasGroundLayer = tmxLevel.HasGroundLayer;
-                    loadedDecoSet = string.IsNullOrEmpty(tmxLevel.DecoSet) ? "deco1" : tmxLevel.DecoSet;
+                    // Load deco set from TMX if present; config file may override when LoadTmxConfig runs
+                    try { loadedDecoSet = string.IsNullOrEmpty(tmxLevel.DecoSet) ? "deco1" : tmxLevel.DecoSet; } catch { loadedDecoSet = "deco1"; }
                 }
                 
                 if (loadedWidth > 0 && loadedHeight > 0 && loadedTiles != null)
                 {
+                    // Directly set the data without going through ResizeMap to avoid undo recording
                     suppressUndoRecording = true;
                     mapWidth = loadedWidth;
                     mapHeight = loadedHeight;
@@ -5872,20 +5984,59 @@ namespace FamidashEditor
                     if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
                     if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
                     
+                    // Clear selection
                     ClearSelection();
+                    
+                    // Clear undo/redo stacks when loading a new file
                     undoStack.Clear();
                     redoStack.Clear();
+                    
                     suppressUndoRecording = false;
                     
+                    // Update current file and clear dirty flag
                     currentFilePath = filePath;
                     hasUnsavedChanges = false;
                     
-                    // Load TMX config to get tints and sets (must be done after currentFilePath is set)
+                    // Add to recent files
+                    AddToRecentFiles(filePath);
+                    
+                    // Load TMX config to get tints, sprite offsets, and sets
                     try { LoadTmxConfig(filePath); } catch { }
                     
-                    AddToRecentFiles(filePath);
-                    CreateNewTab(filePath);
+                    // If current tab is untitled with no changes, replace it instead of creating new tab
+                    bool replaceCurrentTab = false;
+                    if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                    {
+                        var currentTab = openFiles[currentFileIndex];
+                        if (string.IsNullOrEmpty(currentTab.FilePath) && !currentTab.HasUnsavedChanges)
+                        {
+                            replaceCurrentTab = true;
+                        }
+                    }
                     
+                    if (replaceCurrentTab)
+                    {
+                        // Update current tab
+                        SaveCurrentTabState();
+                        openFiles[currentFileIndex].FilePath = filePath;
+                        
+                        // Update tab header
+                        for (int i = 0; i < FileTabControl.Items.Count; i++)
+                        {
+                            if (FileTabControl.Items[i] is TabItem tabItem && tabItem.Tag is int tabFileIndex && tabFileIndex == currentFileIndex)
+                            {
+                                tabItem.Header = System.IO.Path.GetFileName(filePath);
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Create new tab
+                        CreateNewTab(filePath);
+                    }
+                    
+                    // Full redraw with all bitmaps
                     Redraw();
                 }
             }
@@ -13191,6 +13342,12 @@ namespace FamidashEditor
                     spriteChanges.Add(i, sprites[i], finalSprites[i]);
                 }
             }
+            
+            // Capture sprite offsets before making sprite changes
+            if (!spriteChanges.IsEmpty())
+            {
+                spriteChanges.CaptureOffsets(this);
+            }
 
             // Apply deletions for both layers first
             foreach (var idx in delTiles) tiles[idx] = -1;
@@ -13295,6 +13452,12 @@ namespace FamidashEditor
                         }
                     }
                 }
+            }
+
+            // Capture sprite offsets after making changes
+            if (!spriteChanges.IsEmpty())
+            {
+                spriteChanges.CaptureNewOffsets(this);
             }
 
             if (!tileChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileChanges); redoStack.Clear(); hasUnsavedChanges = true; }

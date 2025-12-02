@@ -491,54 +491,67 @@ namespace FamidashEditor
                             
                             int saveIdx = y * level.Width + saveX;
                             
-                            // Check for collision and find nearest vertical neighbor if needed
+                            // Check for collision
                             if (saveIdx >= 0 && saveIdx < spritesToSave.Length)
                             {
                                 if (spritesToSave[saveIdx] != -1)
                                 {
-                                    // Collision detected - find nearest vertical neighbor
-                                    int finalY = y;
-                                    bool foundSlot = false;
+                                    // Only move TRIGGER sprites when there's a collision
+                                    // Normal sprites overwrite (have priority)
+                                    bool isTrigger = !useLegacyTriggerOffset && IsTriggerSprite(spriteIdx);
                                     
-                                    // Search up and down alternately
-                                    for (int offset = 1; offset < level.Height; offset++)
+                                    if (isTrigger)
                                     {
-                                        // Try below first
-                                        int testY = y + offset;
-                                        if (testY < level.Height)
+                                        // Collision detected for trigger - find nearest vertical neighbor
+                                        int finalY = y;
+                                        bool foundSlot = false;
+                                        
+                                        // Search up and down alternately
+                                        for (int offset = 1; offset < level.Height; offset++)
                                         {
-                                            int testIdx = testY * level.Width + saveX;
-                                            if (spritesToSave[testIdx] == -1)
+                                            // Try below first
+                                            int testY = y + offset;
+                                            if (testY < level.Height)
                                             {
-                                                finalY = testY;
-                                                foundSlot = true;
-                                                break;
+                                                int testIdx = testY * level.Width + saveX;
+                                                if (spritesToSave[testIdx] == -1)
+                                                {
+                                                    finalY = testY;
+                                                    foundSlot = true;
+                                                    break;
+                                                }
+                                            }
+                                            
+                                            // Try above
+                                            testY = y - offset;
+                                            if (testY >= 0)
+                                            {
+                                                int testIdx = testY * level.Width + saveX;
+                                                if (spritesToSave[testIdx] == -1)
+                                                {
+                                                    finalY = testY;
+                                                    foundSlot = true;
+                                                    break;
+                                                }
                                             }
                                         }
                                         
-                                        // Try above
-                                        testY = y - offset;
-                                        if (testY >= 0)
+                                        if (foundSlot)
                                         {
-                                            int testIdx = testY * level.Width + saveX;
-                                            if (spritesToSave[testIdx] == -1)
-                                            {
-                                                finalY = testY;
-                                                foundSlot = true;
-                                                break;
-                                            }
+                                            collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) shifted to ({saveX},{y}) collides, saved to ({saveX},{finalY})");
+                                            saveIdx = finalY * level.Width + saveX;
                                         }
-                                    }
-                                    
-                                    if (foundSlot)
-                                    {
-                                        collisionMessages.Add($"Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) shifted to ({saveX},{y}) collides, saved to ({saveX},{finalY})");
-                                        saveIdx = finalY * level.Width + saveX;
+                                        else
+                                        {
+                                            collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) shifted to ({saveX},{y}) collides, no free vertical slot found - sprite dropped");
+                                            continue; // Skip this sprite
+                                        }
                                     }
                                     else
                                     {
-                                        collisionMessages.Add($"Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) shifted to ({saveX},{y}) collides, no free vertical slot found - sprite dropped");
-                                        continue; // Skip this sprite
+                                        // NORMAL sprite overwrites existing sprite at this position
+                                        int existingSprite = spritesToSave[saveIdx];
+                                        collisionMessages.Add($"NORMAL Sprite 0x{spriteIdx:X2} at ({originalX},{originalY}) OVERWRITES existing sprite 0x{existingSprite:X2} at ({saveX},{y})");
                                     }
                                 }
                                 
