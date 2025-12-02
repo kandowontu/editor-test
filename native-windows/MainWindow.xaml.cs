@@ -1138,7 +1138,7 @@ namespace FamidashEditor
     private System.Windows.Threading.DispatcherTimer? zoomThrottleTimer;
     private System.Windows.Threading.DispatcherTimer? zoomCommitTimer;
     private bool deferZoomRebuild = false;
-    private bool isSnappingZoom = false; // Flag to prevent recursion when snapping zoom to integer values
+    private bool isSnappingZoom = false; // Flag to prevent recursion when snapping zoom to quarter intervals
     // Anchor used to preserve the world point under the cursor during zoom commit
     private bool hasZoomAnchor = false;
     private double zoomAnchorMapX = 0.0;
@@ -1814,12 +1814,15 @@ namespace FamidashEditor
 
                 ZoomSlider.ValueChanged += (s, e) =>
                 {
-                    // Snap to integer zoom levels only (1x, 2x, 3x, 4x)
+                    // Snap zoom to quarter intervals (1.0, 1.25, 1.5, 1.75, 2.0, etc.)
                     if (ZoomSlider != null && !isSnappingZoom)
                     {
                         double rawValue = ZoomSlider.Value;
-                        int snappedValue = (int)Math.Round(rawValue);
-                        if (snappedValue < 1) snappedValue = 1;
+                        // Snap to quarter intervals for both slider and Ctrl+wheel
+                        double snappedValue = Math.Round(rawValue * 4.0) / 4.0;
+                        if (snappedValue < 1.0) snappedValue = 1.0;
+                        if (snappedValue > 4.0) snappedValue = 4.0;
+                        
                         if (Math.Abs(rawValue - snappedValue) > 0.01)
                         {
                             isSnappingZoom = true;
@@ -2455,7 +2458,7 @@ namespace FamidashEditor
                 // Record zoom anchor so CommitZoom can preserve the point under the cursor
                 try { zoomAnchorViewportX = mouseVp.X; zoomAnchorViewportY = mouseVp.Y; zoomAnchorMapX = mapX; zoomAnchorMapY = mapY; hasZoomAnchor = true; } catch { hasZoomAnchor = false; }
 
-                // apply new zoom value
+                // apply new zoom value (will be snapped to quarter intervals by ValueChanged handler)
                 if (ZoomSlider != null) ZoomSlider.Value = newScale;
 
                 // compute new content coordinate for same world point
@@ -12308,9 +12311,19 @@ namespace FamidashEditor
                 // Size in logical pixels (WPF converts bitmap DPI to display)
                 GhostImage.Width = (bitmapWidth * scale * dpi.DpiScaleX) / dpi.DpiScaleX;
                 GhostImage.Height = (bitmapHeight * scale * dpi.DpiScaleY) / dpi.DpiScaleY;
+                
+                // Account for existing sprite offsets when positioning ghost
+                int minOffsetX = 0, minOffsetY = 0;
+                foreach (var kvp in selSpriteOffsets)
+                {
+                    minOffsetX = Math.Min(minOffsetX, kvp.Value.offsetX);
+                    minOffsetY = Math.Min(minOffsetY, kvp.Value.offsetY);
+                }
+                
                 // Position using same integer calculation as tiles - convert back to logical
-                int selLeftPx = padPxX + selX * tilePixelW;
-                int selTopPx = padPxY + selY * tilePixelH;
+                // Include the minimum sprite offset so ghost appears where sprites actually are
+                int selLeftPx = padPxX + selX * tilePixelW + (int)Math.Round(minOffsetX * scale * dpi.DpiScaleX);
+                int selTopPx = padPxY + selY * tilePixelH + (int)Math.Round(minOffsetY * scale * dpi.DpiScaleY);
                 double selLeft = selLeftPx / dpi.DpiScaleX;
                 double selTop = selTopPx / dpi.DpiScaleY;
                 Canvas.SetLeft(GhostImage, selLeft);
@@ -12409,12 +12422,12 @@ namespace FamidashEditor
             Canvas.SetTop(GhostImage, snappedTop);
             
             // Calculate and store final tile position and pixel offset for EndDragMove
-            // Convert snapped position back to native coordinates
+            // The ghost position represents where sprites visually appear (including existing offsets)
+            // We need to subtract the minOffset to get back to the base tile position
             double finalNativeLeft = (snappedLeft - logicalPad) / scale;
             double finalNativeTop = (snappedTop - logicalPad) / scale;
             
-            // Account for minOffset - the ghost bitmap has sprites shifted by -minOffset
-            // so the ghost position represents where (selX*TileSize + minOffsetX) should be
+            // Get the minimum sprite offset that was added to ghost position
             int minOffsetX = 0, minOffsetY = 0;
             foreach (var kvp in selSpriteOffsets)
             {
@@ -12422,7 +12435,8 @@ namespace FamidashEditor
                 minOffsetY = Math.Min(minOffsetY, kvp.Value.offsetY);
             }
             
-            // Adjust by minOffset to get the actual selection grid position
+            // Subtract minOffset to get the selection's base tile position
+            // (the ghost was positioned with minOffset added, so we remove it to get tile coords)
             finalNativeLeft -= minOffsetX;
             finalNativeTop -= minOffsetY;
             
@@ -13534,11 +13548,12 @@ namespace FamidashEditor
                                 spritePixelOffsets.Remove(dstIdx);
                             }
                             
-                            // Move anchor to new position if sprite moved
+                            // Update anchor reference: remove from source, add to destination
+                            // but KEEP the original anchor tile coordinates (don't update them)
                             if (srcIdx != dstIdx)
                             {
                                 spriteAnchors.Remove(srcIdx);
-                                spriteAnchors[dstIdx] = anchor;
+                                spriteAnchors[dstIdx] = anchor; // Keep original anchor coordinates
                             }
                         }
                         else
