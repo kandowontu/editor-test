@@ -2043,6 +2043,9 @@ namespace FamidashEditor
             if (MenuFileLoad != null) MenuFileLoad.Click += LoadButton_Click;
             if (MenuFileClose != null) MenuFileClose.Click += MenuFileClose_Click;
             
+            // Add keyboard shortcut handler
+            this.PreviewKeyDown += MainWindow_KeyDown;
+            
             if (MenuToolPlace != null) MenuToolPlace.Click += (s, e) => { if (PlaceTool != null) PlaceTool.IsChecked = true; };
             if (MenuToolMove != null) MenuToolMove.Click += (s, e) => { if (MoveTool != null) MoveTool.IsChecked = true; };
             if (MenuToolErase != null) MenuToolErase.Click += (s, e) => { if (EraseTool != null) EraseTool.IsChecked = true; };
@@ -15552,6 +15555,16 @@ namespace FamidashEditor
             }
         }
         catch { }
+    }
+    
+    private void MainWindow_KeyDown(object sender, KeyEventArgs e)
+    {
+        // Handle Ctrl+W for close tab
+        if (e.Key == Key.W && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            MenuFileClose_Click(sender, e);
+            e.Handled = true;
+        }
     }
 }
 

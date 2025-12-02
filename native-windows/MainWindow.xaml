@@ -106,7 +106,7 @@
                         <!-- Recent files will be populated dynamically -->
                     </MenuItem>
                     <Separator />
-                    <MenuItem x:Name="MenuFileClose" Header="_Close" InputGestureText="Ctrl+W" />
+                    <MenuItem x:Name="MenuFileClose" Header="Close _Tab" InputGestureText="Ctrl+W" />
                     <Separator />
                 </MenuItem>
                 <MenuItem Header="_Tools">
