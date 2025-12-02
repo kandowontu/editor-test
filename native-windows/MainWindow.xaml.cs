@@ -169,6 +169,7 @@ namespace FamidashEditor
     private List<string> recentFiles = new List<string>();
     private const int MaxRecentFiles = 10;
     private bool isHandlingNewTab = false;
+    private TabItem? lastSelectedTab = null;
     
     // Store loaded TMX metadata to preserve when saving
     private string? loadedTilesetSource = null;
@@ -5735,7 +5736,7 @@ namespace FamidashEditor
             
             openFiles.Add(tabData);
             currentFileIndex = openFiles.Count - 1;
-            
+
             // Create tab with close button
             var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
             var headerText = new TextBlock 
@@ -5761,25 +5762,35 @@ namespace FamidashEditor
                 Tag = currentFileIndex
             };
             closeButton.Click += CloseTab_Click;
-            
+
             headerPanel.Children.Add(headerText);
             headerPanel.Children.Add(closeButton);
-            
+
             var tab = new TabItem
             {
                 Header = headerPanel,
                 Tag = currentFileIndex
             };
-            
+
             // Insert before the + tab if it exists
             int insertIndex = FileTabControl.Items.Count;
             if (insertIndex > 0 && FileTabControl.Items[insertIndex - 1] is TabItem lastTab && lastTab.Tag?.ToString() == "NEW")
             {
                 insertIndex--;
             }
-            FileTabControl.Items.Insert(insertIndex, tab);
-            FileTabControl.SelectedItem = tab;
-            
+            isHandlingNewTab = true;
+            try
+            {
+                FileTabControl.Items.Insert(insertIndex, tab);
+                FileTabControl.SelectedItem = tab;
+                // Record the tab we selected programmatically so duplicate SelectionChanged events are ignored
+                lastSelectedTab = tab;
+            }
+            finally
+            {
+                isHandlingNewTab = false;
+            }
+
             // Ensure + tab exists
             EnsureNewTabButton();
         }
@@ -6098,21 +6109,24 @@ namespace FamidashEditor
 
         private void FileTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (FileTabControl.SelectedItem is TabItem tab)
+            // Prevent re-entrancy
+            if (isHandlingNewTab) return;
+            
+                if (FileTabControl.SelectedItem is TabItem tab)
             {
-                if (tab.Tag?.ToString() == "NEW")
+                    // Ignore if selection didn't actually change (queued duplicate events)
+                    if (lastSelectedTab != null && ReferenceEquals(lastSelectedTab, tab))
+                    {
+                        return;
+                    }
+
+                    // Only trigger new tab creation if the selected tab is the + tab and it is the last tab
+                    if (tab.Tag?.ToString() == "NEW" && FileTabControl.Items[FileTabControl.Items.Count - 1] == tab)
                 {
-                    // Prevent re-entrancy when handling new tab creation
-                    if (isHandlingNewTab) return;
-                    
                     isHandlingNewTab = true;
                     try
                     {
-                        // Clicked the + tab, create new file
                         NewMenuItem_Click(this, new RoutedEventArgs());
-                        
-                        // CreateNewTab will select the newly created tab,
-                        // so we don't need to do anything else here
                     }
                     finally
                     {
@@ -6121,8 +6135,14 @@ namespace FamidashEditor
                 }
                 else if (tab.Tag is int index)
                 {
-                    SwitchToTab(index);
+                    // Only switch if we're not already on this tab
+                    if (currentFileIndex != index && index >= 0 && index < openFiles.Count)
+                    {
+                        SwitchToTab(index);
+                    }
                 }
+                    // Track last selected tab reference
+                    lastSelectedTab = tab;
             }
         }
 
@@ -15376,7 +15396,84 @@ namespace FamidashEditor
 
         private void NewMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            // Prompt to save if there are unsaved changes
+            // In multi-tab mode, just create a new tab without prompting
+            // The old tab keeps its state and unsaved changes
+            if (openFiles.Count > 0)
+            {
+                // If there's already an untitled tab open, switch to it instead of creating another
+                int existingUntitled = openFiles.FindIndex(f => string.IsNullOrEmpty(f.FilePath));
+                if (existingUntitled >= 0)
+                {
+                    // Find the corresponding TabItem in the UI
+                    for (int i = 0; i < FileTabControl.Items.Count; i++)
+                    {
+                        if (FileTabControl.Items[i] is TabItem ti && ti.Tag is int idx && idx == existingUntitled)
+                        {
+                            try
+                            {
+                                isHandlingNewTab = true; // prevent SelectionChanged from creating a new tab
+                                FileTabControl.SelectedItem = ti;
+                                lastSelectedTab = ti;
+                            }
+                            finally
+                            {
+                                isHandlingNewTab = false;
+                            }
+                            // Load the tab contents
+                            SwitchToTab(existingUntitled);
+                            if (StatusText != null) StatusText.Text = "Switched to existing Untitled tab.";
+                            return;
+                        }
+                    }
+                }
+                // Switch to a fresh state for the new tab
+                InitDefaultMap();
+                currentFilePath = null;
+                hasUnsavedChanges = false;
+                
+                // Load default tints
+                try
+                {
+                    var dir = AppContext.BaseDirectory;
+                    var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                    if (System.IO.File.Exists(settingsPath))
+                    {
+                        var txt = System.IO.File.ReadAllText(settingsPath);
+                        var doc = System.Text.Json.JsonDocument.Parse(txt);
+                        
+                        if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                            backgroundTint = Color.FromArgb((byte)bt[0].GetInt32(), (byte)bt[1].GetInt32(), (byte)bt[2].GetInt32(), (byte)bt[3].GetInt32());
+                        
+                        if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                            groundTint = Color.FromArgb((byte)gt[0].GetInt32(), (byte)gt[1].GetInt32(), (byte)gt[2].GetInt32(), (byte)gt[3].GetInt32());
+                        
+                        if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                            tileTint = Color.FromArgb((byte)tt[0].GetInt32(), (byte)tt[1].GetInt32(), (byte)tt[2].GetInt32(), (byte)tt[3].GetInt32());
+                    }
+                }
+                catch { }
+                
+                UpdateParallaxTint();
+                UpdateGroundTint();
+                UpdateTileTint();
+                
+                noParallaxBg = false;
+                if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
+                
+                backgroundDirty = true;
+                try { scaledTileCaches.Clear(); } catch { }
+                
+                undoStack.Clear();
+                redoStack.Clear();
+                
+                // Create the new tab - this will save current state to the tab before switching
+                CreateNewTab(null);
+                
+                if (StatusText != null) StatusText.Text = "New map created (200x27)";
+                return;
+            }
+            
+            // Legacy single-tab behavior: Prompt to save if there are unsaved changes
             if (hasUnsavedChanges)
             {
                 var result = MessageBox.Show(
