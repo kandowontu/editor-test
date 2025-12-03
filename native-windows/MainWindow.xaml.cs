@@ -4050,17 +4050,17 @@ namespace FamidashEditor
         // Methods called by SetOptionsWindow -------------------------------------------------
         public void ShowBackgroundTintPicker()
         {
-            try { BgTintButton_Click(null, new RoutedEventArgs()); } catch { }
+            try { BgTintButton_Click(null, null); } catch { }
         }
 
         public void ShowGroundTintPicker()
         {
-            try { GroundTintButton_Click(null, new RoutedEventArgs()); } catch { }
+            try { GroundTintButton_Click(null, null); } catch { }
         }
 
         public void ShowTileTintPicker()
         {
-            try { TileTintButton_Click(null, new RoutedEventArgs()); } catch { }
+            try { TileTintButton_Click(null, null); } catch { }
         }
 
         public void SetNoParallax(bool v)
@@ -4074,7 +4074,7 @@ namespace FamidashEditor
             catch { }
         }
 
-        public void SetShowAccurateTileset(bool show, string? block, string? spike)
+        public void SetShowAccurateTileset(bool show, string block, string spike)
         {
             try
             {
@@ -4087,17 +4087,17 @@ namespace FamidashEditor
             catch { }
         }
 
-        public void SetBlockSet(string? s)
+        public void SetBlockSet(string s)
         {
             try { currentBlockSet = s ?? currentBlockSet; } catch { }
         }
 
-        public void SetSpikeSet(string? s)
+        public void SetSpikeSet(string s)
         {
             try { currentSpikeSet = s ?? currentSpikeSet; } catch { }
         }
 
-        public void SetLockSpritesToSet(bool lockIt, string? deco)
+        public void SetLockSpritesToSet(bool lockIt, string deco)
         {
             try
             {
@@ -4109,11 +4109,11 @@ namespace FamidashEditor
             catch { }
         }
 
-        public void SetDecoSet(string? deco)
+        public void SetDecoSet(string deco)
         {
             try
             {
-                loadedDecoSet = string.IsNullOrEmpty(deco) ? "deco1" : deco!;
+                loadedDecoSet = string.IsNullOrEmpty(deco) ? "deco1" : deco;
                 // Save to per-level config if applicable
                 try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
                 try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
