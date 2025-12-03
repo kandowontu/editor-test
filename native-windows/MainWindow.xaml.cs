@@ -10993,6 +10993,11 @@ namespace FamidashEditor
             {
                 if (MagicWandTool != null) MagicWandTool.IsChecked = true; e.Handled = true; return;
             }
+            if (e.Key == Key.T)
+            {
+                var st = FindName("StructureTool") as System.Windows.Controls.Primitives.ToggleButton;
+                if (st != null) { st.IsChecked = true; e.Handled = true; return; }
+            }
         }
 
         private void MainWindow_PreviewKeyUp(object? sender, KeyEventArgs e)
