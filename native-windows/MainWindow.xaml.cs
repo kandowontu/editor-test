@@ -12101,10 +12101,11 @@ namespace FamidashEditor
             if (tb == null) return;
             var all = new System.Collections.Generic.List<ToggleButton?> { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool };
             var structBtn = FindName("StructureTool") as ToggleButton;
+            bool isStruct = (structBtn != null && tb == structBtn);
             if (structBtn != null) all.Add(structBtn);
             foreach (var t in all)
             {
-                if (t != tb) t.IsChecked = false;
+                if (t != null && t != tb) t.IsChecked = false;
             }
             
             // Sync menu checkmarks with toolbar
@@ -12115,11 +12116,11 @@ namespace FamidashEditor
             if (MenuToolSelect != null) MenuToolSelect.IsChecked = (tb == SelectTool);
             if (MenuToolWand != null) MenuToolWand.IsChecked = (tb == MagicWandTool);
             var menuStructure = FindName("MenuToolStructure") as MenuItem;
-            if (menuStructure != null) menuStructure.IsChecked = (tb == structBtn);
+            if (menuStructure != null) menuStructure.IsChecked = isStruct;
 
             // When switching to certain tools, reset draw mode back to Tile by default
             // Include FillTool so selecting Fill also activates the Tile draw mode
-            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == MagicWandTool || tb == structBtn)
+            if (tb == PlaceTool || tb == FillTool || tb == MagicWandTool || isStruct)
             {
                 if (DrawTileButton != null) DrawTileButton.IsChecked = true;
                 currentDrawMode = DrawMode.Tile;
@@ -15253,6 +15254,13 @@ namespace FamidashEditor
             if (e.Key == Key.F)
             {
                 if (FillTool != null) FillTool.IsChecked = true; e.Handled = true; return;
+            }
+
+            // T -> Structure tool (no modifiers)
+            if (e.Key == Key.T && (mods & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift)) == 0)
+            {
+                var st = FindName("StructureTool") as ToggleButton;
+                if (st != null) { st.IsChecked = true; e.Handled = true; return; }
             }
 
             // Save / Select behavior on S: Ctrl+S = Save, Ctrl+Alt+S = Save As, plain S = Select (only if no modifiers)
