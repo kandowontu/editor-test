@@ -89,6 +89,11 @@ namespace FamidashEditor
         private int lastKnownSelectedTile = -2;
         private int lastKnownSelectedSprite = -2;
         private System.DateTime lastInputAction = System.DateTime.MinValue;
+        // Right-button click/drag detection for deferred select-drag vs click-to-pick
+        private bool isRightMouseDown = false;
+        private Point rightMouseDownPosition;
+        private bool rightDragStarted = false;
+        private const double RightDragThreshold = 4.0; // pixels
     // Timer used to perform continuous 1-px fine scrolling while Shift+Left/Right are held
     private System.Windows.Threading.DispatcherTimer? shiftArrowScrollTimer = null;
     private int shiftArrowScrollDir = 0; // -1 = left, +1 = right
@@ -11941,6 +11946,18 @@ namespace FamidashEditor
                     hasMouseMoved = true;
                 }
             }
+
+            // Track right-button drag threshold for deferred selection start
+            if (e.RightButton == MouseButtonState.Pressed && isRightMouseDown && !rightDragStarted)
+            {
+                double rdx = pos.X - rightMouseDownPosition.X;
+                double rdy = pos.Y - rightMouseDownPosition.Y;
+                if (Math.Sqrt(rdx * rdx + rdy * rdy) > RightDragThreshold)
+                {
+                    rightDragStarted = true;
+                    try { StartSelectionAt(rightMouseDownPosition); } catch { }
+                }
+            }
             
             UpdateCoords(pos);
             
@@ -12283,18 +12300,16 @@ namespace FamidashEditor
             var menuStructure = FindName("MenuToolStructure") as MenuItem;
             if (menuStructure != null) menuStructure.IsChecked = isStruct;
 
-            // When switching to certain tools, reset draw mode back to Tile by default
-            // Include FillTool so selecting Fill also activates the Tile draw mode
-            if (tb == PlaceTool || tb == FillTool || tb == MagicWandTool || isStruct)
+            // When switching to any main tool, revert draw mode back to Tile
+            if (tb == PlaceTool || tb == MoveTool || tb == EraseTool || tb == FillTool || tb == SelectTool || tb == MagicWandTool || isStruct)
             {
                 if (DrawTileButton != null) DrawTileButton.IsChecked = true;
                 currentDrawMode = DrawMode.Tile;
             }
 
-            // When Select, Move or MagicWand tools are active, grey-out (disable)
-            // the non-tile drawing shape controls so only Tile remains usable.
-            // Also disable shape tools when Fill is active
-            bool disableShapes = (tb == SelectTool || tb == MoveTool || tb == MagicWandTool || tb == FillTool);
+            // Disable non-tile shape buttons when not using brush/erase tools
+            // Only PlaceTool and EraseTool should allow shapes other than Tile
+            bool disableShapes = !(tb == PlaceTool || tb == EraseTool);
             if (DrawLineButton != null) DrawLineButton.IsEnabled = !disableShapes;
             if (DrawSquareButton != null) DrawSquareButton.IsEnabled = !disableShapes;
             if (DrawCircleButton != null) DrawCircleButton.IsEnabled = !disableShapes;
@@ -12306,15 +12321,24 @@ namespace FamidashEditor
 
         private void DrawModeButton_Checked(object? sender, RoutedEventArgs e)
         {
-            // Keep only one draw mode checked at a time
+            // Keep only one draw mode checked at a time and set currentDrawMode
             var tb = sender as ToggleButton;
             if (tb == null) return;
 
-            // Build list of all toolbar tool ToggleButtons and include StructureTool if present
-            var all = new System.Collections.Generic.List<ToggleButton?> { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool };
-            var structBtn = FindName("StructureTool") as ToggleButton;
-            bool isStruct = (structBtn != null && tb == structBtn);
-            if (structBtn != null) all.Add(structBtn);
+            // Uncheck other draw-mode buttons
+            var drawButtons = new System.Collections.Generic.List<ToggleButton?> { DrawTileButton, DrawLineButton, DrawSquareButton, DrawCircleButton, DrawTriangleButton, DrawPolygonButton };
+            foreach (var b in drawButtons)
+            {
+                if (b != null && b != tb) b.IsChecked = false;
+            }
+
+            // Update current draw mode based on which button was checked
+            if (tb == DrawTileButton) currentDrawMode = DrawMode.Tile;
+            else if (tb == DrawLineButton) currentDrawMode = DrawMode.Line;
+            else if (tb == DrawSquareButton) currentDrawMode = DrawMode.Square;
+            else if (tb == DrawCircleButton) currentDrawMode = DrawMode.Circle;
+            else if (tb == DrawTriangleButton) currentDrawMode = DrawMode.Triangle;
+            else if (tb == DrawPolygonButton) currentDrawMode = DrawMode.Polygon;
         }
 
         private void InitializeStructurePopupIcons()
@@ -12470,13 +12494,18 @@ namespace FamidashEditor
 
         private void CanvasHost_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
-            // Holding right button now begins a rectangle selection dragbox at any time
+            // Right button: on click, pick tile/sprite into the palette; start selection
+            // only after the user holds and drags beyond a small threshold.
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
             UpdateCoords(pos);
             try
             {
-                StartSelectionAt(pos);
+                // Record right-button down state and position; defer starting selection
+                isRightMouseDown = true;
+                rightMouseDownPosition = pos;
+                rightDragStarted = false;
+                // prevent other handlers from showing context menus
                 e.Handled = true;
             }
             catch { }
@@ -12516,10 +12545,78 @@ namespace FamidashEditor
                     Mouse.OverrideCursor = null;
                     e.Handled = true;
                 }
+                // If right button was pressed, handle click-to-pick when released without dragging,
+                // otherwise allow selection end to proceed for drag-selected rectangles.
+                if (isRightMouseDown)
+                {
+                    // If we never started a right-button drag, treat this as a click and pick the tile/sprite
+                    if (!rightDragStarted)
+                    {
+                        var pos = e.GetPosition(CanvasHost);
+                        try
+                        {
+                            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                            double pad = mapViewportPadding;
+                            int tx = Math.Max(0, Math.Min(mapWidth - 1, (int)((pos.X - pad) / (TileSize * scale))));
+                            int ty = Math.Max(0, Math.Min(mapHeight - 1, (int)((pos.Y - pad) / (TileSize * scale))));
+                            int idx = ty * mapWidth + tx;
+                            bool pickedTile = false;
+                            bool pickedSprite = false;
+
+                            if (tilesLayerActive)
+                            {
+                                int tile = tiles[idx];
+                                if (tile >= 0)
+                                {
+                                    selectedTile = tile;
+                                    pickedTile = true;
+                                }
+                            }
+                            if (spritesLayerActive)
+                            {
+                                int sprite = sprites[idx];
+                                if (sprite >= 0)
+                                {
+                                    selectedSprite = sprite;
+                                    pickedSprite = true;
+                                }
+                            }
+                            if (pickedTile || pickedSprite)
+                            {
+                                if (pickedTile && !pickedSprite)
+                                {
+                                    tilesLayerActive = true; spritesLayerActive = false; selectedSprite = -1;
+                                }
+                                else if (pickedSprite && !pickedTile)
+                                {
+                                    spritesLayerActive = true; tilesLayerActive = false; selectedTile = -1;
+                                }
+                                UpdatePaletteHighlight();
+                                if (StatusText != null)
+                                {
+                                    if (pickedTile && pickedSprite) StatusText.Text = $"Picked tile {selectedTile} and sprite {selectedSprite}";
+                                    else if (pickedTile) StatusText.Text = $"Picked tile {selectedTile}";
+                                    else StatusText.Text = $"Picked sprite {selectedSprite}";
+                                }
+                            }
+                        }
+                        catch { }
+                        // Clear right-button down state
+                        isRightMouseDown = false;
+                        rightDragStarted = false;
+                        e.Handled = true;
+                        return;
+                    }
+                    // otherwise fall through to selection-end below
+                }
+
                 // End selection on right-button release (support right-button drag selection)
                 if (isSelecting && e.RightButton == MouseButtonState.Released)
                 {
                     EndSelection();
+                    // Clear right-button state
+                    isRightMouseDown = false;
+                    rightDragStarted = false;
                     e.Handled = true;
                     return;
                 }
@@ -12656,7 +12753,8 @@ namespace FamidashEditor
         {
             if (sx < 0 || sx >= mapWidth || sy < 0 || sy >= mapHeight) return;
             int startIdx = sy * mapWidth + sx;
-            if (tiles[startIdx] == -1) return;
+            // Ignore empty tiles (-1) and explicit tile id 0x00 when starting
+            if (tiles[startIdx] == -1 || tiles[startIdx] == 0x00) return;
 
             // Collect contiguous region of non-empty tiles (4-way)
             var q = new System.Collections.Generic.Queue<(int x, int y)>();
@@ -12672,7 +12770,8 @@ namespace FamidashEditor
                     if (nx < 0 || nx >= mapWidth || ny < 0 || ny >= mapHeight) continue;
                     int ni = ny * mapWidth + nx;
                     if (visited.Contains(ni)) continue;
-                    if (tiles[ni] != -1)
+                    // Only consider neighbors that are non-empty and not the explicit 0x00 tile
+                    if (tiles[ni] != -1 && tiles[ni] != 0x00)
                     {
                         visited.Add(ni);
                         q.Enqueue((nx, ny));
