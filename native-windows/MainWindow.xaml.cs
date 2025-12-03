@@ -2232,6 +2232,8 @@ namespace FamidashEditor
             if (MenuToolFill != null) MenuToolFill.Click += (s, e) => { if (FillTool != null) FillTool.IsChecked = true; };
             if (MenuToolSelect != null) MenuToolSelect.Click += (s, e) => { if (SelectTool != null) SelectTool.IsChecked = true; };
             if (MenuToolWand != null) MenuToolWand.Click += (s, e) => { if (MagicWandTool != null) MagicWandTool.IsChecked = true; };
+            var menuStruct = FindName("MenuToolStructure") as MenuItem;
+            if (menuStruct != null) menuStruct.Click += (s, e) => { var st = FindName("StructureTool") as ToggleButton; if (st != null) st.IsChecked = true; };
             if (MenuEditCopy != null) MenuEditCopy.Click += (s, e) => CopySelection();
             if (MenuEditCut != null) MenuEditCut.Click += (s, e) => CutSelection();
             if (MenuEditPaste != null) MenuEditPaste.Click += (s, e) => {
@@ -2566,7 +2568,9 @@ namespace FamidashEditor
                 if (EraseTool != null) EraseTool.Checked += Tool_Checked;
                 if (FillTool != null) FillTool.Checked += Tool_Checked;
                 if (SelectTool != null) SelectTool.Checked += Tool_Checked;
-        if (MagicWandTool != null) MagicWandTool.Checked += Tool_Checked;
+            if (MagicWandTool != null) MagicWandTool.Checked += Tool_Checked;
+            var structToggle = FindName("StructureTool") as ToggleButton;
+            if (structToggle != null) structToggle.Checked += Tool_Checked;
             // keyboard shortcuts for undo/redo
             this.PreviewKeyDown += MainWindow_PreviewKeyDown;
             // Handle key up for stopping continuous Shift+arrow scrolling
@@ -11478,6 +11482,13 @@ namespace FamidashEditor
                 StartMagicWandAt(pos);
                 return;
             }
+            // Structure tool: build a structured outline from a connected tile region (tiles layer only)
+            var _st = FindName("StructureTool") as ToggleButton;
+            if (_st != null && _st.IsChecked == true)
+            {
+                StartStructureAt(pos);
+                return;
+            }
             // Branch behavior based on active tool
             // Select tool: support Ctrl+click to toggle single-tile selection, or drag to rectangle-select
             if (SelectTool != null && SelectTool.IsChecked == true)
@@ -12088,7 +12099,9 @@ namespace FamidashEditor
             if (sender == null) return;
             var tb = sender as ToggleButton;
             if (tb == null) return;
-            var all = new[] { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool };
+            var all = new System.Collections.Generic.List<ToggleButton?> { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool };
+            var structBtn = FindName("StructureTool") as ToggleButton;
+            if (structBtn != null) all.Add(structBtn);
             foreach (var t in all)
             {
                 if (t != tb) t.IsChecked = false;
@@ -12101,10 +12114,12 @@ namespace FamidashEditor
             if (MenuToolFill != null) MenuToolFill.IsChecked = (tb == FillTool);
             if (MenuToolSelect != null) MenuToolSelect.IsChecked = (tb == SelectTool);
             if (MenuToolWand != null) MenuToolWand.IsChecked = (tb == MagicWandTool);
+            var menuStructure = FindName("MenuToolStructure") as MenuItem;
+            if (menuStructure != null) menuStructure.IsChecked = (tb == structBtn);
 
             // When switching to certain tools, reset draw mode back to Tile by default
             // Include FillTool so selecting Fill also activates the Tile draw mode
-            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == MagicWandTool || tb == FillTool)
+            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == MagicWandTool || tb == structBtn)
             {
                 if (DrawTileButton != null) DrawTileButton.IsChecked = true;
                 currentDrawMode = DrawMode.Tile;
@@ -12564,6 +12579,141 @@ namespace FamidashEditor
             UpdateSelectionVisuals(selX, selY, selW, selH);
             string mode = isCtrl ? "added" : "selected";
             if (StatusText != null) StatusText.Text = $"Magic wand {mode} {visited.Count} tiles of type {target} (total: {selectionSet.Count})";
+        }
+
+        private void StartStructureAt(Point pos)
+        {
+            if (CanvasHost == null) return;
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            double pad = mapViewportPadding;
+            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)((pos.X - pad) / (TileSize * scale))));
+            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)((pos.Y - pad) / (TileSize * scale))));
+            int startIdx = y * mapWidth + x;
+
+            // Only operate on tiles layer
+            if (!tilesLayerActive) return;
+            int target = tiles[startIdx];
+            if (target == -1) return;
+
+            var q = new System.Collections.Generic.Queue<(int x, int y)>();
+            var visited = new System.Collections.Generic.HashSet<int>();
+            q.Enqueue((x, y)); visited.Add(startIdx);
+            while (q.Count > 0)
+            {
+                var (cx, cy) = q.Dequeue();
+                // four neighbors
+                var nbrs = new (int nx, int ny)[] { (cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1) };
+                foreach (var n in nbrs)
+                {
+                    int nx = n.nx, ny = n.ny;
+                    if (nx < 0 || nx >= mapWidth || ny < 0 || ny >= mapHeight) continue;
+                    int ni = ny * mapWidth + nx;
+                    if (visited.Contains(ni)) continue;
+                    if (tiles[ni] == target)
+                    {
+                        visited.Add(ni);
+                        q.Enqueue((nx, ny));
+                    }
+                }
+            }
+
+            // Build action and apply replacements
+            var action = new TileChangeAction();
+            foreach (var idx in visited)
+            {
+                int tx = idx % mapWidth; int ty = idx / mapWidth;
+                int newTile = GetStructureTileForNeighbors(tx, ty, visited);
+                if (newTile != tiles[idx])
+                {
+                    action.Add(idx, tiles[idx], newTile);
+                    tiles[idx] = newTile;
+                }
+            }
+
+            if (!action.IsEmpty() && !suppressUndoRecording)
+            {
+                undoStack.Push(action);
+                redoStack.Clear();
+                hasUnsavedChanges = true;
+            }
+
+            // Update tiles bitmap
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+            if (StatusText != null) StatusText.Text = $"Structure built ({visited.Count} tiles)";
+        }
+
+        private int GetStructureTileForNeighbors(int x, int y, System.Collections.Generic.HashSet<int> region)
+        {
+            bool n = (y - 1 >= 0) && region.Contains((y - 1) * mapWidth + x);
+            bool s = (y + 1 < mapHeight) && region.Contains((y + 1) * mapWidth + x);
+            bool w = (x - 1 >= 0) && region.Contains(y * mapWidth + (x - 1));
+            bool e = (x + 1 < mapWidth) && region.Contains(y * mapWidth + (x + 1));
+
+            // If the map has a ground image layer, compute the top tile row of the ground
+            // and treat ground directly below as an effective neighbor so we avoid placing
+            // bottom endcaps when a structure runs into the ground.
+            bool belowIsGround = false;
+            try
+            {
+                if (y + 1 >= mapHeight) belowIsGround = true; // bottom of map
+                else if (loadedHasGroundLayer)
+                {
+                    int groundTopRow = (int)Math.Floor(loadedGroundOffsetY / TileSize);
+                    if (y + 1 >= groundTopRow) belowIsGround = true;
+                }
+            }
+            catch { belowIsGround = false; }
+
+            // Treat the ground as an effective southern neighbor when present so the
+            // structure algorithm doesn't add bottom endpieces against the ground.
+            bool s_eff = s || belowIsGround;
+
+            int count = (n ? 1 : 0) + (s_eff ? 1 : 0) + (w ? 1 : 0) + (e ? 1 : 0);
+
+            // Four-way interior
+            if (count == 4) return 0x2F; // filler middle
+
+            // Three neighbors -> edge piece (missing side indicates which edge)
+            if (count == 3)
+            {
+                if (!n) return 0x21; // missing top -> top edge
+                if (!e) return 0x22; // missing right -> right edge
+                if (!s_eff) return 0x23; // missing bottom -> bottom edge
+                if (!w) return 0x24; // missing left -> left edge
+            }
+
+            // Two neighbors: straight or corner
+            if (count == 2)
+            {
+                // straight vertical
+                if (n && s_eff) return 0x2D; // vertical line
+                // straight horizontal
+                if (w && e) return 0x2E; // horizontal line
+                // corners (use effective south for decisions so ground counts as a neighbor)
+                if (e && s_eff) return 0x25; // neighbors right+down -> top-left corner
+                if (w && s_eff) return 0x26; // neighbors left+down -> top-right corner
+                if (w && n) return 0x27; // neighbors left+up -> bottom-right corner
+                if (e && n) return 0x28; // neighbors right+up -> bottom-left corner
+            }
+
+            // One neighbor -> endcap pointing toward neighbor
+            if (count == 1)
+            {
+                if (n) return 0x32; // neighbor above -> bottom cap
+                if (s_eff)
+                {
+                    // If the southern neighbor is actual region tile, return the normal top cap.
+                    if (s) return 0x30; // neighbor below -> top cap
+                    // If southern neighbor is ground (s_eff true but s false), prefer a vertical side
+                    // so the structure doesn't get a bottom endcap against the ground.
+                    return 0x2D; // vertical line
+                }
+                if (w) return 0x31; // neighbor left -> right cap
+                if (e) return 0x33; // neighbor right -> left cap
+            }
+
+            // No neighbors (isolated) -> filler
+            return 0x2F;
         }
 
         private void StartDragMove(Point pos)
