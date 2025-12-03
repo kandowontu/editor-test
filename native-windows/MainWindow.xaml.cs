@@ -18,6 +18,12 @@ namespace FamidashEditor
 {
     public partial class MainWindow : Window
     {
+        private FamiStudioIntegration famiIntegration = new FamiStudioIntegration();
+        private string? famiStudioPath = null;
+        // Set to true when a precomputed name->index mapping is loaded from disk so
+        // we prefer that mapping over any in-process remapping at play-time.
+        private bool mappingLoadedFromFile = false;
+        private string? albumTxtPath = null;
         private enum DrawMode { Tile, Line, Square, Circle, Triangle, Polygon, None }
         private DrawMode currentDrawMode = DrawMode.Tile;
         private bool hollowShape = false;
@@ -45,17 +51,28 @@ namespace FamidashEditor
     private int mapHeight = 27;
     private int[] tiles = Array.Empty<int>();
     private int[] sprites = Array.Empty<int>(); // separate layer for sprites
+    // Sprite pixel offsets: key is (y * mapWidth + x), value is (offsetX, offsetY) in pixels
+    // NOTE: These offsets are for VISUAL RENDERING ONLY. They are loaded from JSON metadata
+    // but are NOT saved to TMX files. Sprites are always saved at their grid anchor positions.
+    private Dictionary<int, (int offsetX, int offsetY)> spritePixelOffsets = new Dictionary<int, (int offsetX, int offsetY)>();
     // Legacy trigger offset option (default off)
     private bool useLegacyTriggerOffset = false;
     // Preview option: hide color triggers in preview mode
     private bool hideColorTriggers = false;
+    // Preview option: hide all invisible sprites (user-configurable global setting)
+    private bool hideInvisibleSprites = false;
+    // Editor option: suppress collision messages during TMX load/save (default true)
+    private bool suppressCollisionMessages = true;
     // Per-level option: replace parallax background with noparallax.bmp when true
     private bool noParallaxBg = false;
+    private bool suppressNoParallaxHandler = false;
     private bool swapMouseWheelScroll = false; // when true, swap shift/no-modifier wheel scroll behavior
     private bool invertPinchGesture = true; // if true, invert pinch scale (device-dependent)
     private bool pinchDirectionDetected = false;
+    private string tileboardPosition = "LEFT"; // LEFT, RIGHT, TOP, or BOTTOM
     private double lastManipulationCumulativeScale = 1.0;
     private bool manipulationActive = false;
+    // NOTE: 'MenuOptionHideInvisibleSprites' is declared in XAML (x:Name) and initialized by InitializeComponent.
     // default grid darkness: much lighter so grid lines are subtle over dark backgrounds
     private double gridDarkness = 0.18;
     private Brush mapBackground = new SolidColorBrush(Color.FromRgb(59,59,59));
@@ -63,6 +80,10 @@ namespace FamidashEditor
     private Color backgroundTint = Color.FromArgb(0, 0, 0, 0);
     private Color groundTint = Color.FromArgb(0, 0, 0, 0);
     private Color tileTint = Color.FromArgb(0, 0, 0, 0);
+    // Default tints from global settings (used when 'Set as default' is checked)
+    private Color defaultBackgroundTint = Color.FromArgb(255, 0, 23, 116);
+    private Color defaultGroundTint = Color.FromArgb(255, 0, 23, 116);
+    private Color defaultTileTint = Color.FromArgb(255, 0, 23, 116);
     // Player tint (applied to decoration pixels that are not black/transparent)
     private Color playerTint = Color.FromArgb(0, 0, 0, 0);
     // Whether player tinting is enabled (user-selected). Default: disabled.
@@ -92,12 +113,64 @@ namespace FamidashEditor
     private int selectionHeight = 1; // Height of the selection grid
     private bool isSelectingMultipleTiles = false; // Track if user is dragging in tile palette
     private System.Windows.Point? tileSelectionStart = null; // Starting point for multi-select
+    // Copy/Cut/Paste clipboard (rectangular with optional mask for sparse selections)
+    private int[]? clipboardTiles = null;
+    private int[]? clipboardSprites = null;
+    private bool[]? clipboardMask = null; // true == cell was part of original selection
+    private int clipboardW = 0;
+    private int clipboardH = 0;
+    private bool clipboardHasData = false;
     // Layer selection state - can select both layers simultaneously for tools
     private bool tilesLayerActive = true;
     private bool spritesLayerActive = false;
     // Track changes and current file
     private string? currentFilePath = null;
     private bool hasUnsavedChanges = false;
+    
+    // Multiple file tabs management
+    private class FileTabData
+    {
+        public string? FilePath { get; set; }
+        public int[] Tiles { get; set; } = Array.Empty<int>();
+        public int[] Sprites { get; set; } = Array.Empty<int>();
+        public Dictionary<int, (int offsetX, int offsetY)> SpritePixelOffsets { get; set; } = new Dictionary<int, (int, int)>();
+        public int MapWidth { get; set; } = 200;
+        public int MapHeight { get; set; } = 27;
+        public bool HasUnsavedChanges { get; set; } = false;
+        public string? LoadedTilesetSource { get; set; }
+        public string? LoadedSpritesetSource { get; set; }
+        public bool LoadedHasEditorSettings { get; set; }
+        public int LoadedChunkWidth { get; set; } = 16;
+        public int LoadedChunkHeight { get; set; } = 27;
+        public string? LoadedExportTarget { get; set; }
+        public string LoadedExportFormat { get; set; } = "csv";
+        public string? LoadedParallaxSource { get; set; }
+        public double LoadedParallaxX { get; set; } = 0.9;
+        public double LoadedParallaxY { get; set; } = 0.9;
+        public bool LoadedParallaxRepeatX { get; set; } = true;
+        public bool LoadedParallaxRepeatY { get; set; } = true;
+        public bool LoadedHasParallaxLayer { get; set; }
+        public string? LoadedGroundSource { get; set; }
+        public double LoadedGroundOffsetY { get; set; } = 432;
+        public bool LoadedGroundRepeatX { get; set; } = true;
+        public bool LoadedHasGroundLayer { get; set; }
+        public string LoadedDecoSet { get; set; } = "DECO1";
+        public string LoadedBlockSet { get; set; } = "BLOCKSA";
+        public string LoadedSpikeSet { get; set; } = "SPIKESA";
+        public bool NoParallaxBg { get; set; }
+        public Color BackgroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
+        public Color GroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
+        public Color TileTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
+        public string? SelectedSong { get; set; } = null;
+    }
+    
+    private List<FileTabData> openFiles = new List<FileTabData>();
+    private int currentFileIndex = -1;
+    private List<string> recentFiles = new List<string>();
+    private const int MaxRecentFiles = 10;
+    private bool isHandlingNewTab = false;
+    private TabItem? lastSelectedTab = null;
+    
     // Store loaded TMX metadata to preserve when saving
     private string? loadedTilesetSource = null;
     private string? loadedSpritesetSource = null;
@@ -107,6 +180,7 @@ namespace FamidashEditor
     private string? loadedExportTarget = null;
     private string loadedExportFormat = "csv";
     private string? loadedParallaxSource = null;
+    private string? originalParallaxSource = null; // Store original parallax, not affected by noParallax override
     private double loadedParallaxX = 0.9;
     private double loadedParallaxY = 0.9;
     private bool loadedParallaxRepeatX = true;
@@ -116,13 +190,10 @@ namespace FamidashEditor
     private double loadedGroundOffsetY = 432;
     private bool loadedGroundRepeatX = true;
     private bool loadedHasGroundLayer = false;
-    private string loadedDecoSet = "deco1";
-    // Additional UI state used by SetOptionsWindow
-    private string currentBlockSet = "BLOCKSA";
-    private string currentSpikeSet = "SPIKESA";
-    private bool showAccurateTileset = false;
-    public bool ShowAccurateTileset { get { return showAccurateTileset; } }
-    public bool LockSpritesToSet { get; private set; } = false;
+    private bool isTileboardHidden = false; // Track tileboard hidden state
+    private string loadedDecoSet = "DECO1";
+    private string loadedBlockSet = "BLOCKSA";
+    private string loadedSpikeSet = "SPIKESA";
     private int paletteTileSize = 16;
     private int paletteSpriteSize = 16;
     // Painting state for drag-to-draw
@@ -132,18 +203,29 @@ namespace FamidashEditor
     // Track if mouse has moved since button down to distinguish click from drag
     private bool hasMouseMoved = false;
     private Point mouseDownPosition;
+    // Middle-click panning state
+    private bool isMiddlePanning = false;
+    private Point middlePanStart;
+    private double panStartHOffset = 0.0;
+    private double panStartVOffset = 0.0;
     // Selection state
     private bool isSelecting = false;
     private int selectStartX = -1, selectStartY = -1;
     private int selX = -1, selY = -1, selW = 0, selH = 0;
     private int[]? selTiles = null; // row-major selW * selH
     private int[]? selSprites = null; // row-major selW * selH
+    private Dictionary<int, (int offsetX, int offsetY)> selSpriteOffsets = new Dictionary<int, (int offsetX, int offsetY)>(); // sprite offsets for selection (local coords)
+    private Dictionary<int, (int anchorTileX, int anchorTileY)> spriteAnchors = new Dictionary<int, (int anchorTileX, int anchorTileY)>(); // anchor tile positions for sprites (global map coords, persists across drags)
     private System.Collections.Generic.HashSet<int> selectionSet = new System.Collections.Generic.HashSet<int>();
     // Dragging selection state
     private bool isDraggingSelection = false;
     private Point dragStartMouse; // in CanvasHost coords
     private int dragOrigX = 0, dragOrigY = 0; // original selection top-left
     private Point dragOffset; // offset from mouse to selection top-left when dragging
+    private int ghostLogicalWidth = 0, ghostLogicalHeight = 0; // logical size of ghost bitmap
+    private double lastDragScale = 1.0; // last scale value during drag for zoom rescaling
+    private int dragFinalTileX = 0, dragFinalTileY = 0; // final snapped tile position during drag
+    private int dragFinalOffsetX = 0, dragFinalOffsetY = 0; // final snapped pixel offset during drag
     // Allow a small padded margin around the map so users can scroll slightly out-of-bounds
     private double mapViewportPadding = 64.0; // pixels on each side
     // Undo/redo support (unlimited)
@@ -164,7 +246,365 @@ namespace FamidashEditor
         public byte? TileTintG { get; set; }
         public byte? TileTintB { get; set; }
         public bool NoParallaxBg { get; set; } = false;
-        public string? DecoSet { get; set; } = "deco1";
+        public string? DecoSet { get; set; } = "DECO1";
+        public string? BlockSet { get; set; } = "BLOCKSA";
+        public string? SpikeSet { get; set; } = "SPIKESA";
+        public bool LockSpritesToSet { get; set; } = false;
+        public string? SelectedSong { get; set; } = null;
+        // Sprite offsets: key is "x,y" and value is [offsetX, offsetY]
+        public Dictionary<string, int[]>? SpriteOffsets { get; set; } = null;
+        // Sprite anchors: key is "x,y" (sprite position) and value is [anchorTileX, anchorTileY]
+        public Dictionary<string, int[]>? SpriteAnchors { get; set; } = null;
+    }
+
+    // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
+    private HashSet<int> disabledSprites = new HashSet<int>();
+    private bool lockSpritesToSet = false;
+    public bool LockSpritesToSet => lockSpritesToSet;
+    // When true, prefer external per-set tileset PNGs (if available) and swap famidash.bmp at runtime
+    private bool showAccurateTileset = false;
+    public bool ShowAccurateTileset => showAccurateTileset;
+    // Public accessors for map dimensions
+    public int MapWidth => mapWidth;
+    public int MapHeight => mapHeight;
+    
+    // Helper function to normalize song names for mapping
+    private string NormalizeSongName(string songName)
+    {
+        if (string.IsNullOrEmpty(songName)) return "";
+        // Replace spaces with underscores, lowercase everything, strip special symbols
+        var normalized = songName.ToLowerInvariant()
+            .Replace(' ', '_')
+            .Replace("-", "")
+            .Replace("'", "")
+            .Replace("!", "")
+            .Replace("?", "")
+            .Replace(".", "")
+            .Replace(",", "")
+            .Replace(":", "")
+            .Replace(";", "")
+            .Replace("(", "")
+            .Replace(")", "")
+            .Replace("[", "")
+            .Replace("]", "")
+            .Replace("{", "")
+            .Replace("}", "")
+            .Replace("&", "")
+            .Replace("#", "")
+            .Replace("@", "")
+            .Replace("$", "")
+            .Replace("%", "")
+            .Replace("^", "")
+            .Replace("*", "")
+            .Replace("+", "")
+            .Replace("=", "")
+            .Replace("/", "")
+            .Replace("\\", "")
+            .Replace("|", "")
+            .Replace("<", "")
+            .Replace(">", "");
+        return normalized;
+    }
+
+    // Public setter used by dialogs so behavior applies identically
+        public void SetLockSpritesToSet(bool enabled, string? decoOverride = null)
+    {
+        try
+        {
+                lockSpritesToSet = enabled;
+                // Persist as a global editor setting
+                try { SaveSettingsWithTriggerOption(); } catch { }
+                ApplyLockSpritesToSet(decoOverride);
+        }
+        catch { }
+    }
+
+        // Public setter used by dialogs to enable/disable the accurate tileset swapping feature.
+        // When enabled, this will attempt to locate a matching PNG tileset for the current Block/Spike/NoParallax
+        // combination and load it. When disabled, it reverts to the default embedded/fallback tileset.
+        public void SetShowAccurateTileset(bool enabled, string? blockOverride = null, string? spikeOverride = null)
+        {
+            try
+            {
+                showAccurateTileset = enabled;
+                // persist as global editor setting
+                try { SaveSettingsWithTriggerOption(); } catch { }
+
+                if (showAccurateTileset)
+                {
+                    // Determine which block/spike to use
+                    var block = string.IsNullOrEmpty(blockOverride) ? loadedBlockSet : blockOverride;
+                    var spike = string.IsNullOrEmpty(spikeOverride) ? loadedSpikeSet : spikeOverride;
+
+                    // Helper: convert BLOCKSA -> Blocksa (Pascal-ish)
+                    string ToPascal(string s)
+                    {
+                        if (string.IsNullOrEmpty(s)) return s ?? "";
+                        var low = s.ToLowerInvariant();
+                        return char.ToUpperInvariant(low[0]) + low.Substring(1);
+                    }
+
+                    // Build expected suffix according to pattern you described:
+                    // {block}{spike}sawsa{noParallax?"Slopesa"/"SlopesA":"SlopesNone"}
+                    // Accept a couple of common casing/variant forms to be tolerant of filename differences.
+                    var pascalSuffixOn = "Slopesa"; // common Pascal form when NoParallax == true
+                    var pascalSuffixOnAlt = "SlopesA"; // alternate Pascal variant
+                    var pascalSuffixOff = "SlopesNone"; // when NoParallax == false
+                    var pascalBlock = ToPascal(block ?? "");
+                    var pascalSpike = ToPascal(spike ?? "");
+
+                    var exactCandidates = new List<string>();
+                    // Primary PascalCase form (e.g. BlocksaSpikesaSawsaSlopesa.png)
+                    // Try the preferred suffix first based on noParallaxBg, then fallbacks.
+                    var preferredPascal = noParallaxBg ? pascalSuffixOn : pascalSuffixOff;
+                    var alternatePascal = noParallaxBg ? pascalSuffixOnAlt : pascalSuffixOn;
+                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{preferredPascal}.png");
+                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{preferredPascal}.PNG");
+                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{alternatePascal}.png");
+                    exactCandidates.Add($"{pascalBlock}{pascalSpike}Sawsa{pascalSuffixOff}.png");
+                    // Lowercase concatenated form (e.g. blocksaspikesasawsaslopesnone.png)
+                    // Lowercase variants. Some filenames use 'sawsaslopesa' vs 'sawsa' patterns; include common permutations.
+                    var lowerBlockSpike = $"{(block??"").ToLowerInvariant()}{(spike??"").ToLowerInvariant()}";
+                    exactCandidates.Add($"{lowerBlockSpike}sawsa{(noParallaxBg?"slopesa":"slopesnone")}.png");
+                    exactCandidates.Add($"{lowerBlockSpike}sawsaslopesa.png");
+                    exactCandidates.Add($"{lowerBlockSpike}sawsaslopesnone.png");
+
+                    // Candidate directories: prioritize explicit user folder, then app, repo
+                    var candidates = new List<string>();
+                    // explicit path the user mentioned
+                    candidates.Add(Path.Combine(AppContext.BaseDirectory, "..")); // keep as general fallback
+                    // prioritize a tilesets folder at workspace root (common user location)
+                    candidates.Add(Path.Combine("C:\\Editor Test", "tilesets"));
+                    candidates.Add(Path.Combine(AppContext.BaseDirectory, "tilesets"));
+                    candidates.Add(AppContext.BaseDirectory);
+                    candidates.Add(Environment.CurrentDirectory);
+                    var repo = FindRepoRootFor("famidash.bmp");
+                    if (!string.IsNullOrEmpty(repo))
+                    {
+                        candidates.Add(Path.Combine(repo, "tilesets"));
+                        candidates.Add(repo);
+                    }
+
+                    string? found = null;
+                    // Try exact candidates first (deterministic)
+                    foreach (var dir in candidates)
+                    {
+                        try
+                        {
+                            if (string.IsNullOrEmpty(dir)) continue;
+                            if (!Directory.Exists(dir)) continue;
+                            foreach (var fname in exactCandidates)
+                            {
+                                var p = Path.Combine(dir, fname);
+                                if (File.Exists(p)) { found = p; break; }
+                            }
+                            if (!string.IsNullOrEmpty(found)) break;
+                        }
+                        catch { }
+                    }
+
+                    // If not found, use previous fuzzy search fallback (scan pngs for substrings)
+                    if (string.IsNullOrEmpty(found))
+                    {
+                        foreach (var dir in candidates)
+                        {
+                            try
+                            {
+                                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
+                                var files = Directory.GetFiles(dir, "*.png");
+                                int bestScore = 0;
+                                string? bestFile = null;
+                                foreach (var f in files)
+                                {
+                                    var name = Path.GetFileName(f).ToLowerInvariant();
+                                    int score = 0;
+                                    try { if (!string.IsNullOrEmpty(block) && name.Contains(block.ToLowerInvariant())) score += 2; } catch { }
+                                    try { if (!string.IsNullOrEmpty(spike) && name.Contains(spike.ToLowerInvariant())) score += 2; } catch { }
+                                    try { if (noParallaxBg && name.Contains("slopesa")) score += 2; } catch { }
+                                    try { if (!noParallaxBg && name.Contains("slopesnone")) score += 2; } catch { }
+                                    if (score > bestScore)
+                                    {
+                                        bestScore = score;
+                                        bestFile = f;
+                                    }
+                                }
+                                if (bestFile != null && bestScore >= 2)
+                                {
+                                    found = bestFile;
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(found))
+                    {
+                        LoadTileset(found);
+                        try { SliceTileset(); PopulateTilesPanel(); backgroundDirty = true; RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                        try { Dispatcher.Invoke(() => Redraw()); } catch { }
+                        return;
+                    }
+
+                    // Nothing found — keep current tileset
+                }
+                else
+                {
+                    // Disabled: revert to embedded famidash.bmp or any previously loaded flat tileset source
+                    try
+                    {
+                        // If a TMX provided an explicit tileset source, prefer it
+                        if (!string.IsNullOrEmpty(loadedTilesetSource) && File.Exists(loadedTilesetSource))
+                        {
+                            LoadTileset(loadedTilesetSource);
+                        }
+                        else
+                        {
+                            var emb = LoadEmbeddedImage("famidash.bmp");
+                            if (emb != null)
+                            {
+                                tilesetBitmap = emb;
+                                SliceTileset();
+                                PopulateTilesPanel();
+                            }
+                            else
+                            {
+                                // try to find a famidash.bmp/png file on disk
+                                var repo = FindRepoRootFor("famidash.bmp");
+                                var candidates = new List<string>();
+                                if (!string.IsNullOrEmpty(repo)) candidates.Add(Path.Combine(repo, "famidash.bmp"));
+                                candidates.Add(Path.Combine(AppContext.BaseDirectory, "famidash.bmp"));
+                                candidates.Add(Path.Combine(AppContext.BaseDirectory, "famidash.png"));
+                                foreach (var cand in candidates)
+                                {
+                                    try { if (!string.IsNullOrEmpty(cand) && File.Exists(cand)) { LoadTileset(cand); break; } } catch { }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    try { SliceTileset(); PopulateTilesPanel(); backgroundDirty = true; RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    try { Dispatcher.Invoke(() => Redraw()); } catch { }
+                }
+            }
+            catch { }
+        }
+
+    // Compute disabled sprite list from the current loadedDecoSet and update UI overlays
+    private void ApplyLockSpritesToSet(string? decoOverride = null)
+        {
+        disabledSprites.Clear();
+        if (!lockSpritesToSet) {
+            // Remove overlays
+            try { if (IncompatibleOverlay != null) IncompatibleOverlay.Children.Clear(); } catch { }
+            // Rebuild palette to remove disable visuals
+            try { PopulateSpritesPanel(); } catch { }
+            return;
+        }
+
+        // Sprites 0x17, 0x4B, 0x58, 0x64 are only disabled if parallax is ENABLED (noParallaxBg is false)
+        // These are disabled regardless of deco set when parallax is on
+        if (!noParallaxBg)
+        {
+            disabledSprites.Add(0x17);
+            disabledSprites.Add(0x4B);
+            disabledSprites.Add(0x58);
+            disabledSprites.Add(0x64);
+        }
+
+        // Determine which deco set to use for computing disabled sprites (normalize and accept minor variants)
+        string decoToUse = (decoOverride ?? loadedDecoSet ?? "").ToUpperInvariant().Trim();
+        // Remove non-alphanumeric characters for robust matching (e.g. "deco 1", "deco_1")
+        string decoNorm = new string(decoToUse.Where(c => char.IsLetterOrDigit(c)).ToArray());
+        // Based on the selected deco set, compute the disabled sprite IDs (ranges inclusive)
+        // Check EXTRAS first to avoid accidental matches with DECO
+        if (decoNorm.Contains("EXTRA"))
+        {
+            // EXTRASPRITES1 -> ranges 0x2A–0x35 and 0x37–0x3F and 0x4A
+            for (int i = 0x2A; i <= 0x35; i++) disabledSprites.Add(i);
+            for (int i = 0x37; i <= 0x3F; i++) disabledSprites.Add(i);
+            disabledSprites.Add(0x4A);
+        }
+        else if (decoNorm.Contains("DECOCLOUD") || decoNorm.Contains("DECO1") || decoNorm.StartsWith("DECO"))
+        {
+            // DECO1 / DECOCLOUD share the same disabled list
+            // Rainbow portal (0x64) is now controlled by parallax state, not deco set
+            int[] list = new int[] { 0x4E, 0x4F, 0x66, 0x67, 0x68, 0x69, 0x4C, 0x4D, 0x50, 0x51, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x6E, 0x79 };
+            foreach (var v in list) disabledSprites.Add(v);
+        }
+
+        // Update palette visuals and deselect if current selection invalid
+        try { PopulateSpritesPanel(); } catch { }
+        if (selectedSprite >= 0 && disabledSprites.Contains(selectedSprite))
+        {
+            selectedSprite = -1;
+            try { UpdatePaletteHighlight(); } catch { }
+        }
+
+        // Update map overlays indicating incompatibilities
+        try { UpdateIncompatibleOverlay(); } catch { }
+    }
+
+    private void UpdateIncompatibleOverlay()
+    {
+        if (IncompatibleOverlay == null || CanvasHost == null) return;
+        IncompatibleOverlay.Children.Clear();
+        if (!lockSpritesToSet) return;
+        if (spriteImages == null || sprites == null) return;
+
+        try
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+
+            for (int y = 0; y < mapHeight; y++)
+            {
+                for (int x = 0; x < mapWidth; x++)
+                {
+                    int idx = y * mapWidth + x;
+                    int sidx = sprites[idx];
+                    if (sidx >= 0 && disabledSprites.Contains(sidx))
+                    {
+                        var rect = new Shapes.Rectangle
+                        {
+                            Width = (double)tilePixelW / dpi.DpiScaleX,
+                            Height = (double)tilePixelH / dpi.DpiScaleY,
+                            Fill = new SolidColorBrush(Color.FromArgb(0xC0, 0xFF, 0xFF, 0xFF)),
+                            Stroke = Brushes.Black,
+                            StrokeThickness = 1,
+                            IsHitTestVisible = false
+                        };
+                        double left = (padPxX + x * tilePixelW) / dpi.DpiScaleX;
+                        double top = (padPxY + y * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY;
+                        Canvas.SetLeft(rect, left);
+                        Canvas.SetTop(rect, top);
+                        IncompatibleOverlay.Children.Add(rect);
+
+                        var txt = new TextBlock
+                        {
+                            Text = "!",
+                            FontWeight = FontWeights.Bold,
+                            Foreground = Brushes.Black,
+                            FontSize = Math.Max(12, tilePixelH / dpi.DpiScaleY / 2),
+                            IsHitTestVisible = false
+                        };
+                        // Center the text inside rect
+                        txt.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                        double tx = left + ((double)tilePixelW / dpi.DpiScaleX - txt.DesiredSize.Width) / 2.0;
+                        double ty = top + ((double)tilePixelH / dpi.DpiScaleY - txt.DesiredSize.Height) / 2.0;
+                        Canvas.SetLeft(txt, tx);
+                        Canvas.SetTop(txt, ty);
+                        IncompatibleOverlay.Children.Add(txt);
+                    }
+                }
+            }
+        }
+        catch { }
     }
     
     // Apply the current noParallaxBg setting by selecting the appropriate parallax bitmap
@@ -181,68 +621,78 @@ namespace FamidashEditor
                 {
                     parallaxBitmap = emb;
                     SliceParallax();
-                    backgroundDirty = true;
-                    try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { Redraw(); }
-                    try { Dispatcher.Invoke(() => Redraw()); } catch { }
-                    return;
-                }
-
-                // If embedded resource not found, try to find a noparallax file on disk in common locations
-                try
-                {
-                    var candidates = new List<string>();
-                    var repoRoot = FindRepoRootFor("famidash.bmp");
-                    if (!string.IsNullOrEmpty(repoRoot))
-                    {
-                        candidates.Add(Path.Combine(repoRoot, "src", "renderer", "assets", "noparallax.bmp"));
-                        candidates.Add(Path.Combine(repoRoot, "src", "render", "assets", "noparallax.bmp"));
-                    }
-                    candidates.Add(Path.Combine(AppContext.BaseDirectory, "assets", "noparallax.bmp"));
-                    candidates.Add(Path.Combine(AppContext.BaseDirectory, "noparallax.bmp"));
-
-                    foreach (var cand in candidates)
-                    {
-                        try
-                        {
-                            if (!string.IsNullOrEmpty(cand) && File.Exists(cand))
-                            {
-                                LoadParallax(cand);
-                                backgroundDirty = true;
-                                try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { Redraw(); }
-                                return;
-                            }
-                        }
-                        catch { }
-                    }
-                }
-                catch { }
-            }
-            // Otherwise, prefer any loaded parallax source (from TMX); if not available, fall back to embedded parallax
-            if (!string.IsNullOrEmpty(loadedParallaxSource) && File.Exists(loadedParallaxSource))
-            {
-                LoadParallax(loadedParallaxSource);
-            }
-            else
-            {
-                var emb2 = LoadEmbeddedImage("parallax.bmp");
-                if (emb2 != null)
-                {
-                    parallaxBitmap = emb2;
-                    SliceParallax();
                 }
                 else
                 {
-                    parallaxBitmap = null;
-                    parallaxImages = null;
+                    // If embedded resource not found, try to find a noparallax file on disk in common locations
+                    try
+                    {
+                        var candidates = new List<string>();
+                        var repoRoot = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repoRoot))
+                        {
+                            candidates.Add(Path.Combine(repoRoot, "src", "renderer", "assets", "noparallax.bmp"));
+                            candidates.Add(Path.Combine(repoRoot, "src", "render", "assets", "noparallax.bmp"));
+                        }
+                        candidates.Add(Path.Combine(AppContext.BaseDirectory, "assets", "noparallax.bmp"));
+                        candidates.Add(Path.Combine(AppContext.BaseDirectory, "noparallax.bmp"));
+
+                        foreach (var cand in candidates)
+                        {
+                            try
+                            {
+                                if (!string.IsNullOrEmpty(cand) && File.Exists(cand))
+                                {
+                                    LoadParallax(cand);
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
                 }
             }
-
-            backgroundDirty = true;
-            try { RebuildAllTilesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { Redraw(); }
-            try { Dispatcher.Invoke(() => Redraw()); } catch { }
+            else
+            {
+                // Load regular parallax - prefer original parallax source (from TMX); if not available, fall back to embedded parallax
+                if (!string.IsNullOrEmpty(originalParallaxSource) && File.Exists(originalParallaxSource))
+                {
+                    LoadParallax(originalParallaxSource);
+                }
+                else if (!string.IsNullOrEmpty(loadedParallaxSource) && File.Exists(loadedParallaxSource))
+                {
+                    LoadParallax(loadedParallaxSource);
+                }
+                else
+                {
+                    var emb2 = LoadEmbeddedImage("parallax.bmp");
+                    if (emb2 != null)
+                    {
+                        parallaxBitmap = emb2;
+                        SliceParallax();
+                    }
+                    else
+                    {
+                        parallaxBitmap = null;
+                        parallaxImages = null;
+                    }
+                }
+            }
         }
         catch { }
-        }
+        
+        // Clear tint cache since we changed the parallax bitmap
+        parallaxTintCache.Clear();
+        
+        // Always rebuild background after changing parallax, even if load failed
+        backgroundDirty = true;
+        try 
+        { 
+            Dispatcher.Invoke(() => Redraw(), System.Windows.Threading.DispatcherPriority.Render);
+        } 
+        catch { }
+    }
 
     // Helpers to safely read ScrollViewer viewport size when it may be null
     private double SafeViewportWidth()
@@ -321,6 +771,52 @@ namespace FamidashEditor
             // Always persist these explicit options
             config.NoParallaxBg = noParallaxBg;
             config.DecoSet = loadedDecoSet;
+            config.BlockSet = loadedBlockSet;
+            config.SpikeSet = loadedSpikeSet;
+            
+            // Save currently selected song
+            try
+            {
+                if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Content != null)
+                {
+                    config.SelectedSong = cbi.Content.ToString();
+                }
+            }
+            catch { }
+
+            // Save sprite offsets
+            try
+            {
+                if (spritePixelOffsets.Count > 0)
+                {
+                    config.SpriteOffsets = new Dictionary<string, int[]>();
+                    foreach (var kvp in spritePixelOffsets)
+                    {
+                        int x = kvp.Key % mapWidth;
+                        int y = kvp.Key / mapWidth;
+                        string key = $"{x},{y}";
+                        config.SpriteOffsets[key] = new int[] { kvp.Value.offsetX, kvp.Value.offsetY };
+                    }
+                }
+            }
+            catch { }
+
+            // Save sprite anchors
+            try
+            {
+                if (spriteAnchors.Count > 0)
+                {
+                    config.SpriteAnchors = new Dictionary<string, int[]>();
+                    foreach (var kvp in spriteAnchors)
+                    {
+                        int x = kvp.Key % mapWidth;
+                        int y = kvp.Key / mapWidth;
+                        string key = $"{x},{y}";
+                        config.SpriteAnchors[key] = new int[] { kvp.Value.anchorTileX, kvp.Value.anchorTileY };
+                    }
+                }
+            }
+            catch { }
 
             string configPath = GetConfigPath(tmxFilePath);
             // Serialize and write the config file, omitting nulls
@@ -349,12 +845,18 @@ namespace FamidashEditor
                 
                 if (config != null)
                 {
+                    // Track which tints are present in the config
+                    bool hasBackgroundTint = false;
+                    bool hasGroundTint = false;
+                    bool hasTileTint = false;
+                    
                     // Apply loaded tints only when the components are present in the config
                     try
                     {
                         if (config.BackgroundTintR.HasValue && config.BackgroundTintG.HasValue && config.BackgroundTintB.HasValue)
                         {
                             backgroundTint = Color.FromRgb(config.BackgroundTintR.Value, config.BackgroundTintG.Value, config.BackgroundTintB.Value);
+                            hasBackgroundTint = true;
                         }
                     }
                     catch { }
@@ -364,6 +866,7 @@ namespace FamidashEditor
                         if (config.GroundTintR.HasValue && config.GroundTintG.HasValue && config.GroundTintB.HasValue)
                         {
                             groundTint = Color.FromRgb(config.GroundTintR.Value, config.GroundTintG.Value, config.GroundTintB.Value);
+                            hasGroundTint = true;
                         }
                     }
                     catch { }
@@ -373,81 +876,278 @@ namespace FamidashEditor
                         if (config.TileTintR.HasValue && config.TileTintG.HasValue && config.TileTintB.HasValue)
                         {
                             tileTint = Color.FromRgb(config.TileTintR.Value, config.TileTintG.Value, config.TileTintB.Value);
+                            hasTileTint = true;
                         }
                     }
                     catch { }
+
+                    // If any tints are missing from the config, reload them from global defaults
+                    if (!hasBackgroundTint || !hasGroundTint || !hasTileTint)
+                    {
+                        try
+                        {
+                            var dir = AppContext.BaseDirectory;
+                            var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                            System.Diagnostics.Debug.WriteLine($"Reloading missing tints from: {settingsPath} (bg:{!hasBackgroundTint}, gnd:{!hasGroundTint}, tile:{!hasTileTint})");
+                            if (System.IO.File.Exists(settingsPath))
+                            {
+                                var txt = System.IO.File.ReadAllText(settingsPath);
+                                var doc = System.Text.Json.JsonDocument.Parse(txt);
+                                
+                                if (!hasBackgroundTint && doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                                {
+                                    backgroundTint = Color.FromArgb((byte)bt[0].GetInt32(), (byte)bt[1].GetInt32(), (byte)bt[2].GetInt32(), (byte)bt[3].GetInt32());
+                                    System.Diagnostics.Debug.WriteLine($"Reloaded backgroundTint: {backgroundTint}");
+                                }
+                                
+                                if (!hasGroundTint && doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                                {
+                                    groundTint = Color.FromArgb((byte)gt[0].GetInt32(), (byte)gt[1].GetInt32(), (byte)gt[2].GetInt32(), (byte)gt[3].GetInt32());
+                                    System.Diagnostics.Debug.WriteLine($"Reloaded groundTint: {groundTint}");
+                                }
+                                
+                                if (!hasTileTint && doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                                {
+                                    tileTint = Color.FromArgb((byte)tt[0].GetInt32(), (byte)tt[1].GetInt32(), (byte)tt[2].GetInt32(), (byte)tt[3].GetInt32());
+                                    System.Diagnostics.Debug.WriteLine($"Reloaded tileTint: {tileTint}");
+                                }
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Settings file not found at: {settingsPath}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error reloading missing tints: {ex.Message}");
+                        }
+                    }
 
                     // Apply loaded no-parallax setting (default false when absent in file)
                     try { noParallaxBg = config.NoParallaxBg; } catch { noParallaxBg = false; }
                     if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
 
                     // Apply deco set if present
-                    try { loadedDecoSet = string.IsNullOrEmpty(config.DecoSet) ? "deco1" : config.DecoSet; } catch { loadedDecoSet = "deco1"; }
-                    if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet}";
+                    try { loadedDecoSet = string.IsNullOrEmpty(config.DecoSet) ? "DECO1" : config.DecoSet; } catch { loadedDecoSet = "DECO1"; }
+                    // Apply block/spike sets if present
+                    try { loadedBlockSet = string.IsNullOrEmpty(config.BlockSet) ? "BLOCKSA" : config.BlockSet; } catch { loadedBlockSet = "BLOCKSA"; }
+                    try { loadedSpikeSet = string.IsNullOrEmpty(config.SpikeSet) ? "SPIKESA" : config.SpikeSet; } catch { loadedSpikeSet = "SPIKESA"; }
+                    // LockSpritesToSet is now a global editor setting; per-TMX configs no longer contain it
+                    
+                    // Apply selected song if present
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(config.SelectedSong) && FamiTrackCombo != null)
+                        {
+                            // Try to find and select the song in the combo box
+                            for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                            {
+                                if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                                    item.Content?.ToString() == config.SelectedSong)
+                                {
+                                    FamiTrackCombo.SelectedIndex = i;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                    
+                    // Load sprite offsets from config
+                    try
+                    {
+                        if (config.SpriteOffsets != null && config.SpriteOffsets.Count > 0)
+                        {
+                            spritePixelOffsets.Clear();
+                            foreach (var kvp in config.SpriteOffsets)
+                            {
+                                // Parse "x,y" key back to position index
+                                var parts = kvp.Key.Split(',');
+                                if (parts.Length == 2 && int.TryParse(parts[0], out int x) && int.TryParse(parts[1], out int y))
+                                {
+                                    int positionIndex = y * mapWidth + x;
+                                    if (kvp.Value.Length >= 2)
+                                    {
+                                        spritePixelOffsets[positionIndex] = (kvp.Value[0], kvp.Value[1]);
+                                    }
+                                }
+                            }
+                            System.Diagnostics.Debug.WriteLine($"Loaded {spritePixelOffsets.Count} sprite offsets from config");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error loading sprite offsets: {ex.Message}");
+                    }
 
-                    // Update tinted images for any tints that were applied
+                    // Load sprite anchors from config
+                    try
+                    {
+                        if (config.SpriteAnchors != null && config.SpriteAnchors.Count > 0)
+                        {
+                            spriteAnchors.Clear();
+                            foreach (var kvp in config.SpriteAnchors)
+                            {
+                                // Parse "x,y" key back to position index
+                                var parts = kvp.Key.Split(',');
+                                if (parts.Length == 2 && int.TryParse(parts[0], out int x) && int.TryParse(parts[1], out int y))
+                                {
+                                    int positionIndex = y * mapWidth + x;
+                                    if (kvp.Value.Length >= 2)
+                                    {
+                                        spriteAnchors[positionIndex] = (kvp.Value[0], kvp.Value[1]);
+                                    }
+                                }
+                            }
+                            System.Diagnostics.Debug.WriteLine($"Loaded {spriteAnchors.Count} sprite anchors from config");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error loading sprite anchors: {ex.Message}");
+                    }
+                    
+                    if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet} block:{loadedBlockSet} spike:{loadedSpikeSet}";
+
+                    // Update tinted images for all tints (whether from config or reloaded from global)
                     UpdateParallaxTint();
                     UpdateGroundTint();
                     UpdateTileTint();
+                    
+                    // Force full rebuild with new tints
+                    backgroundDirty = true;
+                    try { scaledTileCaches.Clear(); } catch { }
+                    
+                    // Rebuild sprites to reflect the loaded deco set
+                    try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+                    
+                    // Apply accurate tileset based on loaded block/spike sets if enabled
+                    try 
+                    { 
+                        if (showAccurateTileset) 
+                        {
+                            SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); 
+                        }
+                    } 
+                    catch { }
+                    
+                    try { Redraw(); } catch { }
 
                     System.Diagnostics.Debug.WriteLine($"Loaded config from: {configPath}");
                     if (StatusText != null) StatusText.Text = $"Loaded tint config for {Path.GetFileName(tmxFilePath)}";
                     // Ensure the parallax choice reflects the loaded config
                     try { ApplyParallaxChoice(); } catch { }
+                    // Update sprite locking since 0x17, 0x4B, 0x58, 0x64 depend on parallax state
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
                 }
             }
             else
             {
-                // No config file - reset to defaults (transparent = no tint)
-                backgroundTint = Color.FromArgb(0, 0, 0, 0);
-                groundTint = Color.FromArgb(0, 0, 0, 0);
-                tileTint = Color.FromArgb(0, 0, 0, 0);
+                // No config file - reload global default tints from editor-settings.json
+                try
+                {
+                    var dir = AppContext.BaseDirectory;
+                    var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                    if (System.IO.File.Exists(settingsPath))
+                    {
+                        var txt = System.IO.File.ReadAllText(settingsPath);
+                        var doc = System.Text.Json.JsonDocument.Parse(txt);
+                        
+                        // Reload background tint from global settings
+                        if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                        {
+                            var a = (byte)bt[0].GetInt32();
+                            var r = (byte)bt[1].GetInt32();
+                            var g = (byte)bt[2].GetInt32();
+                            var b = (byte)bt[3].GetInt32();
+                            backgroundTint = Color.FromArgb(a, r, g, b);
+                        }
+                        
+                        // Reload ground tint from global settings
+                        if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                        {
+                            var a = (byte)gt[0].GetInt32();
+                            var r = (byte)gt[1].GetInt32();
+                            var g = (byte)gt[2].GetInt32();
+                            var b = (byte)gt[3].GetInt32();
+                            groundTint = Color.FromArgb(a, r, g, b);
+                        }
+                        
+                        // Reload tile tint from global settings
+                        if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                        {
+                            var a = (byte)tt[0].GetInt32();
+                            var r = (byte)tt[1].GetInt32();
+                            var g = (byte)tt[2].GetInt32();
+                            var b = (byte)tt[3].GetInt32();
+                            tileTint = Color.FromArgb(a, r, g, b);
+                        }
+                    }
+                }
+                catch { }
                 
-                // Don't call Update methods - just clear the toned images to use originals
-                parallaxTonedImages = null;
-                groundTonedImages = null;
-                tileTonedImages = null;
-                sawFrame1TilesTinted = null;
-                sawFrame2TilesTinted = null;
+                // Apply the reloaded tints
+                UpdateParallaxTint();
+                UpdateGroundTint();
+                UpdateTileTint();
                 
-                // Mark background dirty to force rebuild of parallax/ground without tints
-                backgroundDirty = true;
                 // Default: noParallax option absent -> unchecked and render parallax
                 noParallaxBg = false;
                 if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
 
                 try { ApplyParallaxChoice(); } catch { }
                 
-                // Clear tile caches and rebuild tiles without tint
+                // Force full rebuild with default tints
+                backgroundDirty = true;
                 try { scaledTileCaches.Clear(); } catch { }
-                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                try { Redraw(); } catch { }
                 
-                // Refresh tile palette to show untinted tiles
+                // Refresh tile palette to show tinted tiles
                 try { PopulateTilesPanel(); } catch { }
                 
                 System.Diagnostics.Debug.WriteLine($"No config found at: {configPath}, using defaults");
-                // default deco set when no config is present
-                loadedDecoSet = "deco1";
-                // Write out a default config immediately so first-load creates .cfg with deco1
-                try { SaveTmxConfig(tmxFilePath); } catch { }
+                // default deco/block/spike sets when no config is present
+                loadedDecoSet = "DECO1";
+                loadedBlockSet = "BLOCKSA";
+                loadedSpikeSet = "SPIKESA";
+                // Don't auto-save config here - let user make changes first
+                // Config will be saved when user changes settings or saves the TMX
+                // Update sprite locking since 0x17, 0x4B, 0x58, 0x64 depend on parallax state
+                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to load TMX config: {ex.Message}");
             
-            // Reset to defaults on error (transparent = no tint)
-            backgroundTint = Color.FromArgb(0, 0, 0, 0);
-            groundTint = Color.FromArgb(0, 0, 0, 0);
-            tileTint = Color.FromArgb(0, 0, 0, 0);
-                loadedDecoSet = "deco1";
+            // Reset to global defaults on error
+            try
+            {
+                var dir = AppContext.BaseDirectory;
+                var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                if (System.IO.File.Exists(settingsPath))
+                {
+                    var txt = System.IO.File.ReadAllText(settingsPath);
+                    var doc = System.Text.Json.JsonDocument.Parse(txt);
+                    
+                    if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                        backgroundTint = Color.FromArgb((byte)bt[0].GetInt32(), (byte)bt[1].GetInt32(), (byte)bt[2].GetInt32(), (byte)bt[3].GetInt32());
+                    
+                    if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                        groundTint = Color.FromArgb((byte)gt[0].GetInt32(), (byte)gt[1].GetInt32(), (byte)gt[2].GetInt32(), (byte)gt[3].GetInt32());
+                    
+                    if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                        tileTint = Color.FromArgb((byte)tt[0].GetInt32(), (byte)tt[1].GetInt32(), (byte)tt[2].GetInt32(), (byte)tt[3].GetInt32());
+                }
+            }
+            catch { }
             
-            // Clear toned images to use originals
-            parallaxTonedImages = null;
-            groundTonedImages = null;
-            tileTonedImages = null;
-            sawFrame1TilesTinted = null;
-            sawFrame2TilesTinted = null;
+            loadedDecoSet = "DECO1";
+            
+            // Update tints with defaults
+            UpdateParallaxTint();
+            UpdateGroundTint();
+            UpdateTileTint();
             
             // Mark background dirty to force rebuild
             backgroundDirty = true;
@@ -480,6 +1180,9 @@ namespace FamidashEditor
     // Pre-scaled tile pixel caches keyed by integer scale key (scale*100)
     private class ScaledTileCache { public byte[][] Pixels; public int TileW; public int TileH; public int Stride; public double Scale; public DpiScale Dpi; public ScaledTileCache(byte[][] pixels, int w, int h, int stride, double scale, DpiScale dpi) { Pixels = pixels; TileW = w; TileH = h; Stride = stride; Scale = scale; Dpi = dpi; } }
     private readonly Dictionary<int, ScaledTileCache> scaledTileCaches = new Dictionary<int, ScaledTileCache>();
+    // Caches for single-tinted parallax/ground bitmaps keyed by (scaleKey<<32)|ARGB
+    private readonly Dictionary<long, BitmapSource> parallaxTintCache = new Dictionary<long, BitmapSource>();
+    private readonly Dictionary<long, BitmapSource> groundTintCache = new Dictionary<long, BitmapSource>();
     private int cachedPixelWidth = 0;
     private int cachedPixelHeight = 0;
     private double cachedScale = 1.0;
@@ -495,11 +1198,15 @@ namespace FamidashEditor
     // Cache hover position to avoid redundant updates
     private int lastHoverX = -1;
     private int lastHoverY = -1;
+    // Cache last explicit click tile (used as paste anchor)
+    private int lastClickX = -1;
+    private int lastClickY = -1;
     // Throttle timers for expensive events
     private System.Windows.Threading.DispatcherTimer? sizeChangedThrottleTimer;
     private System.Windows.Threading.DispatcherTimer? zoomThrottleTimer;
     private System.Windows.Threading.DispatcherTimer? zoomCommitTimer;
     private bool deferZoomRebuild = false;
+    private bool isSnappingZoom = false; // Flag to prevent recursion when snapping zoom to quarter intervals
     // Anchor used to preserve the world point under the cursor during zoom commit
     private bool hasZoomAnchor = false;
     private double zoomAnchorMapX = 0.0;
@@ -538,8 +1245,18 @@ namespace FamidashEditor
     private BitmapSource? wavePortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x24 in preview mode
     // New portal sprites added by the user
     private BitmapSource? spiderPortalSprite; // for sprite 0x17 (spider-portal.png)
+    // Spider pad preview sprites (single-tile, non-animated)
+    private BitmapSource? spiderPadSprite; // for sprite 0x56 (spider-pad.png)
+    private BitmapSource? spiderPadUpsideDownSprite; // for sprite 0x57 (spider-pad-upsidedown.png)
     private BitmapSource? swingcopterPortalSprite; // for sprite 0x4B (swingcopter-portal.png)
     private BitmapSource? ninjaPortalSprite; // for sprite 0x58 (ninja-portal.png)
+    private BitmapSource? teleportPortalEnterSprite; // for sprite 0x4E (teleport-portal-enter.png)
+    private BitmapSource? teleportPortalExitSprite;  // for sprite 0x4F (teleport-portal-exit.png)
+    // Horizontal teleport portal preview replacements (3x1.5 tiles)
+    private BitmapSource? teleportPortalHorizontalEnterDownSprite;   // sprite 0x66
+    private BitmapSource? teleportPortalHorizontalExitUpSprite;      // sprite 0x67 (shift up 1 tile)
+    private BitmapSource? teleportPortalHorizontalEnterUpSprite;     // sprite 0x68 (shift up 1 tile)
+    private BitmapSource? teleportPortalHorizontalExitDownSprite;    // sprite 0x69
     // Speed portal preview sprites (single-frame replacements)
     private BitmapSource? speed05xPortalSprite; // sprite 0x14
     private BitmapSource? speed1xPortalSprite;  // sprite 0x15
@@ -587,6 +1304,11 @@ namespace FamidashEditor
     private BitmapSource[]? coinFrame2;
     private BitmapSource[]? coinFrame3;
     private BitmapSource[]? coinFrame4;
+    // Mini coin animation frames (preview-only): 4 frames for sprite 0x6E
+    private BitmapSource[]? miniCoinFrame1;
+    private BitmapSource[]? miniCoinFrame2;
+    private BitmapSource[]? miniCoinFrame3;
+    private BitmapSource[]? miniCoinFrame4;
     // Red pad (preview-only) animation frames: 4 frames for sprite 0x52
     private BitmapSource[]? redPadFrame1;
     private BitmapSource[]? redPadFrame2;
@@ -682,6 +1404,11 @@ namespace FamidashEditor
     // Star decoration 2-frame preview animation (sprite 0x36)
     private BitmapSource[]? starFrame1;
     private BitmapSource[]? starFrame2;
+    // New decorations: pulsing ball (0x49) and music note (0x4A)
+    private BitmapSource[]? pulsingBallFrame1;
+    private BitmapSource[]? pulsingBallFrame2;
+    private BitmapSource[]? musicNoteFrame1;
+    private BitmapSource[]? musicNoteFrame2;
     // Additional decoration two-frame preview animations
     private BitmapSource[]? diamondFrame1; // sprite 0x32
     private BitmapSource[]? diamondFrame2;
@@ -702,9 +1429,29 @@ namespace FamidashEditor
     private BitmapSource[]? poleLeftShortFrame2;
     private BitmapSource[]? poleRightShortFrame1; // sprite 0x39
     private BitmapSource[]? poleRightShortFrame2;
+    // Medium pole replacements (sprite 0x3E/0x3F)
+    private BitmapSource[]? poleLeftMediumFrame1; // sprite 0x3E
+    private BitmapSource[]? poleLeftMediumFrame2;
+    private BitmapSource[]? poleRightMediumFrame1; // sprite 0x3F
+    private BitmapSource[]? poleRightMediumFrame2;
+    // Pole-medium (1.5 tiles tall) decorative replacements for sprite 0x2C/0x3C
+    private BitmapSource[]? poleMediumFrame1; // sprite 0x2C uses custom indices 2122/2123
+    private BitmapSource[]? poleMediumFrame2;
+    private BitmapSource[]? poleMediumUpsideDownFrame1; // sprite 0x3C uses custom indices 2124/2125
+    private BitmapSource[]? poleMediumUpsideDownFrame2;
+    // Pole-long (2 tiles tall) decorative replacements for sprite 0x2A/0x3A
+    private BitmapSource[]? poleLongFrame1; // sprite 0x2A -> custom 2140/2141
+    private BitmapSource[]? poleLongFrame2;
+    private BitmapSource[]? poleLongUpsideDownFrame1; // sprite 0x3A -> custom 2142/2143
+    private BitmapSource[]? poleLongUpsideDownFrame2;
     // Chain decorations (single-frame preview-only)
     private BitmapSource[]? chainFrame1; // sprite 0x2D
     private BitmapSource[]? chainUpsideDownFrame1; // sprite 0x3D
+    // New single-frame decoration previews (spikes)
+    private BitmapSource[]? decoSpikesFrame1; // sprite 0x2E
+    private BitmapSource[]? decoSpikesUpsideDownFrame1; // sprite 0x2F
+    private BitmapSource[]? decoSpikesSmallFrame1; // sprite 0x30
+    private BitmapSource[]? decoSpikesSmallUpsideDownFrame1; // sprite 0x31
     // Random frame offsets for each sprite position to desynchronize animations
     private Dictionary<int, int> spriteFrameOffsets = new Dictionary<int, int>();
     private Random spriteAnimationRandom = new Random();
@@ -784,7 +1531,7 @@ namespace FamidashEditor
     // Lock for thread-safe access to the tinted caches when precomputing on background threads
     private readonly object tintedCacheLock = new object();
     // Decoration sprite ids that should receive player tinting
-    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x38, 0x39 };
+    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
     // Portal debug log path (initialized at startup)
     private string? portalDebugPath = null;
 
@@ -859,6 +1606,10 @@ namespace FamidashEditor
             public struct Change { public int Index; public int Old; public int New; }
             private readonly List<Change> changes = new List<Change>();
             private readonly Dictionary<int, int> indexMap = new Dictionary<int, int>();
+            
+            // Track sprite pixel offset changes
+            private readonly Dictionary<int, (int offsetX, int offsetY)?> oldOffsets = new Dictionary<int, (int offsetX, int offsetY)?>();
+            private readonly Dictionary<int, (int offsetX, int offsetY)?> newOffsets = new Dictionary<int, (int offsetX, int offsetY)?>();
 
             public void Add(int index, int oldVal, int newVal)
             {
@@ -873,6 +1624,40 @@ namespace FamidashEditor
                     changes.Add(new Change { Index = index, Old = oldVal, New = newVal });
                 }
             }
+            
+            public void CaptureOffsets(MainWindow window)
+            {
+                // Capture current state of sprite offsets for all changed indices
+                oldOffsets.Clear();
+                foreach (var c in changes)
+                {
+                    if (window.spritePixelOffsets.TryGetValue(c.Index, out var offset))
+                    {
+                        oldOffsets[c.Index] = offset;
+                    }
+                    else
+                    {
+                        oldOffsets[c.Index] = null;
+                    }
+                }
+            }
+            
+            public void CaptureNewOffsets(MainWindow window)
+            {
+                // Capture final state of sprite offsets after changes
+                newOffsets.Clear();
+                foreach (var c in changes)
+                {
+                    if (window.spritePixelOffsets.TryGetValue(c.Index, out var offset))
+                    {
+                        newOffsets[c.Index] = offset;
+                    }
+                    else
+                    {
+                        newOffsets[c.Index] = null;
+                    }
+                }
+            }
 
             public bool IsEmpty() => changes.Count == 0;
 
@@ -884,6 +1669,26 @@ namespace FamidashEditor
                 {
                     if (c.Index >= 0 && c.Index < sprites.Length) sprites[c.Index] = c.Old;
                 }
+                
+                // Restore old sprite offsets
+                foreach (var kvp in oldOffsets)
+                {
+                    if (kvp.Value.HasValue)
+                    {
+                        window.spritePixelOffsets[kvp.Key] = kvp.Value.Value;
+                    }
+                    else
+                    {
+                        window.spritePixelOffsets.Remove(kvp.Key);
+                    }
+                }
+                
+                // Rebuild sprites and update selection visuals
+                try { window.RebuildAllSpritesBitmap((window.ZoomSlider!=null?window.ZoomSlider.Value:1.0), window.mapViewportPadding); } catch { window.Redraw(); }
+                if (window.selectionSet != null && window.selectionSet.Count > 0)
+                {
+                    window.UpdateSelectionVisuals(window.selX, window.selY, window.selW, window.selH);
+                }
             }
 
             public void Redo(MainWindow window)
@@ -893,6 +1698,26 @@ namespace FamidashEditor
                 foreach (var c in changes)
                 {
                     if (c.Index >= 0 && c.Index < sprites.Length) sprites[c.Index] = c.New;
+                }
+                
+                // Restore new sprite offsets
+                foreach (var kvp in newOffsets)
+                {
+                    if (kvp.Value.HasValue)
+                    {
+                        window.spritePixelOffsets[kvp.Key] = kvp.Value.Value;
+                    }
+                    else
+                    {
+                        window.spritePixelOffsets.Remove(kvp.Key);
+                    }
+                }
+                
+                // Rebuild sprites and update selection visuals
+                try { window.RebuildAllSpritesBitmap((window.ZoomSlider!=null?window.ZoomSlider.Value:1.0), window.mapViewportPadding); } catch { window.Redraw(); }
+                if (window.selectionSet != null && window.selectionSet.Count > 0)
+                {
+                    window.UpdateSelectionVisuals(window.selX, window.selY, window.selW, window.selH);
                 }
             }
         }
@@ -931,6 +1756,49 @@ namespace FamidashEditor
         {
             InitializeComponent();
             LoadSettings();
+            LoadRecentFiles();
+            
+            // Initialize default map before creating tab
+            InitDefaultMap();
+            
+            // Create initial tab for new/untitled map
+            CreateNewTab(null);
+            
+            // Attempt to populate the FamiStudio track combo from a pre-parsed JSON or the album TXT
+            try { TryLoadFamiAlbumParsedJson(); } catch { }
+            // Wire main toolbar Play/Stop buttons (only toolbar controls should drive playback)
+            try { if (PlayFamiButton != null) PlayFamiButton.Click += PlayFamiButton_Click; } catch { }
+            try { if (StopFamiButton != null) StopFamiButton.Click += StopFamiButton_Click; } catch { }
+            // Wire configure FamiStudio menu
+            try { if (MenuConfigureFamiStudio != null) MenuConfigureFamiStudio.Click += MenuConfigureFamiStudio_Click; } catch { }
+
+            // Background warm-up: load FamiStudio assemblies and warm the in-process renderer/audio device
+            try
+            {
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        // Prefer any explicit configured path
+                        if (!string.IsNullOrEmpty(famiStudioPath) && Directory.Exists(famiStudioPath) && !famiIntegration.IsLoaded)
+                        {
+                            try { famiIntegration.LoadFromFolder(famiStudioPath); } catch { }
+                        }
+
+                        // Look for a local .fms next to the repo root or the album txt path
+                        string? probeFms = null;
+                        var repoFms = Path.Combine(Environment.CurrentDirectory, "the album.fms");
+                        if (File.Exists(repoFms)) probeFms = repoFms;
+                        if (string.IsNullOrEmpty(probeFms) && !string.IsNullOrEmpty(albumTxtPath) && Path.GetExtension(albumTxtPath).Equals(".fms", StringComparison.OrdinalIgnoreCase)) probeFms = albumTxtPath;
+                        if (!string.IsNullOrEmpty(probeFms) && File.Exists(probeFms))
+                        {
+                            try { famiIntegration.WarmAndPrime(probeFms); } catch { }
+                        }
+                    }
+                    catch { }
+                });
+            }
+            catch { }
             
             // Wire up window closing event to prompt for unsaved changes
             Closing += Window_Closing;
@@ -1014,8 +1882,77 @@ namespace FamidashEditor
 
                 ZoomSlider.ValueChanged += (s, e) =>
                 {
+                    // Snap zoom to quarter intervals (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, etc.)
+                    if (ZoomSlider != null && !isSnappingZoom)
+                    {
+                        double rawValue = ZoomSlider.Value;
+                        // Snap to quarter intervals for both slider and Ctrl+wheel
+                        double snappedValue = Math.Round(rawValue * 4.0) / 4.0;
+                        if (snappedValue < 0.25) snappedValue = 0.25;
+                        if (snappedValue > 4.0) snappedValue = 4.0;
+                        
+                        if (Math.Abs(rawValue - snappedValue) > 0.001)
+                        {
+                            isSnappingZoom = true;
+                            ZoomSlider.Value = snappedValue;
+                            isSnappingZoom = false;
+                            return; // Exit early, the snapped value will trigger another ValueChanged
+                        }
+                    }
+                    
                     // Update visible numeric zoom label
                     try { if (ZoomLevelLabel != null) ZoomLevelLabel.Text = $"{(ZoomSlider!=null?ZoomSlider.Value:1.0):0.00}x"; } catch { }
+                    
+                    // If dragging selection, update ghost size and drag offset for new zoom level
+                    if (isDraggingSelection && GhostImage != null && GhostImage.Source != null)
+                    {
+                        try
+                        {
+                            double oldScale = lastDragScale;
+                            double newScale = ZoomSlider?.Value ?? 1.0;
+                            var dpi = VisualTreeHelper.GetDpi(this);
+                            var mousePos = Mouse.GetPosition(CanvasHost);
+                            
+                            // Use same calculation as tile rendering
+                            int oldTilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleX));
+                            int oldTilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * oldScale * dpi.DpiScaleY));
+                            int newTilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * newScale * dpi.DpiScaleX));
+                            int newTilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * newScale * dpi.DpiScaleY));
+                            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                            
+                            // Get current ghost position in logical pixels
+                            double oldLeft = Canvas.GetLeft(GhostImage);
+                            double oldTop = Canvas.GetTop(GhostImage);
+                            
+                            // Update ghost display size for new scale
+                            GhostImage.Width = (ghostLogicalWidth * newScale * dpi.DpiScaleX) / dpi.DpiScaleX;
+                            GhostImage.Height = (ghostLogicalHeight * newScale * dpi.DpiScaleY) / dpi.DpiScaleY;
+                            
+                            // Convert to physical pixels, then to tile coordinates
+                            int oldLeftPx = (int)Math.Round(oldLeft * dpi.DpiScaleX);
+                            int oldTopPx = (int)Math.Round(oldTop * dpi.DpiScaleY);
+                            double logicalTileX = (double)(oldLeftPx - padPxX) / oldTilePixelW;
+                            double logicalTileY = (double)(oldTopPx - padPxY) / oldTilePixelH;
+                            
+                            // Reposition at new scale using integer pixel math, then convert to logical
+                            int newLeftPx = padPxX + (int)Math.Round(logicalTileX * newTilePixelW);
+                            int newTopPx = padPxY + (int)Math.Round(logicalTileY * newTilePixelH);
+                            double newLeft = newLeftPx / dpi.DpiScaleX;
+                            double newTop = newTopPx / dpi.DpiScaleY;
+                            
+                            Canvas.SetLeft(GhostImage, newLeft);
+                            Canvas.SetTop(GhostImage, newTop);
+                            
+                            // Update stored scale for next zoom
+                            lastDragScale = newScale;
+                            
+                            // Recalculate drag offset for new scale
+                            dragOffset = new Point(mousePos.X - newLeft, mousePos.Y - newTop);
+                        }
+                        catch { }
+                    }
+                    
                     // Provide immediate visual feedback by scaling existing images
                     UpdateQuickZoomTransform();
 
@@ -1058,6 +1995,8 @@ namespace FamidashEditor
                 CanvasHost.MouseLeftButtonDown += CanvasHost_MouseLeftButtonDown;
                 CanvasHost.MouseMove += CanvasHost_MouseMove;
                 CanvasHost.MouseLeftButtonUp += CanvasHost_MouseLeftButtonUp;
+                CanvasHost.MouseDown += CanvasHost_MouseDown;
+                CanvasHost.MouseUp += CanvasHost_MouseUp;
                 CanvasHost.MouseLeave += CanvasHost_MouseLeave;
                 CanvasHost.MouseRightButtonDown += CanvasHost_MouseRightButtonDown;
                 CanvasHost.PreviewMouseWheel += CanvasHost_PreviewMouseWheel;
@@ -1092,8 +2031,14 @@ namespace FamidashEditor
             InitDefaultMap();
                 Loaded += (s, e) =>
                 {
+                    // Apply tileboard position FIRST, before any size calculations
+                    ApplyTileboardPosition();
+                    
                     // Ensure initial layout completes before the first redraw so measurements are accurate.
                     LoadAssetsOnStart();
+                    
+                    // If the user previously enabled accurate tileset switching, attempt to apply it now
+                    try { if (showAccurateTileset) SetShowAccurateTileset(true); } catch { }
                     // Ensure palette UI reflects default active layer (tiles) on startup
                     try { UpdatePaletteHighlight(); } catch { }
                     // Run left-column sizing and palette sizing after layout has run so ActualWidth/measure are available.
@@ -1113,6 +2058,12 @@ namespace FamidashEditor
                                 UpdateTilesPanelWidth();
                             }
                             AdjustPaletteSizes();
+                            
+                            // Apply tints from settings after everything is initialized
+                            UpdateParallaxTint();
+                            UpdateGroundTint();
+                            UpdateTileTint();
+                            
                             Redraw();
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
                     // Install a native window hook to capture horizontal mouse wheel (WM_MOUSEHWHEEL)
@@ -1219,6 +2170,45 @@ namespace FamidashEditor
             };
             if (TilesPanel != null) TilesPanel.SizeChanged += (_, __) => AdjustPaletteSizes();
             if (SpritesPanel != null) SpritesPanel.SizeChanged += (_, __) => AdjustPaletteSizes();
+            
+            // Add shift+wheel horizontal scrolling for tile panels
+            if (TilesPanel != null)
+            {
+                TilesPanel.PreviewMouseWheel += (s, e) =>
+                {
+                    if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                    {
+                        // Get the ScrollViewer from the ListBox
+                        var scrollViewer = FindVisualChild<ScrollViewer>(TilesPanel);
+                        if (scrollViewer != null && scrollViewer.ComputedHorizontalScrollBarVisibility == Visibility.Visible)
+                        {
+                            // Apply invert pinch setting to horizontal scroll
+                            double delta = invertPinchGesture ? -e.Delta : e.Delta;
+                            scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset - delta / 3.0);
+                            e.Handled = true;
+                        }
+                    }
+                };
+            }
+            if (SpritesPanel != null)
+            {
+                SpritesPanel.PreviewMouseWheel += (s, e) =>
+                {
+                    if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                    {
+                        // Get the ScrollViewer from the ListBox
+                        var scrollViewer = FindVisualChild<ScrollViewer>(SpritesPanel);
+                        if (scrollViewer != null && scrollViewer.ComputedHorizontalScrollBarVisibility == Visibility.Visible)
+                        {
+                            // Apply invert pinch setting to horizontal scroll
+                            double delta = invertPinchGesture ? -e.Delta : e.Delta;
+                            scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset - delta / 3.0);
+                            e.Handled = true;
+                        }
+                    }
+                };
+            }
+            
             if (RootGrid != null) RootGrid.SizeChanged += (_, __) => 
             {
                 UpdateTilesPanelWidth();
@@ -1231,6 +2221,10 @@ namespace FamidashEditor
             if (MenuFileSave != null) MenuFileSave.Click += SaveButton_Click;
             if (MenuFileSaveAs != null) MenuFileSaveAs.Click += MenuFileSaveAs_Click;
             if (MenuFileLoad != null) MenuFileLoad.Click += LoadButton_Click;
+            if (MenuFileClose != null) MenuFileClose.Click += MenuFileClose_Click;
+            
+            // Add keyboard shortcut handler
+            this.PreviewKeyDown += MainWindow_KeyDown;
             
             if (MenuToolPlace != null) MenuToolPlace.Click += (s, e) => { if (PlaceTool != null) PlaceTool.IsChecked = true; };
             if (MenuToolMove != null) MenuToolMove.Click += (s, e) => { if (MoveTool != null) MoveTool.IsChecked = true; };
@@ -1238,7 +2232,13 @@ namespace FamidashEditor
             if (MenuToolFill != null) MenuToolFill.Click += (s, e) => { if (FillTool != null) FillTool.IsChecked = true; };
             if (MenuToolSelect != null) MenuToolSelect.Click += (s, e) => { if (SelectTool != null) SelectTool.IsChecked = true; };
             if (MenuToolWand != null) MenuToolWand.Click += (s, e) => { if (MagicWandTool != null) MagicWandTool.IsChecked = true; };
-            if (MenuToolStructure != null) MenuToolStructure.Click += (s, e) => { if (StructureTool != null) StructureTool.IsChecked = true; };
+            if (MenuEditCopy != null) MenuEditCopy.Click += (s, e) => CopySelection();
+            if (MenuEditCut != null) MenuEditCut.Click += (s, e) => CutSelection();
+            if (MenuEditPaste != null) MenuEditPaste.Click += (s, e) => {
+                int dx = (selW > 0 && selH > 0) ? selX : (lastClickX >= 0 ? lastClickX : lastHoverX);
+                int dy = (selW > 0 && selH > 0) ? selY : (lastClickY >= 0 ? lastClickY : lastHoverY);
+                if (dx >= 0 && dy >= 0) PasteClipboardAt(dx, dy);
+            };
             if (MenuToolUndo != null) MenuToolUndo.Click += (s, e) => Undo();
             if (MenuToolRedo != null) MenuToolRedo.Click += (s, e) => Redo();
             
@@ -1261,6 +2261,14 @@ namespace FamidashEditor
                     SaveSettingsWithTriggerOption();
                 };
             }
+            // Global lock sprites option in main Options menu
+            if (MenuOptionLockSprites != null)
+            {
+                // Initialize checked state from loaded settings
+                MenuOptionLockSprites.IsChecked = lockSpritesToSet;
+                MenuOptionLockSprites.Checked += (s, e) => { try { SetLockSpritesToSet(true); } catch { } };
+                MenuOptionLockSprites.Unchecked += (s, e) => { try { SetLockSpritesToSet(false); } catch { } };
+            }
             // Swap Mouse Wheel Scroll (global user preference)
             if (MenuOptionSwapMouseWheel != null)
             {
@@ -1276,10 +2284,102 @@ namespace FamidashEditor
                 };
             }
             // Invert pinch gesture option (some devices report inverted scale)
-            if (MenuOptionInvertPinch != null)
+            if (MenuOptionSwapPinch != null)
             {
-                MenuOptionInvertPinch.Checked += (s, e) => { invertPinchGesture = true; SaveSettingsWithTriggerOption(); };
-                MenuOptionInvertPinch.Unchecked += (s, e) => { invertPinchGesture = false; SaveSettingsWithTriggerOption(); };
+                MenuOptionSwapPinch.Checked += (s, e) => { invertPinchGesture = true; SaveSettingsWithTriggerOption(); };
+                MenuOptionSwapPinch.Unchecked += (s, e) => { invertPinchGesture = false; SaveSettingsWithTriggerOption(); };
+            }
+            
+            // Tileboard position handlers
+            if (MenuTileboardLeft != null)
+            {
+                MenuTileboardLeft.Checked += (s, e) => {
+                    if (MenuTileboardRight != null) MenuTileboardRight.IsChecked = false;
+                    if (MenuTileboardTop != null) MenuTileboardTop.IsChecked = false;
+                    if (MenuTileboardBottom != null) MenuTileboardBottom.IsChecked = false;
+                    SetTileboardPosition("LEFT");
+                };
+            }
+            if (MenuTileboardRight != null)
+            {
+                MenuTileboardRight.Checked += (s, e) => {
+                    if (MenuTileboardLeft != null) MenuTileboardLeft.IsChecked = false;
+                    if (MenuTileboardTop != null) MenuTileboardTop.IsChecked = false;
+                    if (MenuTileboardBottom != null) MenuTileboardBottom.IsChecked = false;
+                    SetTileboardPosition("RIGHT");
+                };
+            }
+            if (MenuTileboardTop != null)
+            {
+                MenuTileboardTop.Checked += (s, e) => {
+                    if (MenuTileboardLeft != null) MenuTileboardLeft.IsChecked = false;
+                    if (MenuTileboardRight != null) MenuTileboardRight.IsChecked = false;
+                    if (MenuTileboardBottom != null) MenuTileboardBottom.IsChecked = false;
+                    SetTileboardPosition("TOP");
+                };
+            }
+            if (MenuTileboardBottom != null)
+            {
+                MenuTileboardBottom.Checked += (s, e) => {
+                    if (MenuTileboardLeft != null) MenuTileboardLeft.IsChecked = false;
+                    if (MenuTileboardRight != null) MenuTileboardRight.IsChecked = false;
+                    if (MenuTileboardTop != null) MenuTileboardTop.IsChecked = false;
+                    SetTileboardPosition("BOTTOM");
+                };
+            }
+            // Tileboard Hidden option (non-persistent UI state)
+            if (MenuTileboardHidden != null)
+            {
+                MenuTileboardHidden.Checked += (s, e) =>
+                {
+                    isTileboardHidden = true;
+                    if (TileboardPanel != null)
+                    {
+                        TileboardPanel.Visibility = Visibility.Collapsed;
+                        
+                        // Hide the GridSplitter to prevent dragging
+                        var splitter = RootGrid?.Children.OfType<GridSplitter>().FirstOrDefault();
+                        if (splitter != null) splitter.Visibility = Visibility.Collapsed;
+                        
+                        // Expand map to fill space
+                        if (RootGrid != null && RootGrid.ColumnDefinitions.Count >= 3)
+                        {
+                            if (tileboardPosition == "LEFT")
+                            {
+                                RootGrid.ColumnDefinitions[0].Width = new GridLength(0);
+                                RootGrid.ColumnDefinitions[1].Width = new GridLength(0);
+                            }
+                            else if (tileboardPosition == "RIGHT")
+                            {
+                                RootGrid.ColumnDefinitions[1].Width = new GridLength(0);
+                                RootGrid.ColumnDefinitions[2].Width = new GridLength(0);
+                            }
+                            else if (RootGrid.RowDefinitions.Count >= 3) // TOP/BOTTOM
+                            {
+                                if (tileboardPosition == "TOP")
+                                {
+                                    RootGrid.RowDefinitions[0].Height = new GridLength(0);
+                                    RootGrid.RowDefinitions[1].Height = new GridLength(0);
+                                }
+                                else // BOTTOM
+                                {
+                                    RootGrid.RowDefinitions[1].Height = new GridLength(0);
+                                    RootGrid.RowDefinitions[2].Height = new GridLength(0);
+                                }
+                            }
+                        }
+                    }
+                };
+                MenuTileboardHidden.Unchecked += (s, e) =>
+                {
+                    isTileboardHidden = false;
+                    if (TileboardPanel != null)
+                    {
+                        TileboardPanel.Visibility = Visibility.Visible;
+                        // Restore original layout (this will also restore the GridSplitter visibility)
+                        ApplyTileboardPosition();
+                    }
+                };
             }
             // Hide color triggers preview option
             if (MenuOptionHideColorTriggers != null)
@@ -1297,27 +2397,78 @@ namespace FamidashEditor
                     try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
                 };
             }
+            // Hide all invisible sprites (Preview Mode Options)
+            if (MenuOptionHideInvisibleSprites != null)
+            {
+                MenuOptionHideInvisibleSprites.Checked += (s, e) =>
+                {
+                    hideInvisibleSprites = true;
+                    SaveSettingsWithTriggerOption();
+                    // Only rebuild sprites immediately if preview mode is active to avoid flicker
+                    if (previewMode)
+                    {
+                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    }
+                };
+                MenuOptionHideInvisibleSprites.Unchecked += (s, e) =>
+                {
+                    hideInvisibleSprites = false;
+                    SaveSettingsWithTriggerOption();
+                    // Only rebuild sprites immediately if preview mode is active to avoid flicker
+                    if (previewMode)
+                    {
+                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    }
+                };
+            }
+            // Suppress collision messages option
+            if (MenuOptionSuppressCollisionMessages != null)
+            {
+                MenuOptionSuppressCollisionMessages.Checked += (s, e) =>
+                {
+                    suppressCollisionMessages = true;
+                    SaveSettingsWithTriggerOption();
+                };
+                MenuOptionSuppressCollisionMessages.Unchecked += (s, e) =>
+                {
+                    suppressCollisionMessages = false;
+                    SaveSettingsWithTriggerOption();
+                };
+            }
             // No Parallax BG (per-level) option
             if (MenuOptionNoParallax != null)
             {
                 MenuOptionNoParallax.Checked += (s, e) =>
                 {
+                    if (suppressNoParallaxHandler) return;
                     noParallaxBg = true;
                     // save to per-level config immediately if a file is loaded
                     try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
                     // Apply choice and rebuild background to apply change immediately
-                    try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
+                    ApplyParallaxChoice();
+                    // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
                 };
                 MenuOptionNoParallax.Unchecked += (s, e) =>
                 {
+                    if (suppressNoParallaxHandler) return;
                     noParallaxBg = false;
                     try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
-                    try { ApplyParallaxChoice(); } catch { backgroundDirty = true; try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); } }
+                    ApplyParallaxChoice();
+                    // Update sprite locking since 0x17, 0x4B, 0x58, 0x64 depend on parallax state
+                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
                 };
             }
             
             if (UndoButton != null) UndoButton.Click += (s, e) => Undo();
             if (RedoButton != null) RedoButton.Click += (s, e) => Redo();
+            if (CopyButton != null) CopyButton.Click += (s, e) => CopySelection();
+            if (CutButton != null) CutButton.Click += (s, e) => CutSelection();
+            if (PasteButton != null) PasteButton.Click += (s, e) => {
+                int dx = (selW > 0 && selH > 0) ? selX : (lastClickX >= 0 ? lastClickX : lastHoverX);
+                int dy = (selW > 0 && selH > 0) ? selY : (lastClickY >= 0 ? lastClickY : lastHoverY);
+                if (dx >= 0 && dy >= 0) PasteClipboardAt(dx, dy);
+            };
             
             // Preview mode checkbox and timer
             if (PreviewModeCheckbox != null)
@@ -1416,7 +2567,6 @@ namespace FamidashEditor
                 if (FillTool != null) FillTool.Checked += Tool_Checked;
                 if (SelectTool != null) SelectTool.Checked += Tool_Checked;
         if (MagicWandTool != null) MagicWandTool.Checked += Tool_Checked;
-        if (StructureTool != null) StructureTool.Checked += Tool_Checked;
             // keyboard shortcuts for undo/redo
             this.PreviewKeyDown += MainWindow_PreviewKeyDown;
             // Handle key up for stopping continuous Shift+arrow scrolling
@@ -1431,6 +2581,12 @@ namespace FamidashEditor
             }
         }
 
+        private void MenuOpenFmsPlayer_Click(object sender, RoutedEventArgs e)
+        {
+            // FMS Player UI removed. This handler should no longer be reachable.
+            try { System.Diagnostics.Debug.WriteLine("MenuOpenFmsPlayer_Click called but the menu item was removed."); } catch { }
+        }
+
         // Ctrl + Mouse Wheel inside the canvas -> zoom in/out while keeping the point under cursor stable
         // Ctrl + Mouse Wheel -> zoom in/out
         // Shift + Mouse Wheel -> horizontal scrolling (also handles touchpad 2-finger swipe)
@@ -1442,24 +2598,30 @@ namespace FamidashEditor
             // Ctrl+Wheel = Zoom
             if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
             {
+                e.Handled = true; // Mark as handled first to prevent scrolling
                 if (ZoomSlider == null) return;
-                e.Handled = true;
+                
                 // Ensure canvas keeps focus so subsequent wheel events remain routed here
                 try { if (CanvasHost != null) { CanvasHost.Focus(); Keyboard.Focus(CanvasHost); } } catch { }
 
                 double oldScale = ZoomSlider.Value;
                 // use a multiplicative zoom per mouse wheel notch (120 delta = one notch)
                 // Invert sign so wheel-up zooms in and wheel-down zooms out
-                double factorPerNotch = 1.1; // 10% per notch
-                // Respect user preference: the menu option now means "Invert Wheel/Pinch Zoom".
-                // Its checked state should invert the behavior compared to the old default.
-                // Choose sign so that when the option is CHECKED the behavior is inverted relative to before.
                 double sign = invertPinchGesture ? -1.0 : 1.0;
-                double factor = Math.Pow(factorPerNotch, sign * e.Delta / 120.0);
-                double newScale = oldScale * factor;
-                // clamp to slider limits
-                newScale = Math.Max(ZoomSlider.Minimum, Math.Min(ZoomSlider.Maximum, newScale));
-                if (Math.Abs(newScale - oldScale) < 1e-6) return;
+                int notches = e.Delta / 120;
+                
+                // Move by quarter intervals (0.25) per notch for predictable behavior
+                double newScale = oldScale + (sign * notches * 0.25);
+                
+                // Clamp to valid range
+                if (newScale < 0.25) newScale = 0.25;
+                if (newScale > 4.0) newScale = 4.0;
+                
+                // Ensure it's snapped to quarter interval
+                newScale = Math.Round(newScale * 4.0) / 4.0;
+                
+                // Only proceed if zoom actually changed
+                if (Math.Abs(newScale - oldScale) < 0.001) return;
 
                 // Determine mouse position in viewport coordinates
                 var mouseVp = e.GetPosition(MapScrollViewer);
@@ -1477,8 +2639,10 @@ namespace FamidashEditor
                 // Record zoom anchor so CommitZoom can preserve the point under the cursor
                 try { zoomAnchorViewportX = mouseVp.X; zoomAnchorViewportY = mouseVp.Y; zoomAnchorMapX = mapX; zoomAnchorMapY = mapY; hasZoomAnchor = true; } catch { hasZoomAnchor = false; }
 
-                // apply new zoom value
+                // Apply new zoom value (already snapped, so disable snapping in ValueChanged)
+                isSnappingZoom = true;
                 if (ZoomSlider != null) ZoomSlider.Value = newScale;
+                isSnappingZoom = false;
 
                 // compute new content coordinate for same world point
                 double newContentX = mapViewportPadding + mapX * TileSize * newScale;
@@ -1547,63 +2711,104 @@ namespace FamidashEditor
             }
         }
 
-        private void ResizeMap(int newWidth, int newHeight)
+        private async void ResizeMap(int newWidth, int newHeight)
         {
-            // preserve existing tiles and sprites where possible
-            var newTiles = Enumerable.Repeat(-1, newWidth * newHeight).ToArray();
-            var newSprites = Enumerable.Repeat(-1, newWidth * newHeight).ToArray();
-            int copyW = Math.Min(mapWidth, newWidth);
-            // preserve bottom-aligned: existing content should remain at the bottom
-            if (newHeight >= mapHeight)
+            // Show loading window for large resize operations
+            LoadingWindow? loadingWindow = null;
+            bool isLargeResize = (newWidth * newHeight) > 50000;
+            
+            if (isLargeResize)
             {
-                int yOffset = newHeight - mapHeight; // add rows at top
-                for (int y = 0; y < mapHeight; y++)
+                loadingWindow = new LoadingWindow
                 {
-                    for (int x = 0; x < copyW; x++)
+                    Owner = this,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner
+                };
+                loadingWindow.SetMessage($"Resizing map to {newWidth}x{newHeight}...\nPlease wait.");
+                loadingWindow.Show();
+                
+                // Allow UI to update
+                await System.Threading.Tasks.Task.Delay(50);
+                await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
+            }
+            
+            try
+            {
+                // preserve existing tiles and sprites where possible
+                var newTiles = Enumerable.Repeat(-1, newWidth * newHeight).ToArray();
+                var newSprites = Enumerable.Repeat(-1, newWidth * newHeight).ToArray();
+                int copyW = Math.Min(mapWidth, newWidth);
+                // preserve bottom-aligned: existing content should remain at the bottom
+                if (newHeight >= mapHeight)
+                {
+                    int yOffset = newHeight - mapHeight; // add rows at top
+                    for (int y = 0; y < mapHeight; y++)
                     {
-                        newTiles[(y + yOffset) * newWidth + x] = tiles[y * mapWidth + x];
-                        newSprites[(y + yOffset) * newWidth + x] = sprites[y * mapWidth + x];
+                        for (int x = 0; x < copyW; x++)
+                        {
+                            newTiles[(y + yOffset) * newWidth + x] = tiles[y * mapWidth + x];
+                            newSprites[(y + yOffset) * newWidth + x] = sprites[y * mapWidth + x];
+                        }
                     }
                 }
-            }
-            else // newHeight < mapHeight -> remove rows from top, keep bottom rows
-            {
-                int startOldY = mapHeight - newHeight;
-                for (int y = 0; y < newHeight; y++)
+                else // newHeight < mapHeight -> remove rows from top, keep bottom rows
                 {
-                    for (int x = 0; x < copyW; x++)
+                    int startOldY = mapHeight - newHeight;
+                    for (int y = 0; y < newHeight; y++)
                     {
-                        newTiles[y * newWidth + x] = tiles[(y + startOldY) * mapWidth + x];
-                        newSprites[y * newWidth + x] = sprites[(y + startOldY) * mapWidth + x];
+                        for (int x = 0; x < copyW; x++)
+                        {
+                            newTiles[y * newWidth + x] = tiles[(y + startOldY) * mapWidth + x];
+                            newSprites[y * newWidth + x] = sprites[(y + startOldY) * mapWidth + x];
+                        }
                     }
                 }
-            }
 
-            // record resize action for undo/redo
-            if (!suppressUndoRecording)
+                // record resize action for undo/redo
+                if (!suppressUndoRecording)
+                {
+                    var oldTilesCopy = tiles; // keep reference to old array
+                    var action = new MapResizeAction(mapWidth, mapHeight, oldTilesCopy, newWidth, newHeight, newTiles);
+                    undoStack.Push(action);
+                    redoStack.Clear();
+                }
+
+                mapWidth = newWidth; mapHeight = newHeight; 
+                tiles = newTiles;
+                sprites = newSprites;
+                
+                // Clear all sprite pixel offsets since coordinates have changed
+                spritePixelOffsets.Clear();
+                
+                if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
+                if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+                
+                if (isLargeResize && loadingWindow != null)
+                {
+                    loadingWindow.SetMessage($"Rebuilding map layers ({newWidth}x{newHeight})...\nPlease wait.");
+                    await System.Threading.Tasks.Task.Delay(50);
+                    await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
+                }
+                
+                // Force rebuild of all layers (background, grid, tiles)
+                backgroundDirty = true;
+                gridDirty = true;
+                // Clear cached dimensions to force size recalculation
+                cachedPixelWidth = 0;
+                cachedPixelHeight = 0;
+                
+                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                ClampScrollOffsets();
+                Redraw();
+            }
+            finally
             {
-                var oldTilesCopy = tiles; // keep reference to old array
-                var action = new MapResizeAction(mapWidth, mapHeight, oldTilesCopy, newWidth, newHeight, newTiles);
-                undoStack.Push(action);
-                redoStack.Clear();
+                // Close loading window
+                if (loadingWindow != null)
+                {
+                    loadingWindow.Close();
+                }
             }
-
-            mapWidth = newWidth; mapHeight = newHeight; 
-            tiles = newTiles;
-            sprites = newSprites;
-            if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
-            if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
-            
-            // Force rebuild of all layers (background, grid, tiles)
-            backgroundDirty = true;
-            gridDirty = true;
-            // Clear cached dimensions to force size recalculation
-            cachedPixelWidth = 0;
-            cachedPixelHeight = 0;
-            
-            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-            ClampScrollOffsets();
-            Redraw();
         }
 
         private void BgColorButton_Click(object? sender, RoutedEventArgs e)
@@ -1634,7 +2839,7 @@ namespace FamidashEditor
             // For parallax/background tint, use full alpha (no slider)
             var dlg = new ColorPickerWindow(initialBgTint, allowAlpha: false, forcedIndex: (backgroundTint.A == 0 ? 1 : -1)) { Owner = this };
             dlg.Title = "Pick Background Tint (RGBA)";
-            Action<Color> handler = (c) => { backgroundTint = c; UpdateParallaxTint(); Dispatcher.BeginInvoke(new Action(Redraw)); };
+            Action<Color> handler = (c) => { backgroundTint = c; UpdateParallaxTint(); try { Dispatcher.Invoke(RedrawViewportOnly, System.Windows.Threading.DispatcherPriority.Render); } catch { } };
             dlg.ColorChanged += handler;
             var result = dlg.ShowDialog();
             if (result == true)
@@ -1652,6 +2857,7 @@ namespace FamidashEditor
                 // Persist as editor default if user checked 'Set as default'
                 if (dlg.SetAsDefault)
                 {
+                    defaultBackgroundTint = backgroundTint;
                     try { SaveSettingsWithTriggerOption(); } catch { }
                 }
 
@@ -1674,7 +2880,7 @@ namespace FamidashEditor
             // For ground tint, force full alpha and hide slider
             var dlg = new ColorPickerWindow(initialGroundTint, allowAlpha: false, forcedIndex: (groundTint.A == 0 ? 29 : -1)) { Owner = this };
             dlg.Title = "Pick Ground Tint (RGBA)";
-            Action<Color> handler = (c) => { groundTint = c; UpdateGroundTint(); Dispatcher.BeginInvoke(new Action(Redraw)); };
+            Action<Color> handler = (c) => { groundTint = c; UpdateGroundTint(); try { Dispatcher.Invoke(RedrawViewportOnly, System.Windows.Threading.DispatcherPriority.Render); } catch { } };
             dlg.ColorChanged += handler;
             var result = dlg.ShowDialog();
             if (result == true)
@@ -1692,6 +2898,7 @@ namespace FamidashEditor
                 // Persist as editor default if user checked 'Set as default'
                 if (dlg.SetAsDefault)
                 {
+                    defaultGroundTint = groundTint;
                     try { SaveSettingsWithTriggerOption(); } catch { }
                 }
 
@@ -1712,7 +2919,7 @@ namespace FamidashEditor
             var initial = tileTint;
             var dlg = new ColorPickerWindow(initial, allowAlpha: false) { Owner = this };
             dlg.Title = "Pick Tile Tint (RGBA)";
-            Action<Color> handler = (c) => { tileTint = c; UpdateTileTint(); Dispatcher.BeginInvoke(new Action(Redraw)); };
+            Action<Color> handler = (c) => { tileTint = c; UpdateTileTint(); try { Dispatcher.Invoke(RedrawViewportOnly, System.Windows.Threading.DispatcherPriority.Render); } catch { } };
             dlg.ColorChanged += handler;
             var result = dlg.ShowDialog();
             if (result == true)
@@ -1730,6 +2937,7 @@ namespace FamidashEditor
                 // Persist as editor default if user checked 'Set as default'
                 if (dlg.SetAsDefault)
                 {
+                    defaultTileTint = tileTint;
                     try { SaveSettingsWithTriggerOption(); } catch { }
                 }
 
@@ -1978,6 +3186,8 @@ namespace FamidashEditor
 
             // Include star two-frame preview frames and additional decorations
             anyOrbFramesAvailable = anyOrbFramesAvailable || (starFrame1 != null && starFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (pulsingBallFrame1 != null && pulsingBallFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (musicNoteFrame1 != null && musicNoteFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (diamondFrame1 != null && diamondFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (diamondHalfFrame1 != null && diamondHalfFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (questionMarkFrame1 != null && questionMarkFrame2 != null);
@@ -1985,8 +3195,14 @@ namespace FamidashEditor
             anyOrbFramesAvailable = anyOrbFramesAvailable || (xFrame1 != null && xFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleShortFrame1 != null && poleShortFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleMediumFrame1 != null && poleMediumFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleMediumUpsideDownFrame1 != null && poleMediumUpsideDownFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleLongFrame1 != null && poleLongFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleLongUpsideDownFrame1 != null && poleLongUpsideDownFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleLeftShortFrame1 != null && poleLeftShortFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleLeftMediumFrame1 != null && poleLeftMediumFrame2 != null);
             anyOrbFramesAvailable = anyOrbFramesAvailable || (poleRightShortFrame1 != null && poleRightShortFrame2 != null);
+            anyOrbFramesAvailable = anyOrbFramesAvailable || (poleRightMediumFrame1 != null && poleRightMediumFrame2 != null);
 
             if (spritesWb != null && anyOrbFramesAvailable)
             {
@@ -1996,27 +3212,30 @@ namespace FamidashEditor
 
                 // Check if we have any animated orb sprites in the visible area (fast scan)
                 bool hasAnimatedOrbs = false;
-                for (int yy = vMinY; yy <= vMaxY && !hasAnimatedOrbs; yy++)
+                        for (int yy = vMinY; yy <= vMaxY && !hasAnimatedOrbs; yy++)
                 {
                     for (int xx = vMinX; xx <= vMaxX; xx++)
                     {
                         int spriteIdx = sprites[yy * mapWidth + xx];
+                        // Animated two-frame sprites and decorations that participate in preview animation
                         if (spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
                             spriteIdx == 0x05 || // Blue
                             spriteIdx == 0x06 || // Pink
                             spriteIdx == 0x27 || // Green
                             spriteIdx == 0x28 || // Red
                             spriteIdx == 0x44 || // Black
+                            spriteIdx == 0x7B || spriteIdx == 0x7C || // 0x7B/0x7C mimic blue/green orb behavior
                             spriteIdx == 0x7A || // White
                             spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
+                            spriteIdx == 0x6E || // Mini coin
                             spriteIdx == 0x52 || spriteIdx == 0x53 || // Red pad down/up
                             spriteIdx == 0x0A || spriteIdx == 0x0C || // Yellow pad down/up
                             spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0xFD || spriteIdx == 0xFE || // Blue pad down/up (+ aliases)
                             spriteIdx == 0x25 || spriteIdx == 0x26 || // Pink pad down/up
                             // Dash/teleport/spider two-frame sprites
                             spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
-                            // Star and other decoration sprites
-                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39)
+                            // Decorations (including new pulsing/music decorations)
+                            spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F || spriteIdx == 0x2B || spriteIdx == 0x3B || spriteIdx == 0x2A || spriteIdx == 0x3A || spriteIdx == 0x49 || spriteIdx == 0x4A)
                         {
                             hasAnimatedOrbs = true;
                             if (animationFrame % 60 == 0)
@@ -2050,6 +3269,7 @@ namespace FamidashEditor
                                     spriteIdx == 0x27 || // Green
                                     spriteIdx == 0x28 || // Red
                                     spriteIdx == 0x44 || // Black
+                                    spriteIdx == 0x7B || spriteIdx == 0x7C || // 0x7B/0x7C mimic blue/green orb behavior
                                         spriteIdx == 0x52 || // Red pad (preview-only)
                                     spriteIdx == 0x53 || // Red pad up
                                     spriteIdx == 0x0A || // Yellow pad down
@@ -2064,10 +3284,11 @@ namespace FamidashEditor
                                         spriteIdx == 0x07 || // Coin types
                                         spriteIdx == 0x1A ||
                                         spriteIdx == 0x1B || // Coin types
+                                        spriteIdx == 0x6E || // Mini coin
                                         // New dash orb sprites
                                         spriteIdx == 0x45 || spriteIdx == 0x46 || spriteIdx == 0x4C || spriteIdx == 0x4D || spriteIdx == 0x50 || spriteIdx == 0x51 || spriteIdx == 0x5B || spriteIdx == 0x5C || spriteIdx == 0x5D || spriteIdx == 0x5E || spriteIdx == 0x59 || spriteIdx == 0x5A || spriteIdx == 0x54 || spriteIdx == 0x55 ||
-                                        // Decorations
-                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39)
+                                        // Decorations (including pulsing ball 0x49 and music note 0x4A)
+                                        spriteIdx == 0x36 || spriteIdx == 0x32 || spriteIdx == 0x33 || spriteIdx == 0x34 || spriteIdx == 0x35 || spriteIdx == 0x37 || spriteIdx == 0x2C || spriteIdx == 0x3C || spriteIdx == 0x38 || spriteIdx == 0x39 || spriteIdx == 0x3E || spriteIdx == 0x3F || spriteIdx == 0x2B || spriteIdx == 0x3B || spriteIdx == 0x2A || spriteIdx == 0x3A || spriteIdx == 0x49 || spriteIdx == 0x4A)
                                 {
                                     UpdateSpriteBitmapAtLocked(x, y, spriteIdx, scale, mapViewportPadding, spritePixelW, spritePixelH, dpi);
                                 }
@@ -2088,6 +3309,28 @@ namespace FamidashEditor
                         spritesWb.Unlock();
                     }
                 }
+            
+            // Also update visible portal regions so animated portals (including 0x64 rainbow)
+            // advance each preview tick instead of only when sprites change.
+            if (previewMode && portalsWb != null)
+            {
+                GetVisibleTileBounds(out int pMinX, out int pMaxX, out int pMinY, out int pMaxY);
+                bool hasPortals = false;
+                for (int yy = pMinY; yy <= pMaxY && !hasPortals; yy++)
+                {
+                    for (int xx = pMinX; xx <= pMaxX; xx++)
+                    {
+                        int sidx = sprites[yy * mapWidth + xx];
+                        if (IsPortalSprite(sidx)) { hasPortals = true; break; }
+                    }
+                }
+
+                if (hasPortals)
+                {
+                    // Rebuild a slightly expanded region to cover multi-tile portals
+                    QueueRebuildPortalsRegion(Math.Max(0, pMinX - 1), Math.Max(0, pMinY - 2), Math.Min(mapWidth - 1, pMaxX + 1), Math.Min(mapHeight - 1, pMaxY + 2));
+                }
+            }
             }
             else
             {
@@ -2105,6 +3348,34 @@ namespace FamidashEditor
         private int GetAnimatedTileIndex(int originalIndex)
         {
             if (!previewMode) return originalIndex;
+
+            // Preview remaps: map special preview-only tile indices to existing tiles so they render identically
+            int mapped = originalIndex;
+            switch (originalIndex)
+            {
+                case 0xE0: mapped = 0x30; break;
+                case 0xE1: mapped = 0x24; break;
+                case 0xE2: mapped = 0x28; break;
+                case 0xE4: mapped = 0x32; break;
+                case 0xE5: mapped = 0x25; break;
+                case 0xE6:
+                case 0xE7: mapped = 0x10; break;
+                case 0x8F: mapped = 0x2F; break;
+                case 0xDD:
+                case 0xDE: mapped = 0x10; break;
+                case 0xD9:
+                case 0xDA: mapped = 0x11; break;
+                case 0xDB:
+                case 0xDC: mapped = 0x1B; break;
+                case 0xFC: 
+                case 0xDF:
+                case 0xE3:
+                case 0xFE:
+                case 0xFF: mapped = 0x00; break;
+                case 0xFD: mapped = 0x26; break;
+
+            }
+            if (mapped != originalIndex) originalIndex = mapped;
             
             // Check if this is one of the saw tiles (0x08-0x0B)
             if (originalIndex >= 0x08 && originalIndex <= 0x0B)
@@ -2162,18 +3433,64 @@ namespace FamidashEditor
                      spriteIdx == 0x03 || spriteIdx == 0x04 || spriteIdx == 0x24 ||
                      spriteIdx == 0x17 || spriteIdx == 0x18 || spriteIdx == 0x19 || spriteIdx == 0x4B || spriteIdx == 0x58 ||
                      spriteIdx == 0x08 || spriteIdx == 0x09 ||
+                     // Rainbow portal (new): treat 0x64 as a portal for preview rendering
+                     spriteIdx == 0x64 ||
+                     // Teleport portal preview replacements
+                     spriteIdx == 0x4E || spriteIdx == 0x4F ||
                      // Horizontal gravity portals
                      spriteIdx == 0x10 || spriteIdx == 0x11 || spriteIdx == 0x12 || spriteIdx == 0x13 ||
                              spriteIdx == 0x22 || spriteIdx == 0x23 ||
                          // Speed portal preview replacements
                          spriteIdx == 0x14 || spriteIdx == 0x15 || spriteIdx == 0x16 || spriteIdx == 0x20 || spriteIdx == 0x21 || spriteIdx == 0x6D ||
+                         // Horizontal teleport portals
+                         spriteIdx == 0x66 || spriteIdx == 0x67 || spriteIdx == 0x68 || spriteIdx == 0x69 ||
                      // Additional gravity-X portal sprite IDs (preview replacements)
                      spriteIdx == 0x5F || spriteIdx == 0x60 || spriteIdx == 0x61 || spriteIdx == 0x62 || spriteIdx == 0x63;
         }
         
         // Get the portal sprite bitmap for a given sprite ID
-        private BitmapSource? GetPortalSpriteForId(int spriteIdx)
+        // Optionally accepts a position key (y*mapWidth + x) so callers can request
+        // a per-position deterministic variant (used for the rainbow portal 0x64).
+        private BitmapSource? GetPortalSpriteForId(int spriteIdx, int positionKey = -1)
         {
+            // Rainbow portal (0x64) cycles through a specific ordered list of portal images.
+            if (spriteIdx == 0x64)
+            {
+                // Ordered list: cube, ship, ball, ufo, robot, wave, spider, swingcopter, ninja
+                BitmapSource?[] order = new BitmapSource?[]
+                {
+                    cubePortalSprite,
+                    shipPortalSprite,
+                    ballPortalSprite,
+                    ufoPortalSprite,
+                    robotPortalSprite,
+                    wavePortalSprite,
+                    spiderPortalSprite,
+                    swingcopterPortalSprite,
+                    ninjaPortalSprite
+                };
+
+                // If positionKey not provided, fall back to cube portal
+                if (positionKey < 0)
+                {
+                    return cubePortalSprite;
+                }
+
+                int len = order.Length;
+                if (len == 0) return null;
+
+                // Deterministic per-position start offset using Knuth multiplicative hash
+                uint seed = (uint)positionKey;
+                uint offset = (uint)((seed * 2654435761u) % (uint)len);
+
+                // Advance based on global animationFrame so portals animate over time
+                int frameAdvance = 0;
+                try { frameAdvance = (animationFrame / 8) % len; } catch { frameAdvance = 0; }
+
+                int idx = (int)((offset + (uint)frameAdvance) % (uint)len);
+                return order[idx];
+            }
+
             return spriteIdx switch
             {
                 0x00 => cubePortalSprite,
@@ -2191,9 +3508,15 @@ namespace FamidashEditor
                 0x62 => gravity2XPortalSprite,
                 0x63 => gravity1XPortalSprite,
                 0x4B => swingcopterPortalSprite,
+                0x66 => teleportPortalHorizontalEnterDownSprite,
+                0x67 => teleportPortalHorizontalExitUpSprite,
+                0x68 => teleportPortalHorizontalEnterUpSprite,
+                0x69 => teleportPortalHorizontalExitDownSprite,
                 0x08 => gravityDownPortalSprite,
                 0x09 => gravityUpPortalSprite,
                 0x58 => ninjaPortalSprite,
+                0x4E => teleportPortalEnterSprite,
+                0x4F => teleportPortalExitSprite,
                 0x14 => speed05xPortalSprite,
                 0x15 => speed1xPortalSprite,
                 0x16 => speed2xPortalSprite,
@@ -2218,9 +3541,16 @@ namespace FamidashEditor
         private int GetAnimatedSpriteIndex(int originalIndex)
         {
             if (!previewMode) return originalIndex;
+
+            // Preview aliasing: treat these non-orb sprites as orbs in preview mode
+            if (originalIndex == 0x7B) originalIndex = 0x05; // behave like blue orb
+            if (originalIndex == 0x7C) originalIndex = 0x27; // behave like green orb
             
             // Check if this is a portal sprite
             if (originalIndex == 0x00) return 3000; // Cube portal
+            // Treat 0x64 as the rainbow portal which should be rendered using the
+            // same sizing as standard tall portals (map it to 3000 for sizing).
+            if (originalIndex == 0x64) return 3000; // Rainbow portal (cycles through portal images)
             if (originalIndex == 0x01) return 3001; // Ship portal
             if (originalIndex == 0x02) return 3002; // Ball portal
             if (originalIndex == 0x03) return 3003; // UFO portal
@@ -2238,6 +3568,17 @@ namespace FamidashEditor
             {
                 return 3018; // Growth portal (new)
             }
+            // Teleport portal preview replacements (non-animated, tall portals)
+            if (originalIndex == 0x4E) return 3000; // teleport-portal-enter
+            if (originalIndex == 0x4F) return 3000; // teleport-portal-exit
+            // Spider pad preview replacements (single-frame, non-animated)
+            if (originalIndex == 0x56) return 2152; // spider-pad (0x56)
+            if (originalIndex == 0x57) return 2153; // spider-pad-upsidedown (0x57)
+            // Horizontal teleport portal preview replacements (3 tiles wide x 1.5 tiles tall)
+            if (originalIndex == 0x66) return 3030; // teleport-portal-horizontal-enter-downwards
+            if (originalIndex == 0x67) return 3031; // teleport-portal-horizontal-exit-upwards (shift up 1 tile)
+            if (originalIndex == 0x68) return 3032; // teleport-portal-horizontal-enter-upwards (shift up 1 tile)
+            if (originalIndex == 0x69) return 3033; // teleport-portal-horizontal-exit-downwards
             if (originalIndex == 0x4B)
             {
                 return 3007; // Swingcopter portal (0x4B)
@@ -2309,10 +3650,26 @@ namespace FamidashEditor
             if (originalIndex == 0x3C) return GetTwoFrameCustomIndex(2124); // pole short upside-down (2124/2125)
             if (originalIndex == 0x38) return GetTwoFrameCustomIndex(2128); // pole-left-short (2128/2129)
             if (originalIndex == 0x39) return GetTwoFrameCustomIndex(2130); // pole-right-short (2130/2131)
+            if (originalIndex == 0x3E) return GetTwoFrameCustomIndex(2132); // pole-left-medium (2132/2133)
+            if (originalIndex == 0x3F) return GetTwoFrameCustomIndex(2134); // pole-right-medium (2134/2135)
+            // New mapping: medium pole replacements for 0x2B/0x3B use custom indices 2136/2138
+            if (originalIndex == 0x2B) return GetTwoFrameCustomIndex(2136); // pole-medium (2136/2137)
+            if (originalIndex == 0x3B) return GetTwoFrameCustomIndex(2138); // pole-medium upside-down (2138/2139)
+            if (originalIndex == 0x2A) return GetTwoFrameCustomIndex(2140); // pole-long (2140/2141)
+            if (originalIndex == 0x3A) return GetTwoFrameCustomIndex(2142); // pole-long upside-down (2142/2143)
             if (originalIndex == 0x36) return GetTwoFrameCustomIndex(2110); // star (2110/2111)
+            // New decorations mapping: pulsing ball (0x49) and music note (0x4A)
+            if (originalIndex == 0x49) return GetTwoFrameCustomIndex(2144); // pulsing ball (2144/2145)
+            if (originalIndex == 0x4A) return GetTwoFrameCustomIndex(2146); // music note (2146/2147)
             // Chain decorations (preview-only, single-frame)
             if (originalIndex == 0x2D) return 2126; // chain (2126)
             if (originalIndex == 0x3D) return 2127; // chain-upsidedown (2127)
+            // Deco spikes (single-frame preview-only)
+            if (originalIndex == 0x2E) return 2148; // deco-spikes (2148)
+            if (originalIndex == 0x2F) return 2149; // deco-spikes-upsidedown (2149)
+            // (Removed earlier sprite-only mapping for 0x8F; tile mapping will be applied instead)
+            if (originalIndex == 0x30) return 2150; // deco-spikes-small (2150)
+            if (originalIndex == 0x31) return 2151; // deco-spikes-small-upsidedown (2151)
             if (originalIndex == 0x52)
             {
             }
@@ -2327,11 +3684,13 @@ namespace FamidashEditor
             bool isWhiteOrb = (originalIndex == 0x7A);
             // Coins: 0x07, 0x1A, 0x1B
             bool isCoin = (originalIndex == 0x07 || originalIndex == 0x1A || originalIndex == 0x1B);
+            // Mini coin (preview-only animation): sprite 0x6E
+            bool isMiniCoin = (originalIndex == 0x6E);
             // Pads (preview-only): 0x52 red-pad-down, 0x53 red-pad-up, 0x0A yellow-pad-down, 0x0C yellow-pad-up,
             // 0x0D blue-pad-down, 0x0E blue-pad-up, 0x25 pink-pad-down, 0x26 pink-pad-up
             bool isPad = (originalIndex == 0x52 || originalIndex == 0x53 || originalIndex == 0x0A || originalIndex == 0x0C || originalIndex == 0x0D || originalIndex == 0x0E || originalIndex == 0x25 || originalIndex == 0x26 || originalIndex == 0xFD || originalIndex == 0xFE);
             
-            if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb || isPad || isWhiteOrb || isCoin)
+            if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb || isPad || isWhiteOrb || isCoin || isMiniCoin)
             {
                 // 4-frame animation at 9/20 speed (slower than saws)
                 // Each sprite gets a random offset so they don't all sync
@@ -2359,6 +3718,11 @@ namespace FamidashEditor
                 // Red:    2024-2027 (1 sprite × 4 frames)
                 // Black:  2028-2031 (1 sprite × 4 frames)
                 
+                // Mini-coin handled here as its own 4-frame animation (custom indices 2400-2403)
+                if (isMiniCoin)
+                {
+                    return 2400 + frame;
+                }
                 if (isYellowOrb)
                 {
                     int spriteOffset = (originalIndex == 0x0B) ? 0 : (originalIndex == 0x1F) ? 1 : 2;
@@ -2549,6 +3913,14 @@ namespace FamidashEditor
             if (customIndex == 3008) return ninjaPortalSprite;
             if (customIndex == 3009) return gravityDownPortalSprite;
             if (customIndex == 3010) return gravityUpPortalSprite;
+            // Horizontal teleport portals custom indices (3030-3033)
+            if (customIndex == 3030) return teleportPortalHorizontalEnterDownSprite;
+            if (customIndex == 3031) return teleportPortalHorizontalExitUpSprite;
+            if (customIndex == 3032) return teleportPortalHorizontalEnterUpSprite;
+            if (customIndex == 3033) return teleportPortalHorizontalExitDownSprite;
+            // Spider pad static previews
+            if (customIndex == 2152) return spiderPadSprite;
+            if (customIndex == 2153) return spiderPadUpsideDownSprite;
             // Horizontal gravity portal custom indices
             if (customIndex == 3011) return gravityDownDownwardsPortalSprite;
             if (customIndex == 3012) return gravityDownUpwardsPortalSprite;
@@ -2787,6 +4159,19 @@ namespace FamidashEditor
                     return frameArray[spriteOffset];
                 }
             }
+            else if (customIndex >= 2400 && customIndex <= 2403)
+            {
+                // Mini coin: 4 frames (2400-2403)
+                int frame = customIndex - 2400;
+                return frame switch
+                {
+                    0 => miniCoinFrame1?[0],
+                    1 => miniCoinFrame2?[0],
+                    2 => miniCoinFrame3?[0],
+                    3 => miniCoinFrame4?[0],
+                    _ => null
+                };
+            }
             else if (customIndex >= 2076 && customIndex <= 2079)
             {
                 // White orb (single sprite)
@@ -2934,6 +4319,16 @@ namespace FamidashEditor
                     default: return null;
                 }
             }
+            // Pole left medium: 2132-2133 (sprite 0x3E)
+            if (customIndex >= 2132 && customIndex <= 2133)
+            {
+                switch (customIndex)
+                {
+                    case 2132: return poleLeftMediumFrame1?[0];
+                    case 2133: return poleLeftMediumFrame2?[0];
+                    default: return null;
+                }
+            }
             // Pole right short: 2130-2131 (sprite 0x39)
             if (customIndex >= 2130 && customIndex <= 2131)
             {
@@ -2941,6 +4336,16 @@ namespace FamidashEditor
                 {
                     case 2130: return poleRightShortFrame1?[0];
                     case 2131: return poleRightShortFrame2?[0];
+                    default: return null;
+                }
+            }
+            // Pole right medium: 2134-2135 (sprite 0x3F)
+            if (customIndex >= 2134 && customIndex <= 2135)
+            {
+                switch (customIndex)
+                {
+                    case 2134: return poleRightMediumFrame1?[0];
+                    case 2135: return poleRightMediumFrame2?[0];
                     default: return null;
                 }
             }
@@ -2954,6 +4359,68 @@ namespace FamidashEditor
                     default: return null;
                 }
             }
+
+            // Pole-long custom indices for 0x2A/0x3A: 2140-2143
+            if (customIndex >= 2140 && customIndex <= 2141)
+            {
+                switch (customIndex)
+                {
+                    case 2140: return poleLongFrame1?[0];
+                    case 2141: return poleLongFrame2?[0];
+                    default: return null;
+                }
+            }
+            if (customIndex >= 2142 && customIndex <= 2143)
+            {
+                switch (customIndex)
+                {
+                    case 2142: return poleLongUpsideDownFrame1?[0];
+                    case 2143: return poleLongUpsideDownFrame2?[0];
+                    default: return null;
+                }
+            }
+
+            // Pulsing ball two-frame preview: 2144-2145 (sprite 0x49)
+            if (customIndex >= 2144 && customIndex <= 2145)
+            {
+                switch (customIndex)
+                {
+                    case 2144: return pulsingBallFrame1?[0];
+                    case 2145: return pulsingBallFrame2?[0];
+                    default: return null;
+                }
+            }
+
+            // Music note two-frame preview: 2146-2147 (sprite 0x4A)
+            if (customIndex >= 2146 && customIndex <= 2147)
+            {
+                switch (customIndex)
+                {
+                    case 2146: return musicNoteFrame1?[0];
+                    case 2147: return musicNoteFrame2?[0];
+                    default: return null;
+                }
+            }
+
+            // Pole-medium custom indices for 0x2B/0x3B: 2136-2139
+            if (customIndex >= 2136 && customIndex <= 2137)
+            {
+                switch (customIndex)
+                {
+                    case 2136: return poleMediumFrame1?[0];
+                    case 2137: return poleMediumFrame2?[0];
+                    default: return null;
+                }
+            }
+            if (customIndex >= 2138 && customIndex <= 2139)
+            {
+                switch (customIndex)
+                {
+                    case 2138: return poleMediumUpsideDownFrame1?[0];
+                    case 2139: return poleMediumUpsideDownFrame2?[0];
+                    default: return null;
+                }
+            }
             // Chain single-frame decoration: 2126 (sprite 0x2D)
             if (customIndex == 2126)
             {
@@ -2964,6 +4431,11 @@ namespace FamidashEditor
             {
                 return chainUpsideDownFrame1?[0];
             }
+            // Deco spikes single-frame decorations
+            if (customIndex == 2148) { return decoSpikesFrame1?[0]; }
+            if (customIndex == 2149) { return decoSpikesUpsideDownFrame1?[0]; }
+            if (customIndex == 2150) { return decoSpikesSmallFrame1?[0]; }
+            if (customIndex == 2151) { return decoSpikesSmallUpsideDownFrame1?[0]; }
             
             return null;
         }
@@ -3259,6 +4731,17 @@ namespace FamidashEditor
                     // New mini and growth portal preview images (placed in workspace root)
                     miniPortalSprite = LoadPortalSprite("mini-portal.png");
                     growthPortalSprite = LoadPortalSprite("growth-portal.png");
+                    // Teleport portal preview replacements (single-frame PNGs)
+                    teleportPortalEnterSprite = LoadPortalSprite("teleport-portal-enter.png");
+                    teleportPortalExitSprite = LoadPortalSprite("teleport-portal-exit.png");
+                        // Spider pad preview sprites (single-tile, non-animated)
+                        spiderPadSprite = LoadPortalSprite("spider-pad.png");
+                        spiderPadUpsideDownSprite = LoadPortalSprite("spider-pad-upsidedown.png");
+                    // Horizontal teleport portal preview assets (3 tiles wide x 1.5 tiles tall)
+                    teleportPortalHorizontalEnterDownSprite = LoadPortalSprite("teleport-portal-horizontal-enter-downwards.png");
+                    teleportPortalHorizontalExitUpSprite = LoadPortalSprite("teleport-portal-horizontal-exit-upwards.png");
+                    teleportPortalHorizontalEnterUpSprite = LoadPortalSprite("teleport-portal-horizontal-enter-upwards.png");
+                    teleportPortalHorizontalExitDownSprite = LoadPortalSprite("teleport-portal-horizontal-exit-downwards.png");
                 // Speed portal preview images
                 speed05xPortalSprite = LoadPortalSprite("speed-05x.png");
                 speed1xPortalSprite = LoadPortalSprite("speed-1x.png");
@@ -3493,6 +4976,45 @@ namespace FamidashEditor
         private void InitializeCoinAnimationFrames()
         {
             LoadCoinFrames(ref coinFrame1, ref coinFrame2, ref coinFrame3, ref coinFrame4);
+        }
+
+        private void InitializeMiniCoinAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("mini-coin-frame1.png");
+                var f2 = LoadEmbeddedImage("mini-coin-frame2.png");
+                var f3 = LoadEmbeddedImage("mini-coin-frame3.png");
+                var f4 = LoadEmbeddedImage("mini-coin-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var c1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var c2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var c3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var c4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    miniCoinFrame1 = new BitmapSource[1];
+                    miniCoinFrame2 = new BitmapSource[1];
+                    miniCoinFrame3 = new BitmapSource[1];
+                    miniCoinFrame4 = new BitmapSource[1];
+
+                    miniCoinFrame1[0] = c1;
+                    miniCoinFrame2[0] = c2;
+                    miniCoinFrame3[0] = c3;
+                    miniCoinFrame4[0] = c4;
+
+                    System.Diagnostics.Debug.WriteLine("✓ Loaded mini-coin animation frames (4 frames)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("✗ mini-coin frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load mini-coin animation frames: {ex.Message}");
+            }
         }
 
         private void InitializeBlueOrbAnimationFrames()
@@ -3896,10 +5418,36 @@ namespace FamidashEditor
             {
                 var dir = AppContext.BaseDirectory;
                 var path = System.IO.Path.Combine(dir, "editor-settings.json");
+                
+                // If no settings file exists, create default one
+                if (!System.IO.File.Exists(path))
+                {
+                    var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                    System.IO.File.WriteAllText(path, defaultSettings);
+                }
+                
                 if (System.IO.File.Exists(path))
                 {
                     var txt = System.IO.File.ReadAllText(path);
                     var doc = System.Text.Json.JsonDocument.Parse(txt);
+                    
+                    // Check version - if not version 2, delete and recreate with defaults
+                    int version = 0;
+                    if (doc.RootElement.TryGetProperty("version", out var ver))
+                    {
+                        try { version = ver.GetInt32(); } catch { version = 0; }
+                    }
+                    
+                    if (version != 2)
+                    {
+                        // Old version - delete and recreate
+                        try { System.IO.File.Delete(path); } catch { }
+                        var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                        System.IO.File.WriteAllText(path, defaultSettings);
+                        txt = defaultSettings;
+                        doc = System.Text.Json.JsonDocument.Parse(txt);
+                    }
+                    
                     if (doc.RootElement.TryGetProperty("background", out var bg))
                     {
                         Color col;
@@ -3934,6 +5482,7 @@ namespace FamidashEditor
                         var g = (byte)bt[2].GetInt32();
                         var b = (byte)bt[3].GetInt32();
                         backgroundTint = Color.FromArgb(a, r, g, b);
+                        defaultBackgroundTint = backgroundTint; // Store as default
                     }
                     // per-level: no parallax background
                     if (doc.RootElement.TryGetProperty("noParallaxBg", out var npb))
@@ -3949,6 +5498,17 @@ namespace FamidashEditor
                         var g = (byte)gt[2].GetInt32();
                         var b = (byte)gt[3].GetInt32();
                         groundTint = Color.FromArgb(a, r, g, b);
+                        defaultGroundTint = groundTint; // Store as default
+                    }
+                    // optional tile tint (RGBA)
+                    if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                    {
+                        var a = (byte)tt[0].GetInt32();
+                        var r = (byte)tt[1].GetInt32();
+                        var g = (byte)tt[2].GetInt32();
+                        var b = (byte)tt[3].GetInt32();
+                        tileTint = Color.FromArgb(a, r, g, b);
+                        defaultTileTint = tileTint; // Store as default
                     }
                     // optional legacy trigger offset
                     if (doc.RootElement.TryGetProperty("useLegacyTriggerOffset", out var lto))
@@ -3967,6 +5527,38 @@ namespace FamidashEditor
                         {
                             MenuOptionHideColorTriggers.IsChecked = hideColorTriggers;
                         }
+                    }
+                    // optional hide invisible sprites setting (global)
+                    if (doc.RootElement.TryGetProperty("hideInvisibleSprites", out var his))
+                    {
+                        try { hideInvisibleSprites = his.GetBoolean(); } catch { hideInvisibleSprites = false; }
+                        if (MenuOptionHideInvisibleSprites != null)
+                        {
+                            MenuOptionHideInvisibleSprites.IsChecked = hideInvisibleSprites;
+                        }
+                    }
+                    // optional lock-sprites global setting
+                    if (doc.RootElement.TryGetProperty("lockSpritesToSet", out var ls))
+                    {
+                        try { lockSpritesToSet = ls.GetBoolean(); } catch { lockSpritesToSet = false; }
+                    }
+                    // optional show accurate tileset setting (global)
+                    if (doc.RootElement.TryGetProperty("showAccurateTileset", out var sat))
+                    {
+                        try { showAccurateTileset = sat.GetBoolean(); } catch { showAccurateTileset = false; }
+                    }
+                    // optional suppress collision messages (defaults to true if not present)
+                    if (doc.RootElement.TryGetProperty("suppressCollisionMessages", out var scm))
+                    {
+                        try { suppressCollisionMessages = scm.GetBoolean(); } catch { suppressCollisionMessages = true; }
+                    }
+                    else
+                    {
+                        suppressCollisionMessages = true; // Default to true for new users
+                    }
+                    if (MenuOptionSuppressCollisionMessages != null)
+                    {
+                        MenuOptionSuppressCollisionMessages.IsChecked = suppressCollisionMessages;
                     }
                     // optional grid darkness (double)
                     if (doc.RootElement.TryGetProperty("gridDarkness", out var gd))
@@ -4001,7 +5593,46 @@ namespace FamidashEditor
                     if (doc.RootElement.TryGetProperty("invertPinchGesture", out var ipg))
                     {
                         try { invertPinchGesture = ipg.GetBoolean(); } catch { invertPinchGesture = true; }
-                        if (MenuOptionInvertPinch != null) MenuOptionInvertPinch.IsChecked = invertPinchGesture;
+                        if (MenuOptionSwapPinch != null) MenuOptionSwapPinch.IsChecked = invertPinchGesture;
+                    }
+                    
+                    // Load tileboard position (default to LEFT if not present)
+                    if (doc.RootElement.TryGetProperty("tileboardPosition", out var tbPosElem))
+                    {
+                        tileboardPosition = tbPosElem.GetString() ?? "LEFT";
+                    }
+                    else
+                    {
+                        tileboardPosition = "LEFT";
+                    }
+                    // Don't apply position here - will be applied after window loads
+                    if (MenuTileboardLeft != null) MenuTileboardLeft.IsChecked = (tileboardPosition == "LEFT");
+                    if (MenuTileboardRight != null) MenuTileboardRight.IsChecked = (tileboardPosition == "RIGHT");
+                    if (MenuTileboardTop != null) MenuTileboardTop.IsChecked = (tileboardPosition == "TOP");
+                    if (MenuTileboardBottom != null) MenuTileboardBottom.IsChecked = (tileboardPosition == "BOTTOM");
+                    
+                    // optional famistudio path
+                    if (doc.RootElement.TryGetProperty("famistudioPath", out var fsPath))
+                    {
+                        try { famiStudioPath = fsPath.GetString(); } catch { famiStudioPath = null; }
+                        if (!string.IsNullOrEmpty(famiStudioPath))
+                        {
+                            try { famiIntegration.LoadFromFolder(famiStudioPath); } catch { }
+                        }
+                        else
+                        {
+                            // If not configured, check the common Program Files location and use it automatically if present
+                            try
+                            {
+                                var defaultPf = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "FamiStudio");
+                                if (Directory.Exists(defaultPf))
+                                {
+                                    famiStudioPath = defaultPf;
+                                    try { famiIntegration.LoadFromFolder(famiStudioPath); } catch { }
+                                }
+                            }
+                            catch { }
+                        }
                     }
                 }
             }
@@ -4010,6 +5641,9 @@ namespace FamidashEditor
             {
                 // Ensure any previous tinted caches are cleared so they don't reference stale tints
                 ClearTintedCaches();
+                // Apply lock state if present in global settings (sprites may not yet be loaded, but ApplyLockSpritesToSet
+                // will re-run when sprites are loaded elsewhere)
+                try { ApplyLockSpritesToSet(); } catch { }
             }
         }
 
@@ -4018,16 +5652,24 @@ namespace FamidashEditor
             try
             {
                 var obj = new {
+                    version = 2,
                     background = new int[] { c.A, c.R, c.G, c.B },
-                    backgroundTint = new int[] { backgroundTint.A, backgroundTint.R, backgroundTint.G, backgroundTint.B },
-                    groundTint = new int[] { groundTint.A, groundTint.R, groundTint.G, groundTint.B },
+                    backgroundTint = new int[] { defaultBackgroundTint.A, defaultBackgroundTint.R, defaultBackgroundTint.G, defaultBackgroundTint.B },
+                    groundTint = new int[] { defaultGroundTint.A, defaultGroundTint.R, defaultGroundTint.G, defaultGroundTint.B },
+                    tileTint = new int[] { defaultTileTint.A, defaultTileTint.R, defaultTileTint.G, defaultTileTint.B },
                     useLegacyTriggerOffset = useLegacyTriggerOffset,
                     swapMouseWheelScroll = swapMouseWheelScroll,
                     invertPinchGesture = invertPinchGesture,
                     hideColorTriggers = hideColorTriggers,
+                    hideInvisibleSprites = hideInvisibleSprites,
+                    lockSpritesToSet = lockSpritesToSet,
+                    showAccurateTileset = showAccurateTileset,
+                    suppressCollisionMessages = suppressCollisionMessages,
                     playerColor = new int[] { playerTint.A, playerTint.R, playerTint.G, playerTint.B },
                     playerColorEnabled = playerTintEnabled,
-                    gridDarkness = gridDarkness
+                    gridDarkness = gridDarkness,
+                    famistudioPath = string.IsNullOrEmpty(famiStudioPath) ? null : famiStudioPath,
+                    tileboardPosition = tileboardPosition
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
                 var dir = AppContext.BaseDirectory;
@@ -4047,97 +5689,913 @@ namespace FamidashEditor
             catch { }
         }
 
-        // Methods called by SetOptionsWindow -------------------------------------------------
-        public void ShowBackgroundTintPicker()
-        {
-            try { BgTintButton_Click(null, null); } catch { }
-        }
-
-        public void ShowGroundTintPicker()
-        {
-            try { GroundTintButton_Click(null, null); } catch { }
-        }
-
-        public void ShowTileTintPicker()
-        {
-            try { TileTintButton_Click(null, null); } catch { }
-        }
-
-        public void SetNoParallax(bool v)
-        {
-            try
-            {
-                noParallaxBg = v;
-                if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = v;
-                try { ApplyParallaxChoice(); } catch { backgroundDirty = true; }
-            }
-            catch { }
-        }
-
-        public void SetShowAccurateTileset(bool show, string block, string spike)
-        {
-            try
-            {
-                showAccurateTileset = show;
-                if (!string.IsNullOrEmpty(block)) SetBlockSet(block);
-                if (!string.IsNullOrEmpty(spike)) SetSpikeSet(spike);
-                // Rebuild tiles to reflect change
-                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-            }
-            catch { }
-        }
-
-        public void SetBlockSet(string s)
-        {
-            try { currentBlockSet = s ?? currentBlockSet; } catch { }
-        }
-
-        public void SetSpikeSet(string s)
-        {
-            try { currentSpikeSet = s ?? currentSpikeSet; } catch { }
-        }
-
-        public void SetLockSpritesToSet(bool lockIt, string deco)
-        {
-            try
-            {
-                LockSpritesToSet = lockIt;
-                if (!string.IsNullOrEmpty(deco)) loadedDecoSet = deco;
-                // When locking, restrict displayed sprites (best-effort: trigger rebuild)
-                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-            }
-            catch { }
-        }
-
-        public void SetDecoSet(string deco)
-        {
-            try
-            {
-                loadedDecoSet = string.IsNullOrEmpty(deco) ? "deco1" : deco;
-                // Save to per-level config if applicable
-                try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
-                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-            }
-            catch { }
-        }
-
-        public void SaveCurrentTmxConfig()
-        {
-            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
-        }
-
-        public string GetCurrentTmxPath()
-        {
-            return currentFilePath ?? string.Empty;
-        }
-        // End SetOptionsWindow helpers ------------------------------------------------------
-
         private void InitDefaultMap()
         {
             tiles = Enumerable.Repeat(-1, mapWidth * mapHeight).ToArray();
             sprites = Enumerable.Repeat(-1, mapWidth * mapHeight).ToArray();
             if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
             if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+        }
+
+        private void CreateNewTab(string? filePath = null)
+        {
+            var tabData = new FileTabData
+            {
+                FilePath = filePath,
+                Tiles = tiles.ToArray(),
+                Sprites = sprites.ToArray(),
+                SpritePixelOffsets = new Dictionary<int, (int, int)>(spritePixelOffsets),
+                MapWidth = mapWidth,
+                MapHeight = mapHeight,
+                HasUnsavedChanges = hasUnsavedChanges,
+                LoadedTilesetSource = loadedTilesetSource,
+                LoadedSpritesetSource = loadedSpritesetSource,
+                LoadedHasEditorSettings = loadedHasEditorSettings,
+                LoadedChunkWidth = loadedChunkWidth,
+                LoadedChunkHeight = loadedChunkHeight,
+                LoadedExportTarget = loadedExportTarget,
+                LoadedExportFormat = loadedExportFormat,
+                LoadedParallaxSource = loadedParallaxSource,
+                LoadedParallaxX = loadedParallaxX,
+                LoadedParallaxY = loadedParallaxY,
+                LoadedParallaxRepeatX = loadedParallaxRepeatX,
+                LoadedParallaxRepeatY = loadedParallaxRepeatY,
+                LoadedHasParallaxLayer = loadedHasParallaxLayer,
+                LoadedGroundSource = loadedGroundSource,
+                LoadedGroundOffsetY = loadedGroundOffsetY,
+                LoadedGroundRepeatX = loadedGroundRepeatX,
+                LoadedHasGroundLayer = loadedHasGroundLayer,
+                LoadedDecoSet = loadedDecoSet,
+                LoadedBlockSet = loadedBlockSet,
+                LoadedSpikeSet = loadedSpikeSet,
+                NoParallaxBg = noParallaxBg,
+                BackgroundTint = backgroundTint,
+                GroundTint = groundTint,
+                TileTint = tileTint
+            };
+            
+            openFiles.Add(tabData);
+            currentFileIndex = openFiles.Count - 1;
+
+            // Create tab with close button
+            var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
+            var headerText = new TextBlock 
+            { 
+                Text = filePath != null ? System.IO.Path.GetFileName(filePath) : "Untitled",
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var closeButton = new Button
+            {
+                Content = "×",
+                Width = 16,
+                Height = 16,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Cursor = Cursors.Hand,
+                Visibility = Visibility.Visible,
+                Tag = currentFileIndex
+            };
+            closeButton.Click += CloseTab_Click;
+
+            headerPanel.Children.Add(headerText);
+            headerPanel.Children.Add(closeButton);
+
+            var tab = new TabItem
+            {
+                Header = headerPanel,
+                Tag = currentFileIndex
+            };
+
+            // Insert before the + tab if it exists
+            int insertIndex = FileTabControl.Items.Count;
+            if (insertIndex > 0 && FileTabControl.Items[insertIndex - 1] is TabItem lastTab && lastTab.Tag?.ToString() == "NEW")
+            {
+                insertIndex--;
+            }
+            isHandlingNewTab = true;
+            try
+            {
+                FileTabControl.Items.Insert(insertIndex, tab);
+                FileTabControl.SelectedItem = tab;
+                // Record the tab we selected programmatically so duplicate SelectionChanged events are ignored
+                lastSelectedTab = tab;
+            }
+            finally
+            {
+                isHandlingNewTab = false;
+            }
+
+            // Ensure + tab exists
+            EnsureNewTabButton();
+        }
+
+        private void EnsureNewTabButton()
+        {
+            // Check if + tab already exists
+            bool hasNewTabButton = false;
+            foreach (TabItem item in FileTabControl.Items)
+            {
+                if (item.Tag?.ToString() == "NEW")
+                {
+                    hasNewTabButton = true;
+                    break;
+                }
+            }
+            
+            if (!hasNewTabButton)
+            {
+                var newTab = new TabItem
+                {
+                    Header = "+",
+                    Tag = "NEW",
+                    Width = 30
+                };
+                FileTabControl.Items.Add(newTab);
+            }
+        }
+
+        private void CloseTab_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true; // Prevent tab selection
+            
+            if (sender is Button button && button.Tag is int index)
+            {
+                CloseTabAtIndex(index);
+            }
+        }
+
+        private void CloseTabAtIndex(int index)
+        {
+            if (index < 0 || index >= openFiles.Count) return;
+            
+            // Stop music player when closing a tab
+            try { famiIntegration.Stop(); } catch { }
+            
+            var tabData = openFiles[index];
+            
+            // Check for unsaved changes
+            if (tabData.HasUnsavedChanges)
+            {
+                var fileName = tabData.FilePath != null ? System.IO.Path.GetFileName(tabData.FilePath) : "Untitled";
+                var result = MessageBox.Show(
+                    $"Save changes to {fileName}?",
+                    "Unsaved Changes",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+                
+                if (result == MessageBoxResult.Cancel)
+                {
+                    return;
+                }
+                else if (result == MessageBoxResult.Yes)
+                {
+                    // Switch to that tab and save
+                    SwitchToTab(index);
+                    SaveButton_Click(this, new RoutedEventArgs());
+                    if (hasUnsavedChanges) return; // User cancelled save
+                }
+            }
+            
+            // Remove the tab
+            openFiles.RemoveAt(index);
+            
+            // Find and remove the UI tab
+            for (int i = 0; i < FileTabControl.Items.Count; i++)
+            {
+                if (FileTabControl.Items[i] is TabItem tab && tab.Tag is int tabIndex && tabIndex == index)
+                {
+                    FileTabControl.Items.RemoveAt(i);
+                    break;
+                }
+            }
+            
+            // Update tags for remaining tabs
+            for (int i = 0; i < FileTabControl.Items.Count; i++)
+            {
+                if (FileTabControl.Items[i] is TabItem tab && tab.Tag is int tabIndex && tabIndex > index)
+                {
+                    tab.Tag = tabIndex - 1;
+                    // Update close button tag too
+                    if (tab.Header is StackPanel panel && panel.Children[1] is Button btn)
+                    {
+                        btn.Tag = tabIndex - 1;
+                    }
+                }
+            }
+            
+            // If we closed the current tab, switch to another
+            if (currentFileIndex == index)
+            {
+                if (openFiles.Count > 0)
+                {
+                    int newIndex = Math.Min(index, openFiles.Count - 1);
+                    SwitchToTab(newIndex);
+                }
+                else
+                {
+                    // No tabs left, create a new one
+                    NewMenuItem_Click(this, new RoutedEventArgs());
+                }
+            }
+            else if (currentFileIndex > index)
+            {
+                currentFileIndex--;
+            }
+        }
+
+        private void MenuFileClose_Click(object sender, RoutedEventArgs e)
+        {
+            if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+            {
+                CloseTabAtIndex(currentFileIndex);
+            }
+        }
+
+        private async void SwitchToTab(int index)
+        {
+            if (index < 0 || index >= openFiles.Count) return;
+            
+            // Show loading indicator
+            LoadingWindow? loadingWindow = null;
+            try
+            {
+                loadingWindow = new LoadingWindow { Owner = this };
+                loadingWindow.SetMessage("Tab rendering, please wait...");
+                loadingWindow.Show();
+                
+                // Allow UI to update
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            }
+            catch { }
+            
+            try
+            {
+                // Save current tab state and TMX config
+                if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                {
+                    SaveCurrentTabState();
+                    
+                    // Auto-save TMX config to persist sprite offsets, tints, etc.
+                    var currentTab = openFiles[currentFileIndex];
+                    if (!string.IsNullOrEmpty(currentTab.FilePath) && Path.GetExtension(currentTab.FilePath).ToLower() == ".tmx")
+                    {
+                        try { SaveTmxConfig(currentTab.FilePath); } catch { }
+                    }
+                }
+                
+                // Load new tab state
+                currentFileIndex = index;
+                var tabData = openFiles[index];
+                
+                tiles = tabData.Tiles.ToArray();
+                sprites = tabData.Sprites.ToArray();
+                spritePixelOffsets = new Dictionary<int, (int, int)>(tabData.SpritePixelOffsets);
+                mapWidth = tabData.MapWidth;
+                mapHeight = tabData.MapHeight;
+                hasUnsavedChanges = tabData.HasUnsavedChanges;
+                currentFilePath = tabData.FilePath;
+                
+                if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
+                if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+                
+                // Load TMX config for this file to get level-specific tints and settings
+                // This will set all the loaded* variables from the config file
+                if (!string.IsNullOrEmpty(tabData.FilePath) && System.IO.File.Exists(tabData.FilePath))
+                {
+                    try 
+                    { 
+                        LoadTmxConfig(tabData.FilePath);
+                        
+                        // Reapply tileset if accurate tileset mode is enabled
+                        if (showAccurateTileset)
+                        {
+                            try { SetShowAccurateTileset(true); } catch { }
+                        }
+                        
+                        // Save the loaded config values back to tab data so they persist
+                        SaveCurrentTabState();
+                    } 
+                    catch { }
+                }
+                else
+                {
+                    // No file, restore all metadata from tab data
+                    loadedTilesetSource = tabData.LoadedTilesetSource;
+                    loadedSpritesetSource = tabData.LoadedSpritesetSource;
+                    loadedHasEditorSettings = tabData.LoadedHasEditorSettings;
+                    loadedChunkWidth = tabData.LoadedChunkWidth;
+                    loadedChunkHeight = tabData.LoadedChunkHeight;
+                    loadedExportTarget = tabData.LoadedExportTarget;
+                    loadedExportFormat = tabData.LoadedExportFormat;
+                    loadedParallaxSource = tabData.LoadedParallaxSource;
+                    loadedParallaxX = tabData.LoadedParallaxX;
+                    loadedParallaxY = tabData.LoadedParallaxY;
+                    loadedParallaxRepeatX = tabData.LoadedParallaxRepeatX;
+                    loadedParallaxRepeatY = tabData.LoadedParallaxRepeatY;
+                    loadedHasParallaxLayer = tabData.LoadedHasParallaxLayer;
+                    loadedGroundSource = tabData.LoadedGroundSource;
+                    loadedGroundOffsetY = tabData.LoadedGroundOffsetY;
+                    loadedGroundRepeatX = tabData.LoadedGroundRepeatX;
+                    loadedHasGroundLayer = tabData.LoadedHasGroundLayer;
+                    loadedDecoSet = tabData.LoadedDecoSet;
+                    loadedBlockSet = tabData.LoadedBlockSet;
+                    loadedSpikeSet = tabData.LoadedSpikeSet;
+                    noParallaxBg = tabData.NoParallaxBg;
+                    backgroundTint = tabData.BackgroundTint;
+                    groundTint = tabData.GroundTint;
+                    tileTint = tabData.TileTint;
+                    
+                    // Restore selected song
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(tabData.SelectedSong) && FamiTrackCombo != null)
+                        {
+                            // Try to find and select the song in the combo box
+                            for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                            {
+                                if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                                    item.Content?.ToString() == tabData.SelectedSong)
+                                {
+                                    FamiTrackCombo.SelectedIndex = i;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                    
+                    // Update NoParallax menu checkbox
+                    if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
+                    
+                    // Rebuild tinted images
+                    UpdateParallaxTint();
+                    UpdateGroundTint();
+                    UpdateTileTint();
+                }
+                
+                // Update locked sprites if that option is enabled
+                if (lockSpritesToSet && MenuOptionLockSprites != null)
+                {
+                    MenuOptionLockSprites.IsChecked = lockSpritesToSet;
+                }
+                
+                // Mark background dirty and clear caches
+                backgroundDirty = true;
+                try { scaledTileCaches.Clear(); } catch { }
+                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                
+                Redraw();
+            }
+            finally
+            {
+                // Close loading indicator
+                try { loadingWindow?.Close(); } catch { }
+            }
+        }
+
+        private void SaveCurrentTabState()
+        {
+            if (currentFileIndex < 0 || currentFileIndex >= openFiles.Count) return;
+            
+            var tabData = openFiles[currentFileIndex];
+            tabData.Tiles = tiles.ToArray();
+            tabData.Sprites = sprites.ToArray();
+            tabData.SpritePixelOffsets = new Dictionary<int, (int, int)>(spritePixelOffsets);
+            tabData.MapWidth = mapWidth;
+            tabData.MapHeight = mapHeight;
+            tabData.HasUnsavedChanges = hasUnsavedChanges;
+            tabData.FilePath = currentFilePath;
+            tabData.LoadedTilesetSource = loadedTilesetSource;
+            tabData.LoadedSpritesetSource = loadedSpritesetSource;
+            tabData.LoadedHasEditorSettings = loadedHasEditorSettings;
+            tabData.LoadedChunkWidth = loadedChunkWidth;
+            tabData.LoadedChunkHeight = loadedChunkHeight;
+            tabData.LoadedExportTarget = loadedExportTarget;
+            tabData.LoadedExportFormat = loadedExportFormat;
+            tabData.LoadedParallaxSource = loadedParallaxSource;
+            tabData.LoadedParallaxX = loadedParallaxX;
+            tabData.LoadedParallaxY = loadedParallaxY;
+            tabData.LoadedParallaxRepeatX = loadedParallaxRepeatX;
+            tabData.LoadedParallaxRepeatY = loadedParallaxRepeatY;
+            tabData.LoadedHasParallaxLayer = loadedHasParallaxLayer;
+            tabData.LoadedGroundSource = loadedGroundSource;
+            tabData.LoadedGroundOffsetY = loadedGroundOffsetY;
+            tabData.LoadedGroundRepeatX = loadedGroundRepeatX;
+            tabData.LoadedHasGroundLayer = loadedHasGroundLayer;
+            tabData.LoadedDecoSet = loadedDecoSet;
+            tabData.LoadedBlockSet = loadedBlockSet;
+            tabData.LoadedSpikeSet = loadedSpikeSet;
+            tabData.NoParallaxBg = noParallaxBg;
+            tabData.BackgroundTint = backgroundTint;
+            tabData.GroundTint = groundTint;
+            tabData.TileTint = tileTint;
+            
+            // Save selected song
+            try
+            {
+                if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Content != null)
+                {
+                    tabData.SelectedSong = cbi.Content.ToString();
+                }
+            }
+            catch { }
+        }
+
+        private void FileTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Prevent re-entrancy
+            if (isHandlingNewTab) return;
+            
+                if (FileTabControl.SelectedItem is TabItem tab)
+            {
+                    // Ignore if selection didn't actually change (queued duplicate events)
+                    if (lastSelectedTab != null && ReferenceEquals(lastSelectedTab, tab))
+                    {
+                        return;
+                    }
+
+                    // Only trigger new tab creation if the selected tab is the + tab and it is the last tab
+                    if (tab.Tag?.ToString() == "NEW" && FileTabControl.Items[FileTabControl.Items.Count - 1] == tab)
+                {
+                    isHandlingNewTab = true;
+                    try
+                    {
+                        NewMenuItem_Click(this, new RoutedEventArgs());
+                    }
+                    finally
+                    {
+                        isHandlingNewTab = false;
+                    }
+                }
+                else if (tab.Tag is int index)
+                {
+                    // Only switch if we're not already on this tab
+                    if (currentFileIndex != index && index >= 0 && index < openFiles.Count)
+                    {
+                        SwitchToTab(index);
+                    }
+                }
+                    // Track last selected tab reference
+                    lastSelectedTab = tab;
+            }
+        }
+
+        private void AddToRecentFiles(string filePath)
+        {
+            recentFiles.Remove(filePath);
+            recentFiles.Insert(0, filePath);
+            if (recentFiles.Count > MaxRecentFiles)
+            {
+                recentFiles.RemoveAt(MaxRecentFiles);
+            }
+            SaveRecentFiles();
+            UpdateRecentFilesMenu();
+        }
+
+        private void UpdateRecentFilesMenu()
+        {
+            if (MenuFileRecent == null) return;
+            
+            MenuFileRecent.Items.Clear();
+            
+            if (recentFiles.Count == 0)
+            {
+                var emptyItem = new MenuItem { Header = "(No recent files)", IsEnabled = false };
+                MenuFileRecent.Items.Add(emptyItem);
+                return;
+            }
+            
+            for (int i = 0; i < recentFiles.Count; i++)
+            {
+                var filePath = recentFiles[i];
+                var menuItem = new MenuItem
+                {
+                    Header = $"_{i + 1}  {System.IO.Path.GetFileName(filePath)}",
+                    Tag = filePath,
+                    ToolTip = filePath
+                };
+                menuItem.Click += RecentFile_Click;
+                MenuFileRecent.Items.Add(menuItem);
+            }
+        }
+
+        private void RecentFile_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem menuItem && menuItem.Tag is string filePath)
+            {
+                if (System.IO.File.Exists(filePath))
+                {
+                    LoadTMXFile(filePath);
+                }
+                else
+                {
+                    MessageBox.Show($"File not found: {filePath}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    recentFiles.Remove(filePath);
+                    SaveRecentFiles();
+                    UpdateRecentFilesMenu();
+                }
+            }
+        }
+
+        private void LoadTMXFile(string filePath)
+        {
+            // Prompt to save if there are unsaved changes
+            if (hasUnsavedChanges)
+            {
+                var result = MessageBox.Show(
+                    "You have unsaved changes. Do you want to save before loading?",
+                    "Unsaved Changes",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+                
+                if (result == MessageBoxResult.Yes)
+                {
+                    SaveButton_Click(this, new RoutedEventArgs());
+                    // If user cancelled the save dialog, abort the load
+                    if (hasUnsavedChanges) return;
+                }
+                else if (result == MessageBoxResult.Cancel)
+                {
+                    return; // User cancelled the load operation
+                }
+                // If No, continue with load without saving
+            }
+            
+            LoadingWindow? loadingWindow = null;
+            try
+            {
+                string ext = Path.GetExtension(filePath).ToLower();
+                int loadedWidth = 0;
+                int loadedHeight = 0;
+                int[]? loadedTiles = null;
+                int[]? loadedSprites = null;
+                
+                if (ext == ".tmx")
+                {
+                    // Show loading dialog
+                    loadingWindow = new LoadingWindow { Owner = this };
+                    loadingWindow.SetMessage("Loading TMX file...\nThis may take a while on larger maps.");
+                    loadingWindow.Show();
+                    
+                    // Force UI update
+                    Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+                    
+                    // Load TMX format
+                    var tmxLevel = TmxHandler.LoadTmx(filePath, useLegacyTriggerOffset);
+                    loadedWidth = tmxLevel.Width;
+                    loadedHeight = tmxLevel.Height;
+                    loadedTiles = tmxLevel.Tiles;
+                    loadedSprites = tmxLevel.Sprites;
+                    
+                    // Show collision messages if any (unless suppressed)
+                    if (!suppressCollisionMessages && !string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
+                    {
+                        MessageBox.Show(this, "Sprite collision adjustments during load:\n\n" + tmxLevel.LoadCollisionMessages, 
+                            "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
+                        
+                        // Restore focus to main window after MessageBox
+                        this.Activate();
+                        this.Focus();
+                    }
+                    
+                    // Store TMX metadata to preserve when saving
+                    loadedTilesetSource = tmxLevel.TilesetSource;
+                    loadedSpritesetSource = tmxLevel.SpritesetSource;
+                    loadedHasEditorSettings = tmxLevel.HasEditorSettings;
+                    loadedChunkWidth = tmxLevel.ChunkWidth;
+                    loadedChunkHeight = tmxLevel.ChunkHeight;
+                    loadedExportTarget = tmxLevel.ExportTarget;
+                    loadedExportFormat = tmxLevel.ExportFormat;
+                    loadedParallaxSource = tmxLevel.ParallaxSource;
+                    originalParallaxSource = tmxLevel.ParallaxSource; // Save original
+                    loadedParallaxX = tmxLevel.ParallaxX;
+                    loadedParallaxY = tmxLevel.ParallaxY;
+                    loadedParallaxRepeatX = tmxLevel.ParallaxRepeatX;
+                    loadedParallaxRepeatY = tmxLevel.ParallaxRepeatY;
+                    loadedHasParallaxLayer = tmxLevel.HasParallaxLayer;
+                    loadedGroundSource = tmxLevel.GroundSource;
+                    loadedGroundOffsetY = tmxLevel.GroundOffsetY;
+                    loadedGroundRepeatX = tmxLevel.GroundRepeatX;
+                    loadedHasGroundLayer = tmxLevel.HasGroundLayer;
+                    // Load deco set from TMX if present; config file may override when LoadTmxConfig runs
+                    try { loadedDecoSet = string.IsNullOrEmpty(tmxLevel.DecoSet) ? "deco1" : tmxLevel.DecoSet; } catch { loadedDecoSet = "deco1"; }
+                }
+                
+                if (loadedWidth > 0 && loadedHeight > 0 && loadedTiles != null)
+                {
+                    // Directly set the data without going through ResizeMap to avoid undo recording
+                    suppressUndoRecording = true;
+                    mapWidth = loadedWidth;
+                    mapHeight = loadedHeight;
+                    tiles = loadedTiles;
+                    sprites = loadedSprites ?? Enumerable.Repeat(-1, loadedWidth * loadedHeight).ToArray();
+                    
+                    if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
+                    if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+                    
+                    // Clear selection
+                    ClearSelection();
+                    
+                    // Clear undo/redo stacks when loading a new file
+                    undoStack.Clear();
+                    redoStack.Clear();
+                    
+                    suppressUndoRecording = false;
+                    
+                    // Update current file and clear dirty flag
+                    currentFilePath = filePath;
+                    hasUnsavedChanges = false;
+                    
+                    // Add to recent files
+                    AddToRecentFiles(filePath);
+                    
+                    // Load TMX config to get tints, sprite offsets, and sets
+                    try { LoadTmxConfig(filePath); } catch { }
+                    
+                    // If current tab is untitled with no changes, replace it instead of creating new tab
+                    bool replaceCurrentTab = false;
+                    if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                    {
+                        var currentTab = openFiles[currentFileIndex];
+                        if (string.IsNullOrEmpty(currentTab.FilePath) && !currentTab.HasUnsavedChanges)
+                        {
+                            replaceCurrentTab = true;
+                        }
+                    }
+                    
+                    if (replaceCurrentTab)
+                    {
+                        // Update current tab
+                        SaveCurrentTabState();
+                        openFiles[currentFileIndex].FilePath = filePath;
+                        
+                        // Update tab header
+                        for (int i = 0; i < FileTabControl.Items.Count; i++)
+                        {
+                            if (FileTabControl.Items[i] is TabItem tabItem && tabItem.Tag is int tabFileIndex && tabFileIndex == currentFileIndex)
+                            {
+                                // Create header panel with close button
+                                var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
+                                var headerText = new TextBlock 
+                                { 
+                                    Text = System.IO.Path.GetFileName(filePath),
+                                    Margin = new Thickness(0, 0, 8, 0),
+                                    VerticalAlignment = VerticalAlignment.Center
+                                };
+                                var closeButton = new Button
+                                {
+                                    Content = "×",
+                                    Width = 16,
+                                    Height = 16,
+                                    Padding = new Thickness(0),
+                                    Margin = new Thickness(0),
+                                    VerticalAlignment = VerticalAlignment.Center,
+                                    Background = Brushes.Transparent,
+                                    BorderThickness = new Thickness(0),
+                                    FontSize = 14,
+                                    FontWeight = FontWeights.Bold,
+                                    Cursor = Cursors.Hand,
+                                    Visibility = Visibility.Visible,
+                                    Tag = currentFileIndex
+                                };
+                                closeButton.Click += CloseTab_Click;
+                                headerPanel.Children.Add(headerText);
+                                headerPanel.Children.Add(closeButton);
+                                tabItem.Header = headerPanel;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Create new tab
+                        CreateNewTab(filePath);
+                    }
+                    
+                    // Full redraw with all bitmaps
+                    Redraw();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading file: {ex.Message}", "Load Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (loadingWindow != null)
+                {
+                    loadingWindow.Close();
+                }
+            }
+        }
+
+        private void SaveRecentFiles()
+        {
+            try
+            {
+                var dir = AppContext.BaseDirectory;
+                var path = System.IO.Path.Combine(dir, "recent-files.json");
+                var json = System.Text.Json.JsonSerializer.Serialize(recentFiles);
+                System.IO.File.WriteAllText(path, json);
+            }
+            catch { }
+        }
+
+        private void LoadRecentFiles()
+        {
+            try
+            {
+                var dir = AppContext.BaseDirectory;
+                var path = System.IO.Path.Combine(dir, "recent-files.json");
+                if (System.IO.File.Exists(path))
+                {
+                    var json = System.IO.File.ReadAllText(path);
+                    var loaded = System.Text.Json.JsonSerializer.Deserialize<List<string>>(json);
+                    if (loaded != null)
+                    {
+                        recentFiles = loaded.Where(f => System.IO.File.Exists(f)).Take(MaxRecentFiles).ToList();
+                    }
+                }
+            }
+            catch { }
+            UpdateRecentFilesMenu();
+        }
+
+        private void SetTileboardPosition(string position)
+        {
+            string previousPosition = tileboardPosition;
+            tileboardPosition = position;
+            
+            // When switching TO LEFT/RIGHT from TOP/BOTTOM, reset manual flags
+            if ((position == "LEFT" || position == "RIGHT") && 
+                (previousPosition == "TOP" || previousPosition == "BOTTOM"))
+            {
+                manualTileSize = false;
+                manualSpriteSize = false;
+            }
+            
+            ApplyTileboardPosition();
+            UpdateLeftColumnWidth(initial: false);
+            
+            // Repopulate tiles panel to apply correct tile order for new position
+            PopulateTilesPanel();
+            
+            // For LEFT/RIGHT positions, recalculate sizes as if app just opened
+            // For TOP/BOTTOM, don't change tile sizes
+            this.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (tileboardPosition == "LEFT" || tileboardPosition == "RIGHT")
+                {
+                    // Reset to startup behavior for LEFT/RIGHT
+                    Ensure16VisibleOnStartup();
+                }
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+            
+            SaveSettingsWithTriggerOption();
+        }
+
+        private void ApplyTileboardPosition()
+        {
+            if (RootGrid == null || RootGrid.ColumnDefinitions.Count < 3) return;
+            
+            // If tileboard is hidden, keep it hidden after layout changes
+            if (isTileboardHidden)
+            {
+                if (TileboardPanel != null) TileboardPanel.Visibility = Visibility.Collapsed;
+                var splitter = RootGrid.Children.OfType<GridSplitter>().FirstOrDefault();
+                if (splitter != null) splitter.Visibility = Visibility.Collapsed;
+                
+                // Keep columns/rows at 0
+                if (tileboardPosition == "LEFT")
+                {
+                    RootGrid.ColumnDefinitions[0].Width = new GridLength(0);
+                    RootGrid.ColumnDefinitions[1].Width = new GridLength(0);
+                }
+                else if (tileboardPosition == "RIGHT")
+                {
+                    RootGrid.ColumnDefinitions[1].Width = new GridLength(0);
+                    RootGrid.ColumnDefinitions[2].Width = new GridLength(0);
+                }
+                else if (RootGrid.RowDefinitions.Count >= 3)
+                {
+                    if (tileboardPosition == "TOP")
+                    {
+                        RootGrid.RowDefinitions[0].Height = new GridLength(0);
+                        RootGrid.RowDefinitions[1].Height = new GridLength(0);
+                    }
+                    else // BOTTOM
+                    {
+                        RootGrid.RowDefinitions[1].Height = new GridLength(0);
+                        RootGrid.RowDefinitions[2].Height = new GridLength(0);
+                    }
+                }
+                return;
+            }
+
+            if (tileboardPosition == "TOP" || tileboardPosition == "BOTTOM")
+            {
+                // TOP/BOTTOM: Use row-based layout instead of column-based
+                // First ensure we have row definitions
+                if (RootGrid.RowDefinitions.Count == 0)
+                {
+                    RootGrid.RowDefinitions.Clear();
+                    if (tileboardPosition == "TOP")
+                    {
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(260, GridUnitType.Pixel) });
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5, GridUnitType.Pixel) });
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                    }
+                    else // BOTTOM
+                    {
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5, GridUnitType.Pixel) });
+                        RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(260, GridUnitType.Pixel) });
+                    }
+                }
+                
+                // Clear column positioning
+                Grid.SetColumn(TileboardPanel, 0);
+                Grid.SetColumn(MainEditorPanel, 0);
+                Grid.SetColumnSpan(TileboardPanel, 3);
+                Grid.SetColumnSpan(MainEditorPanel, 3);
+                
+                // Set row positioning based on TOP or BOTTOM
+                if (tileboardPosition == "TOP")
+                {
+                    Grid.SetRow(TileboardPanel, 0);
+                    Grid.SetRow(MainEditorPanel, 2);
+                }
+                else // BOTTOM
+                {
+                    Grid.SetRow(MainEditorPanel, 0);
+                    Grid.SetRow(TileboardPanel, 2);
+                }
+                
+                // Hide vertical splitter when in TOP/BOTTOM mode
+                if (RootGrid.Children.Count > 2)
+                {
+                    var splitter = RootGrid.Children.OfType<GridSplitter>().FirstOrDefault();
+                    if (splitter != null) splitter.Visibility = Visibility.Collapsed;
+                }
+            }
+            else if (tileboardPosition == "RIGHT")
+            {
+                // Ensure rows are cleared for column-based layout
+                if (RootGrid.RowDefinitions.Count > 0)
+                {
+                    RootGrid.RowDefinitions.Clear();
+                }
+                Grid.SetRowSpan(TileboardPanel, 1);
+                Grid.SetRowSpan(MainEditorPanel, 1);
+                Grid.SetRow(TileboardPanel, 0);
+                Grid.SetRow(MainEditorPanel, 0);
+                
+                // Move panels: Main | Splitter | Tileboard
+                Grid.SetColumn(TileboardPanel, 2);
+                Grid.SetColumn(MainEditorPanel, 0);
+                Grid.SetColumnSpan(TileboardPanel, 1);
+                Grid.SetColumnSpan(MainEditorPanel, 1);
+                
+                // Reset column widths to default
+                RootGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+                RootGrid.ColumnDefinitions[2].Width = new GridLength(260, GridUnitType.Pixel);
+                
+                // Show vertical splitter
+                var splitter = RootGrid.Children.OfType<GridSplitter>().FirstOrDefault();
+                if (splitter != null) splitter.Visibility = Visibility.Visible;
+            }
+            else // LEFT
+            {
+                // Ensure rows are cleared for column-based layout
+                if (RootGrid.RowDefinitions.Count > 0)
+                {
+                    RootGrid.RowDefinitions.Clear();
+                }
+                Grid.SetRowSpan(TileboardPanel, 1);
+                Grid.SetRowSpan(MainEditorPanel, 1);
+                Grid.SetRow(TileboardPanel, 0);
+                Grid.SetRow(MainEditorPanel, 0);
+                
+                // Default: Tileboard | Splitter | Main
+                Grid.SetColumn(TileboardPanel, 0);
+                Grid.SetColumn(MainEditorPanel, 2);
+                Grid.SetColumnSpan(TileboardPanel, 1);
+                Grid.SetColumnSpan(MainEditorPanel, 1);
+                
+                // Reset column widths to default
+                RootGrid.ColumnDefinitions[0].Width = new GridLength(260, GridUnitType.Pixel);
+                RootGrid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
+                
+                // Show vertical splitter
+                var splitter = RootGrid.Children.OfType<GridSplitter>().FirstOrDefault();
+                if (splitter != null) splitter.Visibility = Visibility.Visible;
+            }
         }
 
         // When initial=true, allow calling code to expand the window minimum width so the left column
@@ -4148,7 +6606,33 @@ namespace FamidashEditor
             try
             {
                 if (RootGrid == null) return;
-                var col = RootGrid.ColumnDefinitions[0];
+                
+                // Don't adjust layout if tileboard is hidden
+                if (isTileboardHidden) return;
+                
+                // For TOP/BOTTOM position, adjust row height instead of column width
+                if (tileboardPosition == "TOP" || tileboardPosition == "BOTTOM")
+                {
+                    int tileboardRow = (tileboardPosition == "TOP") ? 0 : 2;
+                    if (RootGrid.RowDefinitions.Count > tileboardRow)
+                    {
+                        var row = RootGrid.RowDefinitions[tileboardRow];
+                        if (!manualTileSize)
+                        {
+                            double ts = paletteTileSize;
+                            double scrollbar = SystemParameters.VerticalScrollBarWidth; // Use vertical scrollbar width
+                            double padding = 12;
+                            // Height for tiles and sprites stacked horizontally
+                            double desired = Math.Max(160, ts * 8 + scrollbar + padding + 100); // Extra space for labels
+                            row.Height = new GridLength(desired, GridUnitType.Pixel);
+                        }
+                    }
+                    return;
+                }
+                
+                // Determine which column has the tileboard based on current position
+                int tileboardColumn = (tileboardPosition == "RIGHT") ? 2 : 0;
+                var col = RootGrid.ColumnDefinitions[tileboardColumn];
                 
                 // When in auto mode (not manual tile size), adjust column width to fit 16 tiles
                 // When manual, keep the column fixed and allow scrollbars
@@ -4159,13 +6643,13 @@ namespace FamidashEditor
                     double scrollbar = SystemParameters.VerticalScrollBarWidth;
                     double padding = 12;
                     double desired = Math.Max(160, ts * 16 + scrollbar + padding);
-                    // set the left column width to desired
+                    // set the tileboard column width to desired
                     col.Width = new GridLength(desired, GridUnitType.Pixel);
                 }
 
                 if (initial)
                 {
-                    // On first run, expand the window MinWidth so the left column is fully visible,
+                    // On first run, expand the window MinWidth so the tileboard column is fully visible,
                     // but avoid forcing the actual Window.Width (user should be able to resize freely).
                     double colWidth = col.ActualWidth > 0 ? col.ActualWidth : 260;
                     double splitterWidth = (RootGrid.ColumnDefinitions.Count > 1) ? RootGrid.ColumnDefinitions[1].ActualWidth : 5;
@@ -4362,6 +6846,7 @@ namespace FamidashEditor
                     spritesBitmap = embeddedSprites;
                     SliceSpriteset();
                     PopulateSpritesPanel();
+                    try { ApplyLockSpritesToSet(); } catch { }
                     if (StatusText != null) StatusText.Text = "Loaded sprites from embedded resources";
                 }
                 
@@ -4439,6 +6924,8 @@ namespace FamidashEditor
                 InitializeRedOrbAnimationFrames();
                 InitializeWhiteOrbAnimationFrames();
                 InitializeCoinAnimationFrames();
+                // Mini coin animation frames (preview-only)
+                InitializeMiniCoinAnimationFrames();
                 InitializeBlackOrbAnimationFrames();
                 // Initialize pad animation frames (preview-only)
                 InitializeRedPadAnimationFrames();
@@ -4468,6 +6955,9 @@ namespace FamidashEditor
                 LoadTwoFrameOrb("spider-orb-upwards", ref spiderOrbUpFrame1, ref spiderOrbUpFrame2);
                 // Star two-frame preview animation (sprite 0x36)
                 LoadTwoFrameOrb("star", ref starFrame1, ref starFrame2);
+                // New decorations two-frame previews
+                LoadTwoFrameOrb("pulsing-ball", ref pulsingBallFrame1, ref pulsingBallFrame2); // sprite 0x49
+                LoadTwoFrameOrb("music-note", ref musicNoteFrame1, ref musicNoteFrame2); // sprite 0x4A
                 // Additional decoration two-frame previews
                 LoadTwoFrameOrb("diamond", ref diamondFrame1, ref diamondFrame2); // sprite 0x32
                 LoadTwoFrameOrb("diamond-half", ref diamondHalfFrame1, ref diamondHalfFrame2); // sprite 0x33
@@ -4479,6 +6969,15 @@ namespace FamidashEditor
                 // New short pole left/right decorations
                 LoadTwoFrameOrb("pole-left-short", ref poleLeftShortFrame1, ref poleLeftShortFrame2); // sprite 0x38
                 LoadTwoFrameOrb("pole-right-short", ref poleRightShortFrame1, ref poleRightShortFrame2); // sprite 0x39
+                // Pole-medium replacements for 0x2C/0x3C preview (1.5 tiles tall)
+                LoadTwoFrameOrb("pole-medium", ref poleMediumFrame1, ref poleMediumFrame2); // sprite 0x2C -> custom 2122/2123
+                LoadTwoFrameOrb("pole-medium-upsidedown", ref poleMediumUpsideDownFrame1, ref poleMediumUpsideDownFrame2); // sprite 0x3C -> custom 2124/2125
+                // Pole-long replacements for 0x2A/0x3A preview (2 tiles tall)
+                LoadTwoFrameOrb("pole-long", ref poleLongFrame1, ref poleLongFrame2); // sprite 0x2A -> custom 2140/2141
+                LoadTwoFrameOrb("pole-long-upsidedown", ref poleLongUpsideDownFrame1, ref poleLongUpsideDownFrame2); // sprite 0x3A -> custom 2142/2143
+                    // Medium pole replacements (if provided as embedded assets)
+                    LoadTwoFrameOrb("pole-left-medium", ref poleLeftMediumFrame1, ref poleLeftMediumFrame2); // sprite 0x3E
+                    LoadTwoFrameOrb("pole-right-medium", ref poleRightMediumFrame1, ref poleRightMediumFrame2); // sprite 0x3F
                 // Chain decorations (single-frame preview-only)
                 try
                 {
@@ -4523,6 +7022,102 @@ namespace FamidashEditor
                             var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
                             chainUpsideDownFrame1 = new BitmapSource[1];
                             chainUpsideDownFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                        }
+                    }
+                }
+                catch { }
+                // Load deco spikes (single-frame preview-only)
+                try
+                {
+                    var s = LoadEmbeddedImage("deco-spikes.png");
+                    if (s != null)
+                    {
+                        decoSpikesFrame1 = new BitmapSource[1];
+                        decoSpikesFrame1[0] = new FormatConvertedBitmap(s, PixelFormats.Pbgra32, null, 0);
+                    }
+                    else
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var p = Path.Combine(baseDir, "deco-spikes.png");
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "deco-spikes.png"); if (File.Exists(rp)) p = rp; }
+                        if (File.Exists(p))
+                        {
+                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
+                            decoSpikesFrame1 = new BitmapSource[1];
+                            decoSpikesFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var s2 = LoadEmbeddedImage("deco-spikes-upsidedown.png");
+                    if (s2 != null)
+                    {
+                        decoSpikesUpsideDownFrame1 = new BitmapSource[1];
+                        decoSpikesUpsideDownFrame1[0] = new FormatConvertedBitmap(s2, PixelFormats.Pbgra32, null, 0);
+                    }
+                    else
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var p = Path.Combine(baseDir, "deco-spikes-upsidedown.png");
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "deco-spikes-upsidedown.png"); if (File.Exists(rp)) p = rp; }
+                        if (File.Exists(p))
+                        {
+                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
+                            decoSpikesUpsideDownFrame1 = new BitmapSource[1];
+                            decoSpikesUpsideDownFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var s3 = LoadEmbeddedImage("deco-spikes-small.png");
+                    if (s3 != null)
+                    {
+                        decoSpikesSmallFrame1 = new BitmapSource[1];
+                        decoSpikesSmallFrame1[0] = new FormatConvertedBitmap(s3, PixelFormats.Pbgra32, null, 0);
+                    }
+                    else
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var p = Path.Combine(baseDir, "deco-spikes-small.png");
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "deco-spikes-small.png"); if (File.Exists(rp)) p = rp; }
+                        if (File.Exists(p))
+                        {
+                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
+                            decoSpikesSmallFrame1 = new BitmapSource[1];
+                            decoSpikesSmallFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var s4 = LoadEmbeddedImage("deco-spikes-small-upsidedown.png");
+                    if (s4 != null)
+                    {
+                        decoSpikesSmallUpsideDownFrame1 = new BitmapSource[1];
+                        decoSpikesSmallUpsideDownFrame1[0] = new FormatConvertedBitmap(s4, PixelFormats.Pbgra32, null, 0);
+                    }
+                    else
+                    {
+                        var baseDir = AppContext.BaseDirectory;
+                        var p = Path.Combine(baseDir, "deco-spikes-small-upsidedown.png");
+                        var repo = FindRepoRootFor("famidash.bmp");
+                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "deco-spikes-small-upsidedown.png"); if (File.Exists(rp)) p = rp; }
+                        if (File.Exists(p))
+                        {
+                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
+                            decoSpikesSmallUpsideDownFrame1 = new BitmapSource[1];
+                            decoSpikesSmallUpsideDownFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
                         }
                     }
                 }
@@ -4603,6 +7198,294 @@ namespace FamidashEditor
             }
         }
 
+        private void TryLoadFamiAlbumParsedJson()
+        {
+            if (FamiTrackCombo == null) return;
+            
+            // Hook up selection changed event to auto-save song choice
+            FamiTrackCombo.SelectionChanged += (s, e) =>
+            {
+                try
+                {
+                    if (!string.IsNullOrEmpty(currentFilePath))
+                    {
+                        SaveTmxConfig(currentFilePath);
+                    }
+                }
+                catch { }
+            };
+
+            var jsonCandidates = new System.Collections.Generic.List<string>
+            {
+                System.IO.Path.Combine(AppContext.BaseDirectory, "fami-album-parsed.json"),
+                System.IO.Path.Combine(Environment.CurrentDirectory, "fami-album-parsed.json")
+            };
+
+            var repoRoot = FindRepoRootFor("the album.txt");
+            if (!string.IsNullOrEmpty(repoRoot))
+            {
+                jsonCandidates.Add(System.IO.Path.Combine(repoRoot, "fami-album-parsed.json"));
+                jsonCandidates.Add(System.IO.Path.Combine(repoRoot, "native-windows", "fami-album-parsed.json"));
+            }
+
+            string? foundJson = null;
+            foreach (var c in jsonCandidates)
+            {
+                try { if (!string.IsNullOrEmpty(c) && File.Exists(c)) { foundJson = c; break; } } catch { }
+            }
+
+            System.Collections.Generic.List<string> parsed = new System.Collections.Generic.List<string>();
+
+            if (foundJson != null)
+            {
+                try
+                {
+                    var txt = File.ReadAllText(foundJson);
+                    using var doc = System.Text.Json.JsonDocument.Parse(txt);
+                    if (doc.RootElement.TryGetProperty("parsedNames", out var pn) && pn.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        foreach (var el in pn.EnumerateArray()) parsed.Add(el.GetString() ?? "");
+                    }
+                }
+                catch { }
+            }
+
+            // If no parsed JSON found, try to parse the album TXT directly
+            if (parsed.Count == 0)
+            {
+                string? txtPath = null;
+                var txtCandidates = new System.Collections.Generic.List<string>
+                {
+                    System.IO.Path.Combine(AppContext.BaseDirectory, "the album.txt"),
+                    System.IO.Path.Combine(Environment.CurrentDirectory, "the album.txt")
+                };
+                if (!string.IsNullOrEmpty(repoRoot))
+                {
+                    txtCandidates.Add(System.IO.Path.Combine(repoRoot, "the album.txt"));
+                    txtCandidates.Add(System.IO.Path.Combine(repoRoot, "native-windows", "the album.txt"));
+                }
+
+                foreach (var c in txtCandidates)
+                {
+                    try { if (!string.IsNullOrEmpty(c) && File.Exists(c)) { txtPath = c; break; } } catch { }
+                }
+
+                if (txtPath != null)
+                {
+                    albumTxtPath = txtPath;
+                    try { parsed = famiIntegration.ParseFamiStudioTextExport(txtPath); } catch { parsed = new System.Collections.Generic.List<string>(); }
+                }
+            }
+
+            // Also look for an actual .fms project in the repo root or app base and prefer it for playback
+            try
+            {
+                string? fmsCandidate = null;
+                var fmsCandidates = new System.Collections.Generic.List<string>
+                {
+                    System.IO.Path.Combine(AppContext.BaseDirectory, "the album.fms"),
+                    System.IO.Path.Combine(Environment.CurrentDirectory, "the album.fms")
+                };
+                if (!string.IsNullOrEmpty(repoRoot))
+                {
+                    fmsCandidates.Add(System.IO.Path.Combine(repoRoot, "the album.fms"));
+                    fmsCandidates.Add(System.IO.Path.Combine(repoRoot, "native-windows", "the album.fms"));
+                }
+                // Also check for any *.fms files at repo root
+                if (!string.IsNullOrEmpty(repoRoot))
+                {
+                    try
+                    {
+                        foreach (var f in Directory.EnumerateFiles(repoRoot, "*.fms", SearchOption.TopDirectoryOnly)) fmsCandidates.Add(f);
+                    }
+                    catch { }
+                }
+
+                foreach (var c in fmsCandidates)
+                {
+                    try { if (!string.IsNullOrEmpty(c) && File.Exists(c)) { fmsCandidate = c; break; } } catch { }
+                }
+
+                if (!string.IsNullOrEmpty(fmsCandidate))
+                {
+                    albumTxtPath = fmsCandidate; // reuse variable: it can be .txt or .fms; Play checks extension
+                    try { if (StatusText != null) StatusText.Text = $"Found .fms for playback: {Path.GetFileName(fmsCandidate)}"; } catch { }
+                }
+            }
+            catch { }
+
+            // Populate combo
+            FamiTrackCombo.Items.Clear();
+            // Try to load a precomputed mapping from song name -> playable index
+            System.Collections.Generic.Dictionary<string, int>? nameToIndex = null;
+            try
+            {
+                var mapCandidates = new[] {
+                    Path.Combine(AppContext.BaseDirectory, "fami-song-index-map.json"),
+                    Path.Combine(Environment.CurrentDirectory, "fami-song-index-map.json"),
+                    Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory) ?? AppContext.BaseDirectory, "native-windows", "fami-song-index-map.json"),
+                    Path.Combine(AppContext.BaseDirectory, "..", "native-windows", "fami-song-index-map.json")
+                };
+                foreach (var mc in mapCandidates)
+                {
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(mc) && File.Exists(mc))
+                        {
+                            var txt = File.ReadAllText(mc);
+                            var arr = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>>(txt);
+                                if (arr != null)
+                            {
+                                    nameToIndex = new System.Collections.Generic.Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                                foreach (var d in arr)
+                                {
+                                    if (d.TryGetValue("name", out var on) && d.TryGetValue("index", out var oi))
+                                    {
+                                        var n = on?.ToString();
+                                        if (int.TryParse(oi?.ToString() ?? "", out var ii) && !string.IsNullOrEmpty(n))
+                                        {
+                                            if (!nameToIndex.ContainsKey(n)) nameToIndex[n] = ii;
+                                        }
+                                        mappingLoadedFromFile = true;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { nameToIndex = null; }
+
+            if (parsed.Count > 0)
+            {
+                for (int i = 0; i < parsed.Count; i++)
+                {
+                    int tagIndex = i;
+                    try
+                    {
+                        if (nameToIndex != null && nameToIndex.TryGetValue(parsed[i], out var mapped)) tagIndex = mapped;
+                    }
+                    catch { }
+
+                    var item = new System.Windows.Controls.ComboBoxItem() { Content = parsed[i], Tag = tagIndex };
+                    FamiTrackCombo.Items.Add(item);
+                }
+                // Combo population complete - default to "Stereo Madness" if available
+                int defaultIndex = 0;
+                for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                {
+                    if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                        item.Content?.ToString()?.Equals("Stereo Madness", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        defaultIndex = i;
+                        break;
+                    }
+                }
+                FamiTrackCombo.SelectedIndex = defaultIndex;
+                try { if (StatusText != null) StatusText.Text = $"Loaded {parsed.Count} names from {(foundJson != null ? Path.GetFileName(foundJson) : (albumTxtPath != null ? Path.GetFileName(albumTxtPath) : "unknown"))}"; } catch { }
+            }
+            else
+            {
+                // no names found - leave empty but add placeholders so dropdown shows size
+                for (int i = 0; i < 8; i++) FamiTrackCombo.Items.Add(new System.Windows.Controls.ComboBoxItem() { Content = $"Song {i}", Tag = i });
+                if (FamiTrackCombo.Items.Count > 0) FamiTrackCombo.SelectedIndex = 0;
+                try { if (StatusText != null) StatusText.Text = "No parsed song names found"; } catch { }
+            }
+        }
+
+        private async void PlayFamiButton_Click(object? sender, RoutedEventArgs e)
+        {
+            if (albumTxtPath == null)
+            {
+                System.Windows.MessageBox.Show(this, "No album.txt found to play.", "Play", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // If the path we have is a text export, the FamiStudio CLI cannot export playable WAVs from it.
+            // Playback requires a real .fms project file (or an in-process project loaded from FamiStudio assemblies).
+            try
+            {
+                if (Path.GetExtension(albumTxtPath).Equals(".txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    System.Windows.MessageBox.Show(this, "The loaded album is a FamiStudio text export (.txt). Playback requires the original .fms project or using FamiStudio itself.\n\nPlease configure the path to a .fms file or open a .fms via the FMS Player.", "Play Not Available", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+            }
+            catch { }
+
+            int idx = -1;
+            if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t)
+            {
+                idx = t;
+            }
+            else if (FamiTrackCombo?.SelectedIndex >= 0) idx = FamiTrackCombo.SelectedIndex;
+
+            if (idx < 0)
+            {
+                System.Windows.MessageBox.Show(this, "No track selected.", "Play", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            await System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    string fpath = albumTxtPath!;
+                    // If we have an actual .fms and the in-process integration is available, map selected name to the real index
+                    if (File.Exists(fpath) && Path.GetExtension(fpath).Equals(".fms", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            // Ensure famiIntegration has loaded the FamiStudio assemblies if a path is configured
+                            if (!famiIntegration.IsLoaded && !string.IsNullOrEmpty(famiStudioPath) && Directory.Exists(famiStudioPath))
+                            {
+                                famiIntegration.LoadFromFolder(famiStudioPath);
+                            }
+
+                            // If we have loaded a precomputed mapping from disk, prefer it — do not override via
+                            // in-process enumeration at play-time. This avoids mismatches when the runtime FamiStudio
+                            // assemblies (on the target machine) differ from the source tool used to build mappings.
+                            if (!mappingLoadedFromFile)
+                            {
+                                var names = famiIntegration.EnumerateTracks(fpath);
+                                if (names != null && names.Count > 0)
+                                {
+                                    // If the combo has a selected item with a string, try to match by name
+                                    string? selectedName = null;
+                                    if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cb && cb.Content != null) selectedName = cb.Content.ToString();
+                                    if (!string.IsNullOrEmpty(selectedName))
+                                    {
+                                        int mapped = names.FindIndex(n => string.Equals(n, selectedName, StringComparison.OrdinalIgnoreCase));
+                                        if (mapped >= 0) idx = mapped;
+                                    }
+                                }
+                            }
+
+                            // No play-time diagnostics in release build
+                        }
+                        catch { }
+                    }
+
+                    famiIntegration.PlayTrack(fpath, idx);
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() => System.Windows.MessageBox.Show(this, "Play failed: " + ex.Message, "Play Error", MessageBoxButton.OK, MessageBoxImage.Error));
+                }
+            });
+        }
+
+        private void StopFamiButton_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                famiIntegration.Stop();
+            }
+            catch { }
+        }
+
         // Initialize a reliable portal debug log path and create the file with a header.
         // This tries the executable directory first, then the repo root, then the temp folder.
         private void InitializePortalDebugLog()
@@ -4660,6 +7543,7 @@ namespace FamidashEditor
             {
                 var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze();
                 spritesBitmap = bi; SliceSpriteset(); PopulateSpritesPanel(); if (StatusText != null) StatusText.Text = "Loaded sprites: " + Path.GetFileName(path);
+                try { ApplyLockSpritesToSet(); } catch { }
             }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Sprites load failed: " + ex.Message; }
         }
@@ -4674,6 +7558,33 @@ namespace FamidashEditor
         {
             try { var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze(); groundBitmap = bi; SliceGround(); if (StatusText != null) StatusText.Text = "Loaded ground: " + Path.GetFileName(path); }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Ground load failed: " + ex.Message; }
+        }
+
+        private void MenuConfigureFamiStudio_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                using var dlg = new System.Windows.Forms.FolderBrowserDialog();
+                dlg.Description = "Select the FamiStudio installation folder (contains FamiStudio.exe / FamiStudio.dll)";
+                if (!string.IsNullOrEmpty(famiStudioPath) && Directory.Exists(famiStudioPath)) dlg.SelectedPath = famiStudioPath;
+                var res = dlg.ShowDialog();
+                if (res == System.Windows.Forms.DialogResult.OK || res == System.Windows.Forms.DialogResult.Yes)
+                {
+                    var sel = dlg.SelectedPath;
+                    if (!string.IsNullOrEmpty(sel) && Directory.Exists(sel))
+                    {
+                        famiStudioPath = sel;
+                        try { famiIntegration.LoadFromFolder(famiStudioPath); } catch (Exception ex) { System.Windows.MessageBox.Show(this, "Failed to load FamiStudio: " + ex.Message, "FamiStudio Load", MessageBoxButton.OK, MessageBoxImage.Error); }
+                        // Save new setting
+                        try { var c = mapBackground is SolidColorBrush sb ? sb.Color : Color.FromRgb(59, 59, 59); SaveSettings(c); } catch { }
+                        try { if (StatusText != null) StatusText.Text = "Configured FamiStudio: " + Path.GetFileName(famiStudioPath); } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { System.Windows.MessageBox.Show(this, "Failed to configure FamiStudio: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error); } catch { }
+            }
         }
 
         private void SliceTileset()
@@ -5255,9 +8166,34 @@ namespace FamidashEditor
             if (TilesPanel == null) return;
             TilesPanel.Items.Clear();
             if (tileImages == null) return;
-            int idx = 0;
-            foreach (var src in tileImages)
+            
+            // For TOP/BOTTOM position, rotate the tile layout to column-major order
+            // Tiles flow in columns: 0x00-0x0F in first column from top down, 0x10-0x1F in second column, etc.
+            int[] displayOrder;
+            if (tileboardPosition == "TOP" || tileboardPosition == "BOTTOM")
             {
+                // 16 columns × 16 rows = 256 tiles
+                // Original: row-major (0x00-0x0F in first row, 0x10-0x1F in second row, etc.)
+                // TOP/BOTTOM: column-major top-down (0x00 at top-left, 0x01 below it, ..., 0x0F at bottom-left, then 0x10 at top of second column)
+                displayOrder = new int[256];
+                for (int i = 0; i < 256; i++)
+                {
+                    int col = i / 16;  // Which column (0-15)
+                    int row = i % 16;  // Which row within column (0-15)
+                    // Top-down: just map column-major to row-major grid
+                    displayOrder[row * 16 + col] = i;
+                }
+            }
+            else
+            {
+                // Normal order
+                displayOrder = Enumerable.Range(0, 256).ToArray();
+            }
+            
+            foreach (int idx in displayOrder)
+            {
+                if (idx >= tileImages.Length) continue;
+                var src = tileImages[idx];
                 // prefer tinted tiles in the left palette when available, except for
                 // the special player-replacement tiles which must show the player
                 // tinted green pixels while preserving toned colors for non-green.
@@ -5325,6 +8261,24 @@ namespace FamidashEditor
                         UpdatePaletteHighlight();
                         ((Image)s).CaptureMouse();
                     }
+
+                    // Right-click: make this the active selected tile and activate tile layer
+                    img.MouseRightButtonDown += (s, e) => {
+                        int clickedTile = (int)((Image)s).Tag;
+                        selectedTile = clickedTile;
+                        selectedTiles = new List<int> { clickedTile };
+                        selectionWidth = 1;
+                        selectionHeight = 1;
+                        selectedSprite = -1;
+                        tilesLayerActive = true;
+                        spritesLayerActive = false;
+                        // Activate brush/place tool and tile draw mode so it's ready for placement
+                        try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
+                        try { if (DrawTileButton != null) DrawTileButton.IsChecked = true; } catch { }
+                        UpdatePaletteHighlight();
+                        try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
+                        e.Handled = true;
+                    };
                 };
                 
                 // Mouse move updates selection
@@ -5348,15 +8302,31 @@ namespace FamidashEditor
                 img.MouseEnter += (s, e) => {
                     int hoveredTile = (int)((Image)s).Tag;
                     if (TileIdIndicator != null)
-                        TileIdIndicator.Text = $"ID: 0x{hoveredTile:X2} ({hoveredTile})";
+                        TileIdIndicator.Text = $"0x{hoveredTile:X2}";
+                    if (TileSelectedPreviewImage != null && tileImages != null && hoveredTile >= 0 && hoveredTile < tileImages.Length)
+                    {
+                        TileSelectedPreviewImage.Source = tileImages[hoveredTile];
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(TileSelectedPreviewImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                    }
                 };
                 
                 img.MouseLeave += (s, e) => {
                     // Show selected tile when not hovering
                     if (TileIdIndicator != null && selectedTile >= 0)
-                        TileIdIndicator.Text = $"Selected: 0x{selectedTile:X2} ({selectedTile})";
+                        TileIdIndicator.Text = $"0x{selectedTile:X2}";
                     else if (TileIdIndicator != null)
                         TileIdIndicator.Text = "";
+                    if (TileSelectedPreviewImage != null)
+                    {
+                        if (selectedTile >= 0 && tileImages != null && selectedTile < tileImages.Length)
+                        {
+                            TileSelectedPreviewImage.Source = tileImages[selectedTile];
+                        }
+                        else
+                        {
+                            TileSelectedPreviewImage.Source = null;
+                        }
+                    }
                 };
                 
                 var border = new Border { 
@@ -5368,7 +8338,6 @@ namespace FamidashEditor
                 };
                 
                 TilesPanel.Items.Add(border);
-                idx++;
             }
         }
 
@@ -5382,12 +8351,12 @@ namespace FamidashEditor
             {
                 var img = new Image { Source = src, Width = paletteSpriteSize, Height = paletteSpriteSize, Stretch = Stretch.Fill, Tag = idx };
                 RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
-                img.MouseLeftButtonDown += (s, e) => { 
+                img.MouseLeftButtonDown += (s, e) => {
                     int clickedSprite = (int)((Image)s).Tag;
-                    
+                    // If locking active and this sprite is disabled, ignore clicks
+                    if (lockSpritesToSet && disabledSprites.Contains(clickedSprite)) { e.Handled = true; return; }
                     // Check if Ctrl is held for multi-layer selection
                     bool isCtrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
-                    
                     // Only allow multi-layer if a single tile is selected (not multiple tiles)
                     if (isCtrl && selectedTile >= 0 && selectedTiles.Count == 1)
                     {
@@ -5409,26 +8378,75 @@ namespace FamidashEditor
                         tilesLayerActive = false;
                         if (StatusText != null) StatusText.Text = "Selected sprite " + selectedSprite;
                     }
-                    
                     UpdatePaletteHighlight();
+                };
+
+                // Right-click: make this the active selected sprite and activate sprite layer
+                img.MouseRightButtonDown += (s, e) => {
+                    int clickedSprite = (int)((Image)s).Tag;
+                    selectedSprite = clickedSprite;
+                    selectedTile = -1;
+                    selectedTiles = new List<int>();
+                    selectionWidth = 1;
+                    selectionHeight = 1;
+                    spritesLayerActive = true;
+                    tilesLayerActive = false;
+                    // Activate brush/place tool so sprite placement is ready
+                    try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
+                    // Keep draw mode as Tile but ensure the Place tool is active
+                    UpdatePaletteHighlight();
+                    try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
+                    e.Handled = true;
                 };
                 
                 // Update ID indicator on hover
                 img.MouseEnter += (s, e) => {
                     int hoveredSprite = (int)((Image)s).Tag;
                     if (SpriteIdIndicator != null)
-                        SpriteIdIndicator.Text = $"ID: 0x{hoveredSprite:X2} ({hoveredSprite})";
+                        SpriteIdIndicator.Text = $"0x{hoveredSprite:X2}";
+                    if (SpriteSelectedPreviewImage != null && spriteImages != null && hoveredSprite >= 0 && hoveredSprite < spriteImages.Length)
+                    {
+                        SpriteSelectedPreviewImage.Source = spriteImages[hoveredSprite];
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(SpriteSelectedPreviewImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                    }
                 };
                 
                 img.MouseLeave += (s, e) => {
                     // Show selected sprite when not hovering
                     if (SpriteIdIndicator != null && selectedSprite >= 0)
-                        SpriteIdIndicator.Text = $"Selected: 0x{selectedSprite:X2} ({selectedSprite})";
+                        SpriteIdIndicator.Text = $"0x{selectedSprite:X2}";
                     else if (SpriteIdIndicator != null)
                         SpriteIdIndicator.Text = "";
+                    if (SpriteSelectedPreviewImage != null)
+                    {
+                        if (selectedSprite >= 0 && spriteImages != null && selectedSprite < spriteImages.Length)
+                        {
+                            SpriteSelectedPreviewImage.Source = spriteImages[selectedSprite];
+                        }
+                        else
+                        {
+                            SpriteSelectedPreviewImage.Source = null;
+                        }
+                    }
                 };
                 
-                var border = new Border { Child = img, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedSprite ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedSprite ? new Thickness(2) : new Thickness(0)) };
+                // If this sprite is disabled by deco-lock, show overlay and prevent selection
+                bool isDisabled = lockSpritesToSet && disabledSprites.Contains(idx);
+                FrameworkElement childElement = img;
+                if (isDisabled)
+                {
+                    var grid = new Grid();
+                    grid.Children.Add(img);
+                    var cover = new System.Windows.Shapes.Rectangle { Fill = new SolidColorBrush(Color.FromArgb(0xE0, 0xFF, 0xFF, 0xFF)), IsHitTestVisible = false };
+                    grid.Children.Add(cover);
+                    var xlbl = new TextBlock { Text = "X", FontWeight = FontWeights.Bold, Foreground = Brushes.Black, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+                    grid.Children.Add(xlbl);
+                    childElement = grid;
+                    // Make image non-interactive
+                    img.IsEnabled = false;
+                }
+
+                var border = new Border { Child = childElement, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedSprite ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedSprite ? new Thickness(2) : new Thickness(0)), IsEnabled = !isDisabled };
                 SpritesPanel.Items.Add(border);
                 idx++;
             }
@@ -5487,6 +8505,11 @@ namespace FamidashEditor
             if (selectedTiles.Count > 0)
             {
                 selectedTile = selectedTiles[0];
+                if (TileSelectedPreviewImage != null && tileImages != null && selectedTile >= 0 && selectedTile < tileImages.Length)
+                {
+                    TileSelectedPreviewImage.Source = tileImages[selectedTile];
+                    try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(TileSelectedPreviewImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                }
                 if (StatusText != null)
                 {
                     if (selectedTiles.Count == 1)
@@ -5556,18 +8579,42 @@ namespace FamidashEditor
             if (TileIdIndicator != null)
             {
                 if (selectedTile >= 0)
-                    TileIdIndicator.Text = $"Selected: 0x{selectedTile:X2} ({selectedTile})";
+                    TileIdIndicator.Text = $"0x{selectedTile:X2}";
                 else
                     TileIdIndicator.Text = "";
+                if (TileSelectedPreviewImage != null)
+                {
+                    if (selectedTile >= 0 && tileImages != null && selectedTile < tileImages.Length)
+                    {
+                        TileSelectedPreviewImage.Source = tileImages[selectedTile];
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(TileSelectedPreviewImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                    }
+                    else
+                    {
+                        TileSelectedPreviewImage.Source = null;
+                    }
+                }
             }
             
             // Update sprite ID indicator
             if (SpriteIdIndicator != null)
             {
                 if (selectedSprite >= 0)
-                    SpriteIdIndicator.Text = $"Selected: 0x{selectedSprite:X2} ({selectedSprite})";
+                    SpriteIdIndicator.Text = $"0x{selectedSprite:X2}";
                 else
                     SpriteIdIndicator.Text = "";
+                if (SpriteSelectedPreviewImage != null)
+                {
+                    if (selectedSprite >= 0 && spriteImages != null && selectedSprite < spriteImages.Length)
+                    {
+                        SpriteSelectedPreviewImage.Source = spriteImages[selectedSprite];
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(SpriteSelectedPreviewImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                    }
+                    else
+                    {
+                        SpriteSelectedPreviewImage.Source = null;
+                    }
+                }
             }
         }
 
@@ -5740,9 +8787,19 @@ namespace FamidashEditor
                 CanvasHost.Width = displayFullW; CanvasHost.Height = displayFullH;
                 CanvasHost.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
+            try { UpdateIncompatibleOverlay(); } catch { }
         }
 
         private void Redraw() => DrawMap();
+
+        // Redraw only the visible viewport for live preview performance
+        private void RedrawViewportOnly()
+        {
+            // Always redraw immediately for live preview feedback
+            // The tint operations (UpdateParallaxTint, UpdateGroundTint, UpdateTileTint)
+            // already set backgroundDirty = true, so DrawMap will rebuild the layers
+            DrawMap();
+        }
 
         // Ensure the background, tiles and grid bitmaps exist for the current size/scale.
         private void EnsureLayerBitmaps(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight)
@@ -5832,6 +8889,37 @@ namespace FamidashEditor
             backgroundRtb.Render(dv);
         }
 
+        // Create or retrieve a cached tinted BitmapSource for parallax/ground
+        // This avoids recreating the tinted image on every redraw, significantly speeding up color changes
+        private BitmapSource? GetOrCreateSingleTinted(BitmapSource src, Color tint, bool useRgbReplace, int scaleKey)
+        {
+            try
+            {
+                uint argb = ((uint)tint.A << 24) | ((uint)tint.R << 16) | ((uint)tint.G << 8) | tint.B;
+                long key = (((long)scaleKey) << 32) | argb;
+                var cache = useRgbReplace ? parallaxTintCache : groundTintCache;
+                if (cache.TryGetValue(key, out var existing)) return existing;
+
+                ImageSource[]? arr = null;
+                if (useRgbReplace)
+                {
+                    arr = CreateRgbReplacedImages(new ImageSource[] { src }, tint);
+                }
+                else
+                {
+                    arr = CreateHueShiftedImages(new ImageSource[] { src }, tint);
+                }
+
+                if (arr != null && arr.Length > 0 && arr[0] is BitmapSource bs)
+                {
+                    cache[key] = bs;
+                    return bs;
+                }
+            }
+            catch { }
+            return null;
+        }
+
         // Build parallax bitmap (static pixels). We'll translate the image with a cheap transform
         // on scroll instead of re-rendering on every scroll event.
         private void BuildParallaxBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
@@ -5845,60 +8933,47 @@ namespace FamidashEditor
             // Use the full parallax bitmap (not individual tiles)
             BitmapSource sourceImage = parallaxBitmap;
 
-            // Apply tint if needed (check if background tint is active)
+            // Apply tint if needed using cache to avoid recreating on every redraw
             if (backgroundTint.A != 0)
             {
-                var tintedImages = CreateRgbReplacedImages(new ImageSource[] { parallaxBitmap }, backgroundTint);
-                if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
-                {
-                    sourceImage = tinted;
-                }
+                var maybe = GetOrCreateSingleTinted(parallaxBitmap, backgroundTint, useRgbReplace: true, (int)Math.Round(scale * 100.0));
+                if (maybe != null) sourceImage = maybe;
             }
 
-            // Use DrawImage loop like ground - align tiles to device pixels to avoid seams
+            // Use ImageBrush for efficient tiling
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
-                // Compute tile size in device pixels (integral) to avoid fractional placement
-                int tilePixelW = (int)Math.Max(1, Math.Round(sourceImage.PixelWidth * scale));
-                int tilePixelH = (int)Math.Max(1, Math.Round(sourceImage.PixelHeight * scale));
-
-                // Full render area in device-independent units
                 double renderW = pixelPaddedWidth / dpi.DpiScaleX;
                 double renderH = pixelPaddedHeight / dpi.DpiScaleY;
 
-                // Convert pad to device pixels and compute integer-aligned start offset
-                int padPix = (int)Math.Round(pad * dpi.DpiScaleX);
-                int startXPix = -(padPix % tilePixelW);
-                int startYPix = -(padPix % tilePixelH);
+                // Calculate tile size in DIU at current scale
+                double tileDiuW = (sourceImage.PixelWidth / dpi.DpiScaleX) * scale;
+                double tileDiuH = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
 
-                // How many tiles we need (tilePixel based)
-                int tilesWide = (int)Math.Ceiling((double)pixelPaddedWidth / tilePixelW) + 2;
-                int tilesHigh = (int)Math.Ceiling((double)pixelPaddedHeight / tilePixelH) + 2;
+                // Align starting position with padding
+                double startX = -(pad % tileDiuW);
+                double startY = -(pad % tileDiuH);
 
-                // Calculate ground area in DIU to avoid overlap
+                var brush = new ImageBrush(sourceImage)
+                {
+                    TileMode = TileMode.Tile,
+                    ViewportUnits = BrushMappingMode.Absolute,
+                    Viewport = new Rect(0, 0, tileDiuW, tileDiuH),
+                    Stretch = Stretch.Fill
+                };
+                brush.Transform = new TranslateTransform(startX, startY);
+
+                // Use nearest-neighbor scaling to avoid blending edges when scaling
+                RenderOptions.SetBitmapScalingMode(dv, BitmapScalingMode.NearestNeighbor);
+
+                // Calculate ground area to avoid overlap
                 double groundHeight = 0.0;
                 if (groundBitmap != null && groundImages != null && groundImages.Length > 0)
                 {
                     groundHeight = (groundBitmap.PixelHeight / dpi.DpiScaleY) * scale;
                 }
                 double groundStartY = mapHeight * TileSize * scale + pad;
-                double groundEndY = groundStartY + groundHeight;
-
-                // Use an ImageBrush with TileMode.Tile to avoid manual tiling seams
-                double tileDiuW = (sourceImage.PixelWidth / dpi.DpiScaleX) * scale;
-                double tileDiuH = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
-
-                var brush = new ImageBrush(sourceImage)
-                {
-                    TileMode = TileMode.Tile,
-                    Viewport = new Rect(0, 0, tileDiuW, tileDiuH),
-                    ViewportUnits = BrushMappingMode.Absolute,
-                    Stretch = Stretch.Fill
-                };
-
-                // Use nearest-neighbor scaling to avoid blending edges when scaling
-                RenderOptions.SetBitmapScalingMode(dv, BitmapScalingMode.NearestNeighbor);
 
                 // Draw parallax area above ground only (so ground drawn later covers it)
                 if (groundHeight > 0)
@@ -5927,37 +9002,35 @@ namespace FamidashEditor
             // Use the full ground bitmap (not individual tiles)
             BitmapSource sourceImage = groundBitmap;
             
-            // Apply tint if needed (check if ground tint is active - not transparent and not white)
+            // Apply tint if needed using cache to avoid recreating on every redraw
             if (groundTint.A != 0 && (groundTint.R != 255 || groundTint.G != 255 || groundTint.B != 255))
             {
-                // Apply hue/saturation shift to the full ground bitmap
-                var tintedImages = CreateHueShiftedImages(new ImageSource[] { groundBitmap }, groundTint);
-                if (tintedImages != null && tintedImages.Length > 0 && tintedImages[0] is BitmapSource tinted)
-                {
-                    sourceImage = tinted;
-                }
+                var maybe = GetOrCreateSingleTinted(groundBitmap, groundTint, useRgbReplace: false, (int)Math.Round(scale * 100.0));
+                if (maybe != null) sourceImage = maybe;
             }
             
-            // Ground tiles horizontally but stretches vertically to fit the available space
+            // Use ImageBrush for efficient tiling (horizontal only)
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
                 // Ground starts below the map
                 double groundY = mapHeight * TileSize * scale + pad;
                 double fillWidth = pixelPaddedWidth / dpi.DpiScaleX;
-                double groundHeightDiu = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
-                
-                // Calculate how many times we need to tile the ground horizontally
                 double tileWidthDiu = (sourceImage.PixelWidth / dpi.DpiScaleX) * scale;
-                int tilesNeeded = (int)Math.Ceiling(fillWidth / tileWidthDiu) + 1;
-                
-                // Draw the ground tiled horizontally, starting from left edge accounting for padding
-                double startX = -(pad % tileWidthDiu); // Align with padding
-                for (int i = 0; i < tilesNeeded; i++)
+                double groundHeightDiu = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
+
+                var brush = new ImageBrush(sourceImage)
                 {
-                    double x = startX + (i * tileWidthDiu);
-                    dc.DrawImage(sourceImage, new Rect(x, groundY, tileWidthDiu, groundHeightDiu));
-                }
+                    TileMode = TileMode.Tile,
+                    ViewportUnits = BrushMappingMode.Absolute,
+                    Viewport = new Rect(0, 0, tileWidthDiu, groundHeightDiu),
+                    Stretch = Stretch.Fill
+                };
+                double startX = -(pad % tileWidthDiu);
+                brush.Transform = new TranslateTransform(startX, groundY);
+
+                // Draw a rectangle the width of the canvas at the ground vertical position
+                dc.DrawRectangle(brush, null, new Rect(0, groundY, fillWidth, groundHeightDiu));
             }
             
             groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
@@ -6255,6 +9328,7 @@ namespace FamidashEditor
 
             lastHoverX = -1; lastHoverY = -1;
             try { this.Activate(); } catch { }
+            try { UpdateIncompatibleOverlay(); } catch { }
         }
 
         // Snap ScrollViewer offsets to integer device pixels to ensure layers align
@@ -6743,34 +9817,28 @@ namespace FamidashEditor
                                     
                                     if (IsPortalSprite(checkSpriteId))
                                     {
-                                        var portalSprite = GetPortalSpriteForId(checkSpriteId);
+                                        int portalPosKey = checkY * mapWidth + checkX;
+                                        var portalSprite = GetPortalSpriteForId(checkSpriteId, portalPosKey);
                                         if (portalSprite == null) continue;
                                         
                                         // Found a portal! Calculate which part of it overlaps with our current tile
                                         int portalDestX = Math.Max(0, padPxX + checkX * spritePixelW);
                                         int portalDestY = Math.Max(0, padPxY + checkY * spritePixelH);
-                                        int portalRenderWidth = spritePixelW;
-                                        int portalRenderHeight = spritePixelH;
-                                        int portalAnimatedIdx = GetAnimatedSpriteIndex(checkSpriteId);
-                                        // Extend portal mapping up through 3029 like elsewhere so speed portals are handled
-                                        bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3029);
+                                        
+                        int portalRenderWidth = spritePixelW;
+                        int portalRenderHeight = spritePixelH;
+                        int portalAnimatedIdx = GetAnimatedSpriteIndex(checkSpriteId);
+                        // Extend portal mapping up through 3029 like elsewhere so speed portals are handled
+                        bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3029);
 
-                                        // Apply preview-mode vertical nudges for selected portal types (skip 0.5x/1x/special)
-                                        if (previewMode)
-                                        {
-                                            if (checkSpriteId == 0x16)
-                                            {
-                                                int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
-                                                portalDestY = Math.Max(0, portalDestY - nudgePixels);
-                                            }
-                                            else if (checkSpriteId == 0x20 || checkSpriteId == 0x21)
-                                            {
-                                                int nudgePixels = (int)Math.Round(2.0 * dpi.DpiScaleY);
-                                                portalDestY = Math.Max(0, portalDestY - nudgePixels);
-                                            }
-                                        }
-
-                                        if (portalIsMulti)
+                        // Apply sprite pixel offsets (user offset takes priority)
+                        if (spritePixelOffsets.TryGetValue(portalPosKey, out var portalOffset))
+                        {
+                            int scaledOffsetX = (int)Math.Round(portalOffset.offsetX * scale * dpi.DpiScaleX);
+                            int scaledOffsetY = (int)Math.Round(portalOffset.offsetY * scale * dpi.DpiScaleY);
+                            portalDestX += scaledOffsetX;
+                            portalDestY += scaledOffsetY;
+                        }                                        if (portalIsMulti)
                                         {
                                             // Standard tall portals (3000-3010) are 1.5 tiles × 3 tiles
                                             if (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3010)
@@ -6796,11 +9864,11 @@ namespace FamidashEditor
                                                 portalRenderWidth = (spritePixelW * 3) / 2;
                                                 portalRenderHeight = spritePixelH * 2;
                                             }
-                                            // 0.5x, 1x, special (3024/3025/3029): single tile wide, tall height
+                                            // 0.5x, 1x, special (3024/3025/3029): All speed portals are 2 tiles tall
                                             else if (portalAnimatedIdx == 3024 || portalAnimatedIdx == 3025 || portalAnimatedIdx == 3029)
                                             {
                                                 portalRenderWidth = spritePixelW;
-                                                portalRenderHeight = spritePixelH * 3;
+                                                portalRenderHeight = spritePixelH * 2;
                                             }
                                             else
                                             {
@@ -6911,6 +9979,8 @@ namespace FamidashEditor
             {
                 spritesWb.Unlock();
             }
+            // Ensure overlay reflects any change to this single sprite cell
+            try { UpdateIncompatibleOverlay(); } catch { }
         }
 
         // Fast version of UpdateTileBitmapAt that works with a locked WriteableBitmap
@@ -6946,13 +10016,23 @@ namespace FamidashEditor
             int copyHeight = Math.Min(tilePixelH, cachedPixelHeight - destY);
             int srcStride = tilePixelW * 4;
             
+            // Ensure we don't read past the source array bounds
+            int expectedSize = tilePixelH * srcStride;
+            if (srcPixels.Length < expectedSize)
+            {
+                // Source buffer is smaller than expected - clamp the copy height
+                copyHeight = Math.Min(copyHeight, srcPixels.Length / srcStride);
+            }
+            
             for (int row = 0; row < copyHeight; row++)
             {
                 int srcOffset = row * srcStride;
                 long destOffset = (destY + row) * backBufferStride + destX * 4;
                 byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
                 
-                for (int col = 0; col < copyWidth * 4; col++)
+                // Ensure we don't read past the end of this row
+                int maxCol = Math.Min(copyWidth * 4, srcPixels.Length - srcOffset);
+                for (int col = 0; col < maxCol; col++)
                 {
                     destPtr[col] = srcPixels[srcOffset + col];
                 }
@@ -7029,7 +10109,7 @@ namespace FamidashEditor
                                 {
                                     try
                                     {
-                                        if (idx == 0x17 || idx == 0x4B || idx == 0x58 || idx == 0x08 || idx == 0x09)
+                                        if (idx == 0x17 || idx == 0x4B || idx == 0x58 || idx == 0x64 || idx == 0x08 || idx == 0x09)
                                         {
                                             // (debug logging removed)
                                         }
@@ -7042,14 +10122,32 @@ namespace FamidashEditor
                                 }
                             }
                             
-                            // Mark this batch area as dirty. Expand the top by one tile to account
-                            // for preview-mode vertical nudges (e.g. chains that hang upward by 1 tile).
+                            // Mark this batch area as dirty. Expand to account for:
+                            // 1) preview-mode vertical nudges (e.g. chains that hang upward by 1 tile)
+                            // 2) sprite pixel offsets that can shift sprites beyond their tile boundaries
                             int minY = batchStart / mapWidth;
                             int maxY = (batchEnd - 1) / mapWidth;
-                            // Include one extra tile above the batch to capture sprites shifted upward
-                            int dirtyTopTile = Math.Max(0, minY - 1);
-                            int dirtyHeight = (maxY - dirtyTopTile + 1) * spritePixelH;
-                            int dirtyTopPx = (int)(dirtyTopTile * spritePixelH + pad * dpi.DpiScaleY);
+                            
+                            // Calculate max sprite offset in this batch to expand dirty rect accordingly
+                            int maxOffsetUp = spritePixelH; // At least 1 tile for preview mode shifts
+                            int maxOffsetDown = 0;
+                            for (int i = batchStart; i < batchEnd; i++)
+                            {
+                                if (spritePixelOffsets.TryGetValue(i, out var offset))
+                                {
+                                    int scaledOffsetY = (int)Math.Round(Math.Abs(offset.offsetY) * scale * dpi.DpiScaleY);
+                                    if (offset.offsetY < 0)
+                                        maxOffsetUp = Math.Max(maxOffsetUp, scaledOffsetY);
+                                    else
+                                        maxOffsetDown = Math.Max(maxOffsetDown, scaledOffsetY);
+                                }
+                            }
+                            
+                            // Expand dirty rect to include offset sprites
+                            int dirtyTopTile = Math.Max(0, minY - (int)Math.Ceiling((double)maxOffsetUp / spritePixelH));
+                            int dirtyBottomTile = Math.Min(mapHeight - 1, maxY + (int)Math.Ceiling((double)maxOffsetDown / spritePixelH));
+                            int dirtyHeight = (dirtyBottomTile - dirtyTopTile + 1) * spritePixelH + maxOffsetUp + maxOffsetDown;
+                            int dirtyTopPx = Math.Max(0, (int)(dirtyTopTile * spritePixelH + pad * dpi.DpiScaleY - maxOffsetUp));
                             spritesWb.AddDirtyRect(new Int32Rect(0, dirtyTopPx, cachedPixelWidth, Math.Min(dirtyHeight, cachedPixelHeight - dirtyTopPx)));
                         }
                         finally
@@ -7060,6 +10158,8 @@ namespace FamidashEditor
                 }
                 
                 System.Diagnostics.Debug.WriteLine($"RebuildAllSpritesBitmap: Complete");
+                // After rebuilding the full sprites layer, update the incompatibility overlay
+                try { Dispatcher.Invoke(() => UpdateIncompatibleOverlay()); } catch { }
             }
             catch (Exception ex)
             {
@@ -7244,6 +10344,115 @@ namespace FamidashEditor
             }
         }
 
+        // Immediately clear a rectangular tile region in the sprites writeable bitmap (pixel-space).
+        // Used to avoid ghost pixels when moving selections by zeroing affected pixels before committing changes.
+        private void ClearSpritesBitmapTileRect(int minX, int minY, int maxX, int maxY, double scale, double pad)
+        {
+            if (spritesWb == null) return;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            int spritePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int spritePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+
+            // Clamp region
+            minX = Math.Max(0, minX);
+            minY = Math.Max(0, minY);
+            maxX = Math.Min(mapWidth - 1, maxX);
+            maxY = Math.Min(mapHeight - 1, maxY);
+
+            int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
+            int pxLeft = padPxX + minX * spritePixelW;
+            int pxTop = padPxY + minY * spritePixelH;
+            int pxRight = padPxX + (maxX + 1) * spritePixelW;
+            int pxBottom = padPxY + (maxY + 1) * spritePixelH;
+
+            int widthPx = Math.Max(0, Math.Min(cachedPixelWidth - pxLeft, pxRight - pxLeft));
+            int heightPx = Math.Max(0, Math.Min(cachedPixelHeight - pxTop, pxBottom - pxTop));
+            if (widthPx <= 0 || heightPx <= 0) return;
+
+            Dispatcher.Invoke(() =>
+            {
+                spritesWb.Lock();
+                try
+                {
+                    unsafe
+                    {
+                        IntPtr pBackBuffer = spritesWb.BackBuffer;
+                        if (pBackBuffer == IntPtr.Zero) return;
+                        int stride = spritesWb.BackBufferStride;
+                        for (int row = 0; row < heightPx; row++)
+                        {
+                            long destOffset = (pxTop + row) * stride + pxLeft * 4;
+                            byte* ptr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                            for (int col = 0; col < widthPx; col++)
+                            {
+                                ptr[col * 4 + 0] = 0;
+                                ptr[col * 4 + 1] = 0;
+                                ptr[col * 4 + 2] = 0;
+                                ptr[col * 4 + 3] = 0;
+                            }
+                        }
+                    }
+                    spritesWb.AddDirtyRect(new Int32Rect(pxLeft, pxTop, widthPx, heightPx));
+                }
+                finally { spritesWb.Unlock(); }
+            });
+        }
+
+        // Immediately clear a rectangular tile region in the portals writeable bitmap (pixel-space).
+        private void ClearPortalsBitmapTileRect(int minX, int minY, int maxX, int maxY, double scale, double pad)
+        {
+            if (portalsWb == null) return;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            int spritePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int spritePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+
+            // Clamp region
+            minX = Math.Max(0, minX);
+            minY = Math.Max(0, minY);
+            maxX = Math.Min(mapWidth - 1, maxX);
+            maxY = Math.Min(mapHeight - 1, maxY);
+
+            int padPxX = (int)Math.Round(pad * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(pad * dpi.DpiScaleY);
+            int pxLeft = padPxX + minX * spritePixelW;
+            int pxTop = padPxY + minY * spritePixelH;
+            int pxRight = padPxX + (maxX + 1) * spritePixelW;
+            int pxBottom = padPxY + (maxY + 1) * spritePixelH;
+
+            int widthPx = Math.Max(0, Math.Min(cachedPixelWidth - pxLeft, pxRight - pxLeft));
+            int heightPx = Math.Max(0, Math.Min(cachedPixelHeight - pxTop, pxBottom - pxTop));
+            if (widthPx <= 0 || heightPx <= 0) return;
+
+            Dispatcher.Invoke(() =>
+            {
+                portalsWb.Lock();
+                try
+                {
+                    unsafe
+                    {
+                        IntPtr pBackBuffer = portalsWb.BackBuffer;
+                        if (pBackBuffer == IntPtr.Zero) return;
+                        int stride = portalsWb.BackBufferStride;
+                        for (int row = 0; row < heightPx; row++)
+                        {
+                            long destOffset = (pxTop + row) * stride + pxLeft * 4;
+                            byte* ptr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                            for (int col = 0; col < widthPx; col++)
+                            {
+                                ptr[col * 4 + 0] = 0;
+                                ptr[col * 4 + 1] = 0;
+                                ptr[col * 4 + 2] = 0;
+                                ptr[col * 4 + 3] = 0;
+                            }
+                        }
+                    }
+                    portalsWb.AddDirtyRect(new Int32Rect(pxLeft, pxTop, widthPx, heightPx));
+                }
+                finally { portalsWb.Unlock(); }
+            });
+        }
+
         // Background precompute for tinted decoration sprites to reduce work during rebuild
         private Task PrecomputeTintedCachesAsync()
         {
@@ -7325,8 +10534,8 @@ namespace FamidashEditor
             // Set the position key for random frame offsets (unique per position on map)
             currentSpritePositionKey = y * mapWidth + x;
             
-            // Debug: Log when we're updating an orb or coin (periodic)
-              if ((spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
+                        // Debug: Log when we're updating an orb or coin (periodic)
+                            if ((spriteIdx == 0x0B || spriteIdx == 0x1F || spriteIdx == 0x29 || // Yellow
                   spriteIdx == 0x05 || // Blue
                   spriteIdx == 0x06 || // Pink
                   spriteIdx == 0x27 || // Green
@@ -7334,7 +10543,7 @@ namespace FamidashEditor
                   spriteIdx == 0x44 || // Black
                   spriteIdx == 0x7A || // White
                   spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || // Coins
-                  spriteIdx == 0x36) && animationFrame % 60 == 0)
+                                    spriteIdx == 0x36 || spriteIdx == 0x49 || spriteIdx == 0x4A) && animationFrame % 60 == 0)
             {
                 System.Diagnostics.Debug.WriteLine($"UpdateSpriteBitmapAtLocked: Updating animated sprite 0x{spriteIdx:X2} at ({x},{y}), previewMode={previewMode}");
             }
@@ -7347,6 +10556,17 @@ namespace FamidashEditor
                 int destX = Math.Max(0, padPxX + x * spritePixelW);
                 int destY = Math.Max(0, padPxY + y * spritePixelH);
 
+                // Apply sprite pixel offsets from JSON metadata (if any)
+                int posKey = y * mapWidth + x;
+                if (spritePixelOffsets.TryGetValue(posKey, out var offset))
+                {
+                    // Scale the offset by the current scale and DPI
+                    int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
+                    int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
+                    destX += scaledOffsetX;
+                    destY += scaledOffsetY;
+                }
+
                 // Shift certain decoration previews up so they visually hang from above.
                 // Chains: normal chain (0x2D) continues to hang a bit higher (1.5 tiles shift).
                 // The upside-down chain (0x3D) previously nudged up by 1 tile (16px); remove
@@ -7358,6 +10578,50 @@ namespace FamidashEditor
                     // Previously 1.5 tiles; reduce to 0.5 tiles to correct over-shift.
                     int totalShift = (int)Math.Round(oneTileScaled * 0.5);
                     destY = Math.Max(0, destY - totalShift);
+                }
+                // Shift pole-medium (sprite 0x2B) upwards by half a tile so it visually aligns
+                // with surrounding decorations when previewing.
+                if (previewMode && spriteIdx == 0x2B)
+                {
+                    try
+                    {
+                        int halfShift = (int)Math.Round(spritePixelH * 0.5);
+                        destY = Math.Max(0, destY - halfShift);
+                    }
+                    catch { }
+                }
+
+                // Shift pole-long (sprite 0x2A) upwards by one full tile in preview mode
+                if (previewMode && spriteIdx == 0x2A)
+                {
+                    try
+                    {
+                        int oneTilePx = spritePixelH; // tile height in pixels at current scale/DPI
+                        destY = Math.Max(0, destY - oneTilePx);
+                    }
+                    catch { }
+                }
+
+                // Small nudge for 3x/4x speed preview portals (sprite 0x20/0x21)
+                if (previewMode && (spriteIdx == 0x20 || spriteIdx == 0x21))
+                {
+                    try
+                    {
+                        int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
+                        destY = Math.Max(0, destY - nudgePixels);
+                    }
+                    catch { }
+                }
+
+                // Teleport horizontal portals 0x67/0x68 should be shifted up by one tile
+                if (previewMode && (spriteIdx == 0x67 || spriteIdx == 0x68))
+                {
+                    try
+                    {
+                        int oneTilePx = spritePixelH; // tile height in pixels at current scale/DPI
+                        destY = Math.Max(0, destY - oneTilePx);
+                    }
+                    catch { }
                 }
                 
                 // Bounds check
@@ -7378,11 +10642,22 @@ namespace FamidashEditor
                 // Check if this is a custom animated sprite
                 if (animatedIdx >= 2000)
                 {
-                    // Request the custom animation sprite
-                    sprite = GetCustomAnimationSprite(animatedIdx);
+                    // Special-case: rainbow portal (original sprite 0x64) should be
+                    // provided by GetPortalSpriteForId so it can start at a per-position
+                    // randomized frame and cycle through the ordered portal images.
+                    if (spriteIdx == 0x64)
+                    {
+                        // currentSpritePositionKey was set earlier in this method
+                        sprite = GetPortalSpriteForId(spriteIdx, currentSpritePositionKey);
+                    }
+                    else
+                    {
+                        // Request the custom animation sprite
+                        sprite = GetCustomAnimationSprite(animatedIdx);
+                    }
 
                     // Lightweight diagnostic: sample first pixel of pad frames to detect per-frame changes
-                    if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26 || spriteIdx == 0x7A || spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || spriteIdx == 0x36))
+                    if (sprite != null && (spriteIdx == 0x52 || spriteIdx == 0x53 || spriteIdx == 0x0A || spriteIdx == 0x0C || spriteIdx == 0x0D || spriteIdx == 0x0E || spriteIdx == 0x25 || spriteIdx == 0x26 || spriteIdx == 0x7A || spriteIdx == 0x07 || spriteIdx == 0x1A || spriteIdx == 0x1B || spriteIdx == 0x36 || spriteIdx == 0x49 || spriteIdx == 0x4A))
                     {
                         try
                         {
@@ -7465,11 +10740,13 @@ namespace FamidashEditor
                 // If preview-mode hiding of color triggers is enabled and this sprite is such a trigger,
                 // skip rendering so it behaves as if disappeared.
                 if (previewMode && hideColorTriggers && IsColorTriggerSprite(spriteIdx)) return;
+                // If preview-mode hiding of invisible sprites is enabled and this sprite is in that set,
+                // skip rendering so it behaves as if disappeared.
+                if (previewMode && hideInvisibleSprites && IsInvisibleSprite(spriteIdx)) return;
                 
-                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3029)
-                // Extend the range to 3029 so that the speed-3x/4x preview sprites (3027/3028)
-                // are treated as portal layer rendering and not drawn into the sprites layer
-                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3029);
+                // Check if this is a multi-tile portal sprite (portal sprites use indices 3000-3039)
+                // Extend the range to include the new custom mappings for horizontal teleport portals
+                bool isMultiTilePortal = (animatedIdx >= 3000 && animatedIdx <= 3039);
                 int renderHeight = spritePixelH;
                 int renderWidth = spritePixelW;
 
@@ -7486,8 +10763,18 @@ namespace FamidashEditor
                     else
                     {
                         // Horizontal gravity portals: 3 tiles wide, 2 tiles tall
-                        renderWidth = spritePixelW * 3;
-                        renderHeight = spritePixelH * 2;
+                        // Special-case: horizontal teleport portals (3030-3033) are 3 tiles wide x 1.5 tiles tall
+                        if (animatedIdx >= 3030 && animatedIdx <= 3033)
+                        {
+                            renderWidth = spritePixelW * 3;                 // 3 tiles wide
+                            renderHeight = (spritePixelH * 3) / 2;          // 1.5 tiles tall
+                        }
+                        else
+                        {
+                            // Horizontal gravity portals: 3 tiles wide, 2 tiles tall
+                            renderWidth = spritePixelW * 3;
+                            renderHeight = spritePixelH * 2;
+                        }
                     }
                 }
 
@@ -7496,10 +10783,59 @@ namespace FamidashEditor
                 {
                     renderHeight = (spritePixelH * 3) / 2; // 1.5 tiles tall
                 }
+
+                // Treat pole-medium decorations for sprites 0x2B/0x3B (custom indices 2136-2139)
+                // as 1.5 tiles tall (vertical) and 1 tile wide.
+                if (!isMultiTilePortal && (animatedIdx == 2136 || animatedIdx == 2137 || animatedIdx == 2138 || animatedIdx == 2139))
+                {
+                    renderHeight = (spritePixelH * 3) / 2; // 1.5 tiles tall
+                    renderWidth = spritePixelW; // 1 tile wide
+                }
+
+                // Treat pole-long decorations for sprites 0x2A/0x3A (custom indices 2140-2143)
+                // as 2 tiles tall (vertical) and 1 tile wide.
+                if (!isMultiTilePortal && (animatedIdx == 2140 || animatedIdx == 2141 || animatedIdx == 2142 || animatedIdx == 2143))
+                {
+                    renderHeight = spritePixelH * 2; // 2 tiles tall
+                    renderWidth = spritePixelW; // 1 tile wide
+                }
+
+                // Treat medium pole decorations (custom indices 2132/2133 and 2134/2135)
+                // as 1.5 tiles tall. Additionally, the left-medium pole (original sprite 0x3E)
+                // should be anchored so its right side aligns with the anchor tile; compute
+                // a desired destination X based on source width so it expands leftwards.
+                int desiredDestX = destX; // may be adjusted below for left-medium
+                if (!isMultiTilePortal && (animatedIdx == 2132 || animatedIdx == 2133 || animatedIdx == 2134 || animatedIdx == 2135))
+                {
+                    // Medium poles are 1 tile tall and 1.5 tiles wide
+                    renderWidth = (spritePixelW * 3) / 2; // 1.5 tiles wide
+                    renderHeight = spritePixelH; // 1 tile tall
+                    // For left-medium (sprite 0x3E) align the right side with anchor tile
+                    if (spriteIdx == 0x3E)
+                    {
+                        // Align right side: desiredDestX will be computed after we know the source width
+                    }
+                    else if (spriteIdx == 0x3F)
+                    {
+                        // Right-medium keeps normal anchor (left of tile)
+                        desiredDestX = destX;
+                    }
+                }
                 
                 // Calculate the actual size we need to render
                 int srcWidth = sprite.PixelWidth;
                 int srcHeight = sprite.PixelHeight;
+
+                // If this is the left-medium pole, we can now compute desiredDestX using the actual source width
+                if (!isMultiTilePortal && (animatedIdx == 2132 || animatedIdx == 2133 || animatedIdx == 2134 || animatedIdx == 2135) && spriteIdx == 0x3E)
+                {
+                    try
+                    {
+                        // Shift left by half a tile relative to the anchor tile
+                        desiredDestX = destX - (int)Math.Round(spritePixelW * 0.5);
+                    }
+                    catch { desiredDestX = destX; }
+                }
                 
                 // Sanity check dimensions
                 if (srcWidth <= 0 || srcHeight <= 0 || spritePixelW <= 0 || spritePixelH <= 0)
@@ -7516,45 +10852,60 @@ namespace FamidashEditor
                 IntPtr pBackBuffer = spritesWb.BackBuffer;
                 if (pBackBuffer == IntPtr.Zero) return;
                 int backBufferStride = spritesWb.BackBufferStride;
-                
+
+                // To support sprites that may expand left of the anchor (negative desiredDestX),
+                // compute a drawing X and a source X start offset. drawX is clamped to >=0
+                // and srcXStart is the number of source columns to skip when destX < 0.
+                int drawX = Math.Max(0, desiredDestX);
+                int srcXStart = drawX - desiredDestX; // zero when desiredDestX >= 0
+
                 // Clear the rendering area
                 // For portals: clear their full area
                 // For regular sprites: clear only their tile, but also re-render any portal underneath first
                 unsafe
                 {
-                    int clearWidth = Math.Min(isMultiTilePortal ? renderWidth : spritePixelW, cachedPixelWidth - destX);
-                    int clearHeight = Math.Min(renderHeight, cachedPixelHeight - destY);
+                    int clearWidth = Math.Min(renderWidth - srcXStart, Math.Max(0, cachedPixelWidth - drawX));
+                    int clearHeight = Math.Min(renderHeight, Math.Max(0, cachedPixelHeight - destY));
+                    if (clearWidth <= 0 || clearHeight <= 0) return;
 
-                    // If this is a regular sprite and portals exist underneath, copy portal pixels into spritesWb first
-                    // so that animated sprites (orbs) can clear/re-render each frame correctly while preserving portals.
-                    if (!isMultiTilePortal && previewMode && portalsWb != null)
-                    {
-                        try
+                        // If this is a regular sprite and portals exist underneath, copy portal pixels into spritesWb first
+                        // so that animated sprites (orbs) can clear/re-render each frame correctly while preserving portals.
+                        if (!isMultiTilePortal && previewMode && portalsWb != null)
                         {
-                            int portalStride = portalsWb.BackBufferStride;
-                            byte[] portalBuf = new byte[clearHeight * portalStride];
-                            Int32Rect srcRect = new Int32Rect(destX, destY, clearWidth, clearHeight);
-                            portalsWb.CopyPixels(srcRect, portalBuf, portalStride, 0);
-
-                            // Copy portal pixels into spritesWb back buffer
-                            IntPtr spritesBackBuffer = spritesWb.BackBuffer;
-                            int spritesBackBufferStride = spritesWb.BackBufferStride;
-                            unsafe
+                            try
                             {
-                                for (int row = 0; row < clearHeight; row++)
+                                int portalStride = portalsWb.BackBufferStride;
+                                if (portalStride <= 0) throw new Exception("invalid portal stride");
+                                byte[] portalBuf = new byte[clearHeight * portalStride];
+                                Int32Rect srcRect = new Int32Rect(drawX, destY, clearWidth, clearHeight);
+                                portalsWb.CopyPixels(srcRect, portalBuf, portalStride, 0);
+
+                                // Copy portal pixels into spritesWb back buffer
+                                IntPtr spritesBackBuffer = spritesWb.BackBuffer;
+                                int spritesBackBufferStride = spritesWb.BackBufferStride;
+                                if (spritesBackBuffer != IntPtr.Zero && spritesBackBufferStride > 0)
                                 {
-                                    long destOffset = (destY + row) * spritesBackBufferStride + destX * 4;
-                                    byte* destPtr = (byte*)spritesBackBuffer.ToPointer() + destOffset;
-                                    int srcRowOffset = row * portalStride;
-                                    for (int col = 0; col < clearWidth * 4; col++)
+                                    unsafe
                                     {
-                                        destPtr[col] = portalBuf[srcRowOffset + col];
+                                        int maxRowBytes = Math.Max(0, spritesBackBufferStride - drawX * 4);
+                                        for (int row = 0; row < clearHeight; row++)
+                                        {
+                                            long destOffset = (destY + row) * spritesBackBufferStride + drawX * 4;
+                                            byte* destPtr = (byte*)spritesBackBuffer.ToPointer() + destOffset;
+                                            int srcRowOffset = row * portalStride;
+                                            int copyBytes = Math.Min(clearWidth * 4, portalBuf.Length - srcRowOffset);
+                                            copyBytes = Math.Min(copyBytes, maxRowBytes);
+                                            if (copyBytes <= 0) continue;
+                                            for (int b = 0; b < copyBytes; b++)
+                                            {
+                                                destPtr[b] = portalBuf[srcRowOffset + b];
+                                            }
+                                        }
                                     }
                                 }
                             }
+                            catch { /* swallow portal copy failures to avoid crashing the UI */ }
                         }
-                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Rebuild portal copy failed at ({x},{y}): {ex.Message}"); }
-                    }
                     
                     
                     
@@ -7590,20 +10941,28 @@ namespace FamidashEditor
                     // Clear the area only if needed
                     if (shouldClear)
                     {
-                        for (int row = 0; row < clearHeight; row++)
+                        try
                         {
-                            long destOffset = (destY + row) * backBufferStride + destX * 4;
-                            byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
-                            
-                            for (int col = 0; col < clearWidth; col++)
+                            int maxRowPixels = Math.Max(0, (backBufferStride / 4) - drawX);
+                            int rowsToClear = Math.Min(clearHeight, Math.Max(0, cachedPixelHeight - destY));
+                            int colsToClear = Math.Min(clearWidth, Math.Max(0, cachedPixelWidth - drawX));
+                            for (int row = 0; row < rowsToClear; row++)
                             {
-                                int pixelOffset = col * 4;
-                                destPtr[pixelOffset + 0] = 0; // B
-                                destPtr[pixelOffset + 1] = 0; // G
-                                destPtr[pixelOffset + 2] = 0; // R
-                                destPtr[pixelOffset + 3] = 0; // A (transparent)
+                                long destOffset = (destY + row) * backBufferStride + drawX * 4;
+                                byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                                int pixelsThisRow = Math.Min(colsToClear, maxRowPixels);
+                                if (pixelsThisRow <= 0) continue;
+                                for (int col = 0; col < pixelsThisRow; col++)
+                                {
+                                    int pixelOffset = col * 4;
+                                    destPtr[pixelOffset + 0] = 0; // B
+                                    destPtr[pixelOffset + 1] = 0; // G
+                                    destPtr[pixelOffset + 2] = 0; // R
+                                    destPtr[pixelOffset + 3] = 0; // A (transparent)
+                                }
                             }
                         }
+                        catch { /* swallow clearing failures */ }
                     }
                     
                     // Portals are now rendered into a dedicated `portalsWb` layer beneath sprites; sprites do not need
@@ -7620,7 +10979,7 @@ namespace FamidashEditor
                 // Direct copy fast-path: only use for non-custom, single-tile sprites at 1x scale/DPI.
                 // Custom preview sprites (animatedIdx >= 2000) must go through the scaling branch
                 // so they can be rendered at 1.5 tiles tall when appropriate (e.g. chains).
-                if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && !isMultiTilePortal && animatedIdx < 2000)
+                    if (Math.Abs(scale - 1.0) < 0.001 && Math.Abs(dpi.DpiScaleX - 1.0) < 0.001 && srcWidth == TileSize && !isMultiTilePortal && animatedIdx < 2000)
                 {
                     // Direct copy - no scaling (only for single-tile sprites)
                     int copyWidth = Math.Min(srcWidth, cachedPixelWidth - destX);
@@ -7731,11 +11090,11 @@ namespace FamidashEditor
                             for (int col = 0; col < copyWidth; col++)
                             {
                                 // Map destination pixel back to source pixel (nearest neighbor)
-                                int srcX = Math.Min((int)(col / scaleX), srcWidth - 1);
+                                int srcX = Math.Min((int)((col + srcXStart) / scaleX), srcWidth - 1);
                                 int srcY = Math.Min((int)(row / scaleY), srcHeight - 1);
                                 int srcOffset = srcY * srcStride + srcX * 4;
                                 
-                                long destOffset = (destY + row) * backBufferStride + (destX + col) * 4;
+                                long destOffset = (destY + row) * backBufferStride + (drawX + col) * 4;
                                 byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
                                 
                                 byte srcAlpha = srcPixels[srcOffset + 3];
@@ -7817,6 +11176,44 @@ namespace FamidashEditor
                         }
                     }
                 }
+                
+                // Draw visual indicator for offset sprites (when not in preview mode)
+                if (!previewMode && spritePixelOffsets.ContainsKey(posKey))
+                {
+                    try
+                    {
+                        // Draw a small white box in the bottom-right corner of the shifted sprite tile
+                        int indicatorSize = Math.Max(4, (int)Math.Round(6 * scale * dpi.DpiScaleX));
+                        // Position at bottom-right of the actual rendered sprite (which includes offset)
+                        int indicatorX = destX + spritePixelW - indicatorSize - 2;
+                        int indicatorY = destY + spritePixelH - indicatorSize - 2;
+                        
+                        unsafe
+                        {
+                            for (int iy = 0; iy < indicatorSize; iy++)
+                            {
+                                int screenY = indicatorY + iy;
+                                if (screenY < 0 || screenY >= cachedPixelHeight) continue;
+                                
+                                for (int ix = 0; ix < indicatorSize; ix++)
+                                {
+                                    int screenX = indicatorX + ix;
+                                    if (screenX < 0 || screenX >= cachedPixelWidth) continue;
+                                    
+                                    long destOffset = screenY * backBufferStride + screenX * 4;
+                                    byte* destPtr = (byte*)pBackBuffer.ToPointer() + destOffset;
+                                    
+                                    // White color
+                                    destPtr[0] = 255; // B
+                                    destPtr[1] = 255; // G
+                                    destPtr[2] = 255; // R
+                                    destPtr[3] = 255; // A
+                                }
+                            }
+                        }
+                    }
+                    catch { /* ignore indicator drawing failures */ }
+                }
             }
             catch (Exception ex)
             {
@@ -7832,7 +11229,8 @@ namespace FamidashEditor
             if (spriteIdx < 0 || spriteIdx >= spriteImages.Length) return;
             if (!IsPortalSprite(spriteIdx)) return;
 
-            var portalSprite = GetPortalSpriteForId(spriteIdx);
+            int portalPosKey = y * mapWidth + x;
+            var portalSprite = GetPortalSpriteForId(spriteIdx, portalPosKey);
             if (portalSprite == null)
             {
                 System.Diagnostics.Debug.WriteLine($"WARNING: Portal sprite null for idx=0x{spriteIdx:X2} at ({x},{y})");
@@ -7859,37 +11257,34 @@ namespace FamidashEditor
 
             // Special-case: in preview mode, certain horizontal gravity portal previews
             // should be visually shifted up by one tile (16px) to align correctly.
-            // Apply for sprite IDs 0x10 and 0x12.
-            if (previewMode && (spriteIdx == 0x10 || spriteIdx == 0x12))
+            // BUT: only apply these if the user hasn't set a custom offset
+            bool hasCustomOffset = spritePixelOffsets.ContainsKey(portalPosKey);
+            if (previewMode && !hasCustomOffset && (spriteIdx == 0x10 || spriteIdx == 0x12))
             {
                 destY = Math.Max(0, destY - spritePixelH);
             }
-            // Speed portal previews: most should start one tile higher so they visually hang
-            // from the tile above similar to other portal previews. However, the 3x/4x
-            // speed previews (sprite 0x20 and 0x21) render better when shifted down
-            // by one tile instead of up. Keep other speed previews shifted up.
-            if (previewMode)
+            // Horizontal teleport portal previews 0x67/0x68 are designed to be shifted
+            // up by one tile so they visually align with the surrounding tiles.
+            if (previewMode && !hasCustomOffset && (spriteIdx == 0x67 || spriteIdx == 0x68))
             {
-                // Keep nudges for 2x and 3x/4x portals only; skip 0.5x/1x/special (0x14/0x15/0x6D)
-                if (spriteIdx == 0x16 || spriteIdx == 0x14 || spriteIdx == 0x15 || spriteIdx == 0x6D)
-                {
-                    // 2x, and also 0.5x/1x/special speed portals: nudge up 6 logical pixels, scaled by DPI
-                    int nudgePixels = (int)Math.Round(6.0 * dpi.DpiScaleY);
-                    destY = Math.Max(0, destY - nudgePixels);
-                }
-                else if (spriteIdx == 0x20 || spriteIdx == 0x21)
-                {
-                    // 3x/4x speed portals: small nudge up of 2 logical pixels, scaled by DPI
-                    int nudgePixels = (int)Math.Round(2.0 * dpi.DpiScaleY);
-                    destY = Math.Max(0, destY - nudgePixels);
-                }
+                destY = Math.Max(0, destY - spritePixelH);
+            }
+            
+            // Apply sprite pixel offsets (user offset takes priority)
+            if (spritePixelOffsets.TryGetValue(portalPosKey, out var offset))
+            {
+                // Scale the offset by the current scale and DPI
+                int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
+                int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
+                destX += scaledOffsetX;
+                destY += scaledOffsetY;
             }
 
             int renderWidth = spritePixelW;
             int renderHeight = spritePixelH;
             int portalAnimatedIdx = GetAnimatedSpriteIndex(spriteIdx);
-            // Treat custom portal indices up through 3029 as multi-tile portals (extended for speed portals)
-            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3029);
+            // Treat custom portal indices 3000+ as multi-tile portals (include newly-added 3030-3033)
+            bool portalIsMulti = (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3039);
             // Special-case for 3x/4x speed portals (3027/3028): they should be two tiles tall
             // and their horizontal pixel width should follow the source PNG width rather than
             // being forced to a single tile width.
@@ -7913,6 +11308,12 @@ namespace FamidashEditor
                 {
                     renderWidth = Math.Min(cachedPixelWidth, (int)Math.Round(spritePixelW * (double)srcWidth / (double)TileSize));
                     renderHeight = spritePixelH * 2;
+                }
+                // Horizontal teleport portals (3030-3033) are 3 tiles wide × 1.5 tiles tall
+                else if (portalAnimatedIdx >= 3030 && portalAnimatedIdx <= 3033)
+                {
+                    renderWidth = spritePixelW * 3; // 3 tiles wide
+                    renderHeight = (spritePixelH * 3) / 2; // 1.5 tiles tall
                 }
                 // 0.5x and 1x and special speed previews (3024/3025/3029) should only occupy
                 // a single tile horizontally but keep the tall height. The 2x preview (3026)
@@ -8037,25 +11438,44 @@ namespace FamidashEditor
             return false;
         }
 
+        // Return true if a sprite id should be considered 'invisible' for the
+        // "Hide all invisible sprites" preview option. Includes explicit ids and ranges.
+        private bool IsInvisibleSprite(int spriteIdx)
+        {
+            if (spriteIdx == 0x0F) return true;
+            if (spriteIdx == 0x47 || spriteIdx == 0x48) return true;
+            if (spriteIdx == 0x6F) return true;
+            if (spriteIdx >= 0x70 && spriteIdx <= 0x78) return true;
+            if (spriteIdx == 0x7D) return true;
+            if (spriteIdx == 0x7F) return true;
+            if (spriteIdx == 0x8E) return true;
+            if (spriteIdx == 0x9E) return true;
+            if (spriteIdx >= 0xDD && spriteIdx <= 0xDF) return true;
+            if (spriteIdx >= 0xEE && spriteIdx <= 0xEF) return true;
+            if (spriteIdx >= 0xF0 && spriteIdx <= 0xFC) return true;
+            return false;
+        }
+
         private void CanvasHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
-            
+
             // Track mouse down position and reset movement flag
             mouseDownPosition = pos;
+            // Record explicit click anchor (tile under the click) when inside map
+            try
+            {
+                var ttClick = ViewportPointToTile(pos);
+                if (IsPointInsideMap(pos)) { lastClickX = ttClick.x; lastClickY = ttClick.y; } else { lastClickX = -1; lastClickY = -1; }
+            }
+            catch { lastClickX = -1; lastClickY = -1; }
             hasMouseMoved = false;
             
             // Magic Wand tool: select connected region of same tile
             if (MagicWandTool != null && MagicWandTool.IsChecked == true)
             {
                 StartMagicWandAt(pos);
-                return;
-            }
-            // Structure tool: build a structured outline from a connected tile region (tiles layer only)
-            if (StructureTool != null && StructureTool.IsChecked == true)
-            {
-                StartStructureAt(pos);
                 return;
             }
             // Branch behavior based on active tool
@@ -8087,20 +11507,124 @@ namespace FamidashEditor
                 int x = t.x; int y = t.y;
                 if (selectionSet != null && selectionSet.Count > 0)
                 {
-                    // start drag-move of selection
+                    // Before starting drag, verify the clicked tile is actually in the selection
+                    // If not, check if we clicked on an offset sprite's visual footprint
+                    int clickIdx = y * mapWidth + x;
+                    if (!selectionSet.Contains(clickIdx) && spritesLayerActive)
+                    {
+                        // Click is outside selection - check if it's on an offset sprite's visual area
+                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        int clickNativeX = (int)Math.Round((pos.X - mapViewportPadding) / scale);
+                        int clickNativeY = (int)Math.Round((pos.Y - mapViewportPadding) / scale);
+                        
+                        // Check all tiles in selection for sprites whose visual footprint includes the click
+                        bool foundInSelection = false;
+                        for (int yy = 0; yy < selH && !foundInSelection; yy++)
+                        {
+                            for (int xx = 0; xx < selW && !foundInSelection; xx++)
+                            {
+                                int checkX = selX + xx;
+                                int checkY = selY + yy;
+                                int checkIdx = checkY * mapWidth + checkX;
+                                
+                                if (selectionSet.Contains(checkIdx) && sprites[checkIdx] != -1)
+                                {
+                                    int offsetX = 0, offsetY = 0;
+                                    if (spritePixelOffsets.TryGetValue(checkIdx, out var offset))
+                                    {
+                                        offsetX = offset.offsetX;
+                                        offsetY = offset.offsetY;
+                                    }
+                                    
+                                    int spriteLeft = checkX * TileSize + offsetX;
+                                    int spriteTop = checkY * TileSize + offsetY;
+                                    int spriteRight = spriteLeft + TileSize;
+                                    int spriteBottom = spriteTop + TileSize;
+                                    
+                                    if (clickNativeX >= spriteLeft && clickNativeX < spriteRight &&
+                                        clickNativeY >= spriteTop && clickNativeY < spriteBottom)
+                                    {
+                                        // Clicked on a sprite in the selection - this is valid
+                                        foundInSelection = true;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // If click wasn't on any sprite in selection, clear selection
+                        if (!foundInSelection)
+                        {
+                            ClearSelection();
+                            return;
+                        }
+                    }
+                    
+                    // start drag-move of selection (click was on selection or sprite's visual footprint)
                     StartDragMove(pos);
                     return;
                 }
+                
                 // If no selection, check the tile/sprite under cursor based on active layers
+                // For sprites, also check for sprites with pixel offsets that might be at the click position
+                int foundX = x, foundY = y;
                 int idx = y * mapWidth + x;
                 int tileVal = tilesLayerActive ? tiles[idx] : -1;
                 int spriteVal = spritesLayerActive ? sprites[idx] : -1;
                 
+                // If sprites layer is active and no sprite at exact tile, check nearby tiles for offset sprites
+                if (spritesLayerActive && spriteVal == -1)
+                {
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    int clickNativeX = (int)Math.Round((pos.X - mapViewportPadding) / scale);
+                    int clickNativeY = (int)Math.Round((pos.Y - mapViewportPadding) / scale);
+                    
+                    // Check adjacent tiles for sprites with offsets that overlap the click position
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int checkX = x + dx;
+                            int checkY = y + dy;
+                            if (checkX >= 0 && checkX < mapWidth && checkY >= 0 && checkY < mapHeight)
+                            {
+                                int checkIdx = checkY * mapWidth + checkX;
+                                if (sprites[checkIdx] != -1 && spritePixelOffsets.TryGetValue(checkIdx, out var offset))
+                                {
+                                    int spriteLeft = checkX * TileSize + offset.offsetX;
+                                    int spriteTop = checkY * TileSize + offset.offsetY;
+                                    int spriteRight = spriteLeft + TileSize;
+                                    int spriteBottom = spriteTop + TileSize;
+                                    
+                                    if (clickNativeX >= spriteLeft && clickNativeX < spriteRight &&
+                                        clickNativeY >= spriteTop && clickNativeY < spriteBottom)
+                                    {
+                                        foundX = checkX;
+                                        foundY = checkY;
+                                        spriteVal = sprites[checkIdx];
+                                        idx = checkIdx;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (spriteVal != -1) break;
+                    }
+                }
+                
                 if (tileVal != -1 || spriteVal != -1)
                 {
+                    // Double-click on a sprite with offset removes the offset
+                    if (e.ClickCount >= 2 && spriteVal != -1 && spritePixelOffsets.ContainsKey(idx))
+                    {
+                        spritePixelOffsets.Remove(idx);
+                        spriteAnchors.Remove(idx); // Also remove the anchor
+                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                        SaveCurrentTmxConfig();
+                        return;
+                    }
+                    
                     // create a 1x1 selection at this tile/sprite and begin dragging
-                    // Only include the layers that are active (not based on what exists)
-                    selX = x; selY = y; selW = 1; selH = 1;
+                    selX = foundX; selY = foundY; selW = 1; selH = 1;
                     selTiles = new int[1] { tileVal };
                     selSprites = new int[1] { spriteVal };
                     selectionSet!.Clear(); selectionSet.Add(idx);
@@ -8150,7 +11674,9 @@ namespace FamidashEditor
                     return;
                 }
 
-                // Other shapes: start drag-based deferred draw
+                // Other shapes: start drag-based deferred draw only if inside map
+                if (!IsPointInsideMap(pos)) { return; }
+                
                 drawStartX = tt.x; drawStartY = tt.y; drawCurrentX = drawStartX; drawCurrentY = drawStartY;
                 isDeferredDrawing = true;
                 if (CanvasHost != null) CanvasHost.CaptureMouse();
@@ -8239,6 +11765,26 @@ namespace FamidashEditor
         {
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
+
+            // If middle-button panning is active, handle scroll offsets and consume the move.
+            try
+            {
+                if (isMiddlePanning && MapScrollViewer != null && e.MiddleButton == MouseButtonState.Pressed)
+                {
+                    var cur = e.GetPosition(MapScrollViewer);
+                    double dx = cur.X - middlePanStart.X;
+                    double dy = cur.Y - middlePanStart.Y;
+                    double newH = panStartHOffset - dx;
+                    double newV = panStartVOffset - dy;
+                    // Clamp to valid ranges
+                    if (newH < 0) newH = 0;
+                    if (newV < 0) newV = 0;
+                    try { MapScrollViewer.ScrollToHorizontalOffset(newH); } catch { }
+                    try { MapScrollViewer.ScrollToVerticalOffset(newV); } catch { }
+                    return;
+                }
+            }
+            catch { }
             
             // Track if mouse has moved since button down (for click vs drag detection)
             if (e.LeftButton == MouseButtonState.Pressed && !hasMouseMoved)
@@ -8253,6 +11799,167 @@ namespace FamidashEditor
             }
             
             UpdateCoords(pos);
+            
+            // Check if hovering over an offset sprite and show tooltip
+            try
+            {
+                if (!previewMode && OffsetGhostContainer != null && OffsetTooltipContainer != null)
+                {
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                    int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                    int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                    int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                    
+                    // Convert mouse position to pixel coordinates
+                    int mousePxX = (int)Math.Round(pos.X * dpi.DpiScaleX);
+                    int mousePxY = (int)Math.Round(pos.Y * dpi.DpiScaleY);
+                    
+                    // Find all sprites that overlap at mouse position
+                    var overlappingSprites = new List<(int posKey, int spriteId, (int offsetX, int offsetY) offset, int origLeftPx, int origTopPx, int shiftedLeftPx, int shiftedTopPx)>();
+                    
+                    // Check all sprites with offsets to see if mouse is over any shifted sprite
+                    foreach (var kvp in spritePixelOffsets)
+                    {
+                        int posKey = kvp.Key;
+                        var offset = kvp.Value;
+                        
+                        if (sprites[posKey] == -1) continue;
+                        
+                        int tx = posKey % mapWidth;
+                        int ty = posKey / mapWidth;
+                        
+                        // Get anchor position for this sprite (if it exists)
+                        int anchorX = tx;
+                        int anchorY = ty;
+                        if (spriteAnchors.TryGetValue(posKey, out var anchor))
+                        {
+                            anchorX = anchor.anchorTileX;
+                            anchorY = anchor.anchorTileY;
+                        }
+                        
+                        // Calculate shifted sprite bounds (from current storage position)
+                        int origLeftPx = padPxX + tx * tilePixelW;
+                        int origTopPx = padPxY + ty * tilePixelH + gridRenderShiftYPx;
+                        int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
+                        int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
+                        int shiftedLeftPx = origLeftPx + scaledOffsetX;
+                        int shiftedTopPx = origTopPx + scaledOffsetY;
+                        int shiftedRightPx = shiftedLeftPx + tilePixelW;
+                        int shiftedBottomPx = shiftedTopPx + tilePixelH;
+                        
+                        // Calculate anchor position for ghost tile display
+                        int anchorLeftPx = padPxX + anchorX * tilePixelW;
+                        int anchorTopPx = padPxY + anchorY * tilePixelH + gridRenderShiftYPx;
+                        
+                        // Check if mouse is within shifted sprite bounds
+                        if (mousePxX >= shiftedLeftPx && mousePxX < shiftedRightPx &&
+                            mousePxY >= shiftedTopPx && mousePxY < shiftedBottomPx)
+                        {
+                            overlappingSprites.Add((posKey, sprites[posKey], offset, anchorLeftPx, anchorTopPx, shiftedLeftPx, shiftedTopPx));
+                        }
+                    }
+                    
+                    if (overlappingSprites.Count > 0)
+                    {
+                        // Clear previous ghost tiles and tooltips
+                        OffsetGhostContainer.Children.Clear();
+                        OffsetTooltipContainer.Children.Clear();
+                        
+                        double currentTooltipY = (double)overlappingSprites[0].shiftedTopPx / dpi.DpiScaleY;
+                        double widthDiu = (double)tilePixelW / dpi.DpiScaleX;
+                        double heightDiu = (double)tilePixelH / dpi.DpiScaleY;
+                        
+                        foreach (var sprite in overlappingSprites)
+                        {
+                            // Show ghost tile at original position
+                            double origLeft = (double)sprite.origLeftPx / dpi.DpiScaleX;
+                            double origTop = (double)sprite.origTopPx / dpi.DpiScaleY;
+                            
+                            var ghostTile = new Shapes.Rectangle
+                            {
+                                Fill = Brushes.Transparent,
+                                Stroke = new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF)),
+                                StrokeThickness = 1,
+                                StrokeDashArray = new DoubleCollection { 2, 2 },
+                                Width = widthDiu,
+                                Height = heightDiu
+                            };
+                            Canvas.SetLeft(ghostTile, origLeft);
+                            Canvas.SetTop(ghostTile, origTop);
+                            OffsetGhostContainer.Children.Add(ghostTile);
+                            
+                            // Create tooltip with sprite icon
+                            var tooltipPanel = new StackPanel { Orientation = Orientation.Horizontal, Background = new SolidColorBrush(Color.FromArgb(0xDD, 0x00, 0x00, 0x00)) };
+                            
+                            // Add sprite icon if available
+                            if (spriteImages != null && sprite.spriteId >= 0 && sprite.spriteId < spriteImages.Length && spriteImages[sprite.spriteId] != null)
+                            {
+                                var icon = new Image
+                                {
+                                    Source = spriteImages[sprite.spriteId],
+                                    Width = 16,
+                                    Height = 16,
+                                    Margin = new Thickness(2)
+                                };
+                                tooltipPanel.Children.Add(icon);
+                            }
+                            
+                            // Add offset text - show total offset from anchor, not from storage position
+                            int totalOffsetX = sprite.offset.offsetX;
+                            int totalOffsetY = sprite.offset.offsetY;
+                            
+                            // If there's an anchor, calculate the total movement from anchor
+                            if (spriteAnchors.TryGetValue(sprite.posKey, out var spriteAnchor))
+                            {
+                                // Calculate where the sprite currently is stored
+                                int storageTileX = sprite.posKey % mapWidth;
+                                int storageTileY = sprite.posKey / mapWidth;
+                                
+                                // Total offset = tile movement from anchor + sub-tile offset
+                                int tileDeltaX = storageTileX - spriteAnchor.anchorTileX;
+                                int tileDeltaY = storageTileY - spriteAnchor.anchorTileY;
+                                totalOffsetX = tileDeltaX * TileSize + sprite.offset.offsetX;
+                                totalOffsetY = tileDeltaY * TileSize + sprite.offset.offsetY;
+                            }
+                            
+                            string tooltipText = $"ID:{sprite.spriteId:X2} Offset: X={totalOffsetX:+#;-#;0} Y={totalOffsetY:+#;-#;0}";
+                            var textBlock = new TextBlock
+                            {
+                                Text = tooltipText,
+                                Foreground = Brushes.White,
+                                Padding = new Thickness(4, 2, 4, 2),
+                                FontSize = 10,
+                                VerticalAlignment = VerticalAlignment.Center
+                            };
+                            tooltipPanel.Children.Add(textBlock);
+                            
+                            // Position tooltip - stack them vertically at the shifted location
+                            double shiftedLeft = (double)sprite.shiftedLeftPx / dpi.DpiScaleX;
+                            Canvas.SetLeft(tooltipPanel, shiftedLeft + widthDiu + 5);
+                            Canvas.SetTop(tooltipPanel, currentTooltipY);
+                            OffsetTooltipContainer.Children.Add(tooltipPanel);
+                            
+                            currentTooltipY += 20; // Stack next tooltip below
+                        }
+                        
+                        OffsetGhostContainer.Visibility = Visibility.Visible;
+                        OffsetTooltipContainer.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        OffsetGhostContainer.Visibility = Visibility.Collapsed;
+                        OffsetTooltipContainer.Visibility = Visibility.Collapsed;
+                    }
+                }
+            }
+            catch
+            {
+                if (OffsetGhostContainer != null) OffsetGhostContainer.Visibility = Visibility.Collapsed;
+                if (OffsetTooltipContainer != null) OffsetTooltipContainer.Visibility = Visibility.Collapsed;
+            }
+            
             // If actively selecting, update the selection rectangle
             if (isDraggingSelection && e.LeftButton == MouseButtonState.Pressed)
             {
@@ -8288,6 +11995,91 @@ namespace FamidashEditor
                 UpdateDeferredPreview();
                 return;
             }
+
+            // Show ghost preview of selected tile when brush/tile are active
+            try
+            {
+                // Prefer sprite ghost when sprite layer is active and a sprite is selected
+                if (PlaceTool != null && PlaceTool.IsChecked == true && spritesLayerActive && selectedSprite >= 0 && spriteImages != null && GhostImage != null)
+                {
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                    int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                    int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                    int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                    var tt = ViewportPointToTile(pos);
+                    int tx = tt.x; int ty = tt.y;
+                    if (tx >= 0 && ty >= 0)
+                    {
+                        int leftPx = padPxX + tx * tilePixelW;
+                        int topPx = padPxY + ty * tilePixelH + gridRenderShiftYPx;
+                        double left = (double)leftPx / dpi.DpiScaleX;
+                        double top = (double)topPx / dpi.DpiScaleY;
+                        // If showing sprite ghost, attempt to size according to sprite image natural size in tiles
+                        ImageSource spriteSrc = spriteImages[selectedSprite];
+                        double diuPerTileX = (double)tilePixelW / dpi.DpiScaleX;
+                        double diuPerTileY = (double)tilePixelH / dpi.DpiScaleY;
+                        int widthTiles = 1, heightTiles = 1;
+                        if (spriteSrc is BitmapSource bs)
+                        {
+                            widthTiles = Math.Max(1, (int)Math.Round(bs.PixelWidth / (double)TileSize));
+                            heightTiles = Math.Max(1, (int)Math.Round(bs.PixelHeight / (double)TileSize));
+                        }
+                        double widthDiu = widthTiles * diuPerTileX;
+                        double heightDiu = heightTiles * diuPerTileY;
+                        GhostImage.Source = spriteSrc;
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(GhostImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                        GhostImage.Width = widthDiu;
+                        GhostImage.Height = heightDiu;
+                        Canvas.SetLeft(GhostImage, left);
+                        Canvas.SetTop(GhostImage, top);
+                        GhostImage.Visibility = Visibility.Visible;
+                        GhostImage.Opacity = 0.6;
+                    }
+                    else
+                    {
+                        GhostImage.Visibility = Visibility.Collapsed;
+                    }
+                }
+                else if (PlaceTool != null && PlaceTool.IsChecked == true && DrawTileButton != null && DrawTileButton.IsChecked == true && selectedTile >= 0 && tileImages != null && GhostImage != null)
+                {
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                    int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                    int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                    int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+                    var tt = ViewportPointToTile(pos);
+                    int tx = tt.x; int ty = tt.y;
+                    if (tx >= 0 && ty >= 0)
+                    {
+                        int leftPx = padPxX + tx * tilePixelW;
+                        int topPx = padPxY + ty * tilePixelH + gridRenderShiftYPx;
+                        double left = (double)leftPx / dpi.DpiScaleX;
+                        double top = (double)topPx / dpi.DpiScaleY;
+                        double widthDiu = (double)tilePixelW / dpi.DpiScaleX;
+                        double heightDiu = (double)tilePixelH / dpi.DpiScaleY;
+                        GhostImage.Source = tileImages[selectedTile];
+                        try { System.Windows.Media.RenderOptions.SetBitmapScalingMode(GhostImage, BitmapScalingMode.NearestNeighbor); } catch { }
+                        GhostImage.Width = widthDiu;
+                        GhostImage.Height = heightDiu;
+                        Canvas.SetLeft(GhostImage, left);
+                        Canvas.SetTop(GhostImage, top);
+                        GhostImage.Visibility = Visibility.Visible;
+                        GhostImage.Opacity = 0.6;
+                    }
+                    else
+                    {
+                        GhostImage.Visibility = Visibility.Collapsed;
+                    }
+                }
+                else if (GhostImage != null)
+                {
+                    GhostImage.Visibility = Visibility.Collapsed;
+                }
+            }
+            catch { if (GhostImage != null) GhostImage.Visibility = Visibility.Collapsed; }
         }
 
         private void Tool_Checked(object? sender, RoutedEventArgs e)
@@ -8296,7 +12088,7 @@ namespace FamidashEditor
             if (sender == null) return;
             var tb = sender as ToggleButton;
             if (tb == null) return;
-            var all = new[] { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool, StructureTool };
+            var all = new[] { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool };
             foreach (var t in all)
             {
                 if (t != tb) t.IsChecked = false;
@@ -8309,14 +12101,26 @@ namespace FamidashEditor
             if (MenuToolFill != null) MenuToolFill.IsChecked = (tb == FillTool);
             if (MenuToolSelect != null) MenuToolSelect.IsChecked = (tb == SelectTool);
             if (MenuToolWand != null) MenuToolWand.IsChecked = (tb == MagicWandTool);
-            if (MenuToolStructure != null) MenuToolStructure.IsChecked = (tb == StructureTool);
 
             // When switching to certain tools, reset draw mode back to Tile by default
-            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == MagicWandTool || tb == StructureTool)
+            // Include FillTool so selecting Fill also activates the Tile draw mode
+            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == MagicWandTool || tb == FillTool)
             {
                 if (DrawTileButton != null) DrawTileButton.IsChecked = true;
                 currentDrawMode = DrawMode.Tile;
             }
+
+            // When Select, Move or MagicWand tools are active, grey-out (disable)
+            // the non-tile drawing shape controls so only Tile remains usable.
+            // Also disable shape tools when Fill is active
+            bool disableShapes = (tb == SelectTool || tb == MoveTool || tb == MagicWandTool || tb == FillTool);
+            if (DrawLineButton != null) DrawLineButton.IsEnabled = !disableShapes;
+            if (DrawSquareButton != null) DrawSquareButton.IsEnabled = !disableShapes;
+            if (DrawCircleButton != null) DrawCircleButton.IsEnabled = !disableShapes;
+            if (DrawTriangleButton != null) DrawTriangleButton.IsEnabled = !disableShapes;
+            if (DrawPolygonButton != null) DrawPolygonButton.IsEnabled = !disableShapes;
+            if (HollowCheckBox != null) HollowCheckBox.IsEnabled = !disableShapes;
+            if (BrushThicknessSlider != null) BrushThicknessSlider.IsEnabled = !disableShapes;
         }
 
         private void DrawModeButton_Checked(object? sender, RoutedEventArgs e)
@@ -8404,10 +12208,105 @@ namespace FamidashEditor
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
             UpdateCoords(pos);
+
+            try
+            {
+                var tt = ViewportPointToTile(pos);
+                int x = tt.x, y = tt.y;
+                if (x < 0 || y < 0) return;
+                int idx = y * mapWidth + x;
+
+                // Prefer picking a sprite if one exists at this location
+                int spriteAt = (idx >= 0 && idx < sprites.Length) ? sprites[idx] : -1;
+                int tileAt = (idx >= 0 && idx < tiles.Length) ? tiles[idx] : -1;
+
+                bool pickedSomething = false;
+
+                if (spriteAt >= 0)
+                {
+                    // If lock is enabled and this sprite is in the disabled list, ignore right-click selection
+                    if (lockSpritesToSet && disabledSprites.Contains(spriteAt))
+                    {
+                        // do not pick this sprite
+                    }
+                    else
+                    {
+                        // pick sprite under cursor
+                        selectedSprite = spriteAt;
+                        selectedTile = -1;
+                        spritesLayerActive = true;
+                        tilesLayerActive = false;
+                        // activate place tool for immediate placement
+                        try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
+                        pickedSomething = true;
+                    }
+                }
+                else if (tileAt >= 0)
+                {
+                    selectedTile = tileAt;
+                    selectedTiles = new List<int> { tileAt };
+                    selectedSprite = -1;
+                    tilesLayerActive = true;
+                    spritesLayerActive = false;
+                    // Activate place tool and ensure tile draw mode
+                    try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
+                    try { if (DrawTileButton != null) DrawTileButton.IsChecked = true; } catch { }
+                    pickedSomething = true;
+                }
+
+                if (pickedSomething)
+                {
+                    UpdatePaletteHighlight();
+                    try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
+                    e.Handled = true;
+                }
+            }
+            catch { }
+        }
+
+        private void CanvasHost_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (CanvasHost == null || MapScrollViewer == null) return;
+            try
+            {
+                // Only start panning if middle button was pressed
+                if (e.MiddleButton == MouseButtonState.Pressed)
+                {
+                    isMiddlePanning = true;
+                    middlePanStart = e.GetPosition(MapScrollViewer);
+                    panStartHOffset = MapScrollViewer.HorizontalOffset;
+                    panStartVOffset = MapScrollViewer.VerticalOffset;
+                    // Capture mouse so we receive move/up events outside the canvas
+                    CanvasHost.CaptureMouse();
+                    Mouse.OverrideCursor = Cursors.ScrollAll;
+                    e.Handled = true;
+                }
+            }
+            catch { }
+        }
+
+        private void CanvasHost_MouseUp(object sender, MouseButtonEventArgs e)
+        {
+            if (CanvasHost == null) return;
+            try
+            {
+                // Stop panning on middle-button release
+                if (isMiddlePanning && e.MiddleButton == MouseButtonState.Released)
+                {
+                    isMiddlePanning = false;
+                    try { if (Mouse.Captured == CanvasHost) Mouse.Captured.ReleaseMouseCapture(); } catch { }
+                    Mouse.OverrideCursor = null;
+                    e.Handled = true;
+                }
+            }
+            catch { }
         }
 
         private void StartPaintingAt(Point pos)
         {
+            // Don't start painting if click is outside the map area
+            if (!IsPointInsideMap(pos)) return;
+            
             var tt = ViewportPointToTile(pos);
             int x = tt.x; int y = tt.y;
 
@@ -8667,129 +12566,54 @@ namespace FamidashEditor
             if (StatusText != null) StatusText.Text = $"Magic wand {mode} {visited.Count} tiles of type {target} (total: {selectionSet.Count})";
         }
 
-        private void StartStructureAt(Point pos)
-        {
-            if (CanvasHost == null) return;
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
-            int x = Math.Max(0, Math.Min(mapWidth - 1, (int)((pos.X - pad) / (TileSize * scale))));
-            int y = Math.Max(0, Math.Min(mapHeight - 1, (int)((pos.Y - pad) / (TileSize * scale))));
-            int startIdx = y * mapWidth + x;
-
-            // Only operate on tiles layer
-            if (!tilesLayerActive) return;
-            int target = tiles[startIdx];
-            if (target == -1) return;
-
-            var q = new System.Collections.Generic.Queue<(int x, int y)>();
-            var visited = new System.Collections.Generic.HashSet<int>();
-            q.Enqueue((x, y)); visited.Add(startIdx);
-            while (q.Count > 0)
-            {
-                var (cx, cy) = q.Dequeue();
-                // four neighbors
-                var nbrs = new (int nx, int ny)[] { (cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1) };
-                foreach (var n in nbrs)
-                {
-                    int nx = n.nx, ny = n.ny;
-                    if (nx < 0 || nx >= mapWidth || ny < 0 || ny >= mapHeight) continue;
-                    int ni = ny * mapWidth + nx;
-                    if (visited.Contains(ni)) continue;
-                    if (tiles[ni] == target)
-                    {
-                        visited.Add(ni);
-                        q.Enqueue((nx, ny));
-                    }
-                }
-            }
-
-            // Build action and apply replacements
-            var action = new TileChangeAction();
-            foreach (var idx in visited)
-            {
-                int tx = idx % mapWidth; int ty = idx / mapWidth;
-                int newTile = GetStructureTileForNeighbors(tx, ty, visited);
-                if (newTile != tiles[idx])
-                {
-                    action.Add(idx, tiles[idx], newTile);
-                    tiles[idx] = newTile;
-                }
-            }
-
-            if (!action.IsEmpty() && !suppressUndoRecording)
-            {
-                undoStack.Push(action);
-                redoStack.Clear();
-                hasUnsavedChanges = true;
-            }
-
-            // Update tiles bitmap
-            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-            if (StatusText != null) StatusText.Text = $"Structure built ({visited.Count} tiles)";
-        }
-
-        private int GetStructureTileForNeighbors(int x, int y, System.Collections.Generic.HashSet<int> region)
-        {
-            bool n = (y - 1 >= 0) && region.Contains((y - 1) * mapWidth + x);
-            bool s = (y + 1 < mapHeight) && region.Contains((y + 1) * mapWidth + x);
-            bool w = (x - 1 >= 0) && region.Contains(y * mapWidth + (x - 1));
-            bool e = (x + 1 < mapWidth) && region.Contains(y * mapWidth + (x + 1));
-            int count = (n ? 1 : 0) + (s ? 1 : 0) + (w ? 1 : 0) + (e ? 1 : 0);
-
-            // Four-way interior
-            if (count == 4) return 0x2F; // filler middle
-
-            // Three neighbors -> edge piece (missing side indicates which edge)
-            if (count == 3)
-            {
-                if (!n) return 0x21; // top only (missing top)
-                if (!e) return 0x22; // right only (missing right)
-                if (!s) return 0x23; // bottom only (missing bottom)
-                if (!w) return 0x24; // left only (missing left)
-            }
-
-            // Two neighbors: straight or corner
-            if (count == 2)
-            {
-                // straight vertical
-                if (n && s) return 0x2D; // vertical line
-                // straight horizontal
-                if (w && e) return 0x2E; // horizontal line
-                // corners
-                if (e && s) return 0x25; // top-left corner (neighbors right+down)
-                if (w && s) return 0x26; // top-right corner (neighbors left+down)
-                if (w && n) return 0x27; // bottom-right corner (neighbors left+up)
-                if (e && n) return 0x28; // bottom-left corner (neighbors right+up)
-            }
-
-            // One neighbor -> endcap pointing toward neighbor
-            if (count == 1)
-            {
-                if (n) return 0x32; // neighbor above -> bottom cap
-                if (s) return 0x30; // neighbor below -> top cap
-                if (w) return 0x31; // neighbor left -> right cap
-                if (e) return 0x33; // neighbor right -> left cap
-            }
-
-            // No neighbors (isolated) -> filler
-            return 0x2F;
-        }
-
         private void StartDragMove(Point pos)
         {
             if (selTiles == null || selW <= 0 || selH <= 0) return;
+            
+            // Clear sprite offsets tracking for this drag
+            selSpriteOffsets.Clear();
+            
+            // Set anchors for sprites in the selection
+            // Preserve existing anchors - only set new anchors for sprites without one
+            // This ensures the anchor always references the sprite's ORIGINAL position before any offsets
+            for (int yy = 0; yy < selH; yy++)
+            {
+                for (int xx = 0; xx < selW; xx++)
+                {
+                    int srcIdx = (selY + yy) * mapWidth + (selX + xx);
+                    if (selectionSet.Contains(srcIdx))
+                    {
+                        // Only set anchor if this sprite doesn't have one yet
+                        // This preserves the original reference point across moves
+                        if (!spriteAnchors.ContainsKey(srcIdx))
+                        {
+                            spriteAnchors[srcIdx] = (selX + xx, selY + yy);
+                        }
+                    }
+                }
+            }
+            
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             var dpi = VisualTreeHelper.GetDpi(this);
+            
+            // Use same calculation as tile rendering for exact alignment
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
 
-            // Build an image for the selection (render scaled tiles and sprites into a RenderTargetBitmap)
-            int pixW = selW * tilePixelW;
-            int pixH = selH * tilePixelH;
+            // Build an image for the selection - simple approach: just draw what we have
+            int bitmapWidth = selW * TileSize;
+            int bitmapHeight = selH * TileSize;
+            
+            // Store logical dimensions for zoom updates
+            ghostLogicalWidth = bitmapWidth;
+            ghostLogicalHeight = bitmapHeight;
+            
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
-                // Draw tiles first
+                // Draw tiles at their natural positions
                 for (int yy = 0; yy < selH; yy++)
                 {
                     for (int xx = 0; xx < selW; xx++)
@@ -8802,14 +12626,12 @@ namespace FamidashEditor
                             if (src == null) src = tileImages[val];
                             if (src != null)
                             {
-                                double x = xx * TileSize * scale;
-                                double y = yy * TileSize * scale;
-                                dc.DrawImage(src, new Rect(x, y, TileSize * scale, TileSize * scale));
+                                dc.DrawImage(src, new Rect(xx * TileSize, yy * TileSize, TileSize, TileSize));
                             }
                         }
                     }
                 }
-                // Draw sprites on top
+                // Draw sprites on top at their grid positions (ignore pixel offsets for ghost)
                 if (selSprites != null)
                 {
                     for (int yy = 0; yy < selH; yy++)
@@ -8822,27 +12644,36 @@ namespace FamidashEditor
                                 var src = spriteImages[val];
                                 if (src != null)
                                 {
-                                    double x = xx * TileSize * scale;
-                                    double y = yy * TileSize * scale;
-                                    dc.DrawImage(src, new Rect(x, y, TileSize * scale, TileSize * scale));
+                                    dc.DrawImage(src, new Rect(xx * TileSize, yy * TileSize, TileSize, TileSize));
                                 }
                             }
                         }
                     }
                 }
             }
-            var rtb = new RenderTargetBitmap(pixW, pixH, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            var rtb = new RenderTargetBitmap(bitmapWidth, bitmapHeight, 96, 96, PixelFormats.Pbgra32);
             rtb.Render(dv);
             rtb.Freeze();
+
+            // Hide hover rectangle and offset ghosts during drag
+            if (HoverRect != null) HoverRect.Visibility = Visibility.Collapsed;
+            if (HoverBorder != null) HoverBorder.Visibility = Visibility.Collapsed;
+            if (OffsetGhostContainer != null) OffsetGhostContainer.Visibility = Visibility.Collapsed;
+            if (OffsetTooltipContainer != null) OffsetTooltipContainer.Visibility = Visibility.Collapsed;
 
             // Set ghost image source and initial position
             if (GhostImage != null && CanvasHost != null)
             {
                 GhostImage.Source = rtb;
-                GhostImage.Width = selW * TileSize * scale;
-                GhostImage.Height = selH * TileSize * scale;
-                double selLeft = selX * TileSize * scale + mapViewportPadding;
-                double selTop = selY * TileSize * scale + mapViewportPadding;
+                // Size in logical pixels (WPF converts bitmap DPI to display)
+                GhostImage.Width = (bitmapWidth * scale * dpi.DpiScaleX) / dpi.DpiScaleX;
+                GhostImage.Height = (bitmapHeight * scale * dpi.DpiScaleY) / dpi.DpiScaleY;
+                
+                // Position at tile boundary (no offset adjustment needed since we cleared offsets)
+                int selLeftPx = padPxX + selX * tilePixelW;
+                int selTopPx = padPxY + selY * tilePixelH;
+                double selLeft = selLeftPx / dpi.DpiScaleX;
+                double selTop = selTopPx / dpi.DpiScaleY;
                 Canvas.SetLeft(GhostImage, selLeft);
                 Canvas.SetTop(GhostImage, selTop);
                 GhostImage.Visibility = Visibility.Visible;
@@ -8852,10 +12683,12 @@ namespace FamidashEditor
             isDraggingSelection = true;
             dragStartMouse = pos;
             dragOrigX = selX; dragOrigY = selY;
+            lastDragScale = scale; // Store current scale for zoom rescaling
             // compute offset so the ghost follows the pointer at the same relative point
-            double selLeftUnits = selX * TileSize * scale + mapViewportPadding;
-            double selTopUnits = selY * TileSize * scale + mapViewportPadding;
-            dragOffset = new Point(dragStartMouse.X - selLeftUnits, dragStartMouse.Y - selTopUnits);
+            // Use the actual ghost position (which includes minOffset)
+            double ghostLeft = Canvas.GetLeft(GhostImage);
+            double ghostTop = Canvas.GetTop(GhostImage);
+            dragOffset = new Point(dragStartMouse.X - ghostLeft, dragStartMouse.Y - ghostTop);
             if (CanvasHost != null) CanvasHost.CaptureMouse();
         }
 
@@ -8863,18 +12696,131 @@ namespace FamidashEditor
         {
             if (!isDraggingSelection || GhostImage == null) return;
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-            double pad = mapViewportPadding;
-            // desired top-left in canvas units
+            var dpi = VisualTreeHelper.GetDpi(this);
+            
+            // Calculate tile size in logical pixels (matching how tiles are actually positioned)
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            double logicalTileW = tilePixelW / dpi.DpiScaleX;
+            double logicalTileH = tilePixelH / dpi.DpiScaleY;
+            
+            int padPx = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+            double logicalPad = padPx / dpi.DpiScaleX;
+            
+            // Check modifier keys and sprite-only mode
+            bool isShiftHeld = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+            bool isCtrlHeld = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            bool isSpritesOnly = spritesLayerActive && !tilesLayerActive;
+            
+            // desired top-left in canvas units (before snapping)
             double left = pos.X - dragOffset.X;
             double top = pos.Y - dragOffset.Y;
-            // clamp so selection stays within map extents (allow small padding)
-            double minLeft = pad; double minTop = pad;
-            double maxLeft = pad + Math.Max(0, mapWidth * TileSize * scale - selW * TileSize * scale);
-            double maxTop = pad + Math.Max(0, mapHeight * TileSize * scale - selH * TileSize * scale);
-            if (left < minLeft) left = minLeft; if (left > maxLeft) left = maxLeft;
-            if (top < minTop) top = minTop; if (top > maxTop) top = maxTop;
-            Canvas.SetLeft(GhostImage, left);
-            Canvas.SetTop(GhostImage, top);
+            
+            double snappedLeft, snappedTop;
+            
+            if (isShiftHeld && isCtrlHeld && isSpritesOnly)
+            {
+                // Single-pixel precision: work in native unscaled pixels
+                // Convert from display units to native pixels
+                double nativeLeft = (left - logicalPad) / scale;
+                double nativeTop = (top - logicalPad) / scale;
+                
+                // Snap to nearest native pixel
+                int snappedNativeX = (int)Math.Round(nativeLeft);
+                int snappedNativeY = (int)Math.Round(nativeTop);
+                
+                // Convert back to display units
+                snappedLeft = logicalPad + snappedNativeX * scale;
+                snappedTop = logicalPad + snappedNativeY * scale;
+            }
+            else if (isShiftHeld && isSpritesOnly)
+            {
+                // Half-grid snapping: use half of the logical tile size
+                double halfTileW = logicalTileW / 2.0;
+                double halfTileH = logicalTileH / 2.0;
+                
+                int halfTileX = (int)Math.Round((left - logicalPad) / halfTileW);
+                int halfTileY = (int)Math.Round((top - logicalPad) / halfTileH);
+                
+                snappedLeft = logicalPad + halfTileX * halfTileW;
+                snappedTop = logicalPad + halfTileY * halfTileH;
+            }
+            else
+            {
+                // Normal full-grid snapping: snap to logical tile boundaries
+                int tileX = (int)Math.Round((left - logicalPad) / logicalTileW);
+                int tileY = (int)Math.Round((top - logicalPad) / logicalTileH);
+                
+                snappedLeft = logicalPad + tileX * logicalTileW;
+                snappedTop = logicalPad + tileY * logicalTileH;
+            }
+            
+            // clamp so selection stays within map extents
+            double minLeft = logicalPad;
+            double minTop = logicalPad;
+            double maxLeft = logicalPad + Math.Max(0, mapWidth * logicalTileW - selW * logicalTileW);
+            double maxTop = logicalPad + Math.Max(0, mapHeight * logicalTileH - selH * logicalTileH);
+            if (snappedLeft < minLeft) snappedLeft = minLeft;
+            if (snappedLeft > maxLeft) snappedLeft = maxLeft;
+            if (snappedTop < minTop) snappedTop = minTop;
+            if (snappedTop > maxTop) snappedTop = maxTop;
+            
+            // Position ghost at snapped location
+            Canvas.SetLeft(GhostImage, snappedLeft);
+            Canvas.SetTop(GhostImage, snappedTop);
+            
+            // Calculate and store final tile position and pixel offset for EndDragMove
+            // The ghost position represents the final visual position where sprites should appear
+            // Convert to native coordinates - this gives us the absolute position
+            double finalNativeLeft = (snappedLeft - logicalPad) / scale;
+            double finalNativeTop = (snappedTop - logicalPad) / scale;
+            
+            if (isShiftHeld && isCtrlHeld && isSpritesOnly)
+            {
+                // Pixel-perfect: calculate tile and offset
+                dragFinalTileX = (int)Math.Floor(finalNativeLeft / TileSize);
+                dragFinalTileY = (int)Math.Floor(finalNativeTop / TileSize);
+                dragFinalOffsetX = (int)Math.Round(finalNativeLeft - dragFinalTileX * TileSize);
+                dragFinalOffsetY = (int)Math.Round(finalNativeTop - dragFinalTileY * TileSize);
+            }
+            else if (isShiftHeld && isSpritesOnly)
+            {
+                // Half-grid: calculate tile and half-grid offset
+                dragFinalTileX = (int)Math.Floor(finalNativeLeft / TileSize);
+                dragFinalTileY = (int)Math.Floor(finalNativeTop / TileSize);
+                double withinTileX = finalNativeLeft - dragFinalTileX * TileSize;
+                double withinTileY = finalNativeTop - dragFinalTileY * TileSize;
+                dragFinalOffsetX = (int)Math.Round(withinTileX / (TileSize / 2.0)) * (TileSize / 2);
+                dragFinalOffsetY = (int)Math.Round(withinTileY / (TileSize / 2.0)) * (TileSize / 2);
+            }
+            else
+            {
+                // Full grid: no offset
+                dragFinalTileX = (int)Math.Round(finalNativeLeft / TileSize);
+                dragFinalTileY = (int)Math.Round(finalNativeTop / TileSize);
+                dragFinalOffsetX = 0;
+                dragFinalOffsetY = 0;
+            }
+            
+            // Show yellow box at snapped position
+            if (SelectionOverlay != null)
+            {
+                SelectionOverlay.Children.Clear();
+                double boxWidth = selW * TileSize * scale;
+                double boxHeight = selH * TileSize * scale;
+                var rect = new Shapes.Rectangle 
+                { 
+                    Width = boxWidth, 
+                    Height = boxHeight, 
+                    Stroke = Brushes.Yellow, 
+                    StrokeThickness = 2.0 / scale, 
+                    Fill = Brushes.Transparent, 
+                    IsHitTestVisible = false 
+                };
+                Canvas.SetLeft(rect, snappedLeft);
+                Canvas.SetTop(rect, snappedTop);
+                SelectionOverlay.Children.Add(rect);
+            }
         }
 
         private void EndDragMove(Point pos)
@@ -8903,29 +12849,32 @@ namespace FamidashEditor
                 }
             }
             
-            // compute final destination tile coords from ghost position using integer-pixel math
-            double left = Canvas.GetLeft(GhostImage);
-            double top = Canvas.GetTop(GhostImage);
-            var dpiGhost = VisualTreeHelper.GetDpi(this);
-            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpiGhost.DpiScaleX));
-            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpiGhost.DpiScaleY));
-            int padPxX = (int)Math.Round(pad * dpiGhost.DpiScaleX);
-            int padPxY = (int)Math.Round(pad * dpiGhost.DpiScaleY);
-            int leftPx = (int)Math.Round((left) * dpiGhost.DpiScaleX);
-            int topPx = (int)Math.Round((top) * dpiGhost.DpiScaleY);
-            int destX = (leftPx - padPxX + tilePixelW/2) / tilePixelW;
-            int destY = (topPx - padPxY + tilePixelH/2) / tilePixelH;
+            // Check modifier keys and sprite-only mode
+            bool isShiftHeld = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+            bool isCtrlHeld = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            bool isSpritesOnly = spritesLayerActive && !tilesLayerActive;
+            
+            // Use the final position calculated during UpdateDragMoveTo
+            // This ensures the placement matches exactly where the ghost was shown
+            int destX = dragFinalTileX;
+            int destY = dragFinalTileY;
+            int pixelOffsetX = dragFinalOffsetX;
+            int pixelOffsetY = dragFinalOffsetY;
+            
             // clamp
             if (destX < 0) destX = 0; if (destY < 0) destY = 0;
             if (destX + selW > mapWidth) destX = mapWidth - selW;
             if (destY + selH > mapHeight) destY = mapHeight - selH;
 
-            // hide ghost
+            // hide ghost and yellow box
             GhostImage.Visibility = Visibility.Collapsed;
             GhostImage.Source = null;
+            if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
 
-            // commit move
-            MoveSelectionTo(destX, destY);
+            // commit move with optional pixel offset
+            // Preserve offsets only when shift is held (sub-tile positioning mode)
+            bool preserveOffsets = isShiftHeld && isSpritesOnly;
+            MoveSelectionTo(destX, destY, pixelOffsetX, pixelOffsetY, preserveOffsets);
         }
 
         private void UpdateSelectionTo(Point pos)
@@ -8978,6 +12927,15 @@ namespace FamidashEditor
                 {
                     int tx = idx % mapWidth;
                     int ty = idx / mapWidth;
+                    
+                    // Check if this tile has a sprite with pixel offset
+                    int offsetX = 0, offsetY = 0;
+                    if (sprites[idx] != -1 && spritePixelOffsets.TryGetValue(idx, out var pixelOffset))
+                    {
+                        offsetX = pixelOffset.offsetX;
+                        offsetY = pixelOffset.offsetY;
+                    }
+                    
                     var rect = new Shapes.Rectangle
                     {
                         Fill = SelectionFillBrush,
@@ -8987,8 +12945,12 @@ namespace FamidashEditor
                         Height = (double)tilePixelH / dpi.DpiScaleY,
                         IsHitTestVisible = false
                     };
-                    double left = (padPxX + tx * tilePixelW) / dpi.DpiScaleX;
-                    double top = (padPxY + ty * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY;
+                    
+                    // Position includes sprite pixel offset (scaled)
+                    int scaledOffsetX = (int)Math.Round(offsetX * scale * dpi.DpiScaleX);
+                    int scaledOffsetY = (int)Math.Round(offsetY * scale * dpi.DpiScaleY);
+                    double left = (padPxX + tx * tilePixelW + scaledOffsetX) / dpi.DpiScaleX;
+                    double top = (padPxY + ty * tilePixelH + scaledOffsetY) / dpi.DpiScaleY + gridRenderShiftY;
                     try { rect.StrokeThickness = 1.0 / dpi.DpiScaleX; rect.SnapsToDevicePixels = true; } catch { }
                     Canvas.SetLeft(rect, left);
                     Canvas.SetTop(rect, top);
@@ -9453,11 +13415,15 @@ namespace FamidashEditor
                 int rx = Math.Abs(ex - sx), ry = Math.Abs(ey - sy);
                 int r = Math.Max(1, Math.Max(rx, ry) + 1);
                 int cx = sx, cy = sy;
+                // For circles, treat the minimum brush thickness as one tick higher.
+                // This ensures the smallest brush setting still produces a complete circle.
+                int effThickness = thickness;
+                if (effThickness <= 1) effThickness = 2;
                 // Use center between sx,ex and sy,ey
                 cx = (sx + ex) / 2; cy = (sy + ey) / 2;
                 if (hollowShape)
                 {
-                    int t = Math.Max(1, thickness);
+                    int t = Math.Max(1, effThickness);
                     int innerR = Math.Max(0, r - t + 1);
                     int r2 = r * r; int inner2 = innerR * innerR;
                     for (int y = cy - r; y <= cy + r; y++) for (int x = cx - r; x <= cx + r; x++)
@@ -9712,11 +13678,12 @@ namespace FamidashEditor
         {
             selTiles = null; selSprites = null; selW = 0; selH = 0; selX = selY = -1;
             selectionSet.Clear();
+            spriteAnchors.Clear(); // Clear anchors when selection is cleared
             if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
             if (StatusText != null) StatusText.Text = string.Empty;
         }
 
-        private void MoveSelectionTo(int destX, int destY)
+        private void MoveSelectionTo(int destX, int destY, int pixelOffsetX = 0, int pixelOffsetY = 0, bool preserveOffsets = false)
         {
             if (selTiles == null || selW <= 0 || selH <= 0) return;
             // clamp destination so selection fits
@@ -9724,142 +13691,270 @@ namespace FamidashEditor
             if (destX + selW > mapWidth) destX = mapWidth - selW;
             if (destY + selH > mapHeight) destY = mapHeight - selH;
 
-            // Check if selTiles has any non-empty values
-            bool hasAnyTiles = false;
-            for (int i = 0; i < selTiles.Length; i++)
-            {
-                if (selTiles[i] != -1) { hasAnyTiles = true; break; }
-            }
+            // Build atomic final state for both tiles and sprites, then apply deletions for both layers,
+            // then apply placements for both layers. This avoids inter-layer or overlapping-source/dest races
+            // where an item could be moved and later accidentally cleared.
 
-            // Prepare final values map and record changes compared to current tiles
-            if (hasAnyTiles)
+            var finalTiles = (int[])tiles.Clone();
+            var finalSprites = (int[])sprites.Clone();
+            var tileChanges = new TileChangeAction();
+            var spriteChanges = new SpriteChangeAction();
+
+            // Helper to determine whether a selection cell should be considered (sparse selection vs full rect)
+            bool useSparse = (selectionSet != null && selectionSet.Count > 0);
+
+            // First pass: collect mappings from source->dest for tiles and sprites (respecting sparse selection)
+            var tileMappings = new System.Collections.Generic.List<(int src, int dst, int val)>();
+            var spriteMappings = new System.Collections.Generic.List<(int src, int dst, int val)>();
+            for (int yy = 0; yy < selH; yy++)
             {
-                // If this was a sparse/wand selection, only move the selected indices rather than the entire rectangle
-                if (selectionSet != null && selectionSet.Count > 0)
+                for (int xx = 0; xx < selW; xx++)
                 {
-                    var finalTiles = (int[])tiles.Clone();
-                    var changedTiles = new TileChangeAction();
-                    var srcToDest = new System.Collections.Generic.List<(int srcIdx, int dstIdx)>();
+                    int srcIdx = (selY + yy) * mapWidth + (selX + xx);
+                    if (srcIdx < 0 || srcIdx >= tiles.Length) continue;
+                    if (useSparse && (selectionSet == null || !selectionSet.Contains(srcIdx))) continue;
 
-                    foreach (var sIdx in selectionSet)
+                    if (tilesLayerActive)
                     {
-                        // compute relative coords inside selection rectangle
-                        int sx = sIdx % mapWidth; int sy = sIdx / mapWidth;
-                        int relX = sx - selX; int relY = sy - selY;
-                        if (relX < 0 || relX >= selW || relY < 0 || relY >= selH) continue;
-                        int val = selTiles[relY * selW + relX];
-                        if (val == -1) continue; // don't place transparent cells
-                        int dstIdx = (destY + relY) * mapWidth + (destX + relX);
-                        if (dstIdx < 0 || dstIdx >= finalTiles.Length) continue;
-                        finalTiles[dstIdx] = val;
-                        srcToDest.Add((sIdx, dstIdx));
+                        int val = selTiles[yy * selW + xx];
+                        if (val != -1)
+                        {
+                            int dstIdx = (destY + yy) * mapWidth + (destX + xx);
+                            if (dstIdx >= 0 && dstIdx < finalTiles.Length)
+                            {
+                                tileMappings.Add((srcIdx, dstIdx, val));
+                            }
+                        }
                     }
 
-                    // Clear source indices that were selected and not overlapping destination
-                    var destSet = new HashSet<int>(srcToDest.ConvertAll(t => t.dstIdx));
-                    foreach (var (sIdx, _) in srcToDest)
+                    if (selSprites != null && spritesLayerActive)
                     {
-                        if (!destSet.Contains(sIdx))
+                        int sval = selSprites[yy * selW + xx];
+                        if (sval != -1)
                         {
-                            finalTiles[sIdx] = -1;
+                            int sDstIdx = (destY + yy) * mapWidth + (destX + xx);
+                            if (sDstIdx >= 0 && sDstIdx < finalSprites.Length)
+                            {
+                                spriteMappings.Add((srcIdx, sDstIdx, sval));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Build destination sets so we don't clear a source that is also a destination of some mapping
+            var tileDstSet = new System.Collections.Generic.HashSet<int>();
+            foreach (var m in tileMappings) tileDstSet.Add(m.dst);
+            var spriteDstSet = new System.Collections.Generic.HashSet<int>();
+            foreach (var m in spriteMappings) spriteDstSet.Add(m.dst);
+
+            // Apply mappings to finals: set destinations first, then clear sources only if source is not a destination
+            foreach (var m in tileMappings)
+            {
+                finalTiles[m.dst] = m.val;
+            }
+            foreach (var m in tileMappings)
+            {
+                if (m.dst != m.src && !tileDstSet.Contains(m.src)) finalTiles[m.src] = -1;
+            }
+
+            foreach (var m in spriteMappings)
+            {
+                finalSprites[m.dst] = m.val;
+            }
+            foreach (var m in spriteMappings)
+            {
+                if (m.dst != m.src && !spriteDstSet.Contains(m.src)) finalSprites[m.src] = -1;
+            }
+
+            // Build del/put lists for tiles and sprites by comparing final vs current
+            var delTiles = new System.Collections.Generic.List<int>();
+            var putTiles = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < finalTiles.Length; i++)
+            {
+                if (finalTiles[i] != tiles[i])
+                {
+                    if (finalTiles[i] == -1) delTiles.Add(i); else putTiles.Add(i);
+                    tileChanges.Add(i, tiles[i], finalTiles[i]);
+                }
+            }
+
+            var delSprites = new System.Collections.Generic.List<int>();
+            var putSprites = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < finalSprites.Length; i++)
+            {
+                if (finalSprites[i] != sprites[i])
+                {
+                    if (finalSprites[i] == -1) delSprites.Add(i); else putSprites.Add(i);
+                    spriteChanges.Add(i, sprites[i], finalSprites[i]);
+                }
+            }
+            
+            // Capture sprite offsets before making sprite changes
+            if (!spriteChanges.IsEmpty())
+            {
+                spriteChanges.CaptureOffsets(this);
+            }
+
+            // Apply deletions for both layers first
+            foreach (var idx in delTiles) tiles[idx] = -1;
+            foreach (var idx in delSprites)
+            {
+                // For sprites, clear the pixel footprints for affected indices
+                int old = sprites[idx];
+                if (old != -1)
+                {
+                    int animated = GetAnimatedSpriteIndex(old);
+                    int sx = idx % mapWidth; int sy = idx / mapWidth;
+                    int fminX = sx - 1; int fmaxX = sx + 1; int fminY = sy - 2; int fmaxY = sy + 2;
+                    if (animated >= 3000 && animated <= 3029)
+                    {
+                        if (animated >= 3011 && animated <= 3014)
+                        {
+                            fminX = sx; fmaxX = sx + 2; fminY = sy; fmaxY = sy + 1;
                         }
                         else
                         {
-                            // If source and dest are different indices and source wasn't overwritten by another destination, clear source
-                            if (!destSet.Contains(sIdx)) finalTiles[sIdx] = -1;
+                            fminX = sx; fmaxX = sx + 1; fminY = sy; fmaxY = sy + 2;
                         }
                     }
-
-                    // Build TileChangeAction from differences
-                    for (int i = 0; i < finalTiles.Length; i++) if (finalTiles[i] != tiles[i]) changedTiles.Add(i, tiles[i], finalTiles[i]);
-                    if (!changedTiles.IsEmpty() && !suppressUndoRecording) { undoStack.Push(changedTiles); redoStack.Clear(); hasUnsavedChanges = true; }
-                    tiles = finalTiles;
-                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    fminX = Math.Max(0, fminX); fminY = Math.Max(0, fminY); fmaxX = Math.Min(mapWidth - 1, fmaxX); fmaxY = Math.Min(mapHeight - 1, fmaxY);
+                    ClearPortalsBitmapTileRect(fminX, fminY, fmaxX, fmaxY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                    ClearSpritesBitmapTileRect(fminX, fminY, fmaxX, fmaxY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
                 }
-                else
+                sprites[idx] = -1;
+                // Clear sprite pixel offset when deleting sprite from this position
+                if (spritePixelOffsets.ContainsKey(idx))
                 {
-                    var finalTiles = (int[])tiles.Clone();
-                    var changedTiles = new TileChangeAction();
-
-                    // Apply selection tile values to final at destination (only where selection contained tiles)
-                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
-                    {
-                        int val = selTiles[yy * selW + xx];
-                        if (val == -1) continue; // do not overwrite target when selection cell was empty
-                        int dIdx = (destY + yy) * mapWidth + (destX + xx);
-                        finalTiles[dIdx] = val;
-                    }
-
-                    // Clear original source tile cells unless they are also targets for the selection (i.e., overlapping move)
-                    var targetSet = new HashSet<int>();
-                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++) targetSet.Add((destY + yy) * mapWidth + (destX + xx));
-                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
-                    {
-                        int sIdx = (selY + yy) * mapWidth + (selX + xx);
-                        bool srcWasSelected = (selTiles[yy * selW + xx] != -1);
-                        if (!targetSet.Contains(sIdx) && srcWasSelected) finalTiles[sIdx] = -1;
-                    }
-
-                    // Build TileChangeAction from differences
-                    for (int i = 0; i < finalTiles.Length; i++) if (finalTiles[i] != tiles[i]) changedTiles.Add(i, tiles[i], finalTiles[i]);
-                    if (!changedTiles.IsEmpty() && !suppressUndoRecording) { undoStack.Push(changedTiles); redoStack.Clear(); hasUnsavedChanges = true; }
-                    tiles = finalTiles;
-                    try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    spritePixelOffsets.Remove(idx);
                 }
+            }
+
+            // Rebuild both layers so deletions are visible
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+
+            // Apply placements for both layers
+            foreach (var idx in putTiles) tiles[idx] = finalTiles[idx];
+            
+            foreach (var idx in putSprites)
+            {
+                sprites[idx] = finalSprites[idx];
             }
             
-            // Check if selSprites has any non-empty values
-            bool hasAnySprites = false;
-            if (selSprites != null)
+            // Update sprite offsets for ALL sprites in the selection, not just ones that moved tiles
+            // This handles cases where sprite stays in same tile but offset changes (e.g., half-tile movement)
+            if (preserveOffsets && selSprites != null && spritesLayerActive)
             {
-                for (int i = 0; i < selSprites.Length; i++)
+                for (int yy = 0; yy < selH; yy++)
                 {
-                    if (selSprites[i] != -1) { hasAnySprites = true; break; }
+                    for (int xx = 0; xx < selW; xx++)
+                    {
+                        int srcIdx = (selY + yy) * mapWidth + (selX + xx);
+                        if (srcIdx < 0 || srcIdx >= sprites.Length) continue;
+                        if (useSparse && (selectionSet == null || !selectionSet.Contains(srcIdx))) continue;
+                        
+                        int sval = selSprites[yy * selW + xx];
+                        if (sval == -1) continue; // No sprite in selection at this position
+                        
+                        int dstIdx = (destY + yy) * mapWidth + (destX + xx);
+                        if (dstIdx < 0 || dstIdx >= sprites.Length) continue;
+                        
+                        // Get anchor for this sprite
+                        if (spriteAnchors.TryGetValue(srcIdx, out var anchor))
+                        {
+                            // The offset needs to be relative to where the sprite is STORED (dstIdx),
+                            // not relative to the anchor. We need to calculate where the sprite should
+                            // APPEAR (relative to anchor) and then convert that to an offset from dstIdx.
+                            
+                            int currentTileX = destX + xx;
+                            int currentTileY = destY + yy;
+                            
+                            // Calculate how far we've moved from the anchor (in tiles + sub-tile pixels)
+                            int tileDeltaX = currentTileX - anchor.anchorTileX;
+                            int tileDeltaY = currentTileY - anchor.anchorTileY;
+                            
+                            // The total movement in pixels is: tile movement + sub-tile offset from drag
+                            int totalMovementX = tileDeltaX * TileSize + pixelOffsetX;
+                            int totalMovementY = tileDeltaY * TileSize + pixelOffsetY;
+                            
+                            // Where should the sprite appear? At anchor + total movement
+                            int targetPixelX = anchor.anchorTileX * TileSize + totalMovementX;
+                            int targetPixelY = anchor.anchorTileY * TileSize + totalMovementY;
+                            
+                            // Where is the sprite actually stored?
+                            int storedPixelX = currentTileX * TileSize;
+                            int storedPixelY = currentTileY * TileSize;
+                            
+                            // Offset = where it should appear - where it's stored
+                            int offsetX = targetPixelX - storedPixelX;
+                            int offsetY = targetPixelY - storedPixelY;
+                            
+                            // Always set the offset if there's an anchor (even if offset is 0)
+                            // This ensures the hover tooltip and ghost indicator still work
+                            spritePixelOffsets[dstIdx] = (offsetX, offsetY);
+                            
+                            // Update anchor reference: remove from source, add to destination
+                            // The anchor stays at its original position
+                            if (srcIdx != dstIdx)
+                            {
+                                spriteAnchors.Remove(srcIdx);
+                                // Verify we're preserving the anchor coordinates
+                                System.Diagnostics.Debug.WriteLine($"Transferring anchor from idx {srcIdx} to {dstIdx}, keeping coords ({anchor.anchorTileX}, {anchor.anchorTileY})");
+                                spriteAnchors[dstIdx] = anchor; // Keep original anchor coordinates
+                            }
+                        }
+                        else
+                        {
+                            // No anchor - just use the pixel offset directly
+                            if (pixelOffsetX != 0 || pixelOffsetY != 0)
+                            {
+                                spritePixelOffsets[dstIdx] = (pixelOffsetX, pixelOffsetY);
+                            }
+                            else if (spritePixelOffsets.ContainsKey(dstIdx))
+                            {
+                                spritePixelOffsets.Remove(dstIdx);
+                            }
+                        }
+                    }
                 }
             }
+            else if (!preserveOffsets && selSprites != null && spritesLayerActive)
+            {
+                // Grid snap mode - clear offsets for all sprites in selection
+                for (int yy = 0; yy < selH; yy++)
+                {
+                    for (int xx = 0; xx < selW; xx++)
+                    {
+                        int dstIdx = (destY + yy) * mapWidth + (destX + xx);
+                        if (dstIdx >= 0 && dstIdx < sprites.Length && spritePixelOffsets.ContainsKey(dstIdx))
+                        {
+                            spritePixelOffsets.Remove(dstIdx);
+                        }
+                    }
+                }
+            }
+
+            // Capture sprite offsets after making changes
+            if (!spriteChanges.IsEmpty())
+            {
+                spriteChanges.CaptureNewOffsets(this);
+            }
+
+            if (!tileChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileChanges); redoStack.Clear(); hasUnsavedChanges = true; }
+            if (!spriteChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteChanges); redoStack.Clear(); hasUnsavedChanges = true; }
+
+            // Auto-save TMX config if sprite offsets were modified
+            if (!spriteChanges.IsEmpty() && !string.IsNullOrEmpty(currentFilePath))
+            {
+                try { SaveTmxConfig(currentFilePath); } catch { }
+            }
+
+            // Final rebuild
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
             
-            // Handle sprites if selSprites exists and has content
-            if (hasAnySprites && selSprites != null)
-            {
-                var finalSprites = (int[])sprites.Clone();
-                var changedSprites = new SpriteChangeAction();
-                
-                // Apply selection sprite values to final at destination (only where selection contained sprites)
-                for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
-                {
-                    int val = selSprites[yy * selW + xx];
-                    if (val == -1) continue;
-                    int dIdx = (destY + yy) * mapWidth + (destX + xx);
-                    finalSprites[dIdx] = val;
-                }
-
-                // Clear original source sprite cells unless they are also targets
-                var targetSet = new HashSet<int>();
-                for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++) targetSet.Add((destY + yy) * mapWidth + (destX + xx));
-                for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
-                {
-                    int sIdx = (selY + yy) * mapWidth + (selX + xx);
-                    int srcVal = selSprites[yy * selW + xx];
-                    if (!targetSet.Contains(sIdx) && srcVal != -1) finalSprites[sIdx] = -1;
-                }
-
-                // Build SpriteChangeAction from differences
-                for (int i = 0; i < finalSprites.Length; i++)
-                {
-                    if (finalSprites[i] != sprites[i]) changedSprites.Add(i, sprites[i], finalSprites[i]);
-                }
-
-                if (!changedSprites.IsEmpty() && !suppressUndoRecording)
-                {
-                    undoStack.Push(changedSprites);
-                    redoStack.Clear();
-                    hasUnsavedChanges = true;
-                }
-
-                // Commit final sprite state
-                sprites = finalSprites;
-                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-            }
+            
             
             // Update selection to new destination: preserve sparse selection membership only for cells that were selected
             var newSelection = new System.Collections.Generic.HashSet<int>();
@@ -9963,6 +14058,94 @@ namespace FamidashEditor
 
             ClearSelection();
             if (StatusText != null) StatusText.Text = "Erased selection on active layers";
+        }
+
+        // Copy current selection into the internal clipboard
+        private void CopySelection()
+        {
+            if (selW <= 0 || selH <= 0) return;
+            clipboardW = selW; clipboardH = selH;
+            clipboardTiles = new int[clipboardW * clipboardH];
+            clipboardSprites = new int[clipboardW * clipboardH];
+            clipboardMask = new bool[clipboardW * clipboardH];
+            clipboardHasData = false;
+
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            {
+                int sIdx = (selY + yy) * mapWidth + (selX + xx);
+                int ti = selTiles != null ? selTiles[yy * selW + xx] : -1;
+                int si = selSprites != null ? selSprites[yy * selW + xx] : -1;
+                clipboardTiles[yy * clipboardW + xx] = ti;
+                clipboardSprites[yy * clipboardW + xx] = si;
+                bool wasSelected = (selectionSet != null && selectionSet.Contains(sIdx)) || ti != -1 || si != -1;
+                clipboardMask[yy * clipboardW + xx] = wasSelected;
+                if (wasSelected) clipboardHasData = true;
+            }
+            if (StatusText != null) StatusText.Text = clipboardHasData ? "Copied selection" : "Copied (empty)";
+        }
+
+        // Cut = copy then erase selected layers (honor active layers)
+        private void CutSelection()
+        {
+            CopySelection();
+            try { EraseSelectedLayers(); } catch { }
+            if (StatusText != null) StatusText.Text = "Cut selection";
+        }
+
+        // Paste clipboard at destination tile coordinate (top-left)
+        private void PasteClipboardAt(int destX, int destY)
+        {
+            if (!clipboardHasData || clipboardTiles == null || clipboardSprites == null || clipboardMask == null) return;
+            if (destX < 0 || destY < 0) return;
+
+            var tileAction = new TileChangeAction();
+            var spriteAction = new SpriteChangeAction();
+
+            for (int yy = 0; yy < clipboardH; yy++)
+            {
+                for (int xx = 0; xx < clipboardW; xx++)
+                {
+                    if (!clipboardMask[yy * clipboardW + xx]) continue; // only paste cells that were part of original selection
+                    int dX = destX + xx; int dY = destY + yy;
+                    if (dX < 0 || dX >= mapWidth || dY < 0 || dY >= mapHeight) continue;
+                    int dIdx = dY * mapWidth + dX;
+                    int tVal = clipboardTiles[yy * clipboardW + xx];
+                    int sVal = clipboardSprites[yy * clipboardW + xx];
+                    if (tVal != -1)
+                    {
+                        int old = tiles[dIdx]; if (old != tVal) tileAction.Add(dIdx, old, tVal);
+                        tiles[dIdx] = tVal;
+                    }
+                    if (sVal != -1)
+                    {
+                        int old = sprites[dIdx]; if (old != sVal) spriteAction.Add(dIdx, old, sVal);
+                        sprites[dIdx] = sVal;
+                    }
+                }
+            }
+
+            if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
+            if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+
+            try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+
+            // Update selection to pasted rectangle
+            ClearSelection();
+            selW = clipboardW; selH = clipboardH; selX = destX; selY = destY;
+            selTiles = (int[])clipboardTiles.Clone();
+            selSprites = (int[])clipboardSprites.Clone();
+            selectionSet.Clear();
+            for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+            {
+                if (clipboardMask[yy * clipboardW + xx])
+                {
+                    int idx = (selY + yy) * mapWidth + (selX + xx);
+                    selectionSet.Add(idx);
+                }
+            }
+            UpdateSelectionVisuals(selX, selY, selW, selH);
+            if (StatusText != null) StatusText.Text = "Pasted clipboard";
         }
 
         private void ContinuePaintingAt(Point pos)
@@ -10070,6 +14253,12 @@ namespace FamidashEditor
                         if (previewMode && IsPortalSprite(neu))
                         {
                             placedPortal = true;
+                        }
+                        
+                        // Clear any pixel offset when placing/replacing a sprite (force grid snapping)
+                        if (spritePixelOffsets.ContainsKey(idx))
+                        {
+                            spritePixelOffsets.Remove(idx);
                         }
                         
                         if (!suppressUndoRecording)
@@ -10248,7 +14437,8 @@ namespace FamidashEditor
             {
                 if (HoverRect != null)
                 {
-                    if (inBounds)
+                    // Don't show hover during drag
+                    if (inBounds && !isDraggingSelection)
                     {
                         var dpi = VisualTreeHelper.GetDpi(this);
                         // Use same integer-pixel math as grid: compute tile pixel size and pad in pixels
@@ -10288,6 +14478,7 @@ namespace FamidashEditor
                     else
                     {
                         HoverRect.Visibility = Visibility.Collapsed;
+                        if (HoverBorder != null) HoverBorder.Visibility = Visibility.Collapsed;
                     }
                 }
             }
@@ -10686,11 +14877,14 @@ namespace FamidashEditor
                             , DecoSet = loadedDecoSet
                         };
                         var saveCollisionMessages = TmxHandler.SaveTmx(target, tmxLevel, useLegacyTriggerOffset);
-                        if (!string.IsNullOrEmpty(saveCollisionMessages))
+                        if (!suppressCollisionMessages && !string.IsNullOrEmpty(saveCollisionMessages))
                         {
                             MessageBox.Show("Sprite collision adjustments during save:\n\n" + saveCollisionMessages,
                                 "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
+                        
+                        // Save TMX config (sprite offsets, tints, sets, etc.)
+                        try { SaveTmxConfig(target); } catch { }
                     }
                     else
                     {
@@ -10751,11 +14945,14 @@ namespace FamidashEditor
                             DecoSet = loadedDecoSet
                         };
                         var saveCollisionMessages = TmxHandler.SaveTmx(dlg.FileName, tmxLevel, useLegacyTriggerOffset);
-                        if (!string.IsNullOrEmpty(saveCollisionMessages))
+                        if (!suppressCollisionMessages && !string.IsNullOrEmpty(saveCollisionMessages))
                         {
                             MessageBox.Show("Sprite collision adjustments during save:\n\n" + saveCollisionMessages,
                                 "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
+                        
+                        // Save TMX config (sprite offsets, tints, sets, etc.)
+                        try { SaveTmxConfig(dlg.FileName); } catch { }
                     }
                     else
                     {
@@ -10808,6 +15005,32 @@ namespace FamidashEditor
                     e.Handled = true; return;
                 }
 
+                if (e.Key == Key.C)
+                {
+                    try { CopySelection(); } catch { }
+                    e.Handled = true; return;
+                }
+
+                if (e.Key == Key.X)
+                {
+                    try { CutSelection(); } catch { }
+                    e.Handled = true; return;
+                }
+
+                if (e.Key == Key.V)
+                {
+                    int dx = (selW > 0 && selH > 0) ? selX : (lastClickX >= 0 ? lastClickX : lastHoverX);
+                    int dy = (selW > 0 && selH > 0) ? selY : (lastClickY >= 0 ? lastClickY : lastHoverY);
+                        try { if (dx >= 0 && dy >= 0) PasteClipboardAt(dx, dy); } catch { }
+                    e.Handled = true; return;
+                }
+
+                if (e.Key == Key.Y)
+                {
+                    try { Redo(); } catch { }
+                    e.Handled = true; return;
+                }
+
                 if (e.Key == Key.O)
                 {
                     try { LoadButton_Click(this, new RoutedEventArgs()); } catch { }
@@ -10835,8 +15058,8 @@ namespace FamidashEditor
                         {
                             try
                             {
-                                // Fine-scroll 2 pixels per tick when Shift+Arrow is held
-                                double newH = (MapScrollViewer?.HorizontalOffset ?? 0) + shiftArrowScrollDir * 2.0;
+                                // Fine-scroll 8 pixels per tick when Shift+Arrow is held
+                                double newH = (MapScrollViewer?.HorizontalOffset ?? 0) + shiftArrowScrollDir * 8.0;
                                 if (newH < 0) newH = 0;
                                 double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - SafeViewportWidth());
                                 if (newH > maxH) newH = maxH;
@@ -10937,27 +15160,181 @@ namespace FamidashEditor
         {
             try
             {
-                var dlg = new SetOptionsWindow(loadedDecoSet, currentBlockSet, currentSpikeSet) { Owner = this };
+                var dlg = new SetOptionsWindow(loadedDecoSet, loadedBlockSet, loadedSpikeSet) { Owner = this };
                 bool? res = dlg.ShowDialog();
-                if (res == true)
-                {
-                    string newDeco = dlg.SelectedDeco ?? "deco1";
-                    if (newDeco != loadedDecoSet)
+                    if (res == true)
                     {
-                        loadedDecoSet = newDeco;
-                        // Save to per-level config without prompting
-                        try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
-                        if (StatusText != null) StatusText.Text = $"Deco set saved: {loadedDecoSet}";
-                        // Trigger a rebuild of sprites preview so change takes effect in preview mode
-                        try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
-                        try { Redraw(); } catch { }
+                        string newDeco = dlg.SelectedDeco ?? "DECO1";
+                        string newBlock = dlg.SelectedBlockSet ?? "BLOCKSA";
+                        string newSpike = dlg.SelectedSpikeSet ?? "SPIKESA";
+                        bool changed = false;
+                        if (newDeco != loadedDecoSet)
+                        {
+                            loadedDecoSet = newDeco; changed = true;
+                            if (StatusText != null) StatusText.Text = $"Deco set saved: {loadedDecoSet}";
+                            try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+                            // If lock is enabled, re-apply disabled sprites immediately for the new deco
+                            try { if (lockSpritesToSet) ApplyLockSpritesToSet(); } catch { }
+                        }
+                        if (newBlock != loadedBlockSet)
+                        {
+                            loadedBlockSet = newBlock; changed = true;
+                            if (StatusText != null) StatusText.Text = $"Block set saved: {loadedBlockSet}";
+                        }
+                        if (newSpike != loadedSpikeSet)
+                        {
+                            loadedSpikeSet = newSpike; changed = true;
+                            if (StatusText != null) StatusText.Text = $"Spike set saved: {loadedSpikeSet}";
+                        }
+                        if (changed)
+                        {
+                            // Save to per-level config without prompting
+                            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                            try { Redraw(); } catch { }
+                        }
+                        // Also persist lock sprites option if dialog changed it (dialog wires owner on toggle but ensure saved)
+                        try {
+                            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                        } catch { }
                     }
-                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine("SetOptions dialog failed: " + ex.Message);
             }
+        }
+
+        // Programmatic setter to ensure SetOptionsWindow toggles behave identically
+        public void SetNoParallax(bool enabled)
+        {
+            try
+            {
+                suppressNoParallaxHandler = true;
+                noParallaxBg = enabled;
+                if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = enabled;
+                try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                ApplyParallaxChoice();
+                // If accurate tileset swapping is enabled, reapply so the correct tileset (Slopesa vs SlopesNone) is selected
+                try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+                // Update sprite locking since 0x17, 0x4B, 0x58, 0x64 depend on parallax state
+                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
+            }
+            finally { suppressNoParallaxHandler = false; }
+        }
+
+        public void ApplySpriteOffsets(ObjectOffsetEntry[] offsetEntries)
+        {
+            try
+            {
+                // Clear existing offsets when loading from JSON - JSON data is authoritative
+                spritePixelOffsets.Clear();
+                
+                foreach (var entry in offsetEntries)
+                {
+                    if (entry == null) continue;
+                    
+                    int ox = entry.offsetX ?? 0;
+                    int oy = entry.offsetY ?? 0;
+                    
+                    // Skip if no offsets defined
+                    if (ox == 0 && oy == 0)
+                        continue;
+                    
+                    // Parse coordinates
+                    if (entry.coordinates != null)
+                    {
+                        // Handle JsonElement coordinates
+                        if (entry.coordinates is JsonElement coordsJson)
+                        {
+                            if (coordsJson.ValueKind == JsonValueKind.Array)
+                            {
+                                var coordArray = coordsJson.EnumerateArray().ToList();
+                                
+                                // Check if first element is an array (nested coords) or a number (single coord)
+                                if (coordArray.Count > 0)
+                                {
+                                    var first = coordArray[0];
+                                    if (first.ValueKind == JsonValueKind.Array)
+                                    {
+                                        // Multiple coordinates: [[x,y], [x,y], ...]
+                                        foreach (var coord in coordArray)
+                                        {
+                                            var xy = coord.EnumerateArray().ToList();
+                                            if (xy.Count >= 2)
+                                            {
+                                                int x = xy[0].GetInt32();
+                                                int y = xy[1].GetInt32();
+                                                int key = y * mapWidth + x;
+                                                spritePixelOffsets[key] = (ox, oy);
+                                            }
+                                        }
+                                    }
+                                    else if (first.ValueKind == JsonValueKind.Number)
+                                    {
+                                        // Single coordinate: [x, y]
+                                        if (coordArray.Count >= 2)
+                                        {
+                                            int x = coordArray[0].GetInt32();
+                                            int y = coordArray[1].GetInt32();
+                                            int key = y * mapWidth + x;
+                                            spritePixelOffsets[key] = (ox, oy);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Save offsets to TMX config after applying JSON offsets
+                try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                
+                // Trigger a redraw to apply the offsets
+                try
+                {
+                    RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding);
+                    Redraw();
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error applying sprite offsets: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // Public wrappers so child dialogs can invoke the tint pickers on the main window
+        public void ShowBackgroundTintPicker()
+        {
+            try { BgTintButton_Click(this, new RoutedEventArgs()); } catch { }
+        }
+
+        public void ShowGroundTintPicker()
+        {
+            try { GroundTintButton_Click(this, new RoutedEventArgs()); } catch { }
+        }
+
+        public void ShowTileTintPicker()
+        {
+            try { TileTintButton_Click(this, new RoutedEventArgs()); } catch { }
+        }
+
+        public int GetSpriteOffsetCount()
+        {
+            return spritePixelOffsets.Count;
+        }
+
+        public Dictionary<int, (int offsetX, int offsetY)> GetSpriteOffsets()
+        {
+            return new Dictionary<int, (int offsetX, int offsetY)>(spritePixelOffsets);
+        }
+
+        public void RemoveAllSpriteOffsets()
+        {
+            spritePixelOffsets.Clear();
+            spriteAnchors.Clear(); // Also clear all anchors
+            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+            SaveCurrentTmxConfig();
         }
 
         private void Undo()
@@ -11019,7 +15396,84 @@ namespace FamidashEditor
 
         private void NewMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            // Prompt to save if there are unsaved changes
+            // In multi-tab mode, just create a new tab without prompting
+            // The old tab keeps its state and unsaved changes
+            if (openFiles.Count > 0)
+            {
+                // If there's already an untitled tab open, switch to it instead of creating another
+                int existingUntitled = openFiles.FindIndex(f => string.IsNullOrEmpty(f.FilePath));
+                if (existingUntitled >= 0)
+                {
+                    // Find the corresponding TabItem in the UI
+                    for (int i = 0; i < FileTabControl.Items.Count; i++)
+                    {
+                        if (FileTabControl.Items[i] is TabItem ti && ti.Tag is int idx && idx == existingUntitled)
+                        {
+                            try
+                            {
+                                isHandlingNewTab = true; // prevent SelectionChanged from creating a new tab
+                                FileTabControl.SelectedItem = ti;
+                                lastSelectedTab = ti;
+                            }
+                            finally
+                            {
+                                isHandlingNewTab = false;
+                            }
+                            // Load the tab contents
+                            SwitchToTab(existingUntitled);
+                            if (StatusText != null) StatusText.Text = "Switched to existing Untitled tab.";
+                            return;
+                        }
+                    }
+                }
+                // Switch to a fresh state for the new tab
+                InitDefaultMap();
+                currentFilePath = null;
+                hasUnsavedChanges = false;
+                
+                // Load default tints
+                try
+                {
+                    var dir = AppContext.BaseDirectory;
+                    var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                    if (System.IO.File.Exists(settingsPath))
+                    {
+                        var txt = System.IO.File.ReadAllText(settingsPath);
+                        var doc = System.Text.Json.JsonDocument.Parse(txt);
+                        
+                        if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                            backgroundTint = Color.FromArgb((byte)bt[0].GetInt32(), (byte)bt[1].GetInt32(), (byte)bt[2].GetInt32(), (byte)bt[3].GetInt32());
+                        
+                        if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                            groundTint = Color.FromArgb((byte)gt[0].GetInt32(), (byte)gt[1].GetInt32(), (byte)gt[2].GetInt32(), (byte)gt[3].GetInt32());
+                        
+                        if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                            tileTint = Color.FromArgb((byte)tt[0].GetInt32(), (byte)tt[1].GetInt32(), (byte)tt[2].GetInt32(), (byte)tt[3].GetInt32());
+                    }
+                }
+                catch { }
+                
+                UpdateParallaxTint();
+                UpdateGroundTint();
+                UpdateTileTint();
+                
+                noParallaxBg = false;
+                if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
+                
+                backgroundDirty = true;
+                try { scaledTileCaches.Clear(); } catch { }
+                
+                undoStack.Clear();
+                redoStack.Clear();
+                
+                // Create the new tab - this will save current state to the tab before switching
+                CreateNewTab(null);
+                
+                if (StatusText != null) StatusText.Text = "New map created (200x27)";
+                return;
+            }
+            
+            // Legacy single-tab behavior: Prompt to save if there are unsaved changes
             if (hasUnsavedChanges)
             {
                 var result = MessageBox.Show(
@@ -11041,46 +15495,50 @@ namespace FamidashEditor
                 // If No, continue with new without saving
             }
             
+            // CRITICAL: Clear file path FIRST before changing any settings
+            // Otherwise event handlers will save changed settings to the old file!
+            currentFilePath = "";
+            
             // Create a new 200x27 map
             mapWidth = 200;
             mapHeight = 27;
-            // Clear any previously-loaded TMX metadata so new map uses defaults
-            loadedTilesetSource = null;
-            loadedSpritesetSource = null;
-            loadedHasEditorSettings = false;
-            loadedChunkWidth = 16;
-            loadedChunkHeight = 27;
-            loadedExportTarget = null;
-            loadedExportFormat = "csv";
-            loadedParallaxSource = null;
-            loadedParallaxX = 0.9;
-            loadedParallaxY = 0.9;
-            loadedParallaxRepeatX = true;
-            loadedParallaxRepeatY = true;
-            loadedHasParallaxLayer = false;
-            loadedGroundSource = null;
-            loadedGroundOffsetY = 432;
-            loadedGroundRepeatX = true;
-            loadedHasGroundLayer = false;
-            loadedDecoSet = "deco1";
             // Initialize tiles and sprites to -1 (empty) using shared initializer
             InitDefaultMap();
             // Reset any per-position animation offsets so new empty map starts fresh
             try { spriteFrameOffsets.Clear(); } catch { }
             
-            // Reset tints to defaults (transparent = no tint)
-            backgroundTint = Color.FromArgb(0, 0, 0, 0);
-            groundTint = Color.FromArgb(0, 0, 0, 0);
-            tileTint = Color.FromArgb(0, 0, 0, 0);
+            // Load default tints from global settings instead of using transparent
+            try
+            {
+                var dir = AppContext.BaseDirectory;
+                var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                if (System.IO.File.Exists(settingsPath))
+                {
+                    var txt = System.IO.File.ReadAllText(settingsPath);
+                    var doc = System.Text.Json.JsonDocument.Parse(txt);
+                    
+                    if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                        backgroundTint = Color.FromArgb((byte)bt[0].GetInt32(), (byte)bt[1].GetInt32(), (byte)bt[2].GetInt32(), (byte)bt[3].GetInt32());
+                    
+                    if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                        groundTint = Color.FromArgb((byte)gt[0].GetInt32(), (byte)gt[1].GetInt32(), (byte)gt[2].GetInt32(), (byte)gt[3].GetInt32());
+                    
+                    if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                        tileTint = Color.FromArgb((byte)tt[0].GetInt32(), (byte)tt[1].GetInt32(), (byte)tt[2].GetInt32(), (byte)tt[3].GetInt32());
+                }
+            }
+            catch { }
             
-            // Clear toned images to use originals
-            parallaxTonedImages = null;
-            groundTonedImages = null;
-            tileTonedImages = null;
-            sawFrame1TilesTinted = null;
-            sawFrame2TilesTinted = null;
+            // Update tinted images with the loaded defaults
+            UpdateParallaxTint();
+            UpdateGroundTint();
+            UpdateTileTint();
             
-            // Mark background dirty and clear tile caches to force rebuild without tints
+            // Reset noParallaxBg to false (use parallax by default)
+            noParallaxBg = false;
+            if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
+            
+            // Mark background dirty and clear tile caches to force rebuild with default tints
             backgroundDirty = true;
             try { scaledTileCaches.Clear(); } catch { }
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
@@ -11089,13 +15547,33 @@ namespace FamidashEditor
             try { PopulateTilesPanel(); } catch { }
             try { PopulateSpritesPanel(); } catch { }
             
+            // Set default song to Stereo Madness
+            try
+            {
+                if (FamiTrackCombo != null)
+                {
+                    for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                    {
+                        if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                            item.Content?.ToString()?.Equals("Stereo Madness", StringComparison.OrdinalIgnoreCase) == true)
+                        {
+                            FamiTrackCombo.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { }
+            
             // Clear undo/redo stacks
             undoStack.Clear();
             redoStack.Clear();
             
-            // Reset file path and unsaved changes flag
-            currentFilePath = "";
+            // File path already cleared at the start
             hasUnsavedChanges = false;
+            
+            // Create a new tab
+            CreateNewTab(null);
             
             // Update UI
             if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
@@ -11105,10 +15583,24 @@ namespace FamidashEditor
             // Rebuild sprites layer and redraw the map
             try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
             Redraw();
+            
+            // Restore focus to main window
+            try
+            {
+                this.Activate();
+                this.Focus();
+            }
+            catch { }
         }
 
         private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            // Auto-save TMX config to preserve sprite offsets, tints, etc.
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                try { SaveTmxConfig(currentFilePath); } catch { }
+            }
+            
             // Prompt to save if there are unsaved changes
             if (hasUnsavedChanges)
             {
@@ -11185,6 +15677,9 @@ namespace FamidashEditor
             var dlg = new OpenFileDialog { Filter = "Tiled Map (TMX)|*.tmx|JSON level|*.json|All files|*.*" };
             if (dlg.ShowDialog(this) == true)
             {
+                // Reset zoom to 1.0x before loading to improve performance
+                if (ZoomSlider != null) ZoomSlider.Value = 1.0;
+                
                 LoadingWindow? loadingWindow = null;
                 try
                 {
@@ -11211,8 +15706,8 @@ namespace FamidashEditor
                         loadedTiles = tmxLevel.Tiles;
                         loadedSprites = tmxLevel.Sprites;
                         
-                        // Show collision messages if any
-                        if (!string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
+                        // Show collision messages if any (unless suppressed)
+                        if (!suppressCollisionMessages && !string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
                         {
                             MessageBox.Show(this, "Sprite collision adjustments during load:\n\n" + tmxLevel.LoadCollisionMessages, 
                                 "Sprite Collision Resolution", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -11231,6 +15726,7 @@ namespace FamidashEditor
                         loadedExportTarget = tmxLevel.ExportTarget;
                         loadedExportFormat = tmxLevel.ExportFormat;
                         loadedParallaxSource = tmxLevel.ParallaxSource;
+                        originalParallaxSource = tmxLevel.ParallaxSource; // Save original
                         loadedParallaxX = tmxLevel.ParallaxX;
                         loadedParallaxY = tmxLevel.ParallaxY;
                         loadedParallaxRepeatX = tmxLevel.ParallaxRepeatX;
@@ -11256,6 +15752,58 @@ namespace FamidashEditor
                             loadedWidth = model.Width;
                             loadedHeight = model.Height;
                             loadedTiles = model.Tiles;
+                            
+                            // Try to extract and match songID from JSON
+                            try
+                            {
+                                var doc = System.Text.Json.JsonDocument.Parse(json);
+                                if (doc.RootElement.TryGetProperty("songID", out var songIdProp))
+                                {
+                                    string? songId = songIdProp.GetString();
+                                    if (!string.IsNullOrEmpty(songId) && FamiTrackCombo != null)
+                                    {
+                                        // Strip "song_" prefix if present
+                                        if (songId.StartsWith("song_", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            songId = songId.Substring(5);
+                                        }
+                                        
+                                        // Normalize the songID to match against song list
+                                        string normalizedSongId = NormalizeSongName(songId);
+                                        
+                                        // Try to find matching song in combo
+                                        bool foundSong = false;
+                                        for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                                        {
+                                            if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && item.Content != null)
+                                            {
+                                                string normalizedItemName = NormalizeSongName(item.Content.ToString() ?? "");
+                                                if (normalizedItemName == normalizedSongId)
+                                                {
+                                                    FamiTrackCombo.SelectedIndex = i;
+                                                    foundSong = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        
+                                        // If song not found, default to Stereo Madness
+                                        if (!foundSong)
+                                        {
+                                            for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                                            {
+                                                if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                                                    item.Content?.ToString()?.Equals("Stereo Madness", StringComparison.OrdinalIgnoreCase) == true)
+                                                {
+                                                    FamiTrackCombo.SelectedIndex = i;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
                         }
                     }
                     
@@ -11283,6 +15831,45 @@ namespace FamidashEditor
                         // Update current file and clear dirty flag
                         currentFilePath = dlg.FileName;
                         hasUnsavedChanges = false;
+                        
+                        // Add to recent files
+                        AddToRecentFiles(dlg.FileName);
+                        
+                        // If current tab is untitled with no changes, replace it instead of creating new tab
+                        bool replaceCurrentTab = false;
+                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                        {
+                            var currentTab = openFiles[currentFileIndex];
+                            if (string.IsNullOrEmpty(currentTab.FilePath) && !currentTab.HasUnsavedChanges)
+                            {
+                                replaceCurrentTab = true;
+                            }
+                        }
+                        
+                        if (replaceCurrentTab)
+                        {
+                            // Update current tab
+                            SaveCurrentTabState();
+                            openFiles[currentFileIndex].FilePath = dlg.FileName;
+                            
+                            // Update tab header
+                            for (int i = 0; i < FileTabControl.Items.Count; i++)
+                            {
+                                if (FileTabControl.Items[i] is TabItem tab && tab.Tag is int idx && idx == currentFileIndex)
+                                {
+                                    if (tab.Header is StackPanel panel && panel.Children[0] is TextBlock txt)
+                                    {
+                                        txt.Text = System.IO.Path.GetFileName(dlg.FileName);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Always create a new tab for loaded files
+                            CreateNewTab(dlg.FileName);
+                        }
                         
                         // For large maps, defer the redraw to allow loading window to update
                         bool isLargeMap = (loadedWidth * loadedHeight) > 50000;
@@ -11371,6 +15958,31 @@ namespace FamidashEditor
                         // Load and apply saved tint configuration
                         LoadTmxConfig(dlg.FileName);
 
+                        // Apply tileset choice from TMX or per-level config
+                        try {
+                            // If TMX provided an explicit tileset source, prefer it
+                            if (!string.IsNullOrEmpty(loadedTilesetSource) && File.Exists(loadedTilesetSource))
+                            {
+                                LoadTileset(loadedTilesetSource);
+                                SliceTileset(); PopulateTilesPanel();
+                            }
+                            else if (showAccurateTileset)
+                            {
+                                // Apply accurate tileset based on loaded sets
+                                try { SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+                            }
+                            else
+                            {
+                                // Revert to embedded default
+                                var emb = LoadEmbeddedImage("famidash.bmp");
+                                if (emb != null)
+                                {
+                                    tilesetBitmap = emb;
+                                    SliceTileset(); PopulateTilesPanel();
+                                }
+                            }
+                        } catch { }
+
                         // Redraw to apply the loaded tints
                         Redraw();
 
@@ -11397,5 +16009,153 @@ namespace FamidashEditor
                 }
             }
         }
+
+    // Public API: apply a deco set immediately and save to per-level config
+    public void SetDecoSet(string deco)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(deco)) return;
+            if (deco == loadedDecoSet) return;
+            loadedDecoSet = deco;
+            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+            try { RebuildAllSpritesBitmap((ZoomSlider != null ? ZoomSlider.Value : 1.0), mapViewportPadding); } catch { }
+            try { if (lockSpritesToSet) ApplyLockSpritesToSet(); } catch { }
+            try { Redraw(); } catch { }
+        }
+        catch { }
     }
+
+    // Public API: apply a block set immediately and save to per-level config
+    public void SetBlockSet(string block)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(block)) return;
+            if (block == loadedBlockSet) return;
+            loadedBlockSet = block;
+            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+            // If accurate tileset swapping is enabled, reapply to pick the matching tileset
+            try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+            try { Redraw(); } catch { }
+        }
+        catch { }
+    }
+
+    // Public API: apply a spike set immediately and save to per-level config
+    public void SetSpikeSet(string spike)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(spike)) return;
+            if (spike == loadedSpikeSet) return;
+            loadedSpikeSet = spike;
+            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+            // If accurate tileset swapping is enabled, reapply to pick the matching tileset
+            try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+            try { Redraw(); } catch { }
+        }
+        catch { }
+    }
+
+    // Helper methods for SetOptionsWindow JSON loading
+    public string GetCurrentTmxPath()
+    {
+        return currentFilePath ?? string.Empty;
+    }
+
+    public void SaveCurrentTmxConfig()
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                SaveTmxConfig(currentFilePath);
+            }
+        }
+        catch { }
+    }
+    
+    public void SetSongFromMetadata(string songId)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(songId) || FamiTrackCombo == null) return;
+            
+            // Strip "song_" prefix if present
+            if (songId.StartsWith("song_", StringComparison.OrdinalIgnoreCase))
+            {
+                songId = songId.Substring(5);
+            }
+            
+            // Normalize the songID to match against song list
+            string normalizedSongId = NormalizeSongName(songId);
+            
+            // Try to find matching song in combo
+            bool foundSong = false;
+            for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+            {
+                if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && item.Content != null)
+                {
+                    string normalizedItemName = NormalizeSongName(item.Content.ToString() ?? "");
+                    if (normalizedItemName == normalizedSongId)
+                    {
+                        FamiTrackCombo.SelectedIndex = i;
+                        foundSong = true;
+                        break;
+                    }
+                }
+            }
+            
+            // If song not found, default to Stereo Madness
+            if (!foundSong)
+            {
+                for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                {
+                    if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item && 
+                        item.Content?.ToString()?.Equals("Stereo Madness", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        FamiTrackCombo.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+    
+    private void MainWindow_KeyDown(object sender, KeyEventArgs e)
+    {
+        // Handle Ctrl+W for close tab
+        if (e.Key == Key.W && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            MenuFileClose_Click(sender, e);
+            e.Handled = true;
+        }
+    }
+    
+    // Helper method to find a child of a specific type in the visual tree
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        if (parent == null) return null;
+        
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T typedChild)
+            {
+                return typedChild;
+            }
+            
+            var childOfChild = FindVisualChild<T>(child);
+            if (childOfChild != null)
+            {
+                return childOfChild;
+            }
+        }
+        
+        return null;
+    }
+}
+
 }
