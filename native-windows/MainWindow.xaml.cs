@@ -2573,6 +2573,8 @@ namespace FamidashEditor
                 if (FillTool != null) FillTool.Checked += Tool_Checked;
                 if (SelectTool != null) SelectTool.Checked += Tool_Checked;
         if (MagicWandTool != null) MagicWandTool.Checked += Tool_Checked;
+            // Ensure StructureTool participates in exclusive tool logic
+            try { var structBtn = FindName("StructureTool") as ToggleButton; if (structBtn != null) structBtn.Checked += Tool_Checked; } catch { }
             // keyboard shortcuts for undo/redo
             this.PreviewKeyDown += MainWindow_PreviewKeyDown;
             // Handle key up for stopping continuous Shift+arrow scrolling
@@ -12232,6 +12234,8 @@ namespace FamidashEditor
                 }
                 // Keep the toggle checked while selecting a set
                 tb.IsChecked = true;
+                // Ensure the unified tool-checked logic runs so other tools (e.g. PlaceTool) are unchecked
+                try { Tool_Checked(tb, new RoutedEventArgs()); } catch { }
             }
             catch { }
         }
@@ -12514,6 +12518,19 @@ namespace FamidashEditor
                 return;
             }
 
+            // Structure tool: convert contiguous block of tiles into structure tiles
+            try
+            {
+                var st = FindName("StructureTool") as ToggleButton;
+                if (st != null && st.IsChecked == true)
+                {
+                        var tileCoord = ViewportPointToTile(pos);
+                        ConvertRegionToStructure(tileCoord.x, tileCoord.y);
+                    return;
+                }
+            }
+            catch { }
+
             // For Place or Erase tools, start painting and capture mouse so dragging works when cursor leaves the canvas
             if ((PlaceTool != null && PlaceTool.IsChecked == true) || (EraseTool != null && EraseTool.IsChecked == true))
             {
@@ -12526,6 +12543,128 @@ namespace FamidashEditor
                 CanvasHost.CaptureMouse();
                 DoPaintAt(x, y);
             }
+        }
+
+        private void ConvertRegionToStructure(int sx, int sy)
+        {
+            if (sx < 0 || sx >= mapWidth || sy < 0 || sy >= mapHeight) return;
+            int startIdx = sy * mapWidth + sx;
+            if (tiles[startIdx] == -1) return;
+
+            // Collect contiguous region of non-empty tiles (4-way)
+            var q = new System.Collections.Generic.Queue<(int x, int y)>();
+            var visited = new System.Collections.Generic.HashSet<int>();
+            q.Enqueue((sx, sy)); visited.Add(startIdx);
+            while (q.Count > 0)
+            {
+                var (cx, cy) = q.Dequeue();
+                var nbrs = new (int nx, int ny)[] { (cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1) };
+                foreach (var n in nbrs)
+                {
+                    int nx = n.nx, ny = n.ny;
+                    if (nx < 0 || nx >= mapWidth || ny < 0 || ny >= mapHeight) continue;
+                    int ni = ny * mapWidth + nx;
+                    if (visited.Contains(ni)) continue;
+                    if (tiles[ni] != -1)
+                    {
+                        visited.Add(ni);
+                        q.Enqueue((nx, ny));
+                    }
+                }
+            }
+
+            if (visited.Count == 0) return;
+
+            // Apply mapping to each tile and record changes in a composite action for undo
+            var action = new TileChangeAction();
+            foreach (var i in visited)
+            {
+                int x = i % mapWidth; int y = i / mapWidth;
+                // Determine neighbor flags within the region
+                bool n = (y - 1 >= 0) && visited.Contains((y - 1) * mapWidth + x);
+                bool s = (y + 1 < mapHeight) && visited.Contains((y + 1) * mapWidth + x);
+                bool w = (x - 1 >= 0) && visited.Contains(y * mapWidth + (x - 1));
+                bool e = (x + 1 < mapWidth) && visited.Contains(y * mapWidth + (x + 1));
+
+                // Determine if ground should be considered a southern neighbor
+                bool belowIsGround = false;
+                try
+                {
+                    if (y + 1 >= mapHeight) belowIsGround = true;
+                    else if (loadedHasGroundLayer)
+                    {
+                        int groundTopRow = (int)Math.Floor(loadedGroundOffsetY / TileSize);
+                        if (y + 1 >= groundTopRow) belowIsGround = true;
+                    }
+                }
+                catch { belowIsGround = false; }
+                bool s_eff = s || belowIsGround;
+
+                int count = (n ? 1 : 0) + (s_eff ? 1 : 0) + (w ? 1 : 0) + (e ? 1 : 0);
+                int mapped = -1;
+                if (count == 4) mapped = 0x2F;
+                else if (count == 3)
+                {
+                    if (!n) mapped = 0x21;
+                    else if (!e) mapped = 0x22;
+                    else if (!s_eff) mapped = 0x23;
+                    else if (!w) mapped = 0x24;
+                }
+                else if (count == 2)
+                {
+                    if (n && s_eff) mapped = 0x2D;
+                    else if (w && e) mapped = 0x2E;
+                    else if (e && s_eff) mapped = 0x25;
+                    else if (w && s_eff) mapped = 0x26;
+                    else if (w && n) mapped = 0x27;
+                    else if (e && n) mapped = 0x28;
+                }
+                else if (count == 1)
+                {
+                    if (n) mapped = 0x32;
+                    else if (s_eff)
+                    {
+                        if (s) mapped = 0x30;
+                        else mapped = 0x2D;
+                    }
+                    else if (w) mapped = 0x31;
+                    else if (e) mapped = 0x33;
+                }
+                else
+                {
+                    // isolated single tile, choose a reasonable default (vertical)
+                    mapped = 0x2D;
+                }
+
+                // Apply structure set offset (A/B/C)
+                try { mapped += structureSetOffset * 0x20; } catch { }
+
+                int old = tiles[i];
+                int neu = mapped;
+                if (old != neu)
+                {
+                    action.Add(i, old, neu);
+                    tiles[i] = neu;
+                }
+            }
+
+            if (!action.IsEmpty() && !suppressUndoRecording)
+            {
+                undoStack.Push(action);
+                redoStack.Clear();
+                hasUnsavedChanges = true;
+            }
+
+            // Update visuals for affected tiles
+            try
+            {
+                foreach (var i in visited)
+                {
+                    int tx = i % mapWidth; int ty = i / mapWidth;
+                    UpdateTileBitmapAt(tx, ty, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                }
+            }
+            catch { Redraw(); }
         }
 
         // Selection helpers
@@ -14328,6 +14467,16 @@ namespace FamidashEditor
                                 {
                                     int old = tiles[idx];
                                     int neu = selectedTiles[selIdx];
+                                    // If Structure tool is active, apply selected set offset (A/B/C)
+                                    try
+                                    {
+                                        var structBtn = FindName("StructureTool") as ToggleButton;
+                                        if (structBtn != null && structBtn.IsChecked == true)
+                                        {
+                                            neu += structureSetOffset * 0x20;
+                                        }
+                                    }
+                                    catch { }
                                     
                                     if (old != neu)
                                     {
