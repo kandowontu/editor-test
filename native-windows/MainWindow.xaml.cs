@@ -12088,14 +12088,12 @@ namespace FamidashEditor
             if (sender == null) return;
             var tb = sender as ToggleButton;
             if (tb == null) return;
-<<<<<<< HEAD
-            var all = new[] { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool };
-=======
+
             var all = new System.Collections.Generic.List<ToggleButton?> { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool };
             var structBtn = FindName("StructureTool") as ToggleButton;
             bool isStruct = (structBtn != null && tb == structBtn);
             if (structBtn != null) all.Add(structBtn);
->>>>>>> b0222fe (Structure tool reapply)
+
             foreach (var t in all)
             {
                 if (t != null && t != tb) t.IsChecked = false;
@@ -12108,19 +12106,13 @@ namespace FamidashEditor
             if (MenuToolFill != null) MenuToolFill.IsChecked = (tb == FillTool);
             if (MenuToolSelect != null) MenuToolSelect.IsChecked = (tb == SelectTool);
             if (MenuToolWand != null) MenuToolWand.IsChecked = (tb == MagicWandTool);
-<<<<<<< HEAD
 
-            // When switching to certain tools, reset draw mode back to Tile by default
-            // Include FillTool so selecting Fill also activates the Tile draw mode
-            if (tb == MoveTool || tb == PlaceTool || tb == EraseTool || tb == MagicWandTool || tb == FillTool)
-=======
             var menuStructure = FindName("MenuToolStructure") as MenuItem;
             if (menuStructure != null) menuStructure.IsChecked = isStruct;
 
             // When switching to certain tools, reset draw mode back to Tile by default
             // Include FillTool so selecting Fill also activates the Tile draw mode
             if (tb == PlaceTool || tb == FillTool || tb == MagicWandTool || isStruct)
->>>>>>> b0222fe (Structure tool reapply)
             {
                 if (DrawTileButton != null) DrawTileButton.IsChecked = true;
                 currentDrawMode = DrawMode.Tile;
