@@ -116,6 +116,7 @@
                     <MenuItem x:Name="MenuToolFill" Header="_Fill" IsCheckable="True" InputGestureText="F" />
                     <MenuItem x:Name="MenuToolSelect" Header="_Select" IsCheckable="True" InputGestureText="S" />
                     <MenuItem x:Name="MenuToolWand" Header="_Magic Wand" IsCheckable="True" InputGestureText="W" />
+                    <MenuItem x:Name="MenuToolStructure" Header="_Structure" IsCheckable="True" InputGestureText="T" />
                     <Separator />
                     <MenuItem x:Name="MenuEditCut" Header="Cu_t" InputGestureText="Ctrl+X" />
                     <MenuItem x:Name="MenuEditCopy" Header="_Copy" InputGestureText="Ctrl+C" />
@@ -203,6 +204,12 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="✦" FontSize="12" Margin="2,0" />
                             <TextBlock Text="Wand" Margin="4,0" />
+                        </StackPanel>
+                    </ToggleButton>
+                    <ToggleButton x:Name="StructureTool" Margin="2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⤢" FontSize="12" Margin="2,0" />
+                            <TextBlock Text="Structure" Margin="4,0" />
                         </StackPanel>
                     </ToggleButton>
                     <!-- Undo/Redo moved next to brush controls -->
