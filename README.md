@@ -22,8 +22,6 @@ Other options include:
 
 -Automatically shift all triggers 10 tiles left on load and 10 tiles right on save, so you place triggers where they should activate, not 10 tiles over. You'll recieve an informational popup if any clashes happen, and those sprites will be moved vertically one tile.
 
--Structure builder - click on connected blocks to turn them into outlined structures automatically!
-
 -Local level cfg files - saves music, background/ground/tile tints, parallax/no parallax settings, block/spike/deco set
 
 -Preview Mode - replaces all sprite tiles with their in-game sprites, making it appear as it does in-game (this is heavily a wip)
@@ -48,6 +46,9 @@ Other options include:
 -Local level cfg file also saves blockset, spikeset, spriteset, all json shifts, and no parallax setting
 
 
+
+
+-Structure builder - click on connected blocks to turn them into outlined structures automatically!
 
 -Cut/Copy/Paste, many draw tools (line, circle, square, triangle, polygon), thickness slider for these, hollow toggle box
 
