@@ -14871,6 +14871,10 @@ namespace FamidashEditor
         private void CanvasHost_MouseLeave(object sender, MouseEventArgs e)
         {
             try { if (HoverRect != null) HoverRect.Visibility = Visibility.Collapsed; } catch { }
+            try { if (GhostImage != null) { GhostImage.Visibility = Visibility.Collapsed; GhostImage.Source = null; } } catch { }
+            try { if (OffsetGhostContainer != null) OffsetGhostContainer.Visibility = Visibility.Collapsed; } catch { }
+            try { if (OffsetTooltipContainer != null) OffsetTooltipContainer.Visibility = Visibility.Collapsed; } catch { }
+            try { if (OffsetGhostTile != null) OffsetGhostTile.Visibility = Visibility.Collapsed; } catch { }
         }
 
         private void GridDarknessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
