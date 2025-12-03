@@ -272,6 +272,80 @@ namespace FamidashEditor
                         LockSpritesCheckBox.Checked += (ss, ee) => { LockSpritesToSet = true; };
                         LockSpritesCheckBox.Unchecked += (ss, ee) => { LockSpritesToSet = false; };
                     }
+
+                    // Wire immediate-preview + persist handlers so changes apply and save right away
+                    try
+                    {
+                        if (this.Owner is MainWindow mwOwner)
+                        {
+                            if (DecoCombo != null)
+                            {
+                                DecoCombo.SelectionChanged += (ss, ee) =>
+                                {
+                                    try
+                                    {
+                                        if (DecoCombo.SelectedItem is System.Windows.Controls.ComboBoxItem sel)
+                                        {
+                                            var val = (string)sel.Content;
+                                            mwOwner.SetDecoSet(val);
+                                        }
+                                    }
+                                    catch { }
+                                };
+                            }
+
+                            if (BlockCombo != null)
+                            {
+                                BlockCombo.SelectionChanged += (ss, ee) =>
+                                {
+                                    try
+                                    {
+                                        if (BlockCombo.SelectedItem is System.Windows.Controls.ComboBoxItem sel)
+                                        {
+                                            var val = (string)sel.Content;
+                                            mwOwner.SetBlockSet(val);
+                                        }
+                                    }
+                                    catch { }
+                                };
+                            }
+
+                            if (SpikeCombo != null)
+                            {
+                                SpikeCombo.SelectionChanged += (ss, ee) =>
+                                {
+                                    try
+                                    {
+                                        if (SpikeCombo.SelectedItem is System.Windows.Controls.ComboBoxItem sel)
+                                        {
+                                            var val = (string)sel.Content;
+                                            mwOwner.SetSpikeSet(val);
+                                        }
+                                    }
+                                    catch { }
+                                };
+                            }
+
+                            if (NoParallaxCheckBox != null)
+                            {
+                                NoParallaxCheckBox.Checked += (ss, ee) => { try { mwOwner.SetNoParallax(true); } catch { } };
+                                NoParallaxCheckBox.Unchecked += (ss, ee) => { try { mwOwner.SetNoParallax(false); } catch { } };
+                            }
+
+                            if (ShowAccurateTilesetCheckBox != null)
+                            {
+                                ShowAccurateTilesetCheckBox.Checked += (ss, ee) =>
+                                {
+                                    try { mwOwner.SetShowAccurateTileset(true, (BlockCombo?.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string, (SpikeCombo?.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string); } catch { }
+                                };
+                                ShowAccurateTilesetCheckBox.Unchecked += (ss, ee) =>
+                                {
+                                    try { mwOwner.SetShowAccurateTileset(false, (BlockCombo?.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string, (SpikeCombo?.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string); } catch { }
+                                };
+                            }
+                        }
+                    }
+                    catch { }
                 }
                 catch { }
             };
