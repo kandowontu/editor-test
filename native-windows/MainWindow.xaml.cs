@@ -11874,6 +11874,17 @@ namespace FamidashEditor
                     
                     if (overlappingSprites.Count > 0)
                     {
+                        // Only show the tooltip if at least one of the overlapping
+                        // sprites has an explicit pixel offset (i.e. something was
+                        // shifted). Otherwise don't show tooltips for plain
+                        // non-shifted sprites.
+                        if (!overlappingSprites.Any(s => s.hasOffset))
+                        {
+                            if (OffsetGhostContainer != null) OffsetGhostContainer.Visibility = Visibility.Collapsed;
+                            if (OffsetTooltipContainer != null) OffsetTooltipContainer.Visibility = Visibility.Collapsed;
+                            // nothing to show
+                            return;
+                        }
                         // Clear previous ghost tiles and tooltips
                         OffsetGhostContainer.Children.Clear();
                         OffsetTooltipContainer.Children.Clear();
