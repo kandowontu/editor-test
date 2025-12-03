@@ -18,6 +18,50 @@ namespace FamidashEditor
 {
     public partial class MainWindow : Window
     {
+        // Layer visibility toggles (eye buttons)
+        // These are wired to the UI ToggleButtons to hide/show layers
+        private void TileEyeButton_Checked(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (TilesImage != null) TilesImage.Visibility = Visibility.Visible;
+                if (PortalsImage != null) PortalsImage.Visibility = Visibility.Visible;
+                if (TileEyeButton != null) TileEyeButton.Content = "👁";
+            }
+            catch { }
+        }
+
+        private void TileEyeButton_Unchecked(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (TilesImage != null) TilesImage.Visibility = Visibility.Collapsed;
+                if (PortalsImage != null) PortalsImage.Visibility = Visibility.Collapsed;
+                if (TileEyeButton != null) TileEyeButton.Content = "🙈";
+            }
+            catch { }
+        }
+
+        private void SpriteEyeButton_Checked(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (SpritesImage != null) SpritesImage.Visibility = Visibility.Visible;
+                if (SpriteEyeButton != null) SpriteEyeButton.Content = "👁";
+            }
+            catch { }
+        }
+
+        private void SpriteEyeButton_Unchecked(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (SpritesImage != null) SpritesImage.Visibility = Visibility.Collapsed;
+                if (SpriteEyeButton != null) SpriteEyeButton.Content = "🙈";
+            }
+            catch { }
+        }
+
         // Structure tool set state
         private int structureSetOffset = 0; // in tiles (0, 0x20, 0x40)
         private int structureSetBaseTile = 0x20; // 0x20 for A, 0x40 for B, 0x60 for C
