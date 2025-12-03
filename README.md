@@ -47,6 +47,9 @@ Other options include:
 
 
 
+
+-Structure builder - click on connected blocks to turn them into outlined structures automatically!
+
 -Cut/Copy/Paste, many draw tools (line, circle, square, triangle, polygon), thickness slider for these, hollow toggle box
 
 -Shortcut keys for tools
