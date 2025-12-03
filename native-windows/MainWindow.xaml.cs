@@ -8783,7 +8783,27 @@ namespace FamidashEditor
             bool s = (y + 1 < mapHeight) && region.Contains((y + 1) * mapWidth + x);
             bool w = (x - 1 >= 0) && region.Contains(y * mapWidth + (x - 1));
             bool e = (x + 1 < mapWidth) && region.Contains(y * mapWidth + (x + 1));
-            int count = (n ? 1 : 0) + (s ? 1 : 0) + (w ? 1 : 0) + (e ? 1 : 0);
+
+            // If the map has a ground image layer, compute the top tile row of the ground
+            // and treat ground directly below as an effective neighbor so we avoid placing
+            // bottom endcaps when a structure runs into the ground.
+            bool belowIsGround = false;
+            try
+            {
+                if (y + 1 >= mapHeight) belowIsGround = true; // bottom of map
+                else if (loadedHasGroundLayer)
+                {
+                    int groundTopRow = (int)Math.Floor(loadedGroundOffsetY / TileSize);
+                    if (y + 1 >= groundTopRow) belowIsGround = true;
+                }
+            }
+            catch { belowIsGround = false; }
+
+            // Treat the ground as an effective southern neighbor when present so the
+            // structure algorithm doesn't add bottom endpieces against the ground.
+            bool s_eff = s || belowIsGround;
+
+            int count = (n ? 1 : 0) + (s_eff ? 1 : 0) + (w ? 1 : 0) + (e ? 1 : 0);
 
             // Four-way interior
             if (count == 4) return 0x2F; // filler middle
@@ -8791,31 +8811,38 @@ namespace FamidashEditor
             // Three neighbors -> edge piece (missing side indicates which edge)
             if (count == 3)
             {
-                if (!n) return 0x21; // top only (missing top)
-                if (!e) return 0x22; // right only (missing right)
-                if (!s) return 0x23; // bottom only (missing bottom)
-                if (!w) return 0x24; // left only (missing left)
+                if (!n) return 0x21; // missing top -> top edge
+                if (!e) return 0x22; // missing right -> right edge
+                if (!s_eff) return 0x23; // missing bottom -> bottom edge
+                if (!w) return 0x24; // missing left -> left edge
             }
 
             // Two neighbors: straight or corner
             if (count == 2)
             {
                 // straight vertical
-                if (n && s) return 0x2D; // vertical line
+                if (n && s_eff) return 0x2D; // vertical line
                 // straight horizontal
                 if (w && e) return 0x2E; // horizontal line
-                // corners
-                if (e && s) return 0x25; // top-left corner (neighbors right+down)
-                if (w && s) return 0x26; // top-right corner (neighbors left+down)
-                if (w && n) return 0x27; // bottom-right corner (neighbors left+up)
-                if (e && n) return 0x28; // bottom-left corner (neighbors right+up)
+                // corners (use effective south for decisions so ground counts as a neighbor)
+                if (e && s_eff) return 0x25; // neighbors right+down -> top-left corner
+                if (w && s_eff) return 0x26; // neighbors left+down -> top-right corner
+                if (w && n) return 0x27; // neighbors left+up -> bottom-right corner
+                if (e && n) return 0x28; // neighbors right+up -> bottom-left corner
             }
 
             // One neighbor -> endcap pointing toward neighbor
             if (count == 1)
             {
                 if (n) return 0x32; // neighbor above -> bottom cap
-                if (s) return 0x30; // neighbor below -> top cap
+                if (s_eff)
+                {
+                    // If the southern neighbor is actual region tile, return the normal top cap.
+                    if (s) return 0x30; // neighbor below -> top cap
+                    // If southern neighbor is ground (s_eff true but s false), prefer a vertical side
+                    // so the structure doesn't get a bottom endcap against the ground.
+                    return 0x2D; // vertical line
+                }
                 if (w) return 0x31; // neighbor left -> right cap
                 if (e) return 0x33; // neighbor right -> left cap
             }
