@@ -15792,73 +15792,53 @@ namespace FamidashEditor
                 int existingUntitled = openFiles.FindIndex(f => string.IsNullOrEmpty(f.FilePath));
                 if (existingUntitled >= 0)
                 {
-                    // If it's the only tab and it's unsaved/untitled, overwrite it in-place
-                    if (openFiles.Count == 1 && openFiles[existingUntitled].HasUnsavedChanges)
+                    // If there's only one tab and it's the untitled tab, treat New as overwrite
+                    if (openFiles.Count == 1 && existingUntitled == 0)
                     {
-                        // Switch to that tab and reset its contents to a new default map
-                        SwitchToTab(existingUntitled);
-
-                        // Clear file path so it's still untitled
-                        currentFilePath = "";
-
-                        // Create a new empty map of default size
-                        mapWidth = 200;
-                        mapHeight = 27;
-                        InitDefaultMap();
-
-                        // Reset per-position animation offsets and tints
-                        try { spriteFrameOffsets.Clear(); } catch { }
-                        try
+                        // If there are unsaved changes in the current working state, prompt to save
+                        if (hasUnsavedChanges)
                         {
-                            var dir = AppContext.BaseDirectory;
-                            var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
-                            if (System.IO.File.Exists(settingsPath))
+                            var result = MessageBox.Show(
+                                "You have unsaved changes. Do you want to save before creating a new map?",
+                                "Unsaved Changes",
+                                MessageBoxButton.YesNoCancel,
+                                MessageBoxImage.Question);
+
+                            if (result == MessageBoxResult.Yes)
                             {
-                                var txt = System.IO.File.ReadAllText(settingsPath);
-                                var doc = System.Text.Json.JsonDocument.Parse(txt);
-
-                                if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
-                                    backgroundTint = Color.FromArgb((byte)bt[0].GetInt32(), (byte)bt[1].GetInt32(), (byte)bt[2].GetInt32(), (byte)bt[3].GetInt32());
-
-                                if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
-                                    groundTint = Color.FromArgb((byte)gt[0].GetInt32(), (byte)gt[1].GetInt32(), (byte)gt[2].GetInt32(), (byte)gt[3].GetInt32());
-
-                                if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
-                                    tileTint = Color.FromArgb((byte)tt[0].GetInt32(), (byte)tt[1].GetInt32(), (byte)tt[2].GetInt32(), (byte)tt[3].GetInt32());
+                                SaveButton_Click(this, e);
+                                // If user cancelled the save dialog, abort the new operation
+                                if (hasUnsavedChanges) return;
                             }
+                            else if (result == MessageBoxResult.Cancel)
+                            {
+                                return; // User cancelled
+                            }
+                            // If No, continue to clear
                         }
-                        catch { }
 
-                        UpdateParallaxTint();
-                        UpdateGroundTint();
-                        UpdateTileTint();
-
+                        // Overwrite the single untitled tab with a fresh map
+                        SwitchToTab(existingUntitled);
+                        currentFilePath = "";
+                        mapWidth = 200; mapHeight = 27;
+                        InitDefaultMap();
+                        try { spriteFrameOffsets.Clear(); } catch { }
+                        try { scaledTileCaches.Clear(); } catch { }
                         noParallaxBg = false;
                         if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
-
-                        backgroundDirty = true;
-                        try { scaledTileCaches.Clear(); } catch { }
-
-                        undoStack.Clear();
-                        redoStack.Clear();
-
-                        // Mark as not dirty (fresh new map)
+                        UpdateParallaxTint(); UpdateGroundTint(); UpdateTileTint();
+                        undoStack.Clear(); redoStack.Clear();
                         hasUnsavedChanges = false;
-
-                        // Update UI boxes and redraw
-                        if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
-                        if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+                        SaveCurrentTabState();
                         try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                         try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                         Redraw();
-
                         if (StatusText != null) StatusText.Text = "New map created (200x27) - replaced Untitled tab.";
-                        // Ensure + tab state is consistent (we may have removed/added it elsewhere)
                         EnsureNewTabButton();
                         return;
                     }
 
-                    // Otherwise, just switch to the existing untitled tab instead of creating another
+                    // For multiple tabs, switch to existing untitled instead of creating another
                     for (int i = 0; i < FileTabControl.Items.Count; i++)
                     {
                         if (FileTabControl.Items[i] is TabItem ti && ti.Tag is int idx && idx == existingUntitled)
