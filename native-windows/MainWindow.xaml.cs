@@ -80,6 +80,9 @@ namespace FamidashEditor
         private bool isDeferredDrawing = false;
         private int drawStartX = -1, drawStartY = -1;
         private int drawCurrentX = -1, drawCurrentY = -1;
+        // When a deferred draw is initiated via keyboard modifiers (not via UI draw-mode buttons)
+        // we mark this so we can restore the draw mode back to Tile after committing.
+        private bool deferredDrawFromModifier = false;
         // Polygon construction state
         private System.Collections.Generic.List<(int x, int y)> polygonPoints = new System.Collections.Generic.List<(int x, int y)>();
         private bool isConstructingPolygon = false;
@@ -5859,7 +5862,25 @@ namespace FamidashEditor
                     break;
                 }
             }
-            
+            // If there is any existing untitled tab, do not show the + new-tab button
+            bool hasUntitled = openFiles.Exists(f => string.IsNullOrEmpty(f.FilePath));
+
+            if (hasUntitled)
+            {
+                // Remove existing + tab if present
+                if (hasNewTabButton)
+                {
+                    for (int i = FileTabControl.Items.Count - 1; i >= 0; i--)
+                    {
+                        if (FileTabControl.Items[i] is TabItem ti && ti.Tag?.ToString() == "NEW")
+                        {
+                            FileTabControl.Items.RemoveAt(i);
+                        }
+                    }
+                }
+                return;
+            }
+
             if (!hasNewTabButton)
             {
                 var newTab = new TabItem
@@ -11737,6 +11758,77 @@ namespace FamidashEditor
             }
 
             // Default: place/erase painting behavior
+            // If Place tool is active and tile-draw mode is selected, support modifier-initiated shapes
+            try
+            {
+                bool isPlace = (PlaceTool != null && PlaceTool.IsChecked == true);
+                bool isTileMode = (DrawTileButton != null && DrawTileButton.IsChecked == true);
+                if (isPlace && isTileMode)
+                {
+                    var tt = ViewportPointToTile(pos);
+                    int sx = tt.x, sy = tt.y;
+                    bool shift = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+                    bool alt = Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt);
+                    bool ctrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+
+                    // Shift+Alt -> Circle
+                    if (shift && alt)
+                    {
+                        currentDrawMode = DrawMode.Circle;
+                        isDeferredDrawing = true;
+                        deferredDrawFromModifier = true;
+                        drawStartX = sx; drawStartY = sy; drawCurrentX = sx; drawCurrentY = sy;
+                        if (CanvasHost != null) CanvasHost.CaptureMouse();
+                        UpdateDeferredPreview();
+                        return;
+                    }
+                    // Shift+Ctrl -> Square
+                    if (shift && ctrl)
+                    {
+                        currentDrawMode = DrawMode.Square;
+                        isDeferredDrawing = true;
+                        deferredDrawFromModifier = true;
+                        drawStartX = sx; drawStartY = sy; drawCurrentX = sx; drawCurrentY = sy;
+                        if (CanvasHost != null) CanvasHost.CaptureMouse();
+                        UpdateDeferredPreview();
+                        return;
+                    }
+                    // Shift only -> Line
+                    if (shift && !alt && !ctrl)
+                    {
+                        currentDrawMode = DrawMode.Line;
+                        isDeferredDrawing = true;
+                        deferredDrawFromModifier = true;
+                        drawStartX = sx; drawStartY = sy; drawCurrentX = sx; drawCurrentY = sy;
+                        if (CanvasHost != null) CanvasHost.CaptureMouse();
+                        UpdateDeferredPreview();
+                        return;
+                    }
+                    // Alt+Ctrl (no shift) -> Fill
+                    if (alt && ctrl && !shift)
+                    {
+                        if (tilesLayerActive && selectedTile >= 0)
+                        {
+                            int target = tiles[sy * mapWidth + sx];
+                            if (target != selectedTile)
+                            {
+                                FloodFill(sx, sy, target, selectedTile);
+                            }
+                        }
+                        else if (spritesLayerActive && selectedSprite >= 0)
+                        {
+                            int target = sprites[sy * mapWidth + sx];
+                            if (target != selectedSprite)
+                            {
+                                SpriteFloodFill(sx, sy, target, selectedSprite);
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
+            catch { }
+
             StartPaintingAt(pos);
         }
 
@@ -12042,12 +12134,12 @@ namespace FamidashEditor
             }
             
             // If actively selecting, update the selection rectangle
-            if (isDraggingSelection && e.LeftButton == MouseButtonState.Pressed)
+            if (isDraggingSelection && (e.LeftButton == MouseButtonState.Pressed || e.RightButton == MouseButtonState.Pressed))
             {
                 UpdateDragMoveTo(pos);
                 return;
             }
-            if (isSelecting && e.LeftButton == MouseButtonState.Pressed)
+            if (isSelecting && (e.LeftButton == MouseButtonState.Pressed || e.RightButton == MouseButtonState.Pressed))
             {
                 UpdateSelectionTo(pos);
                 return;
@@ -12378,61 +12470,14 @@ namespace FamidashEditor
 
         private void CanvasHost_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
+            // Holding right button now begins a rectangle selection dragbox at any time
             if (CanvasHost == null) return;
             var pos = e.GetPosition(CanvasHost);
             UpdateCoords(pos);
-
             try
             {
-                var tt = ViewportPointToTile(pos);
-                int x = tt.x, y = tt.y;
-                if (x < 0 || y < 0) return;
-                int idx = y * mapWidth + x;
-
-                // Prefer picking a sprite if one exists at this location
-                int spriteAt = (idx >= 0 && idx < sprites.Length) ? sprites[idx] : -1;
-                int tileAt = (idx >= 0 && idx < tiles.Length) ? tiles[idx] : -1;
-
-                bool pickedSomething = false;
-
-                if (spriteAt >= 0)
-                {
-                    // If lock is enabled and this sprite is in the disabled list, ignore right-click selection
-                    if (lockSpritesToSet && disabledSprites.Contains(spriteAt))
-                    {
-                        // do not pick this sprite
-                    }
-                    else
-                    {
-                        // pick sprite under cursor
-                        selectedSprite = spriteAt;
-                        selectedTile = -1;
-                        spritesLayerActive = true;
-                        tilesLayerActive = false;
-                        // activate place tool for immediate placement
-                        try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
-                        pickedSomething = true;
-                    }
-                }
-                else if (tileAt >= 0)
-                {
-                    selectedTile = tileAt;
-                    selectedTiles = new List<int> { tileAt };
-                    selectedSprite = -1;
-                    tilesLayerActive = true;
-                    spritesLayerActive = false;
-                    // Activate place tool and ensure tile draw mode
-                    try { if (PlaceTool != null) PlaceTool.IsChecked = true; } catch { }
-                    try { if (DrawTileButton != null) DrawTileButton.IsChecked = true; } catch { }
-                    pickedSomething = true;
-                }
-
-                if (pickedSomething)
-                {
-                    UpdatePaletteHighlight();
-                    try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
-                    e.Handled = true;
-                }
+                StartSelectionAt(pos);
+                e.Handled = true;
             }
             catch { }
         }
@@ -12470,6 +12515,13 @@ namespace FamidashEditor
                     try { if (Mouse.Captured == CanvasHost) Mouse.Captured.ReleaseMouseCapture(); } catch { }
                     Mouse.OverrideCursor = null;
                     e.Handled = true;
+                }
+                // End selection on right-button release (support right-button drag selection)
+                if (isSelecting && e.RightButton == MouseButtonState.Released)
+                {
+                    EndSelection();
+                    e.Handled = true;
+                    return;
                 }
             }
             catch { }
@@ -13848,6 +13900,13 @@ namespace FamidashEditor
             finally
             {
                 isDeferredDrawing = false; drawStartX = drawStartY = drawCurrentX = drawCurrentY = -1; ClearDeferredPreview(); if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
+                // If this deferred draw originated from modifier keys, restore draw mode back to Tile
+                if (deferredDrawFromModifier)
+                {
+                    deferredDrawFromModifier = false;
+                    try { currentDrawMode = DrawMode.Tile; } catch { }
+                    try { if (DrawTileButton != null) DrawTileButton.IsChecked = true; } catch { }
+                }
                 lastInputAction = System.DateTime.Now;
             }
         }
@@ -15729,11 +15788,77 @@ namespace FamidashEditor
             // The old tab keeps its state and unsaved changes
             if (openFiles.Count > 0)
             {
-                // If there's already an untitled tab open, switch to it instead of creating another
+                // If there's already an untitled tab open, handle specially.
                 int existingUntitled = openFiles.FindIndex(f => string.IsNullOrEmpty(f.FilePath));
                 if (existingUntitled >= 0)
                 {
-                    // Find the corresponding TabItem in the UI
+                    // If it's the only tab and it's unsaved/untitled, overwrite it in-place
+                    if (openFiles.Count == 1 && openFiles[existingUntitled].HasUnsavedChanges)
+                    {
+                        // Switch to that tab and reset its contents to a new default map
+                        SwitchToTab(existingUntitled);
+
+                        // Clear file path so it's still untitled
+                        currentFilePath = "";
+
+                        // Create a new empty map of default size
+                        mapWidth = 200;
+                        mapHeight = 27;
+                        InitDefaultMap();
+
+                        // Reset per-position animation offsets and tints
+                        try { spriteFrameOffsets.Clear(); } catch { }
+                        try
+                        {
+                            var dir = AppContext.BaseDirectory;
+                            var settingsPath = System.IO.Path.Combine(dir, "editor-settings.json");
+                            if (System.IO.File.Exists(settingsPath))
+                            {
+                                var txt = System.IO.File.ReadAllText(settingsPath);
+                                var doc = System.Text.Json.JsonDocument.Parse(txt);
+
+                                if (doc.RootElement.TryGetProperty("backgroundTint", out var bt) && bt.GetArrayLength() >= 4)
+                                    backgroundTint = Color.FromArgb((byte)bt[0].GetInt32(), (byte)bt[1].GetInt32(), (byte)bt[2].GetInt32(), (byte)bt[3].GetInt32());
+
+                                if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
+                                    groundTint = Color.FromArgb((byte)gt[0].GetInt32(), (byte)gt[1].GetInt32(), (byte)gt[2].GetInt32(), (byte)gt[3].GetInt32());
+
+                                if (doc.RootElement.TryGetProperty("tileTint", out var tt) && tt.GetArrayLength() >= 4)
+                                    tileTint = Color.FromArgb((byte)tt[0].GetInt32(), (byte)tt[1].GetInt32(), (byte)tt[2].GetInt32(), (byte)tt[3].GetInt32());
+                            }
+                        }
+                        catch { }
+
+                        UpdateParallaxTint();
+                        UpdateGroundTint();
+                        UpdateTileTint();
+
+                        noParallaxBg = false;
+                        if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
+
+                        backgroundDirty = true;
+                        try { scaledTileCaches.Clear(); } catch { }
+
+                        undoStack.Clear();
+                        redoStack.Clear();
+
+                        // Mark as not dirty (fresh new map)
+                        hasUnsavedChanges = false;
+
+                        // Update UI boxes and redraw
+                        if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
+                        if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+                        try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                        Redraw();
+
+                        if (StatusText != null) StatusText.Text = "New map created (200x27) - replaced Untitled tab.";
+                        // Ensure + tab state is consistent (we may have removed/added it elsewhere)
+                        EnsureNewTabButton();
+                        return;
+                    }
+
+                    // Otherwise, just switch to the existing untitled tab instead of creating another
                     for (int i = 0; i < FileTabControl.Items.Count; i++)
                     {
                         if (FileTabControl.Items[i] is TabItem ti && ti.Tag is int idx && idx == existingUntitled)
