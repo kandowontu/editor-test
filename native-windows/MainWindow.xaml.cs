@@ -18,6 +18,9 @@ namespace FamidashEditor
 {
     public partial class MainWindow : Window
     {
+        // Structure tool set state
+        private int structureSetOffset = 0; // in tiles (0, 0x20, 0x40)
+        private int structureSetBaseTile = 0x20; // 0x20 for A, 0x40 for B, 0x60 for C
         private FamiStudioIntegration famiIntegration = new FamiStudioIntegration();
         private string? famiStudioPath = null;
         // Set to true when a precomputed name->index mapping is loaded from disk so
@@ -1771,6 +1774,9 @@ namespace FamidashEditor
             try { if (StopFamiButton != null) StopFamiButton.Click += StopFamiButton_Click; } catch { }
             // Wire configure FamiStudio menu
             try { if (MenuConfigureFamiStudio != null) MenuConfigureFamiStudio.Click += MenuConfigureFamiStudio_Click; } catch { }
+
+            // Initialize Structure popup icons when tile images are available (will refresh when tiles loaded)
+            try { InitializeStructurePopupIcons(); } catch { }
 
             // Background warm-up: load FamiStudio assemblies and warm the in-process renderer/audio device
             try
@@ -11816,20 +11822,18 @@ namespace FamidashEditor
                     int mousePxX = (int)Math.Round(pos.X * dpi.DpiScaleX);
                     int mousePxY = (int)Math.Round(pos.Y * dpi.DpiScaleY);
                     
-                    // Find all sprites that overlap at mouse position
-                    var overlappingSprites = new List<(int posKey, int spriteId, (int offsetX, int offsetY) offset, int origLeftPx, int origTopPx, int shiftedLeftPx, int shiftedTopPx)>();
-                    
-                    // Check all sprites with offsets to see if mouse is over any shifted sprite
-                    foreach (var kvp in spritePixelOffsets)
+                    // Find all sprites that overlap at mouse position. Iterate all sprite positions
+                    // so we include sprites that have no explicit pixel offset (non-shifted) as well.
+                    var overlappingSprites = new List<(int posKey, int spriteId, (int offsetX, int offsetY) offset, bool hasOffset, int origLeftPx, int origTopPx, int shiftedLeftPx, int shiftedTopPx)>();
+
+                    for (int posKey = 0; posKey < sprites.Length; posKey++)
                     {
-                        int posKey = kvp.Key;
-                        var offset = kvp.Value;
-                        
-                        if (sprites[posKey] == -1) continue;
-                        
+                        int spriteId = sprites[posKey];
+                        if (spriteId == -1) continue;
+
                         int tx = posKey % mapWidth;
                         int ty = posKey / mapWidth;
-                        
+
                         // Get anchor position for this sprite (if it exists)
                         int anchorX = tx;
                         int anchorY = ty;
@@ -11838,26 +11842,31 @@ namespace FamidashEditor
                             anchorX = anchor.anchorTileX;
                             anchorY = anchor.anchorTileY;
                         }
-                        
-                        // Calculate shifted sprite bounds (from current storage position)
+
+                        // Calculate original storage bounds
                         int origLeftPx = padPxX + tx * tilePixelW;
                         int origTopPx = padPxY + ty * tilePixelH + gridRenderShiftYPx;
-                        int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
-                        int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
+
+                        // Check if this sprite has an explicit pixel offset entry
+                        bool hasOffset = spritePixelOffsets.TryGetValue(posKey, out var offset);
+                        var useOffset = hasOffset ? offset : (offsetX: 0, offsetY: 0);
+
+                        int scaledOffsetX = (int)Math.Round(useOffset.offsetX * scale * dpi.DpiScaleX);
+                        int scaledOffsetY = (int)Math.Round(useOffset.offsetY * scale * dpi.DpiScaleY);
                         int shiftedLeftPx = origLeftPx + scaledOffsetX;
                         int shiftedTopPx = origTopPx + scaledOffsetY;
                         int shiftedRightPx = shiftedLeftPx + tilePixelW;
                         int shiftedBottomPx = shiftedTopPx + tilePixelH;
-                        
+
                         // Calculate anchor position for ghost tile display
                         int anchorLeftPx = padPxX + anchorX * tilePixelW;
                         int anchorTopPx = padPxY + anchorY * tilePixelH + gridRenderShiftYPx;
-                        
+
                         // Check if mouse is within shifted sprite bounds
                         if (mousePxX >= shiftedLeftPx && mousePxX < shiftedRightPx &&
                             mousePxY >= shiftedTopPx && mousePxY < shiftedBottomPx)
                         {
-                            overlappingSprites.Add((posKey, sprites[posKey], offset, anchorLeftPx, anchorTopPx, shiftedLeftPx, shiftedTopPx));
+                            overlappingSprites.Add((posKey, spriteId, useOffset, hasOffset, origLeftPx, origTopPx, shiftedLeftPx, shiftedTopPx));
                         }
                     }
                     
@@ -11906,34 +11915,49 @@ namespace FamidashEditor
                                 tooltipPanel.Children.Add(icon);
                             }
                             
-                            // Add offset text - show total offset from anchor, not from storage position
-                            int totalOffsetX = sprite.offset.offsetX;
-                            int totalOffsetY = sprite.offset.offsetY;
-                            
-                            // If there's an anchor, calculate the total movement from anchor
-                            if (spriteAnchors.TryGetValue(sprite.posKey, out var spriteAnchor))
+                            // Add offset text only when an explicit pixel offset exists for this sprite.
+                            if (sprite.hasOffset)
                             {
-                                // Calculate where the sprite currently is stored
-                                int storageTileX = sprite.posKey % mapWidth;
-                                int storageTileY = sprite.posKey / mapWidth;
-                                
-                                // Total offset = tile movement from anchor + sub-tile offset
-                                int tileDeltaX = storageTileX - spriteAnchor.anchorTileX;
-                                int tileDeltaY = storageTileY - spriteAnchor.anchorTileY;
-                                totalOffsetX = tileDeltaX * TileSize + sprite.offset.offsetX;
-                                totalOffsetY = tileDeltaY * TileSize + sprite.offset.offsetY;
+                                // Add offset text - show total offset from anchor, not from storage position
+                                int totalOffsetX = sprite.offset.offsetX;
+                                int totalOffsetY = sprite.offset.offsetY;
+
+                                // If there's an anchor, calculate the total movement from anchor
+                                if (spriteAnchors.TryGetValue(sprite.posKey, out var spriteAnchor))
+                                {
+                                    int storageTileX = sprite.posKey % mapWidth;
+                                    int storageTileY = sprite.posKey / mapWidth;
+                                    int tileDeltaX = storageTileX - spriteAnchor.anchorTileX;
+                                    int tileDeltaY = storageTileY - spriteAnchor.anchorTileY;
+                                    totalOffsetX = tileDeltaX * TileSize + sprite.offset.offsetX;
+                                    totalOffsetY = tileDeltaY * TileSize + sprite.offset.offsetY;
+                                }
+
+                                string tooltipText = $"ID:{sprite.spriteId:X2} Offset: X={totalOffsetX:+#;-#;0} Y={totalOffsetY:+#;-#;0}";
+                                var textBlock = new TextBlock
+                                {
+                                    Text = tooltipText,
+                                    Foreground = Brushes.White,
+                                    Padding = new Thickness(4, 2, 4, 2),
+                                    FontSize = 10,
+                                    VerticalAlignment = VerticalAlignment.Center
+                                };
+                                tooltipPanel.Children.Add(textBlock);
                             }
-                            
-                            string tooltipText = $"ID:{sprite.spriteId:X2} Offset: X={totalOffsetX:+#;-#;0} Y={totalOffsetY:+#;-#;0}";
-                            var textBlock = new TextBlock
+                            else
                             {
-                                Text = tooltipText,
-                                Foreground = Brushes.White,
-                                Padding = new Thickness(4, 2, 4, 2),
-                                FontSize = 10,
-                                VerticalAlignment = VerticalAlignment.Center
-                            };
-                            tooltipPanel.Children.Add(textBlock);
+                                // Include an empty spacer text block so the icon aligns with shifted entries
+                                var emptyText = new TextBlock
+                                {
+                                    Text = "",
+                                    Foreground = Brushes.White,
+                                    Padding = new Thickness(4, 2, 4, 2),
+                                    FontSize = 10,
+                                    VerticalAlignment = VerticalAlignment.Center,
+                                    Width = 140
+                                };
+                                tooltipPanel.Children.Add(emptyText);
+                            }
                             
                             // Position tooltip - stack them vertically at the shifted location
                             double shiftedLeft = (double)sprite.shiftedLeftPx / dpi.DpiScaleX;
@@ -12142,6 +12166,92 @@ namespace FamidashEditor
             var structBtn = FindName("StructureTool") as ToggleButton;
             bool isStruct = (structBtn != null && tb == structBtn);
             if (structBtn != null) all.Add(structBtn);
+        }
+
+        private void InitializeStructurePopupIcons()
+        {
+            try
+            {
+                // Safely set the popup preview icons if tileImages are loaded
+                if (tileImages != null)
+                {
+                    if (StructureSetAIcon != null && 0x20 < tileImages.Length) StructureSetAIcon.Source = tileImages[0x20];
+                    if (StructureSetBIcon != null && 0x40 < tileImages.Length) StructureSetBIcon.Source = tileImages[0x40];
+                    if (StructureSetCIcon != null && 0x60 < tileImages.Length) StructureSetCIcon.Source = tileImages[0x60];
+                }
+            }
+            catch { }
+        }
+
+        private void UpdateStructureToolIcon()
+        {
+            try
+            {
+                if (StructureToolIcon == null) return;
+                if (tileImages == null) { StructureToolIcon.Visibility = Visibility.Collapsed; return; }
+                int idx = structureSetBaseTile;
+                if (idx >= 0 && idx < tileImages.Length && tileImages[idx] != null)
+                {
+                    StructureToolIcon.Source = tileImages[idx];
+                    StructureToolIcon.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    StructureToolIcon.Visibility = Visibility.Collapsed;
+                }
+            }
+            catch { }
+        }
+
+        private void SelectStructureSet(int baseTile)
+        {
+            structureSetBaseTile = baseTile;
+            // structureSetOffset in tiles (0x20 increments)
+            structureSetOffset = (baseTile - 0x20) / 0x20; // 0 => A, 1 => B, 2 => C
+            UpdateStructureToolIcon();
+        }
+
+        private void StructureTool_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var popup = FindName("StructurePopup") as Popup;
+                var tb = FindName("StructureTool") as ToggleButton;
+                if (popup == null || tb == null) return;
+
+                // Toggle popup explicitly so clicking the already-checked button reopens it
+                if (popup.IsOpen)
+                {
+                    popup.IsOpen = false;
+                }
+                else
+                {
+                    // Refresh icons in case tiles loaded since initialization
+                    InitializeStructurePopupIcons();
+                    popup.IsOpen = true;
+                }
+                // Keep the toggle checked while selecting a set
+                tb.IsChecked = true;
+            }
+            catch { }
+        }
+
+        private void StructureSetAButton_Click(object? sender, RoutedEventArgs e)
+        {
+            SelectStructureSet(0x20);
+            var popup = FindName("StructurePopup") as Popup; if (popup != null) popup.IsOpen = false;
+        }
+
+        private void StructureSetBButton_Click(object? sender, RoutedEventArgs e)
+        {
+            SelectStructureSet(0x40);
+            var popup = FindName("StructurePopup") as Popup; if (popup != null) popup.IsOpen = false;
+        }
+
+        private void StructureSetCButton_Click(object? sender, RoutedEventArgs e)
+        {
+            SelectStructureSet(0x60);
+            var popup = FindName("StructurePopup") as Popup; if (popup != null) popup.IsOpen = false;
         }
 
         private void DrawModeButton_Unchecked(object? sender, RoutedEventArgs e)

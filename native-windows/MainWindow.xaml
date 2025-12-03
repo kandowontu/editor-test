@@ -206,12 +206,38 @@
                             <TextBlock Text="Wand" Margin="4,0" />
                         </StackPanel>
                     </ToggleButton>
-                    <ToggleButton x:Name="StructureTool" Margin="2">
+                    <ToggleButton x:Name="StructureTool" Margin="2" Click="StructureTool_Click">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="⤢" FontSize="12" Margin="2,0" />
+                            <Image x:Name="StructureToolIcon" Width="16" Height="16" Margin="2,0" Visibility="Collapsed" />
                             <TextBlock Text="Structure" Margin="4,0" />
                         </StackPanel>
                     </ToggleButton>
+                    <!-- Popup for selecting Structure sets A/B/C -->
+                    <Popup x:Name="StructurePopup" PlacementTarget="{Binding ElementName=StructureTool}" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+                        <Border Background="#EE222222" Padding="6" CornerRadius="4">
+                            <StackPanel Orientation="Vertical">
+                                <Button x:Name="StructureSetAButton" Click="StructureSetAButton_Click" Margin="2" Padding="4" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Image x:Name="StructureSetAIcon" Width="20" Height="20" Margin="2" />
+                                        <TextBlock Text="Set A" VerticalAlignment="Center" Margin="6,0" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="StructureSetBButton" Click="StructureSetBButton_Click" Margin="2" Padding="4" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Image x:Name="StructureSetBIcon" Width="20" Height="20" Margin="2" />
+                                        <TextBlock Text="Set B" VerticalAlignment="Center" Margin="6,0" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="StructureSetCButton" Click="StructureSetCButton_Click" Margin="2" Padding="4" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Image x:Name="StructureSetCIcon" Width="20" Height="20" Margin="2" />
+                                        <TextBlock Text="Set C" VerticalAlignment="Center" Margin="6,0" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                     <!-- Undo/Redo moved next to brush controls -->
                     <Separator Margin="8,0" />
                     <CheckBox x:Name="PreviewModeCheckbox" Content="Preview Mode" VerticalAlignment="Center" Margin="4,0" ToolTip="Enable animated previews (saws, etc.)" />
