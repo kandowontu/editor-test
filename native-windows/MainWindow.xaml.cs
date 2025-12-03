@@ -5347,35 +5347,16 @@ namespace FamidashEditor
                 // Update ID indicator on hover
                 img.MouseEnter += (s, e) => {
                     int hoveredTile = (int)((Image)s).Tag;
-                    // Only show hover preview/text when the tiles layer is active
-                    if (tilesLayerActive)
-                    {
-                        if (TileIdIndicator != null)
-                        {
-                            TileIdIndicator.Text = $"0x{hoveredTile:X2}";
-                        }
-                        try { if (TileSelectedPreviewImage != null) TileSelectedPreviewImage.Source = paletteSrc; } catch { }
-                    }
+                    if (TileIdIndicator != null)
+                        TileIdIndicator.Text = $"ID: 0x{hoveredTile:X2} ({hoveredTile})";
                 };
                 
                 img.MouseLeave += (s, e) => {
                     // Show selected tile when not hovering
-                    if (tilesLayerActive)
-                    {
-                        if (TileIdIndicator != null && selectedTile >= 0)
-                        {
-                                TileIdIndicator.Text = $"0x{selectedTile:X2}";
-                            try { if (TileSelectedPreviewImage != null) TileSelectedPreviewImage.Source = (tileTonedImages != null && selectedTile < tileTonedImages.Length ? tileTonedImages[selectedTile] : (tileImages != null && selectedTile < tileImages.Length ? tileImages[selectedTile] : null)); } catch { }
-                        }
-                        else if (TileIdIndicator != null)
-                            TileIdIndicator.Text = "";
-                    }
-                    else
-                    {
-                        // Layer inactive: clear indicators and preview
-                        if (TileIdIndicator != null) TileIdIndicator.Text = "";
-                        try { if (TileSelectedPreviewImage != null) TileSelectedPreviewImage.Source = null; } catch { }
-                    }
+                    if (TileIdIndicator != null && selectedTile >= 0)
+                        TileIdIndicator.Text = $"Selected: 0x{selectedTile:X2} ({selectedTile})";
+                    else if (TileIdIndicator != null)
+                        TileIdIndicator.Text = "";
                 };
                 
                 var border = new Border { 
@@ -5435,34 +5416,16 @@ namespace FamidashEditor
                 // Update ID indicator on hover
                 img.MouseEnter += (s, e) => {
                     int hoveredSprite = (int)((Image)s).Tag;
-                    // Only show hover preview/text when the sprites layer is active
-                    if (spritesLayerActive)
-                    {
-                        if (SpriteIdIndicator != null)
-                        {
-                                SpriteIdIndicator.Text = $"0x{hoveredSprite:X2}";
-                        }
-                        try { if (SpriteSelectedPreviewImage != null) SpriteSelectedPreviewImage.Source = src; } catch { }
-                    }
+                    if (SpriteIdIndicator != null)
+                        SpriteIdIndicator.Text = $"ID: 0x{hoveredSprite:X2} ({hoveredSprite})";
                 };
                 
                 img.MouseLeave += (s, e) => {
-                    // Show selected sprite when not hovering (only if sprites layer active)
-                    if (spritesLayerActive)
-                    {
-                        if (SpriteIdIndicator != null && selectedSprite >= 0)
-                        {
-                                SpriteIdIndicator.Text = $"0x{selectedSprite:X2}";
-                            try { if (SpriteSelectedPreviewImage != null) SpriteSelectedPreviewImage.Source = (spriteImages != null && selectedSprite < spriteImages.Length ? spriteImages[selectedSprite] : null); } catch { }
-                        }
-                        else if (SpriteIdIndicator != null)
-                            SpriteIdIndicator.Text = "";
-                    }
-                    else
-                    {
-                        if (SpriteIdIndicator != null) SpriteIdIndicator.Text = "";
-                        try { if (SpriteSelectedPreviewImage != null) SpriteSelectedPreviewImage.Source = null; } catch { }
-                    }
+                    // Show selected sprite when not hovering
+                    if (SpriteIdIndicator != null && selectedSprite >= 0)
+                        SpriteIdIndicator.Text = $"Selected: 0x{selectedSprite:X2} ({selectedSprite})";
+                    else if (SpriteIdIndicator != null)
+                        SpriteIdIndicator.Text = "";
                 };
                 
                 var border = new Border { Child = img, Margin = new Thickness(0), Padding = new Thickness(0), BorderBrush = (idx == selectedSprite ? Brushes.Yellow : Brushes.Transparent), BorderThickness = (idx == selectedSprite ? new Thickness(2) : new Thickness(0)) };
@@ -5592,31 +5555,19 @@ namespace FamidashEditor
             // Update tile ID indicator
             if (TileIdIndicator != null)
             {
-                if (tilesLayerActive && selectedTile >= 0)
-                {
-                    TileIdIndicator.Text = $"0x{selectedTile:X2}";
-                    try { if (TileSelectedPreviewImage != null) TileSelectedPreviewImage.Source = (tileTonedImages != null && selectedTile < tileTonedImages.Length ? tileTonedImages[selectedTile] : (tileImages != null && selectedTile < tileImages.Length ? tileImages[selectedTile] : null)); } catch { }
-                }
+                if (selectedTile >= 0)
+                    TileIdIndicator.Text = $"Selected: 0x{selectedTile:X2} ({selectedTile})";
                 else
-                {
                     TileIdIndicator.Text = "";
-                    try { if (TileSelectedPreviewImage != null) TileSelectedPreviewImage.Source = null; } catch { }
-                }
             }
             
             // Update sprite ID indicator
             if (SpriteIdIndicator != null)
             {
-                if (spritesLayerActive && selectedSprite >= 0)
-                {
-                    SpriteIdIndicator.Text = $"0x{selectedSprite:X2}";
-                    try { if (SpriteSelectedPreviewImage != null) SpriteSelectedPreviewImage.Source = (spriteImages != null && selectedSprite < spriteImages.Length ? spriteImages[selectedSprite] : null); } catch { }
-                }
+                if (selectedSprite >= 0)
+                    SpriteIdIndicator.Text = $"Selected: 0x{selectedSprite:X2} ({selectedSprite})";
                 else
-                {
                     SpriteIdIndicator.Text = "";
-                    try { if (SpriteSelectedPreviewImage != null) SpriteSelectedPreviewImage.Source = null; } catch { }
-                }
             }
         }
 
