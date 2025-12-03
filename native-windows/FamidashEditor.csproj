@@ -25,9 +25,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     
-    <!-- Embed special audio as resource -->
-    <EmbeddedResource Include="..\fire.wav" />
-    
     <!-- Embed assets as resources -->
     <EmbeddedResource Include="..\saw-frame1.png" />
     <EmbeddedResource Include="..\saw-frame2.png" />
@@ -229,6 +226,10 @@
     <EmbeddedResource Include="..\teleport-portal-horizontal-exit-downwards.png" />
     <EmbeddedResource Include="..\teleport-portal-enter.png" />
     <EmbeddedResource Include="..\teleport-portal-exit.png" />
+    <!-- Level metadata JSON5 -->
+    <EmbeddedResource Include="..\lvlset_HUGE_metadata.json5">
+      <LogicalName>lvlset_HUGE_metadata.json5</LogicalName>
+    </EmbeddedResource>
     <!-- Tileset variations -->
     <EmbeddedResource Include="..\tilesets\BlocksaSpikesaSawsaSlopesa.png" />
     <EmbeddedResource Include="..\tilesets\BlocksaSpikesaSawsaSlopesnone.png" />
@@ -254,7 +255,6 @@
     <EmbeddedResource Include="..\tilesets\BlocksdSpikesbSawsaSlopesnone.png" />
     <EmbeddedResource Include="..\tilesets\BlocksdSpikescSawsaSlopesa.png" />
     <EmbeddedResource Include="..\tilesets\BlocksdSpikescSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\that_one_render_1.png" />
   </ItemGroup>
   <!-- If present, copy pre-parsed FamiStudio album JSON and probe results into the build output
        so the runtime (launched from bin) can find them without additional configuration. -->
@@ -263,10 +263,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="fami-probe-result.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <!-- Level metadata JSON5 - copy to output so it's editable -->
-    <None Include="..\lvlset_HUGE_metadata.json5">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
