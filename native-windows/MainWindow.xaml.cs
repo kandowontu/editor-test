@@ -2278,6 +2278,7 @@ namespace FamidashEditor
             if (MenuFileNew != null) MenuFileNew.Click += NewMenuItem_Click;
             if (MenuFileSave != null) MenuFileSave.Click += SaveButton_Click;
             if (MenuFileSaveAs != null) MenuFileSaveAs.Click += MenuFileSaveAs_Click;
+            if (MenuOpenSimulator != null) MenuOpenSimulator.Click += MenuOpenSimulator_Click;
             if (MenuFileLoad != null) MenuFileLoad.Click += LoadButton_Click;
             if (MenuFileClose != null) MenuFileClose.Click += MenuFileClose_Click;
             
@@ -5853,6 +5854,152 @@ namespace FamidashEditor
 
             // Ensure + tab exists
             EnsureNewTabButton();
+        }
+
+        // Open the simulator window showing the current map state. This is lightweight
+        // and copies the current tile/sprite arrays and tile images for rendering.
+        public void OpenSimulatorWindow()
+        {
+            try
+            {
+                var previewMap = new System.Collections.Generic.Dictionary<int, ImageSource?>();
+                try
+                {
+                    // Single-frame portal replacements
+                    if (cubePortalSprite != null) previewMap[0x00] = cubePortalSprite;
+                    if (shipPortalSprite != null) previewMap[0x01] = shipPortalSprite;
+                    if (ballPortalSprite != null) previewMap[0x02] = ballPortalSprite;
+                    if (ufoPortalSprite != null) previewMap[0x03] = ufoPortalSprite;
+                    if (robotPortalSprite != null) previewMap[0x04] = robotPortalSprite;
+                    if (wavePortalSprite != null) previewMap[0x24] = wavePortalSprite;
+                    if (spiderPortalSprite != null) previewMap[0x17] = spiderPortalSprite;
+                    if (spiderPadSprite != null) previewMap[0x56] = spiderPadSprite;
+                    if (spiderPadUpsideDownSprite != null) previewMap[0x57] = spiderPadUpsideDownSprite;
+                    if (swingcopterPortalSprite != null) previewMap[0x4B] = swingcopterPortalSprite;
+                    if (ninjaPortalSprite != null) previewMap[0x58] = ninjaPortalSprite;
+                    if (teleportPortalEnterSprite != null) previewMap[0x4E] = teleportPortalEnterSprite;
+                    if (teleportPortalExitSprite != null) previewMap[0x4F] = teleportPortalExitSprite;
+                    if (teleportPortalHorizontalEnterDownSprite != null) previewMap[0x66] = teleportPortalHorizontalEnterDownSprite;
+                    if (teleportPortalHorizontalExitUpSprite != null) previewMap[0x67] = teleportPortalHorizontalExitUpSprite;
+                    if (teleportPortalHorizontalEnterUpSprite != null) previewMap[0x68] = teleportPortalHorizontalEnterUpSprite;
+                    if (teleportPortalHorizontalExitDownSprite != null) previewMap[0x69] = teleportPortalHorizontalExitDownSprite;
+                    if (speed05xPortalSprite != null) previewMap[0x14] = speed05xPortalSprite;
+                    if (speed1xPortalSprite != null) previewMap[0x15] = speed1xPortalSprite;
+                    if (speed2xPortalSprite != null) previewMap[0x16] = speed2xPortalSprite;
+                    if (speed3xPortalSprite != null) previewMap[0x20] = speed3xPortalSprite;
+                    if (speed4xPortalSprite != null) previewMap[0x21] = speed4xPortalSprite;
+                    if (speedSpecialPortalSprite != null) previewMap[0x6D] = speedSpecialPortalSprite;
+                    if (dualPortalSprite != null) previewMap[0x22] = dualPortalSprite;
+                    if (singlePortalSprite != null) previewMap[0x23] = singlePortalSprite;
+                    if (miniPortalSprite != null) previewMap[0x18] = miniPortalSprite;
+                    if (growthPortalSprite != null) previewMap[0x19] = growthPortalSprite;
+
+                    // Gravity portals
+                    if (gravityDownPortalSprite != null) previewMap[0x08] = gravityDownPortalSprite;
+                    if (gravityUpPortalSprite != null) previewMap[0x09] = gravityUpPortalSprite;
+                    if (gravityDownDownwardsPortalSprite != null) previewMap[0x10] = gravityDownDownwardsPortalSprite;
+                    if (gravityDownUpwardsPortalSprite != null) previewMap[0x11] = gravityDownUpwardsPortalSprite;
+                    if (gravityUpDownwardsPortalSprite != null) previewMap[0x12] = gravityUpDownwardsPortalSprite;
+                    if (gravityUpUpwardsPortalSprite != null) previewMap[0x13] = gravityUpUpwardsPortalSprite;
+
+                    // Multi-frame or animated previews: use first frame as representative
+                    if (yellowOrbFrame1 != null && yellowOrbFrame1.Length > 0) { previewMap[0x0B] = yellowOrbFrame1[0]; previewMap[0x1F] = yellowOrbFrame1[0]; previewMap[0x29] = yellowOrbFrame1[0]; }
+                    if (blueOrbFrame1 != null && blueOrbFrame1.Length > 0) previewMap[0x05] = blueOrbFrame1[0];
+                    if (whiteOrbFrame1 != null && whiteOrbFrame1.Length > 0) previewMap[0x7A] = whiteOrbFrame1[0];
+                    if (coinFrame1 != null && coinFrame1.Length > 0) { previewMap[0x07] = coinFrame1[0]; previewMap[0x1A] = coinFrame1[0]; previewMap[0x1B] = coinFrame1[0]; }
+                    if (miniCoinFrame1 != null && miniCoinFrame1.Length > 0) previewMap[0x6E] = miniCoinFrame1[0];
+                    if (redPadFrame1 != null && redPadFrame1.Length > 0) previewMap[0x52] = redPadFrame1[0];
+                    if (starFrame1 != null && starFrame1.Length > 0) previewMap[0x36] = starFrame1[0];
+                    if (pulsingBallFrame1 != null && pulsingBallFrame1.Length > 0) previewMap[0x49] = pulsingBallFrame1[0];
+                    if (musicNoteFrame1 != null && musicNoteFrame1.Length > 0) previewMap[0x4A] = musicNoteFrame1[0];
+                    if (diamondFrame1 != null && diamondFrame1.Length > 0) previewMap[0x32] = diamondFrame1[0];
+                    if (diamondHalfFrame1 != null && diamondHalfFrame1.Length > 0) previewMap[0x33] = diamondHalfFrame1[0];
+                    if (questionMarkFrame1 != null && questionMarkFrame1.Length > 0) previewMap[0x34] = questionMarkFrame1[0];
+                    if (exclamationFrame1 != null && exclamationFrame1.Length > 0) previewMap[0x35] = exclamationFrame1[0];
+                    if (xFrame1 != null && xFrame1.Length > 0) previewMap[0x37] = xFrame1[0];
+                    // Pole and chain previews
+                    if (poleShortFrame1 != null && poleShortFrame1.Length > 0) previewMap[0x2C] = poleShortFrame1[0];
+                    if (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame1.Length > 0) previewMap[0x3C] = poleShortUpsideDownFrame1[0];
+                    if (chainFrame1 != null && chainFrame1.Length > 0) previewMap[0x2D] = chainFrame1[0];
+                }
+                catch { }
+
+                // Build animation frames mapping for the simulator so sprites animate correctly
+                var animationFrames = new System.Collections.Generic.Dictionary<int, ImageSource[]?>();
+                try
+                {
+                    // Yellow orb sprites (0x0B,0x1F,0x29) - each has 4 frames and 3 sub-sprites
+                    if (yellowOrbFrame1 != null && yellowOrbFrame2 != null && yellowOrbFrame3 != null && yellowOrbFrame4 != null)
+                    {
+                        for (int i = 0; i < 3; i++)
+                        {
+                            var arr = new ImageSource?[4];
+                            arr[0] = yellowOrbFrame1.Length > i ? yellowOrbFrame1[i] : null;
+                            arr[1] = yellowOrbFrame2.Length > i ? yellowOrbFrame2[i] : null;
+                            arr[2] = yellowOrbFrame3.Length > i ? yellowOrbFrame3[i] : null;
+                            arr[3] = yellowOrbFrame4.Length > i ? yellowOrbFrame4[i] : null;
+                            int id = (i == 0) ? 0x0B : (i == 1) ? 0x1F : 0x29;
+                            animationFrames[id] = arr;
+                        }
+                    }
+                    // Blue orb (0x05)
+                    if (blueOrbFrame1 != null && blueOrbFrame2 != null && blueOrbFrame3 != null && blueOrbFrame4 != null)
+                    {
+                        animationFrames[0x05] = new ImageSource?[] { blueOrbFrame1[0], blueOrbFrame2[0], blueOrbFrame3[0], blueOrbFrame4[0] };
+                    }
+                    // White orb (0x7A)
+                    if (whiteOrbFrame1 != null && whiteOrbFrame2 != null && whiteOrbFrame3 != null && whiteOrbFrame4 != null)
+                    {
+                        animationFrames[0x7A] = new ImageSource?[] { whiteOrbFrame1[0], whiteOrbFrame2[0], whiteOrbFrame3[0], whiteOrbFrame4[0] };
+                    }
+                    // Coins (0x07,0x1A,0x1B) - coinFrame arrays hold 3 sub-sprites per frame
+                    if (coinFrame1 != null && coinFrame2 != null && coinFrame3 != null && coinFrame4 != null)
+                    {
+                        for (int i = 0; i < 3; i++)
+                        {
+                            int id = (i == 0) ? 0x07 : (i == 1) ? 0x1A : 0x1B;
+                            animationFrames[id] = new ImageSource?[] { coinFrame1.Length > i ? coinFrame1[i] : null, coinFrame2.Length > i ? coinFrame2[i] : null, coinFrame3.Length > i ? coinFrame3[i] : null, coinFrame4.Length > i ? coinFrame4[i] : null };
+                        }
+                    }
+                    // Mini coin (0x6E)
+                    if (miniCoinFrame1 != null && miniCoinFrame2 != null && miniCoinFrame3 != null && miniCoinFrame4 != null)
+                    {
+                        animationFrames[0x6E] = new ImageSource?[] { miniCoinFrame1[0], miniCoinFrame2[0], miniCoinFrame3[0], miniCoinFrame4[0] };
+                    }
+                    // Pads and two-frame decorations
+                    if (redPadFrame1 != null && redPadFrame2 != null && redPadFrame3 != null && redPadFrame4 != null) animationFrames[0x52] = new ImageSource?[] { redPadFrame1[0], redPadFrame2[0], redPadFrame3[0], redPadFrame4[0] };
+                    if (starFrame1 != null && starFrame2 != null) animationFrames[0x36] = new ImageSource?[] { starFrame1[0], starFrame2[0] };
+                    if (pulsingBallFrame1 != null && pulsingBallFrame2 != null) animationFrames[0x49] = new ImageSource?[] { pulsingBallFrame1[0], pulsingBallFrame2[0] };
+                    if (musicNoteFrame1 != null && musicNoteFrame2 != null) animationFrames[0x4A] = new ImageSource?[] { musicNoteFrame1[0], musicNoteFrame2[0] };
+                    if (diamondFrame1 != null && diamondFrame2 != null) animationFrames[0x32] = new ImageSource?[] { diamondFrame1[0], diamondFrame2[0] };
+                }
+                catch { }
+
+                var sim = new SimulatorWindow(
+                    tiles.ToArray(),
+                    sprites.ToArray(),
+                    mapWidth,
+                    mapHeight,
+                    tileImages,
+                    tileTonedImages,
+                    spriteImages,
+                    spritePixelOffsets,
+                    spriteAnchors,
+                    backgroundTint,
+                    groundTint,
+                    tileTint,
+                    playerTint,
+                    playerTintEnabled,
+                    gridRenderShiftYPx,
+                    true, // force preview mode in simulator
+                    hideColorTriggers,
+                    previewMap,
+                    animationFrames
+                    );
+                sim.Owner = this;
+                sim.Show();
+            }
+            catch { }
         }
 
         private void EnsureNewTabButton()
@@ -16125,6 +16272,11 @@ namespace FamidashEditor
                 this.Focus();
             }
             catch { }
+        }
+
+        private void MenuOpenSimulator_Click(object? sender, RoutedEventArgs e)
+        {
+            try { OpenSimulatorWindow(); } catch { }
         }
 
         private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)

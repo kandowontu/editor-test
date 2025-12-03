@@ -132,6 +132,8 @@
                     <Separator />
                     <MenuItem x:Name="MenuToolUndo" Header="_Undo" InputGestureText="Ctrl+Z" />
                     <MenuItem x:Name="MenuToolRedo" Header="_Redo" InputGestureText="Ctrl+Y" />
+                    <Separator />
+                    <MenuItem x:Name="MenuOpenSimulator" Header="Open _Simulator" InputGestureText="F5" />
                 </MenuItem>
                 <MenuItem Header="_Options">
                     <MenuItem Header="Editor Options">
