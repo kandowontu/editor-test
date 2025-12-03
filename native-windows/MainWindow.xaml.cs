@@ -2236,7 +2236,7 @@ namespace FamidashEditor
                         if (scrollViewer != null && scrollViewer.ComputedHorizontalScrollBarVisibility == Visibility.Visible)
                         {
                             // Apply invert pinch setting to horizontal scroll
-                            double delta = invertPinchGesture ? -e.Delta : e.Delta;
+                            double delta = invertPinchGesture ? e.Delta : -e.Delta;
                             scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset - delta / 3.0);
                             e.Handled = true;
                         }
@@ -2254,7 +2254,7 @@ namespace FamidashEditor
                         if (scrollViewer != null && scrollViewer.ComputedHorizontalScrollBarVisibility == Visibility.Visible)
                         {
                             // Apply invert pinch setting to horizontal scroll
-                            double delta = invertPinchGesture ? -e.Delta : e.Delta;
+                            double delta = invertPinchGesture ? e.Delta : -e.Delta;
                             scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset - delta / 3.0);
                             e.Handled = true;
                         }
@@ -2662,7 +2662,7 @@ namespace FamidashEditor
                 double oldScale = ZoomSlider.Value;
                 // use a multiplicative zoom per mouse wheel notch (120 delta = one notch)
                 // Invert sign so wheel-up zooms in and wheel-down zooms out
-                double sign = invertPinchGesture ? -1.0 : 1.0;
+                double sign = invertPinchGesture ? 1.0 : -1.0;
                 int notches = e.Delta / 120;
                 
                 // Move by quarter intervals (0.25) per notch for predictable behavior
@@ -14965,14 +14965,15 @@ namespace FamidashEditor
             lastManipulationCumulativeScale = cumulative;
             // Respect user preference: when the option is CHECKED the behavior should be inverted
             // (user requested the meaning to flip). So invert the ratio only when the setting is OFF.
-            try
-            {
-                if (!invertPinchGesture)
+                try
                 {
-                    if (Math.Abs(ratio) > 1e-12) ratio = 1.0 / ratio;
+                    // Reverse behavior: when the setting is CHECKED we invert the gesture
+                    if (invertPinchGesture)
+                    {
+                        if (Math.Abs(ratio) > 1e-12) ratio = 1.0 / ratio;
+                    }
                 }
-            }
-            catch { }
+                catch { }
             
             bool handledAny = false;
             // Handle translation (two-finger swipe) as scrolling. Map horizontal translation according
