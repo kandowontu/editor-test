@@ -15,7 +15,7 @@ namespace FamidashEditor
         private readonly int mapWidth;
         private readonly int mapHeight;
         private readonly ImageSource[]? tileImages;
-        private readonly ImageSource[]? tileTonedImages;
+        private ImageSource[]? tileTonedImages;
         private readonly ImageSource[]? spriteImages;
         private readonly System.Collections.Generic.Dictionary<int, (int offsetX, int offsetY)> spritePixelOffsets;
         private readonly System.Collections.Generic.Dictionary<int, (int anchorTileX, int anchorTileY)> spriteAnchors;
@@ -30,12 +30,12 @@ namespace FamidashEditor
         private readonly System.Collections.Generic.Dictionary<int, ImageSource?>? previewSpriteMap;
         private readonly System.Collections.Generic.Dictionary<int, ImageSource?[]>? animationFrames;
         // Tile-level animated saw frames (tinted versions) passed from MainWindow
-        private readonly ImageSource[]? sawFrame1TilesTinted;
-        private readonly ImageSource[]? sawFrame2TilesTinted;
-        private readonly ImageSource[]? smallSawFrame1TilesTinted;
-        private readonly ImageSource[]? smallSawFrame2TilesTinted;
-        private readonly ImageSource[]? largeSawFrame1TilesTinted;
-        private readonly ImageSource[]? largeSawFrame2TilesTinted;
+        private ImageSource[]? sawFrame1TilesTinted;
+        private ImageSource[]? sawFrame2TilesTinted;
+        private ImageSource[]? smallSawFrame1TilesTinted;
+        private ImageSource[]? smallSawFrame2TilesTinted;
+        private ImageSource[]? largeSawFrame1TilesTinted;
+        private ImageSource[]? largeSawFrame2TilesTinted;
 
         private const int NES_W = 16; // horizontal tiles (was 15)
         private const int NES_H = 15; // vertical tiles (was 16)
@@ -90,11 +90,15 @@ namespace FamidashEditor
 
         private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
 
+        // Cache tinted decoration sprites keyed by (spriteId<<32)|ARGB
+        private readonly System.Collections.Generic.Dictionary<long, ImageSource?> tintedSpriteCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
+
         // Track color-trigger anchors that have already been processed (so we don't resample every frame)
         private System.Collections.Generic.HashSet<int> processedColorTriggers = new System.Collections.Generic.HashSet<int>();
 
         private bool upHeld = false;
         private bool downHeld = false;
+        private bool tabHeld = false;
 
         // (debug overlay removed)
 
@@ -205,13 +209,17 @@ namespace FamidashEditor
                     Stretch = Stretch.None
                 };
                 System.Windows.Media.RenderOptions.SetBitmapScalingMode(tileLayerImage, BitmapScalingMode.NearestNeighbor);
+                // Snap to device pixels and use aliased edge mode to avoid 1-px seams when translating
+                tileLayerImage.SnapsToDevicePixels = true;
+                System.Windows.Media.RenderOptions.SetEdgeMode(tileLayerImage, EdgeMode.Aliased);
                 RenderCanvas.Children.Add(tileLayerImage);
 
                 groundRectPersistent = new System.Windows.Shapes.Rectangle
                 {
                     Width = RenderCanvas.Width,
                     Height = TILE * Math.Min(NES_H, 2),
-                    Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 }
+                    Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 },
+                    Visibility = Visibility.Collapsed // hide ground overlay temporarily until ground rendering is fixed
                 };
                 System.Windows.Controls.Canvas.SetLeft(groundRectPersistent, 0);
                 System.Windows.Controls.Canvas.SetTop(groundRectPersistent, (NES_H * TILE) - (TILE * Math.Min(NES_H, 2)));
@@ -242,21 +250,22 @@ namespace FamidashEditor
 
             if (mapped >= 0x08 && mapped <= 0x0B)
             {
-                bool showFrame2 = (((animationFrame * 3) / 4) % 2) == 1;
+                // Use the same rhythm as sprite animations (frame math below)
+                bool showFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
                 int tileOffset = mapped - 0x08;
                 return showFrame2 ? 1004 + tileOffset : 1000 + tileOffset;
             }
 
             if (mapped == 0x04 || mapped == 0x7D || mapped == 0x7F)
             {
-                bool showFrame2 = (((animationFrame * 3) / 4) % 2) == 1;
+                bool showFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
                 int tileOffset = (mapped == 0x04) ? 0 : (mapped == 0x7D) ? 1 : 2;
                 return showFrame2 ? 1013 + tileOffset : 1010 + tileOffset;
             }
 
             if (mapped >= 0x74 && mapped <= 0x7C)
             {
-                bool showFrame2 = (((animationFrame * 3) / 4) % 2) == 1;
+                bool showFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
                 int tileOffset = mapped - 0x74;
                 return showFrame2 ? 1029 + tileOffset : 1020 + tileOffset;
             }
@@ -268,12 +277,14 @@ namespace FamidashEditor
         {
             if (e.Key == Key.Up) upHeld = true;
             if (e.Key == Key.Down) downHeld = true;
+            if (e.Key == Key.Tab) tabHeld = true;
         }
 
         private void SimulatorWindow_KeyUp(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Up) upHeld = false;
             if (e.Key == Key.Down) downHeld = false;
+            if (e.Key == Key.Tab) tabHeld = false;
         }
 
         private void Timer_Tick(object? sender, EventArgs e)
@@ -282,7 +293,9 @@ namespace FamidashEditor
             int prevCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
 
             // Advance camera X by current dynamic speed (fixed-point)
-            cameraX_fixed += currentSpeed_fixed;
+            // Holding TAB doubles horizontal movement speed.
+            int speedMultiplier = tabHeld ? 2 : 1;
+            cameraX_fixed += currentSpeed_fixed * speedMultiplier;
 
             // Advance animation frame counter
             animationFrame++;
@@ -301,6 +314,10 @@ namespace FamidashEditor
             // After moving camera X, check for speed-portal anchor crossings
             try
             {
+                // remember previous tints so we can detect changes
+                var prevBackgroundTint = backgroundTint;
+                var prevTileTint = tileTint;
+                var prevGroundTint = groundTint;
                 int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
                 // We moved right only; find any speed portal anchors whose anchor X lies in (prevCenter, center]
                 int bestAnchor_fixed = int.MaxValue;
@@ -411,6 +428,18 @@ namespace FamidashEditor
                 }
                 catch { }
 
+                // If any tint changed, regenerate toned tile images and invalidate tile-layer cache
+                try
+                {
+                    if (!AreColorsEqual(prevBackgroundTint, backgroundTint) || !AreColorsEqual(prevTileTint, tileTint) || !AreColorsEqual(prevGroundTint, groundTint))
+                    {
+                        // regenerate toned tile sets for the new tile tint so cached tiles draw with new hue
+                        UpdateTonedImagesForTileTint(tileTint);
+                        // invalidate cached tile layer so it is rebuilt with new toned images
+                        tileLayerCache = null;
+                    }
+                }
+                catch { }
                 if (newSpeed_fixed.HasValue)
                 {
                     currentSpeed_fixed = newSpeed_fixed.Value;
@@ -471,25 +500,68 @@ namespace FamidashEditor
                                 {
                                     if (t >= 1000)
                                     {
-                                        bool frame2 = (((animationFrame * 3) / 40) % 2) != 0;
-                                        if (t >= 1000 && t <= 1007)
-                                        {
-                                            int off = (t - 1000) % 4;
-                                            chosenTile = frame2 ? (sawFrame2TilesTinted != null && off < sawFrame2TilesTinted.Length ? sawFrame2TilesTinted[off] : null)
-                                                                 : (sawFrame1TilesTinted != null && off < sawFrame1TilesTinted.Length ? sawFrame1TilesTinted[off] : null);
-                                        }
+                                        // Use the same animation cadence as sprite frames so saws flip in sync
+                                        bool frame2 = (((animationFrame * 9) / 20) % 2) != 0;
+                                                if (t >= 1000 && t <= 1007)
+                                                {
+                                                    int off = (t - 1000) % 4;
+                                                    int len1 = sawFrame1TilesTinted != null ? sawFrame1TilesTinted.Length : 0;
+                                                    int len2 = sawFrame2TilesTinted != null ? sawFrame2TilesTinted.Length : 0;
+                                                    // Use sprite rhythm to pick an index; fall back to boolean pair selection
+                                                    if (len1 > 1 || len2 > 1)
+                                                    {
+                                                        int frameIdx = (((animationFrame * 9) / 20) + off) % Math.Max(1, Math.Max(len1, len2));
+                                                        chosenTile = (sawFrame1TilesTinted != null && frameIdx < sawFrame1TilesTinted.Length) ? sawFrame1TilesTinted[frameIdx]
+                                                                    : (sawFrame2TilesTinted != null && frameIdx < sawFrame2TilesTinted.Length) ? sawFrame2TilesTinted[frameIdx]
+                                                                    : null;
+                                                    }
+                                                    else
+                                                    {
+                                                        bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+                                                        chosenTile = useFrame2 ? (sawFrame2TilesTinted != null && off < sawFrame2TilesTinted.Length ? sawFrame2TilesTinted[off] : null)
+                                                                              : (sawFrame1TilesTinted != null && off < sawFrame1TilesTinted.Length ? sawFrame1TilesTinted[off] : null);
+                                                    }
+                                                }
                                         else if (t >= 1010 && t <= 1015)
                                         {
                                             int off = (t - 1010) % 3;
-                                            chosenTile = frame2 ? (smallSawFrame2TilesTinted != null && off < smallSawFrame2TilesTinted.Length ? smallSawFrame2TilesTinted[off] : null)
-                                                                 : (smallSawFrame1TilesTinted != null && off < smallSawFrame1TilesTinted.Length ? smallSawFrame1TilesTinted[off] : null);
+                                            int len1 = smallSawFrame1TilesTinted != null ? smallSawFrame1TilesTinted.Length : 0;
+                                            int len2 = smallSawFrame2TilesTinted != null ? smallSawFrame2TilesTinted.Length : 0;
+                                            if (len1 > 1 || len2 > 1)
+                                            {
+                                                int frameIdx = (((animationFrame * 9) / 20) + off) % Math.Max(1, Math.Max(len1, len2));
+                                                chosenTile = (smallSawFrame1TilesTinted != null && frameIdx < smallSawFrame1TilesTinted.Length) ? smallSawFrame1TilesTinted[frameIdx]
+                                                            : (smallSawFrame2TilesTinted != null && frameIdx < smallSawFrame2TilesTinted.Length) ? smallSawFrame2TilesTinted[frameIdx]
+                                                            : null;
+                                            }
+                                            else
+                                            {
+                                                bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+                                                chosenTile = useFrame2 ? (smallSawFrame2TilesTinted != null && off < smallSawFrame2TilesTinted.Length ? smallSawFrame2TilesTinted[off] : null)
+                                                                      : (smallSawFrame1TilesTinted != null && off < smallSawFrame1TilesTinted.Length ? smallSawFrame1TilesTinted[off] : null);
+                                            }
                                         }
                                         else if (t >= 1020 && t <= 1037)
                                         {
                                             int off = (t - 1020) % 9;
-                                            chosenTile = frame2 ? (largeSawFrame2TilesTinted != null && off < largeSawFrame2TilesTinted.Length ? largeSawFrame2TilesTinted[off] : null)
-                                                                 : (largeSawFrame1TilesTinted != null && off < largeSawFrame1TilesTinted.Length ? largeSawFrame1TilesTinted[off] : null);
+                                            int len1 = largeSawFrame1TilesTinted != null ? largeSawFrame1TilesTinted.Length : 0;
+                                            int len2 = largeSawFrame2TilesTinted != null ? largeSawFrame2TilesTinted.Length : 0;
+                                            if (len1 > 1 || len2 > 1)
+                                            {
+                                                int frameIdx = (((animationFrame * 9) / 20) + off) % Math.Max(1, Math.Max(len1, len2));
+                                                chosenTile = (largeSawFrame1TilesTinted != null && frameIdx < largeSawFrame1TilesTinted.Length) ? largeSawFrame1TilesTinted[frameIdx]
+                                                            : (largeSawFrame2TilesTinted != null && frameIdx < largeSawFrame2TilesTinted.Length) ? largeSawFrame2TilesTinted[frameIdx]
+                                                            : null;
+                                            }
+                                            else
+                                            {
+                                                bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+                                                chosenTile = useFrame2 ? (largeSawFrame2TilesTinted != null && off < largeSawFrame2TilesTinted.Length ? largeSawFrame2TilesTinted[off] : null)
+                                                                      : (largeSawFrame1TilesTinted != null && off < largeSawFrame1TilesTinted.Length ? largeSawFrame1TilesTinted[off] : null);
+                                            }
                                         }
+
+                                        // (no diagnostics) intentionally left blank
                                     }
                                 }
                                 catch { }
@@ -596,6 +668,16 @@ namespace FamidashEditor
 
                     if (chosenSprite == null) continue;
                     if (hideColorTriggers && IsColorTriggerSprite(s)) continue;
+
+                    // Apply player tint to decoration sprites when enabled
+                    try
+                    {
+                        if (playerTintEnabled && decorationSpriteIds.Contains(s) && chosenSprite != null)
+                        {
+                            chosenSprite = GetPlayerTintedSprite(chosenSprite, s);
+                        }
+                    }
+                    catch { }
 
                     double px = (mapX - startTileX) * TILE - offsetX;
                     double py = (mapY - startTileY) * TILE - offsetY + gridRenderShiftYPx;
@@ -810,6 +892,275 @@ namespace FamidashEditor
             byte g = (byte)Math.Round((g1 + m) * 255.0);
             byte b = (byte)Math.Round((b1 + m) * 255.0);
             return Color.FromArgb(255, r, g, b);
+        }
+
+        // Helper: compare colors (treat nullability not applicable here)
+        private static bool AreColorsEqual(Color a, Color b)
+        {
+            return a.A == b.A && a.R == b.R && a.G == b.G && a.B == b.B;
+        }
+
+        // Return a player-tinted copy of the given sprite image (cached).
+        private ImageSource? GetPlayerTintedSprite(ImageSource src, int spriteId)
+        {
+            if (!playerTintEnabled) return src;
+            try
+            {
+                long key = (((long)spriteId) << 32) | ((long)playerTint.A << 24) | ((long)playerTint.R << 16) | ((long)playerTint.G << 8) | playerTint.B;
+                if (tintedSpriteCache.TryGetValue(key, out var cached)) return cached;
+
+                if (src is BitmapSource bs)
+                {
+                    var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                    int w = Math.Max(1, conv.PixelWidth);
+                    int h = Math.Max(1, conv.PixelHeight);
+                    int stride = w * 4;
+                    var pixels = new byte[h * stride];
+                    conv.CopyPixels(pixels, stride, 0);
+
+                    // compute tint hue
+                    RgbToHsl(playerTint.R, playerTint.G, playerTint.B, out double tintH, out double tintS, out double tintL);
+
+                    for (int i = 0; i < pixels.Length; i += 4)
+                    {
+                        byte b = pixels[i + 0];
+                        byte g = pixels[i + 1];
+                        byte r = pixels[i + 2];
+                        byte a = pixels[i + 3];
+                        if (a == 0) continue; // preserve fully transparent pixels
+
+                        // Replace hue with tint hue while preserving original saturation/lightness
+                        RgbToHsl(r, g, b, out double ph, out double ps, out double pl);
+                        double nh = tintH; double ns = ps; double nl = pl;
+                        RgbFromHsl(nh, ns, nl, out byte nr, out byte ng, out byte nb);
+                        pixels[i + 0] = nb;
+                        pixels[i + 1] = ng;
+                        pixels[i + 2] = nr;
+                        // alpha unchanged
+                    }
+
+                    var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                    wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                    wb.Freeze();
+                    tintedSpriteCache[key] = wb;
+                    return wb;
+                }
+                else
+                {
+                    tintedSpriteCache[key] = src;
+                    return src;
+                }
+            }
+            catch
+            {
+                return src;
+            }
+        }
+
+        // Regenerate toned images for tiles and saw frames using HSL hue shifting.
+        // This mirrors MainWindow.UpdateTileTint's behavior so simulator can apply tints locally.
+        private void UpdateTonedImagesForTileTint(Color newTileTint)
+        {
+            try
+            {
+                // Create HSL-shifted copies for tiles and saw frames
+                if (tileImages != null)
+                    tileTonedImages = CreateHslShiftedImages(tileImages, newTileTint);
+
+                if (sawFrame1TilesTinted != null && sawFrame1TilesTinted.Length > 0)
+                {
+                    // If we already had tinted saw frames passed in, re-tint the original saw frames
+                    // Fallback: if original arrays are null, do nothing
+                }
+
+                // For saw frames we don't have originals here; MainWindow may have passed tinted versions already.
+                // If those originals are available elsewhere in the simulator, we could re-tint them here.
+            }
+            catch { }
+        }
+
+        // Create HSL-hue shifted copies of images. For each visible, non-black/non-white pixel
+        // we replace the hue with the tint's hue while preserving the original saturation and lightness.
+        // Returns originals if tint.A == 0.
+        private ImageSource[]? CreateHslShiftedImages(ImageSource[]? originals, Color tint)
+        {
+            if (originals == null) return null;
+            if (tint.A == 0) return originals; // no change requested
+            // Precompute tint hue
+            RgbToHsl(tint.R, tint.G, tint.B, out double tintH, out double tintS, out double tintL);
+
+            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte b = pixels[i + 0];
+                            byte g = pixels[i + 1];
+                            byte r = pixels[i + 2];
+                            byte a = pixels[i + 3];
+                            // Skip fully transparent, near-black, and near-white pixels
+                            bool isBlack = (r <= 12 && g <= 12 && b <= 12);
+                            bool isWhite = (r >= 249 && g >= 249 && b >= 249);
+                            if (a == 0 || isBlack || isWhite) continue;
+
+                            // Convert pixel to HSL, replace hue with tint hue, keep S/L
+                            RgbToHsl(r, g, b, out double ph, out double ps, out double pl);
+                            double nh = tintH; // replace hue
+                            double ns = ps;
+                            double nl = pl;
+                            RgbFromHsl(nh, ns, nl, out byte nr, out byte ng, out byte nb);
+
+                            pixels[i + 0] = nb;
+                            pixels[i + 1] = ng;
+                            pixels[i + 2] = nr;
+                            // alpha unchanged
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch
+                    {
+                        outList.Add(src);
+                    }
+                }
+                else
+                {
+                    outList.Add(src);
+                }
+            }
+            return outList.ToArray();
+        }
+
+        // Create hue-shifted images with interpolation towards tint hue (used for ground in MainWindow)
+        private ImageSource[]? CreateHueShiftedImages(ImageSource[]? originals, Color tint)
+        {
+            if (originals == null) return null;
+            if (tint.A == 0) return originals; // strength 0 => no change
+
+            double strength = tint.A / 255.0;
+            // convert tint color to HSL once
+            RgbToHsl(tint.R, tint.G, tint.B, out double tintH, out double tintS, out double tintL);
+            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            int b = pixels[i + 0];
+                            int g = pixels[i + 1];
+                            int r = pixels[i + 2];
+                            int a = pixels[i + 3];
+
+                            RgbToHsl((byte)r, (byte)g, (byte)b, out double h0, out double s0, out double l0);
+
+                            // interpolate hue towards tint hue, and optionally scale/lerp saturation
+                            double newH = LerpAngle(h0, tintH, strength);
+                            double newS = s0 * (1.0 - strength) + tintS * strength;
+                            double newL = l0; // preserve original lightness to keep details
+
+                            RgbFromHsl(newH, newS, newL, out byte r2, out byte g2, out byte b2);
+
+                            pixels[i + 0] = b2;
+                            pixels[i + 1] = g2;
+                            pixels[i + 2] = r2;
+                            pixels[i + 3] = (byte)a; // keep original alpha
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch
+                    {
+                        outList.Add(src);
+                    }
+                }
+                else
+                {
+                    outList.Add(src);
+                }
+            }
+            return outList.ToArray();
+        }
+
+        // Helper: convert RGB byte values to HSL (H in degrees 0..360, S/L 0..1)
+        private static void RgbToHsl(byte r8, byte g8, byte b8, out double h, out double s, out double l)
+        {
+            double r = r8 / 255.0, g = g8 / 255.0, b = b8 / 255.0;
+            double max = Math.Max(r, Math.Max(g, b));
+            double min = Math.Min(r, Math.Min(g, b));
+            l = (max + min) / 2.0;
+            if (max == min)
+            {
+                h = 0.0; s = 0.0; return;
+            }
+            double d = max - min;
+            s = l > 0.5 ? d / (2.0 - max - min) : d / (max + min);
+            if (max == r) h = (g - b) / d + (g < b ? 6 : 0);
+            else if (max == g) h = (b - r) / d + 2;
+            else h = (r - g) / d + 4;
+            h *= 60.0;
+        }
+
+        // Helper: convert HSL to RGB bytes. H in degrees 0..360, S/L 0..1
+        private static void RgbFromHsl(double h, double s, double l, out byte r8, out byte g8, out byte b8)
+        {
+            double r, g, b;
+            if (s == 0)
+            {
+                r = g = b = l; // achromatic
+            }
+            else
+            {
+                double q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                double p = 2 * l - q;
+                double hk = (h % 360.0) / 360.0;
+                double[] t = new double[3] { hk + 1.0 / 3.0, hk, hk - 1.0 / 3.0 };
+                double[] rgb = new double[3];
+                for (int i = 0; i < 3; i++)
+                {
+                    double tc = t[i];
+                    if (tc < 0) tc += 1.0; if (tc > 1) tc -= 1.0;
+                    if (tc < 1.0 / 6.0) rgb[i] = p + (q - p) * 6.0 * tc;
+                    else if (tc < 1.0 / 2.0) rgb[i] = q;
+                    else if (tc < 2.0 / 3.0) rgb[i] = p + (q - p) * (2.0 / 3.0 - tc) * 6.0;
+                    else rgb[i] = p;
+                }
+                r = rgb[0]; g = rgb[1]; b = rgb[2];
+            }
+            r8 = (byte)Math.Max(0, Math.Min(255, (int)Math.Round(r * 255.0)));
+            g8 = (byte)Math.Max(0, Math.Min(255, (int)Math.Round(g * 255.0)));
+            b8 = (byte)Math.Max(0, Math.Min(255, (int)Math.Round(b * 255.0)));
+        }
+
+        // Linear interpolation for circular hue (degrees). t in 0..1
+        private static double LerpAngle(double a, double b, double t)
+        {
+            // convert to radians for shortest path
+            double diff = (b - a + 540.0) % 360.0 - 180.0;
+            return (a + diff * t + 360.0) % 360.0;
         }
     }
 }

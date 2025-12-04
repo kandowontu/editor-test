@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Simulator" Height="320" Width="288" ResizeMode="NoResize" WindowStartupLocation="CenterOwner">
     <Grid Background="#FF000000">
-        <Canvas x:Name="RenderCanvas" Width="240" Height="256" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <!-- Canvas size corrected to match runtime NES_W * TILE / NES_H * TILE (256x240) -->
+        <!-- ClipToBounds prevents the cached tile layer (which is intentionally one tile larger) from rendering outside the visible area -->
+        <Canvas x:Name="RenderCanvas" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True" />
     </Grid>
 </Window>

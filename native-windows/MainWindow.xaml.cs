@@ -5934,6 +5934,43 @@ namespace FamidashEditor
                         if (bluePadUpFrame1 != null && bluePadUpFrame1.Length > 0) previewMap[0xFE] = bluePadUpFrame1[0];
                     }
                     catch { }
+
+                    // Yellow pad preview mapping (down/up)
+                    try
+                    {
+                        if (yellowPadDownFrame1 != null && yellowPadDownFrame1.Length > 0) previewMap[0x0A] = yellowPadDownFrame1[0];
+                        if (yellowPadUpFrame1 != null && yellowPadUpFrame1.Length > 0) previewMap[0x0C] = yellowPadUpFrame1[0];
+                    }
+                    catch { }
+
+                    // Also map primary pad sprite IDs to their colored variants if available
+                    try
+                    {
+                        if (bluePadDownFrame1 != null && bluePadDownFrame1.Length > 0) previewMap[0x0D] = bluePadDownFrame1[0];
+                        if (bluePadUpFrame1 != null && bluePadUpFrame1.Length > 0) previewMap[0x0E] = bluePadUpFrame1[0];
+                        if (pinkPadDownFrame1 != null && pinkPadDownFrame1.Length > 0) previewMap[0x25] = pinkPadDownFrame1[0];
+                        if (pinkPadUpFrame1 != null && pinkPadUpFrame1.Length > 0) previewMap[0x26] = pinkPadUpFrame1[0];
+                    }
+                    catch { }
+
+                    // Pole variants: short/medium/long and left/right mappings
+                    try
+                    {
+                        if (poleShortFrame1 != null && poleShortFrame1.Length > 0) previewMap[0x2C] = poleShortFrame1[0];
+                        if (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame1.Length > 0) previewMap[0x3C] = poleShortUpsideDownFrame1[0];
+                        if (poleMediumFrame1 != null && poleMediumFrame1.Length > 0) previewMap[0x2C] = poleMediumFrame1[0];
+                        if (poleMediumUpsideDownFrame1 != null && poleMediumUpsideDownFrame1.Length > 0) previewMap[0x3C] = poleMediumUpsideDownFrame1[0];
+                        // Also map medium pole variants to 0x2B/0x3B (medium pole sprites)
+                        if (poleMediumFrame1 != null && poleMediumFrame1.Length > 0) previewMap[0x2B] = poleMediumFrame1[0];
+                        if (poleMediumUpsideDownFrame1 != null && poleMediumUpsideDownFrame1.Length > 0) previewMap[0x3B] = poleMediumUpsideDownFrame1[0];
+                        if (poleLongFrame1 != null && poleLongFrame1.Length > 0) previewMap[0x2A] = poleLongFrame1[0];
+                        if (poleLongUpsideDownFrame1 != null && poleLongUpsideDownFrame1.Length > 0) previewMap[0x3A] = poleLongUpsideDownFrame1[0];
+                        if (poleLeftShortFrame1 != null && poleLeftShortFrame1.Length > 0) previewMap[0x38] = poleLeftShortFrame1[0];
+                        if (poleRightShortFrame1 != null && poleRightShortFrame1.Length > 0) previewMap[0x39] = poleRightShortFrame1[0];
+                        if (poleLeftMediumFrame1 != null && poleLeftMediumFrame1.Length > 0) previewMap[0x3E] = poleLeftMediumFrame1[0];
+                        if (poleRightMediumFrame1 != null && poleRightMediumFrame1.Length > 0) previewMap[0x3F] = poleRightMediumFrame1[0];
+                    }
+                    catch { }
                 }
                 catch { }
 
@@ -6001,10 +6038,35 @@ namespace FamidashEditor
                     }
                     // Pads and two-frame decorations
                     if (redPadFrame1 != null && redPadFrame2 != null && redPadFrame3 != null && redPadFrame4 != null) animationFrames[0x52] = new ImageSource?[] { redPadFrame1[0], redPadFrame2[0], redPadFrame3[0], redPadFrame4[0] };
+                    if (yellowPadDownFrame1 != null && yellowPadDownFrame2 != null && yellowPadDownFrame3 != null && yellowPadDownFrame4 != null) animationFrames[0x0A] = new ImageSource?[] { yellowPadDownFrame1[0], yellowPadDownFrame2[0], yellowPadDownFrame3[0], yellowPadDownFrame4[0] };
+                    if (yellowPadUpFrame1 != null && yellowPadUpFrame2 != null && yellowPadUpFrame3 != null && yellowPadUpFrame4 != null) animationFrames[0x0C] = new ImageSource?[] { yellowPadUpFrame1[0], yellowPadUpFrame2[0], yellowPadUpFrame3[0], yellowPadUpFrame4[0] };
+                    if (bluePadDownFrame1 != null && bluePadDownFrame2 != null && bluePadDownFrame3 != null && bluePadDownFrame4 != null) animationFrames[0x0D] = new ImageSource?[] { bluePadDownFrame1[0], bluePadDownFrame2[0], bluePadDownFrame3[0], bluePadDownFrame4[0] };
+                    if (bluePadUpFrame1 != null && bluePadUpFrame2 != null && bluePadUpFrame3 != null && bluePadUpFrame4 != null) animationFrames[0x0E] = new ImageSource?[] { bluePadUpFrame1[0], bluePadUpFrame2[0], bluePadUpFrame3[0], bluePadUpFrame4[0] };
+                    if (pinkPadDownFrame1 != null && pinkPadDownFrame2 != null && pinkPadDownFrame3 != null && pinkPadDownFrame4 != null) animationFrames[0x25] = new ImageSource?[] { pinkPadDownFrame1[0], pinkPadDownFrame2[0], pinkPadDownFrame3[0], pinkPadDownFrame4[0] };
+                    if (pinkPadUpFrame1 != null && pinkPadUpFrame2 != null && pinkPadUpFrame3 != null && pinkPadUpFrame4 != null) animationFrames[0x26] = new ImageSource?[] { pinkPadUpFrame1[0], pinkPadUpFrame2[0], pinkPadUpFrame3[0], pinkPadUpFrame4[0] };
+                    // Pole two-frame animations
+                    if (poleShortFrame1 != null && poleShortFrame2 != null) animationFrames[0x2C] = new ImageSource?[] { poleShortFrame1[0], poleShortFrame2[0] };
+                    if (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame2 != null) animationFrames[0x3C] = new ImageSource?[] { poleShortUpsideDownFrame1[0], poleShortUpsideDownFrame2[0] };
+                    if (poleMediumFrame1 != null && poleMediumFrame2 != null) animationFrames[0x2C] = new ImageSource?[] { poleMediumFrame1[0], poleMediumFrame2[0] };
+                    if (poleMediumUpsideDownFrame1 != null && poleMediumUpsideDownFrame2 != null) animationFrames[0x3C] = new ImageSource?[] { poleMediumUpsideDownFrame1[0], poleMediumUpsideDownFrame2[0] };
+                    // Medium pole variants for sprite IDs 0x2B/0x3B (use same medium frames)
+                    if (poleMediumFrame1 != null && poleMediumFrame2 != null) animationFrames[0x2B] = new ImageSource?[] { poleMediumFrame1[0], poleMediumFrame2[0] };
+                    if (poleMediumUpsideDownFrame1 != null && poleMediumUpsideDownFrame2 != null) animationFrames[0x3B] = new ImageSource?[] { poleMediumUpsideDownFrame1[0], poleMediumUpsideDownFrame2[0] };
+                    if (poleLongFrame1 != null && poleLongFrame2 != null) animationFrames[0x2A] = new ImageSource?[] { poleLongFrame1[0], poleLongFrame2[0] };
+                    if (poleLongUpsideDownFrame1 != null && poleLongUpsideDownFrame2 != null) animationFrames[0x3A] = new ImageSource?[] { poleLongUpsideDownFrame1[0], poleLongUpsideDownFrame2[0] };
+                    if (poleLeftShortFrame1 != null && poleLeftShortFrame2 != null) animationFrames[0x38] = new ImageSource?[] { poleLeftShortFrame1[0], poleLeftShortFrame2[0] };
+                    if (poleRightShortFrame1 != null && poleRightShortFrame2 != null) animationFrames[0x39] = new ImageSource?[] { poleRightShortFrame1[0], poleRightShortFrame2[0] };
+                    if (poleLeftMediumFrame1 != null && poleLeftMediumFrame2 != null) animationFrames[0x3E] = new ImageSource?[] { poleLeftMediumFrame1[0], poleLeftMediumFrame2[0] };
+                    if (poleRightMediumFrame1 != null && poleRightMediumFrame2 != null) animationFrames[0x3F] = new ImageSource?[] { poleRightMediumFrame1[0], poleRightMediumFrame2[0] };
                     if (starFrame1 != null && starFrame2 != null) animationFrames[0x36] = new ImageSource?[] { starFrame1[0], starFrame2[0] };
                     if (pulsingBallFrame1 != null && pulsingBallFrame2 != null) animationFrames[0x49] = new ImageSource?[] { pulsingBallFrame1[0], pulsingBallFrame2[0] };
                     if (musicNoteFrame1 != null && musicNoteFrame2 != null) animationFrames[0x4A] = new ImageSource?[] { musicNoteFrame1[0], musicNoteFrame2[0] };
                     if (diamondFrame1 != null && diamondFrame2 != null) animationFrames[0x32] = new ImageSource?[] { diamondFrame1[0], diamondFrame2[0] };
+                    // Two-frame decorations: ensure half-diamond, question, exclamation and X also animate
+                    if (diamondHalfFrame1 != null && diamondHalfFrame2 != null) animationFrames[0x33] = new ImageSource?[] { diamondHalfFrame1[0], diamondHalfFrame2[0] };
+                    if (questionMarkFrame1 != null && questionMarkFrame2 != null) animationFrames[0x34] = new ImageSource?[] { questionMarkFrame1[0], questionMarkFrame2[0] };
+                    if (exclamationFrame1 != null && exclamationFrame2 != null) animationFrames[0x35] = new ImageSource?[] { exclamationFrame1[0], exclamationFrame2[0] };
+                    if (xFrame1 != null && xFrame2 != null) animationFrames[0x37] = new ImageSource?[] { xFrame1[0], xFrame2[0] };
                 }
                 catch { }
 
