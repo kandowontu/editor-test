@@ -157,6 +157,26 @@ namespace FamidashEditor
             this.largeSawFrame1TilesTinted = largeSawFrame1TilesTinted;
             this.largeSawFrame2TilesTinted = largeSawFrame2TilesTinted;
 
+            // Ensure decoration sprites pulse even when editor didn't provide animation frames.
+            try
+            {
+                if (animationFrames != null && previewSpriteMap != null)
+                {
+                    foreach (var id in decorationSpriteIds)
+                    {
+                        if (!animationFrames.ContainsKey(id))
+                        {
+                            if (previewSpriteMap.TryGetValue(id, out var pimg) && pimg != null)
+                            {
+                                var frames = CreateTwoFramePulse(pimg);
+                                if (frames != null) animationFrames[id] = frames;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+
             // (debug reporting removed)
 
             // Clamp initial cameraY so visible region fits (fixed-point)
@@ -493,38 +513,47 @@ namespace FamidashEditor
                                 int idx = mapY * mapWidth + mapX;
                                 int t = tiles[idx];
                                 int animatedTileIndex = MapAnimatedTileIndex(t);
-                                if (animatedTileIndex != t || t >= 1000) hadAnimated = true;
                                 int useTileIndex = animatedTileIndex;
+                                if (animatedTileIndex != t || useTileIndex >= 1000) hadAnimated = true;
                                 ImageSource? chosenTile = null;
                                 try
                                 {
-                                    if (t >= 1000)
+                                    if (useTileIndex >= 1000)
                                     {
                                         // Use the same animation cadence as sprite frames so saws flip in sync
                                         bool frame2 = (((animationFrame * 9) / 20) % 2) != 0;
-                                                if (t >= 1000 && t <= 1007)
-                                                {
-                                                    int off = (t - 1000) % 4;
-                                                    int len1 = sawFrame1TilesTinted != null ? sawFrame1TilesTinted.Length : 0;
-                                                    int len2 = sawFrame2TilesTinted != null ? sawFrame2TilesTinted.Length : 0;
-                                                    // Use sprite rhythm to pick an index; fall back to boolean pair selection
-                                                    if (len1 > 1 || len2 > 1)
-                                                    {
-                                                        int frameIdx = (((animationFrame * 9) / 20) + off) % Math.Max(1, Math.Max(len1, len2));
-                                                        chosenTile = (sawFrame1TilesTinted != null && frameIdx < sawFrame1TilesTinted.Length) ? sawFrame1TilesTinted[frameIdx]
-                                                                    : (sawFrame2TilesTinted != null && frameIdx < sawFrame2TilesTinted.Length) ? sawFrame2TilesTinted[frameIdx]
-                                                                    : null;
-                                                    }
-                                                    else
-                                                    {
-                                                        bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
-                                                        chosenTile = useFrame2 ? (sawFrame2TilesTinted != null && off < sawFrame2TilesTinted.Length ? sawFrame2TilesTinted[off] : null)
-                                                                              : (sawFrame1TilesTinted != null && off < sawFrame1TilesTinted.Length ? sawFrame1TilesTinted[off] : null);
-                                                    }
-                                                }
-                                        else if (t >= 1010 && t <= 1015)
+                                        int ut = useTileIndex;
+                                        // Prefer explicit tileImages/toned images for animated tile indices when available
+                                        if (tileTonedImages != null && useTileIndex >= 0 && useTileIndex < tileTonedImages.Length && tileTonedImages[useTileIndex] != null)
                                         {
-                                            int off = (t - 1010) % 3;
+                                            chosenTile = tileTonedImages[useTileIndex];
+                                        }
+                                        else if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
+                                        {
+                                            chosenTile = tileImages[useTileIndex];
+                                        }
+                                        else if (ut >= 1000 && ut <= 1007)
+                                        {
+                                            int off = (ut - 1000) % 4;
+                                            int len1 = sawFrame1TilesTinted != null ? sawFrame1TilesTinted.Length : 0;
+                                            int len2 = sawFrame2TilesTinted != null ? sawFrame2TilesTinted.Length : 0;
+                                            if (len1 > 1 || len2 > 1)
+                                            {
+                                                int frameIdx = (((animationFrame * 9) / 20) + off) % Math.Max(1, Math.Max(len1, len2));
+                                                chosenTile = (sawFrame1TilesTinted != null && frameIdx < sawFrame1TilesTinted.Length) ? sawFrame1TilesTinted[frameIdx]
+                                                            : (sawFrame2TilesTinted != null && frameIdx < sawFrame2TilesTinted.Length) ? sawFrame2TilesTinted[frameIdx]
+                                                            : null;
+                                            }
+                                            else
+                                            {
+                                                bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+                                                chosenTile = useFrame2 ? (sawFrame2TilesTinted != null && off < sawFrame2TilesTinted.Length ? sawFrame2TilesTinted[off] : null)
+                                                                      : (sawFrame1TilesTinted != null && off < sawFrame1TilesTinted.Length ? sawFrame1TilesTinted[off] : null);
+                                            }
+                                        }
+                                        else if (ut >= 1010 && ut <= 1015)
+                                        {
+                                            int off = (ut - 1010) % 3;
                                             int len1 = smallSawFrame1TilesTinted != null ? smallSawFrame1TilesTinted.Length : 0;
                                             int len2 = smallSawFrame2TilesTinted != null ? smallSawFrame2TilesTinted.Length : 0;
                                             if (len1 > 1 || len2 > 1)
@@ -541,9 +570,9 @@ namespace FamidashEditor
                                                                       : (smallSawFrame1TilesTinted != null && off < smallSawFrame1TilesTinted.Length ? smallSawFrame1TilesTinted[off] : null);
                                             }
                                         }
-                                        else if (t >= 1020 && t <= 1037)
+                                        else if (ut >= 1020 && ut <= 1037)
                                         {
-                                            int off = (t - 1020) % 9;
+                                            int off = (ut - 1020) % 9;
                                             int len1 = largeSawFrame1TilesTinted != null ? largeSawFrame1TilesTinted.Length : 0;
                                             int len2 = largeSawFrame2TilesTinted != null ? largeSawFrame2TilesTinted.Length : 0;
                                             if (len1 > 1 || len2 > 1)
@@ -568,12 +597,13 @@ namespace FamidashEditor
 
                                 if (chosenTile == null && useTileIndex >= 0)
                                 {
+                                    // Use the animated tile index (useTileIndex) consistently when selecting the image.
                                     if (useTileIndex >= 1000)
                                     {
-                                        if (tileTonedImages != null && t >= 0 && t < tileTonedImages.Length && tileTonedImages[t] != null)
-                                            chosenTile = tileTonedImages[t];
-                                        else if (tileImages != null && t >= 0 && t < tileImages.Length && tileImages[t] != null)
-                                            chosenTile = tileImages[t];
+                                        if (tileTonedImages != null && useTileIndex >= 0 && useTileIndex < tileTonedImages.Length && tileTonedImages[useTileIndex] != null)
+                                            chosenTile = tileTonedImages[useTileIndex];
+                                        else if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
+                                            chosenTile = tileImages[useTileIndex];
                                     }
                                     else
                                     {
@@ -1041,6 +1071,51 @@ namespace FamidashEditor
                 }
             }
             return outList.ToArray();
+        }
+
+        // Create a simple 2-frame pulsing animation from a single sprite image by producing
+        // a slightly brightened second frame. Returns null on failure.
+        private ImageSource?[]? CreateTwoFramePulse(ImageSource src)
+        {
+            try
+            {
+                if (src is BitmapSource bs)
+                {
+                    // Convert to BGRA32
+                    var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                    int w = Math.Max(1, conv.PixelWidth);
+                    int h = Math.Max(1, conv.PixelHeight);
+                    int stride = w * 4;
+                    var pixels = new byte[h * stride];
+                    conv.CopyPixels(pixels, stride, 0);
+
+                    // Create brightened copy by blending each color toward white (alpha preserved)
+                    var bright = new byte[h * stride];
+                    const double factor = 0.35; // how strongly to brighten
+                    for (int i = 0; i < pixels.Length; i += 4)
+                    {
+                        byte b = pixels[i + 0];
+                        byte g = pixels[i + 1];
+                        byte r = pixels[i + 2];
+                        byte a = pixels[i + 3];
+                        if (a == 0) { bright[i + 0] = b; bright[i + 1] = g; bright[i + 2] = r; bright[i + 3] = a; continue; }
+                        bright[i + 0] = (byte)Math.Min(255, (int)Math.Round(b + (255 - b) * factor));
+                        bright[i + 1] = (byte)Math.Min(255, (int)Math.Round(g + (255 - g) * factor));
+                        bright[i + 2] = (byte)Math.Min(255, (int)Math.Round(r + (255 - r) * factor));
+                        bright[i + 3] = a;
+                    }
+
+                    var wb1 = new WriteableBitmap(conv.PixelWidth, conv.PixelHeight, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                    wb1.WritePixels(new Int32Rect(0, 0, conv.PixelWidth, conv.PixelHeight), pixels, stride, 0);
+                    wb1.Freeze();
+                    var wb2 = new WriteableBitmap(conv.PixelWidth, conv.PixelHeight, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                    wb2.WritePixels(new Int32Rect(0, 0, conv.PixelWidth, conv.PixelHeight), bright, stride, 0);
+                    wb2.Freeze();
+                    return new ImageSource?[] { wb1, wb2 };
+                }
+            }
+            catch { }
+            return null;
         }
 
         // Create hue-shifted images with interpolation towards tint hue (used for ground in MainWindow)

@@ -218,6 +218,8 @@ namespace FamidashEditor
         public Color TileTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
         public string? SelectedSong { get; set; } = null;
     }
+
+    
     
     private List<FileTabData> openFiles = new List<FileTabData>();
     private int currentFileIndex = -1;
@@ -1810,6 +1812,9 @@ namespace FamidashEditor
         public MainWindow()
         {
             InitializeComponent();
+
+                // Ensure simulator menu opens simulator window and passes preview/animation maps
+                MenuOpenSimulator.Click += MenuOpenSimulator_Click;
             LoadSettings();
             LoadRecentFiles();
             
@@ -1826,6 +1831,8 @@ namespace FamidashEditor
             try { if (StopFamiButton != null) StopFamiButton.Click += StopFamiButton_Click; } catch { }
             // Wire configure FamiStudio menu
             try { if (MenuConfigureFamiStudio != null) MenuConfigureFamiStudio.Click += MenuConfigureFamiStudio_Click; } catch { }
+
+            // Simulator menu click handler added above in constructor wiring
 
             // Initialize Structure popup icons when tile images are available (will refresh when tiles loaded)
             try { InitializeStructurePopupIcons(); } catch { }
@@ -2641,6 +2648,11 @@ namespace FamidashEditor
                 MapScrollViewer.ManipulationDelta += MapScrollViewer_ManipulationDelta;
             }
         }
+
+    private void MenuOpenSimulator_Click(object? sender, RoutedEventArgs e)
+    {
+        try { OpenSimulatorWindow(); } catch { }
+    }
 
         private void MenuOpenFmsPlayer_Click(object sender, RoutedEventArgs e)
         {
@@ -16375,10 +16387,7 @@ namespace FamidashEditor
             catch { }
         }
 
-        private void MenuOpenSimulator_Click(object? sender, RoutedEventArgs e)
-        {
-            try { OpenSimulatorWindow(); } catch { }
-        }
+        
 
         private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
