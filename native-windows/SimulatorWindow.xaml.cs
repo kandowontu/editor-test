@@ -537,18 +537,22 @@ namespace FamidashEditor
                                             int off = (ut - 1000) % 4;
                                             int len1 = sawFrame1TilesTinted != null ? sawFrame1TilesTinted.Length : 0;
                                             int len2 = sawFrame2TilesTinted != null ? sawFrame2TilesTinted.Length : 0;
-                                            if (len1 > 1 || len2 > 1)
+                                            int tileCount = 4;
+                                            int nFrames1 = len1 >= tileCount && len1 % tileCount == 0 ? len1 / tileCount : 1;
+                                            int nFrames2 = len2 >= tileCount && len2 % tileCount == 0 ? len2 / tileCount : 1;
+                                            int frameCount = Math.Max(1, Math.Max(nFrames1, nFrames2));
+                                            int frameIdx = (((animationFrame * 9) / 20)) % frameCount;
+                                            bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+
+                                            if (useFrame2 && sawFrame2TilesTinted != null)
                                             {
-                                                int frameIdx = (((animationFrame * 9) / 20) + off) % Math.Max(1, Math.Max(len1, len2));
-                                                chosenTile = (sawFrame1TilesTinted != null && frameIdx < sawFrame1TilesTinted.Length) ? sawFrame1TilesTinted[frameIdx]
-                                                            : (sawFrame2TilesTinted != null && frameIdx < sawFrame2TilesTinted.Length) ? sawFrame2TilesTinted[frameIdx]
-                                                            : null;
+                                                int arrIdx = (nFrames2 > 1 ? (frameIdx % nFrames2) * tileCount + off : off);
+                                                if (arrIdx >= 0 && arrIdx < len2) chosenTile = sawFrame2TilesTinted[arrIdx];
                                             }
-                                            else
+                                            if (chosenTile == null && sawFrame1TilesTinted != null)
                                             {
-                                                bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
-                                                chosenTile = useFrame2 ? (sawFrame2TilesTinted != null && off < sawFrame2TilesTinted.Length ? sawFrame2TilesTinted[off] : null)
-                                                                      : (sawFrame1TilesTinted != null && off < sawFrame1TilesTinted.Length ? sawFrame1TilesTinted[off] : null);
+                                                int arrIdx = (nFrames1 > 1 ? (frameIdx % nFrames1) * tileCount + off : off);
+                                                if (arrIdx >= 0 && arrIdx < len1) chosenTile = sawFrame1TilesTinted[arrIdx];
                                             }
                                         }
                                         else if (ut >= 1010 && ut <= 1015)
@@ -556,18 +560,22 @@ namespace FamidashEditor
                                             int off = (ut - 1010) % 3;
                                             int len1 = smallSawFrame1TilesTinted != null ? smallSawFrame1TilesTinted.Length : 0;
                                             int len2 = smallSawFrame2TilesTinted != null ? smallSawFrame2TilesTinted.Length : 0;
-                                            if (len1 > 1 || len2 > 1)
+                                            int tileCount = 3;
+                                            int nFrames1 = len1 >= tileCount && len1 % tileCount == 0 ? len1 / tileCount : 1;
+                                            int nFrames2 = len2 >= tileCount && len2 % tileCount == 0 ? len2 / tileCount : 1;
+                                            int frameCount = Math.Max(1, Math.Max(nFrames1, nFrames2));
+                                            int frameIdx = (((animationFrame * 9) / 20)) % frameCount;
+                                            bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+
+                                            if (useFrame2 && smallSawFrame2TilesTinted != null)
                                             {
-                                                int frameIdx = (((animationFrame * 9) / 20) + off) % Math.Max(1, Math.Max(len1, len2));
-                                                chosenTile = (smallSawFrame1TilesTinted != null && frameIdx < smallSawFrame1TilesTinted.Length) ? smallSawFrame1TilesTinted[frameIdx]
-                                                            : (smallSawFrame2TilesTinted != null && frameIdx < smallSawFrame2TilesTinted.Length) ? smallSawFrame2TilesTinted[frameIdx]
-                                                            : null;
+                                                int arrIdx = (nFrames2 > 1 ? (frameIdx % nFrames2) * tileCount + off : off);
+                                                if (arrIdx >= 0 && arrIdx < len2) chosenTile = smallSawFrame2TilesTinted[arrIdx];
                                             }
-                                            else
+                                            if (chosenTile == null && smallSawFrame1TilesTinted != null)
                                             {
-                                                bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
-                                                chosenTile = useFrame2 ? (smallSawFrame2TilesTinted != null && off < smallSawFrame2TilesTinted.Length ? smallSawFrame2TilesTinted[off] : null)
-                                                                      : (smallSawFrame1TilesTinted != null && off < smallSawFrame1TilesTinted.Length ? smallSawFrame1TilesTinted[off] : null);
+                                                int arrIdx = (nFrames1 > 1 ? (frameIdx % nFrames1) * tileCount + off : off);
+                                                if (arrIdx >= 0 && arrIdx < len1) chosenTile = smallSawFrame1TilesTinted[arrIdx];
                                             }
                                         }
                                         else if (ut >= 1020 && ut <= 1037)
@@ -575,18 +583,22 @@ namespace FamidashEditor
                                             int off = (ut - 1020) % 9;
                                             int len1 = largeSawFrame1TilesTinted != null ? largeSawFrame1TilesTinted.Length : 0;
                                             int len2 = largeSawFrame2TilesTinted != null ? largeSawFrame2TilesTinted.Length : 0;
-                                            if (len1 > 1 || len2 > 1)
+                                            int tileCount = 9;
+                                            int nFrames1 = len1 >= tileCount && len1 % tileCount == 0 ? len1 / tileCount : 1;
+                                            int nFrames2 = len2 >= tileCount && len2 % tileCount == 0 ? len2 / tileCount : 1;
+                                            int frameCount = Math.Max(1, Math.Max(nFrames1, nFrames2));
+                                            int frameIdx = (((animationFrame * 9) / 20)) % frameCount;
+                                            bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+
+                                            if (useFrame2 && largeSawFrame2TilesTinted != null)
                                             {
-                                                int frameIdx = (((animationFrame * 9) / 20) + off) % Math.Max(1, Math.Max(len1, len2));
-                                                chosenTile = (largeSawFrame1TilesTinted != null && frameIdx < largeSawFrame1TilesTinted.Length) ? largeSawFrame1TilesTinted[frameIdx]
-                                                            : (largeSawFrame2TilesTinted != null && frameIdx < largeSawFrame2TilesTinted.Length) ? largeSawFrame2TilesTinted[frameIdx]
-                                                            : null;
+                                                int arrIdx = (nFrames2 > 1 ? (frameIdx % nFrames2) * tileCount + off : off);
+                                                if (arrIdx >= 0 && arrIdx < len2) chosenTile = largeSawFrame2TilesTinted[arrIdx];
                                             }
-                                            else
+                                            if (chosenTile == null && largeSawFrame1TilesTinted != null)
                                             {
-                                                bool useFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
-                                                chosenTile = useFrame2 ? (largeSawFrame2TilesTinted != null && off < largeSawFrame2TilesTinted.Length ? largeSawFrame2TilesTinted[off] : null)
-                                                                      : (largeSawFrame1TilesTinted != null && off < largeSawFrame1TilesTinted.Length ? largeSawFrame1TilesTinted[off] : null);
+                                                int arrIdx = (nFrames1 > 1 ? (frameIdx % nFrames1) * tileCount + off : off);
+                                                if (arrIdx >= 0 && arrIdx < len1) chosenTile = largeSawFrame1TilesTinted[arrIdx];
                                             }
                                         }
 

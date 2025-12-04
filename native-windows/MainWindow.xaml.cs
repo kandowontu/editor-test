@@ -1814,7 +1814,6 @@ namespace FamidashEditor
             InitializeComponent();
 
                 // Ensure simulator menu opens simulator window and passes preview/animation maps
-                MenuOpenSimulator.Click += MenuOpenSimulator_Click;
             LoadSettings();
             LoadRecentFiles();
             
