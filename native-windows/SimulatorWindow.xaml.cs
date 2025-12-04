@@ -628,7 +628,37 @@ namespace FamidashEditor
 
                                 if (chosenTile != null)
                                 {
-                                    dc.DrawImage(chosenTile, dest);
+                                    // If the tile image is smaller than the canonical TILE size (e.g.
+                                    // saw halves that are half-height PNGs), draw it at its natural
+                                    // pixel size instead of scaling to fill the full tile. Align
+                                    // smaller images to the bottom of the tile so transparent
+                                    // padding sits above as expected.
+                                    if (chosenTile is BitmapSource bs)
+                                    {
+                                        // Use the bitmap's pixel dimensions to decide if it should be
+                                        // drawn at natural size. Device-independent units in this
+                                        // renderer correspond to pixels (RTB created at 96 DPI), so
+                                        // bs.PixelWidth/Height work directly.
+                                        double imgW = Math.Max(1.0, bs.PixelWidth);
+                                        double imgH = Math.Max(1.0, bs.PixelHeight);
+
+                                        if (imgW <= TILE && imgH <= TILE)
+                                        {
+                                            // bottom-align within the tile cell
+                                            double x = dest.X + (TILE - imgW) / 2.0;
+                                            double y = dest.Y + (TILE - imgH);
+                                            dc.DrawImage(chosenTile, new Rect(x, y, imgW, imgH));
+                                        }
+                                        else
+                                        {
+                                            // image larger than tile: fall back to scaling to tile
+                                            dc.DrawImage(chosenTile, dest);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        dc.DrawImage(chosenTile, dest);
+                                    }
                                 }
                                 else
                                 {
