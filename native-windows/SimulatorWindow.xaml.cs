@@ -28,10 +28,17 @@ namespace FamidashEditor
         private readonly bool hideColorTriggers;
         private readonly int gridRenderShiftYPx;
         private readonly System.Collections.Generic.Dictionary<int, ImageSource?>? previewSpriteMap;
-        private readonly System.Collections.Generic.Dictionary<int, ImageSource[]?>? animationFrames;
+        private readonly System.Collections.Generic.Dictionary<int, ImageSource?[]>? animationFrames;
+        // Tile-level animated saw frames (tinted versions) passed from MainWindow
+        private readonly ImageSource[]? sawFrame1TilesTinted;
+        private readonly ImageSource[]? sawFrame2TilesTinted;
+        private readonly ImageSource[]? smallSawFrame1TilesTinted;
+        private readonly ImageSource[]? smallSawFrame2TilesTinted;
+        private readonly ImageSource[]? largeSawFrame1TilesTinted;
+        private readonly ImageSource[]? largeSawFrame2TilesTinted;
 
-        private const int NES_W = 15;
-        private const int NES_H = 16;
+        private const int NES_W = 16; // horizontal tiles (was 15)
+        private const int NES_H = 15; // vertical tiles (was 16)
         private const int TILE = 16;
 
         // Fixed-point camera X with 8 fractional bits
@@ -61,16 +68,35 @@ namespace FamidashEditor
             { 0x21, CUBE_SPEED_X4  }
         };
 
-        private readonly DispatcherTimer timer;
+        private readonly System.Windows.Threading.DispatcherTimer timer;
+        private System.Diagnostics.Stopwatch renderStopwatch = new System.Diagnostics.Stopwatch();
+        private double accumulatedSeconds = 0.0;
 
         private int animationFrame = 0;
         private System.Collections.Generic.Dictionary<int, int> spriteFrameOffsets = new System.Collections.Generic.Dictionary<int, int>();
         private Random spriteAnimationRandom = new Random();
 
+        // Tile-layer cache and sprite pooling for performance
+        private RenderTargetBitmap? tileLayerCache = null;
+        private int cachedStartTileX = int.MinValue;
+        private int cachedStartTileY = int.MinValue;
+        private System.Windows.Controls.Image? tileLayerImage = null;
+        private System.Windows.Shapes.Rectangle? bgRectPersistent = null;
+        private System.Windows.Shapes.Rectangle? groundRectPersistent = null;
+        private System.Collections.Generic.List<System.Windows.Controls.Image> spritePool = new System.Collections.Generic.List<System.Windows.Controls.Image>();
+        private int spritesInUse = 0;
+        private bool lastCacheHadAnimatedTiles = false;
+        private int lastCacheAnimationFrame = -1;
+
         private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
+
+        // Track color-trigger anchors that have already been processed (so we don't resample every frame)
+        private System.Collections.Generic.HashSet<int> processedColorTriggers = new System.Collections.Generic.HashSet<int>();
 
         private bool upHeld = false;
         private bool downHeld = false;
+
+        // (debug overlay removed)
 
         public SimulatorWindow(
             int[] tiles,
@@ -91,7 +117,13 @@ namespace FamidashEditor
             , bool forcePreviewMode = true,
             bool hideColorTriggers = false,
             System.Collections.Generic.Dictionary<int, ImageSource?>? previewSpriteMap = null,
-            System.Collections.Generic.Dictionary<int, ImageSource[]?>? animationFrames = null
+            System.Collections.Generic.Dictionary<int, ImageSource?[]>? animationFrames = null,
+            ImageSource[]? sawFrame1TilesTinted = null,
+            ImageSource[]? sawFrame2TilesTinted = null,
+            ImageSource[]? smallSawFrame1TilesTinted = null,
+            ImageSource[]? smallSawFrame2TilesTinted = null,
+            ImageSource[]? largeSawFrame1TilesTinted = null,
+            ImageSource[]? largeSawFrame2TilesTinted = null
             )
         {
             InitializeComponent();
@@ -113,48 +145,123 @@ namespace FamidashEditor
             this.forcePreviewMode = forcePreviewMode;
             this.hideColorTriggers = hideColorTriggers;
             this.previewSpriteMap = previewSpriteMap ?? new System.Collections.Generic.Dictionary<int, ImageSource?>();
-            this.animationFrames = animationFrames ?? new System.Collections.Generic.Dictionary<int, ImageSource[]?>();
+            this.animationFrames = animationFrames ?? new System.Collections.Generic.Dictionary<int, ImageSource?[]>();
+            this.sawFrame1TilesTinted = sawFrame1TilesTinted;
+            this.sawFrame2TilesTinted = sawFrame2TilesTinted;
+            this.smallSawFrame1TilesTinted = smallSawFrame1TilesTinted;
+            this.smallSawFrame2TilesTinted = smallSawFrame2TilesTinted;
+            this.largeSawFrame1TilesTinted = largeSawFrame1TilesTinted;
+            this.largeSawFrame2TilesTinted = largeSawFrame2TilesTinted;
 
-            // Debug: report which sprite IDs present in this level have preview replacements
-            try
-            {
-                var ids = new System.Collections.Generic.HashSet<int>(sprites);
-                var present = new System.Collections.Generic.List<int>();
-                var missing = new System.Collections.Generic.List<int>();
-                foreach (var id in ids)
-                {
-                    if (id < 0) continue;
-                    if (this.previewSpriteMap != null && this.previewSpriteMap.TryGetValue(id, out var img) && img != null)
-                        present.Add(id);
-                    else
-                        missing.Add(id);
-                }
-                System.Diagnostics.Debug.WriteLine($"Simulator preview map: present={present.Count}, missing={missing.Count}");
-                if (missing.Count > 0)
-                {
-                    var sample = string.Join(",", missing.Take(32));
-                    System.Diagnostics.Debug.WriteLine($"Missing preview sprite IDs (sample up to 32): {sample}");
-                }
-            }
-            catch { }
+            // (debug reporting removed)
 
             // Clamp initial cameraY so visible region fits (fixed-point)
             int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
             // Start the simulator from the bottom of the map by default
             cameraY_fixed = maxY_fixed;
 
-            // Setup a 60FPS timer
-            timer = new DispatcherTimer(DispatcherPriority.Render);
-            timer.Interval = TimeSpan.FromMilliseconds(1000.0 / 60.0);
-            timer.Tick += Timer_Tick;
-            timer.Start();
+            // Setup a high-precision render loop using CompositionTarget and a stopwatch
+            timer = new System.Windows.Threading.DispatcherTimer(DispatcherPriority.Render);
+            renderStopwatch.Start();
+            System.Windows.Media.CompositionTarget.Rendering += CompositionTarget_Rendering;
 
             this.KeyDown += SimulatorWindow_KeyDown;
             this.KeyUp += SimulatorWindow_KeyUp;
-            this.Closed += (s, e) => timer.Stop();
+            this.Closed += (s, e) =>
+            {
+                try { System.Windows.Media.CompositionTarget.Rendering -= CompositionTarget_Rendering; } catch { }
+                try { timer.Stop(); } catch { }
+            };
 
             RenderCanvas.Width = NES_W * TILE;
             RenderCanvas.Height = NES_H * TILE;
+            // Keep nearest-neighbor sampling for bitmaps, but avoid forcing layout rounding/snapping
+            try
+            {
+                System.Windows.Media.RenderOptions.SetBitmapScalingMode(RenderCanvas, BitmapScalingMode.NearestNeighbor);
+            }
+            catch { }
+
+            // Ensure the window receives keyboard input for panning
+            this.Loaded += (s, e) => { try { this.Focus(); Keyboard.Focus(this); } catch { } };
+            // Create persistent background / tile-layer / ground children to avoid re-allocating each frame
+            try
+            {
+                bgRectPersistent = new System.Windows.Shapes.Rectangle
+                {
+                    Width = RenderCanvas.Width,
+                    Height = RenderCanvas.Height,
+                    Fill = new SolidColorBrush(backgroundTint)
+                };
+                System.Windows.Controls.Canvas.SetLeft(bgRectPersistent, 0);
+                System.Windows.Controls.Canvas.SetTop(bgRectPersistent, 0);
+                RenderCanvas.Children.Add(bgRectPersistent);
+
+                // Tile layer image: cache full tile block into a RenderTargetBitmap and blit
+                tileLayerImage = new System.Windows.Controls.Image
+                {
+                    Width = (NES_W + 1) * TILE,
+                    Height = (NES_H + 1) * TILE,
+                    Stretch = Stretch.None
+                };
+                System.Windows.Media.RenderOptions.SetBitmapScalingMode(tileLayerImage, BitmapScalingMode.NearestNeighbor);
+                RenderCanvas.Children.Add(tileLayerImage);
+
+                groundRectPersistent = new System.Windows.Shapes.Rectangle
+                {
+                    Width = RenderCanvas.Width,
+                    Height = TILE * Math.Min(NES_H, 2),
+                    Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 }
+                };
+                System.Windows.Controls.Canvas.SetLeft(groundRectPersistent, 0);
+                System.Windows.Controls.Canvas.SetTop(groundRectPersistent, (NES_H * TILE) - (TILE * Math.Min(NES_H, 2)));
+                RenderCanvas.Children.Add(groundRectPersistent);
+            }
+            catch { }
+
+            // (debug overlay removed)
+        }
+
+        // Map a tile index to its animated version based on current animation frame
+        // Mirrors MainWindow.GetAnimatedTileIndex for saw tiles so simulator can animate tile-based saws
+        private int MapAnimatedTileIndex(int originalIndex)
+        {
+            // Simulator forces preview-like behavior when requested
+            int mapped = originalIndex;
+
+            // Apply same preview remaps as editor (subset relevant to saws)
+            switch (originalIndex)
+            {
+                case 0xFC:
+                case 0xDF:
+                case 0xE3:
+                case 0xFE:
+                case 0xFF: mapped = 0x00; break;
+                case 0xFD: mapped = 0x26; break;
+            }
+
+            if (mapped >= 0x08 && mapped <= 0x0B)
+            {
+                bool showFrame2 = (((animationFrame * 3) / 4) % 2) == 1;
+                int tileOffset = mapped - 0x08;
+                return showFrame2 ? 1004 + tileOffset : 1000 + tileOffset;
+            }
+
+            if (mapped == 0x04 || mapped == 0x7D || mapped == 0x7F)
+            {
+                bool showFrame2 = (((animationFrame * 3) / 4) % 2) == 1;
+                int tileOffset = (mapped == 0x04) ? 0 : (mapped == 0x7D) ? 1 : 2;
+                return showFrame2 ? 1013 + tileOffset : 1010 + tileOffset;
+            }
+
+            if (mapped >= 0x74 && mapped <= 0x7C)
+            {
+                bool showFrame2 = (((animationFrame * 3) / 4) % 2) == 1;
+                int tileOffset = mapped - 0x74;
+                return showFrame2 ? 1029 + tileOffset : 1020 + tileOffset;
+            }
+
+            return originalIndex;
         }
 
         private void SimulatorWindow_KeyDown(object sender, KeyEventArgs e)
@@ -181,7 +288,8 @@ namespace FamidashEditor
             animationFrame++;
 
             // Vertical panning while keys held - use fixed-point for smoothness
-            const int panStep_fixed = 1024; // 4 pixels per frame (256 = 1px)
+            // Use smaller step for smoother motion (2 pixels/frame)
+            const int panStep_fixed = 512; // 2 pixels per frame (256 = 1px)
             if (upHeld) cameraY_fixed -= panStep_fixed;
             if (downHeld) cameraY_fixed += panStep_fixed;
 
@@ -224,10 +332,12 @@ namespace FamidashEditor
                     }
                 }
 
-                // Also detect color-trigger crossings (and collect the nearest one crossed per category)
-                int bestBg_fixed = int.MaxValue; int? bgSprite = null;
-                int bestTile_fixed = int.MaxValue; int? tileSprite = null;
-                int bestGround_fixed = int.MaxValue; int? groundSprite = null;
+                // Also detect color-trigger crossings. To reduce sampling cost, only sample a trigger
+                // once when it first moves past the center line. Keep a set of processed anchors so
+                // we don't resample every frame while the trigger remains past center.
+                int bestBg_fixed = int.MaxValue; int? bgIdx = null; int? bgSid = null;
+                int bestTile_fixed = int.MaxValue; int? tileIdx = null; int? tileSid = null;
+                int bestGround_fixed = int.MaxValue; int? groundIdx = null; int? groundSid = null;
 
                 for (int idx = 0; idx < sprites.Length; idx++)
                 {
@@ -245,43 +355,58 @@ namespace FamidashEditor
                         anchorTileX = idx % mapWidth;
 
                     int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
-                    if (!(anchorX_center_fixed > prevCenter_fixed && anchorX_center_fixed <= center_fixed)) continue;
 
-                    // Classify trigger type
-                    if (IsBackgroundTrigger(sid))
+                    // If anchor has already moved past center, and we've already processed it, skip.
+                    if (anchorX_center_fixed <= center_fixed)
                     {
-                        if (anchorX_center_fixed < bestBg_fixed) { bestBg_fixed = anchorX_center_fixed; bgSprite = sid; }
+                        if (processedColorTriggers.Contains(idx))
+                        {
+                            // already handled previously
+                        }
+                        else
+                        {
+                            // Newly past-center trigger; consider for nearest selection per category
+                            if (IsBackgroundTrigger(sid))
+                            {
+                                if (anchorX_center_fixed < bestBg_fixed) { bestBg_fixed = anchorX_center_fixed; bgIdx = idx; bgSid = sid; }
+                            }
+                            else if (IsTileTrigger(sid))
+                            {
+                                if (anchorX_center_fixed < bestTile_fixed) { bestTile_fixed = anchorX_center_fixed; tileIdx = idx; tileSid = sid; }
+                            }
+                            else if (IsGroundTrigger(sid))
+                            {
+                                if (anchorX_center_fixed < bestGround_fixed) { bestGround_fixed = anchorX_center_fixed; groundIdx = idx; groundSid = sid; }
+                            }
+                        }
                     }
-                    else if (IsTileTrigger(sid))
+                    else
                     {
-                        if (anchorX_center_fixed < bestTile_fixed) { bestTile_fixed = anchorX_center_fixed; tileSprite = sid; }
-                    }
-                    else if (IsGroundTrigger(sid))
-                    {
-                        if (anchorX_center_fixed < bestGround_fixed) { bestGround_fixed = anchorX_center_fixed; groundSprite = sid; }
+                        // Anchor is left-of-center; clear any processed flag so it can be processed again if recrossed
+                        if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx);
                     }
                 }
 
-                // Apply detected color triggers: compute color and set tints accordingly
+                // Apply detected color triggers: compute color and set tints accordingly. Mark anchors processed
                 try
                 {
-                    if (bgSprite.HasValue)
+                        if (bgIdx.HasValue && bgSid.HasValue)
                     {
-                        var c = ColorFromTrigger(bgSprite.Value);
+                        var c = ColorFromTrigger(bgSid.Value);
                         backgroundTint = c; // update field used for drawing background
-                        System.Diagnostics.Debug.WriteLine($"Simulator: background tint set from trigger 0x{bgSprite.Value:X2}");
+                        processedColorTriggers.Add(bgIdx.Value);
                     }
-                    if (tileSprite.HasValue)
+                    if (tileIdx.HasValue && tileSid.HasValue)
                     {
-                        var c = ColorFromTrigger(tileSprite.Value);
+                        var c = ColorFromTrigger(tileSid.Value);
                         tileTint = c;
-                        System.Diagnostics.Debug.WriteLine($"Simulator: tile tint set from trigger 0x{tileSprite.Value:X2}");
+                        processedColorTriggers.Add(tileIdx.Value);
                     }
-                    if (groundSprite.HasValue)
+                    if (groundIdx.HasValue && groundSid.HasValue)
                     {
-                        var c = ColorFromTrigger(groundSprite.Value);
+                        var c = ColorFromTrigger(groundSid.Value);
                         groundTint = c;
-                        System.Diagnostics.Debug.WriteLine($"Simulator: ground tint set from trigger 0x{groundSprite.Value:X2}");
+                        processedColorTriggers.Add(groundIdx.Value);
                     }
                 }
                 catch { }
@@ -289,7 +414,6 @@ namespace FamidashEditor
                 if (newSpeed_fixed.HasValue)
                 {
                     currentSpeed_fixed = newSpeed_fixed.Value;
-                    System.Diagnostics.Debug.WriteLine($"Simulator: speed changed to 0x{currentSpeed_fixed:X} due to speed portal crossing.");
                 }
             }
             catch { }
@@ -299,9 +423,6 @@ namespace FamidashEditor
 
         private void RenderFrame()
         {
-            // Clear
-            RenderCanvas.Children.Clear();
-
             // Compute pixel offset and starting tile index
             int pixelX = cameraX_fixed >> 8; // full pixels
             int subPixel = cameraX_fixed & 0xFF; // fractional
@@ -311,93 +432,130 @@ namespace FamidashEditor
             int startTileY = pixelY / TILE;
             int offsetY = pixelY % TILE;
 
-            // Draw background tint
-            var bgRect = new System.Windows.Shapes.Rectangle
-            {
-                Width = RenderCanvas.Width,
-                Height = RenderCanvas.Height,
-                Fill = new SolidColorBrush(backgroundTint)
-            };
-            System.Windows.Controls.Canvas.SetLeft(bgRect, 0);
-            System.Windows.Controls.Canvas.SetTop(bgRect, 0);
-            RenderCanvas.Children.Add(bgRect);
+            // Update persistent background tint
+            try { if (bgRectPersistent != null) bgRectPersistent.Fill = new SolidColorBrush(backgroundTint); } catch { }
 
-            // For each visible tile column
-            for (int vx = 0; vx < NES_W; vx++)
+            // Rebuild tile-layer cache when integer tile origin changes
+            try
             {
-                int mapX = startTileX + vx;
-                for (int vy = 0; vy < NES_H; vy++)
+                if (tileLayerImage != null && (tileLayerCache == null || cachedStartTileX != startTileX || cachedStartTileY != startTileY || (lastCacheHadAnimatedTiles && lastCacheAnimationFrame != animationFrame)))
                 {
-                    int mapY = startTileY + vy;
-                    if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight)
-                    {
-                        // draw a blank rectangle for out-of-bounds
-                        var rect = new System.Windows.Shapes.Rectangle
-                        {
-                            Width = TILE,
-                            Height = TILE,
-                            Fill = Brushes.Black
-                        };
-                        System.Windows.Controls.Canvas.SetLeft(rect, vx * TILE - (offsetX));
-                        System.Windows.Controls.Canvas.SetTop(rect, vy * TILE);
-                        RenderCanvas.Children.Add(rect);
-                    }
-                    else
-                    {
-                        int idx = mapY * mapWidth + mapX;
-                        int t = tiles[idx];
-                        // Prefer toned tile images when available
-                        ImageSource? chosenTile = null;
-                        if (t >= 0)
-                        {
-                            if (tileTonedImages != null && t < tileTonedImages.Length && tileTonedImages[t] != null)
-                                chosenTile = tileTonedImages[t];
-                            else if (tileImages != null && t < tileImages.Length && tileImages[t] != null)
-                                chosenTile = tileImages[t];
-                        }
+                    int cacheTilesX = NES_W + 1;
+                    int cacheTilesY = NES_H + 1;
+                    int pxW = cacheTilesX * TILE;
+                    int pxH = cacheTilesY * TILE;
 
-                        if (chosenTile != null)
+                    var dv = new DrawingVisual();
+                    bool hadAnimated = false;
+                    using (var dc = dv.RenderOpen())
+                    {
+                        for (int vx = 0; vx <= NES_W; vx++)
                         {
-                            var img = new System.Windows.Controls.Image
+                            int mapX = startTileX + vx;
+                            for (int vy = 0; vy <= NES_H; vy++)
                             {
-                                Source = chosenTile,
-                                Width = TILE,
-                                Height = TILE
-                            };
-                            RenderCanvas.Children.Add(img);
-                            System.Windows.Controls.Canvas.SetLeft(img, vx * TILE - (offsetX));
-                            System.Windows.Controls.Canvas.SetTop(img, vy * TILE);
-                        }
-                        else
-                        {
-                            // empty tile
-                            var rect = new System.Windows.Shapes.Rectangle
-                            {
-                                Width = TILE,
-                                Height = TILE,
-                                Fill = Brushes.Black
-                            };
-                            System.Windows.Controls.Canvas.SetLeft(rect, vx * TILE - (offsetX));
-                            System.Windows.Controls.Canvas.SetTop(rect, vy * TILE);
-                            RenderCanvas.Children.Add(rect);
+                                int mapY = startTileY + vy;
+                                Rect dest = new Rect(vx * TILE, vy * TILE, TILE, TILE);
+                                if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight)
+                                {
+                                    dc.DrawRectangle(Brushes.Black, null, dest);
+                                    continue;
+                                }
+                                int idx = mapY * mapWidth + mapX;
+                                int t = tiles[idx];
+                                int animatedTileIndex = MapAnimatedTileIndex(t);
+                                if (animatedTileIndex != t || t >= 1000) hadAnimated = true;
+                                int useTileIndex = animatedTileIndex;
+                                ImageSource? chosenTile = null;
+                                try
+                                {
+                                    if (t >= 1000)
+                                    {
+                                        bool frame2 = (((animationFrame * 3) / 40) % 2) != 0;
+                                        if (t >= 1000 && t <= 1007)
+                                        {
+                                            int off = (t - 1000) % 4;
+                                            chosenTile = frame2 ? (sawFrame2TilesTinted != null && off < sawFrame2TilesTinted.Length ? sawFrame2TilesTinted[off] : null)
+                                                                 : (sawFrame1TilesTinted != null && off < sawFrame1TilesTinted.Length ? sawFrame1TilesTinted[off] : null);
+                                        }
+                                        else if (t >= 1010 && t <= 1015)
+                                        {
+                                            int off = (t - 1010) % 3;
+                                            chosenTile = frame2 ? (smallSawFrame2TilesTinted != null && off < smallSawFrame2TilesTinted.Length ? smallSawFrame2TilesTinted[off] : null)
+                                                                 : (smallSawFrame1TilesTinted != null && off < smallSawFrame1TilesTinted.Length ? smallSawFrame1TilesTinted[off] : null);
+                                        }
+                                        else if (t >= 1020 && t <= 1037)
+                                        {
+                                            int off = (t - 1020) % 9;
+                                            chosenTile = frame2 ? (largeSawFrame2TilesTinted != null && off < largeSawFrame2TilesTinted.Length ? largeSawFrame2TilesTinted[off] : null)
+                                                                 : (largeSawFrame1TilesTinted != null && off < largeSawFrame1TilesTinted.Length ? largeSawFrame1TilesTinted[off] : null);
+                                        }
+                                    }
+                                }
+                                catch { }
+
+                                if (chosenTile == null && useTileIndex >= 0)
+                                {
+                                    if (useTileIndex >= 1000)
+                                    {
+                                        if (tileTonedImages != null && t >= 0 && t < tileTonedImages.Length && tileTonedImages[t] != null)
+                                            chosenTile = tileTonedImages[t];
+                                        else if (tileImages != null && t >= 0 && t < tileImages.Length && tileImages[t] != null)
+                                            chosenTile = tileImages[t];
+                                    }
+                                    else
+                                    {
+                                        if (tileTonedImages != null && useTileIndex >= 0 && useTileIndex < tileTonedImages.Length && tileTonedImages[useTileIndex] != null)
+                                            chosenTile = tileTonedImages[useTileIndex];
+                                        else if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
+                                            chosenTile = tileImages[useTileIndex];
+                                    }
+                                }
+
+                                if (chosenTile != null)
+                                {
+                                    dc.DrawImage(chosenTile, dest);
+                                }
+                                else
+                                {
+                                    dc.DrawRectangle(Brushes.Black, null, dest);
+                                }
+                            }
                         }
                     }
+
+                    var rtb = new RenderTargetBitmap(pxW, pxH, 96, 96, PixelFormats.Pbgra32);
+                    rtb.Render(dv);
+                    tileLayerCache = rtb;
+                    lastCacheHadAnimatedTiles = hadAnimated;
+                    lastCacheAnimationFrame = animationFrame;
+                    cachedStartTileX = startTileX;
+                    cachedStartTileY = startTileY;
+                    tileLayerImage!.Source = tileLayerCache;
+                    tileLayerImage!.Width = pxW;
+                    tileLayerImage!.Height = pxH;
                 }
             }
+            catch { }
 
-            // Draw ground tint area (a subtle band at bottom). Show up to 2 tile rows of ground.
-            var groundHeight = TILE * Math.Min(NES_H, 2); // bottom 2 rows
-            var groundRect = new System.Windows.Shapes.Rectangle
+            // Position the tile layer to account for fractional pixel offset
+            try { if (tileLayerImage != null) { System.Windows.Controls.Canvas.SetLeft(tileLayerImage, -offsetX); System.Windows.Controls.Canvas.SetTop(tileLayerImage, -offsetY); } } catch { }
+
+            // Update ground tint rect
+            try
             {
-                Width = RenderCanvas.Width,
-                Height = groundHeight,
-                Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 }
-            };
-            System.Windows.Controls.Canvas.SetLeft(groundRect, 0);
-            System.Windows.Controls.Canvas.SetTop(groundRect, (NES_H * TILE) - groundHeight);
-            RenderCanvas.Children.Add(groundRect);
+                if (groundRectPersistent != null)
+                {
+                    groundRectPersistent.Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 };
+                    int groundHeight = TILE * Math.Min(NES_H, 2);
+                    groundRectPersistent.Height = groundHeight;
+                    System.Windows.Controls.Canvas.SetTop(groundRectPersistent, (NES_H * TILE) - groundHeight);
+                }
+            }
+            catch { }
 
-            // Render sprites on top (always in preview)
+            // Render sprites using pooled Image controls
+            spritesInUse = 0;
             for (int vx = 0; vx < NES_W; vx++)
             {
                 int mapX = startTileX + vx;
@@ -407,21 +565,25 @@ namespace FamidashEditor
                     if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) continue;
                     int idx = mapY * mapWidth + mapX;
                     int s = sprites[idx];
-                    if (s < 0) continue; // -1 means empty
+                    if (s < 0) continue;
 
-                    // Animated frames: if we have an animationFrames entry for this sprite id, pick a frame
                     ImageSource? chosenSprite = null;
                     if (animationFrames != null && animationFrames.TryGetValue(s, out var frames) && frames != null && frames.Length > 0)
                     {
-                        // per-position offset to desync animations
-                        if (!spriteFrameOffsets.ContainsKey(idx)) spriteFrameOffsets[idx] = spriteAnimationRandom.Next(0, frames.Length);
+                        if (!spriteFrameOffsets.ContainsKey(idx)) spriteFrameOffsets[idx] = spriteAnimationRandom.Next(0, Math.Max(1, frames.Length));
                         int offset = spriteFrameOffsets[idx];
-                        int frame = (((animationFrame * 9) / 20) + offset) % frames.Length;
+                        int frame = (((animationFrame * 9) / 20) + offset) % Math.Max(1, frames.Length);
                         chosenSprite = frames[frame];
+                        if (chosenSprite == null)
+                        {
+                            if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s, out var pimg) && pimg != null)
+                                chosenSprite = pimg;
+                            else if (spriteImages != null && s < spriteImages.Length && spriteImages[s] != null)
+                                chosenSprite = spriteImages[s];
+                        }
                     }
                     else
                     {
-                        // Choose preview replacement when forced and available; otherwise use sliced sprite image
                         if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s, out var previewImg) && previewImg != null)
                         {
                             chosenSprite = previewImg;
@@ -433,62 +595,98 @@ namespace FamidashEditor
                     }
 
                     if (chosenSprite == null) continue;
-                    // If hide color triggers option is enabled, skip rendering those sprites
                     if (hideColorTriggers && IsColorTriggerSprite(s)) continue;
 
-                    // base position in viewport
                     double px = (mapX - startTileX) * TILE - offsetX;
                     double py = (mapY - startTileY) * TILE - offsetY + gridRenderShiftYPx;
-
-                    // If an anchor is present for this sprite position, use it as placement base
                     if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
                     {
-                        px = (anchor.anchorTileX - startTileX) * TILE - offsetX;
-                        py = (anchor.anchorTileY - startTileY) * TILE - offsetY + gridRenderShiftYPx;
+                        int storageTileX = idx % mapWidth;
+                        int storageTileY = idx / mapWidth;
+                        int tileDeltaX = storageTileX - anchor.anchorTileX;
+                        int tileDeltaY = storageTileY - anchor.anchorTileY;
+                        px = (anchor.anchorTileX - startTileX) * TILE - offsetX + tileDeltaX * TILE;
+                        py = (anchor.anchorTileY - startTileY) * TILE - offsetY + tileDeltaY * TILE + gridRenderShiftYPx;
                     }
-
-                    // apply pixel offsets if present (offsets keyed by position index)
                     if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs))
                     {
                         px += offs.offsetX;
-                        py += offs.offsetY;
+                        py -= offs.offsetY;
+                    }
+                    else if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anc))
+                    {
+                        int anchorKey = anc.anchorTileY * mapWidth + anc.anchorTileX;
+                        if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs))
+                        {
+                            px += aoffs.offsetX;
+                            py -= aoffs.offsetY;
+                        }
                     }
 
-                    var simg = new System.Windows.Controls.Image
+                    // get pooled image
+                    System.Windows.Controls.Image simg;
+                    if (spritesInUse < spritePool.Count)
                     {
-                        Source = chosenSprite,
-                        Stretch = Stretch.None
-                    };
-                    // Use the native pixel size of the sprite image when available
-                    if (chosenSprite is BitmapSource bs)
-                    {
-                        simg.Width = bs.PixelWidth;
-                        simg.Height = bs.PixelHeight;
+                        simg = spritePool[spritesInUse];
+                        simg.Visibility = Visibility.Visible;
                     }
-                    RenderCanvas.Children.Add(simg);
+                    else
+                    {
+                        simg = new System.Windows.Controls.Image { Stretch = Stretch.None };
+                        System.Windows.Media.RenderOptions.SetBitmapScalingMode(simg, BitmapScalingMode.NearestNeighbor);
+                        spritePool.Add(simg);
+                        RenderCanvas.Children.Add(simg);
+                    }
+                    simg.Source = chosenSprite;
+                    if (chosenSprite is BitmapSource bs) { simg.Width = bs.PixelWidth; simg.Height = bs.PixelHeight; }
                     System.Windows.Controls.Canvas.SetLeft(simg, px);
                     System.Windows.Controls.Canvas.SetTop(simg, py);
+                    spritesInUse++;
 
-                    // apply player tint overlay to decoration sprites only if enabled
-                    if (playerTintEnabled && decorationSpriteIds.Contains(s))
-                    {
-                        var overlay = new System.Windows.Shapes.Rectangle
-                        {
-                            Width = simg.Width,
-                            Height = simg.Height,
-                            Fill = new SolidColorBrush(playerTint) { Opacity = 0.25 }
-                        };
-                        RenderCanvas.Children.Add(overlay);
-                        System.Windows.Controls.Canvas.SetLeft(overlay, px);
-                        System.Windows.Controls.Canvas.SetTop(overlay, py);
-                    }
+                    
                 }
             }
+
+            // Hide remaining pooled images
+            for (int i = spritesInUse; i < spritePool.Count; i++) spritePool[i].Visibility = Visibility.Collapsed;
 
             // Apply sub-pixel smoothing with a translate transform for X and Y
             double fracX = (cameraX_fixed & 0xFF) / 256.0;
             double fracY = (cameraY_fixed & 0xFF) / 256.0;
             RenderCanvas.RenderTransform = new TranslateTransform(-fracX, -fracY);
+        }
+
+        // Use CompositionTarget.Rendering as the main loop to maintain consistent timing. We implement
+        // a simple fixed-step simulation so animation and camera advance at 60Hz even if rendering
+        // intermittently lags.
+        private void CompositionTarget_Rendering(object? sender, EventArgs e)
+        {
+            try
+            {
+                var now = renderStopwatch.Elapsed.TotalSeconds;
+                // compute delta since last sample
+                double delta = now - accumulatedSeconds;
+                if (delta < 0) delta = 0;
+                accumulatedSeconds = now;
+
+                // accumulate and step in fixed 1/60s increments
+                double remaining = delta;
+                const double step = 1.0 / 60.0;
+                int steps = 0;
+                // Safety cap to avoid spiral of death
+                int maxSteps = 5;
+                while (remaining >= step && steps < maxSteps)
+                {
+                    // perform simulation step: advance camera and animation
+                    Timer_Tick(null, EventArgs.Empty);
+                    remaining -= step;
+                    steps++;
+                }
+
+                // Render once per CompositionTarget tick
+                RenderFrame();
+            }
+            catch { }
         }
 
         // Determine if a sprite id is a color trigger we should consider
@@ -522,7 +720,8 @@ namespace FamidashEditor
 
         private bool IsBackgroundTrigger(int spriteIdx)
         {
-            return spriteIdx >= 0x80 && spriteIdx <= 0xAC && IsColorTriggerSprite(spriteIdx);
+            // Include 0x8F as valid background trigger per request
+            return (spriteIdx >= 0x80 && spriteIdx <= 0xAC || spriteIdx == 0x8F) && IsColorTriggerSprite(spriteIdx);
         }
 
         private bool IsTileTrigger(int spriteIdx)
@@ -532,7 +731,8 @@ namespace FamidashEditor
 
         private bool IsGroundTrigger(int spriteIdx)
         {
-            return spriteIdx >= 0xC0 && spriteIdx <= 0xEC && IsColorTriggerSprite(spriteIdx);
+            // Include 0xCF as valid ground trigger per request
+            return (spriteIdx >= 0xC0 && spriteIdx <= 0xEC || spriteIdx == 0xCF) && IsColorTriggerSprite(spriteIdx);
         }
 
         private Color ColorFromTrigger(int spriteIdx)

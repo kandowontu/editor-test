@@ -5920,12 +5920,25 @@ namespace FamidashEditor
                     // Pole and chain previews
                     if (poleShortFrame1 != null && poleShortFrame1.Length > 0) previewMap[0x2C] = poleShortFrame1[0];
                     if (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame1.Length > 0) previewMap[0x3C] = poleShortUpsideDownFrame1[0];
-                    if (chainFrame1 != null && chainFrame1.Length > 0) previewMap[0x2D] = chainFrame1[0];
+                    if (chainFrame1 != null && chainFrame1.Length > 0)
+                    {
+                        // Provide preview mapping for both upright and upside-down chain sprite IDs
+                        previewMap[0x2D] = chainFrame1[0];
+                        // Some maps use the upside-down chain id; map it to the same preview frame if available
+                        previewMap[0x3D] = chainFrame1[0];
+                    }
+                    // Blue pad preview mapping: map 0xFD/0xFE to blue pad down/up preview frames
+                    try
+                    {
+                        if (bluePadDownFrame1 != null && bluePadDownFrame1.Length > 0) previewMap[0xFD] = bluePadDownFrame1[0];
+                        if (bluePadUpFrame1 != null && bluePadUpFrame1.Length > 0) previewMap[0xFE] = bluePadUpFrame1[0];
+                    }
+                    catch { }
                 }
                 catch { }
 
                 // Build animation frames mapping for the simulator so sprites animate correctly
-                var animationFrames = new System.Collections.Generic.Dictionary<int, ImageSource[]?>();
+                var animationFrames = new System.Collections.Generic.Dictionary<int, ImageSource?[]>();
                 try
                 {
                     // Yellow orb sprites (0x0B,0x1F,0x29) - each has 4 frames and 3 sub-sprites
@@ -5966,6 +5979,26 @@ namespace FamidashEditor
                     {
                         animationFrames[0x6E] = new ImageSource?[] { miniCoinFrame1[0], miniCoinFrame2[0], miniCoinFrame3[0], miniCoinFrame4[0] };
                     }
+                    // Pink orb (0x06)
+                    if (pinkOrbFrame1 != null && pinkOrbFrame2 != null && pinkOrbFrame3 != null && pinkOrbFrame4 != null)
+                    {
+                        animationFrames[0x06] = new ImageSource?[] { pinkOrbFrame1[0], pinkOrbFrame2[0], pinkOrbFrame3[0], pinkOrbFrame4[0] };
+                    }
+                    // Green orb (0x27)
+                    if (greenOrbFrame1 != null && greenOrbFrame2 != null && greenOrbFrame3 != null && greenOrbFrame4 != null)
+                    {
+                        animationFrames[0x27] = new ImageSource?[] { greenOrbFrame1[0], greenOrbFrame2[0], greenOrbFrame3[0], greenOrbFrame4[0] };
+                    }
+                    // Red orb (0x28)
+                    if (redOrbFrame1 != null && redOrbFrame2 != null && redOrbFrame3 != null && redOrbFrame4 != null)
+                    {
+                        animationFrames[0x28] = new ImageSource?[] { redOrbFrame1[0], redOrbFrame2[0], redOrbFrame3[0], redOrbFrame4[0] };
+                    }
+                    // Black orb (0x44)
+                    if (blackOrbFrame1 != null && blackOrbFrame2 != null && blackOrbFrame3 != null && blackOrbFrame4 != null)
+                    {
+                        animationFrames[0x44] = new ImageSource?[] { blackOrbFrame1[0], blackOrbFrame2[0], blackOrbFrame3[0], blackOrbFrame4[0] };
+                    }
                     // Pads and two-frame decorations
                     if (redPadFrame1 != null && redPadFrame2 != null && redPadFrame3 != null && redPadFrame4 != null) animationFrames[0x52] = new ImageSource?[] { redPadFrame1[0], redPadFrame2[0], redPadFrame3[0], redPadFrame4[0] };
                     if (starFrame1 != null && starFrame2 != null) animationFrames[0x36] = new ImageSource?[] { starFrame1[0], starFrame2[0] };
@@ -5994,7 +6027,13 @@ namespace FamidashEditor
                     true, // force preview mode in simulator
                     hideColorTriggers,
                     previewMap,
-                    animationFrames
+                    animationFrames,
+                    sawFrame1TilesTinted,
+                    sawFrame2TilesTinted,
+                    smallSawFrame1TilesTinted,
+                    smallSawFrame2TilesTinted,
+                    largeSawFrame1TilesTinted,
+                    largeSawFrame2TilesTinted
                     );
                 sim.Owner = this;
                 sim.Show();
