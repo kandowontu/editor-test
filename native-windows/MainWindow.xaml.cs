@@ -5963,10 +5963,14 @@ namespace FamidashEditor
                     if (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame1.Length > 0) previewMap[0x3C] = poleShortUpsideDownFrame1[0];
                     if (chainFrame1 != null && chainFrame1.Length > 0)
                     {
-                        // Provide preview mapping for both upright and upside-down chain sprite IDs
+                        // Provide preview mapping for upright chain sprite ID
                         previewMap[0x2D] = chainFrame1[0];
-                        // Some maps use the upside-down chain id; map it to the same preview frame if available
-                        previewMap[0x3D] = chainFrame1[0];
+                        // If an upside-down chain image is available, use it for the upside-down sprite id;
+                        // otherwise fall back to the upright chain image.
+                        if (chainUpsideDownFrame1 != null && chainUpsideDownFrame1.Length > 0)
+                            previewMap[0x3D] = chainUpsideDownFrame1[0];
+                        else
+                            previewMap[0x3D] = chainFrame1[0];
                     }
                     // Blue pad preview mapping: map 0xFD/0xFE to blue pad down/up preview frames
                     try
@@ -6147,6 +6151,7 @@ namespace FamidashEditor
                     largeSawFrame1TilesTinted,
                     largeSawFrame2TilesTinted
                     ,
+                    parallaxBitmap,
                     parallaxImages,
                     parallaxTonedImages,
                     loadedParallaxX,

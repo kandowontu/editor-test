@@ -230,6 +230,8 @@ namespace FamidashEditor
         // Parallax / ground data passed from the editor so simulator can mirror preview-mode
         private ImageSource[]? parallaxImages;
         private ImageSource[]? parallaxTonedImages;
+        private ImageSource? parallaxBitmap = null;
+        private ImageSource? parallaxBitmapToned = null;
         private double parallaxX = 1.0;
         private double parallaxY = 1.0;
         private bool parallaxRepeatX = true;
@@ -393,6 +395,7 @@ namespace FamidashEditor
             ImageSource[]? largeSawFrame1TilesTinted = null,
             ImageSource[]? largeSawFrame2TilesTinted = null
             ,
+            ImageSource? parallaxBitmap = null,
             ImageSource[]? parallaxImages = null,
             ImageSource[]? parallaxTonedImages = null,
             double parallaxX = 1.0,
@@ -478,6 +481,7 @@ namespace FamidashEditor
             this.largeSawFrame2TilesTinted = largeSawFrame2TilesTinted;
 
             // parallax / ground
+            this.parallaxBitmap = parallaxBitmap;
             this.parallaxImages = parallaxImages;
             this.parallaxTonedImages = parallaxTonedImages;
             this.parallaxX = parallaxX;
@@ -1132,24 +1136,30 @@ namespace FamidashEditor
             {
                 if (bgRectPersistent != null && hasParallaxLayer && parallaxImages != null && parallaxImages.Length > 0)
                 {
-                    ImageSource src = parallaxTonedImages != null && parallaxTonedImages.Length == parallaxImages.Length && parallaxTonedImages[0] != null ? parallaxTonedImages[0] : parallaxImages[0];
+                    // Prefer using the full parallax bitmap (if provided) so the entire image repeats.
+                    ImageSource? src = null;
+                    if (parallaxBitmapToned != null) src = parallaxBitmapToned;
+                    else if (parallaxBitmap != null) src = parallaxBitmap;
+                    else if (parallaxTonedImages != null && parallaxTonedImages.Length == parallaxImages.Length && parallaxTonedImages[0] != null) src = parallaxTonedImages[0];
+                    else if (parallaxImages != null && parallaxImages.Length > 0) src = parallaxImages[0];
+
                     if (src is BitmapSource pbs)
                     {
-                        double tileW = Math.Max(1.0, pbs.PixelWidth);
-                        double tileH = Math.Max(1.0, pbs.PixelHeight);
+                        double imgW = Math.Max(1.0, pbs.PixelWidth);
+                        double imgH = Math.Max(1.0, pbs.PixelHeight);
                         var brush = new ImageBrush(src)
                         {
                             TileMode = TileMode.Tile,
                             ViewportUnits = BrushMappingMode.Absolute,
-                            Viewport = new Rect(0, 0, tileW, tileH),
-                            Stretch = Stretch.Fill
+                            Viewport = new Rect(0, 0, imgW, imgH),
+                            Stretch = Stretch.None
                         };
 
                         // Parallax translation: background moves slower than camera based on parallaxX/Y.
                         double parallaxOffsetX = -(pixelX) * (1.0 - parallaxX);
                         double parallaxOffsetY = -(cameraY_fixed >> 8) * (1.0 - parallaxY);
 
-                        // Align horizontal scroll to tile pixels to avoid shimmering
+                        // Align horizontal scroll to pixel coordinates to avoid shimmering
                         brush.Transform = new TranslateTransform(parallaxOffsetX, parallaxOffsetY);
                         bgRectPersistent.Fill = brush;
                     }
@@ -1639,6 +1649,8 @@ namespace FamidashEditor
                     try
                     {
                         if (s == 0x2B || s == 0x2C) py -= 8;
+                        // Chains should be shifted up 8 pixels in the simulator to match preview
+                        if (s == 0x2D || s == 0x3D) py -= 8;
                     }
                     catch { }
 
@@ -1976,6 +1988,27 @@ namespace FamidashEditor
                     UpdateTonedImagesForTileTint(tileTint);
                     try { parallaxTonedImages = backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0 ? CreateBlackMaskedImages(parallaxImages) : CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
                     try { groundTonedImages = groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0 ? CreateBlackMaskedImages(groundImages) : CreateHueShiftedImages(groundImages, groundTint); } catch { groundTonedImages = groundImages; }
+
+                    // Also create/update a tinted full-parallax bitmap if a full parallax bitmap was provided
+                    try
+                    {
+                        if (parallaxBitmap != null)
+                        {
+                            ImageSource[]? arr = null;
+                            if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
+                                arr = CreateBlackMaskedImages(new ImageSource[] { parallaxBitmap });
+                            else
+                                arr = CreateHueShiftedImages(new ImageSource[] { parallaxBitmap }, backgroundTint);
+
+                            if (arr != null && arr.Length > 0 && arr[0] != null) parallaxBitmapToned = arr[0];
+                            else parallaxBitmapToned = parallaxBitmap;
+                        }
+                        else
+                        {
+                            parallaxBitmapToned = null;
+                        }
+                    }
+                    catch { parallaxBitmapToned = parallaxBitmap; }
                     tileLayerCache = null;
                     try { groundTintedTileCache.Clear(); } catch { }
                 }
