@@ -183,18 +183,29 @@ namespace FamidashEditor
             this.spriteImages = spriteImages;
             this.spritePixelOffsets = new System.Collections.Generic.Dictionary<int, (int, int)>(spritePixelOffsets);
             this.spriteAnchors = new System.Collections.Generic.Dictionary<int, (int, int)>(spriteAnchors);
-            // Simulator-specific tweak: shift sprite 0x2B up 8 pixels to match editor preview
+            // Simulator-specific tweak: shift sprite 0x2B and 0x2C up 8 pixels to match editor preview
             try
             {
-                const int SPRITE_ID_SHIFT = 0x2B;
-                if (this.spritePixelOffsets.ContainsKey(SPRITE_ID_SHIFT))
+                const int SPRITE_ID_SHIFT_A = 0x2B;
+                const int SPRITE_ID_SHIFT_B = 0x2C;
+                if (this.spritePixelOffsets.ContainsKey(SPRITE_ID_SHIFT_A))
                 {
-                    var prev = this.spritePixelOffsets[SPRITE_ID_SHIFT];
-                    this.spritePixelOffsets[SPRITE_ID_SHIFT] = (prev.Item1, prev.Item2 - 8);
+                    var prev = this.spritePixelOffsets[SPRITE_ID_SHIFT_A];
+                    this.spritePixelOffsets[SPRITE_ID_SHIFT_A] = (prev.Item1, prev.Item2 - 8);
                 }
                 else
                 {
-                    this.spritePixelOffsets[SPRITE_ID_SHIFT] = (0, -8);
+                    this.spritePixelOffsets[SPRITE_ID_SHIFT_A] = (0, -8);
+                }
+
+                if (this.spritePixelOffsets.ContainsKey(SPRITE_ID_SHIFT_B))
+                {
+                    var prev = this.spritePixelOffsets[SPRITE_ID_SHIFT_B];
+                    this.spritePixelOffsets[SPRITE_ID_SHIFT_B] = (prev.Item1, prev.Item2 - 8);
+                }
+                else
+                {
+                    this.spritePixelOffsets[SPRITE_ID_SHIFT_B] = (0, -8);
                 }
             }
             catch { }
@@ -234,16 +245,18 @@ namespace FamidashEditor
             // Ensure decoration sprites pulse even when editor didn't provide animation frames.
             try
             {
-                if (animationFrames != null && previewSpriteMap != null)
+                // Use the simulator's effective animationFrames / previewSpriteMap so
+                // this works even when the caller passed null and we created defaults.
+                if (this.animationFrames != null && this.previewSpriteMap != null)
                 {
                     foreach (var id in decorationSpriteIds)
                     {
-                        if (!animationFrames.ContainsKey(id))
+                        if (!this.animationFrames.ContainsKey(id))
                         {
-                            if (previewSpriteMap.TryGetValue(id, out var pimg) && pimg != null)
+                            if (this.previewSpriteMap.TryGetValue(id, out var pimg) && pimg != null)
                             {
                                 var frames = CreateTwoFramePulse(pimg);
-                                if (frames != null) animationFrames[id] = frames;
+                                if (frames != null) this.animationFrames[id] = frames;
                             }
                         }
                     }
@@ -294,6 +307,7 @@ namespace FamidashEditor
                 // Resolve cube.png relative to executable directory (project root is four levels up from bin)
                 try
                 {
+                    bool loaded = false;
                     string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
                     string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\cube.png"));
                     if (System.IO.File.Exists(candidate))
@@ -307,14 +321,54 @@ namespace FamidashEditor
                         playerImage.Source = bi;
                         playerImage.Width = bi.PixelWidth;
                         playerImage.Height = bi.PixelHeight;
+                        loaded = true;
                     }
-                    else
+
+                    // If file path didn't work, attempt to load as an embedded resource from the executing assembly.
+                    if (!loaded)
+                    {
+                        try
+                        {
+                            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                            var names = asm.GetManifestResourceNames();
+                            string? found = names.FirstOrDefault(n => n.EndsWith("cube.png", StringComparison.OrdinalIgnoreCase));
+                            if (!string.IsNullOrEmpty(found))
+                            {
+                                using (var s = asm.GetManifestResourceStream(found))
+                                {
+                                    if (s != null)
+                                    {
+                                        var bi = new BitmapImage();
+                                        bi.BeginInit();
+                                        bi.CacheOption = BitmapCacheOption.OnLoad;
+                                        bi.StreamSource = s;
+                                        bi.EndInit();
+                                        bi.Freeze();
+                                        playerImage.Source = bi;
+                                        playerImage.Width = bi.PixelWidth;
+                                        playerImage.Height = bi.PixelHeight;
+                                        loaded = true;
+                                    }
+                                }
+                            }
+                        }
+                        catch { /* ignore embedded load errors */ }
+                    }
+
+                    if (!loaded)
                     {
                         // fallback rectangle if image not found
                         playerRect = new System.Windows.Shapes.Rectangle { Width = TILE, Height = TILE, Fill = new SolidColorBrush(Colors.Magenta) };
                         System.Windows.Controls.Canvas.SetZIndex(playerRect, 1000);
                         RenderCanvas.Children.Add(playerRect);
                         playerRect.Visibility = Visibility.Visible;
+                        // hide the image control if it's unused
+                        playerImage.Visibility = Visibility.Collapsed;
+                    }
+                    else
+                    {
+                        playerImage.Visibility = Visibility.Visible;
+                        if (playerRect != null) playerRect.Visibility = Visibility.Collapsed;
                     }
                 }
                 catch
@@ -324,6 +378,7 @@ namespace FamidashEditor
                     System.Windows.Controls.Canvas.SetZIndex(playerRect, 1000);
                     RenderCanvas.Children.Add(playerRect);
                     playerRect.Visibility = Visibility.Visible;
+                    if (playerImage != null) playerImage.Visibility = Visibility.Collapsed;
                 }
             }
             catch { }
@@ -1141,10 +1196,10 @@ namespace FamidashEditor
                         }
                     }
 
-                    // Simulator tweak: medium poles (sprite id 0x2B) render 8px higher in preview
+                    // Simulator tweak: medium poles (sprite id 0x2B and 0x2C) render 8px higher in preview
                     try
                     {
-                        if (s == 0x2B) py -= 8;
+                        if (s == 0x2B || s == 0x2C) py -= 8;
                     }
                     catch { }
 
@@ -1178,12 +1233,21 @@ namespace FamidashEditor
             // Position the player visual so it appears above the reserved ground rows.
             try
             {
-                if (playerRect != null)
+                int playerPixelX = (playerX_fixed >> 8) - (cameraX_fixed >> 8);
+                // Place player's bottom so it stands one tile above the reserved ground rows
+                int bottomY = NES_H * TILE - groundPixels;
+                int playerTop = bottomY - (TILE * 1) + gridRenderShiftYPx;
+
+                if (playerImage != null && playerImage.Source != null)
                 {
-                    int playerPixelX = (playerX_fixed >> 8) - (cameraX_fixed >> 8);
-                    // Place player's bottom so it stands one tile above the reserved ground rows
-                    int bottomY = NES_H * TILE - groundPixels;
-                    int playerTop = bottomY - (TILE * 1) + gridRenderShiftYPx;
+                    // Position image; center-left semantics preserved from rectangle usage
+                    System.Windows.Controls.Canvas.SetLeft(playerImage, playerPixelX);
+                    System.Windows.Controls.Canvas.SetTop(playerImage, playerTop);
+                    playerImage.Visibility = Visibility.Visible;
+                    if (playerRect != null) playerRect.Visibility = Visibility.Collapsed;
+                }
+                else if (playerRect != null)
+                {
                     System.Windows.Controls.Canvas.SetLeft(playerRect, playerPixelX);
                     System.Windows.Controls.Canvas.SetTop(playerRect, playerTop);
                     playerRect.Visibility = Visibility.Visible;
