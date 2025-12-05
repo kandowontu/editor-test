@@ -6122,6 +6122,8 @@ namespace FamidashEditor
                     loadedHasGroundLayer,
                     groundTileRows
                     );
+                // Pass current simulator-related options into the window
+                try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
                 sim.Owner = this;
                 sim.Show();
             }
