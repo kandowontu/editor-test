@@ -501,6 +501,11 @@ namespace FamidashEditor
                     {
                         // regenerate toned tile sets for the new tile tint so cached tiles draw with new hue
                         UpdateTonedImagesForTileTint(tileTint);
+
+                        // regenerate parallax and ground toned images so parallax/ground respond to their tints
+                        try { parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
+                        try { groundTonedImages = CreateHueShiftedImages(groundImages, groundTint); } catch { groundTonedImages = groundImages; }
+
                         // invalidate cached tile layer so it is rebuilt with new toned images
                         tileLayerCache = null;
                     }
