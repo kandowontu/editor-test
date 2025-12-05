@@ -169,6 +169,9 @@
                         <MenuItem x:Name="MenuOptionHideColorTriggers" Header="Hide Color Triggers" IsCheckable="True" IsChecked="False" />
                         <MenuItem x:Name="MenuOptionHideInvisibleSprites" Header="Hide Invisible Sprites" IsCheckable="True" IsChecked="False" />
                     </MenuItem>
+                    <MenuItem Header="Simulator Options">
+                        <MenuItem x:Name="MenuOptionShowSpriteHitboxes" Header="Show Sprite Hitboxes" IsCheckable="True" IsChecked="False" />
+                    </MenuItem>
                 </MenuItem>
             </Menu>
             
