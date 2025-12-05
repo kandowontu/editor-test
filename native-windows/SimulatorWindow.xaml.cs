@@ -307,6 +307,11 @@ namespace FamidashEditor
         private bool upHeld = false;
         private bool downHeld = false;
         private bool tabHeld = false;
+        // Pause state controlled by ESC
+        private bool paused = false;
+        // Multiplier applied while Tab (or Shift+Tab / Ctrl+Shift+Tab) is held.
+        // Default 1 (no extra multiplier). While Tab is down this becomes 2/4/8 per modifiers.
+        private int tabSpeedMultiplier = 1;
 
         // (debug overlay removed)
 
@@ -665,14 +670,32 @@ namespace FamidashEditor
         {
             if (e.Key == Key.Up) upHeld = true;
             if (e.Key == Key.Down) downHeld = true;
-            if (e.Key == Key.Tab) tabHeld = true;
+            if (e.Key == Key.Tab)
+            {
+                tabHeld = true;
+                // compute tab multiplier based on modifiers: Tab=2x, Shift+Tab=4x, Ctrl+Shift+Tab=8x
+                bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+                bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+                if (shift && ctrl) tabSpeedMultiplier = 8;
+                else if (shift) tabSpeedMultiplier = 4;
+                else tabSpeedMultiplier = 2;
+            }
+            if (e.Key == Key.Escape)
+            {
+                // toggle pause
+                paused = !paused;
+            }
         }
 
         private void SimulatorWindow_KeyUp(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Up) upHeld = false;
             if (e.Key == Key.Down) downHeld = false;
-            if (e.Key == Key.Tab) tabHeld = false;
+            if (e.Key == Key.Tab)
+            {
+                tabHeld = false;
+                tabSpeedMultiplier = 1;
+            }
         }
 
         private void Timer_Tick(object? sender, EventArgs e)
@@ -681,8 +704,8 @@ namespace FamidashEditor
             int prevCameraCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
 
             // Advance player X by current dynamic speed (fixed-point)
-            // Holding TAB doubles horizontal movement speed.
-            int speedMultiplier = tabHeld ? 2 : 1;
+            // Holding TAB or modifiers change horizontal movement speed via tabSpeedMultiplier.
+            int speedMultiplier = tabSpeedMultiplier;
             int centerOffset_fixed = (TILE / 2) << 8;
             int prevPlayerCenter_fixed = playerX_fixed + centerOffset_fixed;
             int attemptedPlayerX_fixed = playerX_fixed + currentSpeed_fixed * speedMultiplier;
@@ -1612,8 +1635,20 @@ namespace FamidashEditor
             catch { }
 
             // Apply sub-pixel smoothing with a translate transform for X and Y
+            // Stabilize X fractional translation when the player is anchored at the interaction line
+            int centerOffset_fixed_local = (TILE / 2) << 8;
+            int playerCenter_fixed_now_local = playerX_fixed + centerOffset_fixed_local;
+            bool isAnchoredNow = interactionScreenOffset_px >= 0 && playerCenter_fixed_now_local >= INTERACTION_LINE_FIXED;
+
             double fracX = (cameraX_fixed & 0xFF) / 256.0;
             double fracY = (cameraY_fixed & 0xFF) / 256.0;
+
+            if (isAnchoredNow)
+            {
+                // Force fractional X to zero while anchored to avoid 1-px jitter when camera follows
+                fracX = 0.0;
+            }
+
             RenderCanvas.RenderTransform = new TranslateTransform(-fracX, -fracY);
         }
 
@@ -1636,6 +1671,13 @@ namespace FamidashEditor
                 int steps = 0;
                 // Safety cap to avoid spiral of death
                 int maxSteps = 5;
+                // If paused, skip simulation steps but still render so UI stays responsive
+                if (paused)
+                {
+                    RenderFrame();
+                    return;
+                }
+
                 while (remaining >= step && steps < maxSteps)
                 {
                     // perform simulation step: advance camera and animation
