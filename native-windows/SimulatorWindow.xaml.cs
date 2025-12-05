@@ -31,6 +31,28 @@ namespace FamidashEditor
             catch { }
         }
 
+        // Timer loop invoked on threadpool; accumulates elapsed time and runs fixed-step simulation.
+        private void TimerSimulationLoop()
+        {
+            try
+            {
+                double now = simStopwatch.Elapsed.TotalMilliseconds;
+                double delta = now - simLastMs;
+                // First tick: simLastMs is zero, treat delta as 0 to avoid a large initial jump
+                if (simLastMs <= 0.0) delta = 0.0;
+                simLastMs = now;
+                simAccumulatedMs += delta;
+
+                // Run one or more fixed 60Hz steps as needed
+                while (simAccumulatedMs >= SIM_STEP_MS)
+                {
+                    try { SimulateNumericStep(); } catch { }
+                    simAccumulatedMs -= SIM_STEP_MS;
+                }
+            }
+            catch { }
+        }
+
         // Sprite geometry tables (from user-provided data). Non-numeric placeholders use sensible defaults.
         private static readonly int[] sprite_heights = new int[] {
             0x34,0x34,0x34,0x34,0x34,0x12,0x12,0x10, // 00-07 (SPBH->0x10)
@@ -275,6 +297,11 @@ namespace FamidashEditor
         // Dedicated background simulation timer to keep simulation at a steady 60Hz
         private System.Threading.Timer? simTimer;
         private readonly object simLock = new object();
+        // High-resolution timing for fixed-step simulation at 60Hz
+        private System.Diagnostics.Stopwatch simStopwatch = new System.Diagnostics.Stopwatch();
+        private double simLastMs = 0.0;
+        private double simAccumulatedMs = 0.0;
+        private const double SIM_STEP_MS = 1000.0 / 60.0; // 16.666... ms per fixed-step
         // Pending color trigger info populated by simulation thread and applied on UI thread
         // Use -1 to indicate 'none' rather than nullable/volatile types.
         private int pendingBgIdx = -1;
@@ -344,7 +371,12 @@ namespace FamidashEditor
                 if (simTimer != null) return;
                 // Ensure player starts from initial X (do not advance before start)
                 // (playerX_fixed may already be set by caller/constructor)
-                simTimer = new System.Threading.Timer(_ => { try { SimulateNumericStep(); } catch { } }, null, 0, 16);
+                // Start high-resolution stopwatch and use an accumulator to run fixed 60Hz steps.
+                simStopwatch.Restart();
+                simLastMs = 0.0;
+                simAccumulatedMs = 0.0;
+                // Run timer at a small interval and accumulate elapsed time to drive fixed steps.
+                simTimer = new System.Threading.Timer(_ => { try { TimerSimulationLoop(); } catch { } }, null, 0, 10);
             }
             catch { }
         }
@@ -354,6 +386,7 @@ namespace FamidashEditor
         {
             try { simTimer?.Dispose(); } catch { }
             simTimer = null;
+            try { simStopwatch.Stop(); } catch { }
         }
 
         private bool upHeld = false;
@@ -648,7 +681,8 @@ namespace FamidashEditor
                 // Place the player's left such that (playerVisualWidth - 1) pixels are offscreen to the left,
                 // leaving 1 pixel (the outline) visible at x=0 on the first rendered frame.
                 // Shift one more tile left so the player starts further offscreen.
-                playerX_fixed = ((-playerVisualWidth + 1 - TILE) << 8);
+                // Start the player just offscreen to the left by one pixel (remove previous extra tile offset)
+                playerX_fixed = ((-playerVisualWidth + 1) << 8);
                 interactionScreenOffset_px = -1;
             }
             catch { }
@@ -752,6 +786,8 @@ namespace FamidashEditor
                 if (shift && ctrl) tabSpeedMultiplier = 8;
                 else if (shift) tabSpeedMultiplier = 4;
                 else tabSpeedMultiplier = 2;
+                // Tab speed multiplier previously notified the owner to change audio playback rate.
+                // Reverted: do not affect music from simulator key presses.
             }
             if (e.Key == Key.Escape)
             {

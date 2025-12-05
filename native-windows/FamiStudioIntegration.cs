@@ -19,6 +19,10 @@ namespace FamidashEditor
         private WaveOutEvent? output;
         private WaveStream? reader;
         private string? lastTempWav;
+        private string? lastFmsPath = null;
+        private int lastTrackIndex = -1;
+        // Playback rate multiplier (1.0 == normal). When possible, audio output will be resampled to match.
+        private double playbackRate = 1.0;
         public string? StatusMessage { get; private set; }
         public bool IsLoaded => alc != null;
         public bool IsPlaying => output != null && output.PlaybackState == PlaybackState.Playing;
@@ -391,6 +395,9 @@ namespace FamidashEditor
 
         public void PlayTrack(string fmsPath, int trackIndex)
         {
+            // Remember requested track so we can restart if playback rate changes.
+            lastFmsPath = fmsPath;
+            lastTrackIndex = trackIndex;
             Stop();
             // No PlayTrack diagnostic logging
 
@@ -518,7 +525,30 @@ namespace FamidashEditor
                 reader = new WaveFileReader(wavPath);
             }
             output = new WaveOutEvent();
-            output.Init(reader);
+            try
+            {
+                if (Math.Abs(playbackRate - 1.0) > 0.0001 && reader != null)
+                {
+                    try
+                    {
+                        var newFormat = new WaveFormat((int)(reader.WaveFormat.SampleRate * playbackRate), reader.WaveFormat.BitsPerSample, reader.WaveFormat.Channels);
+                        var resampler = new MediaFoundationResampler(reader, newFormat) { ResamplerQuality = 60 };
+                        output.Init(resampler);
+                    }
+                    catch
+                    {
+                        output.Init(reader);
+                    }
+                }
+                else
+                {
+                    output.Init(reader);
+                }
+            }
+            catch
+            {
+                try { output.Init(reader); } catch { }
+            }
             output.PlaybackStopped += (s, e) =>
             {
                 try { reader?.Dispose(); } catch { }
@@ -547,7 +577,30 @@ namespace FamidashEditor
             }
 
             output = new WaveOutEvent();
-            output.Init(reader);
+            try
+            {
+                if (Math.Abs(playbackRate - 1.0) > 0.0001 && reader != null)
+                {
+                    try
+                    {
+                        var newFormat = new WaveFormat((int)(reader.WaveFormat.SampleRate * playbackRate), reader.WaveFormat.BitsPerSample, reader.WaveFormat.Channels);
+                        var resampler = new MediaFoundationResampler(reader, newFormat) { ResamplerQuality = 60 };
+                        output.Init(resampler);
+                    }
+                    catch
+                    {
+                        output.Init(reader);
+                    }
+                }
+                else
+                {
+                    output.Init(reader);
+                }
+            }
+            catch
+            {
+                try { output.Init(reader); } catch { }
+            }
             output.PlaybackStopped += (s, e) =>
             {
                 try { reader?.Dispose(); } catch { }
@@ -576,6 +629,19 @@ namespace FamidashEditor
             try { if (lastTempWav != null && File.Exists(lastTempWav)) File.Delete(lastTempWav); } catch { }
             lastTempWav = null;
             StatusMessage = "Stopped";
+        }
+
+        // Request a playback rate multiplier (e.g. 2.0 for 2x).
+        // Reverted to a safe no-op that only records the desired rate but does not modify playback.
+        public void SetPlaybackRate(double rate)
+        {
+            try
+            {
+                if (rate <= 0) return;
+                playbackRate = rate;
+                // Do not restart or reinitialize audio here; simulator no longer affects music.
+            }
+            catch { }
         }
 
         // Warm up FamiStudio in-process API and audio device to reduce first-play latency.
