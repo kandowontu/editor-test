@@ -6,5 +6,17 @@
         <!-- Canvas size corrected to match runtime NES_W * TILE / NES_H * TILE (256x240) -->
         <!-- ClipToBounds prevents the cached tile layer (which is intentionally one tile larger) from rendering outside the visible area -->
         <Canvas x:Name="RenderCanvas" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True" />
+
+        <!-- Pause overlay shown while simulation is paused -->
+        <Grid x:Name="PauseOverlay" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="True" MouseLeftButtonUp="PauseOverlay_MouseLeftButtonUp" Cursor="Hand">
+            <Rectangle Fill="#80000000" Width="256" Height="240" />
+            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Ellipse Width="120" Height="120" Fill="#AA000000" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Width="60" Height="80" Margin="0,0,0,0">
+                    <Rectangle Width="16" Height="80" Fill="White" RadiusX="2" RadiusY="2" Margin="6,0" />
+                    <Rectangle Width="16" Height="80" Fill="White" RadiusX="2" RadiusY="2" Margin="6,0" />
+                </StackPanel>
+            </Grid>
+        </Grid>
     </Grid>
 </Window>

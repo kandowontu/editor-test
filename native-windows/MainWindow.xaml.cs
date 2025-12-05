@@ -217,9 +217,9 @@ namespace FamidashEditor
         public Color GroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
         public Color TileTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
         public string? SelectedSong { get; set; } = null;
+        public int LoadedStartingSpeedUiIndex { get; set; } = 1;
     }
 
-    
     
     private List<FileTabData> openFiles = new List<FileTabData>();
     private int currentFileIndex = -1;
@@ -251,6 +251,8 @@ namespace FamidashEditor
     private string loadedDecoSet = "DECO1";
     private string loadedBlockSet = "BLOCKSA";
     private string loadedSpikeSet = "SPIKESA";
+    private int loadedStartingSpeedUiIndex = 1; // UI indices: 0=0.5x,1=1x,2=2x,3=3x,4=4x
+    public int LoadedStartingSpeedUiIndex { get => loadedStartingSpeedUiIndex; set => loadedStartingSpeedUiIndex = value; }
     private int paletteTileSize = 16;
     private int paletteSpriteSize = 16;
     // Painting state for drag-to-draw
@@ -312,6 +314,9 @@ namespace FamidashEditor
         public Dictionary<string, int[]>? SpriteOffsets { get; set; } = null;
         // Sprite anchors: key is "x,y" (sprite position) and value is [anchorTileX, anchorTileY]
         public Dictionary<string, int[]>? SpriteAnchors { get; set; } = null;
+        // Starting speed metadata numeric code (matches JSON metadata scheme):
+        // 0 -> 1x, 1 -> 0.5x, 2 -> 2x, 3 -> 3x, 4 -> 4x
+        public int? StartingSpeed { get; set; } = null;
     }
 
     // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
@@ -841,6 +846,15 @@ namespace FamidashEditor
             }
             catch { }
 
+            // Save starting speed (convert UI index -> metadata numeric code)
+            try
+            {
+                int ui = loadedStartingSpeedUiIndex;
+                int mapped = (ui == 0) ? 1 : (ui == 1) ? 0 : ui; // 0->1, 1->0, else identity
+                config.StartingSpeed = mapped;
+            }
+            catch { }
+
             // Save sprite offsets
             try
             {
@@ -1009,6 +1023,22 @@ namespace FamidashEditor
                         }
                     }
                     catch { }
+
+                    // Load starting speed from config and map metadata numeric code -> UI index
+                    try
+                    {
+                        if (config.StartingSpeed.HasValue)
+                        {
+                            int jsonVal = config.StartingSpeed.Value;
+                            int uiIndex = (jsonVal == 1) ? 0 : (jsonVal == 0) ? 1 : jsonVal;
+                            loadedStartingSpeedUiIndex = uiIndex;
+                        }
+                        else
+                        {
+                            loadedStartingSpeedUiIndex = 1; // default 1x
+                        }
+                    }
+                    catch { loadedStartingSpeedUiIndex = 1; }
                     
                     // Load sprite offsets from config
                     try
@@ -6134,23 +6164,9 @@ namespace FamidashEditor
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
                     sim.Owner = this;
+                    try { sim.SetStartingSpeedUiIndex(loadedStartingSpeedUiIndex); } catch { }
                     // Warm audio and preload the selected track to reduce first-play latency.
-                    try { famiIntegration.WarmAndPrime(albumTxtPath); } catch { }
-
-                    // Start playback synchronously so audio is already playing when the simulator appears.
-                    try
-                    {
-                        int playIdx = -1;
-                        if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t) playIdx = t;
-                        else if (FamiTrackCombo?.SelectedIndex >= 0) playIdx = FamiTrackCombo.SelectedIndex;
-
-                        if (!string.IsNullOrEmpty(albumTxtPath) && playIdx >= 0)
-                        {
-                            // Run PlayTrack on a background thread but block here until it starts/returns so playback is synchronous with window show.
-                            try { System.Threading.Tasks.Task.Run(() => famiIntegration.PlayTrack(albumTxtPath, playIdx)).Wait(); } catch { }
-                        }
-                    }
-                    catch { }
+                    try { if (!string.IsNullOrEmpty(albumTxtPath)) famiIntegration.WarmAndPrime(albumTxtPath); } catch { }
 
                     sim.Show();
                     // Start simulation only after the window is shown so player doesn't move beforehand
@@ -6160,6 +6176,57 @@ namespace FamidashEditor
                 {
                     // Restore previous accurate-tileset setting so editor state is unchanged
                     try { if (!originalShowAccurate) SetShowAccurateTileset(false, loadedBlockSet, loadedSpikeSet); } catch { }
+                }
+            }
+            catch { }
+        }
+
+        // Called by simulator when user unpauses so music begins in sync with gameplay.
+        public void StartSimulatorPlayback()
+        {
+            try
+            {
+                if (famiIntegration != null && !famiIntegration.IsPlaying)
+                {
+                    int playIdx = -1;
+                    if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t) playIdx = t;
+                    else if (FamiTrackCombo?.SelectedIndex >= 0) playIdx = FamiTrackCombo.SelectedIndex;
+
+                    if (!string.IsNullOrEmpty(albumTxtPath) && playIdx >= 0)
+                    {
+                        // Fire-and-forget playback; WarmAndPrime has already reduced first-play latency.
+                        try { System.Threading.Tasks.Task.Run(() => famiIntegration.PlayTrack(albumTxtPath, playIdx)); } catch { }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // Start playback and await until the audio output reports playing (or timeout).
+        public async System.Threading.Tasks.Task StartSimulatorPlaybackAsync()
+        {
+            try
+            {
+                if (famiIntegration == null) return;
+                if (famiIntegration.IsPlaying) return;
+
+                int playIdx = -1;
+                if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t) playIdx = t;
+                else if (FamiTrackCombo?.SelectedIndex >= 0) playIdx = FamiTrackCombo.SelectedIndex;
+
+                if (string.IsNullOrEmpty(albumTxtPath) || playIdx < 0) return;
+
+                // Launch playback on background thread to avoid blocking UI.
+                // Suppress CS4014: this is intentionally fire-and-forget; StartSimulatorPlaybackAsync will poll IsPlaying.
+#pragma warning disable CS4014
+                System.Threading.Tasks.Task.Run(() => famiIntegration.PlayTrack(albumTxtPath, playIdx));
+#pragma warning restore CS4014
+
+                // Wait up to 1500ms for playback to start, polling IsPlaying.
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (!famiIntegration.IsPlaying && sw.ElapsedMilliseconds < 1500)
+                {
+                    await System.Threading.Tasks.Task.Delay(8).ConfigureAwait(false);
                 }
             }
             catch { }
@@ -6394,6 +6461,7 @@ namespace FamidashEditor
                     loadedDecoSet = tabData.LoadedDecoSet;
                     loadedBlockSet = tabData.LoadedBlockSet;
                     loadedSpikeSet = tabData.LoadedSpikeSet;
+                    try { loadedStartingSpeedUiIndex = tabData.LoadedStartingSpeedUiIndex; } catch { loadedStartingSpeedUiIndex = 1; }
                     noParallaxBg = tabData.NoParallaxBg;
                     backgroundTint = tabData.BackgroundTint;
                     groundTint = tabData.GroundTint;
@@ -6479,6 +6547,7 @@ namespace FamidashEditor
             tabData.LoadedDecoSet = loadedDecoSet;
             tabData.LoadedBlockSet = loadedBlockSet;
             tabData.LoadedSpikeSet = loadedSpikeSet;
+            tabData.LoadedStartingSpeedUiIndex = loadedStartingSpeedUiIndex;
             tabData.NoParallaxBg = noParallaxBg;
             tabData.BackgroundTint = backgroundTint;
             tabData.GroundTint = groundTint;

@@ -13,6 +13,24 @@ namespace FamidashEditor
         // Option: show yellow translucent hitboxes for sprites (non-trigger sprites only)
         public bool ShowSpriteHitboxes { get; set; } = false;
 
+        // Allow setting starting speed by UI index from the main window (0=0.5x,1=1x,2=2x,3=3x,4=4x)
+        public void SetStartingSpeedUiIndex(int uiIndex)
+        {
+            try
+            {
+                switch (uiIndex)
+                {
+                    case 0: currentSpeed_fixed = CUBE_SPEED_X05; break;
+                    case 1: currentSpeed_fixed = CUBE_SPEED_X1; break;
+                    case 2: currentSpeed_fixed = CUBE_SPEED_X2; break;
+                    case 3: currentSpeed_fixed = CUBE_SPEED_X3; break;
+                    case 4: currentSpeed_fixed = CUBE_SPEED_X4; break;
+                    default: currentSpeed_fixed = CUBE_SPEED_X1; break;
+                }
+            }
+            catch { }
+        }
+
         // Sprite geometry tables (from user-provided data). Non-numeric placeholders use sensible defaults.
         private static readonly int[] sprite_heights = new int[] {
             0x34,0x34,0x34,0x34,0x34,0x12,0x12,0x10, // 00-07 (SPBH->0x10)
@@ -265,7 +283,6 @@ namespace FamidashEditor
         private int pendingGroundSid = -1;
         private bool pendingTintChange = false;
         private System.Diagnostics.Stopwatch renderStopwatch = new System.Diagnostics.Stopwatch();
-        private double accumulatedSeconds = 0.0;
 
         private int animationFrame = 0;
         private System.Collections.Generic.Dictionary<int, int> spriteFrameOffsets = new System.Collections.Generic.Dictionary<int, int>();
@@ -341,8 +358,8 @@ namespace FamidashEditor
         private bool downHeld = false;
         // tabHeld was used previously; use tabSpeedMultiplier instead.
         // (removed unused field to silence build warning)
-        // Pause state controlled by ESC
-        private bool paused = false;
+        // Pause state controlled by ESC. Start paused so simulator opens paused.
+        private bool paused = true;
         // Multiplier applied while Tab (or Shift+Tab / Ctrl+Shift+Tab) is held.
         // Default 1 (no extra multiplier). While Tab is down this becomes 2/4/8 per modifiers.
         private int tabSpeedMultiplier = 1;
@@ -392,6 +409,8 @@ namespace FamidashEditor
             )
         {
             InitializeComponent();
+            // Ensure pause overlay reflects initial paused state
+            try { PauseOverlay.Visibility = paused ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed; } catch { }
             this.tiles = tiles.ToArray();
             this.sprites = sprites.ToArray();
             this.mapWidth = mapWidth;
@@ -615,6 +634,20 @@ namespace FamidashEditor
                 }
             }
             catch { }
+            // Ensure the player starts offscreen with just the first outline pixels visible.
+            try
+            {
+                int playerVisualWidth = TILE;
+                if (playerImage != null && playerImage.Source != null && playerImage.Width > 0) playerVisualWidth = (int)Math.Ceiling(playerImage.Width);
+                else if (playerRect != null) playerVisualWidth = (int)Math.Ceiling(playerRect.Width);
+
+                // Place the player's left such that (playerVisualWidth - 1) pixels are offscreen to the left,
+                // leaving 1 pixel (the outline) visible at x=0 on the first rendered frame.
+                // Shift one more tile left so the player starts further offscreen.
+                playerX_fixed = ((-playerVisualWidth + 1 - TILE) << 8);
+                interactionScreenOffset_px = -1;
+            }
+            catch { }
             this.Loaded += (s, e) => { try { this.Focus(); Keyboard.Focus(this); } catch { } };
             // Create persistent background / tile-layer / ground children to avoid re-allocating each frame
             try
@@ -703,7 +736,7 @@ namespace FamidashEditor
             return originalIndex;
         }
 
-        private void SimulatorWindow_KeyDown(object sender, KeyEventArgs e)
+        private async void SimulatorWindow_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Up) upHeld = true;
             if (e.Key == Key.Down) downHeld = true;
@@ -718,8 +751,29 @@ namespace FamidashEditor
             }
             if (e.Key == Key.Escape)
             {
-                // toggle pause
-                paused = !paused;
+                // toggle pause. When unpausing, request the owner to start music so music
+                // and gameplay begin on the same frame.
+                bool wasPaused = paused;
+                bool willBePaused = !paused;
+
+                if (wasPaused && !willBePaused)
+                {
+                    // Unpausing: request the owner to start playback and wait briefly for audio
+                    // to begin so audio and gameplay are (more) in sync, then advance one
+                    // numeric step and render a frame so the simulator visibly starts.
+                    try
+                    {
+                        try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
+                        try { SimulateNumericStep(); } catch { }
+                        try { RenderFrame(); } catch { }
+                    }
+                    catch { }
+                }
+
+                paused = willBePaused;
+
+                // Update overlay visibility
+                try { PauseOverlay.Visibility = paused ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed; } catch { }
             }
         }
 
@@ -731,6 +785,29 @@ namespace FamidashEditor
             {
                 tabSpeedMultiplier = 1;
             }
+        }
+
+        private async void PauseOverlay_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                // Only respond when currently paused.
+                if (!paused)
+                    return;
+
+                // Request owner to start playback and wait briefly for audio to begin,
+                // then advance one numeric step and render so gameplay visibly starts.
+                try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
+                try { SimulateNumericStep(); } catch { }
+                try { RenderFrame(); } catch { }
+
+                paused = false;
+                try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+
+                // Mark event handled so underlying canvas doesn't also receive it.
+                e.Handled = true;
+            }
+            catch { }
         }
 
         private void Timer_Tick(object? sender, EventArgs e)
@@ -1695,10 +1772,11 @@ namespace FamidashEditor
             try
             {
                 // Rendering happens on the UI thread; simulation runs on a background timer to maintain a steady 60Hz.
-                // If paused, still render the current frame so UI remains responsive.
+                // If paused, still render the current frame and leave overlay visible.
                 if (paused)
                 {
                     RenderFrame();
+                    try { PauseOverlay.Visibility = System.Windows.Visibility.Visible; } catch { }
                     return;
                 }
 
@@ -1708,6 +1786,8 @@ namespace FamidashEditor
                     try { ApplyPendingTints(); } catch { }
                 }
 
+                // Ensure overlay is not visible while running
+                try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
                 RenderFrame();
             }
             catch { }
@@ -1726,6 +1806,8 @@ namespace FamidashEditor
 
             lock (simLock)
             {
+                // Respect pause: do not advance numeric simulation when paused.
+                if (paused) return;
                 prevCameraCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
                 prevPlayerCenter_fixed = playerX_fixed + centerOffset_fixed;
 

@@ -21,6 +21,7 @@ namespace FamidashEditor
         public string SelectedBlockSet { get; private set; } = "BLOCKSA";
         public string SelectedSpikeSet { get; private set; } = "SPIKESA";
         public bool LockSpritesToSet { get; private set; } = false;
+        public int SelectedStartingSpeedUiIndex { get; private set; } = 1; // UI indices: 0=0.5x,1=1x,2=2x,3=3x,4=4x
         
         // Store original values for cancel functionality
         private string originalDeco = "DECO1";
@@ -113,6 +114,17 @@ namespace FamidashEditor
                         mw.SetNoParallax(NoParallaxCheckBox?.IsChecked == true);
                     }
                     
+                    // Save starting speed selection back to main window before saving config
+                    try
+                    {
+                        if (StartingSpeedCombo != null && StartingSpeedCombo.SelectedIndex >= 0)
+                        {
+                            SelectedStartingSpeedUiIndex = StartingSpeedCombo.SelectedIndex;
+                            mw.LoadedStartingSpeedUiIndex = SelectedStartingSpeedUiIndex;
+                        }
+                    }
+                    catch { }
+
                     // Save config
                     mw.SaveCurrentTmxConfig();
                 }
@@ -343,6 +355,24 @@ namespace FamidashEditor
                                     try { mwOwner.SetShowAccurateTileset(false, (BlockCombo?.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string, (SpikeCombo?.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content as string); } catch { }
                                 };
                             }
+
+                            // Wire StartingSpeed combo: initialize from owner's loaded value and persist on change
+                            if (StartingSpeedCombo != null)
+                            {
+                                try { StartingSpeedCombo.SelectedIndex = mwOwner.LoadedStartingSpeedUiIndex; } catch { }
+                                StartingSpeedCombo.SelectionChanged += (ss, ee) =>
+                                {
+                                    try
+                                    {
+                                        if (StartingSpeedCombo.SelectedIndex >= 0)
+                                        {
+                                            mwOwner.LoadedStartingSpeedUiIndex = StartingSpeedCombo.SelectedIndex;
+                                            try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                        }
+                                    }
+                                    catch { }
+                                };
+                            }
                         }
                     }
                     catch { }
@@ -514,6 +544,21 @@ namespace FamidashEditor
                 {
                     mainWindow.SetSongFromMetadata(levelData.songID);
                     dataChanged = true;
+                }
+
+                // Apply starting speed metadata if present. Metadata numeric codes map as:
+                // 0 -> 1x, 1 -> 0.5x, 2 -> 2x, 3 -> 3x, 4 -> 4x
+                if (levelData.startingSpeed.HasValue)
+                {
+                    try
+                    {
+                        int jsonVal = levelData.startingSpeed.Value;
+                        int uiIndex = (jsonVal == 1) ? 0 : (jsonVal == 0) ? 1 : jsonVal;
+                        mainWindow.LoadedStartingSpeedUiIndex = uiIndex;
+                        if (StartingSpeedCombo != null) StartingSpeedCombo.SelectedIndex = uiIndex;
+                        dataChanged = true;
+                    }
+                    catch { }
                 }
 
                 if (dataChanged)
@@ -747,6 +792,9 @@ namespace FamidashEditor
             public bool? parallaxDisable { get; set; }
             public ObjectOffsetEntry[]? objectOffsets { get; set; }
             public string? songID { get; set; }
+            // Optional starting speed metadata. Values are numeric codes per the metadata spec:
+            // 0 -> 1x, 1 -> 0.5x, 2 -> 2x, 3 -> 3x, 4 -> 4x
+            public int? startingSpeed { get; set; }
         }
     }
 }

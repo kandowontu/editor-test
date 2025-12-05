@@ -8,26 +8,36 @@
             <ColumnDefinition Width="140" />
         </Grid.ColumnDefinitions>
 
+        <!-- Starting speed will be placed under the left column controls to save space -->
+
         <StackPanel Grid.Column="0">
             <TextBlock Text="Sprite/Deco Set:" Margin="0,0,0,6" />
-            <ComboBox x:Name="DecoCombo" Width="220" HorizontalAlignment="Left">
+            <ComboBox x:Name="DecoCombo" Width="160" HorizontalAlignment="Left">
                 <ComboBoxItem Content="DECO1" />
                 <ComboBoxItem Content="DECOCLOUD" />
                 <ComboBoxItem Content="EXTRASPRITES1" />
             </ComboBox>
             <CheckBox x:Name="LockSpritesCheckBox" Content="Lock sprites to currently usable set" Margin="0,6,0,0" Width="260" HorizontalAlignment="Left" />
             <TextBlock Text="Block Set:" Margin="0,8,0,6" />
-            <ComboBox x:Name="BlockCombo" Width="220" HorizontalAlignment="Left">
+            <ComboBox x:Name="BlockCombo" Width="160" HorizontalAlignment="Left">
                 <ComboBoxItem Content="BLOCKSA" />
                 <ComboBoxItem Content="BLOCKSB" />
                 <ComboBoxItem Content="BLOCKSC" />
                 <ComboBoxItem Content="BLOCKSD" />
             </ComboBox>
             <TextBlock Text="Spike Set:" Margin="0,8,0,6" />
-            <ComboBox x:Name="SpikeCombo" Width="220" HorizontalAlignment="Left">
+            <ComboBox x:Name="SpikeCombo" Width="160" HorizontalAlignment="Left">
                 <ComboBoxItem Content="SPIKESA" />
                 <ComboBoxItem Content="SPIKESB" />
                 <ComboBoxItem Content="SPIKESC" />
+            </ComboBox>
+            <TextBlock Text="Starting Speed:" Margin="0,8,0,6" />
+            <ComboBox x:Name="StartingSpeedCombo" Width="120" HorizontalAlignment="Left">
+                <ComboBoxItem Content="0.5x" />
+                <ComboBoxItem Content="1x" />
+                <ComboBoxItem Content="2x" />
+                <ComboBoxItem Content="3x" />
+                <ComboBoxItem Content="4x" />
             </ComboBox>
             <CheckBox x:Name="ShowAccurateTilesetCheckBox" Content="Show accurate tileset" Margin="0,6,0,0" Width="220" HorizontalAlignment="Left" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
