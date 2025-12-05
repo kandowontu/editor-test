@@ -16,7 +16,8 @@ namespace FamidashEditor
         // Player world X (fixed-point, 8 fractional bits)
         private int playerX_fixed = 0;
 
-        // Visual player rectangle used as fallback when no sprite provided
+        // Visual player controls used for the player: image preferred, rectangle fallback
+        private System.Windows.Controls.Image? playerImage = null;
         private System.Windows.Shapes.Rectangle? playerRect = null;
         
         // When player crosses interaction line, remember the screen pixel offset where the crossing occurred
@@ -69,7 +70,6 @@ namespace FamidashEditor
         private bool groundRepeatX = true;
         private bool hasGroundLayer = false;
         private int groundTileRows = 0;
-        private BitmapSource? groundBitmap;
         // Fixed-point camera X with 8 fractional bits
         private int cameraX_fixed = 0;
         // cameraY in fixed-point (8 fractional bits)
@@ -282,13 +282,49 @@ namespace FamidashEditor
 
             // Ensure the window receives keyboard input for panning
 
-            // Create fallback player visual (magenta square) and add to canvas above sprites
+            // Create player visual: try to load `cube.png` from repo root, fall back to magenta rectangle
             try
             {
-                playerRect = new System.Windows.Shapes.Rectangle { Width = TILE, Height = TILE, Fill = new SolidColorBrush(Colors.Magenta) };
-                System.Windows.Controls.Canvas.SetZIndex(playerRect, 1000);
-                RenderCanvas.Children.Add(playerRect);
-                playerRect.Visibility = Visibility.Visible;
+                // create image control and add to canvas
+                playerImage = new System.Windows.Controls.Image { Stretch = Stretch.None };
+                System.Windows.Media.RenderOptions.SetBitmapScalingMode(playerImage, BitmapScalingMode.NearestNeighbor);
+                System.Windows.Controls.Canvas.SetZIndex(playerImage, 1000);
+                RenderCanvas.Children.Add(playerImage);
+
+                // Resolve cube.png relative to executable directory (project root is four levels up from bin)
+                try
+                {
+                    string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
+                    string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\cube.png"));
+                    if (System.IO.File.Exists(candidate))
+                    {
+                        var bi = new BitmapImage();
+                        bi.BeginInit();
+                        bi.UriSource = new Uri(candidate);
+                        bi.CacheOption = BitmapCacheOption.OnLoad;
+                        bi.EndInit();
+                        bi.Freeze();
+                        playerImage.Source = bi;
+                        playerImage.Width = bi.PixelWidth;
+                        playerImage.Height = bi.PixelHeight;
+                    }
+                    else
+                    {
+                        // fallback rectangle if image not found
+                        playerRect = new System.Windows.Shapes.Rectangle { Width = TILE, Height = TILE, Fill = new SolidColorBrush(Colors.Magenta) };
+                        System.Windows.Controls.Canvas.SetZIndex(playerRect, 1000);
+                        RenderCanvas.Children.Add(playerRect);
+                        playerRect.Visibility = Visibility.Visible;
+                    }
+                }
+                catch
+                {
+                    // image load failed; use rectangle fallback
+                    playerRect = new System.Windows.Shapes.Rectangle { Width = TILE, Height = TILE, Fill = new SolidColorBrush(Colors.Magenta) };
+                    System.Windows.Controls.Canvas.SetZIndex(playerRect, 1000);
+                    RenderCanvas.Children.Add(playerRect);
+                    playerRect.Visibility = Visibility.Visible;
+                }
             }
             catch { }
             this.Loaded += (s, e) => { try { this.Focus(); Keyboard.Focus(this); } catch { } };
@@ -1104,6 +1140,13 @@ namespace FamidashEditor
                             py += aoffs.offsetY; // match editor convention
                         }
                     }
+
+                    // Simulator tweak: medium poles (sprite id 0x2B) render 8px higher in preview
+                    try
+                    {
+                        if (s == 0x2B) py -= 8;
+                    }
+                    catch { }
 
                     // get pooled image
                     System.Windows.Controls.Image simg;
