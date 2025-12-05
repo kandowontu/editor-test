@@ -306,7 +306,8 @@ namespace FamidashEditor
 
         private bool upHeld = false;
         private bool downHeld = false;
-        private bool tabHeld = false;
+        // tabHeld was used previously; use tabSpeedMultiplier instead.
+        // (removed unused field to silence build warning)
         // Pause state controlled by ESC
         private bool paused = false;
         // Multiplier applied while Tab (or Shift+Tab / Ctrl+Shift+Tab) is held.
@@ -672,7 +673,6 @@ namespace FamidashEditor
             if (e.Key == Key.Down) downHeld = true;
             if (e.Key == Key.Tab)
             {
-                tabHeld = true;
                 // compute tab multiplier based on modifiers: Tab=2x, Shift+Tab=4x, Ctrl+Shift+Tab=8x
                 bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
                 bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
@@ -693,7 +693,6 @@ namespace FamidashEditor
             if (e.Key == Key.Down) downHeld = false;
             if (e.Key == Key.Tab)
             {
-                tabHeld = false;
                 tabSpeedMultiplier = 1;
             }
         }
@@ -1452,8 +1451,8 @@ namespace FamidashEditor
                                 decoLastSelectedFrame.TryGetValue(idx, out prevFrame);
                                 if (prevFrame != frame)
                                 {
-                                    string h0 = frames[0] != null ? frames[0].GetHashCode().ToString("X8") : "null";
-                                    string h1 = frames[1] != null ? frames[1].GetHashCode().ToString("X8") : "null";
+                                    string h0 = frames[0] != null ? frames[0]!.GetHashCode().ToString("X8") : "null";
+                                    string h1 = frames[1] != null ? frames[1]!.GetHashCode().ToString("X8") : "null";
                                     WriteTempLog($"Simulator: Decoration sprite idx={idx} id=0x{s:X} frames=[{(frames[0]!=null?"ok":"null")},{(frames[1]!=null?"ok":"null")}] selectedFrame={frame} hashes=[{h0},{h1}]");
                                     decoLastSelectedFrame[idx] = frame;
                                 }

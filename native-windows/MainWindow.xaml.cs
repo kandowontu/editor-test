@@ -6081,7 +6081,16 @@ namespace FamidashEditor
                 }
                 catch { }
 
-                var sim = new SimulatorWindow(
+                // Ensure simulator uses accurate tileset and hides color triggers regardless
+                bool originalShowAccurate = showAccurateTileset;
+                try
+                {
+                    if (!originalShowAccurate)
+                    {
+                        try { SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+                    }
+
+                    var sim = new SimulatorWindow(
                     tiles.ToArray(),
                     sprites.ToArray(),
                     mapWidth,
@@ -6098,7 +6107,7 @@ namespace FamidashEditor
                     playerTintEnabled,
                     gridRenderShiftYPx,
                     true, // force preview mode in simulator
-                    hideColorTriggers,
+                    true, // hide color triggers in simulator (force on)
                     previewMap,
                     animationFrames,
                     sawFrame1TilesTinted,
@@ -6122,10 +6131,34 @@ namespace FamidashEditor
                     loadedHasGroundLayer,
                     groundTileRows
                     );
-                // Pass current simulator-related options into the window
-                try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
-                sim.Owner = this;
-                sim.Show();
+                    // Pass current simulator-related options into the window
+                    try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
+                    sim.Owner = this;
+                    // Warm audio and preload the selected track to reduce first-play latency.
+                    try { famiIntegration.WarmAndPrime(albumTxtPath); } catch { }
+
+                    // Start playback synchronously so audio is already playing when the simulator appears.
+                    try
+                    {
+                        int playIdx = -1;
+                        if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t) playIdx = t;
+                        else if (FamiTrackCombo?.SelectedIndex >= 0) playIdx = FamiTrackCombo.SelectedIndex;
+
+                        if (!string.IsNullOrEmpty(albumTxtPath) && playIdx >= 0)
+                        {
+                            // Run PlayTrack on a background thread but block here until it starts/returns so playback is synchronous with window show.
+                            try { System.Threading.Tasks.Task.Run(() => famiIntegration.PlayTrack(albumTxtPath, playIdx)).Wait(); } catch { }
+                        }
+                    }
+                    catch { }
+
+                    sim.Show();
+                }
+                finally
+                {
+                    // Restore previous accurate-tileset setting so editor state is unchanged
+                    try { if (!originalShowAccurate) SetShowAccurateTileset(false, loadedBlockSet, loadedSpikeSet); } catch { }
+                }
             }
             catch { }
         }
@@ -16941,6 +16974,12 @@ namespace FamidashEditor
         if (e.Key == Key.W && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
             MenuFileClose_Click(sender, e);
+            e.Handled = true;
+        }
+        // F5 opens the simulator (shortcut)
+        if (e.Key == Key.F5)
+        {
+            try { OpenSimulatorWindow(); } catch { }
             e.Handled = true;
         }
     }
