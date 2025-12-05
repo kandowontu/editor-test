@@ -122,8 +122,33 @@ namespace FamidashEditor
         // Cache tinted decoration sprites keyed by (spriteId<<32)|ARGB
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> tintedSpriteCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
 
+        // Cache for ground-tinted tile images keyed by (tileIndex<<32)|ARGB
+        private readonly System.Collections.Generic.Dictionary<long, ImageSource?> groundTintedTileCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
+
         // Track color-trigger anchors that have already been processed (so we don't resample every frame)
         private System.Collections.Generic.HashSet<int> processedColorTriggers = new System.Collections.Generic.HashSet<int>();
+
+        // Lightweight one-time debug logging sets to avoid spamming output repeatedly
+        private System.Collections.Generic.HashSet<int> decoLogged = new System.Collections.Generic.HashSet<int>();
+        private System.Collections.Generic.HashSet<int> triggerLogged = new System.Collections.Generic.HashSet<int>();
+        // Track last selected decoration frame so we can log when it actually changes
+        private System.Collections.Generic.Dictionary<int, int> decoLastSelectedFrame = new System.Collections.Generic.Dictionary<int, int>();
+        private bool enableSimulatorDebugLogging = true; // set true to capture helpful messages during diagnosis
+
+        // Append a timestamped simulator debug message to the temp log file.
+        private void WriteTempLog(string message)
+        {
+            if (!enableSimulatorDebugLogging) return;
+            try
+            {
+                string temp = System.IO.Path.GetTempPath();
+                string fn = System.IO.Path.Combine(temp, "FamidashSimulator.log");
+                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}";
+                System.IO.File.AppendAllText(fn, line);
+                try { System.Diagnostics.Debug.WriteLine(message); } catch { }
+            }
+            catch { }
+        }
 
         private bool upHeld = false;
         private bool downHeld = false;
@@ -698,18 +723,33 @@ namespace FamidashEditor
                         var c = ColorFromTrigger(bgSid.Value);
                         backgroundTint = c; // update field used for drawing background
                         processedColorTriggers.Add(bgIdx.Value);
+                        if (enableSimulatorDebugLogging && !triggerLogged.Contains(bgIdx.Value))
+                        {
+                            WriteTempLog($"Simulator: Applied background trigger at idx={bgIdx.Value} sid=0x{bgSid.Value:X} color={c}");
+                            triggerLogged.Add(bgIdx.Value);
+                        }
                     }
                     if (tileIdx.HasValue && tileSid.HasValue)
                     {
                         var c = ColorFromTrigger(tileSid.Value);
                         tileTint = c;
                         processedColorTriggers.Add(tileIdx.Value);
+                        if (enableSimulatorDebugLogging && !triggerLogged.Contains(tileIdx.Value))
+                        {
+                            WriteTempLog($"Simulator: Applied tile trigger at idx={tileIdx.Value} sid=0x{tileSid.Value:X} color={c}");
+                            triggerLogged.Add(tileIdx.Value);
+                        }
                     }
                     if (groundIdx.HasValue && groundSid.HasValue)
                     {
                         var c = ColorFromTrigger(groundSid.Value);
                         groundTint = c;
                         processedColorTriggers.Add(groundIdx.Value);
+                        if (enableSimulatorDebugLogging && !triggerLogged.Contains(groundIdx.Value))
+                        {
+                            WriteTempLog($"Simulator: Applied ground trigger at idx={groundIdx.Value} sid=0x{groundSid.Value:X} color={c}");
+                            triggerLogged.Add(groundIdx.Value);
+                        }
                     }
                 }
                 catch { }
@@ -723,11 +763,31 @@ namespace FamidashEditor
                         UpdateTonedImagesForTileTint(tileTint);
 
                         // regenerate parallax and ground toned images so parallax/ground respond to their tints
-                        try { parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
-                        try { groundTonedImages = CreateHueShiftedImages(groundImages, groundTint); } catch { groundTonedImages = groundImages; }
+                        try {
+                            if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
+                            {
+                                parallaxTonedImages = CreateBlackMaskedImages(parallaxImages);
+                            }
+                            else
+                            {
+                                parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint);
+                            }
+                        } catch { parallaxTonedImages = parallaxImages; }
+                        try {
+                            if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
+                            {
+                                groundTonedImages = CreateBlackMaskedImages(groundImages);
+                            }
+                            else
+                            {
+                                groundTonedImages = CreateHueShiftedImages(groundImages, groundTint);
+                            }
+                        } catch { groundTonedImages = groundImages; }
 
                         // invalidate cached tile layer so it is rebuilt with new toned images
                         tileLayerCache = null;
+                        // Clear ground-tinted tile cache so tiles using ground tint get regenerated
+                        try { groundTintedTileCache.Clear(); } catch { }
                     }
                 }
                 catch { }
@@ -992,19 +1052,59 @@ namespace FamidashEditor
                                 if (chosenTile == null && useTileIndex >= 0)
                                 {
                                     // Use the animated tile index (useTileIndex) consistently when selecting the image.
-                                    if (useTileIndex >= 1000)
+                                    // For a few ground-related tile indices, prefer applying the ground tint
+                                    // (these tiles should respond to ground tint, not tile tint).
+                                    var groundAffected = (useTileIndex == 0x01 || useTileIndex == 0x02 || useTileIndex == 0x05 || useTileIndex == 0x06 || useTileIndex == 0x88 || useTileIndex == 0x89);
+
+                                    if (groundAffected)
                                     {
-                                        if (tileTonedImages != null && useTileIndex >= 0 && useTileIndex < tileTonedImages.Length && tileTonedImages[useTileIndex] != null)
-                                            chosenTile = tileTonedImages[useTileIndex];
-                                        else if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
-                                            chosenTile = tileImages[useTileIndex];
+                                        try
+                                        {
+                                            ImageSource? gt = null;
+                                            long key = (((long)useTileIndex) << 32) | ((long)groundTint.A << 24) | ((long)groundTint.R << 16) | ((long)groundTint.G << 8) | groundTint.B;
+                                            if (!groundTintedTileCache.TryGetValue(key, out gt))
+                                            {
+                                                // create a ground-tinted copy from original tileImages when available
+                                                if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
+                                                {
+                                                    try
+                                                    {
+                                                        if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
+                                                        {
+                                                            // Pure black ground tint: make a black-masked copy (preserve white lines)
+                                                            gt = CreateBlackMaskedImage(tileImages[useTileIndex]);
+                                                        }
+                                                        else
+                                                        {
+                                                            var arr = CreateHslShiftedImages(new ImageSource[] { tileImages[useTileIndex] }, groundTint);
+                                                            if (arr != null && arr.Length > 0) gt = arr[0];
+                                                        }
+                                                    }
+                                                    catch { gt = tileImages[useTileIndex]; }
+                                                }
+                                                groundTintedTileCache[key] = gt;
+                                            }
+                                            if (gt != null) chosenTile = gt;
+                                        }
+                                        catch { }
                                     }
-                                    else
+
+                                    if (chosenTile == null)
                                     {
-                                        if (tileTonedImages != null && useTileIndex >= 0 && useTileIndex < tileTonedImages.Length && tileTonedImages[useTileIndex] != null)
-                                            chosenTile = tileTonedImages[useTileIndex];
-                                        else if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
-                                            chosenTile = tileImages[useTileIndex];
+                                        if (useTileIndex >= 1000)
+                                        {
+                                            if (tileTonedImages != null && useTileIndex >= 0 && useTileIndex < tileTonedImages.Length && tileTonedImages[useTileIndex] != null)
+                                                chosenTile = tileTonedImages[useTileIndex];
+                                            else if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
+                                                chosenTile = tileImages[useTileIndex];
+                                        }
+                                        else
+                                        {
+                                            if (tileTonedImages != null && useTileIndex >= 0 && useTileIndex < tileTonedImages.Length && tileTonedImages[useTileIndex] != null)
+                                                chosenTile = tileTonedImages[useTileIndex];
+                                            else if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
+                                                chosenTile = tileImages[useTileIndex];
+                                        }
                                     }
                                 }
 
@@ -1131,10 +1231,44 @@ namespace FamidashEditor
                     ImageSource? chosenSprite = null;
                     if (animationFrames != null && animationFrames.TryGetValue(s, out var frames) && frames != null && frames.Length > 0)
                     {
-                        if (!spriteFrameOffsets.ContainsKey(idx)) spriteFrameOffsets[idx] = spriteAnimationRandom.Next(0, Math.Max(1, frames.Length));
-                        int offset = spriteFrameOffsets[idx];
-                        int frame = (((animationFrame * 9) / 20) + offset) % Math.Max(1, frames.Length);
+                        // For 2-frame decoration sprites we want a uniform cadence across all anchors
+                        // so do not apply a per-anchor random offset. For other sprites/lengths, preserve
+                        // per-anchor randomness so placements don't always animate in lockstep.
+                        int offset = 0;
+                        if (!(decorationSpriteIds.Contains(s) && frames.Length == 2))
+                        {
+                            if (!spriteFrameOffsets.ContainsKey(idx)) spriteFrameOffsets[idx] = spriteAnimationRandom.Next(0, Math.Max(1, frames.Length));
+                            offset = spriteFrameOffsets[idx];
+                        }
+                        int frame = 0;
+                        if (decorationSpriteIds.Contains(s) && frames.Length == 2)
+                        {
+                            // Match editor preview two-frame cadence exactly (same math as MainWindow.GetTwoFrameCustomIndex)
+                            frame = (((animationFrame * 3) / 40)) % 2;
+                            if (frame < 0) frame += 2;
+                        }
+                        else
+                        {
+                            frame = (((animationFrame * 9) / 20) + offset) % Math.Max(1, frames.Length);
+                        }
                         chosenSprite = frames[frame];
+                        // Debug: log decoration frames presence/selection when the selected frame changes
+                        try
+                        {
+                            if (enableSimulatorDebugLogging && decorationSpriteIds.Contains(s) && frames.Length == 2)
+                            {
+                                int prevFrame = -1;
+                                decoLastSelectedFrame.TryGetValue(idx, out prevFrame);
+                                if (prevFrame != frame)
+                                {
+                                    string h0 = frames[0] != null ? frames[0].GetHashCode().ToString("X8") : "null";
+                                    string h1 = frames[1] != null ? frames[1].GetHashCode().ToString("X8") : "null";
+                                    WriteTempLog($"Simulator: Decoration sprite idx={idx} id=0x{s:X} frames=[{(frames[0]!=null?"ok":"null")},{(frames[1]!=null?"ok":"null")}] selectedFrame={frame} hashes=[{h0},{h1}]");
+                                    decoLastSelectedFrame[idx] = frame;
+                                }
+                            }
+                        }
+                        catch { }
                         if (chosenSprite == null)
                         {
                             if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s, out var pimg) && pimg != null)
@@ -1156,6 +1290,8 @@ namespace FamidashEditor
                     }
 
                     if (chosenSprite == null) continue;
+                    // Always hide black color-trigger sprites (they should activate but not be visible in simulator)
+                    if (s == 0x8F || s == 0xCF) continue;
                     if (hideColorTriggers && IsColorTriggerSprite(s)) continue;
 
                     // Apply player tint to decoration sprites when enabled
@@ -1217,6 +1353,8 @@ namespace FamidashEditor
                         spritePool.Add(simg);
                         RenderCanvas.Children.Add(simg);
                     }
+                    // Force-refresh the Image control to ensure WPF updates when the source changes
+                    try { simg.Source = null; } catch { }
                     simg.Source = chosenSprite;
                     if (chosenSprite is BitmapSource bs) { simg.Width = bs.PixelWidth; simg.Height = bs.PixelHeight; }
                     System.Windows.Controls.Canvas.SetLeft(simg, px);
@@ -1316,8 +1454,19 @@ namespace FamidashEditor
             int high = spriteIdx & 0xF0;
             if (low >= 0xD)
             {
+                // Most high-nibble groups with low >= 0xD are excluded, but allow explicit
+                // single-value exceptions such as 0x8F and 0xCF which should act as triggers.
                 if (high == 0x80 || high == 0x90 || high == 0xA0 || high == 0xC0 || high == 0xD0 || high == 0xE0)
-                    return false;
+                {
+                    if (spriteIdx == 0x8F || spriteIdx == 0xCF)
+                    {
+                        // explicit exceptions: keep as trigger
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
             }
 
             return true;
@@ -1336,12 +1485,18 @@ namespace FamidashEditor
 
         private bool IsGroundTrigger(int spriteIdx)
         {
-            // Include 0xCF as valid ground trigger per request
-            return (spriteIdx >= 0xC0 && spriteIdx <= 0xEC || spriteIdx == 0xCF) && IsColorTriggerSprite(spriteIdx);
+            // Include 0xCF as a valid ground trigger per request
+            return ((spriteIdx >= 0xC0 && spriteIdx <= 0xEC) || spriteIdx == 0xCF) && IsColorTriggerSprite(spriteIdx);
         }
 
         private Color ColorFromTrigger(int spriteIdx)
         {
+            // Special-case: certain trigger sprites explicitly mean "black" regardless of sampling.
+            if (spriteIdx == 0x8F || spriteIdx == 0xCF)
+            {
+                return Color.FromArgb(255, 0, 0, 0);
+            }
+
             // Prefer sampling the actual sprite/preview image color so the tint matches icon color
             try
             {
@@ -1429,7 +1584,10 @@ namespace FamidashEditor
             if (!playerTintEnabled) return src;
             try
             {
-                long key = (((long)spriteId) << 32) | ((long)playerTint.A << 24) | ((long)playerTint.R << 16) | ((long)playerTint.G << 8) | playerTint.B;
+                // Include the source image identity in the cache key so different frames
+                // of the same sprite id don't collapse to the same cached tinted image.
+                int srcHash = src?.GetHashCode() ?? 0;
+                long key = (((long)spriteId) << 48) | (((long)srcHash & 0xFFFF) << 32) | ((long)playerTint.A << 24) | ((long)playerTint.R << 16) | ((long)playerTint.G << 8) | playerTint.B;
                 if (tintedSpriteCache.TryGetValue(key, out var cached)) return cached;
 
                 if (src is BitmapSource bs)
@@ -1500,6 +1658,44 @@ namespace FamidashEditor
                 // If those originals are available elsewhere in the simulator, we could re-tint them here.
             }
             catch { }
+        }
+
+        // Create a black-masked copy of a single image: non-white pixels become black (alpha preserved).
+        private ImageSource? CreateBlackMaskedImage(ImageSource? src)
+        {
+            if (src == null) return null;
+            if (!(src is BitmapSource bs)) return src;
+            try
+            {
+                var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                int w = Math.Max(1, conv.PixelWidth);
+                int h = Math.Max(1, conv.PixelHeight);
+                int stride = w * 4;
+                var pixels = new byte[h * stride];
+                conv.CopyPixels(pixels, stride, 0);
+                for (int i = 0; i < pixels.Length; i += 4)
+                {
+                    byte b = pixels[i + 0];
+                    byte g = pixels[i + 1];
+                    byte r = pixels[i + 2];
+                    byte a = pixels[i + 3];
+                    if (a == 0) continue;
+                    // preserve near-white pixels (white lines), make everything else black
+                    bool isWhite = (r >= 240 && g >= 240 && b >= 240);
+                    if (!isWhite)
+                    {
+                        pixels[i + 0] = 0; // b
+                        pixels[i + 1] = 0; // g
+                        pixels[i + 2] = 0; // r
+                        // keep alpha as-is to preserve anti-alias edges
+                    }
+                }
+                var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                wb.Freeze();
+                return wb;
+            }
+            catch { return src; }
         }
 
         // Create HSL-hue shifted copies of images. For each visible, non-black/non-white pixel
@@ -1616,6 +1812,12 @@ namespace FamidashEditor
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // strength 0 => no change
+            // If the tint is pure opaque black, produce black-masked images that
+            // are solid black except for preserved near-white details (white line).
+            if (tint.A == 255 && tint.R == 0 && tint.G == 0 && tint.B == 0)
+            {
+                return CreateBlackMaskedImages(originals);
+            }
 
             double strength = tint.A / 255.0;
             // convert tint color to HSL once
@@ -1653,6 +1855,61 @@ namespace FamidashEditor
                             pixels[i + 1] = g2;
                             pixels[i + 2] = r2;
                             pixels[i + 3] = (byte)a; // keep original alpha
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch
+                    {
+                        outList.Add(src);
+                    }
+                }
+                else
+                {
+                    outList.Add(src);
+                }
+            }
+            return outList.ToArray();
+        }
+
+        // Create images where non-white pixels become solid black (alpha preserved for transparent pixels),
+        // and near-white pixels are preserved as white. This produces a 'black with white line' effect
+        // useful for pure-black triggers.
+        private ImageSource[]? CreateBlackMaskedImages(ImageSource[]? originals)
+        {
+            if (originals == null) return null;
+            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte b = pixels[i + 0];
+                            byte g = pixels[i + 1];
+                            byte r = pixels[i + 2];
+                            byte a = pixels[i + 3];
+                            if (a == 0) continue; // preserve transparency
+                            bool isWhite = (r >= 249 && g >= 249 && b >= 249);
+                            if (isWhite)
+                            {
+                                pixels[i + 0] = 255; pixels[i + 1] = 255; pixels[i + 2] = 255;
+                            }
+                            else
+                            {
+                                pixels[i + 0] = 0; pixels[i + 1] = 0; pixels[i + 2] = 0;
+                            }
+                            pixels[i + 3] = 255; // make opaque
                         }
 
                         var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
