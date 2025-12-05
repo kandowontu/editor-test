@@ -41,6 +41,22 @@ namespace FamidashEditor
         private const int NES_H = 15; // vertical tiles (was 16)
         private const int TILE = 16;
 
+        // Parallax / ground data passed from the editor so simulator can mirror preview-mode
+        private ImageSource[]? parallaxImages;
+        private ImageSource[]? parallaxTonedImages;
+        private double parallaxX = 1.0;
+        private double parallaxY = 1.0;
+        private bool parallaxRepeatX = true;
+        private bool parallaxRepeatY = true;
+        private bool hasParallaxLayer = false;
+
+        private ImageSource[]? groundImages;
+        private ImageSource[]? groundTonedImages;
+        private double groundOffsetY = 0.0;
+        private bool groundRepeatX = true;
+        private bool hasGroundLayer = false;
+        private int groundTileRows = 0;
+        private BitmapSource? groundBitmap;
         // Fixed-point camera X with 8 fractional bits
         private int cameraX_fixed = 0;
         // cameraY in fixed-point (8 fractional bits)
@@ -128,6 +144,20 @@ namespace FamidashEditor
             ImageSource[]? smallSawFrame2TilesTinted = null,
             ImageSource[]? largeSawFrame1TilesTinted = null,
             ImageSource[]? largeSawFrame2TilesTinted = null
+            ,
+            ImageSource[]? parallaxImages = null,
+            ImageSource[]? parallaxTonedImages = null,
+            double parallaxX = 1.0,
+            double parallaxY = 1.0,
+            bool parallaxRepeatX = true,
+            bool parallaxRepeatY = true,
+            bool hasParallaxLayer = false,
+            ImageSource[]? groundImages = null,
+            ImageSource[]? groundTonedImages = null,
+            double groundOffsetY = 0.0,
+            bool groundRepeatX = true,
+            bool hasGroundLayer = false,
+            int groundTileRows = 0
             )
         {
             InitializeComponent();
@@ -156,6 +186,22 @@ namespace FamidashEditor
             this.smallSawFrame2TilesTinted = smallSawFrame2TilesTinted;
             this.largeSawFrame1TilesTinted = largeSawFrame1TilesTinted;
             this.largeSawFrame2TilesTinted = largeSawFrame2TilesTinted;
+
+            // parallax / ground
+            this.parallaxImages = parallaxImages;
+            this.parallaxTonedImages = parallaxTonedImages;
+            this.parallaxX = parallaxX;
+            this.parallaxY = parallaxY;
+            this.parallaxRepeatX = parallaxRepeatX;
+            this.parallaxRepeatY = parallaxRepeatY;
+            this.hasParallaxLayer = hasParallaxLayer;
+
+            this.groundImages = groundImages;
+            this.groundTonedImages = groundTonedImages;
+            this.groundOffsetY = groundOffsetY;
+            this.groundRepeatX = groundRepeatX;
+            this.hasGroundLayer = hasGroundLayer;
+            this.groundTileRows = groundTileRows;
 
             // Ensure decoration sprites pulse even when editor didn't provide animation frames.
             try
@@ -478,11 +524,58 @@ namespace FamidashEditor
             int startTileX = pixelX / TILE;
             int offsetX = pixelX % TILE;
             int pixelY = cameraY_fixed >> 8;
+
+            // If ground is present in the preview, reserve up to two ground rows at the bottom
+            int groundRowsToReserve = 0;
+            if (hasGroundLayer && groundTileRows > 0)
+            {
+                // Reserve exactly 2 rows when a ground layer exists (or fewer if ground bitmap has <2 rows)
+                groundRowsToReserve = Math.Min(2, groundTileRows);
+            }
+            int groundPixels = groundRowsToReserve * TILE;
+
+            // Keep camera-aligned start/offset based on actual camera Y so sub-pixel translation
+            // remains consistent with the editor. We'll subtract ground rows when sampling map tiles.
             int startTileY = pixelY / TILE;
             int offsetY = pixelY % TILE;
 
-            // Update persistent background tint
-            try { if (bgRectPersistent != null) bgRectPersistent.Fill = new SolidColorBrush(backgroundTint); } catch { }
+            // Update persistent background: draw parallax tiled image when available
+            try
+            {
+                if (bgRectPersistent != null && hasParallaxLayer && parallaxImages != null && parallaxImages.Length > 0)
+                {
+                    ImageSource src = parallaxTonedImages != null && parallaxTonedImages.Length == parallaxImages.Length && parallaxTonedImages[0] != null ? parallaxTonedImages[0] : parallaxImages[0];
+                    if (src is BitmapSource pbs)
+                    {
+                        double tileW = Math.Max(1.0, pbs.PixelWidth);
+                        double tileH = Math.Max(1.0, pbs.PixelHeight);
+                        var brush = new ImageBrush(src)
+                        {
+                            TileMode = TileMode.Tile,
+                            ViewportUnits = BrushMappingMode.Absolute,
+                            Viewport = new Rect(0, 0, tileW, tileH),
+                            Stretch = Stretch.Fill
+                        };
+
+                        // Parallax translation: background moves slower than camera based on parallaxX/Y.
+                        double parallaxOffsetX = -(pixelX) * (1.0 - parallaxX);
+                        double parallaxOffsetY = -(cameraY_fixed >> 8) * (1.0 - parallaxY);
+
+                        // Align horizontal scroll to tile pixels to avoid shimmering
+                        brush.Transform = new TranslateTransform(parallaxOffsetX, parallaxOffsetY);
+                        bgRectPersistent.Fill = brush;
+                    }
+                    else
+                    {
+                        bgRectPersistent.Fill = new SolidColorBrush(backgroundTint);
+                    }
+                }
+                else
+                {
+                    if (bgRectPersistent != null) bgRectPersistent.Fill = new SolidColorBrush(backgroundTint);
+                }
+            }
+            catch { }
 
             // Rebuild tile-layer cache when integer tile origin changes
             try
@@ -498,13 +591,77 @@ namespace FamidashEditor
                     bool hadAnimated = false;
                     using (var dc = dv.RenderOpen())
                     {
+                        int cacheTilesY_local = NES_H + 1;
+                        int groundRowsToReserve_local = groundRowsToReserve;
+                        int groundStartRow_local = cacheTilesY_local - groundRowsToReserve_local;
+
+                        // Determine ground layout columns if ground images are available
+                        int groundCols = 1;
+                        if (groundImages != null && groundTileRows > 0)
+                        {
+                            groundCols = Math.Max(1, groundImages.Length / groundTileRows);
+                        }
+
                         for (int vx = 0; vx <= NES_W; vx++)
                         {
                             int mapX = startTileX + vx;
                             for (int vy = 0; vy <= NES_H; vy++)
                             {
-                                int mapY = startTileY + vy;
                                 Rect dest = new Rect(vx * TILE, vy * TILE, TILE, TILE);
+
+                                // Compute the map Y corresponding to this dest row, where we treat the
+                                // visible rows as starting from startTileY - groundRowsToReserve
+                                int mapY = startTileY + groundRowsToReserve_local + vy;
+
+                                // If mapY is beyond the bottom of the map, and we have a ground layer,
+                                // draw the appropriate ground slice row instead of map tiles.
+                                if (mapY >= mapHeight)
+                                {
+                                    if (hasGroundLayer && groundImages != null && groundImages.Length > 0)
+                                    {
+                                        int pyGround = mapY - mapHeight; // 0..groundRowsToReserve-1
+                                        int pxGround = ((mapX % groundCols) + groundCols) % groundCols; // wrap
+                                        int rowIndex = Math.Max(0, Math.Min(groundTileRows - 1, pyGround));
+                                        int arrIdx = rowIndex * groundCols + pxGround;
+                                        ImageSource? gimg = null;
+                                        if (groundTonedImages != null && arrIdx >= 0 && arrIdx < groundTonedImages.Length) gimg = groundTonedImages[arrIdx];
+                                        if (gimg == null && groundImages != null && arrIdx >= 0 && arrIdx < groundImages.Length) gimg = groundImages[arrIdx];
+                                        if (gimg != null)
+                                        {
+                                            if (gimg is BitmapSource gbs)
+                                            {
+                                                double imgW = Math.Max(1.0, gbs.PixelWidth);
+                                                double imgH = Math.Max(1.0, gbs.PixelHeight);
+                                                if (imgW <= TILE && imgH <= TILE)
+                                                {
+                                                    double x = dest.X + (TILE - imgW) / 2.0;
+                                                    double y = dest.Y + (TILE - imgH);
+                                                    dc.DrawImage(gimg, new Rect(x, y, imgW, imgH));
+                                                }
+                                                else
+                                                {
+                                                    dc.DrawImage(gimg, dest);
+                                                }
+                                            }
+                                            else
+                                            {
+                                                dc.DrawImage(gimg, dest);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            dc.DrawRectangle(Brushes.Black, null, dest);
+                                        }
+                                        continue;
+                                    }
+                                    else
+                                    {
+                                        dc.DrawRectangle(Brushes.Black, null, dest);
+                                        continue;
+                                    }
+                                }
+
+                                // Normal map tile sampling
                                 if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight)
                                 {
                                     dc.DrawRectangle(Brushes.Black, null, dest);
@@ -685,15 +842,50 @@ namespace FamidashEditor
             // Position the tile layer to account for fractional pixel offset
             try { if (tileLayerImage != null) { System.Windows.Controls.Canvas.SetLeft(tileLayerImage, -offsetX); System.Windows.Controls.Canvas.SetTop(tileLayerImage, -offsetY); } } catch { }
 
-            // Update ground tint rect
+            // Update ground rectangle (render tiled ground image if available)
             try
             {
                 if (groundRectPersistent != null)
                 {
-                    groundRectPersistent.Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 };
-                    int groundHeight = TILE * Math.Min(NES_H, 2);
-                    groundRectPersistent.Height = groundHeight;
-                    System.Windows.Controls.Canvas.SetTop(groundRectPersistent, (NES_H * TILE) - groundHeight);
+                    if (hasGroundLayer && groundImages != null && groundImages.Length > 0)
+                    {
+                        ImageSource src = groundTonedImages != null && groundTonedImages.Length == groundImages.Length && groundTonedImages[0] != null ? groundTonedImages[0] : groundImages[0];
+                        if (src is BitmapSource gbs)
+                        {
+                            double tileW = Math.Max(1.0, gbs.PixelWidth);
+                            double tileH = Math.Max(1.0, gbs.PixelHeight);
+                            var brush = new ImageBrush(src)
+                            {
+                                TileMode = TileMode.Tile,
+                                ViewportUnits = BrushMappingMode.Absolute,
+                                Viewport = new Rect(0, 0, tileW, tileH),
+                                Stretch = Stretch.Fill
+                            };
+                            // Sync horizontal scroll with tiles
+                            brush.Transform = new TranslateTransform(-offsetX, 0);
+                            groundRectPersistent.Fill = brush;
+                        }
+                        else
+                        {
+                            groundRectPersistent.Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 };
+                        }
+                        int groundHeight = TILE * Math.Min(NES_H, Math.Max(groundTileRows, 2));
+                        // Use reserved rows (up to 2) as visual ground height
+                        groundHeight = TILE * Math.Min(NES_H, Math.Min(groundTileRows, 2));
+                        groundRectPersistent.Height = groundHeight;
+                        System.Windows.Controls.Canvas.SetTop(groundRectPersistent, (NES_H * TILE) - groundHeight);
+                        // We draw ground cells directly into the tile-layer cache, so keep the persistent
+                        // ground rect collapsed to avoid covering the tile layer with a single-tile brush.
+                        groundRectPersistent.Visibility = Visibility.Collapsed;
+                    }
+                    else
+                    {
+                        groundRectPersistent.Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 };
+                        int groundHeight = TILE * Math.Min(NES_H, 2);
+                        groundRectPersistent.Height = groundHeight;
+                        System.Windows.Controls.Canvas.SetTop(groundRectPersistent, (NES_H * TILE) - groundHeight);
+                        groundRectPersistent.Visibility = Visibility.Collapsed;
+                    }
                 }
             }
             catch { }
@@ -705,7 +897,7 @@ namespace FamidashEditor
                 int mapX = startTileX + vx;
                 for (int vy = 0; vy < NES_H; vy++)
                 {
-                    int mapY = startTileY + vy;
+                    int mapY = startTileY + groundRowsToReserve + vy;
                     if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) continue;
                     int idx = mapY * mapWidth + mapX;
                     int s = sprites[idx];
@@ -752,20 +944,22 @@ namespace FamidashEditor
                     catch { }
 
                     double px = (mapX - startTileX) * TILE - offsetX;
-                    double py = (mapY - startTileY) * TILE - offsetY + gridRenderShiftYPx;
+                    double py = (vy * TILE) - offsetY + gridRenderShiftYPx;
                     if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
                     {
                         int storageTileX = idx % mapWidth;
                         int storageTileY = idx / mapWidth;
                         int tileDeltaX = storageTileX - anchor.anchorTileX;
                         int tileDeltaY = storageTileY - anchor.anchorTileY;
-                        px = (anchor.anchorTileX - startTileX) * TILE - offsetX + tileDeltaX * TILE;
-                        py = (anchor.anchorTileY - startTileY) * TILE - offsetY + tileDeltaY * TILE + gridRenderShiftYPx;
+                        double anchorDisplayX = (anchor.anchorTileX - startTileX) * TILE - offsetX;
+                        double anchorDisplayY = (anchor.anchorTileY - (startTileY + groundRowsToReserve)) * TILE - offsetY;
+                        px = anchorDisplayX + tileDeltaX * TILE;
+                        py = anchorDisplayY + tileDeltaY * TILE + gridRenderShiftYPx;
                     }
                     if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs))
                     {
                         px += offs.offsetX;
-                        py -= offs.offsetY;
+                        py += offs.offsetY; // match editor convention: positive offsetY moves sprite down
                     }
                     else if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anc))
                     {
@@ -773,7 +967,7 @@ namespace FamidashEditor
                         if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs))
                         {
                             px += aoffs.offsetX;
-                            py -= aoffs.offsetY;
+                            py += aoffs.offsetY; // match editor convention
                         }
                     }
 

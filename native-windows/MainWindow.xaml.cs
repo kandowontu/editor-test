@@ -6107,6 +6107,20 @@ namespace FamidashEditor
                     smallSawFrame2TilesTinted,
                     largeSawFrame1TilesTinted,
                     largeSawFrame2TilesTinted
+                    ,
+                    parallaxImages,
+                    parallaxTonedImages,
+                    loadedParallaxX,
+                    loadedParallaxY,
+                    loadedParallaxRepeatX,
+                    loadedParallaxRepeatY,
+                    loadedHasParallaxLayer,
+                    groundImages,
+                    groundTonedImages,
+                    loadedGroundOffsetY,
+                    loadedGroundRepeatX,
+                    loadedHasGroundLayer,
+                    groundTileRows
                     );
                 sim.Owner = this;
                 sim.Show();
