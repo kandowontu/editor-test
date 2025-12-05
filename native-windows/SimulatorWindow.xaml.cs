@@ -252,6 +252,18 @@ namespace FamidashEditor
         };
 
         private readonly System.Windows.Threading.DispatcherTimer timer;
+        // Dedicated background simulation timer to keep simulation at a steady 60Hz
+        private System.Threading.Timer? simTimer;
+        private readonly object simLock = new object();
+        // Pending color trigger info populated by simulation thread and applied on UI thread
+        // Use -1 to indicate 'none' rather than nullable/volatile types.
+        private int pendingBgIdx = -1;
+        private int pendingBgSid = -1;
+        private int pendingTileIdx = -1;
+        private int pendingTileSid = -1;
+        private int pendingGroundIdx = -1;
+        private int pendingGroundSid = -1;
+        private bool pendingTintChange = false;
         private System.Diagnostics.Stopwatch renderStopwatch = new System.Diagnostics.Stopwatch();
         private double accumulatedSeconds = 0.0;
 
@@ -302,6 +314,27 @@ namespace FamidashEditor
                 try { System.Diagnostics.Debug.WriteLine(message); } catch { }
             }
             catch { }
+        }
+
+        // Start the background simulation (call after the window is shown).
+        public void StartSimulation()
+        {
+            try
+            {
+                // If already running, ignore
+                if (simTimer != null) return;
+                // Ensure player starts from initial X (do not advance before start)
+                // (playerX_fixed may already be set by caller/constructor)
+                simTimer = new System.Threading.Timer(_ => { try { SimulateNumericStep(); } catch { } }, null, 0, 16);
+            }
+            catch { }
+        }
+
+        // Stop the background simulation gracefully.
+        public void StopSimulation()
+        {
+            try { simTimer?.Dispose(); } catch { }
+            simTimer = null;
         }
 
         private bool upHeld = false;
@@ -481,6 +514,7 @@ namespace FamidashEditor
             {
                 try { System.Windows.Media.CompositionTarget.Rendering -= CompositionTarget_Rendering; } catch { }
                 try { timer.Stop(); } catch { }
+                try { simTimer?.Dispose(); } catch { }
             };
 
             RenderCanvas.Width = NES_W * TILE;
@@ -622,6 +656,8 @@ namespace FamidashEditor
             catch { }
 
             // (debug overlay removed)
+
+            // Background simulation timer will be started when the simulator is shown via StartSimulation().
         }
 
         // Map a tile index to its animated version based on current animation frame
@@ -1658,35 +1694,209 @@ namespace FamidashEditor
         {
             try
             {
-                var now = renderStopwatch.Elapsed.TotalSeconds;
-                // compute delta since last sample
-                double delta = now - accumulatedSeconds;
-                if (delta < 0) delta = 0;
-                accumulatedSeconds = now;
-
-                // accumulate and step in fixed 1/60s increments
-                double remaining = delta;
-                const double step = 1.0 / 60.0;
-                int steps = 0;
-                // Safety cap to avoid spiral of death
-                int maxSteps = 5;
-                // If paused, skip simulation steps but still render so UI stays responsive
+                // Rendering happens on the UI thread; simulation runs on a background timer to maintain a steady 60Hz.
+                // If paused, still render the current frame so UI remains responsive.
                 if (paused)
                 {
                     RenderFrame();
                     return;
                 }
 
-                while (remaining >= step && steps < maxSteps)
+                // If the simulation flagged a pending tint change, apply it here on the UI thread.
+                if (pendingTintChange)
                 {
-                    // perform simulation step: advance camera and animation
-                    Timer_Tick(null, EventArgs.Empty);
-                    remaining -= step;
-                    steps++;
+                    try { ApplyPendingTints(); } catch { }
                 }
 
-                // Render once per CompositionTarget tick
                 RenderFrame();
+            }
+            catch { }
+        }
+
+        // Perform numeric-only simulation step on a background thread at ~60Hz.
+        private void SimulateNumericStep()
+        {
+            // Keep previous camera center for later anchor detection
+            int prevCameraCenter_fixed;
+            int prevPlayerCenter_fixed;
+            int attemptedPlayerX_fixed;
+            int attemptedPlayerCenter_fixed;
+            int speedMultiplierLocal;
+            int centerOffset_fixed = (TILE / 2) << 8;
+
+            lock (simLock)
+            {
+                prevCameraCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
+                prevPlayerCenter_fixed = playerX_fixed + centerOffset_fixed;
+
+                speedMultiplierLocal = tabSpeedMultiplier; // atomic read of volatile-like field
+                attemptedPlayerX_fixed = playerX_fixed + currentSpeed_fixed * speedMultiplierLocal;
+                attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
+
+                // Move the player forward in world coordinates first
+                playerX_fixed = attemptedPlayerX_fixed;
+
+                // Interaction crossing detection
+                bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
+                if (crossedInteraction)
+                {
+                    interactionScreenOffset_px = (INTERACTION_LINE_FIXED >> 8) - (cameraX_fixed >> 8);
+                }
+
+                int playerCenter_fixed_now = playerX_fixed + centerOffset_fixed;
+                if (playerCenter_fixed_now >= INTERACTION_LINE_FIXED)
+                {
+                    if (interactionScreenOffset_px >= 0)
+                    {
+                        cameraX_fixed = playerX_fixed - (interactionScreenOffset_px << 8);
+                    }
+                    else
+                    {
+                        cameraX_fixed += attemptedPlayerCenter_fixed - INTERACTION_LINE_FIXED;
+                    }
+
+                    int maxCamera_fixed = Math.Max(0, (mapWidth - NES_W) * TILE) << 8;
+                    if (cameraX_fixed < 0) cameraX_fixed = 0;
+                    if (cameraX_fixed > maxCamera_fixed) cameraX_fixed = maxCamera_fixed;
+                }
+                else
+                {
+                    interactionScreenOffset_px = -1;
+                }
+
+                // Advance animation frame
+                animationFrame++;
+
+                // Vertical pan keys (smooth)
+                const int panStep_fixed = 512; // 2 px/frame
+                if (upHeld) cameraY_fixed -= panStep_fixed;
+                if (downHeld) cameraY_fixed += panStep_fixed;
+                int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                if (cameraY_fixed < 0) cameraY_fixed = 0;
+                if (cameraY_fixed > maxY_fixed) cameraY_fixed = maxY_fixed;
+
+                // Detect speed portals between prevCameraCenter_fixed and current center
+                int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
+                int? newSpeed_fixed = null;
+                for (int idx = 0; idx < sprites.Length; idx++)
+                {
+                    int sid = sprites[idx];
+                    if (sid < 0) continue;
+                    if (!speedPortalMap.ContainsKey(sid)) continue;
+                    int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
+                    int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
+                    if (crossedInteraction)
+                    {
+                        if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
+                        {
+                            newSpeed_fixed = speedPortalMap[sid];
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        if (anchorX_center_fixed > prevCameraCenter_fixed && anchorX_center_fixed <= center_fixed)
+                        {
+                            newSpeed_fixed = speedPortalMap[sid];
+                            break;
+                        }
+                    }
+                }
+                if (newSpeed_fixed.HasValue) currentSpeed_fixed = newSpeed_fixed.Value;
+
+                // Detect color triggers; instead of sampling/pixel work here, record pending triggers
+                int bestBg_fixed = int.MaxValue; int? bgIdxLocal = null; int? bgSidLocal = null;
+                int bestTile_fixed = int.MaxValue; int? tileIdxLocal = null; int? tileSidLocal = null;
+                int bestGround_fixed = int.MaxValue; int? groundIdxLocal = null; int? groundSidLocal = null;
+
+                for (int idx = 0; idx < sprites.Length; idx++)
+                {
+                    int sid = sprites[idx];
+                    if (sid < 0) continue;
+                    if (!IsColorTriggerSprite(sid)) continue;
+                    int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a2)) ? a2.anchorTileX : idx % mapWidth;
+                    int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
+                    if (crossedInteraction)
+                    {
+                        if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
+                        {
+                            if (IsBackgroundTrigger(sid)) { if (anchorX_center_fixed < bestBg_fixed) { bestBg_fixed = anchorX_center_fixed; bgIdxLocal = idx; bgSidLocal = sid; } }
+                            else if (IsTileTrigger(sid)) { if (anchorX_center_fixed < bestTile_fixed) { bestTile_fixed = anchorX_center_fixed; tileIdxLocal = idx; tileSidLocal = sid; } }
+                            else if (IsGroundTrigger(sid)) { if (anchorX_center_fixed < bestGround_fixed) { bestGround_fixed = anchorX_center_fixed; groundIdxLocal = idx; groundSidLocal = sid; } }
+                        }
+                        else
+                        {
+                            if (processedColorTriggers.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedColorTriggers.Remove(idx);
+                        }
+                    }
+                    else
+                    {
+                        if (anchorX_center_fixed <= center_fixed)
+                        {
+                            if (!processedColorTriggers.Contains(idx))
+                            {
+                                if (IsBackgroundTrigger(sid)) { if (anchorX_center_fixed < bestBg_fixed) { bestBg_fixed = anchorX_center_fixed; bgIdxLocal = idx; bgSidLocal = sid; } }
+                                else if (IsTileTrigger(sid)) { if (anchorX_center_fixed < bestTile_fixed) { bestTile_fixed = anchorX_center_fixed; tileIdxLocal = idx; tileSidLocal = sid; } }
+                                else if (IsGroundTrigger(sid)) { if (anchorX_center_fixed < bestGround_fixed) { bestGround_fixed = anchorX_center_fixed; groundIdxLocal = idx; groundSidLocal = sid; } }
+                            }
+                        }
+                        else { if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx); }
+                    }
+                }
+
+                // If any triggers detected, set pending fields so UI thread will sample and apply tints
+                if (bgIdxLocal.HasValue) { pendingBgIdx = bgIdxLocal ?? -1; pendingBgSid = bgSidLocal ?? -1; pendingTintChange = true; }
+                if (tileIdxLocal.HasValue) { pendingTileIdx = tileIdxLocal ?? -1; pendingTileSid = tileSidLocal ?? -1; pendingTintChange = true; }
+                if (groundIdxLocal.HasValue) { pendingGroundIdx = groundIdxLocal ?? -1; pendingGroundSid = groundSidLocal ?? -1; pendingTintChange = true; }
+            }
+
+            // If we have pending tints, schedule application on UI thread for heavier image work
+            if (pendingTintChange)
+            {
+                try { Dispatcher.BeginInvoke((Action)(() => { try { ApplyPendingTints(); } catch { } })); } catch { }
+            }
+        }
+
+        // Apply pending trigger tints on the UI thread and regenerate toned images as necessary
+        private void ApplyPendingTints()
+        {
+            try
+            {
+                int bgIdxLocal = pendingBgIdx; int bgSidLocal = pendingBgSid;
+                int tileIdxLocal = pendingTileIdx; int tileSidLocal = pendingTileSid;
+                int groundIdxLocal = pendingGroundIdx; int groundSidLocal = pendingGroundSid;
+
+                pendingBgIdx = -1; pendingBgSid = -1; pendingTileIdx = -1; pendingTileSid = -1; pendingGroundIdx = -1; pendingGroundSid = -1; pendingTintChange = false;
+
+                var prevBackgroundTint = backgroundTint; var prevTileTint = tileTint; var prevGroundTint = groundTint;
+
+                if (bgIdxLocal >= 0 && bgSidLocal >= 0)
+                {
+                    var c = ColorFromTrigger(bgSidLocal);
+                    backgroundTint = c; processedColorTriggers.Add(bgIdxLocal);
+                    if (enableSimulatorDebugLogging && !triggerLogged.Contains(bgIdxLocal)) { WriteTempLog($"Simulator: Applied background trigger at idx={bgIdxLocal} sid=0x{bgSidLocal:X} color={c}"); triggerLogged.Add(bgIdxLocal); }
+                }
+                if (tileIdxLocal >= 0 && tileSidLocal >= 0)
+                {
+                    var c = ColorFromTrigger(tileSidLocal);
+                    tileTint = c; processedColorTriggers.Add(tileIdxLocal);
+                    if (enableSimulatorDebugLogging && !triggerLogged.Contains(tileIdxLocal)) { WriteTempLog($"Simulator: Applied tile trigger at idx={tileIdxLocal} sid=0x{tileSidLocal:X} color={c}"); triggerLogged.Add(tileIdxLocal); }
+                }
+                if (groundIdxLocal >= 0 && groundSidLocal >= 0)
+                {
+                    var c = ColorFromTrigger(groundSidLocal);
+                    groundTint = c; processedColorTriggers.Add(groundIdxLocal);
+                    if (enableSimulatorDebugLogging && !triggerLogged.Contains(groundIdxLocal)) { WriteTempLog($"Simulator: Applied ground trigger at idx={groundIdxLocal} sid=0x{groundSidLocal:X} color={c}"); triggerLogged.Add(groundIdxLocal); }
+                }
+
+                if (!AreColorsEqual(prevTileTint, tileTint) || !AreColorsEqual(prevBackgroundTint, backgroundTint) || !AreColorsEqual(prevGroundTint, groundTint))
+                {
+                    UpdateTonedImagesForTileTint(tileTint);
+                    try { parallaxTonedImages = backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0 ? CreateBlackMaskedImages(parallaxImages) : CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
+                    try { groundTonedImages = groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0 ? CreateBlackMaskedImages(groundImages) : CreateHueShiftedImages(groundImages, groundTint); } catch { groundTonedImages = groundImages; }
+                    tileLayerCache = null;
+                    try { groundTintedTileCache.Clear(); } catch { }
+                }
             }
             catch { }
         }

@@ -6153,6 +6153,8 @@ namespace FamidashEditor
                     catch { }
 
                     sim.Show();
+                    // Start simulation only after the window is shown so player doesn't move beforehand
+                    try { sim.StartSimulation(); } catch { }
                 }
                 finally
                 {
