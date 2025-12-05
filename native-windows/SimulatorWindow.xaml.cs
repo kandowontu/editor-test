@@ -1680,14 +1680,24 @@ namespace FamidashEditor
                     byte r = pixels[i + 2];
                     byte a = pixels[i + 3];
                     if (a == 0) continue;
-                    // preserve near-white pixels (white lines), make everything else black
-                    bool isWhite = (r >= 240 && g >= 240 && b >= 240);
-                    if (!isWhite)
+                    // Use perceptual luminance to detect near-white (preserve thin white lines
+                    // and anti-aliased edge pixels). This is more tolerant than strict RGB
+                    // component tests used previously which could drop subtle white pixels.
+                    double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+                    bool isWhite = lum >= 0.82; // keep pixels that are ~82% luminance or above
+                    if (isWhite)
                     {
+                        // promote to full white color but keep original alpha to preserve edges
+                        pixels[i + 0] = 255;
+                        pixels[i + 1] = 255;
+                        pixels[i + 2] = 255;
+                    }
+                    else
+                    {
+                        // make pixel black; keep alpha as-is to preserve anti-aliased edges
                         pixels[i + 0] = 0; // b
                         pixels[i + 1] = 0; // g
                         pixels[i + 2] = 0; // r
-                        // keep alpha as-is to preserve anti-alias edges
                     }
                 }
                 var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
