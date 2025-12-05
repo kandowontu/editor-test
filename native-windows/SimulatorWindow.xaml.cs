@@ -10,6 +10,19 @@ namespace FamidashEditor
 {
     public partial class SimulatorWindow : Window
     {
+        // Interaction line: player's center (fixed-point) where scrolling begins
+        private const int INTERACTION_LINE_FIXED = 0x5000;
+
+        // Player world X (fixed-point, 8 fractional bits)
+        private int playerX_fixed = 0;
+
+        // Visual player rectangle used as fallback when no sprite provided
+        private System.Windows.Shapes.Rectangle? playerRect = null;
+        
+        // When player crosses interaction line, remember the screen pixel offset where the crossing occurred
+        // so the camera can follow the player while keeping them at that screen X.
+        private int interactionScreenOffset_px = -1;
+
         private readonly int[] tiles;
         private readonly int[] sprites;
         private readonly int mapWidth;
@@ -170,6 +183,21 @@ namespace FamidashEditor
             this.spriteImages = spriteImages;
             this.spritePixelOffsets = new System.Collections.Generic.Dictionary<int, (int, int)>(spritePixelOffsets);
             this.spriteAnchors = new System.Collections.Generic.Dictionary<int, (int, int)>(spriteAnchors);
+            // Simulator-specific tweak: shift sprite 0x2B up 8 pixels to match editor preview
+            try
+            {
+                const int SPRITE_ID_SHIFT = 0x2B;
+                if (this.spritePixelOffsets.ContainsKey(SPRITE_ID_SHIFT))
+                {
+                    var prev = this.spritePixelOffsets[SPRITE_ID_SHIFT];
+                    this.spritePixelOffsets[SPRITE_ID_SHIFT] = (prev.Item1, prev.Item2 - 8);
+                }
+                else
+                {
+                    this.spritePixelOffsets[SPRITE_ID_SHIFT] = (0, -8);
+                }
+            }
+            catch { }
             this.backgroundTint = backgroundTint;
             this.groundTint = groundTint;
             this.tileTint = tileTint;
@@ -253,6 +281,16 @@ namespace FamidashEditor
             catch { }
 
             // Ensure the window receives keyboard input for panning
+
+            // Create fallback player visual (magenta square) and add to canvas above sprites
+            try
+            {
+                playerRect = new System.Windows.Shapes.Rectangle { Width = TILE, Height = TILE, Fill = new SolidColorBrush(Colors.Magenta) };
+                System.Windows.Controls.Canvas.SetZIndex(playerRect, 1000);
+                RenderCanvas.Children.Add(playerRect);
+                playerRect.Visibility = Visibility.Visible;
+            }
+            catch { }
             this.Loaded += (s, e) => { try { this.Focus(); Keyboard.Focus(this); } catch { } };
             // Create persistent background / tile-layer / ground children to avoid re-allocating each frame
             try
@@ -355,13 +393,57 @@ namespace FamidashEditor
 
         private void Timer_Tick(object? sender, EventArgs e)
         {
-            // Keep previous center so we can detect crossings
-            int prevCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
+            // Keep previous camera center for later anchor detection
+            int prevCameraCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
 
-            // Advance camera X by current dynamic speed (fixed-point)
+            // Advance player X by current dynamic speed (fixed-point)
             // Holding TAB doubles horizontal movement speed.
             int speedMultiplier = tabHeld ? 2 : 1;
-            cameraX_fixed += currentSpeed_fixed * speedMultiplier;
+            int centerOffset_fixed = (TILE / 2) << 8;
+            int prevPlayerCenter_fixed = playerX_fixed + centerOffset_fixed;
+            int attemptedPlayerX_fixed = playerX_fixed + currentSpeed_fixed * speedMultiplier;
+            int attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
+
+            // Move the player forward in world coordinates first
+            playerX_fixed = attemptedPlayerX_fixed;
+
+            // If the player just crossed the interaction line this step, capture the
+            // screen X (in pixels) where the interaction line appeared so the camera
+            // can keep the player anchored there while the player continues moving.
+            bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
+            if (crossedInteraction)
+            {
+                interactionScreenOffset_px = (INTERACTION_LINE_FIXED >> 8) - (cameraX_fixed >> 8);
+            }
+
+            // If the player's center is at/after the interaction line, make the camera
+            // follow the player's world movement such that the player's screen X stays
+            // at the recorded interaction offset. If no offset recorded, fall back to
+            // keeping the player at the interaction line world X.
+            int playerCenter_fixed_now = playerX_fixed + centerOffset_fixed;
+            if (playerCenter_fixed_now >= INTERACTION_LINE_FIXED)
+            {
+                if (interactionScreenOffset_px >= 0)
+                {
+                    // camera = playerX - interactionScreenOffset
+                    cameraX_fixed = playerX_fixed - (interactionScreenOffset_px << 8);
+                }
+                else
+                {
+                    // No recorded offset (edge case): keep player's center at interaction line
+                    cameraX_fixed += attemptedPlayerCenter_fixed - INTERACTION_LINE_FIXED;
+                }
+
+                // clamp cameraX to map bounds
+                int maxCamera_fixed = Math.Max(0, (mapWidth - NES_W) * TILE) << 8;
+                if (cameraX_fixed < 0) cameraX_fixed = 0;
+                if (cameraX_fixed > maxCamera_fixed) cameraX_fixed = maxCamera_fixed;
+            }
+            else
+            {
+                // player moved left of interaction line: clear recorded offset so crossing will re-capture
+                interactionScreenOffset_px = -1;
+            }
 
             // Advance animation frame counter
             animationFrame++;
@@ -385,38 +467,59 @@ namespace FamidashEditor
                 var prevTileTint = tileTint;
                 var prevGroundTint = groundTint;
                 int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
-                // We moved right only; find any speed portal anchors whose anchor X lies in (prevCenter, center]
+                // We moved right relative to world; detect triggers either from a player crossing
+                // the fixed interaction line, or from camera movement when the player is already past it.
                 int bestAnchor_fixed = int.MaxValue;
                 int? newSpeed_fixed = null;
 
-                for (int idx = 0; idx < sprites.Length; idx++)
+                if (crossedInteraction)
                 {
-                    int sid = sprites[idx];
-                    if (sid < 0) continue;
-                    if (!speedPortalMap.ContainsKey(sid)) continue;
-
-                    // Determine anchor tile X for this sprite: prefer explicit anchor, otherwise use tile position
-                    int anchorTileX;
-                    if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a))
-                        anchorTileX = a.anchorTileX;
-                    else
-                        anchorTileX = idx % mapWidth;
-
-                    // Anchor center pixel (fixed)
-                    int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
-
-                    if (anchorX_center_fixed > prevCenter_fixed && anchorX_center_fixed <= center_fixed)
+                    // Player crossed the interaction line this step: consider anchors between the
+                    // previous player center and the fixed interaction line.
+                    for (int idx = 0; idx < sprites.Length; idx++)
                     {
-                        if (anchorX_center_fixed < bestAnchor_fixed)
+                        int sid = sprites[idx];
+                        if (sid < 0) continue;
+                        if (!speedPortalMap.ContainsKey(sid)) continue;
+
+                        int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
+                        int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
+
+                        if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
                         {
-                            bestAnchor_fixed = anchorX_center_fixed;
-                            newSpeed_fixed = speedPortalMap[sid];
+                            if (anchorX_center_fixed < bestAnchor_fixed)
+                            {
+                                bestAnchor_fixed = anchorX_center_fixed;
+                                newSpeed_fixed = speedPortalMap[sid];
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // Player already past interaction line: use camera-centered detection like before
+                    for (int idx = 0; idx < sprites.Length; idx++)
+                    {
+                        int sid = sprites[idx];
+                        if (sid < 0) continue;
+                        if (!speedPortalMap.ContainsKey(sid)) continue;
+
+                        int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
+                        int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
+
+                        if (anchorX_center_fixed > prevCameraCenter_fixed && anchorX_center_fixed <= center_fixed)
+                        {
+                            if (anchorX_center_fixed < bestAnchor_fixed)
+                            {
+                                bestAnchor_fixed = anchorX_center_fixed;
+                                newSpeed_fixed = speedPortalMap[sid];
+                            }
                         }
                     }
                 }
 
                 // Also detect color-trigger crossings. To reduce sampling cost, only sample a trigger
-                // once when it first moves past the center line. Keep a set of processed anchors so
+                // once when it first moves past the interaction/center line. Keep a set of processed anchors so
                 // we don't resample every frame while the trigger remains past center.
                 int bestBg_fixed = int.MaxValue; int? bgIdx = null; int? bgSid = null;
                 int bestTile_fixed = int.MaxValue; int? tileIdx = null; int? tileSid = null;
@@ -439,16 +542,11 @@ namespace FamidashEditor
 
                     int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
 
-                    // If anchor has already moved past center, and we've already processed it, skip.
-                    if (anchorX_center_fixed <= center_fixed)
+                    if (crossedInteraction)
                     {
-                        if (processedColorTriggers.Contains(idx))
+                        // During a player crossing, only consider anchors between previous player center and the fixed interaction line.
+                        if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
                         {
-                            // already handled previously
-                        }
-                        else
-                        {
-                            // Newly past-center trigger; consider for nearest selection per category
                             if (IsBackgroundTrigger(sid))
                             {
                                 if (anchorX_center_fixed < bestBg_fixed) { bestBg_fixed = anchorX_center_fixed; bgIdx = idx; bgSid = sid; }
@@ -462,11 +560,42 @@ namespace FamidashEditor
                                 if (anchorX_center_fixed < bestGround_fixed) { bestGround_fixed = anchorX_center_fixed; groundIdx = idx; groundSid = sid; }
                             }
                         }
+                        else
+                        {
+                            // Anchor is to the right of the interaction line; clear processed flag so it can trigger again when recrossed
+                            if (processedColorTriggers.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedColorTriggers.Remove(idx);
+                        }
                     }
                     else
                     {
-                        // Anchor is left-of-center; clear any processed flag so it can be processed again if recrossed
-                        if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx);
+                        // Camera-centered detection (player already past interaction line)
+                        if (anchorX_center_fixed <= center_fixed)
+                        {
+                            if (processedColorTriggers.Contains(idx))
+                            {
+                                // already handled previously
+                            }
+                            else
+                            {
+                                if (IsBackgroundTrigger(sid))
+                                {
+                                    if (anchorX_center_fixed < bestBg_fixed) { bestBg_fixed = anchorX_center_fixed; bgIdx = idx; bgSid = sid; }
+                                }
+                                else if (IsTileTrigger(sid))
+                                {
+                                    if (anchorX_center_fixed < bestTile_fixed) { bestTile_fixed = anchorX_center_fixed; tileIdx = idx; tileSid = sid; }
+                                }
+                                else if (IsGroundTrigger(sid))
+                                {
+                                    if (anchorX_center_fixed < bestGround_fixed) { bestGround_fixed = anchorX_center_fixed; groundIdx = idx; groundSid = sid; }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Anchor is left-of-center; clear any processed flag so it can be processed again if recrossed
+                            if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx);
+                        }
                     }
                 }
 
@@ -530,12 +659,12 @@ namespace FamidashEditor
             int offsetX = pixelX % TILE;
             int pixelY = cameraY_fixed >> 8;
 
-            // If ground is present in the preview, reserve up to two ground rows at the bottom
+            // If ground is present in the preview, reserve up to three ground rows at the bottom
             int groundRowsToReserve = 0;
             if (hasGroundLayer && groundTileRows > 0)
             {
-                // Reserve exactly 2 rows when a ground layer exists (or fewer if ground bitmap has <2 rows)
-                groundRowsToReserve = Math.Min(2, groundTileRows);
+                // Reserve exactly 3 rows when a ground layer exists (or fewer if ground bitmap has <3 rows)
+                groundRowsToReserve = Math.Min(3, groundTileRows);
             }
             int groundPixels = groundRowsToReserve * TILE;
 
@@ -1002,6 +1131,22 @@ namespace FamidashEditor
 
             // Hide remaining pooled images
             for (int i = spritesInUse; i < spritePool.Count; i++) spritePool[i].Visibility = Visibility.Collapsed;
+
+            // Position the player visual so it appears above the reserved ground rows.
+            try
+            {
+                if (playerRect != null)
+                {
+                    int playerPixelX = (playerX_fixed >> 8) - (cameraX_fixed >> 8);
+                    // Place player's bottom so it stands one tile above the reserved ground rows
+                    int bottomY = NES_H * TILE - groundPixels;
+                    int playerTop = bottomY - (TILE * 1) + gridRenderShiftYPx;
+                    System.Windows.Controls.Canvas.SetLeft(playerRect, playerPixelX);
+                    System.Windows.Controls.Canvas.SetTop(playerRect, playerTop);
+                    playerRect.Visibility = Visibility.Visible;
+                }
+            }
+            catch { }
 
             // Apply sub-pixel smoothing with a translate transform for X and Y
             double fracX = (cameraX_fixed & 0xFF) / 256.0;

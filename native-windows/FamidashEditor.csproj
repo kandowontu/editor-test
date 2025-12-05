@@ -255,6 +255,7 @@
     <EmbeddedResource Include="..\tilesets\BlocksdSpikescSawsaSlopesa.png" />
     <EmbeddedResource Include="..\tilesets\BlocksdSpikescSawsaSlopesnone.png" />
     <EmbeddedResource Include="..\that_one_render_1.png" />
+    <EmbeddedResource Include="..\cube.png" />
   </ItemGroup>
   <!-- If present, copy pre-parsed FamiStudio album JSON and probe results into the build output
        so the runtime (launched from bin) can find them without additional configuration. -->
