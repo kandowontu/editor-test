@@ -302,6 +302,9 @@ namespace FamidashEditor
         private double simLastMs = 0.0;
         private double simAccumulatedMs = 0.0;
         private const double SIM_STEP_MS = 1000.0 / 60.0; // 16.666... ms per fixed-step
+        // UI animation accumulator for cases where numeric sim is paused or not running
+        private double uiAnimLastMs = 0.0;
+        private double uiAnimAccumulatedMs = 0.0;
         // Pending color trigger info populated by simulation thread and applied on UI thread
         // Use -1 to indicate 'none' rather than nullable/volatile types.
         private int pendingBgIdx = -1;
@@ -314,6 +317,13 @@ namespace FamidashEditor
         private System.Diagnostics.Stopwatch renderStopwatch = new System.Diagnostics.Stopwatch();
 
         private int animationFrame = 0;
+        // Sprite IDs that should animate at half speed (coins, pads, orbs)
+        private static readonly System.Collections.Generic.HashSet<int> slowAnimatedSpriteIds = new System.Collections.Generic.HashSet<int>
+        {
+            0x05, 0x06, 0x27, 0x28, 0x44, 0x7A, // orbs
+            0x07, 0x1A, 0x1B, 0x6E,               // coins / mini-coin
+            0x52, 0x0A, 0x0C, 0x0D, 0x0E, 0x25, 0x26 // pads
+        };
         private System.Collections.Generic.Dictionary<int, int> spriteFrameOffsets = new System.Collections.Generic.Dictionary<int, int>();
         private Random spriteAnimationRandom = new Random();
 
@@ -482,12 +492,13 @@ namespace FamidashEditor
             }
             else
             {
-                this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint);
-                this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint);
-                this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint);
-                this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint);
-                this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint);
-                this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint);
+                // Pass `tileTint` as outlineTint so object triggers (eg. black 0xBF) recolor outlines.
+                this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint, tileTint);
+                this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint, tileTint);
+                this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint, tileTint);
+                this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint, tileTint);
+                this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint, tileTint);
+                this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint, tileTint);
             }
             // Simulator-specific tweak: shift sprite 0x2B and 0x2C up 8 pixels to match editor preview
             try
@@ -584,6 +595,7 @@ namespace FamidashEditor
             // Setup a high-precision render loop using CompositionTarget and a stopwatch
             timer = new System.Windows.Threading.DispatcherTimer(DispatcherPriority.Render);
             renderStopwatch.Start();
+            uiAnimLastMs = renderStopwatch.Elapsed.TotalMilliseconds;
             System.Windows.Media.CompositionTarget.Rendering += CompositionTarget_Rendering;
 
             this.KeyDown += SimulatorWindow_KeyDown;
@@ -943,8 +955,7 @@ namespace FamidashEditor
                 interactionScreenOffset_px = -1;
             }
 
-            // Advance animation frame counter
-            animationFrame++;
+            // Advance animation frame counter - handled by UI render loop now
 
             // Vertical panning while keys held - use fixed-point for smoothness
             // Use smaller step for smoother motion (2 pixels/frame)
@@ -1649,13 +1660,21 @@ namespace FamidashEditor
                         int frame = 0;
                         if (decorationSpriteIds.Contains(s) && frames.Length == 2)
                         {
-                            // Match editor preview two-frame cadence exactly (same math as MainWindow.GetTwoFrameCustomIndex)
-                            frame = (((animationFrame * 3) / 40)) % 2;
+                            // Match editor preview two-frame cadence but slow decorations to half speed
+                            frame = (((animationFrame * 3) / 80)) % 2;
                             if (frame < 0) frame += 2;
                         }
                         else
                         {
-                            frame = (((animationFrame * 9) / 20) + offset) % Math.Max(1, frames.Length);
+                            // Slow down coins/pads/orbs and decorations to half speed
+                            if (slowAnimatedSpriteIds.Contains(s) || decorationSpriteIds.Contains(s))
+                            {
+                                frame = (((animationFrame * 9) / 40) + offset) % Math.Max(1, frames.Length);
+                            }
+                            else
+                            {
+                                frame = (((animationFrame * 9) / 20) + offset) % Math.Max(1, frames.Length);
+                            }
                         }
                         chosenSprite = frames[frame];
                         // Debug: log decoration frames presence/selection when the selected frame changes
@@ -1912,8 +1931,26 @@ namespace FamidashEditor
         {
             try
             {
-                // Rendering happens on the UI thread; simulation runs on a background timer to maintain a steady 60Hz.
-                // If paused, still render the current frame and leave overlay visible.
+                // Advance a UI-driven animation counter when the numeric sim isn't running
+                // or when the sim is paused so decorative/preview animations remain active.
+                try
+                {
+                    double now = renderStopwatch.Elapsed.TotalMilliseconds;
+                    double delta = Math.Max(0.0, now - uiAnimLastMs);
+                    uiAnimLastMs = now;
+                    uiAnimAccumulatedMs += delta;
+                    if (!paused)
+                    {
+                        while (uiAnimAccumulatedMs >= SIM_STEP_MS)
+                        {
+                            animationFrame++;
+                            uiAnimAccumulatedMs -= SIM_STEP_MS;
+                        }
+                    }
+                }
+                catch { }
+
+                // If paused, still render the current frame and show the pause overlay.
                 if (paused)
                 {
                     RenderFrame();
@@ -1987,8 +2024,7 @@ namespace FamidashEditor
                     interactionScreenOffset_px = -1;
                 }
 
-                // Advance animation frame
-                animationFrame++;
+                // Advance animation frame (handled by fixed-step simulation loop)
 
                 // Vertical pan keys (smooth)
                 const int panStep_fixed = 512; // 2 px/frame
@@ -2254,12 +2290,13 @@ namespace FamidashEditor
                     {
                         try
                         {
-                            this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint);
-                            this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint);
-                            this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint);
-                            this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint);
-                            this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint);
-                            this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint);
+                            // Preserve object-trigger outline recolor by passing tileTint as outlineTint
+                            this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint, tileTint);
+                            this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint, tileTint);
+                            this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint, tileTint);
+                            this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint, tileTint);
+                            this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint, tileTint);
+                            this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint, tileTint);
                         }
                         catch { }
                     }
@@ -2535,8 +2572,8 @@ namespace FamidashEditor
                             byte b = pixels[i + 0]; byte g = pixels[i + 1]; byte r = pixels[i + 2]; byte a = pixels[i + 3];
                             if (a == 0) continue;
                             double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
-                            // Skip near-white when computing min/max
-                            if (lum >= 0.92) continue;
+                            // Skip near-white when computing min/max (use 0.82 to catch anti-aliased outlines)
+                            if (lum >= 0.82) continue;
                             if (lum < minL) minL = lum;
                             if (lum > maxL) maxL = lum;
                             count++;
@@ -2729,116 +2766,72 @@ namespace FamidashEditor
                 string key = string.Format("{0}:{1:X2}{2:X2}{3:X2}{4:X2}:{5}:{6}:{7}:{8}:{9}", srcHash, bg.A, bg.R, bg.G, bg.B, destX, destY, animationFrame, layerLeft, layerTop);
                 if (spriteBackgroundCompositeCache.TryGetValue(key, out var cached)) return cached;
 
-                var convSprite = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
-                int w = Math.Max(1, convSprite.PixelWidth);
-                int h = Math.Max(1, convSprite.PixelHeight);
-                int stride = w * 4;
-                var spritePixels = new byte[h * stride];
-                convSprite.CopyPixels(spritePixels, stride, 0);
-
-                var bgPixels = new byte[h * stride];
-
-                if (tileLayerCache != null)
+                // Use WPF rendering to compose the sprite over the background region. This
+                // ensures correct alpha blending and avoids subtle premultiplication issues
+                // that can cause semi-transparent pixels to render the wrong color.
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
                 {
-                    try
+                    // Draw background: either the cropped tile-layer region or a flat color
+                    if (tileLayerCache is BitmapSource layer)
                     {
-                        var layer = tileLayerCache as BitmapSource;
-                        if (layer != null)
+                        try
                         {
-                            // Fill bgPixels with flat bg color initially
-                            for (int i = 0; i < bgPixels.Length; i += 4)
-                            {
-                                bgPixels[i + 0] = bg.B; bgPixels[i + 1] = bg.G; bgPixels[i + 2] = bg.R; bgPixels[i + 3] = 255;
-                            }
-
-                            // Determine overlap between desired dest rect and the tile layer
                             int layerW = layer.PixelWidth;
                             int layerH = layer.PixelHeight;
-                            // destX/destY are canvas coordinates. The tile-layer cache image
-                            // is positioned on the canvas with an offset (Canvas.Left/Top).
-                            // Convert canvas coordinates into layer-local pixel coordinates
-                            // before computing overlap. Use the layerLeft/layerTop values
-                            // obtained earlier when building the cache key.
                             int srcLeft = destX - layerLeft;
                             int srcTop = destY - layerTop;
-                            int srcRight = srcLeft + w;
-                            int srcBottom = srcTop + h;
                             int ovLeft = Math.Max(0, srcLeft);
                             int ovTop = Math.Max(0, srcTop);
-                            int ovRight = Math.Min(layerW, srcRight);
-                            int ovBottom = Math.Min(layerH, srcBottom);
-                            int ovW = ovRight - ovLeft;
-                            int ovH = ovBottom - ovTop;
+                            int ovRight = Math.Min(layerW, srcLeft + Math.Max(1, (int)bs.PixelWidth));
+                            int ovBottom = Math.Min(layerH, srcTop + Math.Max(1, (int)bs.PixelHeight));
+                            int ovW = Math.Max(0, ovRight - ovLeft);
+                            int ovH = Math.Max(0, ovBottom - ovTop);
                             if (ovW > 0 && ovH > 0)
                             {
-                                // Copy the overlapping region from the layer into the bgPixels buffer
-                                var cropped = new CroppedBitmap(layer, new Int32Rect(ovLeft, ovTop, ovW, ovH));
-                                var conv = new FormatConvertedBitmap(cropped, PixelFormats.Bgra32, null, 0);
-                                int ovStride = ovW * 4;
-                                var temp = new byte[ovH * ovStride];
-                                conv.CopyPixels(temp, ovStride, 0);
-
-                                // destination offset within bgPixels where the overlap starts
-                                int dstRowOffset = (ovTop - srcTop) * stride;
-                                int dstColOffset = (ovLeft - srcLeft) * 4;
-                                for (int row = 0; row < ovH; row++)
+                                try
                                 {
-                                    int srcRow = row * ovStride;
-                                    int dstIndex = dstRowOffset + row * stride + dstColOffset;
-                                    Buffer.BlockCopy(temp, srcRow, bgPixels, dstIndex, ovStride);
+                                    var cropped = new CroppedBitmap(layer, new Int32Rect(ovLeft, ovTop, ovW, ovH));
+                                    var brush = new ImageBrush(cropped) { Stretch = Stretch.None, TileMode = TileMode.None };
+                                    // If the sprite doesn't align with the cropped region (edge cases), fill the whole
+                                    // area with the flat background first to keep visuals consistent.
+                                    dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                    // Draw the cropped content at the appropriate offset
+                                    int dx = ovLeft - srcLeft;
+                                    int dy = ovTop - srcTop;
+                                    dc.PushTransform(new TranslateTransform(-dx, -dy));
+                                    dc.DrawRectangle(brush, null, new Rect(dx, dy, ovW, ovH));
+                                    dc.Pop();
+                                }
+                                catch
+                                {
+                                    dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                                 }
                             }
-                        }
-                        else
-                        {
-                            for (int i = 0; i < bgPixels.Length; i += 4)
+                            else
                             {
-                                bgPixels[i + 0] = bg.B; bgPixels[i + 1] = bg.G; bgPixels[i + 2] = bg.R; bgPixels[i + 3] = 255;
+                                dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                             }
                         }
-                    }
-                    catch
-                    {
-                        for (int i = 0; i < bgPixels.Length; i += 4)
+                        catch
                         {
-                            bgPixels[i + 0] = bg.B; bgPixels[i + 1] = bg.G; bgPixels[i + 2] = bg.R; bgPixels[i + 3] = 255;
+                            dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                         }
                     }
-                }
-                else
-                {
-                    for (int i = 0; i < bgPixels.Length; i += 4)
+                    else
                     {
-                        bgPixels[i + 0] = bg.B; bgPixels[i + 1] = bg.G; bgPixels[i + 2] = bg.R; bgPixels[i + 3] = 255;
+                        dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                     }
+
+                    // Draw the sprite on top; WPF will handle alpha blending correctly
+                    dc.DrawImage(bs, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                 }
 
-                var outPixels = new byte[h * stride];
-                Array.Copy(bgPixels, outPixels, bgPixels.Length);
-                for (int i = 0; i < spritePixels.Length; i += 4)
-                {
-                    byte sb = spritePixels[i + 0];
-                    byte sg = spritePixels[i + 1];
-                    byte sr = spritePixels[i + 2];
-                    byte sa = spritePixels[i + 3];
-
-                    if (sa == 0) continue;
-                    if (sa == 255)
-                    {
-                        outPixels[i + 0] = sb; outPixels[i + 1] = sg; outPixels[i + 2] = sr; outPixels[i + 3] = 255; continue;
-                    }
-                    double a = sa / 255.0;
-                    outPixels[i + 0] = (byte)Math.Round(sb * a + outPixels[i + 0] * (1 - a));
-                    outPixels[i + 1] = (byte)Math.Round(sg * a + outPixels[i + 1] * (1 - a));
-                    outPixels[i + 2] = (byte)Math.Round(sr * a + outPixels[i + 2] * (1 - a));
-                    outPixels[i + 3] = 255;
-                }
-
-                var wb = new WriteableBitmap(w, h, convSprite.DpiX, convSprite.DpiY, PixelFormats.Bgra32, null);
-                wb.WritePixels(new Int32Rect(0, 0, w, h), outPixels, stride, 0);
-                wb.Freeze();
-                spriteBackgroundCompositeCache[key] = wb;
-                return wb;
+                var rtb = new RenderTargetBitmap((int)bs.PixelWidth, (int)bs.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                rtb.Freeze();
+                spriteBackgroundCompositeCache[key] = rtb;
+                return rtb;
             }
             catch { return src; }
         }
@@ -2946,7 +2939,7 @@ namespace FamidashEditor
                             if (a == 0) continue;
                             double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
                             bool isBlack = (r <= 12 && g <= 12 && b <= 12);
-                            bool isNearWhite = (lum >= 0.92);
+                            bool isNearWhite = (lum >= 0.82);
                             if (isBlack) continue;
                             if (isNearWhite)
                             {
