@@ -266,6 +266,15 @@
     <None Include="fami-probe-result.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- Ensure the original FamiStudio text export and .fms album are available in build/publish outputs -->
+    <None Include="..\the album.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="the album.fms">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
     <!-- Level metadata JSON5 - copy to output so it's editable -->
     <None Include="..\lvlset_HUGE_metadata.json5">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -235,8 +235,8 @@ namespace FamidashEditor
             try { if (MenuSimulatorSize3x != null) MenuSimulatorSize3x.IsChecked = (size == 3); } catch { }
             try { if (MenuSimulatorSize4x != null) MenuSimulatorSize4x.IsChecked = (size == 4); } catch { }
 
-            // Save per-TMX config if a file is loaded
-            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+            // Persist simulator scale as a global editor setting (do not write per-TMX)
+            try { SaveSettingsWithTriggerOption(); } catch { }
         }
         catch { }
     }
@@ -880,12 +880,7 @@ namespace FamidashEditor
             }
             catch { }
 
-            // Save simulator scale (1..4)
-                try
-                {
-                    config.SimulatorScale = Math.Max(1, Math.Min(4, loadedSimulatorScale));
-                }
-                catch { }
+            // Simulator scale is now a global setting; per-TMX configs must not store it.
 
             // Save sprite offsets
             try
@@ -1072,21 +1067,7 @@ namespace FamidashEditor
                     }
                     catch { loadedStartingSpeedUiIndex = 1; }
 
-                    // Load simulator scale from config (1..4)
-                    try
-                    {
-                        if (config.SimulatorScale.HasValue)
-                        {
-                            int s = config.SimulatorScale.Value;
-                            if (s < 1) s = 1; if (s > 4) s = 4;
-                            loadedSimulatorScale = s;
-                        }
-                        else
-                        {
-                            loadedSimulatorScale = 1;
-                        }
-                    }
-                    catch { loadedSimulatorScale = 1; }
+                    // Simulator scale is intentionally not loaded from per-TMX configs.
                     
                     // Load sprite offsets from config
                     try
@@ -5802,6 +5783,18 @@ namespace FamidashEditor
                         try { invertPinchGesture = ipg.GetBoolean(); } catch { invertPinchGesture = true; }
                         if (MenuOptionSwapPinch != null) MenuOptionSwapPinch.IsChecked = invertPinchGesture;
                     }
+
+                    // optional simulator scale (global setting, 1..4)
+                    if (doc.RootElement.TryGetProperty("simulatorScale", out var ss))
+                    {
+                        try
+                        {
+                            int s = ss.GetInt32();
+                            if (s < 1) s = 1; if (s > 4) s = 4;
+                            loadedSimulatorScale = s;
+                        }
+                        catch { loadedSimulatorScale = 1; }
+                    }
                     
                     // Load tileboard position (default to LEFT if not present)
                     if (doc.RootElement.TryGetProperty("tileboardPosition", out var tbPosElem))
@@ -5869,6 +5862,7 @@ namespace FamidashEditor
                     invertPinchGesture = invertPinchGesture,
                     hideColorTriggers = hideColorTriggers,
                     hideInvisibleSprites = hideInvisibleSprites,
+                    simulatorScale = loadedSimulatorScale,
                     lockSpritesToSet = lockSpritesToSet,
                     showAccurateTileset = showAccurateTileset,
                     suppressCollisionMessages = suppressCollisionMessages,
@@ -6280,6 +6274,15 @@ namespace FamidashEditor
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
                     sim.Owner = this;
+                    // Ensure music and simulation stop when simulator window is closed
+                    try
+                    {
+                        sim.Closed += (s, e) => {
+                            try { sim.StopSimulation(); } catch { }
+                            try { famiIntegration.Stop(); } catch { }
+                        };
+                    }
+                    catch { }
                     try { sim.SetStartingSpeedUiIndex(loadedStartingSpeedUiIndex); } catch { }
                     // Warm audio and preload the selected track to reduce first-play latency.
                     try { if (!string.IsNullOrEmpty(albumTxtPath)) famiIntegration.WarmAndPrime(albumTxtPath); } catch { }
