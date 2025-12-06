@@ -2116,6 +2116,39 @@ namespace FamidashEditor
             {
                 return Color.FromArgb(255, 0, 0, 0);
             }
+            // If this sprite corresponds to a palette cell in the Color Picker, prefer that exact color.
+            try
+            {
+                var palette = PaletteProvider.GetPalette(); // expects 14*4 (or similar)
+
+                // Map background triggers to palette rows:
+                // 0x80-0x8C -> palette row 0, indices rowStart + (sprite - 0x80)
+                // 0x90-0x9C -> palette row 1
+                // 0xA0-0xAC -> palette row 2
+                // Ground triggers similarly map C0-CC, D0-DC, E0-EC to rows 0,1,2
+                int idx = -1;
+                if (spriteIdx >= 0x80 && spriteIdx <= 0x8C) idx = (spriteIdx - 0x80) + (0 * 14);
+                else if (spriteIdx >= 0x90 && spriteIdx <= 0x9C) idx = (spriteIdx - 0x90) + (1 * 14);
+                else if (spriteIdx >= 0xA0 && spriteIdx <= 0xAC) idx = (spriteIdx - 0xA0) + (2 * 14);
+                else if (spriteIdx >= 0xC0 && spriteIdx <= 0xCC) idx = (spriteIdx - 0xC0) + (0 * 14);
+                else if (spriteIdx >= 0xD0 && spriteIdx <= 0xDC) idx = (spriteIdx - 0xD0) + (1 * 14);
+                else if (spriteIdx >= 0xE0 && spriteIdx <= 0xEC) idx = (spriteIdx - 0xE0) + (2 * 14);
+
+                // The user requested that the last color in each row is not counted. Clamp to rowStart+12 maximum.
+                if (idx >= 0)
+                {
+                    int rowStart = (idx / 14) * 14;
+                    int rowOffset = idx % 14;
+                    if (rowOffset > 12) rowOffset = 12;
+                    int finalIdx = rowStart + rowOffset;
+                    if (finalIdx >= 0 && finalIdx < palette.Length)
+                    {
+                        var p = palette[finalIdx];
+                        return Color.FromArgb(255, p.R, p.G, p.B);
+                    }
+                }
+            }
+            catch { }
 
             // Prefer sampling the actual sprite/preview image color so the tint matches icon color
             try
