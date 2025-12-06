@@ -336,6 +336,8 @@ namespace FamidashEditor
 
         // Cache to remember if a BitmapSource appears 'top-heavy' (non-transparent pixels concentrated near top)
         private readonly System.Collections.Generic.Dictionary<int, bool> imageTopHeavyCache = new System.Collections.Generic.Dictionary<int, bool>();
+        // Cache composite of sprite over background tint: key = (srcHash<<32) ^ bgArgb
+        private readonly System.Collections.Generic.Dictionary<long, ImageSource?> spriteBackgroundCompositeCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
 
         // Cache for ground-tinted tile images keyed by (tileIndex<<32)|ARGB
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> groundTintedTileCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
@@ -545,9 +547,12 @@ namespace FamidashEditor
                     {
                         if (!this.animationFrames.ContainsKey(id))
                         {
-                            if (this.previewSpriteMap.TryGetValue(id, out var pimg) && pimg != null)
+                            ImageSource? sourceImg = null;
+                            if (this.previewSpriteMap.TryGetValue(id, out var pimg) && pimg != null) sourceImg = pimg;
+                            else if (this.spriteImages != null && id >= 0 && id < this.spriteImages.Length && this.spriteImages[id] != null) sourceImg = this.spriteImages[id];
+                            if (sourceImg != null)
                             {
-                                var frames = CreateTwoFramePulse(pimg);
+                                var frames = CreateTwoFramePulse(sourceImg);
                                 if (frames != null) this.animationFrames[id] = frames;
                             }
                         }
@@ -1754,8 +1759,21 @@ namespace FamidashEditor
                     }
                     // Force-refresh the Image control to ensure WPF updates when the source changes
                     try { simg.Source = null; } catch { }
-                    simg.Source = chosenSprite;
-                    if (chosenSprite is BitmapSource bs) { simg.Width = bs.PixelWidth; simg.Height = bs.PixelHeight; }
+                    ImageSource? finalSprite = chosenSprite;
+                    try
+                    {
+                        // For decoration sprites, composite the sprite over the current background tint so
+                        // semi-transparent edges blend seamlessly with the background color.
+                        if (chosenSprite is BitmapSource cbs && decorationSpriteIds.Contains(s) && backgroundTint.A > 0)
+                        {
+                            var comp = CompositeSpriteOverBackground(chosenSprite, backgroundTint);
+                            if (comp != null) finalSprite = comp;
+                        }
+                    }
+                    catch { }
+
+                    simg.Source = finalSprite;
+                    if (finalSprite is BitmapSource fbs) { simg.Width = fbs.PixelWidth; simg.Height = fbs.PixelHeight; }
                     System.Windows.Controls.Canvas.SetLeft(simg, px);
                     System.Windows.Controls.Canvas.SetTop(simg, py);
                     spritesInUse++;
@@ -2069,7 +2087,51 @@ namespace FamidashEditor
 
                 if (!AreColorsEqual(prevTileTint, tileTint) || !AreColorsEqual(prevBackgroundTint, backgroundTint) || !AreColorsEqual(prevGroundTint, groundTint))
                 {
-                    UpdateTonedImagesForTileTint(tileTint);
+                    // Recompute tile-toned images. Background triggers should also tint non-white areas of tiles.
+                    // Compute palette-driven primary/secondary colors for background-based two-tone mapping if possible.
+                    Color? bgPrimary = null; Color? bgSecondary = null;
+                    try
+                    {
+                        if (bgSidLocal >= 0)
+                        {
+                            var palette = PaletteProvider.GetPalette();
+                            int? pidx = GetPaletteIndexForBackgroundTrigger(bgSidLocal);
+                            if (pidx.HasValue && pidx.Value >= 0 && pidx.Value < palette.Length)
+                            {
+                                bgPrimary = palette[pidx.Value];
+                                int col = pidx.Value % 14;
+                                if (col > 12) col = 12;
+                                int row = pidx.Value / 14;
+                                int secRow = row - 1;
+                                if (secRow < 0)
+                                {
+                                    bgSecondary = Color.FromArgb(255, 0, 0, 0);
+                                }
+                                else
+                                {
+                                    int secIdx = secRow * 14 + col;
+                                    if (secIdx >= 0 && secIdx < palette.Length) bgSecondary = palette[secIdx];
+                                    else bgSecondary = Color.FromArgb(255, 0, 0, 0);
+                                }
+                            }
+                        }
+                    }
+                    catch { bgPrimary = null; bgSecondary = null; }
+
+                    try
+                    {
+                        // Regenerate tile toned images using background two-tone mapping when available,
+                        // and use tileTint to recolor white/outline pixels only (object triggers affect outlines).
+                        if (tileImages != null)
+                        {
+                            if (bgPrimary.HasValue)
+                                tileTonedImages = CreateTwoToneTileImages(tileImages, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255,0,0,0), (tileIdxLocal >= 0) ? tileTint : Color.FromArgb(0,0,0,0));
+                            else
+                                tileTonedImages = CreateOutlineTintedTileImages(tileImages, tileTint);
+                        }
+                    }
+                    catch { tileTonedImages = CreateHslShiftedImages(tileImages, tileTint); }
+
                     try { parallaxTonedImages = backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0 ? CreateBlackMaskedImages(parallaxImages) : CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
                     try { groundTonedImages = groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0 ? CreateBlackMaskedImages(groundImages) : CreateHueShiftedImages(groundImages, groundTint); } catch { groundTonedImages = groundImages; }
 
@@ -2325,6 +2387,170 @@ namespace FamidashEditor
             return Color.FromArgb(255, r, g, b);
         }
 
+        // Given a background trigger sprite id, return the corresponding palette index (or null).
+        // Mirrors the mapping used by ColorFromTrigger but returns the numeric palette index instead of a color.
+        private int? GetPaletteIndexForBackgroundTrigger(int spriteIdx)
+        {
+            try
+            {
+                int idx = -1;
+                if (spriteIdx >= 0x80 && spriteIdx <= 0x8C) idx = (spriteIdx - 0x80) + (0 * 14);
+                else if (spriteIdx >= 0x90 && spriteIdx <= 0x9C) idx = (spriteIdx - 0x90) + (1 * 14);
+                else if (spriteIdx >= 0xA0 && spriteIdx <= 0xAC) idx = (spriteIdx - 0xA0) + (2 * 14);
+                else if (spriteIdx >= 0xC0 && spriteIdx <= 0xCC) idx = (spriteIdx - 0xC0) + (0 * 14);
+                else if (spriteIdx >= 0xD0 && spriteIdx <= 0xDC) idx = (spriteIdx - 0xD0) + (1 * 14);
+                else if (spriteIdx >= 0xE0 && spriteIdx <= 0xEC) idx = (spriteIdx - 0xE0) + (2 * 14);
+
+                if (idx >= 0)
+                {
+                    int row = idx / 14;
+                    int rowOffset = idx % 14;
+                    if (rowOffset > 12) rowOffset = 12;
+                    // Shift background palette selection down one row (user request).
+                    int shiftedRow = row + 1;
+                    int finalIdx = shiftedRow * 14 + rowOffset;
+                    return finalIdx;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        // Create two-tone tile images: non-white pixels are classified into lighter/darker groups and
+        // mapped to bgPrimary/bgSecondary respectively; white/near-white outlines are mapped to outlineTint.
+        private ImageSource[]? CreateTwoToneTileImages(ImageSource[]? originals, Color bgPrimary, Color bgSecondary, Color outlineTint)
+        {
+            if (originals == null) return null;
+            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+
+                        // Compute min/max luminance of non-white, non-transparent pixels to determine threshold
+                        double minL = 1.0, maxL = 0.0; int count = 0;
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte b = pixels[i + 0]; byte g = pixels[i + 1]; byte r = pixels[i + 2]; byte a = pixels[i + 3];
+                            if (a == 0) continue;
+                            double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+                            // Skip near-white when computing min/max
+                            if (lum >= 0.92) continue;
+                            if (lum < minL) minL = lum;
+                            if (lum > maxL) maxL = lum;
+                            count++;
+                        }
+                        double threshold = (count > 0) ? ((minL + maxL) / 2.0) : 0.5;
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte ob = pixels[i + 0]; byte og = pixels[i + 1]; byte orr = pixels[i + 2]; byte a = pixels[i + 3];
+                            if (a == 0) continue;
+                            double lum = (0.2126 * orr + 0.7152 * og + 0.0722 * ob) / 255.0;
+                            bool isWhite = lum >= 0.92;
+                            bool isBlack = (orr <= 12 && og <= 12 && ob <= 12);
+
+                            if (isBlack)
+                            {
+                                // Preserve true black pixels unchanged (do not tint blacks with background)
+                                continue;
+                            }
+
+                            if (isWhite)
+                            {
+                                // Only recolor white outlines if an explicit outline tint is provided (alpha>0).
+                                if (outlineTint.A > 0)
+                                {
+                                    pixels[i + 3] = 255; // ensure opaque when recoloring
+                                    pixels[i + 2] = outlineTint.R;
+                                    pixels[i + 1] = outlineTint.G;
+                                    pixels[i + 0] = outlineTint.B;
+                                }
+                                else
+                                {
+                                    // leave white as-is
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                // Map into primary/secondary based on luminance threshold
+                                Color target = (lum >= threshold) ? bgPrimary : bgSecondary;
+                                pixels[i + 3] = 255;
+                                pixels[i + 2] = target.R;
+                                pixels[i + 1] = target.G;
+                                pixels[i + 0] = target.B;
+                            }
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch
+                    {
+                        outList.Add(src);
+                    }
+                }
+                else
+                {
+                    outList.Add(src);
+                }
+            }
+            return outList.ToArray();
+        }
+
+        // Create tile images where only near-white outline pixels are replaced by outlineTint while
+        // keeping other pixels unchanged.
+        private ImageSource[]? CreateOutlineTintedTileImages(ImageSource[]? originals, Color outlineTint)
+        {
+            if (originals == null) return null;
+            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte b = pixels[i + 0]; byte g = pixels[i + 1]; byte r = pixels[i + 2]; byte a = pixels[i + 3];
+                            if (a == 0) continue;
+                            double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+                            bool isWhite = lum >= 0.92;
+                            if (isWhite)
+                            {
+                                pixels[i + 3] = 255;
+                                pixels[i + 2] = outlineTint.R;
+                                pixels[i + 1] = outlineTint.G;
+                                pixels[i + 0] = outlineTint.B;
+                            }
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch { outList.Add(src); }
+                }
+                else outList.Add(src);
+            }
+            return outList.ToArray();
+        }
+
         // Helper: compare colors (treat nullability not applicable here)
         private static bool AreColorsEqual(Color a, Color b)
         {
@@ -2389,6 +2615,67 @@ namespace FamidashEditor
             {
                 return src;
             }
+        }
+
+        // Composite a sprite image over a solid background color so transparent areas show that color.
+        // Uses a small cache to avoid redoing work per-frame.
+        private ImageSource? CompositeSpriteOverBackground(ImageSource src, Color bg)
+        {
+            if (src == null) return null;
+            if (!(src is BitmapSource bs)) return src;
+            try
+            {
+                int srcHash = bs.GetHashCode();
+                long key = (((long)srcHash) << 32) ^ (long)((bg.A << 24) | (bg.R << 16) | (bg.G << 8) | bg.B);
+                if (spriteBackgroundCompositeCache.TryGetValue(key, out var cached)) return cached;
+
+                // Use non-premultiplied BGRA so we can do straight alpha blending into an opaque background
+                var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                int w = Math.Max(1, conv.PixelWidth);
+                int h = Math.Max(1, conv.PixelHeight);
+                int stride = w * 4;
+                var srcPixels = new byte[h * stride];
+                conv.CopyPixels(srcPixels, stride, 0);
+
+                var outPixels = new byte[h * stride];
+                // Fill with background color
+                for (int i = 0; i < outPixels.Length; i += 4)
+                {
+                    outPixels[i + 0] = bg.B;
+                    outPixels[i + 1] = bg.G;
+                    outPixels[i + 2] = bg.R;
+                    // Force opaque background so transparent sprite areas show the background tint
+                    outPixels[i + 3] = 255;
+                }
+
+                // Alpha blend src over background
+                for (int i = 0; i < srcPixels.Length; i += 4)
+                {
+                    byte sb = srcPixels[i + 0];
+                    byte sg = srcPixels[i + 1];
+                    byte sr = srcPixels[i + 2];
+                    byte sa = srcPixels[i + 3];
+
+                    if (sa == 0) continue;
+                    if (sa == 255)
+                    {
+                        outPixels[i + 0] = sb; outPixels[i + 1] = sg; outPixels[i + 2] = sr; outPixels[i + 3] = 255; continue;
+                    }
+
+                    double a = sa / 255.0;
+                    outPixels[i + 0] = (byte)Math.Round(sb * a + outPixels[i + 0] * (1 - a));
+                    outPixels[i + 1] = (byte)Math.Round(sg * a + outPixels[i + 1] * (1 - a));
+                    outPixels[i + 2] = (byte)Math.Round(sr * a + outPixels[i + 2] * (1 - a));
+                    outPixels[i + 3] = 255;
+                }
+
+                var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                wb.WritePixels(new Int32Rect(0, 0, w, h), outPixels, stride, 0);
+                wb.Freeze();
+                spriteBackgroundCompositeCache[key] = wb;
+                return wb;
+            }
+            catch { return src; }
         }
 
         // Regenerate toned images for tiles and saw frames using HSL hue shifting.

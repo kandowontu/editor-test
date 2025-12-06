@@ -2253,7 +2253,22 @@ namespace FamidashEditor
                 // Tile slider adjusts only tile sizes, not the frame width. Enable horizontal scrolling
                 // if tiles exceed the available area.
                 if (!suppressManualTileChange) manualTileSize = true;
-                paletteTileSize = (int)ev.NewValue;
+                try
+                {
+                    var slider = s as System.Windows.Controls.Slider;
+                    int snapped = (int)Math.Round(ev.NewValue / 4.0) * 4;
+                    if (slider != null)
+                    {
+                        snapped = Math.Max((int)slider.Minimum, Math.Min((int)slider.Maximum, snapped));
+                        if (Math.Abs(slider.Value - snapped) > 0.0001)
+                        {
+                            slider.Value = snapped;
+                            return;
+                        }
+                    }
+                    paletteTileSize = snapped;
+                }
+                catch { paletteTileSize = (int)Math.Round(ev.NewValue); }
                 PopulateTilesPanel();
                 // Allow horizontal scrolling when the user enlarges tiles beyond the viewport.
                 if (TilesPanel != null)
@@ -2302,7 +2317,31 @@ namespace FamidashEditor
             if (SpriteSizeSlider != null) SpriteSizeSlider.ValueChanged += (s, ev) =>
             {
                 if (!suppressManualSpriteChange) manualSpriteSize = true;
-                paletteSpriteSize = (int)ev.NewValue;
+                try
+                {
+                    // Snap to nearest 4-pixel increment (quarter tile) to avoid fractional zoom alignment issues
+                    var slider = s as System.Windows.Controls.Slider;
+                    if (slider != null)
+                    {
+                        int snapped = (int)Math.Round(ev.NewValue / 4.0) * 4;
+                        snapped = Math.Max((int)slider.Minimum, Math.Min((int)slider.Maximum, snapped));
+                        if (Math.Abs(slider.Value - snapped) > 0.0001)
+                        {
+                            // avoid re-entrancy by setting value and returning
+                            slider.Value = snapped;
+                            return;
+                        }
+                        paletteSpriteSize = snapped;
+                    }
+                    else
+                    {
+                        paletteSpriteSize = (int)Math.Round(ev.NewValue);
+                    }
+                }
+                catch
+                {
+                    paletteSpriteSize = (int)Math.Round(ev.NewValue);
+                }
                 PopulateSpritesPanel();
                 if (SpritesPanel != null)
                 {
