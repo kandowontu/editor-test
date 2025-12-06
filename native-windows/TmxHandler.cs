@@ -187,46 +187,56 @@ namespace FamidashEditor
                 {
                     if (sprites[newIdx] != -1)
                     {
-                        // TRIGGER sprites: Move vertically to find empty slot
+                        // TRIGGER sprites: search nearby positions to find an empty slot.
                         int collidingSprite = sprites[newIdx];
+                        int finalX = x;
                         int finalY = y;
                         bool foundSlot = false;
-                        
-                        // Search up and down alternately - prefer moving down first
-                        // Keep searching until we find an actually empty slot
-                        for (int offset = 1; offset < height; offset++)
+
+                        // Search radius: prefer minimal vertical move (down first), but allow small horizontal shifts
+                        int maxDx = Math.Min(4, width); // allow shifting up to 4 tiles horizontally
+                        // We'll search increasing Manhattan distance from (x,y)
+                        for (int dist = 1; dist <= Math.Max(width, height) && !foundSlot; dist++)
                         {
-                            // Try below first
-                            int testY = y + offset;
-                            if (testY < height)
+                            for (int dx = -maxDx; dx <= maxDx && !foundSlot; dx++)
                             {
-                                int testIdx = testY * width + x;
-                                if (sprites[testIdx] == -1)
+                                int tx = x + dx;
+                                if (tx < 0 || tx >= width) continue;
+                                int maxDy = dist - Math.Abs(dx);
+                                if (maxDy < 0) continue;
+                                // prefer downward search first, then upward
+                                for (int dy = 0; dy <= Math.Min(maxDy, height - 1) && !foundSlot; dy++)
                                 {
-                                    finalY = testY;
-                                    foundSlot = true;
-                                    break;
-                                }
-                            }
-                            
-                            // Try above
-                            testY = y - offset;
-                            if (testY >= 0)
-                            {
-                                int testIdx = testY * width + x;
-                                if (sprites[testIdx] == -1)
-                                {
-                                    finalY = testY;
-                                    foundSlot = true;
-                                    break;
+                                    // Try below (y + dy)
+                                    int ty = y + dy;
+                                    if (ty >= 0 && ty < height)
+                                    {
+                                        int testIdx = ty * width + tx;
+                                        if (sprites[testIdx] == -1)
+                                        {
+                                            finalX = tx; finalY = ty; foundSlot = true; break;
+                                        }
+                                    }
+                                    // Skip dy == 0 duplicate
+                                    if (dy == 0) continue;
+                                    // Try above (y - dy)
+                                    ty = y - dy;
+                                    if (ty >= 0 && ty < height)
+                                    {
+                                        int testIdx = ty * width + tx;
+                                        if (sprites[testIdx] == -1)
+                                        {
+                                            finalX = tx; finalY = ty; foundSlot = true; break;
+                                        }
+                                    }
                                 }
                             }
                         }
-                        
+
                         if (foundSlot)
                         {
-                            collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Editor({x},{y}) COLLISION with 0x{collidingSprite:X2} → Moved to ({x},{finalY})");
-                            newIdx = finalY * width + x;
+                            collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Editor({x},{y}) COLLISION with 0x{collidingSprite:X2} → Moved to ({finalX},{finalY})");
+                            newIdx = finalY * width + finalX;
                         }
                         else
                         {

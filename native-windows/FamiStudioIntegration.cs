@@ -26,6 +26,20 @@ namespace FamidashEditor
         public string? StatusMessage { get; private set; }
         public bool IsLoaded => alc != null;
         public bool IsPlaying => output != null && output.PlaybackState == PlaybackState.Playing;
+        public bool IsPaused => output != null && output.PlaybackState == PlaybackState.Paused;
+
+        // Resume playback if currently paused. No-op otherwise.
+        public void Resume()
+        {
+            try
+            {
+                if (output != null && output.PlaybackState == PlaybackState.Paused)
+                {
+                    output.Play();
+                }
+            }
+            catch { }
+        }
 
         public void LoadFromFolder(string folder)
         {

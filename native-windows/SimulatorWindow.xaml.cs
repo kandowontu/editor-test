@@ -336,8 +336,8 @@ namespace FamidashEditor
 
         // Cache to remember if a BitmapSource appears 'top-heavy' (non-transparent pixels concentrated near top)
         private readonly System.Collections.Generic.Dictionary<int, bool> imageTopHeavyCache = new System.Collections.Generic.Dictionary<int, bool>();
-        // Cache composite of sprite over background tint: key = (srcHash<<32) ^ bgArgb
-        private readonly System.Collections.Generic.Dictionary<long, ImageSource?> spriteBackgroundCompositeCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
+        // Cache composite of sprite over background/tile area: key = "srcHash:ARGB:destX:destY"
+        private readonly System.Collections.Generic.Dictionary<string, ImageSource?> spriteBackgroundCompositeCache = new System.Collections.Generic.Dictionary<string, ImageSource?>();
 
         // Cache for ground-tinted tile images keyed by (tileIndex<<32)|ARGB
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> groundTintedTileCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
@@ -470,12 +470,13 @@ namespace FamidashEditor
             this.largeSawFrame1TilesOrig = largeSawFrame1TilesTinted != null ? (ImageSource[])largeSawFrame1TilesTinted.Clone() : null;
             this.largeSawFrame2TilesOrig = largeSawFrame2TilesTinted != null ? (ImageSource[])largeSawFrame2TilesTinted.Clone() : null;
             // Initialize tinted copies based on provided tileTint
-            this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, tileTint);
-            this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, tileTint);
-            this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, tileTint);
-            this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, tileTint);
-            this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, tileTint);
-            this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, tileTint);
+            // Saws should be tinted by the background color triggers, not the tile tint.
+            this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint);
+            this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint);
+            this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint);
+            this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint);
+            this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint);
+            this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint);
             // Simulator-specific tweak: shift sprite 0x2B and 0x2C up 8 pixels to match editor preview
             try
             {
@@ -1729,6 +1730,17 @@ namespace FamidashEditor
                     try
                     {
                         if (s == 0x2B || s == 0x2C) py -= 8;
+                        // Shift long poles (sprite 0x2A/0x3A) upwards by 1.5 tiles in the simulator
+                        if (s == 0x2A || s == 0x3A)
+                        {
+                            try
+                            {
+                                // Move up 1.5 tiles, then correct by moving down 8px per latest request
+                                int shift = (int)Math.Round(TILE * 1.5) - 8; // net 1 tile (24-8=16)
+                                py = Math.Max(0, py - shift);
+                            }
+                            catch { }
+                        }
                         // Chains should be shifted up 8 pixels in the simulator to match preview
                         if (s == 0x2D || s == 0x3D) py -= 8;
                         // If this decoration sprite appears upside-down (content at top), nudge it up as well.
@@ -1762,11 +1774,14 @@ namespace FamidashEditor
                     ImageSource? finalSprite = chosenSprite;
                     try
                     {
-                        // For decoration sprites, composite the sprite over the current background tint so
-                        // semi-transparent edges blend seamlessly with the background color.
+                        // For decoration sprites, composite the sprite over the rendered tile layer
+                        // (or fallback to the flat background tint) so semi-transparent edges blend
+                        // seamlessly with the exact underlying pixels instead of a flat color.
                         if (chosenSprite is BitmapSource cbs && decorationSpriteIds.Contains(s) && backgroundTint.A > 0)
                         {
-                            var comp = CompositeSpriteOverBackground(chosenSprite, backgroundTint);
+                            int ix = (int)Math.Round(px);
+                            int iy = (int)Math.Round(py);
+                            var comp = CompositeSpriteOverBackgroundAt(chosenSprite, backgroundTint, ix, iy);
                             if (comp != null) finalSprite = comp;
                         }
                     }
@@ -2155,8 +2170,24 @@ namespace FamidashEditor
                         }
                     }
                     catch { parallaxBitmapToned = parallaxBitmap; }
+                    // If the background tint changed, regenerate saw-frame tinted images
+                    if (!AreColorsEqual(prevBackgroundTint, backgroundTint))
+                    {
+                        try
+                        {
+                            this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint);
+                            this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint);
+                            this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint);
+                            this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint);
+                            this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint);
+                            this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint);
+                        }
+                        catch { }
+                    }
+
                     tileLayerCache = null;
                     try { groundTintedTileCache.Clear(); } catch { }
+                    try { spriteBackgroundCompositeCache.Clear(); } catch { }
                 }
             }
             catch { }
@@ -2230,33 +2261,18 @@ namespace FamidashEditor
             try
             {
                 var palette = PaletteProvider.GetPalette(); // expects 14*4 (or similar)
-
-                // Map background triggers to palette rows:
-                // 0x80-0x8C -> palette row 0, indices rowStart + (sprite - 0x80)
-                // 0x90-0x9C -> palette row 1
-                // 0xA0-0xAC -> palette row 2
-                // Ground triggers similarly map C0-CC, D0-DC, E0-EC to rows 0,1,2
-                int idx = -1;
-                if (spriteIdx >= 0x80 && spriteIdx <= 0x8C) idx = (spriteIdx - 0x80) + (0 * 14);
-                else if (spriteIdx >= 0x90 && spriteIdx <= 0x9C) idx = (spriteIdx - 0x90) + (1 * 14);
-                else if (spriteIdx >= 0xA0 && spriteIdx <= 0xAC) idx = (spriteIdx - 0xA0) + (2 * 14);
-                else if (spriteIdx >= 0xC0 && spriteIdx <= 0xCC) idx = (spriteIdx - 0xC0) + (0 * 14);
-                else if (spriteIdx >= 0xD0 && spriteIdx <= 0xDC) idx = (spriteIdx - 0xD0) + (1 * 14);
-                else if (spriteIdx >= 0xE0 && spriteIdx <= 0xEC) idx = (spriteIdx - 0xE0) + (2 * 14);
-
-                // The user requested that the last color in each row is not counted. Clamp to rowStart+12 maximum.
-                if (idx >= 0)
+                try
                 {
-                    int rowStart = (idx / 14) * 14;
-                    int rowOffset = idx % 14;
-                    if (rowOffset > 12) rowOffset = 12;
-                    int finalIdx = rowStart + rowOffset;
-                    if (finalIdx >= 0 && finalIdx < palette.Length)
+                    // For background triggers, use the shifted palette index (one row darker) so
+                    // the background tint and tile two-tone mapping agree.
+                    int? pidx = GetPaletteIndexForBackgroundTrigger(spriteIdx);
+                    if (pidx.HasValue && pidx.Value >= 0 && pidx.Value < palette.Length)
                     {
-                        var p = palette[finalIdx];
+                        var p = palette[pidx.Value];
                         return Color.FromArgb(255, p.R, p.G, p.B);
                     }
                 }
+                catch { }
             }
             catch { }
 
@@ -2406,7 +2422,7 @@ namespace FamidashEditor
                     int row = idx / 14;
                     int rowOffset = idx % 14;
                     if (rowOffset > 12) rowOffset = 12;
-                    // Shift background palette selection down one row (user request).
+                    // Shift background palette selection down one row (darker) so tile tints match
                     int shiftedRow = row + 1;
                     int finalIdx = shiftedRow * 14 + rowOffset;
                     return finalIdx;
@@ -2617,51 +2633,121 @@ namespace FamidashEditor
             }
         }
 
-        // Composite a sprite image over a solid background color so transparent areas show that color.
-        // Uses a small cache to avoid redoing work per-frame.
-        private ImageSource? CompositeSpriteOverBackground(ImageSource src, Color bg)
+        // Composite a sprite image over the rendered tile layer (if available) at the given
+        // destination coordinates so transparent areas show the exact underlying pixels.
+        // Falls back to compositing over a flat `bg` color when the tile layer is unavailable.
+        private ImageSource? CompositeSpriteOverBackgroundAt(ImageSource src, Color bg, int destX, int destY)
         {
             if (src == null) return null;
             if (!(src is BitmapSource bs)) return src;
             try
             {
                 int srcHash = bs.GetHashCode();
-                long key = (((long)srcHash) << 32) ^ (long)((bg.A << 24) | (bg.R << 16) | (bg.G << 8) | bg.B);
+                // Include animationFrame and tile-layer canvas offsets so cached composites
+                // update when animated tiles/frame or fractional camera offsets change.
+                int layerLeft = 0, layerTop = 0;
+                try { if (tileLayerImage != null) { var v = System.Windows.Controls.Canvas.GetLeft(tileLayerImage); if (!double.IsNaN(v)) layerLeft = (int)Math.Round(v); var t = System.Windows.Controls.Canvas.GetTop(tileLayerImage); if (!double.IsNaN(t)) layerTop = (int)Math.Round(t); } } catch { }
+                string key = string.Format("{0}:{1:X2}{2:X2}{3:X2}{4:X2}:{5}:{6}:{7}:{8}:{9}", srcHash, bg.A, bg.R, bg.G, bg.B, destX, destY, animationFrame, layerLeft, layerTop);
                 if (spriteBackgroundCompositeCache.TryGetValue(key, out var cached)) return cached;
 
-                // Use non-premultiplied BGRA so we can do straight alpha blending into an opaque background
-                var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
-                int w = Math.Max(1, conv.PixelWidth);
-                int h = Math.Max(1, conv.PixelHeight);
+                var convSprite = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                int w = Math.Max(1, convSprite.PixelWidth);
+                int h = Math.Max(1, convSprite.PixelHeight);
                 int stride = w * 4;
-                var srcPixels = new byte[h * stride];
-                conv.CopyPixels(srcPixels, stride, 0);
+                var spritePixels = new byte[h * stride];
+                convSprite.CopyPixels(spritePixels, stride, 0);
 
-                var outPixels = new byte[h * stride];
-                // Fill with background color
-                for (int i = 0; i < outPixels.Length; i += 4)
+                var bgPixels = new byte[h * stride];
+
+                if (tileLayerCache != null)
                 {
-                    outPixels[i + 0] = bg.B;
-                    outPixels[i + 1] = bg.G;
-                    outPixels[i + 2] = bg.R;
-                    // Force opaque background so transparent sprite areas show the background tint
-                    outPixels[i + 3] = 255;
+                    try
+                    {
+                        var layer = tileLayerCache as BitmapSource;
+                        if (layer != null)
+                        {
+                            // Fill bgPixels with flat bg color initially
+                            for (int i = 0; i < bgPixels.Length; i += 4)
+                            {
+                                bgPixels[i + 0] = bg.B; bgPixels[i + 1] = bg.G; bgPixels[i + 2] = bg.R; bgPixels[i + 3] = 255;
+                            }
+
+                            // Determine overlap between desired dest rect and the tile layer
+                            int layerW = layer.PixelWidth;
+                            int layerH = layer.PixelHeight;
+                            // destX/destY are canvas coordinates. The tile-layer cache image
+                            // is positioned on the canvas with an offset (Canvas.Left/Top).
+                            // Convert canvas coordinates into layer-local pixel coordinates
+                            // before computing overlap. Use the layerLeft/layerTop values
+                            // obtained earlier when building the cache key.
+                            int srcLeft = destX - layerLeft;
+                            int srcTop = destY - layerTop;
+                            int srcRight = srcLeft + w;
+                            int srcBottom = srcTop + h;
+                            int ovLeft = Math.Max(0, srcLeft);
+                            int ovTop = Math.Max(0, srcTop);
+                            int ovRight = Math.Min(layerW, srcRight);
+                            int ovBottom = Math.Min(layerH, srcBottom);
+                            int ovW = ovRight - ovLeft;
+                            int ovH = ovBottom - ovTop;
+                            if (ovW > 0 && ovH > 0)
+                            {
+                                // Copy the overlapping region from the layer into the bgPixels buffer
+                                var cropped = new CroppedBitmap(layer, new Int32Rect(ovLeft, ovTop, ovW, ovH));
+                                var conv = new FormatConvertedBitmap(cropped, PixelFormats.Bgra32, null, 0);
+                                int ovStride = ovW * 4;
+                                var temp = new byte[ovH * ovStride];
+                                conv.CopyPixels(temp, ovStride, 0);
+
+                                // destination offset within bgPixels where the overlap starts
+                                int dstRowOffset = (ovTop - srcTop) * stride;
+                                int dstColOffset = (ovLeft - srcLeft) * 4;
+                                for (int row = 0; row < ovH; row++)
+                                {
+                                    int srcRow = row * ovStride;
+                                    int dstIndex = dstRowOffset + row * stride + dstColOffset;
+                                    Buffer.BlockCopy(temp, srcRow, bgPixels, dstIndex, ovStride);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            for (int i = 0; i < bgPixels.Length; i += 4)
+                            {
+                                bgPixels[i + 0] = bg.B; bgPixels[i + 1] = bg.G; bgPixels[i + 2] = bg.R; bgPixels[i + 3] = 255;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        for (int i = 0; i < bgPixels.Length; i += 4)
+                        {
+                            bgPixels[i + 0] = bg.B; bgPixels[i + 1] = bg.G; bgPixels[i + 2] = bg.R; bgPixels[i + 3] = 255;
+                        }
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < bgPixels.Length; i += 4)
+                    {
+                        bgPixels[i + 0] = bg.B; bgPixels[i + 1] = bg.G; bgPixels[i + 2] = bg.R; bgPixels[i + 3] = 255;
+                    }
                 }
 
-                // Alpha blend src over background
-                for (int i = 0; i < srcPixels.Length; i += 4)
+                var outPixels = new byte[h * stride];
+                Array.Copy(bgPixels, outPixels, bgPixels.Length);
+                for (int i = 0; i < spritePixels.Length; i += 4)
                 {
-                    byte sb = srcPixels[i + 0];
-                    byte sg = srcPixels[i + 1];
-                    byte sr = srcPixels[i + 2];
-                    byte sa = srcPixels[i + 3];
+                    byte sb = spritePixels[i + 0];
+                    byte sg = spritePixels[i + 1];
+                    byte sr = spritePixels[i + 2];
+                    byte sa = spritePixels[i + 3];
 
                     if (sa == 0) continue;
                     if (sa == 255)
                     {
                         outPixels[i + 0] = sb; outPixels[i + 1] = sg; outPixels[i + 2] = sr; outPixels[i + 3] = 255; continue;
                     }
-
                     double a = sa / 255.0;
                     outPixels[i + 0] = (byte)Math.Round(sb * a + outPixels[i + 0] * (1 - a));
                     outPixels[i + 1] = (byte)Math.Round(sg * a + outPixels[i + 1] * (1 - a));
@@ -2669,7 +2755,7 @@ namespace FamidashEditor
                     outPixels[i + 3] = 255;
                 }
 
-                var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                var wb = new WriteableBitmap(w, h, convSprite.DpiX, convSprite.DpiY, PixelFormats.Bgra32, null);
                 wb.WritePixels(new Int32Rect(0, 0, w, h), outPixels, stride, 0);
                 wb.Freeze();
                 spriteBackgroundCompositeCache[key] = wb;
@@ -2694,17 +2780,8 @@ namespace FamidashEditor
                     // Fallback: if original arrays are null, do nothing
                 }
 
-                // Regenerate saw-frame tinted copies from stored originals so they follow tile tint.
-                try
-                {
-                    sawFrame1TilesTinted = CreateHslShiftedImages(sawFrame1TilesOrig, newTileTint);
-                    sawFrame2TilesTinted = CreateHslShiftedImages(sawFrame2TilesOrig, newTileTint);
-                    smallSawFrame1TilesTinted = CreateHslShiftedImages(smallSawFrame1TilesOrig, newTileTint);
-                    smallSawFrame2TilesTinted = CreateHslShiftedImages(smallSawFrame2TilesOrig, newTileTint);
-                    largeSawFrame1TilesTinted = CreateHslShiftedImages(largeSawFrame1TilesOrig, newTileTint);
-                    largeSawFrame2TilesTinted = CreateHslShiftedImages(largeSawFrame2TilesOrig, newTileTint);
-                }
-                catch { }
+                // NOTE: saw frames are intentionally NOT retinted here from tile tint.
+                // Saws should respond only to background color triggers (handled elsewhere).
             }
             catch { }
         }

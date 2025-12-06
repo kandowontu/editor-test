@@ -6328,6 +6328,12 @@ namespace FamidashEditor
             {
                 if (famiIntegration == null) return;
                 if (famiIntegration.IsPlaying) return;
+                // If playback is paused, prefer resuming instead of restarting the song
+                if (famiIntegration.IsPaused)
+                {
+                    try { System.Threading.Tasks.Task.Run(() => famiIntegration.Resume()); } catch { }
+                    return;
+                }
 
                 int playIdx = -1;
                 if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t) playIdx = t;
@@ -7262,23 +7268,27 @@ namespace FamidashEditor
                 double leftColActual = RootGrid.ColumnDefinitions[0].ActualWidth;
                 if (leftColActual <= 0) return;
 
-                // Try to find the internal ScrollViewer so we can read the viewport width which
-                // reflects the actual horizontal space available for items (excludes scrollbar).
+                // Determine the actual inner ScrollViewer viewport widths for tiles and sprites
+                // and use the minimum of the two to compute a stable per-cell size. Using the
+                // minimum avoids one panel being slightly smaller and then causing the other to
+                // redistribute leftover pixels when scrollbars appear/disappear.
                 double viewportTiles = 0;
                 double viewportSprites = 0;
                 var svTiles = GetInnerScrollViewer(TilesPanel);
                 var svSprites = GetInnerScrollViewer(SpritesPanel);
                 if (svTiles != null) viewportTiles = svTiles.ViewportWidth; else viewportTiles = TilesPanel.ActualWidth;
                 if (svSprites != null) viewportSprites = svSprites.ViewportWidth; else viewportSprites = SpritesPanel.ActualWidth;
-
-                // Fallback: if viewport is not available yet (0), use column width minus padding
+                // Fallback: if either viewport is not ready, use the column width minus a small padding
                 double fallback = Math.Max(0, leftColActual - 8);
                 if (viewportTiles <= 0) viewportTiles = fallback;
                 if (viewportSprites <= 0) viewportSprites = fallback;
+                // Use the smaller viewport so both panels compute the same integer tile size
+                double effectiveViewport = Math.Min(viewportTiles, viewportSprites);
 
-                // Compute per-tile sizes from the viewport width (16 columns)
-                int computedTiles = Math.Max(8, (int)Math.Floor(viewportTiles / 16.0));
-                int computedSprites = Math.Max(8, (int)Math.Floor(viewportSprites / 16.0));
+                // Compute per-tile sizes from the effective viewport width (16 columns)
+                int computedTiles = Math.Max(8, (int)Math.Floor(effectiveViewport / 16.0));
+                // Keep sprite computed size in sync initially so both palettes use the same cell size
+                int computedSprites = computedTiles;
                 // Clamp to a reasonable maximum so the palette doesn't start huge on wide windows
                 const int maxPaletteSize = 32;
                 if (computedTiles > maxPaletteSize) computedTiles = maxPaletteSize;
@@ -7302,23 +7312,50 @@ namespace FamidashEditor
 
                     // Do not auto-adjust sprite palette size here; leave sprites controllable by the user via the slider.
 
-                    // Disable horizontal scrollbars when not in manual mode (auto-sizing)
-                    if (TilesPanel != null)
-                    {
-                        TilesPanel.Width = Double.NaN;
-                        if (!manualTileSize)
+                        // When in auto mode, set the panel widths to exactly fit 16 integer cells
+                        // computed from effective viewport. This ensures there is no fractional
+                        // leftover to distribute between cells when scrollbars toggle.
+                        if (computedTiles > maxPaletteSize) computedTiles = maxPaletteSize;
+                        // If computedTiles differs from current, apply and repopulate
+                        if (!manualTileSize && computedTiles != paletteTileSize)
                         {
-                            TilesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+                            paletteTileSize = computedTiles;
+                            if (TileSizeSlider != null)
+                            {
+                                suppressManualTileChange = true;
+                                TileSizeSlider.Value = paletteTileSize;
+                                suppressManualTileChange = false;
+                            }
+                            PopulateTilesPanel();
                         }
-                    }
-                    if (SpritesPanel != null)
-                    {
-                        SpritesPanel.Width = Double.NaN;
-                        if (!manualSpriteSize)
+
+                        double desiredWidth = paletteTileSize * 16.0; // exact multiple, no extra padding
+                        if (TilesPanel != null)
                         {
-                            SpritesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+                            if (!manualTileSize)
+                            {
+                                TilesPanel.Width = desiredWidth;
+                                TilesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+                            }
+                            else
+                            {
+                                TilesPanel.Width = Double.NaN;
+                                TilesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
+                            }
                         }
-                    }
+                        if (SpritesPanel != null)
+                        {
+                            if (!manualSpriteSize)
+                            {
+                                SpritesPanel.Width = desiredWidth;
+                                SpritesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+                            }
+                            else
+                            {
+                                SpritesPanel.Width = Double.NaN;
+                                SpritesPanel.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
+                            }
+                        }
                 }
                 finally { isAdjustingPanels = false; }
             }
