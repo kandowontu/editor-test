@@ -6077,6 +6077,11 @@ namespace FamidashEditor
                         else
                             previewMap[0x3D] = chainFrame1[0];
                     }
+                    // Decorative spike previews (single-frame). Ensure small and upside-down variants map.
+                    if (decoSpikesFrame1 != null && decoSpikesFrame1.Length > 0) previewMap[0x2E] = decoSpikesFrame1[0];
+                    if (decoSpikesUpsideDownFrame1 != null && decoSpikesUpsideDownFrame1.Length > 0) previewMap[0x2F] = decoSpikesUpsideDownFrame1[0];
+                    if (decoSpikesSmallFrame1 != null && decoSpikesSmallFrame1.Length > 0) previewMap[0x30] = decoSpikesSmallFrame1[0];
+                    if (decoSpikesSmallUpsideDownFrame1 != null && decoSpikesSmallUpsideDownFrame1.Length > 0) previewMap[0x31] = decoSpikesSmallUpsideDownFrame1[0];
                     // Blue pad preview mapping: map 0xFD/0xFE to blue pad down/up preview frames
                     try
                     {
@@ -8015,17 +8020,8 @@ namespace FamidashEditor
                 return;
             }
 
-            // If the path we have is a text export, the FamiStudio CLI cannot export playable WAVs from it.
-            // Playback requires a real .fms project file (or an in-process project loaded from FamiStudio assemblies).
-            try
-            {
-                if (Path.GetExtension(albumTxtPath).Equals(".txt", StringComparison.OrdinalIgnoreCase))
-                {
-                    System.Windows.MessageBox.Show(this, "The loaded album is a FamiStudio text export (.txt). Playback requires the original .fms project or using FamiStudio itself.\n\nPlease configure the path to a .fms file or open a .fms via the FMS Player.", "Play Not Available", MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
-            }
-            catch { }
+            // If the path we have is a text export, we will attempt playback via the FamiStudio integration/CLI.
+            // Previously this was blocked; allow attempting playback and let the integration handle supported formats.
 
             int idx = -1;
             if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t)

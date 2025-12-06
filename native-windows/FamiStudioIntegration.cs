@@ -14,6 +14,8 @@ namespace FamidashEditor
 {
     public class FamiStudioIntegration
     {
+        private readonly object playLock = new object();
+
         private AssemblyLoadContext? alc;
         private string? famiFolder;
         private WaveOutEvent? output;
@@ -409,13 +411,15 @@ namespace FamidashEditor
 
         public void PlayTrack(string fmsPath, int trackIndex)
         {
-            // Remember requested track so we can restart if playback rate changes.
-            lastFmsPath = fmsPath;
-            lastTrackIndex = trackIndex;
-            Stop();
-            // No PlayTrack diagnostic logging
+            lock (playLock)
+            {
+                // Remember requested track so we can restart if playback rate changes.
+                lastFmsPath = fmsPath;
+                lastTrackIndex = trackIndex;
+                Stop();
+                // No PlayTrack diagnostic logging
 
-            if (alc != null)
+                if (alc != null)
             {
                 try
                 {
@@ -492,6 +496,7 @@ namespace FamidashEditor
                 }
             }
 
+            }
             if (famiFolder == null)
             {
                 StatusMessage = "FamiStudio not configured";
@@ -632,17 +637,20 @@ namespace FamidashEditor
 
         public void Stop()
         {
-            try
+            lock (playLock)
             {
-                output?.Stop();
-                reader?.Dispose();
-                output?.Dispose();
-                reader = null; output = null;
+                try
+                {
+                    output?.Stop();
+                    reader?.Dispose();
+                    output?.Dispose();
+                    reader = null; output = null;
+                }
+                catch { }
+                try { if (lastTempWav != null && File.Exists(lastTempWav)) File.Delete(lastTempWav); } catch { }
+                lastTempWav = null;
+                StatusMessage = "Stopped";
             }
-            catch { }
-            try { if (lastTempWav != null && File.Exists(lastTempWav)) File.Delete(lastTempWav); } catch { }
-            lastTempWav = null;
-            StatusMessage = "Stopped";
         }
 
         // Request a playback rate multiplier (e.g. 2.0 for 2x).

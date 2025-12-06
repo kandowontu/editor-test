@@ -37,7 +37,7 @@ namespace FamidashEditor
             try
             {
                 double now = simStopwatch.Elapsed.TotalMilliseconds;
-                double delta = now - simLastMs;
+                double delta = Math.Max(0.0, now - simLastMs);
                 // First tick: simLastMs is zero, treat delta as 0 to avoid a large initial jump
                 if (simLastMs <= 0.0) delta = 0.0;
                 simLastMs = now;
@@ -378,7 +378,7 @@ namespace FamidashEditor
                 // (playerX_fixed may already be set by caller/constructor)
                 // Start high-resolution stopwatch and use an accumulator to run fixed 60Hz steps.
                 simStopwatch.Restart();
-                simLastMs = 0.0;
+                simLastMs = simStopwatch.Elapsed.TotalMilliseconds;
                 simAccumulatedMs = 0.0;
                 // Run timer at a small interval and accumulate elapsed time to drive fixed steps.
                 simTimer = new System.Threading.Timer(_ => { try { TimerSimulationLoop(); } catch { } }, null, 0, 10);
@@ -471,12 +471,24 @@ namespace FamidashEditor
             this.largeSawFrame2TilesOrig = largeSawFrame2TilesTinted != null ? (ImageSource[])largeSawFrame2TilesTinted.Clone() : null;
             // Initialize tinted copies based on provided tileTint
             // Saws should be tinted by the background color triggers, not the tile tint.
-            this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint);
-            this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint);
-            this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint);
-            this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint);
-            this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint);
-            this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint);
+            if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
+            {
+                this.sawFrame1TilesTinted = CreateSolidBlackImages(this.sawFrame1TilesOrig);
+                this.sawFrame2TilesTinted = CreateSolidBlackImages(this.sawFrame2TilesOrig);
+                this.smallSawFrame1TilesTinted = CreateSolidBlackImages(this.smallSawFrame1TilesOrig);
+                this.smallSawFrame2TilesTinted = CreateSolidBlackImages(this.smallSawFrame2TilesOrig);
+                this.largeSawFrame1TilesTinted = CreateSolidBlackImages(this.largeSawFrame1TilesOrig);
+                this.largeSawFrame2TilesTinted = CreateSolidBlackImages(this.largeSawFrame2TilesOrig);
+            }
+            else
+            {
+                this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint);
+                this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint);
+                this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint);
+                this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint);
+                this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint);
+                this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint);
+            }
             // Simulator-specific tweak: shift sprite 0x2B and 0x2C up 8 pixels to match editor preview
             try
             {
@@ -1452,7 +1464,7 @@ namespace FamidashEditor
                                                         }
                                                         else
                                                         {
-                                                            var arr = CreateHslShiftedImages(new ImageSource[] { tileImages[useTileIndex] }, groundTint);
+                                                            var arr = CreateHslShiftedImages(new ImageSource[] { tileImages[useTileIndex] }, groundTint, tileTint);
                                                             if (arr != null && arr.Length > 0) gt = arr[0];
                                                         }
                                                     }
@@ -2139,10 +2151,18 @@ namespace FamidashEditor
                         // and use tileTint to recolor white/outline pixels only (object triggers affect outlines).
                         if (tileImages != null)
                         {
+                            // Use two-tone mapping for all tiles by default (so slopes and other tiles
+                            // get the same background/non-white recoloring behavior). White/near-white
+                            // outlines are handled by `outlineTint` (tileTint) so object color triggers
+                            // still recolor outlines as intended.
+                            // Always pass the current object-trigger tile tint as the outline tint so
+                            // object color triggers continue to recolor white/near-white outlines
+                            // even when background/ground tints change.
+                            var outlineTintParam = tileTint;
                             if (bgPrimary.HasValue)
-                                tileTonedImages = CreateTwoToneTileImages(tileImages, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255,0,0,0), (tileIdxLocal >= 0) ? tileTint : Color.FromArgb(0,0,0,0));
+                                tileTonedImages = CreateTwoToneTileImages(tileImages, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), outlineTintParam);
                             else
-                                tileTonedImages = CreateOutlineTintedTileImages(tileImages, tileTint);
+                                tileTonedImages = CreateTwoToneTileImages(tileImages, backgroundTint, Color.FromArgb(255, 0, 0, 0), outlineTintParam);
 
                             // Per-tile overrides: ensure specific tiles use background or ground tinting
                             try
@@ -2185,7 +2205,7 @@ namespace FamidashEditor
                                             // Ground tiles should only respond to ground color triggers and should not
                                             // participate in background two-tone row-shifting. Use a direct hue-shift
                                             // with the ground tint so the result matches ground visuals exactly.
-                                            var arr = CreateHueShiftedImages(new ImageSource[] { tileImages[i] }, groundTint);
+                                            var arr = CreateHueShiftedImages(new ImageSource[] { tileImages[i] }, groundTint, tileTint);
                                             if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
                                         }
                                     }
@@ -2204,10 +2224,10 @@ namespace FamidashEditor
                             catch { }
                         }
                     }
-                    catch { tileTonedImages = CreateHslShiftedImages(tileImages, tileTint); }
+                    catch { tileTonedImages = CreateHslShiftedImages(tileImages, tileTint, tileTint); }
 
                     try { parallaxTonedImages = backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0 ? CreateBlackMaskedImages(parallaxImages) : CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
-                    try { groundTonedImages = groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0 ? CreateBlackMaskedImages(groundImages) : CreateHueShiftedImages(groundImages, groundTint); } catch { groundTonedImages = groundImages; }
+                    try { groundTonedImages = groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0 ? CreateBlackMaskedImages(groundImages) : CreateHueShiftedImages(groundImages, groundTint, tileTint); } catch { groundTonedImages = groundImages; }
 
                     // Also create/update a tinted full-parallax bitmap if a full parallax bitmap was provided
                     try
@@ -2528,7 +2548,7 @@ namespace FamidashEditor
                             byte ob = pixels[i + 0]; byte og = pixels[i + 1]; byte orr = pixels[i + 2]; byte a = pixels[i + 3];
                             if (a == 0) continue;
                             double lum = (0.2126 * orr + 0.7152 * og + 0.0722 * ob) / 255.0;
-                            bool isWhite = lum >= 0.92;
+                            bool isWhite = lum >= 0.82;
                             bool isBlack = (orr <= 12 && og <= 12 && ob <= 12);
 
                             if (isBlack)
@@ -2604,7 +2624,7 @@ namespace FamidashEditor
                             byte b = pixels[i + 0]; byte g = pixels[i + 1]; byte r = pixels[i + 2]; byte a = pixels[i + 3];
                             if (a == 0) continue;
                             double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
-                            bool isWhite = lum >= 0.92;
+                            bool isWhite = lum >= 0.82;
                             if (isWhite)
                             {
                                 pixels[i + 3] = 255;
@@ -2831,7 +2851,7 @@ namespace FamidashEditor
             {
                 // Create HSL-shifted copies for tiles and saw frames
                 if (tileImages != null)
-                    tileTonedImages = CreateHslShiftedImages(tileImages, newTileTint);
+                    tileTonedImages = CreateHslShiftedImages(tileImages, newTileTint, tileTint);
 
                 if (sawFrame1TilesTinted != null && sawFrame1TilesTinted.Length > 0)
                 {
@@ -2896,7 +2916,7 @@ namespace FamidashEditor
         // Create HSL-hue shifted copies of images. For each visible, non-black/non-white pixel
         // we replace the hue with the tint's hue while preserving the original saturation and lightness.
         // Returns originals if tint.A == 0.
-        private ImageSource[]? CreateHslShiftedImages(ImageSource[]? originals, Color tint)
+        private ImageSource[]? CreateHslShiftedImages(ImageSource[]? originals, Color tint, Color outlineTint = default)
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // no change requested
@@ -2921,10 +2941,24 @@ namespace FamidashEditor
                             byte g = pixels[i + 1];
                             byte r = pixels[i + 2];
                             byte a = pixels[i + 3];
-                            // Skip fully transparent, near-black, and near-white pixels
+                            // Skip fully transparent and near-black pixels. Handle near-white outlines
+                            // via perceptual luminance so anti-aliased white lines are detected reliably.
+                            if (a == 0) continue;
+                            double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
                             bool isBlack = (r <= 12 && g <= 12 && b <= 12);
-                            bool isWhite = (r >= 249 && g >= 249 && b >= 249);
-                            if (a == 0 || isBlack || isWhite) continue;
+                            bool isNearWhite = (lum >= 0.92);
+                            if (isBlack) continue;
+                            if (isNearWhite)
+                            {
+                                if (outlineTint.A > 0)
+                                {
+                                    pixels[i + 3] = outlineTint.A;
+                                    pixels[i + 2] = outlineTint.R;
+                                    pixels[i + 1] = outlineTint.G;
+                                    pixels[i + 0] = outlineTint.B;
+                                }
+                                continue;
+                            }
 
                             // Convert pixel to HSL, replace hue with tint hue, keep S/L
                             RgbToHsl(r, g, b, out double ph, out double ps, out double pl);
@@ -3003,7 +3037,7 @@ namespace FamidashEditor
         }
 
         // Create hue-shifted images with interpolation towards tint hue (used for ground in MainWindow)
-        private ImageSource[]? CreateHueShiftedImages(ImageSource[]? originals, Color tint)
+        private ImageSource[]? CreateHueShiftedImages(ImageSource[]? originals, Color tint, Color outlineTint = default)
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // strength 0 => no change
@@ -3036,6 +3070,23 @@ namespace FamidashEditor
                             int g = pixels[i + 1];
                             int r = pixels[i + 2];
                             int a = pixels[i + 3];
+
+                            // Preserve fully transparent pixels
+                            if (a == 0) continue;
+
+                            // Use perceptual luminance to identify near-white outline pixels.
+                            double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+                            bool isNearWhite = lum >= 0.82;
+
+                            if (isNearWhite && outlineTint.A > 0)
+                            {
+                                // Apply outline tint exactly for near-white pixels when requested
+                                pixels[i + 3] = outlineTint.A;
+                                pixels[i + 2] = outlineTint.R;
+                                pixels[i + 1] = outlineTint.G;
+                                pixels[i + 0] = outlineTint.B;
+                                continue;
+                            }
 
                             RgbToHsl((byte)r, (byte)g, (byte)b, out double h0, out double s0, out double l0);
 
@@ -3095,7 +3146,10 @@ namespace FamidashEditor
                             byte r = pixels[i + 2];
                             byte a = pixels[i + 3];
                             if (a == 0) continue; // preserve transparency
-                            bool isWhite = (r >= 249 && g >= 249 && b >= 249);
+                            // Use perceptual luminance to detect near-white so thin/anti-aliased white
+                            // lines are preserved. Match threshold used elsewhere (0.82) for black mask.
+                            double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+                            bool isWhite = (lum >= 0.82);
                             if (isWhite)
                             {
                                 pixels[i + 0] = 255; pixels[i + 1] = 255; pixels[i + 2] = 255;
@@ -3121,6 +3175,45 @@ namespace FamidashEditor
                 {
                     outList.Add(src);
                 }
+            }
+            return outList.ToArray();
+        }
+
+        // Create fully black images: non-transparent pixels become opaque black.
+        // Use this for saws when background is pure black so no white lines remain.
+        private ImageSource[]? CreateSolidBlackImages(ImageSource[]? originals)
+        {
+            if (originals == null) return null;
+            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = Math.Max(1, conv.PixelWidth);
+                        int h = Math.Max(1, conv.PixelHeight);
+                        int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte a = pixels[i + 3];
+                            if (a == 0) continue;
+                            pixels[i + 0] = 0; // b
+                            pixels[i + 1] = 0; // g
+                            pixels[i + 2] = 0; // r
+                            pixels[i + 3] = 255; // make opaque
+                        }
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch { outList.Add(src); }
+                }
+                else outList.Add(src);
             }
             return outList.ToArray();
         }
