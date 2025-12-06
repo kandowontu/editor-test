@@ -218,6 +218,27 @@ namespace FamidashEditor
         public Color TileTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
         public string? SelectedSong { get; set; } = null;
         public int LoadedStartingSpeedUiIndex { get; set; } = 1;
+        private int loadedSimulatorScale = 1;
+        public int LoadedSimulatorScale { get => loadedSimulatorScale; set => loadedSimulatorScale = value; }
+    }
+
+    private void SetSimulatorSizeFromMenu(int size)
+    {
+        try
+        {
+            if (size < 1) size = 1; if (size > 4) size = 4;
+            loadedSimulatorScale = size;
+
+            // update menu checked states
+            try { if (MenuSimulatorSize1x != null) MenuSimulatorSize1x.IsChecked = (size == 1); } catch { }
+            try { if (MenuSimulatorSize2x != null) MenuSimulatorSize2x.IsChecked = (size == 2); } catch { }
+            try { if (MenuSimulatorSize3x != null) MenuSimulatorSize3x.IsChecked = (size == 3); } catch { }
+            try { if (MenuSimulatorSize4x != null) MenuSimulatorSize4x.IsChecked = (size == 4); } catch { }
+
+            // Save per-TMX config if a file is loaded
+            try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+        }
+        catch { }
     }
 
     
@@ -253,6 +274,8 @@ namespace FamidashEditor
     private string loadedSpikeSet = "SPIKESA";
     private int loadedStartingSpeedUiIndex = 1; // UI indices: 0=0.5x,1=1x,2=2x,3=3x,4=4x
     public int LoadedStartingSpeedUiIndex { get => loadedStartingSpeedUiIndex; set => loadedStartingSpeedUiIndex = value; }
+    private int loadedSimulatorScale = 1; // 1..4
+    public int LoadedSimulatorScale { get => loadedSimulatorScale; set => loadedSimulatorScale = value; }
     private int paletteTileSize = 16;
     private int paletteSpriteSize = 16;
     // Painting state for drag-to-draw
@@ -317,6 +340,8 @@ namespace FamidashEditor
         // Starting speed metadata numeric code (matches JSON metadata scheme):
         // 0 -> 1x, 1 -> 0.5x, 2 -> 2x, 3 -> 3x, 4 -> 4x
         public int? StartingSpeed { get; set; } = null;
+        // Simulator scale multiplier (1..4)
+        public int? SimulatorScale { get; set; } = null;
     }
 
     // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
@@ -855,6 +880,13 @@ namespace FamidashEditor
             }
             catch { }
 
+            // Save simulator scale (1..4)
+                try
+                {
+                    config.SimulatorScale = Math.Max(1, Math.Min(4, loadedSimulatorScale));
+                }
+                catch { }
+
             // Save sprite offsets
             try
             {
@@ -1039,6 +1071,22 @@ namespace FamidashEditor
                         }
                     }
                     catch { loadedStartingSpeedUiIndex = 1; }
+
+                    // Load simulator scale from config (1..4)
+                    try
+                    {
+                        if (config.SimulatorScale.HasValue)
+                        {
+                            int s = config.SimulatorScale.Value;
+                            if (s < 1) s = 1; if (s > 4) s = 4;
+                            loadedSimulatorScale = s;
+                        }
+                        else
+                        {
+                            loadedSimulatorScale = 1;
+                        }
+                    }
+                    catch { loadedSimulatorScale = 1; }
                     
                     // Load sprite offsets from config
                     try
@@ -2491,6 +2539,24 @@ namespace FamidashEditor
                     SaveSettingsWithTriggerOption();
                     try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
                 };
+            }
+            // Simulator size menu items
+            if (MenuSimulatorSize1x != null && MenuSimulatorSize2x != null && MenuSimulatorSize3x != null && MenuSimulatorSize4x != null)
+            {
+                // Initialize checked state based on loadedSimulatorScale
+                try
+                {
+                    MenuSimulatorSize1x.IsChecked = (loadedSimulatorScale == 1);
+                    MenuSimulatorSize2x.IsChecked = (loadedSimulatorScale == 2);
+                    MenuSimulatorSize3x.IsChecked = (loadedSimulatorScale == 3);
+                    MenuSimulatorSize4x.IsChecked = (loadedSimulatorScale == 4);
+                }
+                catch { }
+
+                MenuSimulatorSize1x.Checked += (s, e) => { try { SetSimulatorSizeFromMenu(1); } catch { } };
+                MenuSimulatorSize2x.Checked += (s, e) => { try { SetSimulatorSizeFromMenu(2); } catch { } };
+                MenuSimulatorSize3x.Checked += (s, e) => { try { SetSimulatorSizeFromMenu(3); } catch { } };
+                MenuSimulatorSize4x.Checked += (s, e) => { try { SetSimulatorSizeFromMenu(4); } catch { } };
             }
             // Hide all invisible sprites (Preview Mode Options)
             if (MenuOptionHideInvisibleSprites != null)
@@ -6164,7 +6230,8 @@ namespace FamidashEditor
                     loadedGroundOffsetY,
                     loadedGroundRepeatX,
                     loadedHasGroundLayer,
-                    groundTileRows
+                    groundTileRows,
+                    loadedSimulatorScale
                     );
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }

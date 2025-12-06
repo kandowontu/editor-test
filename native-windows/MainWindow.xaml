@@ -170,6 +170,12 @@
                         <MenuItem x:Name="MenuOptionHideInvisibleSprites" Header="Hide Invisible Sprites" IsCheckable="True" IsChecked="False" />
                     </MenuItem>
                     <MenuItem Header="Simulator Options">
+                        <MenuItem Header="Simulator Size">
+                            <MenuItem x:Name="MenuSimulatorSize1x" Header="1x" IsCheckable="True" />
+                            <MenuItem x:Name="MenuSimulatorSize2x" Header="2x" IsCheckable="True" />
+                            <MenuItem x:Name="MenuSimulatorSize3x" Header="3x" IsCheckable="True" />
+                            <MenuItem x:Name="MenuSimulatorSize4x" Header="4x" IsCheckable="True" />
+                        </MenuItem>
                         <MenuItem x:Name="MenuOptionShowSpriteHitboxes" Header="Show Sprite Hitboxes" IsCheckable="True" IsChecked="False" />
                     </MenuItem>
                 </MenuItem>

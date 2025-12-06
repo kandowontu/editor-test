@@ -373,6 +373,8 @@ namespace FamidashEditor
                                     catch { }
                                 };
                             }
+                            
+                                            // Simulator size moved to main Options menu (handled there)
                         }
                     }
                     catch { }

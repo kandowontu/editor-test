@@ -334,6 +334,9 @@ namespace FamidashEditor
         // Cache tinted decoration sprites keyed by (spriteId<<32)|ARGB
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> tintedSpriteCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
 
+        // Cache to remember if a BitmapSource appears 'top-heavy' (non-transparent pixels concentrated near top)
+        private readonly System.Collections.Generic.Dictionary<int, bool> imageTopHeavyCache = new System.Collections.Generic.Dictionary<int, bool>();
+
         // Cache for ground-tinted tile images keyed by (tileIndex<<32)|ARGB
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> groundTintedTileCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
 
@@ -441,7 +444,8 @@ namespace FamidashEditor
             double groundOffsetY = 0.0,
             bool groundRepeatX = true,
             bool hasGroundLayer = false,
-            int groundTileRows = 0
+            int groundTileRows = 0,
+            int simulatorScale = 1
             )
         {
             InitializeComponent();
@@ -575,6 +579,23 @@ namespace FamidashEditor
 
             RenderCanvas.Width = NES_W * TILE;
             RenderCanvas.Height = NES_H * TILE;
+
+            // Apply simulator scale: scale the RenderCanvas and overlay so the visible area is zoomed.
+            try
+            {
+                simulatorScale = Math.Max(1, Math.Min(4, simulatorScale));
+                var scaleTransform = new System.Windows.Media.ScaleTransform(simulatorScale, simulatorScale);
+                RenderCanvas.LayoutTransform = scaleTransform;
+                try { PauseOverlay.LayoutTransform = scaleTransform; } catch { }
+
+                // Adjust window size so the scaled canvas fits comfortably (preserve original chrome padding)
+                // Original XAML used Width=288 Height=320 for 256x240 canvas. Compute padding from that.
+                double widthPadding = 288 - 256; // 32
+                double heightPadding = 320 - 240; // 80
+                try { this.Width = (NES_W * TILE) * simulatorScale + widthPadding; } catch { }
+                try { this.Height = (NES_H * TILE) * simulatorScale + heightPadding; } catch { }
+            }
+            catch { }
             // Keep nearest-neighbor sampling for bitmaps, but avoid forcing layout rounding/snapping
             try
             {
@@ -1478,6 +1499,24 @@ namespace FamidashEditor
                                             // bottom-align within the tile cell
                                             double x = dest.X + (TILE - imgW) / 2.0;
                                             double y = dest.Y + (TILE - imgH);
+
+                                            // Nudge small-saw bottom halves up slightly so they align with the editor preview.
+                                            // Small saw animated tile indices live in the 1010..1015 range. Only apply
+                                            // for very short images (half-height) to avoid disturbing other tiles.
+                                                try
+                                                {
+                                                    if (useTileIndex >= 1010 && useTileIndex <= 1015 && imgH <= (TILE / 2.0))
+                                                    {
+                                                        try
+                                                        {
+                                                            if (bs != null && IsImageTopHeavy(bs))
+                                                                y -= 8; // move up 8 pixels for upside-down half bottoms only
+                                                        }
+                                                        catch { }
+                                                    }
+                                                }
+                                                catch { }
+
                                             dc.DrawImage(chosenTile, new Rect(x, y, imgW, imgH));
                                         }
                                         else
@@ -1687,6 +1726,15 @@ namespace FamidashEditor
                         if (s == 0x2B || s == 0x2C) py -= 8;
                         // Chains should be shifted up 8 pixels in the simulator to match preview
                         if (s == 0x2D || s == 0x3D) py -= 8;
+                        // If this decoration sprite appears upside-down (content at top), nudge it up as well.
+                        try
+                        {
+                            if (decorationSpriteIds.Contains(s) && s != 0x2D && s != 0x3D && chosenSprite is BitmapSource cbs && cbs.PixelHeight <= (TILE / 2.0))
+                            {
+                                if (IsImageTopHeavy(cbs)) py -= 8;
+                            }
+                        }
+                        catch { }
                     }
                     catch { }
 
@@ -2203,6 +2251,58 @@ namespace FamidashEditor
                 catch { }
             }
             return null;
+        }
+
+        // Determine whether a bitmap's visible pixels are concentrated near the top of the image.
+        // This heuristic allows detecting upside-down halves (content at top) vs normal bottom-aligned halves.
+        private bool IsImageTopHeavy(BitmapSource bs)
+        {
+            try
+            {
+                if (bs == null) return false;
+                int key = bs.GetHashCode();
+                if (imageTopHeavyCache.TryGetValue(key, out var val)) return val;
+
+                var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                int w = Math.Max(1, conv.PixelWidth);
+                int h = Math.Max(1, conv.PixelHeight);
+                int stride = w * 4;
+                var pixels = new byte[h * stride];
+                conv.CopyPixels(pixels, stride, 0);
+
+                long sumY = 0;
+                int count = 0;
+                // Sample at most a limited number of pixels for performance.
+                int maxSamples = 4000;
+                for (int y = 0; y < h && count < maxSamples; y++)
+                {
+                    int rowStart = y * stride;
+                    for (int x = 0; x < w && count < maxSamples; x++)
+                    {
+                        int i = rowStart + x * 4;
+                        byte a = pixels[i + 3];
+                        if (a > 32)
+                        {
+                            // count this pixel
+                            sumY += y;
+                            count++;
+                        }
+                    }
+                }
+
+                bool topHeavy = false;
+                if (count > 0)
+                {
+                    double avgY = (double)sumY / (double)count;
+                    // If the average non-transparent pixel Y is in the top ~45% of the image,
+                    // consider the image top-heavy (likely upside-down bottom half).
+                    topHeavy = avgY < (h * 0.45);
+                }
+
+                imageTopHeavyCache[key] = topHeavy;
+                return topHeavy;
+            }
+            catch { return false; }
         }
 
         private Color HslToColor(double h, double s, double l)
