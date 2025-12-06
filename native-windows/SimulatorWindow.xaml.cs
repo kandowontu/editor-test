@@ -2143,6 +2143,65 @@ namespace FamidashEditor
                                 tileTonedImages = CreateTwoToneTileImages(tileImages, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255,0,0,0), (tileIdxLocal >= 0) ? tileTint : Color.FromArgb(0,0,0,0));
                             else
                                 tileTonedImages = CreateOutlineTintedTileImages(tileImages, tileTint);
+
+                            // Per-tile overrides: ensure specific tiles use background or ground tinting
+                            try
+                            {
+                                if (tileTonedImages != null && tileImages != null)
+                                {
+                                    // Tiles that should get the background tint like other tiles: 0x90-0xA3, 0xD7, 0xD8
+                                    int[] bgRange = Enumerable.Range(0x90, 0xA3 - 0x90 + 1).ToArray();
+                                    int[] bgSingles = new[] { 0xD7, 0xD8 };
+                                    foreach (var i in bgRange.Concat(bgSingles))
+                                    {
+                                        if (i >= 0 && i < tileImages.Length)
+                                        {
+                                            ImageSource? rep = null;
+                                            // For slope tiles, ensure white/outline parts are recolored by object triggers (tileTint)
+                                            // while non-white areas get background two-tone mapping. Prefer palette-driven two-tone
+                                            // mapping when available; otherwise fall back to using backgroundTint as primary.
+                                            if (bgPrimary.HasValue)
+                                            {
+                                                var arr = CreateTwoToneTileImages(new ImageSource[] { tileImages[i] }, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                if (arr != null && arr.Length > 0) rep = arr[0];
+                                            }
+                                            else
+                                            {
+                                                // Use backgroundTint for non-white areas and tileTint for outlines.
+                                                // CreateTwoToneTileImages will leave white outlines to outlineTint (tileTint)
+                                                var arr = CreateTwoToneTileImages(new ImageSource[] { tileImages[i] }, backgroundTint, Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                if (arr != null && arr.Length > 0) rep = arr[0];
+                                            }
+                                            if (rep != null) tileTonedImages[i] = rep;
+                                        }
+                                    }
+
+                                    // Tiles that should get ground tint (exactly like ground): 0x01/02, 0x04/05, 0x88/89
+                                    int[] groundTiles = new[] { 0x01, 0x02, 0x04, 0x05, 0x88, 0x89 };
+                                    foreach (var i in groundTiles)
+                                    {
+                                        if (i >= 0 && i < tileImages.Length)
+                                        {
+                                            // Ground tiles should only respond to ground color triggers and should not
+                                            // participate in background two-tone row-shifting. Use a direct hue-shift
+                                            // with the ground tint so the result matches ground visuals exactly.
+                                            var arr = CreateHueShiftedImages(new ImageSource[] { tileImages[i] }, groundTint);
+                                            if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
+                                        }
+                                    }
+
+                                    // Remap visuals: 0x8F should look like 0x2F; 0xFC should look like 0x00
+                                    if (0x2F >= 0 && 0x2F < tileTonedImages.Length && 0x8F >= 0 && 0x8F < tileTonedImages.Length)
+                                    {
+                                        tileTonedImages[0x8F] = tileTonedImages[0x2F];
+                                    }
+                                    if (0x00 >= 0 && 0x00 < tileTonedImages.Length && 0xFC >= 0 && 0xFC < tileTonedImages.Length)
+                                    {
+                                        tileTonedImages[0xFC] = tileTonedImages[0x00];
+                                    }
+                                }
+                            }
+                            catch { }
                         }
                     }
                     catch { tileTonedImages = CreateHslShiftedImages(tileImages, tileTint); }
