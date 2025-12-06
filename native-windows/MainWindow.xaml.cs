@@ -6306,7 +6306,7 @@ namespace FamidashEditor
                     if (!string.IsNullOrEmpty(albumTxtPath) && playIdx >= 0)
                     {
                         // Fire-and-forget playback; WarmAndPrime has already reduced first-play latency.
-                        try { System.Threading.Tasks.Task.Run(() => famiIntegration.PlayTrack(albumTxtPath, playIdx)); } catch { }
+                        try { _ = System.Threading.Tasks.Task.Run(() => famiIntegration.PlayTrack(albumTxtPath, playIdx)); } catch { }
                     }
                 }
             }
@@ -6331,7 +6331,7 @@ namespace FamidashEditor
                 // If playback is paused, prefer resuming instead of restarting the song
                 if (famiIntegration.IsPaused)
                 {
-                    try { System.Threading.Tasks.Task.Run(() => famiIntegration.Resume()); } catch { }
+                    try { _ = System.Threading.Tasks.Task.Run(() => famiIntegration.Resume()); } catch { }
                     return;
                 }
 
@@ -6343,9 +6343,8 @@ namespace FamidashEditor
 
                 // Launch playback on background thread to avoid blocking UI.
                 // Suppress CS4014: this is intentionally fire-and-forget; StartSimulatorPlaybackAsync will poll IsPlaying.
-#pragma warning disable CS4014
-                System.Threading.Tasks.Task.Run(() => famiIntegration.PlayTrack(albumTxtPath, playIdx));
-#pragma warning restore CS4014
+                // Launch playback in background without awaiting; assign to discard to suppress CS4014.
+                _ = System.Threading.Tasks.Task.Run(() => famiIntegration.PlayTrack(albumTxtPath, playIdx));
 
                 // Wait up to 1500ms for playback to start, polling IsPlaying.
                 var sw = System.Diagnostics.Stopwatch.StartNew();

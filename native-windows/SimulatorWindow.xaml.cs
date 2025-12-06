@@ -350,7 +350,7 @@ namespace FamidashEditor
         private System.Collections.Generic.HashSet<int> triggerLogged = new System.Collections.Generic.HashSet<int>();
         // Track last selected decoration frame so we can log when it actually changes
         private System.Collections.Generic.Dictionary<int, int> decoLastSelectedFrame = new System.Collections.Generic.Dictionary<int, int>();
-        private bool enableSimulatorDebugLogging = true; // set true to capture helpful messages during diagnosis
+        private bool enableSimulatorDebugLogging = false; // set true to capture helpful messages during diagnosis
 
         // Append a timestamped simulator debug message to the temp log file.
         private void WriteTempLog(string message)
