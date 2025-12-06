@@ -7,6 +7,11 @@ namespace FamidashEditor
 {
     public static class TmxHandler
     {
+        // TMX GID base values — change these if your TMX uses a different firstgid for sprites/tiles
+        private const int TilesFirstGid = 1;    // TMX GID for first famidash tile
+        private const int SpriteFirstGid = 257; // TMX GID for first sprite tile
+        private const int TilesCount = 256;     // Number of tiles/sprites per tileset
+
         // Check if a sprite index is a trigger sprite that needs position offsetting
         private static bool IsTriggerSprite(int spriteIdx)
         {
@@ -40,6 +45,13 @@ namespace FamidashEditor
             string? tilesetSource = null;
             string? spritesetSource = null;
             var tilesets = map.Elements("tileset").ToList();
+
+            // Collect all tileset firstgid values that should be treated as sprite tilesets.
+            // TMX files sometimes include the same sprite image as multiple tilesets
+            // (e.g. firstgid=257 and firstgid=513). Treat any tileset with firstgid >= SpriteFirstGid
+            // as a sprite tileset so that GIDs from those ranges are converted correctly.
+            var spriteFirstGids = new System.Collections.Generic.List<int>();
+
             foreach (var tileset in tilesets)
             {
                 int firstgid = (int?)tileset.Attribute("firstgid") ?? 0;
@@ -47,10 +59,20 @@ namespace FamidashEditor
                 if (imageElem != null)
                 {
                     string? source = (string?)imageElem.Attribute("source");
-                    if (firstgid == 1) tilesetSource = source;
-                    else if (firstgid == 257) spritesetSource = source;
+                    if (firstgid == TilesFirstGid) tilesetSource = source;
+                    // Prefer to remember the primary spriteset source (first encountered)
+                    if (firstgid >= SpriteFirstGid)
+                    {
+                        spriteFirstGids.Add(firstgid);
+                        if (spritesetSource == null) spritesetSource = source;
+                    }
                 }
             }
+
+            // Ensure there is at least the configured SpriteFirstGid in the list so
+            // old TMX files without extra tileset declarations still convert correctly.
+            if (!spriteFirstGids.Contains(SpriteFirstGid))
+                spriteFirstGids.Insert(0, SpriteFirstGid);
             
             // Initialize separate tiles and sprites arrays with -1 (empty)
             int[] tiles = Enumerable.Repeat(-1, totalTiles).ToArray();
@@ -59,15 +81,13 @@ namespace FamidashEditor
             // Track sprite collisions during loading
             var collisionMessages = new System.Collections.Generic.List<string>();
             
-            // Track which TMX positions have been processed to avoid duplicates from multiple layers
-            var processedPositions = new System.Collections.Generic.HashSet<int>();
             
             // First pass: collect all sprites with their intended positions (after trigger shift)
             var spritesToPlace = new System.Collections.Generic.List<(int spriteIdx, int x, int y, int originalX, int originalY, bool isTrigger)>();
             
             // Process tile layers separately
-            // TMX uses GIDs: 0=empty, 1-256=famidash tileset, 257-512=sprites tileset
-            // Convert to editor format: -1=empty, 0-255=famidash tiles, 0-255=sprites
+            // TMX uses GIDs: 0=empty, TilesFirstGid..TilesFirstGid+TilesCount-1 = tileset, SpriteFirstGid..SpriteFirstGid+TilesCount-1 = sprites tileset
+            // Convert to editor format: -1=empty, 0..TilesCount-1 = famidash tiles/sprites
             var layers = map.Elements("layer").ToList();
             
             foreach (var layer in layers)
@@ -91,25 +111,23 @@ namespace FamidashEditor
                             int gid = layerTiles[i];
                             if (gid > 0)
                             {
-                                if (isSpriteLayer)
+                                // Prefer interpreting any GID in the sprite tileset range as a sprite,
+                                // regardless of the layer name. This allows maps that embed sprites
+                                // directly into the main tile layer to be imported correctly.
+                                // Check against all known sprite tileset firstgid values
+                                bool handled = false;
+                                foreach (var spriteFg in spriteFirstGids)
                                 {
-                                    // Sprite layer: GID 257-512 → editor index 0-255
-                                    if (gid >= 257)
+                                    if (gid >= spriteFg && gid < spriteFg + TilesCount)
                                     {
-                                        int spriteIdx = gid - 257;
-                                        
-                                        // Skip if this TMX position was already processed from a previous layer
-                                        if (processedPositions.Contains(i))
-                                        {
-                                            continue;
-                                        }
-                                        
+                                        int spriteIdx = gid - spriteFg;
+
                                         // Calculate position in grid
                                         int y = i / width;
                                         int x = i % width;
                                         int originalX = x;
                                         int originalY = y;
-                                        
+
                                         // Trigger sprites are stored 10 tiles to the right in TMX,
                                         // but displayed 10 tiles to the left in editor (unless legacy mode enabled)
                                         bool isTrigger = !useLegacyTriggerOffset && IsTriggerSprite(spriteIdx);
@@ -118,18 +136,21 @@ namespace FamidashEditor
                                             x -= 10; // Shift left
                                             if (x < 0) x = 0; // Clamp to left boundary instead of skipping
                                         }
-                                        
-                                        // Add to list for collision resolution
+
+                                        // Add to list for collision resolution (allow multiple sprites at same TMX index)
                                         spritesToPlace.Add((spriteIdx, x, y, originalX, originalY, isTrigger));
-                                        processedPositions.Add(i);
+                                        handled = true;
+                                        break;
                                     }
                                 }
-                                else
+
+                                // If no sprite-firstgid matched, treat as a tile if it falls in the tile range
+                                if (!handled && gid >= TilesFirstGid && gid < TilesFirstGid + TilesCount)
                                 {
-                                    // Tile layer: GID 1-256 → editor index 0-255
-                                    if (gid >= 1 && gid <= 256)
-                                        tiles[i] = gid - 1;
+                                    // Tile layer: GID TilesFirstGid..TilesFirstGid+TilesCount-1 → editor index 0..TilesCount-1
+                                    tiles[i] = gid - TilesFirstGid;
                                 }
+                                // else: GID is outside recognized ranges; ignore
                             }
                         }
                     }
@@ -152,11 +173,12 @@ namespace FamidashEditor
                 return a.x.CompareTo(b.x);
             });
             
+            // Place triggers left-to-right to avoid cascading overlaps from right-to-left processing.
             triggerSprites.Sort((a, b) =>
             {
-                int cmp = a.y.CompareTo(b.y);
+                int cmp = a.x.CompareTo(b.x);
                 if (cmp != 0) return cmp;
-                return a.x.CompareTo(b.x);
+                return a.y.CompareTo(b.y);
             });
             
             // First pass: place all normal sprites (they can overwrite anything)
@@ -178,74 +200,208 @@ namespace FamidashEditor
             
             // Second pass: place trigger sprites and resolve collisions
             // Second pass: place trigger sprites and resolve collisions
-            foreach (var (spriteIdx, x, y, originalX, originalY, isTrigger) in triggerSprites)
-            {
-                int newIdx = y * width + x;
-                
-                // Handle collisions for trigger sprites
-                if (newIdx >= 0 && newIdx < totalTiles)
-                {
-                    if (sprites[newIdx] != -1)
-                    {
-                        // TRIGGER sprites: search nearby positions to find an empty slot.
-                        int collidingSprite = sprites[newIdx];
-                        int finalX = x;
-                        int finalY = y;
-                        bool foundSlot = false;
+            // Determine playable rows: last row (height-1) is ground level and must not be used.
+            int maxPlayableRow = Math.Max(0, height - 2);
 
-                        // Search radius: prefer minimal vertical move (down first), but allow small horizontal shifts
-                        int maxDx = Math.Min(4, width); // allow shifting up to 4 tiles horizontally
-                        // We'll search increasing Manhattan distance from (x,y)
-                        for (int dist = 1; dist <= Math.Max(width, height) && !foundSlot; dist++)
+            // Helper: attempt to place a trigger in `col` at `row`. If occupied by another trigger,
+            // recursively push that trigger down or up (depending on preference) to make room.
+            // Returns placed row or -1.
+            System.Collections.Generic.HashSet<int> pushVisited = new System.Collections.Generic.HashSet<int>();
+            System.Func<int,int,int,bool,int> PlaceTriggerWithPush = null!;
+            PlaceTriggerWithPush = (int col, int row, int spriteId, bool preferUpFirst) =>
+            {
+                // Clamp row into playable range (do not allow placement on ground row)
+                int r = Math.Max(0, Math.Min(maxPlayableRow, row));
+
+                int idx = r * width + col;
+                // If empty, place directly
+                if (sprites[idx] == -1)
+                {
+                    sprites[idx] = spriteId;
+                    return r;
+                }
+
+                // If occupied by non-trigger, try to find nearest empty row for the current sprite (no replacement)
+                int occupant = sprites[idx];
+                if (!IsTriggerSprite(occupant))
+                {
+                    // Search outward from row: prefer direction based on preferUpFirst
+                    for (int d = 0; d <= maxPlayableRow; d++)
+                    {
+                        if (preferUpFirst)
                         {
-                            for (int dx = -maxDx; dx <= maxDx && !foundSlot; dx++)
+                            int up = row - d;
+                            if (up >= 0 && up <= maxPlayableRow)
                             {
-                                int tx = x + dx;
-                                if (tx < 0 || tx >= width) continue;
-                                int maxDy = dist - Math.Abs(dx);
-                                if (maxDy < 0) continue;
-                                // prefer downward search first, then upward
-                                for (int dy = 0; dy <= Math.Min(maxDy, height - 1) && !foundSlot; dy++)
+                                int uidx = up * width + col;
+                                if (sprites[uidx] == -1)
                                 {
-                                    // Try below (y + dy)
-                                    int ty = y + dy;
-                                    if (ty >= 0 && ty < height)
-                                    {
-                                        int testIdx = ty * width + tx;
-                                        if (sprites[testIdx] == -1)
-                                        {
-                                            finalX = tx; finalY = ty; foundSlot = true; break;
-                                        }
-                                    }
-                                    // Skip dy == 0 duplicate
-                                    if (dy == 0) continue;
-                                    // Try above (y - dy)
-                                    ty = y - dy;
-                                    if (ty >= 0 && ty < height)
-                                    {
-                                        int testIdx = ty * width + tx;
-                                        if (sprites[testIdx] == -1)
-                                        {
-                                            finalX = tx; finalY = ty; foundSlot = true; break;
-                                        }
-                                    }
+                                    sprites[uidx] = spriteId; return up;
+                                }
+                            }
+                            if (d == 0) continue;
+                            int down = row + d;
+                            if (down >= 0 && down <= maxPlayableRow)
+                            {
+                                int didx = down * width + col;
+                                if (sprites[didx] == -1)
+                                {
+                                    sprites[didx] = spriteId; return down;
                                 }
                             }
                         }
-
-                        if (foundSlot)
-                        {
-                            collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Editor({x},{y}) COLLISION with 0x{collidingSprite:X2} → Moved to ({finalX},{finalY})");
-                            newIdx = finalY * width + finalX;
-                        }
                         else
                         {
-                            collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Editor({x},{y}) COLLISION → No free slot - DROPPED");
-                            continue; // Skip this sprite
+                            int down = row + d;
+                            if (down >= 0 && down <= maxPlayableRow)
+                            {
+                                int didx = down * width + col;
+                                if (sprites[didx] == -1)
+                                {
+                                    sprites[didx] = spriteId; return down;
+                                }
+                            }
+                            if (d == 0) continue;
+                            int up = row - d;
+                            if (up >= 0 && up <= maxPlayableRow)
+                            {
+                                int uidx = up * width + col;
+                                if (sprites[uidx] == -1)
+                                {
+                                    sprites[uidx] = spriteId; return up;
+                                }
+                            }
                         }
                     }
-                    
-                    sprites[newIdx] = spriteIdx;
+                    return -1;
+                }
+
+                // Occupied by another trigger: attempt to push it with preference.
+                int visitKey = (col << 16) | r;
+                if (pushVisited.Contains(visitKey)) return -1;
+                pushVisited.Add(visitKey);
+
+                int pushedSprite = sprites[idx];
+                // Try pushing in preferred order: either up-first or down-first, but never beyond maxPlayableRow.
+                if (preferUpFirst)
+                {
+                    for (int d = 1; d <= maxPlayableRow; d++)
+                    {
+                        int upRow = r - d;
+                        if (upRow >= 0)
+                        {
+                            int placed = PlaceTriggerWithPush(col, upRow, pushedSprite, preferUpFirst);
+                            if (placed >= 0)
+                            {
+                                sprites[idx] = spriteId;
+                                pushVisited.Remove(visitKey);
+                                return r;
+                            }
+                        }
+                        int downRow = r + d;
+                        if (downRow <= maxPlayableRow)
+                        {
+                            int placed = PlaceTriggerWithPush(col, downRow, pushedSprite, preferUpFirst);
+                            if (placed >= 0)
+                            {
+                                sprites[idx] = spriteId;
+                                pushVisited.Remove(visitKey);
+                                return r;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    for (int d = 1; d <= maxPlayableRow; d++)
+                    {
+                        int downRow = r + d;
+                        if (downRow <= maxPlayableRow)
+                        {
+                            int placed = PlaceTriggerWithPush(col, downRow, pushedSprite, preferUpFirst);
+                            if (placed >= 0)
+                            {
+                                sprites[idx] = spriteId;
+                                pushVisited.Remove(visitKey);
+                                return r;
+                            }
+                        }
+                        int upRow = r - d;
+                        if (upRow >= 0)
+                        {
+                            int placed = PlaceTriggerWithPush(col, upRow, pushedSprite, preferUpFirst);
+                            if (placed >= 0)
+                            {
+                                sprites[idx] = spriteId;
+                                pushVisited.Remove(visitKey);
+                                return r;
+                            }
+                        }
+                    }
+                }
+
+                pushVisited.Remove(visitKey);
+                return -1;
+            };
+
+            foreach (var (spriteIdx, x, y, originalX, originalY, isTrigger) in triggerSprites)
+            {
+                int col = Math.Max(0, Math.Min(width - 1, x));
+                int placed = -1;
+
+                // Determine if this trigger is within the bottom 8 gameplay rows (from bottom up, excluding ground row)
+                bool preferUpFirst = false;
+                try
+                {
+                    int bottomGameplayStart = Math.Max(0, height - 1 - 8); // inclusive
+                    int bottomGameplayEnd = Math.Max(0, height - 2); // inclusive
+                    if (y >= bottomGameplayStart && y <= bottomGameplayEnd) preferUpFirst = true;
+                }
+                catch { preferUpFirst = false; }
+
+                pushVisited.Clear();
+                placed = PlaceTriggerWithPush(col, y, spriteIdx, preferUpFirst);
+                if (placed >= 0)
+                {
+                    if (placed != y) collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Placed at ({col},{placed})");
+                }
+                else
+                {
+                    // As a last resort, scan the column for any empty slot top-to-bottom but only within playable rows
+                    bool found = false;
+                    for (int r = 0; r <= maxPlayableRow; r++)
+                    {
+                        int tidx = r * width + col;
+                        if (sprites[tidx] == -1)
+                        {
+                            sprites[tidx] = spriteIdx; collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Placed at ({col},{r}) [fallback]"); found = true; break;
+                        }
+                    }
+                    if (!found)
+                    {
+                        // Very last fallback: place anywhere empty in map but avoid ground row when possible
+                        bool found2 = false;
+                        for (int r = 0; r <= maxPlayableRow && !found2; r++)
+                        {
+                            for (int c = 0; c < width && !found2; c++)
+                            {
+                                int tidx = r * width + c;
+                                if (sprites[tidx] == -1)
+                                {
+                                    sprites[tidx] = spriteIdx; collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Placed at ({c},{r}) [global fallback]"); found2 = true; break;
+                                }
+                            }
+                        }
+                        if (!found2)
+                        {
+                            // Map completely full: overwrite nearest playable cell (not ground) or force at target
+                            int forceIdx = Math.Max(0, Math.Min(totalTiles - 1, y * width + col));
+                            // prefer to clamp to a playable row in same column
+                            int forceRow = Math.Max(0, Math.Min(maxPlayableRow, y));
+                            int targetIdx = forceRow * width + col;
+                            sprites[targetIdx] = spriteIdx; collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Forced overwrite at ({col},{forceRow})");
+                        }
+                    }
                 }
             }
 
@@ -395,7 +551,7 @@ namespace FamidashEditor
 
             // Add tilesets
             map.Add(new XElement("tileset",
-                new XAttribute("firstgid", 1),
+                new XAttribute("firstgid", TilesFirstGid),
                 new XAttribute("name", "famidash"),
                 new XAttribute("tilewidth", 16),
                 new XAttribute("tileheight", 16),
@@ -409,7 +565,7 @@ namespace FamidashEditor
             ));
 
             map.Add(new XElement("tileset",
-                new XAttribute("firstgid", 257),
+                new XAttribute("firstgid", SpriteFirstGid),
                 new XAttribute("name", "sprites"),
                 new XAttribute("tilewidth", 16),
                 new XAttribute("tileheight", 16),
@@ -475,7 +631,7 @@ namespace FamidashEditor
                 new XAttribute("height", level.Height)
             );
 
-            // Convert tiles to CSV format
+                // Convert tiles to CSV format using TilesFirstGid and TilesCount constants
             if (level.Tiles != null && level.Tiles.Length > 0)
             {
                 var csvLines = new System.Text.StringBuilder();
@@ -489,11 +645,11 @@ namespace FamidashEditor
                         if (idx < level.Tiles.Length)
                         {
                             int editorIdx = level.Tiles[idx];
-                            // Convert editor index to TMX GID
-                            // Editor: -1=empty, 0-255=tiles → TMX: 0=empty, 1-256=tiles
-                            if (editorIdx >= 0 && editorIdx < 256)
+                                // Convert editor index to TMX GID
+                                // Editor: -1=empty, 0..TilesCount-1=tiles → TMX: 0=empty, TilesFirstGid..TilesFirstGid+TilesCount-1=tiles
+                            if (editorIdx >= 0 && editorIdx < TilesCount)
                             {
-                                tileValue = editorIdx + 1;
+                                    tileValue = editorIdx + TilesFirstGid;
                             }
                         }
                         
@@ -634,10 +790,10 @@ namespace FamidashEditor
                         {
                             int editorIdx = spritesToSave[idx];
                             // Convert editor index to TMX GID
-                            // Editor: -1=empty, 0-255=sprites → TMX: 0=empty, 257-512=sprites
-                            if (editorIdx >= 0 && editorIdx < 256)
+                            // Editor: -1=empty, 0..TilesCount-1=sprites → TMX: 0=empty, SpriteFirstGid..SpriteFirstGid+TilesCount-1=sprites
+                            if (editorIdx >= 0 && editorIdx < TilesCount)
                             {
-                                tileValue = editorIdx + 257;
+                                tileValue = editorIdx + SpriteFirstGid;
                             }
                         }
                         

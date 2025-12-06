@@ -2417,16 +2417,16 @@ namespace FamidashEditor
                 else if (spriteIdx >= 0xD0 && spriteIdx <= 0xDC) idx = (spriteIdx - 0xD0) + (1 * 14);
                 else if (spriteIdx >= 0xE0 && spriteIdx <= 0xEC) idx = (spriteIdx - 0xE0) + (2 * 14);
 
-                if (idx >= 0)
-                {
-                    int row = idx / 14;
-                    int rowOffset = idx % 14;
-                    if (rowOffset > 12) rowOffset = 12;
-                    // Shift background palette selection down one row (darker) so tile tints match
-                    int shiftedRow = row + 1;
-                    int finalIdx = shiftedRow * 14 + rowOffset;
-                    return finalIdx;
-                }
+                    if (idx >= 0)
+                    {
+                        int row = idx / 14;
+                        int rowOffset = idx % 14;
+                        if (rowOffset > 12) rowOffset = 12;
+                        // Shift background palette selection up one row (darker) so tile tints match
+                        int shiftedRow = Math.Max(0, row - 1);
+                        int finalIdx = shiftedRow * 14 + rowOffset;
+                        return finalIdx;
+                    }
             }
             catch { }
             return null;
