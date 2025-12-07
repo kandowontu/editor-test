@@ -1336,13 +1336,15 @@ namespace FamidashEditor
                                         }
                                         else
                                         {
-                                            dc.DrawRectangle(Brushes.Black, null, dest);
+                                            // Leave transparent so background/parallax shows through
+                                            dc.DrawRectangle(Brushes.Transparent, null, dest);
                                         }
                                         continue;
                                     }
                                     else
                                     {
-                                        dc.DrawRectangle(Brushes.Black, null, dest);
+                                        // Leave transparent so background/parallax shows through
+                                        dc.DrawRectangle(Brushes.Transparent, null, dest);
                                         continue;
                                     }
                                 }
@@ -1350,7 +1352,8 @@ namespace FamidashEditor
                                 // Normal map tile sampling
                                 if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight)
                                 {
-                                    dc.DrawRectangle(Brushes.Black, null, dest);
+                                    // Out-of-bounds map area: keep transparent so background shows through
+                                    dc.DrawRectangle(Brushes.Transparent, null, dest);
                                     continue;
                                 }
                                 int idx = mapY * mapWidth + mapX;
