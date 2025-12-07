@@ -2553,8 +2553,8 @@ namespace FamidashEditor
                     }
                     catch { tileTonedImages = CreateHslShiftedImages(tileImages, tileTint, tileTint); }
 
-                    try { parallaxTonedImages = backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0 ? CreateBlackMaskedImages(parallaxImages) : CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
-                    try { groundTonedImages = groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0 ? CreateBlackMaskedImages(groundImages, tileTint, false) : CreateHueShiftedImages(groundImages, groundTint, tileTint); } catch { groundTonedImages = groundImages; }
+                    try { parallaxTonedImages = (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0) ? CreateTwoToneTileImages(parallaxImages, Color.FromArgb(255,0,0,0), Color.FromArgb(255,0,0,0), tileTint) : CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
+                    try { groundTonedImages = (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0) ? CreateTwoToneTileImages(groundImages, Color.FromArgb(255,0,0,0), Color.FromArgb(255,0,0,0), tileTint) : CreateHueShiftedImages(groundImages, groundTint, tileTint); } catch { groundTonedImages = groundImages; }
 
                     // Also create/update a tinted full-parallax bitmap if a full parallax bitmap was provided
                     try
