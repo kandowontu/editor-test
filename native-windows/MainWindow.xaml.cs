@@ -151,14 +151,14 @@ namespace FamidashEditor
     private BitmapSource? spritesBitmap;
     private BitmapSource? parallaxBitmap;
     private BitmapSource? groundBitmap;
-    private ImageSource[]? tileImages;
-    private ImageSource[]? spriteImages;
-    private ImageSource[]? parallaxImages;
-    private ImageSource[]? groundImages;
+    private ImageSource?[]? tileImages;
+    private ImageSource?[]? spriteImages;
+    private ImageSource?[]? parallaxImages;
+    private ImageSource?[]? groundImages;
     // tinted caches (updated when tint changes)
-    private ImageSource[]? parallaxTonedImages;
-    private ImageSource[]? groundTonedImages;
-    private ImageSource[]? tileTonedImages;
+    private ImageSource?[]? parallaxTonedImages;
+    private ImageSource?[]? groundTonedImages;
+    private ImageSource?[]? tileTonedImages;
     private int selectedTile = 0;
     private int selectedSprite = -1;
     // Multi-tile/sprite selection support
@@ -1342,18 +1342,18 @@ namespace FamidashEditor
     // Animated saw frames: stored as separate tile images (4 tiles per frame, 2 frames)
     private BitmapSource[]? sawFrame1Tiles; // 4 tiles: top-left, top-right, bottom-left, bottom-right
     private BitmapSource[]? sawFrame2Tiles; // 4 tiles: top-left, top-right, bottom-left, bottom-right
-    private ImageSource[]? sawFrame1TilesTinted; // Tinted versions
-    private ImageSource[]? sawFrame2TilesTinted; // Tinted versions
+    private ImageSource?[]? sawFrame1TilesTinted; // Tinted versions
+    private ImageSource?[]? sawFrame2TilesTinted; // Tinted versions
     // Small saw frames: 3 single tiles (0x04, 0x7D, 0x7F)
     private BitmapSource[]? smallSawFrame1Tiles; // 3 tiles for frame 1
     private BitmapSource[]? smallSawFrame2Tiles; // 3 tiles for frame 2
-    private ImageSource[]? smallSawFrame1TilesTinted; // Tinted versions
-    private ImageSource[]? smallSawFrame2TilesTinted; // Tinted versions
+    private ImageSource?[]? smallSawFrame1TilesTinted; // Tinted versions
+    private ImageSource?[]? smallSawFrame2TilesTinted; // Tinted versions
     // Large saw frames: 9 tiles (3x3 grid) for 0x74-0x7C
     private BitmapSource[]? largeSawFrame1Tiles; // 9 tiles for frame 1
     private BitmapSource[]? largeSawFrame2Tiles; // 9 tiles for frame 2
-    private ImageSource[]? largeSawFrame1TilesTinted; // Tinted versions
-    private ImageSource[]? largeSawFrame2TilesTinted; // Tinted versions
+    private ImageSource?[]? largeSawFrame1TilesTinted; // Tinted versions
+    private ImageSource?[]? largeSawFrame2TilesTinted; // Tinted versions
     // Portal sprites for preview mode (multi-tile replacements)
     private BitmapSource? cubePortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x00 in preview mode
     private BitmapSource? shipPortalSprite; // 24x48 sprite (1.5x3 tiles) for sprite 0x01 in preview mode
@@ -1900,7 +1900,7 @@ namespace FamidashEditor
             // Background warm-up: load FamiStudio assemblies and warm the in-process renderer/audio device
             try
             {
-                Task.Run(() =>
+                _ = Task.Run(() =>
                 {
                     try
                     {
@@ -5998,8 +5998,8 @@ namespace FamidashEditor
 
             // Ensure + tab exists
             EnsureNewTabButton();
-            // Load the newly created tab's content immediately so the UI shows it
-            try { SwitchToTab(currentFileIndex); } catch { }
+                // Load the newly created tab's content immediately so the UI shows it
+                try { _ = SwitchToTab(currentFileIndex); } catch { }
         }
 
         // Open the simulator window showing the current map state. This is lightweight
@@ -6467,6 +6467,8 @@ namespace FamidashEditor
                         sim.Closed += (s, e) => {
                             try { sim.StopSimulation(); } catch { }
                             try { famiIntegration.Stop(); } catch { }
+                            // Ensure the main editor regains focus and stays in front when the simulator closes.
+                            try { this.Activate(); } catch { }
                         };
                     }
                     catch { }
@@ -6623,7 +6625,7 @@ namespace FamidashEditor
                 else if (result == MessageBoxResult.Yes)
                 {
                     // Switch to that tab and save
-                    SwitchToTab(index);
+                    _ = SwitchToTab(index);
                     SaveButton_Click(this, new RoutedEventArgs());
                     if (hasUnsavedChanges) return; // User cancelled save
                 }
@@ -6645,11 +6647,11 @@ namespace FamidashEditor
             // If we closed the current tab, switch to another
             if (currentFileIndex == index)
             {
-                if (openFiles.Count > 0)
-                {
-                    int newIndex = Math.Min(index, openFiles.Count - 1);
-                    SwitchToTab(newIndex);
-                }
+                    if (openFiles.Count > 0)
+                    {
+                        int newIndex = Math.Min(index, openFiles.Count - 1);
+                        _ = SwitchToTab(newIndex);
+                    }
                 else
                 {
                     // No tabs left, create a new one
@@ -6826,7 +6828,7 @@ namespace FamidashEditor
                                 isHandlingNewTab = true;
                                 lastProgrammaticSelectedTab = ti;
                                 FileTabControl.SelectedItem = ti;
-                                Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background);
+                                _ = Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background);
                             }
                             finally { isHandlingNewTab = false; }
                             break;
@@ -6927,7 +6929,7 @@ namespace FamidashEditor
                                     isHandlingNewTab = true; // prevent SelectionChanged recursion
                                     lastProgrammaticSelectedTab = ti;
                                     FileTabControl.SelectedItem = ti;
-                                    try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                                    try { _ = Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                                 }
                                 finally { isHandlingNewTab = false; }
 
@@ -8587,7 +8589,7 @@ namespace FamidashEditor
         }
 
         // Create tinted copies of a set of ImageSources using simple alpha blend with the tint color.
-        private ImageSource[]? CreateTintedImages(ImageSource[]? originals, Color tint)
+        private ImageSource?[]? CreateTintedImages(ImageSource?[]? originals, Color tint)
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // no tint => return originals so drawing still works
@@ -8626,7 +8628,14 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    outList.Add(src);
+                    if (src == null)
+                    {
+                        var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                        try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                        try { pf.Freeze(); } catch { }
+                        outList.Add(pf);
+                    }
+                    else outList.Add(src);
                 }
             }
             return outList.ToArray();
@@ -8635,7 +8644,7 @@ namespace FamidashEditor
         // Create exact RGB-replaced copies of images. For every non-black, non-transparent pixel
         // we replace the RGB channels with the tint's RGB (preserve original alpha). If tint.A == 0
         // the originals are returned unchanged.
-        private ImageSource[]? CreateRgbReplacedImages(ImageSource[]? originals, Color tint)
+        private ImageSource?[]? CreateRgbReplacedImages(ImageSource?[]? originals, Color tint)
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // no change requested
@@ -8673,12 +8682,26 @@ namespace FamidashEditor
                     }
                     catch
                     {
-                        outList.Add(src);
+                        if (src == null)
+                        {
+                            var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                            try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                            try { pf.Freeze(); } catch { }
+                            outList.Add(pf);
+                        }
+                        else outList.Add(src);
                     }
                 }
                 else
                 {
-                    outList.Add(src);
+                    if (src == null)
+                    {
+                        var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                        try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                        try { pf.Freeze(); } catch { }
+                        outList.Add(pf);
+                    }
+                    else outList.Add(src);
                 }
             }
             return outList.ToArray();
@@ -8687,7 +8710,7 @@ namespace FamidashEditor
         // Create HSL-hue shifted copies of images. For each visible, non-black/non-white pixel
         // we replace the hue with the tint's hue while preserving the original saturation and lightness.
         // Returns originals if tint.A == 0.
-        private ImageSource[]? CreateHslShiftedImages(ImageSource[]? originals, Color tint)
+        private ImageSource?[]? CreateHslShiftedImages(ImageSource?[]? originals, Color tint)
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // no change requested
@@ -8737,18 +8760,32 @@ namespace FamidashEditor
                     }
                     catch
                     {
-                        outList.Add(src);
+                        if (src == null)
+                        {
+                            var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                            try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                            try { pf.Freeze(); } catch { }
+                            outList.Add(pf);
+                        }
+                        else outList.Add(src);
                     }
                 }
                 else
                 {
-                    outList.Add(src);
+                    if (src == null)
+                    {
+                        var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                        try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                        try { pf.Freeze(); } catch { }
+                        outList.Add(pf);
+                    }
+                    else outList.Add(src);
                 }
             }
             return outList.ToArray();
         }
 
-        private ImageSource[]? CreateHueShiftedImages(ImageSource[]? originals, Color tint)
+        private ImageSource?[]? CreateHueShiftedImages(ImageSource?[]? originals, Color tint)
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // strength 0 => no change
@@ -8810,7 +8847,14 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    outList.Add(src);
+                    if (src == null)
+                    {
+                        var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                        try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                        try { pf.Freeze(); } catch { }
+                        outList.Add(pf);
+                    }
+                    else outList.Add(src);
                 }
             }
             return outList.ToArray();
@@ -8818,7 +8862,7 @@ namespace FamidashEditor
 
             // Create two-tone tile images: non-white pixels are classified into lighter/darker groups and
             // mapped to bgPrimary/bgSecondary respectively; white/near-white outlines are mapped to outlineTint.
-            private ImageSource[]? CreateTwoToneTileImages(ImageSource[]? originals, Color bgPrimary, Color bgSecondary, Color outlineTint)
+            private ImageSource?[]? CreateTwoToneTileImages(ImageSource?[]? originals, Color bgPrimary, Color bgSecondary, Color outlineTint)
             {
                 if (originals == null) return null;
                 var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
@@ -8905,12 +8949,26 @@ namespace FamidashEditor
                         }
                         catch
                         {
-                            outList.Add(src);
+                            if (src != null) outList.Add(src);
+                            else
+                            {
+                                var fb = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
+                                try { fb.Lock(); fb.AddDirtyRect(new Int32Rect(0, 0, 1, 1)); } finally { try { fb.Unlock(); } catch { } }
+                                fb.Freeze();
+                                outList.Add(fb);
+                            }
                         }
                     }
                     else
                     {
-                        outList.Add(src);
+                        if (src != null) outList.Add(src);
+                        else
+                        {
+                            var fb2 = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
+                            try { fb2.Lock(); fb2.AddDirtyRect(new Int32Rect(0, 0, 1, 1)); } finally { try { fb2.Unlock(); } catch { } }
+                            fb2.Freeze();
+                            outList.Add(fb2);
+                        }
                     }
                 }
                 return outList.ToArray();
@@ -9850,14 +9908,14 @@ namespace FamidashEditor
                 var cache = useRgbReplace ? parallaxTintCache : groundTintCache;
                 if (cache.TryGetValue(key, out var existing)) return existing;
 
-                ImageSource[]? arr = null;
+                ImageSource?[]? arr = null;
                 if (useRgbReplace)
                 {
-                    arr = CreateRgbReplacedImages(new ImageSource[] { src }, tint);
+                    arr = CreateRgbReplacedImages(new ImageSource?[] { src }, tint);
                 }
                 else
                 {
-                    arr = CreateHueShiftedImages(new ImageSource[] { src }, tint);
+                    arr = CreateHueShiftedImages(new ImageSource?[] { src }, tint);
                 }
 
                 if (arr != null && arr.Length > 0 && arr[0] is BitmapSource bs)
@@ -13082,7 +13140,7 @@ namespace FamidashEditor
                         double left = (double)leftPx / dpi.DpiScaleX;
                         double top = (double)topPx / dpi.DpiScaleY;
                         // If showing sprite ghost, attempt to size according to sprite image natural size in tiles
-                        ImageSource spriteSrc = spriteImages[selectedSprite];
+                        ImageSource? spriteSrc = (spriteImages != null && selectedSprite >= 0 && selectedSprite < spriteImages.Length) ? spriteImages[selectedSprite] : null;
                         double diuPerTileX = (double)tilePixelW / dpi.DpiScaleX;
                         double diuPerTileY = (double)tilePixelH / dpi.DpiScaleY;
                         int widthTiles = 1, heightTiles = 1;
@@ -16793,7 +16851,7 @@ namespace FamidashEditor
                         }
 
                         // Overwrite the single untitled tab with a fresh map
-                        SwitchToTab(existingUntitled);
+                        _ = SwitchToTab(existingUntitled);
                         currentFilePath = "";
                         mapWidth = 200; mapHeight = 27;
                         InitDefaultMap();

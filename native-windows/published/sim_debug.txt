@@ -1,0 +1,11 @@
+2025-12-07 11:02:31.040 OpenSimulatorWindow: tilesLen=5400, nonEmptyTiles=0, mapWidth=200, mapHeight=27, spritesLen=5400, nonEmptySprites=0, distinctTilesSample=[], sampleTiles=[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1], sampleSprites=[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]
+2025-12-07 11:02:31.056 Constructor: hasParallaxLayer=True, parallaxBitmap=True, parallaxImagesLen=36, parallaxTonedLen=36, hasGroundLayer=True, groundImagesLen=32, backgroundTint=#FF001774
+2025-12-07 11:02:33.144 RenderFrame: hasParallaxLayer=True, chosenSrc=BitmapImage, srcW=144, srcH=72, parallaxImagesLen=36, parallaxTonedLen=36, bgRectFill=ImageBrush, backgroundTint=#FF001774, parallaxOffsetX=0, parallaxOffsetY=-19.199999999999996, tileLayerImageSource=null
+2025-12-07 11:02:33.145 RenderCanvas children:
+  [0] Type=Image Z=1000 Width=16 Height=16 Visible=True
+  [1] Type=Rectangle Z=0 Width=256 Height=240 Visible=True
+  [2] Type=Image Z=0 Width=272 Height=256 Visible=True
+  [3] Type=Rectangle Z=0 Width=256 Height=32 Visible=False
+
+2025-12-07 11:02:33.148 Built tileLayerCache pxW=272 pxH=256 hadAnimated=False startTileX=0 startTileY=12 tilesLen=5400 mapWidth=200 mapHeight=27
+2025-12-07 11:02:33.149 Assigned tileLayerImage.Source=RenderTargetBitmap

@@ -201,8 +201,8 @@ namespace FamidashEditor
         private const int INTERACTION_LINE_FIXED = 0x5000;
 
         // Player world X (fixed-point, 8 fractional bits)
-        // Start the player on the first visible tile instead of one tile offscreen.
-        private int playerX_fixed = (TILE << 8);
+        // Start the player on the leftmost tile (x = 0)
+        private int playerX_fixed = 0;
         // Prevent multiple simultaneous requests to start playback (clicks/keys)
         private bool playbackStartPending = false;
 
@@ -218,9 +218,9 @@ namespace FamidashEditor
         private readonly int[] sprites;
         private readonly int mapWidth;
         private readonly int mapHeight;
-        private readonly ImageSource[]? tileImages;
-        private ImageSource[]? tileTonedImages;
-        private readonly ImageSource[]? spriteImages;
+        private readonly ImageSource?[]? tileImages;
+        private ImageSource?[]? tileTonedImages;
+        private readonly ImageSource?[]? spriteImages;
         private readonly System.Collections.Generic.Dictionary<int, (int offsetX, int offsetY)> spritePixelOffsets;
         private readonly System.Collections.Generic.Dictionary<int, (int anchorTileX, int anchorTileY)> spriteAnchors;
         private Color backgroundTint;
@@ -234,27 +234,27 @@ namespace FamidashEditor
         private readonly System.Collections.Generic.Dictionary<int, ImageSource?>? previewSpriteMap;
         private readonly System.Collections.Generic.Dictionary<int, ImageSource?[]>? animationFrames;
         // Tile-level animated saw frames (tinted versions) passed from MainWindow
-        private ImageSource[]? sawFrame1TilesTinted;
-        private ImageSource[]? sawFrame2TilesTinted;
-        private ImageSource[]? smallSawFrame1TilesTinted;
-        private ImageSource[]? smallSawFrame2TilesTinted;
-        private ImageSource[]? largeSawFrame1TilesTinted;
-        private ImageSource[]? largeSawFrame2TilesTinted;
+        private ImageSource?[]? sawFrame1TilesTinted;
+        private ImageSource?[]? sawFrame2TilesTinted;
+        private ImageSource?[]? smallSawFrame1TilesTinted;
+        private ImageSource?[]? smallSawFrame2TilesTinted;
+        private ImageSource?[]? largeSawFrame1TilesTinted;
+        private ImageSource?[]? largeSawFrame2TilesTinted;
         // Keep originals so we can re-generate tinted versions when tile tint changes
-        private ImageSource[]? sawFrame1TilesOrig;
-        private ImageSource[]? sawFrame2TilesOrig;
-        private ImageSource[]? smallSawFrame1TilesOrig;
-        private ImageSource[]? smallSawFrame2TilesOrig;
-        private ImageSource[]? largeSawFrame1TilesOrig;
-        private ImageSource[]? largeSawFrame2TilesOrig;
+        private ImageSource?[]? sawFrame1TilesOrig;
+        private ImageSource?[]? sawFrame2TilesOrig;
+        private ImageSource?[]? smallSawFrame1TilesOrig;
+        private ImageSource?[]? smallSawFrame2TilesOrig;
+        private ImageSource?[]? largeSawFrame1TilesOrig;
+        private ImageSource?[]? largeSawFrame2TilesOrig;
 
         private const int NES_W = 16; // horizontal tiles (was 15)
         private const int NES_H = 15; // vertical tiles (was 16)
         private const int TILE = 16;
 
         // Parallax / ground data passed from the editor so simulator can mirror preview-mode
-        private ImageSource[]? parallaxImages;
-        private ImageSource[]? parallaxTonedImages;
+        private ImageSource?[]? parallaxImages;
+        private ImageSource?[]? parallaxTonedImages;
         private ImageSource? parallaxBitmap = null;
         private ImageSource? parallaxBitmapToned = null;
         private double parallaxX = 1.0;
@@ -263,8 +263,8 @@ namespace FamidashEditor
         private bool parallaxRepeatY = true;
         private bool hasParallaxLayer = false;
 
-        private ImageSource[]? groundImages;
-        private ImageSource[]? groundTonedImages;
+        private ImageSource?[]? groundImages;
+        private ImageSource?[]? groundTonedImages;
         private double groundOffsetY = 0.0;
         private bool groundRepeatX = true;
         private bool hasGroundLayer = false;
@@ -321,11 +321,11 @@ namespace FamidashEditor
 
         private int animationFrame = 0;
         // Sprite IDs that should animate at half speed (coins, pads, orbs)
-        private static readonly System.Collections.Generic.HashSet<int> slowAnimatedSpriteIds = new System.Collections.Generic.HashSet<int>
+            private static readonly System.Collections.Generic.HashSet<int> slowAnimatedSpriteIds = new System.Collections.Generic.HashSet<int>
         {
             0x05, 0x06, 0x27, 0x28, 0x44, 0x7A, // orbs
             0x07, 0x1A, 0x1B, 0x6E,               // coins / mini-coin
-            0x52, 0x0A, 0x0C, 0x0D, 0x0E, 0x25, 0x26 // pads
+            0x52, 0x0A, 0x0C, 0x0D, 0x0E, 0x25, 0x26, 0xFD, 0xFE // pads (include 0xFD/0xFE aliases)
         };
         private System.Collections.Generic.Dictionary<int, int> spriteFrameOffsets = new System.Collections.Generic.Dictionary<int, int>();
         private Random spriteAnimationRandom = new Random();
@@ -342,9 +342,11 @@ namespace FamidashEditor
         private bool lastCacheHadAnimatedTiles = false;
         private int lastCacheAnimationFrame = -1;
 
-        private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A,
-            // Include coins so they composite over the exact tile pixels (user-requested)
-            0x07, 0x1A, 0x1B, 0x6E };
+        private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
+
+        // Coin-like sprites should composite over exact tile pixels, but they must never
+        // receive the player's tint. Keep a small set so we can exclude them from tinting.
+        private readonly System.Collections.Generic.HashSet<int> nonPlayerTintSpriteIds = new System.Collections.Generic.HashSet<int> { 0x07, 0x1A, 0x1B, 0x6E };
 
         // Cache tinted decoration sprites keyed by (spriteId<<32)|ARGB
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> tintedSpriteCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
@@ -441,9 +443,9 @@ namespace FamidashEditor
             int[] sprites,
             int mapWidth,
             int mapHeight,
-            ImageSource[]? tileImages,
-            ImageSource[]? tileTonedImages,
-            ImageSource[]? spriteImages,
+            ImageSource?[]? tileImages,
+            ImageSource?[]? tileTonedImages,
+            ImageSource?[]? spriteImages,
             System.Collections.Generic.Dictionary<int, (int offsetX, int offsetY)> spritePixelOffsets,
             System.Collections.Generic.Dictionary<int, (int anchorTileX, int anchorTileY)> spriteAnchors,
             Color backgroundTint,
@@ -456,23 +458,23 @@ namespace FamidashEditor
             bool hideColorTriggers = false,
             System.Collections.Generic.Dictionary<int, ImageSource?>? previewSpriteMap = null,
             System.Collections.Generic.Dictionary<int, ImageSource?[]>? animationFrames = null,
-            ImageSource[]? sawFrame1TilesTinted = null,
-            ImageSource[]? sawFrame2TilesTinted = null,
-            ImageSource[]? smallSawFrame1TilesTinted = null,
-            ImageSource[]? smallSawFrame2TilesTinted = null,
-            ImageSource[]? largeSawFrame1TilesTinted = null,
-            ImageSource[]? largeSawFrame2TilesTinted = null
+            ImageSource?[]? sawFrame1TilesTinted = null,
+            ImageSource?[]? sawFrame2TilesTinted = null,
+            ImageSource?[]? smallSawFrame1TilesTinted = null,
+            ImageSource?[]? smallSawFrame2TilesTinted = null,
+            ImageSource?[]? largeSawFrame1TilesTinted = null,
+            ImageSource?[]? largeSawFrame2TilesTinted = null
             ,
             ImageSource? parallaxBitmap = null,
-            ImageSource[]? parallaxImages = null,
-            ImageSource[]? parallaxTonedImages = null,
+            ImageSource?[]? parallaxImages = null,
+            ImageSource?[]? parallaxTonedImages = null,
             double parallaxX = 1.0,
             double parallaxY = 1.0,
             bool parallaxRepeatX = true,
             bool parallaxRepeatY = true,
             bool hasParallaxLayer = false,
-            ImageSource[]? groundImages = null,
-            ImageSource[]? groundTonedImages = null,
+            ImageSource?[]? groundImages = null,
+            ImageSource?[]? groundTonedImages = null,
             double groundOffsetY = 0.0,
             bool groundRepeatX = true,
             bool hasGroundLayer = false,
@@ -555,6 +557,22 @@ namespace FamidashEditor
             this.hideColorTriggers = hideColorTriggers;
             this.previewSpriteMap = previewSpriteMap ?? new System.Collections.Generic.Dictionary<int, ImageSource?>();
             this.animationFrames = animationFrames ?? new System.Collections.Generic.Dictionary<int, ImageSource?[]>();
+            // Ensure blue-pad alias IDs 0xFD/0xFE animate the same as canonical 0x0D/0x0E when editor didn't provide aliases
+            try
+            {
+                if (this.animationFrames != null)
+                {
+                    if (!this.animationFrames.ContainsKey(0xFD) && this.animationFrames.ContainsKey(0x0D))
+                    {
+                        this.animationFrames[0xFD] = this.animationFrames[0x0D];
+                    }
+                    if (!this.animationFrames.ContainsKey(0xFE) && this.animationFrames.ContainsKey(0x0E))
+                    {
+                        this.animationFrames[0xFE] = this.animationFrames[0x0E];
+                    }
+                }
+            }
+            catch { }
             this.sawFrame1TilesTinted = sawFrame1TilesTinted;
             this.sawFrame2TilesTinted = sawFrame2TilesTinted;
             this.smallSawFrame1TilesTinted = smallSawFrame1TilesTinted;
@@ -838,11 +856,8 @@ namespace FamidashEditor
                 if (playerImage != null && playerImage.Source != null && playerImage.Width > 0) playerVisualWidth = (int)Math.Ceiling(playerImage.Width);
                 else if (playerRect != null) playerVisualWidth = (int)Math.Ceiling(playerRect.Width);
 
-                // Place the player's left such that (playerVisualWidth - 1) pixels are offscreen to the left,
-                // leaving 1 pixel (the outline) visible at x=0 on the first rendered frame.
-                // Shift one more tile left so the player starts further offscreen.
-                // Start the player just offscreen to the left by one pixel (remove previous extra tile offset)
-                playerX_fixed = ((-playerVisualWidth + 1) << 8);
+                // Place the player so it starts on the leftmost visible tile (x=0)
+                playerX_fixed = 0;
                 interactionScreenOffset_px = -1;
             }
             catch { }
@@ -1758,14 +1773,14 @@ namespace FamidashEditor
                                                             // object tinting control.
                                                             try
                                                             {
-                                                                var arrGt = CreateTwoToneTileImages(new ImageSource[] { tileImages[useTileIndex] }, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                                var arrGt = CreateTwoToneTileImages(new ImageSource?[] { tileImages[useTileIndex]! }, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), tileTint);
                                                                 if (arrGt != null && arrGt.Length > 0) gt = arrGt[0];
                                                             }
                                                             catch { gt = CreateBlackMaskedImage(tileImages[useTileIndex], tileTint, false); }
                                                         }
                                                         else
                                                         {
-                                                            var arr = CreateHslShiftedImages(new ImageSource[] { tileImages[useTileIndex] }, groundTint, tileTint);
+                                                            var arr = CreateHslShiftedImages(new ImageSource?[] { tileImages[useTileIndex]! }, groundTint, tileTint);
                                                             if (arr != null && arr.Length > 0) gt = arr[0];
                                                         }
                                                     }
@@ -1888,7 +1903,7 @@ namespace FamidashEditor
                 {
                     if (hasGroundLayer && groundImages != null && groundImages.Length > 0)
                     {
-                        ImageSource src = groundTonedImages != null && groundTonedImages.Length == groundImages.Length && groundTonedImages[0] != null ? groundTonedImages[0] : groundImages[0];
+                        ImageSource? src = groundTonedImages != null && groundTonedImages.Length == groundImages.Length && groundTonedImages[0] != null ? groundTonedImages[0] : groundImages[0];
                         if (src is BitmapSource gbs)
                         {
                             double tileW = Math.Max(1.0, gbs.PixelWidth);
@@ -2019,7 +2034,7 @@ namespace FamidashEditor
                     // Apply player tint to decoration sprites when enabled
                     try
                     {
-                        if (playerTintEnabled && decorationSpriteIds.Contains(s) && chosenSprite != null)
+                        if (playerTintEnabled && decorationSpriteIds.Contains(s) && !nonPlayerTintSpriteIds.Contains(s) && chosenSprite != null)
                         {
                             chosenSprite = GetPlayerTintedSprite(chosenSprite, s);
                         }
@@ -2070,7 +2085,10 @@ namespace FamidashEditor
                             catch { }
                         }
                         // Chains should be shifted up 8 pixels in the simulator to match preview
-                        if (s == 0x2D || s == 0x3D) py -= 8;
+                        // Upright chains (0x2D) should be nudged up; upside-down chains (0x3D)
+                        // should use the upside-down image and be nudged down instead.
+                        if (s == 0x2D) py -= 8;
+                        else if (s == 0x3D) py += 8;
                         // If this decoration sprite appears upside-down (content at top), nudge it up as well.
                         try
                         {
@@ -2531,14 +2549,14 @@ namespace FamidashEditor
                                             // mapping when available; otherwise fall back to using backgroundTint as primary.
                                             if (bgPrimary.HasValue)
                                             {
-                                                var arr = CreateTwoToneTileImages(new ImageSource[] { tileImages[i] }, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), tileTint);
                                                 if (arr != null && arr.Length > 0) rep = arr[0];
                                             }
                                             else
                                             {
                                                 // Use backgroundTint for non-white areas and tileTint for outlines.
                                                 // CreateTwoToneTileImages will leave white outlines to outlineTint (tileTint)
-                                                var arr = CreateTwoToneTileImages(new ImageSource[] { tileImages[i] }, backgroundTint, Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, backgroundTint, Color.FromArgb(255, 0, 0, 0), tileTint);
                                                 if (arr != null && arr.Length > 0) rep = arr[0];
                                             }
                                             if (rep != null) tileTonedImages[i] = rep;
@@ -2554,7 +2572,7 @@ namespace FamidashEditor
                                             // Ground tiles should only respond to ground color triggers and should not
                                             // participate in background two-tone row-shifting. Use a direct hue-shift
                                             // with the ground tint so the result matches ground visuals exactly.
-                                            var arr = CreateHueShiftedImages(new ImageSource[] { tileImages[i] }, groundTint, tileTint);
+                                            var arr = CreateHueShiftedImages(new ImageSource?[] { tileImages[i]! }, groundTint, tileTint);
                                             if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
                                         }
                                     }
@@ -2583,11 +2601,11 @@ namespace FamidashEditor
                     {
                         if (parallaxBitmap != null)
                         {
-                            ImageSource[]? arr = null;
+                            ImageSource?[]? arr = null;
                             if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
-                                arr = CreateBlackMaskedImages(new ImageSource[] { parallaxBitmap });
+                                arr = CreateBlackMaskedImages(new ImageSource?[] { parallaxBitmap! });
                             else
-                                arr = CreateHueShiftedImages(new ImageSource[] { parallaxBitmap }, backgroundTint);
+                                arr = CreateHueShiftedImages(new ImageSource?[] { parallaxBitmap! }, backgroundTint);
 
                             if (arr != null && arr.Length > 0 && arr[0] != null) parallaxBitmapToned = arr[0];
                             else parallaxBitmapToned = parallaxBitmap;
@@ -2880,12 +2898,21 @@ namespace FamidashEditor
 
         // Create two-tone tile images: non-white pixels are classified into lighter/darker groups and
         // mapped to bgPrimary/bgSecondary respectively; white/near-white outlines are mapped to outlineTint.
-        private ImageSource[]? CreateTwoToneTileImages(ImageSource[]? originals, Color bgPrimary, Color bgSecondary, Color outlineTint)
+        private ImageSource?[]? CreateTwoToneTileImages(ImageSource?[]? originals, Color bgPrimary, Color bgSecondary, Color outlineTint)
         {
             if (originals == null) return null;
             var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
             foreach (var src in originals)
             {
+                if (src == null)
+                {
+                    var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                    var pxf = new byte[4];
+                    try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
+                    try { pf.Freeze(); } catch { }
+                    outList.Add(pf);
+                    continue;
+                }
                 if (src is BitmapSource bs)
                 {
                     try
@@ -2967,12 +2994,14 @@ namespace FamidashEditor
                     }
                     catch
                     {
-                        outList.Add(src);
+                            if (src != null) outList.Add(src);
+                            else outList.Add(new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null));
                     }
                 }
                 else
                 {
-                    outList.Add(src);
+                        if (src != null) outList.Add(src);
+                        else outList.Add(new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null));
                 }
             }
             return outList.ToArray();
@@ -2980,12 +3009,21 @@ namespace FamidashEditor
 
         // Create tile images where only near-white outline pixels are replaced by outlineTint while
         // keeping other pixels unchanged.
-        private ImageSource[]? CreateOutlineTintedTileImages(ImageSource[]? originals, Color outlineTint)
+        private ImageSource?[]? CreateOutlineTintedTileImages(ImageSource?[]? originals, Color outlineTint)
         {
             if (originals == null) return null;
             var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
             foreach (var src in originals)
             {
+                if (src == null)
+                {
+                    var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                    var pxf = new byte[4];
+                    try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
+                    try { pf.Freeze(); } catch { }
+                    outList.Add(pf);
+                    continue;
+                }
                 if (src is BitmapSource bs)
                 {
                     try
@@ -3160,12 +3198,12 @@ namespace FamidashEditor
                                         // If we couldn't draw the full tile layer, fall back to the persistent background
                                         // brush or a flat color. Prefer the persistent background so parallax/ground
                                         // visuals still show through transparent sprite pixels.
-                                        Brush bgBrush = null;
+                                        Brush? bgBrush = null;
                                         try { if (bgRectPersistent != null && bgRectPersistent.Fill != null) bgBrush = bgRectPersistent.Fill; } catch { bgBrush = null; }
                                         if (bgBrush == null)
                                         {
                                             bgBrush = new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B));
-                                            dc.DrawRectangle(bgBrush, null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                            dc.DrawRectangle(bgBrush ?? new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                                         }
                                         else
                                         {
@@ -3197,8 +3235,8 @@ namespace FamidashEditor
                                                         }
                                                     }
                                                     catch { }
-                                                    ImageSource useImg = srcImg;
-                                                    try { if (srcImg != null) { var arr = CreateHslShiftedImages(new ImageSource[] { srcImg }, darkerBg); if (arr != null && arr.Length > 0 && arr[0] != null) useImg = arr[0]; } } catch { }
+                                                    ImageSource useImg = srcImg ?? new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
+                                                    try { if (srcImg != null) { var arr = CreateHslShiftedImages(new ImageSource?[] { srcImg! }, darkerBg); if (arr != null && arr.Length > 0 && arr[0] != null) useImg = arr[0]!; } } catch { }
                                                     var newIb = new ImageBrush(useImg)
                                                     {
                                                         Stretch = ib.Stretch,
@@ -3232,7 +3270,7 @@ namespace FamidashEditor
                                 }
                                 catch
                                 {
-                                    Brush bgBrush2 = null;
+                                    Brush? bgBrush2 = null;
                                     try { if (bgRectPersistent != null && bgRectPersistent.Fill != null) bgBrush2 = bgRectPersistent.Fill; } catch { bgBrush2 = null; }
                                     if (bgBrush2 == null)
                                     {
@@ -3268,8 +3306,8 @@ namespace FamidashEditor
                                                         }
                                                     }
                                                     catch { }
-                                                    ImageSource useImg2 = srcImg2;
-                                                    try { if (srcImg2 != null) { var arr2 = CreateHslShiftedImages(new ImageSource[] { srcImg2 }, darkerBg2); if (arr2 != null && arr2.Length > 0 && arr2[0] != null) useImg2 = arr2[0]; } } catch { }
+                                                    ImageSource useImg2 = srcImg2 ?? new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
+                                                    try { if (srcImg2 != null) { var arr2 = CreateHslShiftedImages(new ImageSource?[] { srcImg2! }, darkerBg2); if (arr2 != null && arr2.Length > 0 && arr2[0] != null) useImg2 = arr2[0]!; } } catch { }
                                                 var newIb2 = new ImageBrush(useImg2)
                                                 {
                                                     Stretch = ib2.Stretch,
@@ -3285,7 +3323,7 @@ namespace FamidashEditor
                                         }
                                         catch { }
                                     }
-                                    dc.DrawRectangle(bgBrush2, null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                    dc.DrawRectangle(bgBrush2 ?? new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                                 }
                             }
                             else
@@ -3312,7 +3350,7 @@ namespace FamidashEditor
                                 }
                                 catch
                                 {
-                                    Brush bgBrush3 = null;
+                                    Brush? bgBrush3 = null;
                                     try { if (bgRectPersistent != null && bgRectPersistent.Fill != null) bgBrush3 = bgRectPersistent.Fill; } catch { bgBrush3 = null; }
                                     if (bgBrush3 == null)
                                     {
@@ -3327,8 +3365,8 @@ namespace FamidashEditor
                                                 var srcImg3 = ib3.ImageSource;
                                                 Color darkerBg3 = bg;
                                                 try { RgbToHsl(bg.R, bg.G, bg.B, out double hh3, out double ss3, out double ll3); ll3 = Math.Max(0.0, ll3 - 0.12); RgbFromHsl(hh3, ss3, ll3, out byte dr3, out byte dg3, out byte db3); darkerBg3 = Color.FromArgb(bg.A, dr3, dg3, db3); } catch { }
-                                                ImageSource useImg3 = srcImg3;
-                                                try { if (srcImg3 != null) { var arr3 = CreateHslShiftedImages(new ImageSource[] { srcImg3 }, darkerBg3); if (arr3 != null && arr3.Length > 0 && arr3[0] != null) useImg3 = arr3[0]; } } catch { }
+                                                ImageSource useImg3 = srcImg3 ?? new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
+                                                try { if (srcImg3 != null) { var arr3 = CreateHslShiftedImages(new ImageSource?[] { srcImg3! }, darkerBg3); if (arr3 != null && arr3.Length > 0 && arr3[0] != null) useImg3 = arr3[0]!; } } catch { }
                                                 var newIb3 = new ImageBrush(useImg3)
                                                 {
                                                     Stretch = ib3.Stretch,
@@ -3344,7 +3382,7 @@ namespace FamidashEditor
                                         }
                                         catch { }
                                     }
-                                    dc.DrawRectangle(bgBrush3, null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                    dc.DrawRectangle(bgBrush3 ?? new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                                 }
                             }
                         }
@@ -3457,7 +3495,7 @@ namespace FamidashEditor
         // Create HSL-hue shifted copies of images. For each visible, non-black/non-white pixel
         // we replace the hue with the tint's hue while preserving the original saturation and lightness.
         // Returns originals if tint.A == 0.
-        private ImageSource[]? CreateHslShiftedImages(ImageSource[]? originals, Color tint, Color outlineTint = default)
+        private ImageSource?[]? CreateHslShiftedImages(ImageSource?[]? originals, Color tint, Color outlineTint = default)
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // no change requested
@@ -3523,12 +3561,26 @@ namespace FamidashEditor
                     }
                     catch
                     {
-                        outList.Add(src);
+                        if (src == null)
+                        {
+                            var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                            try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                            try { pf.Freeze(); } catch { }
+                            outList.Add(pf);
+                        }
+                        else outList.Add(src);
                     }
                 }
                 else
                 {
-                    outList.Add(src);
+                    if (src == null)
+                    {
+                        var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                        try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                        try { pf.Freeze(); } catch { }
+                        outList.Add(pf);
+                    }
+                    else outList.Add(src);
                 }
             }
             return outList.ToArray();
@@ -3600,7 +3652,7 @@ namespace FamidashEditor
         }
 
         // Create hue-shifted images with interpolation towards tint hue (used for ground in MainWindow)
-        private ImageSource[]? CreateHueShiftedImages(ImageSource[]? originals, Color tint, Color outlineTint = default)
+        private ImageSource?[]? CreateHueShiftedImages(ImageSource?[]? originals, Color tint, Color outlineTint = default)
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // strength 0 => no change
@@ -3630,6 +3682,15 @@ namespace FamidashEditor
 
             foreach (var src in originals)
             {
+                if (src == null)
+                {
+                    var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                    var pxf = new byte[4];
+                    try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
+                    try { pf.Freeze(); } catch { }
+                    outList.Add(pf);
+                    continue;
+                }
                 if (src is BitmapSource bs)
                 {
                     try
@@ -3699,12 +3760,21 @@ namespace FamidashEditor
         // Create images where non-white pixels become solid black (alpha preserved for transparent pixels),
         // and near-white pixels are preserved as white. This produces a 'black with white line' effect
         // useful for pure-black triggers.
-        private ImageSource[]? CreateBlackMaskedImages(ImageSource[]? originals, Color outlineTint = default, bool recolorOutline = true)
+        private ImageSource?[]? CreateBlackMaskedImages(ImageSource?[]? originals, Color outlineTint = default, bool recolorOutline = true)
         {
             if (originals == null) return null;
             var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
             foreach (var src in originals)
             {
+                if (src == null)
+                {
+                    var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                    var pxf = new byte[4];
+                    try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
+                    try { pf.Freeze(); } catch { }
+                    outList.Add(pf);
+                    continue;
+                }
                 if (src is BitmapSource bs)
                 {
                     try
@@ -3768,12 +3838,21 @@ namespace FamidashEditor
         // This mirrors CreateBlackMaskedImages but produces white instead, used for
         // representing a pure-white ground tint so the seam can remain editable by
         // object-outline tints.
-        private ImageSource[]? CreateWhiteMaskedImages(ImageSource[]? originals, Color outlineTint = default, bool recolorOutline = false)
+        private ImageSource?[]? CreateWhiteMaskedImages(ImageSource?[]? originals, Color outlineTint = default, bool recolorOutline = false)
         {
             if (originals == null) return null;
             var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
             foreach (var src in originals)
             {
+                if (src == null)
+                {
+                    var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                    var pxf = new byte[4];
+                    try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
+                    try { pf.Freeze(); } catch { }
+                    outList.Add(pf);
+                    continue;
+                }
                 if (src is BitmapSource bs)
                 {
                     try
@@ -3831,12 +3910,21 @@ namespace FamidashEditor
 
         // Create fully black images: non-transparent pixels become opaque black.
         // Use this for saws when background is pure black so no white lines remain.
-        private ImageSource[]? CreateSolidBlackImages(ImageSource[]? originals)
+        private ImageSource?[]? CreateSolidBlackImages(ImageSource?[]? originals)
         {
             if (originals == null) return null;
             var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
             foreach (var src in originals)
             {
+                if (src == null)
+                {
+                    var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                    var pxf = new byte[4];
+                    try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
+                    try { pf.Freeze(); } catch { }
+                    outList.Add(pf);
+                    continue;
+                }
                 if (src is BitmapSource bs)
                 {
                     try
