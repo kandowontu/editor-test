@@ -3563,11 +3563,13 @@ namespace FamidashEditor
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // strength 0 => no change
-            // If the tint is pure opaque black, produce black-masked images that
-            // are solid black except for preserved near-white details (white line).
+            // If the tint is pure opaque black, produce two-tone images that map
+            // non-white pixels to pure black while preserving near-white outlines
+            // so object-outline tints can recolor the seam. Use CreateTwoToneTileImages
+            // for consistent behavior with other ground/tiles code paths.
             if (tint.A == 255 && tint.R == 0 && tint.G == 0 && tint.B == 0)
             {
-                return CreateBlackMaskedImages(originals, outlineTint);
+                return CreateTwoToneTileImages(originals, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), outlineTint);
             }
 
             // If the tint is pure opaque white, produce white-masked images where
