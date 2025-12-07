@@ -3561,6 +3561,16 @@ namespace FamidashEditor
                 return CreateBlackMaskedImages(originals, outlineTint);
             }
 
+            // If the tint is pure opaque white, produce white-masked images where
+            // non-white pixels become opaque white while preserving near-white
+            // seam pixels (so object-outline tinting can control them). Use the
+            // outlineTint only for cases where callers want seam recoloring; by
+            // default we avoid recoloring the seam here.
+            if (tint.A == 255 && tint.R == 255 && tint.G == 255 && tint.B == 255)
+            {
+                return CreateWhiteMaskedImages(originals, outlineTint, false);
+            }
+
             double strength = tint.A / 255.0;
             // convert tint color to HSL once
             RgbToHsl(tint.R, tint.G, tint.B, out double tintH, out double tintS, out double tintL);
@@ -3697,6 +3707,72 @@ namespace FamidashEditor
                 {
                     outList.Add(src);
                 }
+            }
+            return outList.ToArray();
+        }
+
+        // Create white-masked images: non-white pixels become opaque white, and
+        // near-white pixels are left untouched unless `recolorOutline` is true.
+        // This mirrors CreateBlackMaskedImages but produces white instead, used for
+        // representing a pure-white ground tint so the seam can remain editable by
+        // object-outline tints.
+        private ImageSource[]? CreateWhiteMaskedImages(ImageSource[]? originals, Color outlineTint = default, bool recolorOutline = false)
+        {
+            if (originals == null) return null;
+            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte b = pixels[i + 0];
+                            byte g = pixels[i + 1];
+                            byte r = pixels[i + 2];
+                            byte a = pixels[i + 3];
+                            if (a == 0) continue; // preserve transparency
+                            double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+                            bool isNearWhite = (lum >= 0.82);
+                            if (isNearWhite)
+                            {
+                                if (recolorOutline && outlineTint.A > 0)
+                                {
+                                    pixels[i + 3] = 255;
+                                    pixels[i + 2] = outlineTint.R;
+                                    pixels[i + 1] = outlineTint.G;
+                                    pixels[i + 0] = outlineTint.B;
+                                }
+                                else
+                                {
+                                    // leave near-white seam pixels untouched
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                // make pixel opaque white
+                                pixels[i + 2] = 255;
+                                pixels[i + 1] = 255;
+                                pixels[i + 0] = 255;
+                                pixels[i + 3] = 255;
+                            }
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch { outList.Add(src); }
+                }
+                else outList.Add(src);
             }
             return outList.ToArray();
         }
