@@ -16409,6 +16409,13 @@ namespace FamidashEditor
             // Capture modifier state
             var mods = System.Windows.Input.Keyboard.Modifiers;
 
+            // F1 -> open Set Options window
+            if (e.Key == Key.F1)
+            {
+                try { SetOptionsButton_Click(this, new RoutedEventArgs()); } catch { }
+                e.Handled = true; return;
+            }
+
             // ESC cancels polygon construction
             if (e.Key == Key.Escape && isConstructingPolygon)
             {
