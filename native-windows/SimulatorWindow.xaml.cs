@@ -400,7 +400,7 @@ namespace FamidashEditor
             try
             {
                 // If already running, ignore
-                if (simTimer != null) return;
+                    if (simTimer != null) return; // Prevent starting multiple timers
                 // Ensure player starts from initial X (do not advance before start)
                 // (playerX_fixed may already be set by caller/constructor)
                 // Start high-resolution stopwatch and use an accumulator to run fixed 60Hz steps.
@@ -417,7 +417,7 @@ namespace FamidashEditor
         public void StopSimulation()
         {
             try { simTimer?.Dispose(); } catch { }
-            simTimer = null;
+                simTimer = null; // Clear the timer reference
             try { simStopwatch.Stop(); } catch { }
         }
 
@@ -1322,11 +1322,13 @@ namespace FamidashEditor
                         try {
                             if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
                             {
-                                groundTonedImages = CreateBlackMaskedImages(groundImages);
+                                // Preserve/recolor near-white seam pixels using tileTint so object
+                                // outline tints continue to apply to the top seam when ground is black.
+                                groundTonedImages = CreateBlackMaskedImages(groundImages, tileTint);
                             }
                             else
                             {
-                                groundTonedImages = CreateHueShiftedImages(groundImages, groundTint);
+                                groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, tileTint);
                             }
                         } catch { groundTonedImages = groundImages; }
 
@@ -1720,8 +1722,8 @@ namespace FamidashEditor
                                                     {
                                                         if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
                                                         {
-                                                            // Pure black ground tint: make a black-masked copy (preserve white lines)
-                                                            gt = CreateBlackMaskedImage(tileImages[useTileIndex]);
+                                                            // Pure black ground tint: make a black-masked copy (preserve/recolor white lines using tileTint)
+                                                            gt = CreateBlackMaskedImage(tileImages[useTileIndex], tileTint);
                                                         }
                                                         else
                                                         {
@@ -3335,8 +3337,10 @@ namespace FamidashEditor
             catch { }
         }
 
-        // Create a black-masked copy of a single image: non-white pixels become black (alpha preserved).
-        private ImageSource? CreateBlackMaskedImage(ImageSource? src)
+        // Create a black-masked copy of a single image: non-white pixels become black.
+        // If `outlineTint` is provided (alpha>0), near-white pixels will be recolored to that tint
+        // so object-outline recoloring continues to work when ground is forced black.
+        private ImageSource? CreateBlackMaskedImage(ImageSource? src, Color outlineTint = default)
         {
             if (src == null) return null;
             if (!(src is BitmapSource bs)) return src;
@@ -3356,23 +3360,32 @@ namespace FamidashEditor
                     byte a = pixels[i + 3];
                     if (a == 0) continue;
                     // Use perceptual luminance to detect near-white (preserve thin white lines
-                    // and anti-aliased edge pixels). This is more tolerant than strict RGB
-                    // component tests used previously which could drop subtle white pixels.
+                    // and anti-aliased edge pixels).
                     double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
-                    bool isWhite = lum >= 0.82; // keep pixels that are ~82% luminance or above
+                    bool isWhite = lum >= 0.82;
                     if (isWhite)
                     {
-                        // promote to full white color but keep original alpha to preserve edges
-                        pixels[i + 0] = 255;
-                        pixels[i + 1] = 255;
-                        pixels[i + 2] = 255;
+                        if (outlineTint.A > 0)
+                        {
+                            // Recolor near-white pixels to the outline tint so object tints still apply.
+                            pixels[i + 3] = 255;
+                            pixels[i + 2] = outlineTint.R;
+                            pixels[i + 1] = outlineTint.G;
+                            pixels[i + 0] = outlineTint.B;
+                        }
+                        else
+                        {
+                            // Preserve original near-white pixel color to avoid overwriting downstream tinting.
+                            continue;
+                        }
                     }
                     else
                     {
-                        // make pixel black; keep alpha as-is to preserve anti-aliased edges
-                        pixels[i + 0] = 0; // b
-                        pixels[i + 1] = 0; // g
-                        pixels[i + 2] = 0; // r
+                        // Make pixel opaque black
+                        pixels[i + 0] = 0;
+                        pixels[i + 1] = 0;
+                        pixels[i + 2] = 0;
+                        pixels[i + 3] = 255;
                     }
                 }
                 var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
@@ -3537,7 +3550,7 @@ namespace FamidashEditor
             // are solid black except for preserved near-white details (white line).
             if (tint.A == 255 && tint.R == 0 && tint.G == 0 && tint.B == 0)
             {
-                return CreateBlackMaskedImages(originals);
+                return CreateBlackMaskedImages(originals, outlineTint);
             }
 
             double strength = tint.A / 255.0;
@@ -3616,7 +3629,7 @@ namespace FamidashEditor
         // Create images where non-white pixels become solid black (alpha preserved for transparent pixels),
         // and near-white pixels are preserved as white. This produces a 'black with white line' effect
         // useful for pure-black triggers.
-        private ImageSource[]? CreateBlackMaskedImages(ImageSource[]? originals)
+        private ImageSource[]? CreateBlackMaskedImages(ImageSource[]? originals, Color outlineTint = default)
         {
             if (originals == null) return null;
             var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
@@ -3638,19 +3651,28 @@ namespace FamidashEditor
                             byte r = pixels[i + 2];
                             byte a = pixels[i + 3];
                             if (a == 0) continue; // preserve transparency
-                            // Use perceptual luminance to detect near-white so thin/anti-aliased white
-                            // lines are preserved. Match threshold used elsewhere (0.82) for black mask.
                             double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
                             bool isWhite = (lum >= 0.82);
                             if (isWhite)
                             {
-                                pixels[i + 0] = 255; pixels[i + 1] = 255; pixels[i + 2] = 255;
+                                if (outlineTint.A > 0)
+                                {
+                                    pixels[i + 3] = 255;
+                                    pixels[i + 2] = outlineTint.R;
+                                    pixels[i + 1] = outlineTint.G;
+                                    pixels[i + 0] = outlineTint.B;
+                                }
+                                else
+                                {
+                                    // preserve original near-white color
+                                    continue;
+                                }
                             }
                             else
                             {
                                 pixels[i + 0] = 0; pixels[i + 1] = 0; pixels[i + 2] = 0;
+                                pixels[i + 3] = 255;
                             }
-                            pixels[i + 3] = 255; // make opaque
                         }
 
                         var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
