@@ -792,11 +792,8 @@ namespace FamidashEditor
                 if (playerImage != null && playerImage.Source != null && playerImage.Width > 0) playerVisualWidth = (int)Math.Ceiling(playerImage.Width);
                 else if (playerRect != null) playerVisualWidth = (int)Math.Ceiling(playerRect.Width);
 
-                // Place the player's left such that (playerVisualWidth - 1) pixels are offscreen to the left,
-                // leaving 1 pixel (the outline) visible at x=0 on the first rendered frame.
-                // Shift one more tile left so the player starts further offscreen.
-                // Start the player just offscreen to the left by one pixel (remove previous extra tile offset)
-                playerX_fixed = ((-playerVisualWidth + 1) << 8);
+                // Place the player on the first tile (fully onscreen at X=0)
+                playerX_fixed = (0 << 8);
                 interactionScreenOffset_px = -1;
             }
             catch { }
@@ -1926,7 +1923,7 @@ namespace FamidashEditor
                         // For decoration sprites, composite the sprite over the rendered tile layer
                         // (or fallback to the flat background tint) so semi-transparent edges blend
                         // seamlessly with the exact underlying pixels instead of a flat color.
-                        if (chosenSprite is BitmapSource cbs && decorationSpriteIds.Contains(s) && backgroundTint.A > 0)
+                        if (chosenSprite is BitmapSource cbs && decorationSpriteIds.Contains(s))
                         {
                             int ix = (int)Math.Round(px);
                             int iy = (int)Math.Round(py);
@@ -3226,13 +3223,19 @@ namespace FamidashEditor
             catch { return src; }
         }
 
-        // Create HSL-hue shifted copies of images. For each visible, non-black/non-white pixel
+            // Create HSL-hue shifted copies of images. For each visible, non-black/non-white pixel
         // we replace the hue with the tint's hue while preserving the original saturation and lightness.
         // Returns originals if tint.A == 0.
         private ImageSource[]? CreateHslShiftedImages(ImageSource[]? originals, Color tint, Color outlineTint = default)
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // no change requested
+            // If the requested tint is pure opaque black, produce fully solid black images
+            // (saws and some tile-sources should become fully black when background/trigger is black).
+            if (tint.A == 255 && tint.R == 0 && tint.G == 0 && tint.B == 0)
+            {
+                return CreateSolidBlackImages(originals);
+            }
             // Precompute tint hue
             RgbToHsl(tint.R, tint.G, tint.B, out double tintH, out double tintS, out double tintL);
 
@@ -3371,13 +3374,19 @@ namespace FamidashEditor
             return null;
         }
 
-        // Create hue-shifted images with interpolation towards tint hue (used for ground in MainWindow)
+            // Create hue-shifted images with interpolation towards tint hue (used for ground in MainWindow)
         private ImageSource[]? CreateHueShiftedImages(ImageSource[]? originals, Color tint, Color outlineTint = default)
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // strength 0 => no change
-            // If the tint is pure opaque black, produce black-masked images that
-            // are solid black except for preserved near-white details (white line).
+            // If the outline tint (object-trigger / tileTint) is pure opaque black, make the
+            // output fully solid-black so object-black triggers make white lines solid black.
+            if (outlineTint.A == 255 && outlineTint.R == 0 && outlineTint.G == 0 && outlineTint.B == 0)
+            {
+                return CreateSolidBlackImages(originals);
+            }
+            // If the background tint itself is pure opaque black (fallback behavior), preserve
+            // near-white details by producing a black-masked image (white line preserved).
             if (tint.A == 255 && tint.R == 0 && tint.G == 0 && tint.B == 0)
             {
                 return CreateBlackMaskedImages(originals);
