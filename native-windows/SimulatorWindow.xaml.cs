@@ -361,6 +361,8 @@ namespace FamidashEditor
         // Track last selected decoration frame so we can log when it actually changes
         private System.Collections.Generic.Dictionary<int, int> decoLastSelectedFrame = new System.Collections.Generic.Dictionary<int, int>();
         private bool enableSimulatorDebugLogging = false; // set true to capture helpful messages during diagnosis
+        // Remember the sprite id that last set the background tint (so we can special-case saws)
+        private int lastBackgroundTriggerSid = -1;
 
         // Append a timestamped simulator debug message to the temp log file.
         private void WriteTempLog(string message)
@@ -1353,8 +1355,12 @@ namespace FamidashEditor
                                 }
                                 int idx = mapY * mapWidth + mapX;
                                 int t = tiles[idx];
+                                // Treat deleted tile (-1) the same as tile 0 so sprites/compositing
+                                // and tinting behave consistently when a tile is removed.
+                                if (t < 0) t = 0;
                                 int animatedTileIndex = MapAnimatedTileIndex(t);
                                 int useTileIndex = animatedTileIndex;
+                                if (useTileIndex < 0) useTileIndex = 0;
                                 if (animatedTileIndex != t || useTileIndex >= 1000) hadAnimated = true;
                                 ImageSource? chosenTile = null;
                                 try
@@ -1570,6 +1576,10 @@ namespace FamidashEditor
                     var rtb = new RenderTargetBitmap(pxW, pxH, 96, 96, PixelFormats.Pbgra32);
                     rtb.Render(dv);
                     tileLayerCache = rtb;
+                    // When the tile-layer image changes, previously cached sprite-over-background
+                    // composites may be stale (they reference old tile pixels). Clear that cache
+                    // so decoration sprites are recomposited against the fresh tile layer.
+                    try { spriteBackgroundCompositeCache.Clear(); } catch { }
                     lastCacheHadAnimatedTiles = hadAnimated;
                     lastCacheAnimationFrame = animationFrame;
                     cachedStartTileX = startTileX;
@@ -2133,6 +2143,8 @@ namespace FamidashEditor
                 {
                     var c = ColorFromTrigger(bgSidLocal);
                     backgroundTint = c; processedColorTriggers.Add(bgIdxLocal);
+                    // remember which sprite id set the background tint
+                    lastBackgroundTriggerSid = bgSidLocal;
                     if (enableSimulatorDebugLogging && !triggerLogged.Contains(bgIdxLocal)) { WriteTempLog($"Simulator: Applied background trigger at idx={bgIdxLocal} sid=0x{bgSidLocal:X} color={c}"); triggerLogged.Add(bgIdxLocal); }
                 }
                 if (tileIdxLocal >= 0 && tileSidLocal >= 0)
@@ -2291,12 +2303,30 @@ namespace FamidashEditor
                         try
                         {
                             // Preserve object-trigger outline recolor by passing tileTint as outlineTint
-                            this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint, tileTint);
-                            this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint, tileTint);
-                            this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint, tileTint);
-                            this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint, tileTint);
-                            this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint, tileTint);
-                            this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint, tileTint);
+                            // Special-case: if the background change was triggered by 0x8F, make saws
+                            // fully solid black (no preserved white lines) to match preview behavior.
+                            try
+                            {
+                                if (lastBackgroundTriggerSid == 0x8F)
+                                {
+                                    this.sawFrame1TilesTinted = CreateSolidBlackImages(this.sawFrame1TilesOrig);
+                                    this.sawFrame2TilesTinted = CreateSolidBlackImages(this.sawFrame2TilesOrig);
+                                    this.smallSawFrame1TilesTinted = CreateSolidBlackImages(this.smallSawFrame1TilesOrig);
+                                    this.smallSawFrame2TilesTinted = CreateSolidBlackImages(this.smallSawFrame2TilesOrig);
+                                    this.largeSawFrame1TilesTinted = CreateSolidBlackImages(this.largeSawFrame1TilesOrig);
+                                    this.largeSawFrame2TilesTinted = CreateSolidBlackImages(this.largeSawFrame2TilesOrig);
+                                }
+                                else
+                                {
+                                    this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint, tileTint);
+                                    this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint, tileTint);
+                                    this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint, tileTint);
+                                    this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint, tileTint);
+                                    this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint, tileTint);
+                                    this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint, tileTint);
+                                }
+                            }
+                            catch { }
                         }
                         catch { }
                     }
@@ -2369,7 +2399,7 @@ namespace FamidashEditor
         private Color ColorFromTrigger(int spriteIdx)
         {
             // Special-case: certain trigger sprites explicitly mean "black" regardless of sampling.
-            if (spriteIdx == 0x8F || spriteIdx == 0xCF)
+            if (spriteIdx == 0x8F || spriteIdx == 0xCF || spriteIdx == 0xBF)
             {
                 return Color.FromArgb(255, 0, 0, 0);
             }
@@ -2565,6 +2595,10 @@ namespace FamidashEditor
                         var pixels = new byte[h * stride];
                         conv.CopyPixels(pixels, stride, 0);
 
+                        // If outline tint is pure black, be more permissive when classifying
+                        // near-white pixels so thin anti-aliased outlines are captured.
+                        double whiteThreshold = (outlineTint.A == 255 && outlineTint.R == 0 && outlineTint.G == 0 && outlineTint.B == 0) ? 0.70 : 0.82;
+
                         // Compute min/max luminance of non-white, non-transparent pixels to determine threshold
                         double minL = 1.0, maxL = 0.0; int count = 0;
                         for (int i = 0; i < pixels.Length; i += 4)
@@ -2572,8 +2606,8 @@ namespace FamidashEditor
                             byte b = pixels[i + 0]; byte g = pixels[i + 1]; byte r = pixels[i + 2]; byte a = pixels[i + 3];
                             if (a == 0) continue;
                             double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
-                            // Skip near-white when computing min/max (use 0.82 to catch anti-aliased outlines)
-                            if (lum >= 0.82) continue;
+                            // Skip near-white when computing min/max (use threshold to catch anti-aliased outlines)
+                            if (lum >= whiteThreshold) continue;
                             if (lum < minL) minL = lum;
                             if (lum > maxL) maxL = lum;
                             count++;
@@ -2585,7 +2619,7 @@ namespace FamidashEditor
                             byte ob = pixels[i + 0]; byte og = pixels[i + 1]; byte orr = pixels[i + 2]; byte a = pixels[i + 3];
                             if (a == 0) continue;
                             double lum = (0.2126 * orr + 0.7152 * og + 0.0722 * ob) / 255.0;
-                            bool isWhite = lum >= 0.82;
+                            bool isWhite = lum >= whiteThreshold;
                             bool isBlack = (orr <= 12 && og <= 12 && ob <= 12);
 
                             if (isBlack)
@@ -2656,12 +2690,13 @@ namespace FamidashEditor
                         var pixels = new byte[h * stride];
                         conv.CopyPixels(pixels, stride, 0);
 
+                        double whiteThreshold = (outlineTint.A == 255 && outlineTint.R == 0 && outlineTint.G == 0 && outlineTint.B == 0) ? 0.70 : 0.82;
                         for (int i = 0; i < pixels.Length; i += 4)
                         {
                             byte b = pixels[i + 0]; byte g = pixels[i + 1]; byte r = pixels[i + 2]; byte a = pixels[i + 3];
                             if (a == 0) continue;
                             double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
-                            bool isWhite = lum >= 0.82;
+                            bool isWhite = lum >= whiteThreshold;
                             if (isWhite)
                             {
                                 pixels[i + 3] = 255;
@@ -2763,7 +2798,10 @@ namespace FamidashEditor
                 // update when animated tiles/frame or fractional camera offsets change.
                 int layerLeft = 0, layerTop = 0;
                 try { if (tileLayerImage != null) { var v = System.Windows.Controls.Canvas.GetLeft(tileLayerImage); if (!double.IsNaN(v)) layerLeft = (int)Math.Round(v); var t = System.Windows.Controls.Canvas.GetTop(tileLayerImage); if (!double.IsNaN(t)) layerTop = (int)Math.Round(t); } } catch { }
-                string key = string.Format("{0}:{1:X2}{2:X2}{3:X2}{4:X2}:{5}:{6}:{7}:{8}:{9}", srcHash, bg.A, bg.R, bg.G, bg.B, destX, destY, animationFrame, layerLeft, layerTop);
+                // Include cached tile-layer origin so composites are unique when the underlying
+                // tile-layer origin/content changes (prevents returning stale composites).
+                string key = string.Format("{0}:{1:X2}{2:X2}{3:X2}{4:X2}:{5}:{6}:{7}:{8}:{9}:{10}:{11}",
+                    srcHash, bg.A, bg.R, bg.G, bg.B, destX, destY, animationFrame, layerLeft, layerTop, cachedStartTileX, cachedStartTileY);
                 if (spriteBackgroundCompositeCache.TryGetValue(key, out var cached)) return cached;
 
                 // Use WPF rendering to compose the sprite over the background region. This
@@ -2936,10 +2974,13 @@ namespace FamidashEditor
                             byte a = pixels[i + 3];
                             // Skip fully transparent and near-black pixels. Handle near-white outlines
                             // via perceptual luminance so anti-aliased white lines are detected reliably.
+                            // Be more permissive when outlineTint is pure black so thin anti-aliased
+                            // white lines get recolored to black as requested by object triggers.
                             if (a == 0) continue;
                             double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
                             bool isBlack = (r <= 12 && g <= 12 && b <= 12);
-                            bool isNearWhite = (lum >= 0.82);
+                            double whiteThreshold = (outlineTint.A == 255 && outlineTint.R == 0 && outlineTint.G == 0 && outlineTint.B == 0) ? 0.70 : 0.82;
+                            bool isNearWhite = (lum >= whiteThreshold);
                             if (isBlack) continue;
                             if (isNearWhite)
                             {
