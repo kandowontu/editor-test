@@ -1570,7 +1570,9 @@ namespace FamidashEditor
                                 }
                                 else
                                 {
-                                    dc.DrawRectangle(Brushes.Black, null, dest);
+                                    // No tile image available for this cell — keep transparent
+                                    // so decoration sprites above reveal the background/parallax.
+                                    dc.DrawRectangle(Brushes.Transparent, null, dest);
                                 }
                             }
                         }
