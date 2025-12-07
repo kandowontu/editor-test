@@ -203,6 +203,8 @@ namespace FamidashEditor
         // Player world X (fixed-point, 8 fractional bits)
         // Start the player on the first visible tile instead of one tile offscreen.
         private int playerX_fixed = (TILE << 8);
+        // Prevent multiple simultaneous requests to start playback (clicks/keys)
+        private bool playbackStartPending = false;
 
         // Visual player controls used for the player: image preferred, rectangle fallback
         private System.Windows.Controls.Image? playerImage = null;
@@ -993,13 +995,20 @@ namespace FamidashEditor
                     // Unpausing: request the owner to start playback and wait briefly for audio
                     // to begin so audio and gameplay are (more) in sync, then advance one
                     // numeric step and render a frame so the simulator visibly starts.
-                    try
+                    if (!playbackStartPending)
                     {
-                        try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
-                        try { SimulateNumericStep(); } catch { }
-                        try { RenderFrame(); } catch { }
+                        playbackStartPending = true;
+                        try
+                        {
+                            try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
+                            try { SimulateNumericStep(); } catch { }
+                            try { RenderFrame(); } catch { }
+                        }
+                        finally
+                        {
+                            playbackStartPending = false;
+                        }
                     }
-                    catch { }
                 }
 
                 paused = willBePaused;
@@ -1027,11 +1036,23 @@ namespace FamidashEditor
                 if (!paused)
                     return;
 
-                // Request owner to start playback and wait briefly for audio to begin,
-                // then advance one numeric step and render so gameplay visibly starts.
-                try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
-                try { SimulateNumericStep(); } catch { }
-                try { RenderFrame(); } catch { }
+                // If another start is already pending, ignore repeated clicks.
+                if (!playbackStartPending)
+                {
+                    playbackStartPending = true;
+                    try
+                    {
+                        // Request owner to start playback and wait briefly for audio to begin,
+                        // then advance one numeric step and render so gameplay visibly starts.
+                        try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
+                        try { SimulateNumericStep(); } catch { }
+                        try { RenderFrame(); } catch { }
+                    }
+                    finally
+                    {
+                        playbackStartPending = false;
+                    }
+                }
 
                 paused = false;
                 try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
