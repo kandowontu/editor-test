@@ -1716,7 +1716,11 @@ namespace FamidashEditor
                                         try
                                         {
                                             ImageSource? gt = null;
-                                            long key = (((long)useTileIndex) << 32) | ((long)groundTint.A << 24) | ((long)groundTint.R << 16) | ((long)groundTint.G << 8) | groundTint.B;
+                                            // Include both groundTint and current tileTint in the cache key so
+                                            // per-tile ground-tinted copies respond to later tile/object tints.
+                                            long key = (((long)useTileIndex) << 48)
+                                                       | (((long)groundTint.A & 0xFF) << 40) | (((long)groundTint.R & 0xFF) << 32) | (((long)groundTint.G & 0xFF) << 24) | (((long)groundTint.B & 0xFF) << 16)
+                                                       | (((long)tileTint.A & 0xFF) << 8) | (((long)tileTint.R & 0xFF));
                                             if (!groundTintedTileCache.TryGetValue(key, out gt))
                                             {
                                                 // create a ground-tinted copy from original tileImages when available
