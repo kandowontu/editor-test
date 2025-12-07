@@ -201,7 +201,8 @@ namespace FamidashEditor
         private const int INTERACTION_LINE_FIXED = 0x5000;
 
         // Player world X (fixed-point, 8 fractional bits)
-        private int playerX_fixed = 0;
+        // Start the player on the first visible tile instead of one tile offscreen.
+        private int playerX_fixed = (TILE << 8);
 
         // Visual player controls used for the player: image preferred, rectangle fallback
         private System.Windows.Controls.Image? playerImage = null;
