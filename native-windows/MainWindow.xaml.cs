@@ -6483,6 +6483,10 @@ namespace FamidashEditor
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
                     sim.Owner = this;
+                    // Force an initial render while the simulator is still paused so
+                    // starting background/ground tints are applied to the cached tile layer
+                    // before the window becomes visible.
+                    try { sim.EnsureInitialRender(); } catch { }
                     // Ensure music and simulation stop when simulator window is closed
                     try
                     {

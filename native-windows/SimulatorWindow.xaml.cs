@@ -317,6 +317,10 @@ namespace FamidashEditor
         private int pendingGroundIdx = -1;
         private int pendingGroundSid = -1;
         private bool pendingTintChange = false;
+        private bool pendingTintChangeIsStartup = false;
+        // Set to true when we applied starting-per-level tints so subsequent image regeneration
+        // avoids applying object/outline tints at startup.
+        private bool startupTintApplied = false;
         private System.Diagnostics.Stopwatch renderStopwatch = new System.Diagnostics.Stopwatch();
 
         private int animationFrame = 0;
@@ -365,6 +369,8 @@ namespace FamidashEditor
         // Lightweight one-time debug logging sets to avoid spamming output repeatedly
         private System.Collections.Generic.HashSet<int> decoLogged = new System.Collections.Generic.HashSet<int>();
         private System.Collections.Generic.HashSet<int> triggerLogged = new System.Collections.Generic.HashSet<int>();
+        private int tileSelectionLogCount = 0;
+        private const int TILE_SELECTION_LOG_LIMIT = 64;
         // Track last selected decoration frame so we can log when it actually changes
         private System.Collections.Generic.Dictionary<int, int> decoLastSelectedFrame = new System.Collections.Generic.Dictionary<int, int>();
         private bool enableSimulatorDebugLogging = false; // set true to capture helpful messages during diagnosis
@@ -376,6 +382,7 @@ namespace FamidashEditor
         // Append a small simulator debug line to the diagnosis file next to the exe.
         private void AppendSimDebug(string msg)
         {
+            if (!enableSimulatorDebugLogging) return;
             try
             {
                 string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {msg}{Environment.NewLine}";
@@ -607,7 +614,9 @@ namespace FamidashEditor
                 {
                     int sc = startingBackgroundColorCode.Value;
                     int trigger = MapStartingCodeToTrigger(sc, false);
-                    try { this.backgroundTint = ColorFromTrigger(trigger); } catch { }
+                    // Simulate activation of the background color trigger so the pending-tint
+                    // path runs (same as when the player crosses a trigger in-game).
+                    try { pendingBgIdx = 0; pendingBgSid = trigger; pendingTintChange = true; pendingTintChangeIsStartup = true; } catch { }
                 }
             }
             catch { }
@@ -618,87 +627,28 @@ namespace FamidashEditor
                 {
                     int sc = startingGroundColorCode.Value;
                     int trigger = MapStartingCodeToTrigger(sc, true);
-                    try
-                    {
-                        if (trigger == 0xCF)
-                        {
-                            this.groundTint = Color.FromArgb(255, 0, 0, 0);
-                        }
-                        else
-                        {
-                            this.groundTint = ColorFromTrigger(trigger);
-                        }
-                    }
-                    catch { }
+                    // Simulate activation of the ground color trigger (special-casing is handled
+                    // by ApplyPendingTints when it sees sid==0xCF). Use pending fields so the
+                    // UI-thread path applies tints and regenerates toned images.
+                    try { pendingGroundIdx = 0; pendingGroundSid = trigger; pendingTintChange = true; pendingTintChangeIsStartup = true; } catch { }
                 }
             }
             catch { }
 
-            // After applying starting tints, regenerate toned images and update persistent UI brushes
+            // Starting tint values have been set above; we'll regenerate toned images later
+            // after assets/parallax/ground images are loaded and persistent UI elements exist.
+
+            // If we scheduled pending tint changes from starting codes, apply them now on the UI thread
+            // so the toned images and caches are generated immediately.
             try
             {
-                UpdateTonedImagesForTileTint(tileTint);
-
-                try {
-                    if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
-                    {
-                        parallaxTonedImages = CreateBlackMaskedImages(parallaxImages);
-                    }
-                    else
-                    {
-                        parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint);
-                    }
-                } catch { parallaxTonedImages = parallaxImages; }
-
-                try {
-                    if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
-                    {
-                        groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), tileTint);
-                    }
-                    else
-                    {
-                        groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, tileTint);
-                    }
-                } catch { groundTonedImages = groundImages; }
-
-                // Invalidate cached tile layer so the initial render uses new toned images
-                tileLayerCache = null;
-                try { groundTintedTileCache.Clear(); } catch { }
-
-                // Update persistent background rectangle to use toned parallax if available
-                try
+                if (pendingTintChange)
                 {
-                    ImageSource? src = null;
-                    if (parallaxBitmapToned != null) src = parallaxBitmapToned;
-                    else if (parallaxBitmap != null) src = parallaxBitmap;
-                    else if (parallaxTonedImages != null && parallaxTonedImages.Length > 0 && parallaxTonedImages[0] != null) src = parallaxTonedImages[0];
-                    else if (parallaxImages != null && parallaxImages.Length > 0 && parallaxImages[0] != null) src = parallaxImages[0];
-
-                    if (bgRectPersistent != null)
-                    {
-                        if (src is BitmapSource pbs)
-                        {
-                            var brush = new ImageBrush(src)
-                            {
-                                TileMode = TileMode.Tile,
-                                ViewportUnits = BrushMappingMode.Absolute,
-                                Viewport = new Rect(0, 0, Math.Max(1.0, pbs.PixelWidth), Math.Max(1.0, pbs.PixelHeight)),
-                                Stretch = Stretch.None
-                            };
-                            bgRectPersistent.Fill = brush;
-                        }
-                        else
-                        {
-                            bgRectPersistent.Fill = new SolidColorBrush(backgroundTint);
-                        }
-                    }
-
-                    if (groundRectPersistent != null)
-                    {
-                        groundRectPersistent.Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 };
-                    }
+                    // We're on the UI thread in the constructor; apply immediately.
+                    try { ApplyPendingTints(); } catch { }
+                    try { EnsureInitialRender(); } catch { }
+                    // Keep the simulator paused (PauseOverlay handled earlier via `paused`).
                 }
-                catch { }
             }
             catch { }
 
@@ -1003,6 +953,53 @@ namespace FamidashEditor
                 System.Windows.Controls.Canvas.SetLeft(groundRectPersistent, 0);
                 System.Windows.Controls.Canvas.SetTop(groundRectPersistent, (NES_H * TILE) - (TILE * Math.Min(NES_H, 2)));
                 RenderCanvas.Children.Add(groundRectPersistent);
+            }
+            catch { }
+
+            // Regenerate toned images now that parallax/ground images and persistent UI elements exist.
+            try
+            {
+                UpdateTonedImagesForTileTint(tileTint, startupTintApplied ? (Color?)Color.FromArgb(0, 0, 0, 0) : null);
+
+                try {
+                    if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
+                    {
+                        parallaxTonedImages = CreateBlackMaskedImages(parallaxImages);
+                    }
+                    else
+                    {
+                        parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint);
+                    }
+                } catch { parallaxTonedImages = parallaxImages; }
+
+                try {
+                    if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
+                    {
+                        // Preserve white seam (do not recolor outlines) so ground line stays white.
+                        groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), Color.FromArgb(0, 0, 0, 0));
+                    }
+                    else
+                    {
+                        groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, tileTint);
+                    }
+                } catch { groundTonedImages = groundImages; }
+
+                // If ground tint is pure black, also create black-masked tile images so
+                // tiles that visually represent ground (including common index 0) appear
+                // black immediately when the simulator opens paused.
+                try
+                {
+                    if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
+                    {
+                        try { tileTonedImages = CreateTwoToneTileImages(tileImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), Color.FromArgb(0, 0, 0, 0)); } catch { }
+                    }
+                }
+                catch { }
+
+                // Invalidate cached tile layer so the initial render uses new toned images
+                tileLayerCache = null;
+                try { groundTintedTileCache.Clear(); } catch { }
+                try { AppendSimDebug($"Constructor: parallaxToned={(parallaxTonedImages!=null?parallaxTonedImages.Length:0)} groundToned={(groundTonedImages!=null?groundTonedImages.Length:0)} tileToned={(tileTonedImages!=null?tileTonedImages.Length:0)}"); } catch { }
             }
             catch { }
 
@@ -1463,7 +1460,10 @@ namespace FamidashEditor
                     if (!AreColorsEqual(prevBackgroundTint, backgroundTint) || !AreColorsEqual(prevTileTint, tileTint) || !AreColorsEqual(prevGroundTint, groundTint))
                     {
                         // regenerate toned tile sets for the new tile tint so cached tiles draw with new hue
-                        UpdateTonedImagesForTileTint(tileTint);
+                        // Compute an effective outline tint for this regeneration so startup-applied
+                        // tints do not recolor object outlines.
+                        var outlineTintLocal = startupTintApplied ? Color.FromArgb(0, 0, 0, 0) : tileTint;
+                        UpdateTonedImagesForTileTint(tileTint, outlineTintLocal);
 
                         // regenerate parallax and ground toned images so parallax/ground respond to their tints
                         try {
@@ -1890,7 +1890,8 @@ namespace FamidashEditor
                                                             // object tinting control.
                                                             try
                                                             {
-                                                                var arrGt = CreateTwoToneTileImages(new ImageSource?[] { tileImages[useTileIndex]! }, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                                // Preserve white seam outlines rather than recoloring them to tileTint
+                                                                var arrGt = CreateTwoToneTileImages(new ImageSource?[] { tileImages[useTileIndex]! }, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), Color.FromArgb(0, 0, 0, 0));
                                                                 if (arrGt != null && arrGt.Length > 0) gt = arrGt[0];
                                                             }
                                                             catch { gt = CreateBlackMaskedImage(tileImages[useTileIndex], tileTint, false); }
@@ -1931,6 +1932,31 @@ namespace FamidashEditor
 
                                 if (chosenTile != null)
                                 {
+                                    try
+                                    {
+                                        if (tileSelectionLogCount < TILE_SELECTION_LOG_LIMIT)
+                                        {
+                                            string src = "unknown";
+                                            try
+                                            {
+                                                if (tileTonedImages != null && useTileIndex >= 0 && useTileIndex < tileTonedImages.Length && tileTonedImages[useTileIndex] == chosenTile)
+                                                    src = "tileTonedImages";
+                                                else if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] == chosenTile)
+                                                    src = "tileImages";
+                                                else
+                                                {
+                                                    foreach (var kv in groundTintedTileCache)
+                                                    {
+                                                        if (kv.Value == chosenTile) { src = "groundTintedTileCache"; break; }
+                                                    }
+                                                }
+                                            }
+                                            catch { }
+                                            AppendSimDebug($"GetOrRenderCachedTile idx={useTileIndex} src={src} mapIdx={idx} tileVal=0x{t:X}");
+                                            tileSelectionLogCount++;
+                                        }
+                                    }
+                                    catch { }
                                     // If the tile image is smaller than the canonical TILE size (e.g.
                                     // saw halves that are half-height PNGs), draw it at its natural
                                     // pixel size instead of scaling to fill the full tile. Align
@@ -2356,6 +2382,26 @@ namespace FamidashEditor
             RenderCanvas.RenderTransform = new TranslateTransform(-fracX, -fracY);
         }
 
+        // Ensure initial render is performed on the UI thread so toned images and
+        // tile-layer caches are built before the window is shown. Call from owner
+        // before showing the simulator to guarantee the paused snapshot reflects
+        // starting tints.
+        public void EnsureInitialRender()
+        {
+            try
+            {
+                if (!Dispatcher.CheckAccess())
+                {
+                    Dispatcher.Invoke(new Action(() => { try { RenderFrame(); } catch { } }));
+                }
+                else
+                {
+                    try { RenderFrame(); } catch { }
+                }
+            }
+            catch { }
+        }
+
         // Use CompositionTarget.Rendering as the main loop to maintain consistent timing. We implement
         // a simple fixed-step simulation so animation and camera advance at 60Hz even if rendering
         // intermittently lags.
@@ -2553,13 +2599,19 @@ namespace FamidashEditor
         {
             try
             {
+                bool wasStartup = pendingTintChangeIsStartup;
                 int bgIdxLocal = pendingBgIdx; int bgSidLocal = pendingBgSid;
                 int tileIdxLocal = pendingTileIdx; int tileSidLocal = pendingTileSid;
                 int groundIdxLocal = pendingGroundIdx; int groundSidLocal = pendingGroundSid;
 
-                pendingBgIdx = -1; pendingBgSid = -1; pendingTileIdx = -1; pendingTileSid = -1; pendingGroundIdx = -1; pendingGroundSid = -1; pendingTintChange = false;
+                pendingBgIdx = -1; pendingBgSid = -1; pendingTileIdx = -1; pendingTileSid = -1; pendingGroundIdx = -1; pendingGroundSid = -1; pendingTintChange = false; pendingTintChangeIsStartup = false;
+                // Remember that we applied a startup-origin tint so future regenerations avoid object tinting.
+                if (wasStartup) startupTintApplied = true;
 
                 var prevBackgroundTint = backgroundTint; var prevTileTint = tileTint; var prevGroundTint = groundTint;
+                // Use a transparent outline tint when this change originated from startup so
+                // object/outline recoloring is not applied for initial per-level starting colors.
+                var outlineTintParam = wasStartup ? Color.FromArgb(0, 0, 0, 0) : tileTint;
 
                 if (bgIdxLocal >= 0 && bgSidLocal >= 0)
                 {
@@ -2642,7 +2694,7 @@ namespace FamidashEditor
                             // Always pass the current object-trigger tile tint as the outline tint so
                             // object color triggers continue to recolor white/near-white outlines
                             // even when background/ground tints change.
-                            var outlineTintParam = tileTint;
+                            outlineTintParam = wasStartup ? Color.FromArgb(0, 0, 0, 0) : tileTint;
                             if (bgPrimary.HasValue)
                                 tileTonedImages = CreateTwoToneTileImages(tileImages, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), outlineTintParam);
                             else
@@ -2666,14 +2718,13 @@ namespace FamidashEditor
                                             // mapping when available; otherwise fall back to using backgroundTint as primary.
                                             if (bgPrimary.HasValue)
                                             {
-                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), outlineTintParam);
                                                 if (arr != null && arr.Length > 0) rep = arr[0];
                                             }
                                             else
                                             {
-                                                // Use backgroundTint for non-white areas and tileTint for outlines.
-                                                // CreateTwoToneTileImages will leave white outlines to outlineTint (tileTint)
-                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, backgroundTint, Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                // Use backgroundTint for non-white areas and outlineTintParam for outlines.
+                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, backgroundTint, Color.FromArgb(255, 0, 0, 0), outlineTintParam);
                                                 if (arr != null && arr.Length > 0) rep = arr[0];
                                             }
                                             if (rep != null) tileTonedImages[i] = rep;
@@ -2710,8 +2761,8 @@ namespace FamidashEditor
                     }
                     catch { tileTonedImages = CreateHslShiftedImages(tileImages, tileTint, tileTint); }
 
-                    try { parallaxTonedImages = (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0) ? CreateTwoToneTileImages(parallaxImages, Color.FromArgb(255,0,0,0), Color.FromArgb(255,0,0,0), tileTint) : CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
-                    try { groundTonedImages = (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0) ? CreateTwoToneTileImages(groundImages, Color.FromArgb(255,0,0,0), Color.FromArgb(255,0,0,0), tileTint) : CreateHueShiftedImages(groundImages, groundTint, tileTint); } catch { groundTonedImages = groundImages; }
+                    try { parallaxTonedImages = (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0) ? CreateTwoToneTileImages(parallaxImages, Color.FromArgb(255,0,0,0), Color.FromArgb(255,0,0,0), outlineTintParam) : CreateHueShiftedImages(parallaxImages, backgroundTint, outlineTintParam); } catch { parallaxTonedImages = parallaxImages; }
+                    try { groundTonedImages = (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0) ? CreateTwoToneTileImages(groundImages, Color.FromArgb(255,0,0,0), Color.FromArgb(255,0,0,0), outlineTintParam) : CreateHueShiftedImages(groundImages, groundTint, outlineTintParam); } catch { groundTonedImages = groundImages; }
 
                     // Also create/update a tinted full-parallax bitmap if a full parallax bitmap was provided
                     try
@@ -2752,13 +2803,13 @@ namespace FamidashEditor
                             }
                             else
                             {
-                                // Preserve object-trigger outline recolor by passing tileTint as outlineTint
-                                this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint, tileTint);
-                                this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint, tileTint);
-                                this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint, tileTint);
-                                this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint, tileTint);
-                                this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint, tileTint);
-                                this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint, tileTint);
+                                // Use outlineTintParam so startup-origin changes don't recolor outlines/objects.
+                                this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint, outlineTintParam);
+                                this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint, outlineTintParam);
+                                this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint, outlineTintParam);
+                                this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint, outlineTintParam);
+                                this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint, outlineTintParam);
+                                this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint, outlineTintParam);
                             }
                         }
                         catch { }
@@ -3559,13 +3610,16 @@ namespace FamidashEditor
 
         // Regenerate toned images for tiles and saw frames using HSL hue shifting.
         // This mirrors MainWindow.UpdateTileTint's behavior so simulator can apply tints locally.
-        private void UpdateTonedImagesForTileTint(Color newTileTint)
+        private void UpdateTonedImagesForTileTint(Color newTileTint, Color? outlineOverride = null)
         {
             try
             {
                 // Create HSL-shifted copies for tiles and saw frames
+                // Allow caller to override the outline tint (used to keep outlines uncolored at startup).
+                // If outlineOverride is null, fall back to the current `tileTint` member.
+                Color outline = outlineOverride.HasValue ? outlineOverride.Value : tileTint;
                 if (tileImages != null)
-                    tileTonedImages = CreateHslShiftedImages(tileImages, newTileTint, tileTint);
+                    tileTonedImages = CreateHslShiftedImages(tileImages, newTileTint, outline);
 
                 if (sawFrame1TilesTinted != null && sawFrame1TilesTinted.Length > 0)
                 {
