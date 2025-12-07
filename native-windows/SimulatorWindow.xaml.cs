@@ -382,28 +382,17 @@ namespace FamidashEditor
         // Append a small simulator debug line to the diagnosis file next to the exe.
         private void AppendSimDebug(string msg)
         {
-            if (!enableSimulatorDebugLogging) return;
-            try
-            {
-                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {msg}{Environment.NewLine}";
-                System.IO.File.AppendAllText(simDebugFilePath, line);
-            }
-            catch { }
+            // Intentionally no-op to avoid writing sim debug files in normal runs.
+            // Use the `enableSimulatorDebugLogging` flag only for in-memory debug
+            // or when actively diagnosing; file writes are disabled here.
+            return;
         }
 
         // Append a timestamped simulator debug message to the temp log file.
         private void WriteTempLog(string message)
         {
-            if (!enableSimulatorDebugLogging) return;
-            try
-            {
-                string temp = System.IO.Path.GetTempPath();
-                string fn = System.IO.Path.Combine(temp, "FamidashSimulator.log");
-                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}";
-                System.IO.File.AppendAllText(fn, line);
-                try { System.Diagnostics.Debug.WriteLine(message); } catch { }
-            }
-            catch { }
+            // Keep debug output to the Debug console but avoid writing to disk.
+            try { System.Diagnostics.Debug.WriteLine("Simulator: " + message); } catch { }
         }
 
         // Start the background simulation (call after the window is shown).

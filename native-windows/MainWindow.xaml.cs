@@ -6409,27 +6409,8 @@ namespace FamidashEditor
                         effectiveParallaxTonedImages = null;
                     }
 
-                    try
-                    {
-                        try
-                        {
-                            var debugPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sim_debug.txt");
-                            var sampleTiles = (tiles ?? Array.Empty<int>()).Take(16);
-                            var sampleSprites = (sprites ?? Array.Empty<int>()).Take(16);
-                            var tilesSampleStr = string.Join(',', sampleTiles);
-                            var spritesSampleStr = string.Join(',', sampleSprites);
-                            var tilesArr = (tiles ?? Array.Empty<int>());
-                            var spritesArr = (sprites ?? Array.Empty<int>());
-                            var nonEmptyTiles = tilesArr.Count(t => t >= 0);
-                            var nonEmptySprites = spritesArr.Count(s => s >= 0);
-                            var distinctTiles = tilesArr.Where(t => t >= 0).Distinct().Take(8);
-                            var distinctTilesStr = string.Join(',', distinctTiles);
-                            var dbgLine = $"{System.DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} OpenSimulatorWindow: tilesLen={tilesArr.Length}, nonEmptyTiles={nonEmptyTiles}, mapWidth={mapWidth}, mapHeight={mapHeight}, spritesLen={spritesArr.Length}, nonEmptySprites={nonEmptySprites}, distinctTilesSample=[{distinctTilesStr}], sampleTiles=[{tilesSampleStr}], sampleSprites=[{spritesSampleStr}]\n";
-                            System.IO.File.AppendAllText(debugPath, dbgLine);
-                        }
-                        catch { }
-                    }
-                    catch { }
+                    // Debug file writes disabled: avoid creating sim_debug.txt during normal runs.
+                    // (Previously this wrote diagnostic info next to the exe.)
 
                     // Quick workaround: replace sentinel -1 entries with a safe default (0)
                     var sanitizedTiles = (tiles ?? Array.Empty<int>()).Select(t => t < 0 ? 0 : t).ToArray();
