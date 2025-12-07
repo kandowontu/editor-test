@@ -2613,7 +2613,9 @@ namespace FamidashEditor
         private Color ColorFromTrigger(int spriteIdx)
         {
             // Special-case: certain trigger sprites explicitly mean "black" regardless of sampling.
-            if (spriteIdx == 0x8F || spriteIdx == 0xCF || spriteIdx == 0xBF)
+            // Keep sprite-only black triggers here (0x8F and 0xBF). Do NOT special-case 0xCF
+            // so ground triggers can be sampled or palette-mapped like other ground tints.
+            if (spriteIdx == 0x8F || spriteIdx == 0xBF)
             {
                 return Color.FromArgb(255, 0, 0, 0);
             }
