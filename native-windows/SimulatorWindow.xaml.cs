@@ -1275,8 +1275,21 @@ namespace FamidashEditor
                     }
                     if (groundIdx.HasValue && groundSid.HasValue)
                     {
+                        // Compute ground tint from trigger. Special-case: when the trigger
+                        // is the black-ground trigger (0xCF) we want the ground to become
+                        // solid black (preserving the top white seam). We avoid forcing
+                        // 0xCF globally in ColorFromTrigger so sprites/icons remain correct;
+                        // here only the ground tint is made pure black to produce the
+                        // expected visual (CreateBlackMaskedImages will be used below).
                         var c = ColorFromTrigger(groundSid.Value);
-                        groundTint = c;
+                        if (groundSid.Value == 0xCF)
+                        {
+                            groundTint = Color.FromArgb(255, 0, 0, 0);
+                        }
+                        else
+                        {
+                            groundTint = c;
+                        }
                         processedColorTriggers.Add(groundIdx.Value);
                         if (enableSimulatorDebugLogging && !triggerLogged.Contains(groundIdx.Value))
                         {
@@ -2388,7 +2401,20 @@ namespace FamidashEditor
                 if (groundIdxLocal >= 0 && groundSidLocal >= 0)
                 {
                     var c = ColorFromTrigger(groundSidLocal);
-                    groundTint = c; processedColorTriggers.Add(groundIdxLocal);
+                    // If this pending ground trigger is the special black-ground id (0xCF),
+                    // force the ground tint to pure black so the ground images become
+                    // black-masked (preserving the thin white seam). This keeps the
+                    // behavior consistent regardless of whether tints are applied
+                    // immediately or via the pending-tint path.
+                    if (groundSidLocal == 0xCF)
+                    {
+                        groundTint = Color.FromArgb(255, 0, 0, 0);
+                    }
+                    else
+                    {
+                        groundTint = c;
+                    }
+                    processedColorTriggers.Add(groundIdxLocal);
                     if (enableSimulatorDebugLogging && !triggerLogged.Contains(groundIdxLocal)) { WriteTempLog($"Simulator: Applied ground trigger at idx={groundIdxLocal} sid=0x{groundSidLocal:X} color={c}"); triggerLogged.Add(groundIdxLocal); }
                 }
 
