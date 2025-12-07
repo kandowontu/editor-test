@@ -2582,13 +2582,28 @@ namespace FamidashEditor
                     {
                         try
                         {
-                            // Preserve object-trigger outline recolor by passing tileTint as outlineTint
-                            this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint, tileTint);
-                            this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint, tileTint);
-                            this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint, tileTint);
-                            this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint, tileTint);
-                            this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint, tileTint);
-                            this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint, tileTint);
+                            // When background is pure opaque black, make saw frames fully black
+                            // (no white lines or outlines). Otherwise preserve existing HSL shifted
+                            // behavior and pass `tileTint` as outline tint so object recolors work.
+                            if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
+                            {
+                                this.sawFrame1TilesTinted = CreateSolidBlackImages(this.sawFrame1TilesOrig);
+                                this.sawFrame2TilesTinted = CreateSolidBlackImages(this.sawFrame2TilesOrig);
+                                this.smallSawFrame1TilesTinted = CreateSolidBlackImages(this.smallSawFrame1TilesOrig);
+                                this.smallSawFrame2TilesTinted = CreateSolidBlackImages(this.smallSawFrame2TilesOrig);
+                                this.largeSawFrame1TilesTinted = CreateSolidBlackImages(this.largeSawFrame1TilesOrig);
+                                this.largeSawFrame2TilesTinted = CreateSolidBlackImages(this.largeSawFrame2TilesOrig);
+                            }
+                            else
+                            {
+                                // Preserve object-trigger outline recolor by passing tileTint as outlineTint
+                                this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint, tileTint);
+                                this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint, tileTint);
+                                this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint, tileTint);
+                                this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint, tileTint);
+                                this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint, tileTint);
+                                this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint, tileTint);
+                            }
                         }
                         catch { }
                     }
