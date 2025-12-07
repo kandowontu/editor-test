@@ -11665,9 +11665,12 @@ namespace FamidashEditor
                     }
                 }
                 
-                // Calculate the actual size we need to render
-                int srcWidth = sprite.PixelWidth;
-                int srcHeight = sprite.PixelHeight;
+                // Ensure we operate on straight-alpha BGRA pixels (not premultiplied),
+                // then calculate the actual size we need to render.
+                BitmapSource srcConv = sprite;
+                try { if (sprite.Format != PixelFormats.Bgra32) srcConv = new FormatConvertedBitmap(sprite, PixelFormats.Bgra32, null, 0); } catch { srcConv = sprite; }
+                int srcWidth = srcConv.PixelWidth;
+                int srcHeight = srcConv.PixelHeight;
 
                 // If this is the left-medium pole, we can now compute desiredDestX using the actual source width
                 if (!isMultiTilePortal && (animatedIdx == 2132 || animatedIdx == 2133 || animatedIdx == 2134 || animatedIdx == 2135) && spriteIdx == 0x3E)
@@ -11687,10 +11690,10 @@ namespace FamidashEditor
                     return;
                 }
                 
-                // Copy source sprite pixels
+                // Copy source sprite pixels (from straight-alpha converter)
                 int srcStride = srcWidth * 4;
                 byte[] srcPixels = new byte[srcHeight * srcStride];
-                sprite.CopyPixels(srcPixels, srcStride, 0);
+                srcConv.CopyPixels(srcPixels, srcStride, 0);
                 
                 IntPtr pBackBuffer = spritesWb.BackBuffer;
                 if (pBackBuffer == IntPtr.Zero) return;

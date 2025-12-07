@@ -509,7 +509,6 @@ namespace FamidashEditor
             }
             else
             {
-                // Pass `tileTint` as outlineTint so object triggers (eg. black 0xBF) recolor outlines.
                 this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint, tileTint);
                 this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint, tileTint);
                 this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint, tileTint);
@@ -2614,7 +2613,7 @@ namespace FamidashEditor
         private Color ColorFromTrigger(int spriteIdx)
         {
             // Special-case: certain trigger sprites explicitly mean "black" regardless of sampling.
-            if (spriteIdx == 0x8F || spriteIdx == 0xCF)
+            if (spriteIdx == 0x8F || spriteIdx == 0xCF || spriteIdx == 0xBF)
             {
                 return Color.FromArgb(255, 0, 0, 0);
             }
@@ -2825,12 +2824,21 @@ namespace FamidashEditor
                         }
                         double threshold = (count > 0) ? ((minL + maxL) / 2.0) : 0.5;
 
+                        // Determine a white-detection threshold. If the outline tint is pure opaque black
+                        // (object trigger like 0xBF), be more aggressive in treating light pixels as "white"
+                        // so object-black triggers recolor thin/anti-aliased whites properly.
+                        double whiteThreshold = 0.82;
+                        if (outlineTint.A == 255 && outlineTint.R == 0 && outlineTint.G == 0 && outlineTint.B == 0)
+                        {
+                            whiteThreshold = 0.70; // treat more pixels as white when applying black outline tint
+                        }
+
                         for (int i = 0; i < pixels.Length; i += 4)
                         {
                             byte ob = pixels[i + 0]; byte og = pixels[i + 1]; byte orr = pixels[i + 2]; byte a = pixels[i + 3];
                             if (a == 0) continue;
                             double lum = (0.2126 * orr + 0.7152 * og + 0.0722 * ob) / 255.0;
-                            bool isWhite = lum >= 0.82;
+                            bool isWhite = lum >= whiteThreshold;
                             bool isBlack = (orr <= 12 && og <= 12 && ob <= 12);
 
                             if (isBlack)
@@ -2901,12 +2909,16 @@ namespace FamidashEditor
                         var pixels = new byte[h * stride];
                         conv.CopyPixels(pixels, stride, 0);
 
+                        // Choose a white-detection threshold. Be more aggressive when outline tint is
+                        // pure opaque black so object-black triggers recolor a wider set of light pixels.
+                        double outlineWhiteThreshold = 0.82;
+                        if (outlineTint.A == 255 && outlineTint.R == 0 && outlineTint.G == 0 && outlineTint.B == 0) outlineWhiteThreshold = 0.70;
                         for (int i = 0; i < pixels.Length; i += 4)
                         {
                             byte b = pixels[i + 0]; byte g = pixels[i + 1]; byte r = pixels[i + 2]; byte a = pixels[i + 3];
                             if (a == 0) continue;
                             double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
-                            bool isWhite = lum >= 0.82;
+                            bool isWhite = lum >= outlineWhiteThreshold;
                             if (isWhite)
                             {
                                 pixels[i + 3] = 255;
@@ -3038,10 +3050,94 @@ namespace FamidashEditor
                                 {
                                     var cropped = new CroppedBitmap(layer, new Int32Rect(ovLeft, ovTop, ovW, ovH));
                                     var brush = new ImageBrush(cropped) { Stretch = Stretch.None, TileMode = TileMode.None };
-                                    // If the sprite doesn't align with the cropped region (edge cases), fill the whole
-                                    // area with the flat background first to keep visuals consistent.
-                                    dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
-                                    // Draw the cropped content at the appropriate offset
+                                    // Draw the full visible tile layer translated into sprite-local coordinates
+                                    // so transparent sprite pixels reveal the exact rendered pixels beneath them.
+                                    // If the full visible layer isn't available, fall back to the persistent
+                                    // background brush (parallax ImageBrush) or a flat color as before.
+                                    bool drewFullLayer = false;
+                                    try
+                                    {
+                                        if (tileLayerImage != null && tileLayerImage.Source is BitmapSource fullLayer)
+                                        {
+                                            double tx = layerLeft - destX;
+                                            double ty = layerTop - destY;
+                                            dc.PushTransform(new TranslateTransform(tx, ty));
+                                            dc.DrawImage(fullLayer, new Rect(0, 0, fullLayer.PixelWidth, fullLayer.PixelHeight));
+                                            dc.Pop();
+                                            drewFullLayer = true;
+                                        }
+                                    }
+                                    catch { drewFullLayer = false; }
+
+                                    if (!drewFullLayer)
+                                    {
+                                        // If we couldn't draw the full tile layer, fall back to the persistent background
+                                        // brush or a flat color. Prefer the persistent background so parallax/ground
+                                        // visuals still show through transparent sprite pixels.
+                                        Brush bgBrush = null;
+                                        try { if (bgRectPersistent != null && bgRectPersistent.Fill != null) bgBrush = bgRectPersistent.Fill; } catch { bgBrush = null; }
+                                        if (bgBrush == null)
+                                        {
+                                            bgBrush = new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B));
+                                            dc.DrawRectangle(bgBrush, null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                        }
+                                        else
+                                        {
+                                            try
+                                            {
+                                                if (bgBrush is ImageBrush ib)
+                                                {
+                                                    var srcImg = ib.ImageSource;
+                                                    // compute palette-accurate darker version for consistency with tile tinting
+                                                    Color darkerBg = bg;
+                                                    try
+                                                    {
+                                                        var palette = PaletteProvider.GetPalette();
+                                                        int? nearest = GetNearestPaletteIndexForColor(bg, palette);
+                                                        if (nearest.HasValue)
+                                                        {
+                                                            int col = nearest.Value % 14;
+                                                            int row = nearest.Value / 14;
+                                                            int shiftedRow = Math.Max(0, row - 1);
+                                                            int finalIdx = shiftedRow * 14 + (col > 12 ? 12 : col);
+                                                            if (finalIdx >= 0 && finalIdx < palette.Length) darkerBg = Color.FromArgb(bg.A, palette[finalIdx].R, palette[finalIdx].G, palette[finalIdx].B);
+                                                        }
+                                                        else
+                                                        {
+                                                            RgbToHsl(bg.R, bg.G, bg.B, out double hh, out double ss, out double ll);
+                                                            ll = Math.Max(0.0, ll - 0.12);
+                                                            RgbFromHsl(hh, ss, ll, out byte dr, out byte dg, out byte db);
+                                                            darkerBg = Color.FromArgb(bg.A, dr, dg, db);
+                                                        }
+                                                    }
+                                                    catch { }
+                                                    ImageSource useImg = srcImg;
+                                                    try { if (srcImg != null) { var arr = CreateHslShiftedImages(new ImageSource[] { srcImg }, darkerBg); if (arr != null && arr.Length > 0 && arr[0] != null) useImg = arr[0]; } } catch { }
+                                                    var newIb = new ImageBrush(useImg)
+                                                    {
+                                                        Stretch = ib.Stretch,
+                                                        TileMode = ib.TileMode,
+                                                        Viewport = ib.Viewport,
+                                                        ViewportUnits = ib.ViewportUnits,
+                                                    };
+                                                    double ox = 0, oy = 0;
+                                                    try { if (ib.Transform is TranslateTransform tt) { ox = tt.X; oy = tt.Y; } else if (ib.Transform is MatrixTransform mt) { ox = mt.Matrix.OffsetX; oy = mt.Matrix.OffsetY; } } catch { }
+                                                    newIb.Transform = new TranslateTransform(ox - destX, oy - destY);
+                                                    dc.DrawRectangle(newIb, null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                                }
+                                                else
+                                                {
+                                                    dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                                }
+                                            }
+                                            catch
+                                            {
+                                                dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                            }
+                                        }
+                                    }
+
+                                    // Draw the cropped content on top at the appropriate offset (if present)
                                     int dx = ovLeft - srcLeft;
                                     int dy = ovTop - srcTop;
                                     dc.PushTransform(new TranslateTransform(-dx, -dy));
@@ -3050,12 +3146,120 @@ namespace FamidashEditor
                                 }
                                 catch
                                 {
-                                    dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                    Brush bgBrush2 = null;
+                                    try { if (bgRectPersistent != null && bgRectPersistent.Fill != null) bgBrush2 = bgRectPersistent.Fill; } catch { bgBrush2 = null; }
+                                    if (bgBrush2 == null)
+                                    {
+                                        bgBrush2 = new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B));
+                                    }
+                                    else
+                                    {
+                                        try
+                                        {
+                                            if (bgBrush2 is ImageBrush ib2)
+                                            {
+                                                var srcImg2 = ib2.ImageSource;
+                                                // compute darker version for consistency with tile tinting
+                                                    Color darkerBg2 = bg;
+                                                    try
+                                                    {
+                                                        var palette2 = PaletteProvider.GetPalette();
+                                                        int? nearest2 = GetNearestPaletteIndexForColor(bg, palette2);
+                                                        if (nearest2.HasValue)
+                                                        {
+                                                            int col2 = nearest2.Value % 14;
+                                                            int row2 = nearest2.Value / 14;
+                                                            int shiftedRow2 = Math.Max(0, row2 - 1);
+                                                            int finalIdx2 = shiftedRow2 * 14 + (col2 > 12 ? 12 : col2);
+                                                            if (finalIdx2 >= 0 && finalIdx2 < palette2.Length) darkerBg2 = Color.FromArgb(bg.A, palette2[finalIdx2].R, palette2[finalIdx2].G, palette2[finalIdx2].B);
+                                                        }
+                                                        else
+                                                        {
+                                                            RgbToHsl(bg.R, bg.G, bg.B, out double hh2, out double ss2, out double ll2);
+                                                            ll2 = Math.Max(0.0, ll2 - 0.12);
+                                                            RgbFromHsl(hh2, ss2, ll2, out byte dr2, out byte dg2, out byte db2);
+                                                            darkerBg2 = Color.FromArgb(bg.A, dr2, dg2, db2);
+                                                        }
+                                                    }
+                                                    catch { }
+                                                    ImageSource useImg2 = srcImg2;
+                                                    try { if (srcImg2 != null) { var arr2 = CreateHslShiftedImages(new ImageSource[] { srcImg2 }, darkerBg2); if (arr2 != null && arr2.Length > 0 && arr2[0] != null) useImg2 = arr2[0]; } } catch { }
+                                                var newIb2 = new ImageBrush(useImg2)
+                                                {
+                                                    Stretch = ib2.Stretch,
+                                                    TileMode = ib2.TileMode,
+                                                    Viewport = ib2.Viewport,
+                                                    ViewportUnits = ib2.ViewportUnits,
+                                                };
+                                                double ox2 = 0, oy2 = 0;
+                                                try { if (ib2.Transform is TranslateTransform tt2) { ox2 = tt2.X; oy2 = tt2.Y; } else if (ib2.Transform is MatrixTransform mt2) { ox2 = mt2.Matrix.OffsetX; oy2 = mt2.Matrix.OffsetY; } } catch { }
+                                                newIb2.Transform = new TranslateTransform(ox2 - destX, oy2 - destY);
+                                                bgBrush2 = newIb2;
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                    dc.DrawRectangle(bgBrush2, null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                                 }
                             }
                             else
                             {
-                                dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                // Cropping the local tile layer cache returned nothing. Attempt to draw from the
+                                // visible tileLayerImage.Source (full layer) so decorations still composite correctly
+                                // even when the cached region doesn't cover the sprite.
+                                try
+                                {
+                                    if (tileLayerImage != null && tileLayerImage.Source is BitmapSource fullLayer)
+                                    {
+                                        // Translate so that the sprite-local (destX,destY) region of the full layer
+                                        // maps to (0,0) in the drawing visual.
+                                        double tx = layerLeft - destX;
+                                        double ty = layerTop - destY;
+                                        dc.PushTransform(new TranslateTransform(tx, ty));
+                                        dc.DrawImage(fullLayer, new Rect(0, 0, fullLayer.PixelWidth, fullLayer.PixelHeight));
+                                        dc.Pop();
+                                    }
+                                    else
+                                    {
+                                        dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                    }
+                                }
+                                catch
+                                {
+                                    Brush bgBrush3 = null;
+                                    try { if (bgRectPersistent != null && bgRectPersistent.Fill != null) bgBrush3 = bgRectPersistent.Fill; } catch { bgBrush3 = null; }
+                                    if (bgBrush3 == null)
+                                    {
+                                        bgBrush3 = new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B));
+                                    }
+                                    else
+                                    {
+                                        try
+                                        {
+                                            if (bgBrush3 is ImageBrush ib3)
+                                            {
+                                                var srcImg3 = ib3.ImageSource;
+                                                Color darkerBg3 = bg;
+                                                try { RgbToHsl(bg.R, bg.G, bg.B, out double hh3, out double ss3, out double ll3); ll3 = Math.Max(0.0, ll3 - 0.12); RgbFromHsl(hh3, ss3, ll3, out byte dr3, out byte dg3, out byte db3); darkerBg3 = Color.FromArgb(bg.A, dr3, dg3, db3); } catch { }
+                                                ImageSource useImg3 = srcImg3;
+                                                try { if (srcImg3 != null) { var arr3 = CreateHslShiftedImages(new ImageSource[] { srcImg3 }, darkerBg3); if (arr3 != null && arr3.Length > 0 && arr3[0] != null) useImg3 = arr3[0]; } } catch { }
+                                                var newIb3 = new ImageBrush(useImg3)
+                                                {
+                                                    Stretch = ib3.Stretch,
+                                                    TileMode = ib3.TileMode,
+                                                    Viewport = ib3.Viewport,
+                                                    ViewportUnits = ib3.ViewportUnits,
+                                                };
+                                                double ox3 = 0, oy3 = 0;
+                                                try { if (ib3.Transform is TranslateTransform tt3) { ox3 = tt3.X; oy3 = tt3.Y; } else if (ib3.Transform is MatrixTransform mt3) { ox3 = mt3.Matrix.OffsetX; oy3 = mt3.Matrix.OffsetY; } } catch { }
+                                                newIb3.Transform = new TranslateTransform(ox3 - destX, oy3 - destY);
+                                                bgBrush3 = newIb3;
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                    dc.DrawRectangle(bgBrush3, null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                }
                             }
                         }
                         catch
@@ -3184,7 +3388,9 @@ namespace FamidashEditor
                             if (a == 0) continue;
                             double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
                             bool isBlack = (r <= 12 && g <= 12 && b <= 12);
-                            bool isNearWhite = (lum >= 0.82);
+                            double nearWhiteThreshold = 0.82;
+                            if (outlineTint.A == 255 && outlineTint.R == 0 && outlineTint.G == 0 && outlineTint.B == 0) nearWhiteThreshold = 0.70;
+                            bool isNearWhite = (lum >= nearWhiteThreshold);
                             if (isBlack) continue;
                             if (isNearWhite)
                             {
@@ -3269,6 +3475,26 @@ namespace FamidashEditor
                     wb2.Freeze();
                     return new ImageSource?[] { wb1, wb2 };
                 }
+            }
+            catch { }
+            return null;
+        }
+
+        // Find the nearest palette index for a given color. Returns null on failure.
+        private int? GetNearestPaletteIndexForColor(Color c, Color[]? palette)
+        {
+            try
+            {
+                if (palette == null || palette.Length == 0) return null;
+                int best = -1; double bestDist = double.MaxValue;
+                for (int i = 0; i < palette.Length; i++)
+                {
+                    var p = palette[i];
+                    double dr = p.R - c.R; double dg = p.G - c.G; double db = p.B - c.B;
+                    double d = dr * dr + dg * dg + db * db;
+                    if (d < bestDist) { bestDist = d; best = i; }
+                }
+                if (best >= 0) return best;
             }
             catch { }
             return null;
