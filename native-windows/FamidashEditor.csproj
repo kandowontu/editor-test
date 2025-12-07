@@ -127,6 +127,13 @@
     <EmbeddedResource Include="..\src\renderer\assets\noparallax.bmp">
       <LogicalName>noparallax.bmp</LogicalName>
     </EmbeddedResource>
+    <!-- Project-local preferred parallax/ground assets (preferred by simulator) -->
+    <EmbeddedResource Include="parallax Blue.bmp">
+      <LogicalName>Assets.parallax.bmp</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ground.bmp">
+      <LogicalName>Assets.ground.bmp</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="..\gravity-down-downwards-portal.png" />
     <EmbeddedResource Include="..\gravity-down-upwards-portal.png" />
     <EmbeddedResource Include="..\gravity-up-downwards-portal.png" />

@@ -339,7 +339,9 @@ namespace FamidashEditor
         private bool lastCacheHadAnimatedTiles = false;
         private int lastCacheAnimationFrame = -1;
 
-        private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
+        private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A,
+            // Include coins so they composite over the exact tile pixels (user-requested)
+            0x07, 0x1A, 0x1B, 0x6E };
 
         // Cache tinted decoration sprites keyed by (spriteId<<32)|ARGB
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> tintedSpriteCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
@@ -361,6 +363,21 @@ namespace FamidashEditor
         // Track last selected decoration frame so we can log when it actually changes
         private System.Collections.Generic.Dictionary<int, int> decoLastSelectedFrame = new System.Collections.Generic.Dictionary<int, int>();
         private bool enableSimulatorDebugLogging = false; // set true to capture helpful messages during diagnosis
+
+        // Internal one-time simulator debug file (used only for local diagnosis when requested)
+        private readonly string simDebugFilePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt");
+        private bool simDebugLoggedFirstFrame = false;
+
+        // Append a small simulator debug line to the diagnosis file next to the exe.
+        private void AppendSimDebug(string msg)
+        {
+            try
+            {
+                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {msg}{Environment.NewLine}";
+                System.IO.File.AppendAllText(simDebugFilePath, line);
+            }
+            catch { }
+        }
 
         // Append a timestamped simulator debug message to the temp log file.
         private void WriteTempLog(string message)
@@ -559,6 +576,96 @@ namespace FamidashEditor
             this.groundRepeatX = groundRepeatX;
             this.hasGroundLayer = hasGroundLayer;
             this.groundTileRows = groundTileRows;
+
+            // Robust fallback: if editor didn't provide parallax/ground data, try to load embedded project assets
+            // or synthesize a transparent tile so the simulator always has something to render as a background.
+            try
+            {
+                // (leave loading to the conditional fallbacks below so we don't overwrite editor-provided images)
+                if ((!this.hasParallaxLayer) || this.parallaxImages == null || this.parallaxImages.Length == 0)
+                {
+                    var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                    var names = asm.GetManifestResourceNames();
+                    var fullName = names.FirstOrDefault(r => r.IndexOf("Assets.parallax.bmp", StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (fullName == null) fullName = names.FirstOrDefault(r => r.IndexOf("parallax", StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (!string.IsNullOrEmpty(fullName))
+                    {
+                        using (var s = asm.GetManifestResourceStream(fullName))
+                        {
+                            if (s != null)
+                            {
+                                var bi = new BitmapImage();
+                                bi.BeginInit();
+                                bi.CacheOption = BitmapCacheOption.OnLoad;
+                                bi.StreamSource = s;
+                                bi.EndInit();
+                                bi.Freeze();
+                                this.parallaxBitmap = bi;
+                                // Slice into tiles of size TILE
+                                try
+                                {
+                                    int cols = Math.Max(1, bi.PixelWidth / TILE);
+                                    int rows = Math.Max(1, bi.PixelHeight / TILE);
+                                    var list = new System.Collections.Generic.List<ImageSource>();
+                                    for (int y = 0; y < rows; y++)
+                                    for (int x = 0; x < cols; x++)
+                                        list.Add(new CroppedBitmap(bi, new Int32Rect(x * TILE, y * TILE, TILE, TILE)));
+                                    this.parallaxImages = list.ToArray();
+                                }
+                                catch { this.parallaxImages = new ImageSource[] { bi }; }
+                                this.hasParallaxLayer = true;
+                            }
+                        }
+                    }
+
+                    if (this.parallaxImages == null || this.parallaxImages.Length == 0)
+                    {
+                        var wb = new WriteableBitmap(TILE, TILE, 96, 96, PixelFormats.Pbgra32, null);
+                        try { wb.Lock(); wb.AddDirtyRect(new Int32Rect(0, 0, TILE, TILE)); } finally { try { wb.Unlock(); } catch { } }
+                        wb.Freeze();
+                        this.parallaxBitmap = wb;
+                        this.parallaxImages = new ImageSource[] { wb };
+                        this.parallaxTonedImages = null;
+                        this.hasParallaxLayer = true;
+                    }
+                }
+
+                if ((!this.hasGroundLayer) || this.groundImages == null || this.groundImages.Length == 0)
+                {
+                    var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                    var names = asm.GetManifestResourceNames();
+                    var fullName = names.FirstOrDefault(r => r.IndexOf("Assets.ground.bmp", StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (fullName == null) fullName = names.FirstOrDefault(r => r.IndexOf("ground", StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (!string.IsNullOrEmpty(fullName))
+                    {
+                        using (var s = asm.GetManifestResourceStream(fullName))
+                        {
+                            if (s != null)
+                            {
+                                var bi = new BitmapImage();
+                                bi.BeginInit();
+                                bi.CacheOption = BitmapCacheOption.OnLoad;
+                                bi.StreamSource = s;
+                                bi.EndInit();
+                                bi.Freeze();
+                                this.groundImages = new ImageSource[] { bi };
+                                this.hasGroundLayer = true;
+                            }
+                        }
+                    }
+
+                    if (this.groundImages == null || this.groundImages.Length == 0)
+                    {
+                        var wb = new WriteableBitmap(TILE, TILE, 96, 96, PixelFormats.Pbgra32, null);
+                        try { wb.Lock(); wb.AddDirtyRect(new Int32Rect(0, 0, TILE, TILE)); } finally { try { wb.Unlock(); } catch { } }
+                        wb.Freeze();
+                        this.groundImages = new ImageSource[] { wb };
+                        this.groundTonedImages = null;
+                        this.hasGroundLayer = true;
+                    }
+                }
+            }
+            catch { }
 
             // Ensure decoration sprites pulse even when editor didn't provide animation frames.
             try
@@ -776,6 +883,40 @@ namespace FamidashEditor
                 RenderCanvas.Children.Add(groundRectPersistent);
             }
             catch { }
+
+            // Initial background override: if parallax images or bitmap are available, set the persistent
+            // background rectangle to use an ImageBrush immediately so the UI shows a background even
+            // before the render loop runs.
+            try
+            {
+                ImageSource? src = null;
+                if (parallaxBitmapToned != null) src = parallaxBitmapToned;
+                else if (parallaxBitmap != null) src = parallaxBitmap;
+                else if (parallaxTonedImages != null && parallaxTonedImages.Length > 0 && parallaxTonedImages[0] != null) src = parallaxTonedImages[0];
+                else if (parallaxImages != null && parallaxImages.Length > 0 && parallaxImages[0] != null) src = parallaxImages[0];
+
+                if (bgRectPersistent != null && src is BitmapSource pbs)
+                {
+                    var brush = new ImageBrush(src)
+                    {
+                        TileMode = TileMode.Tile,
+                        ViewportUnits = BrushMappingMode.Absolute,
+                        Viewport = new Rect(0, 0, Math.Max(1.0, pbs.PixelWidth), Math.Max(1.0, pbs.PixelHeight)),
+                        Stretch = Stretch.None
+                    };
+                    bgRectPersistent.Fill = brush;
+                }
+            }
+            catch { }
+
+            // Write an initial diagnostic snapshot of parallax/ground state for local debugging (Option A)
+            try
+            {
+                AppendSimDebug($"Constructor: hasParallaxLayer={this.hasParallaxLayer}, parallaxBitmap={(this.parallaxBitmap!=null)}, parallaxImagesLen={(this.parallaxImages==null?0:this.parallaxImages.Length)}, parallaxTonedLen={(this.parallaxTonedImages==null?0:this.parallaxTonedImages.Length)}, hasGroundLayer={this.hasGroundLayer}, groundImagesLen={(this.groundImages==null?0:this.groundImages.Length)}, backgroundTint={this.backgroundTint}");
+            }
+            catch { }
+
+            // (debug overlay removed)
 
             // (debug overlay removed)
 
@@ -1196,6 +1337,61 @@ namespace FamidashEditor
 
         private void RenderFrame()
         {
+            // One-time first-frame diagnostic snapshot (Option A)
+            try
+            {
+                if (!simDebugLoggedFirstFrame)
+                {
+                    simDebugLoggedFirstFrame = true;
+                    // Determine which ImageSource would be used as the brush source
+                    string chosenSrc = "none";
+                    int srcW = 0, srcH = 0;
+                    try
+                    {
+                        ImageSource? src = null;
+                        if (parallaxBitmapToned != null) src = parallaxBitmapToned;
+                        else if (parallaxBitmap != null) src = parallaxBitmap;
+                        else if (parallaxTonedImages != null && parallaxTonedImages.Length == (parallaxImages==null?0:parallaxImages.Length) && parallaxTonedImages.Length>0) src = parallaxTonedImages[0];
+                        else if (parallaxImages != null && parallaxImages.Length > 0) src = parallaxImages[0];
+                        if (src is BitmapSource bs)
+                        {
+                            chosenSrc = bs.GetType().Name;
+                            srcW = bs.PixelWidth;
+                            srcH = bs.PixelHeight;
+                        }
+                        else if (src != null) chosenSrc = src.GetType().Name;
+                    }
+                    catch { }
+
+                    // Compute parallax offsets as used when creating the brush
+                    double logParallaxOffsetX = -(cameraX_fixed >> 8) * (1.0 - parallaxX);
+                    double logParallaxOffsetY = -(cameraY_fixed >> 8) * (1.0 - parallaxY);
+
+                    string tileLayerSrc = (tileLayerImage?.Source == null) ? "null" : tileLayerImage.Source.GetType().Name;
+
+                    AppendSimDebug($"RenderFrame: hasParallaxLayer={hasParallaxLayer}, chosenSrc={chosenSrc}, srcW={srcW}, srcH={srcH}, parallaxImagesLen={(parallaxImages==null?0:parallaxImages.Length)}, parallaxTonedLen={(parallaxTonedImages==null?0:parallaxTonedImages.Length)}, bgRectFill={(bgRectPersistent?.Fill==null?"null":bgRectPersistent.Fill.GetType().Name)}, backgroundTint={backgroundTint}, parallaxOffsetX={logParallaxOffsetX}, parallaxOffsetY={logParallaxOffsetY}, tileLayerImageSource={tileLayerSrc}");
+
+                    try
+                    {
+                        var sb = new System.Text.StringBuilder();
+                        sb.AppendLine("RenderCanvas children:");
+                        for (int i = 0; i < RenderCanvas.Children.Count; i++)
+                        {
+                            var child = RenderCanvas.Children[i];
+                            int z = 0;
+                            try { z = System.Windows.Controls.Canvas.GetZIndex(child); } catch { }
+                            string tname = child?.GetType().Name ?? "null";
+                            double w = 0, h = 0;
+                            try { w = (child as System.Windows.FrameworkElement)?.Width ?? Double.NaN; h = (child as System.Windows.FrameworkElement)?.Height ?? Double.NaN; } catch { }
+                            sb.AppendLine($"  [{i}] Type={tname} Z={z} Width={w} Height={h} Visible={(child is System.Windows.FrameworkElement fe? (fe.Visibility==Visibility.Visible):true)}");
+                        }
+                        AppendSimDebug(sb.ToString());
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
             // Compute pixel offset and starting tile index
             int pixelX = cameraX_fixed >> 8; // full pixels
             int subPixel = cameraX_fixed & 0xFF; // fractional
@@ -1251,7 +1447,49 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        bgRectPersistent.Fill = new SolidColorBrush(backgroundTint);
+                        // If no src was selectable, attempt an on-the-spot load of the embedded project parallax
+                        try
+                        {
+                            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                            var names = asm.GetManifestResourceNames();
+                            var fullName = names.FirstOrDefault(r => r.IndexOf("Assets.parallax.bmp", StringComparison.OrdinalIgnoreCase) >= 0)
+                                ?? names.FirstOrDefault(r => r.IndexOf("parallax Blue.bmp", StringComparison.OrdinalIgnoreCase) >= 0)
+                                ?? names.FirstOrDefault(r => r.IndexOf("parallax.bmp", StringComparison.OrdinalIgnoreCase) >= 0)
+                                ?? names.FirstOrDefault(r => r.IndexOf("parallax", StringComparison.OrdinalIgnoreCase) >= 0);
+                            if (!string.IsNullOrEmpty(fullName))
+                            {
+                                using (var s = asm.GetManifestResourceStream(fullName))
+                                {
+                                    if (s != null)
+                                    {
+                                        var bi = new BitmapImage();
+                                        bi.BeginInit();
+                                        bi.CacheOption = BitmapCacheOption.OnLoad;
+                                        bi.StreamSource = s;
+                                        bi.EndInit();
+                                        bi.Freeze();
+                                        // set as runtime parallax bitmap and create a brush
+                                        this.parallaxBitmap = bi;
+                                        this.parallaxImages = new ImageSource[] { bi };
+                                        this.parallaxTonedImages = null;
+                                        this.hasParallaxLayer = true;
+
+                                        var brush2 = new ImageBrush(bi)
+                                        {
+                                            TileMode = TileMode.Tile,
+                                            ViewportUnits = BrushMappingMode.Absolute,
+                                            Viewport = new Rect(0, 0, Math.Max(1.0, bi.PixelWidth), Math.Max(1.0, bi.PixelHeight)),
+                                            Stretch = Stretch.None
+                                        };
+                                        double parallaxOffsetX2 = -(pixelX) * (1.0 - parallaxX);
+                                        double parallaxOffsetY2 = -(cameraY_fixed >> 8) * (1.0 - parallaxY);
+                                        brush2.Transform = new TranslateTransform(parallaxOffsetX2, parallaxOffsetY2);
+                                        if (bgRectPersistent != null) bgRectPersistent.Fill = brush2;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
                     }
                 }
                 else
@@ -1570,11 +1808,18 @@ namespace FamidashEditor
                     var rtb = new RenderTargetBitmap(pxW, pxH, 96, 96, PixelFormats.Pbgra32);
                     rtb.Render(dv);
                     tileLayerCache = rtb;
+                    try { spriteBackgroundCompositeCache.Clear(); } catch { }
+                    try
+                    {
+                        AppendSimDebug($"Built tileLayerCache pxW={pxW} pxH={pxH} hadAnimated={hadAnimated} startTileX={startTileX} startTileY={startTileY} tilesLen={(tiles==null?0:tiles.Length)} mapWidth={mapWidth} mapHeight={mapHeight}");
+                    }
+                    catch { }
                     lastCacheHadAnimatedTiles = hadAnimated;
                     lastCacheAnimationFrame = animationFrame;
                     cachedStartTileX = startTileX;
                     cachedStartTileY = startTileY;
                     tileLayerImage!.Source = tileLayerCache;
+                    try { AppendSimDebug($"Assigned tileLayerImage.Source={(tileLayerImage.Source==null?"null":tileLayerImage.Source.GetType().Name)}"); } catch { }
                     tileLayerImage!.Width = pxW;
                     tileLayerImage!.Height = pxH;
                 }

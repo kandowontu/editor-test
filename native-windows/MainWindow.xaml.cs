@@ -248,6 +248,8 @@ namespace FamidashEditor
     private const int MaxRecentFiles = 10;
     private bool isHandlingNewTab = false;
     private TabItem? lastSelectedTab = null;
+    // Track the last tab we set programmatically so SelectionChanged can ignore it.
+    private TabItem? lastProgrammaticSelectedTab = null;
     
     // Store loaded TMX metadata to preserve when saving
     private string? loadedTilesetSource = null;
@@ -5960,7 +5962,7 @@ namespace FamidashEditor
                 FontWeight = FontWeights.Bold,
                 Cursor = Cursors.Hand,
                 Visibility = Visibility.Visible,
-                Tag = currentFileIndex
+                Tag = tabData
             };
             closeButton.Click += CloseTab_Click;
 
@@ -5970,7 +5972,7 @@ namespace FamidashEditor
             var tab = new TabItem
             {
                 Header = headerPanel,
-                Tag = currentFileIndex
+                Tag = tabData
             };
 
             // Insert before the + tab if it exists
@@ -5983,9 +5985,11 @@ namespace FamidashEditor
             try
             {
                 FileTabControl.Items.Insert(insertIndex, tab);
+                // Mark this as a programmatic selection so SelectionChanged ignores it briefly
+                lastProgrammaticSelectedTab = tab;
                 FileTabControl.SelectedItem = tab;
-                // Record the tab we selected programmatically so duplicate SelectionChanged events are ignored
-                lastSelectedTab = tab;
+                // Clear the programmatic marker shortly after the UI processes the selection
+                try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
             }
             finally
             {
@@ -5994,6 +5998,8 @@ namespace FamidashEditor
 
             // Ensure + tab exists
             EnsureNewTabButton();
+            // Load the newly created tab's content immediately so the UI shows it
+            try { SwitchToTab(currentFileIndex); } catch { }
         }
 
         // Open the simulator window showing the current map state. This is lightweight
@@ -6228,9 +6234,190 @@ namespace FamidashEditor
                         try { SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
                     }
 
+                    // Ensure simulator always has parallax/ground assets available.
+                    try
+                    {
+                        // Force-prefer the project-embedded parallax. If the per-level "No Parallax"
+                        // option is set, prefer the `noparallax.bmp` asset so the simulator shows the
+                        // expected flat background. Otherwise prefer the normal parallax assets.
+                        System.Windows.Media.Imaging.BitmapSource? preferredParallax = null;
+                        if (noParallaxBg)
+                        {
+                            preferredParallax = (LoadEmbeddedImage("noparallax.bmp") ?? LoadEmbeddedImage("Assets.parallax.bmp") ?? LoadEmbeddedImage("parallax.bmp")) as System.Windows.Media.Imaging.BitmapSource;
+                        }
+                        else
+                        {
+                            preferredParallax = (LoadEmbeddedImage("Assets.parallax.bmp") ?? LoadEmbeddedImage("parallax Blue.bmp") ?? LoadEmbeddedImage("parallax.bmp") ?? LoadEmbeddedImage("noparallax.bmp")) as System.Windows.Media.Imaging.BitmapSource;
+                        }
+
+                        if (preferredParallax != null) { parallaxBitmap = preferredParallax; SliceParallax(); }
+                        else if (parallaxBitmap == null)
+                        {
+                            var emb = LoadEmbeddedImage("parallax Blue.bmp") ?? LoadEmbeddedImage("parallax.bmp");
+                            if (emb != null) { parallaxBitmap = emb; SliceParallax(); }
+                        }
+                    }
+                    catch { }
+                    try
+                    {
+                        // Force-prefer the project-embedded ground asset so simulator always has ground
+                        var preferredGround = LoadEmbeddedImage("Assets.ground.bmp") ?? LoadEmbeddedImage("native_ground.bmp") ?? LoadEmbeddedImage("ground.bmp");
+                        if (preferredGround != null) { groundBitmap = preferredGround; SliceGround(); }
+                        else if (groundBitmap == null)
+                        {
+                            var embg = LoadEmbeddedImage("native_ground.bmp") ?? LoadEmbeddedImage("ground.bmp");
+                            if (embg != null) { groundBitmap = embg; SliceGround(); }
+                        }
+                    }
+                    catch { }
+
+                    // Force simulator to treat layers as present so it will render them
+                    bool simHasParallax = true;
+                    bool simHasGround = true;
+
+                    // Ensure loaded parallax metadata matches the preferred embedded asset so behavior matches ninecircles.tmx
+                    try
+                    {
+                        loadedParallaxX = 0.9;
+                        loadedParallaxY = 0.9;
+                        loadedParallaxRepeatX = true;
+                        loadedParallaxRepeatY = true;
+                    }
+                    catch { }
+
+                    // Absolute override: always prefer the project-embedded parallax/ground assets
+                    // and populate the sliced image arrays so the simulator will render them.
+                    try
+                    {
+                        // Respect the per-level NoParallax option when choosing the embedded fallback.
+                        ImageSource? forcedParallax = null;
+                        if (noParallaxBg)
+                        {
+                            forcedParallax = LoadEmbeddedImage("noparallax.bmp") ?? LoadEmbeddedImage("Assets.parallax.bmp") ?? LoadEmbeddedImage("parallax.bmp");
+                        }
+                        else
+                        {
+                            forcedParallax = LoadEmbeddedImage("Assets.parallax.bmp") ?? LoadEmbeddedImage("parallax Blue.bmp") ?? LoadEmbeddedImage("parallax.bmp");
+                        }
+
+                        if (forcedParallax != null)
+                        {
+                            parallaxBitmap = forcedParallax as System.Windows.Media.Imaging.BitmapSource;
+                            try { SliceParallax(); } catch { }
+                            loadedHasParallaxLayer = true;
+                            loadedParallaxX = 0.9;
+                            loadedParallaxY = 0.9;
+                            loadedParallaxRepeatX = true;
+                            loadedParallaxRepeatY = true;
+                        }
+
+                        var forcedGround = LoadEmbeddedImage("Assets.ground.bmp") ?? LoadEmbeddedImage("ground.bmp") ?? LoadEmbeddedImage("native_ground.bmp");
+                        if (forcedGround != null)
+                        {
+                            groundBitmap = forcedGround;
+                            try { SliceGround(); } catch { }
+                            loadedHasGroundLayer = true;
+                            loadedGroundRepeatX = true;
+                        }
+                    }
+                    catch { }
+
+                    // Ensure parallax images/bitmap are populated for EVERY code path (including new/untitled tabs).
+                    // The simulator requires parallaxImages != null && parallaxImages.Length > 0 to draw the background,
+                    // so try embedded resources first, then as a last resort create a 1-tile transparent bitmap so
+                    // the simulator will always have something to render (matching behavior of a fully-specified TMX).
+                    try
+                    {
+                        if (parallaxImages == null || parallaxImages.Length == 0)
+                        {
+                            // Prefer deterministic logical names embedded in the project.
+                            var emb = LoadEmbeddedImage("Assets.parallax.bmp") ?? LoadEmbeddedImage("parallax Blue.bmp") ?? LoadEmbeddedImage("parallax.bmp") ?? LoadEmbeddedImage("noparallax.bmp");
+                            if (emb != null)
+                            {
+                                parallaxBitmap = emb;
+                                SliceParallax();
+                            }
+                        }
+                    }
+                    catch { }
+
+                    // If still missing, synthesize a minimal transparent tile so parallaxImages is non-empty.
+                    try
+                    {
+                            if (parallaxImages == null || parallaxImages.Length == 0)
+                        {
+                            var wb = new System.Windows.Media.Imaging.WriteableBitmap(TileSize, TileSize, 96, 96, System.Windows.Media.PixelFormats.Pbgra32, null);
+                            wb.Lock();
+                            try
+                            {
+                                // Initialize to transparent
+                                int bytes = TileSize * TileSize * 4;
+                                var buf = new byte[bytes];
+                                System.Runtime.InteropServices.Marshal.Copy(buf, 0, wb.BackBuffer, bytes);
+                                wb.AddDirtyRect(new Int32Rect(0, 0, TileSize, TileSize));
+                            }
+                            finally
+                            {
+                                wb.Unlock();
+                            }
+                            wb.Freeze();
+                            parallaxBitmap = wb;
+                            SliceParallax();
+                        }
+                    }
+                    catch { }
+
+                    // Ensure we pass non-null parallax/ground arrays to the simulator.
+                    ImageSource?[]? effectiveParallaxImages = parallaxImages;
+                    ImageSource?[]? effectiveParallaxTonedImages = parallaxTonedImages;
+                    ImageSource? effectiveParallaxBitmap = parallaxBitmap;
+                    if ((effectiveParallaxImages == null || effectiveParallaxImages.Length == 0) && effectiveParallaxBitmap != null)
+                    {
+                        // Try slicing again from bitmap
+                        try { SliceParallax(); effectiveParallaxImages = parallaxImages; effectiveParallaxBitmap = parallaxBitmap; } catch { }
+                    }
+                    if (effectiveParallaxImages == null || effectiveParallaxImages.Length == 0)
+                    {
+                        // As a last resort create a single transparent tile so simulator will render a background brush
+                        var wb = new System.Windows.Media.Imaging.WriteableBitmap(TileSize, TileSize, 96, 96, System.Windows.Media.PixelFormats.Pbgra32, null);
+                        try { wb.Lock(); wb.AddDirtyRect(new Int32Rect(0,0,TileSize,TileSize)); } finally { try { wb.Unlock(); } catch {} }
+                        wb.Freeze();
+                        effectiveParallaxBitmap = wb;
+                        effectiveParallaxImages = new ImageSource[] { wb };
+                        effectiveParallaxTonedImages = null;
+                    }
+
+                    try
+                    {
+                        try
+                        {
+                            var debugPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sim_debug.txt");
+                            var sampleTiles = (tiles ?? Array.Empty<int>()).Take(16);
+                            var sampleSprites = (sprites ?? Array.Empty<int>()).Take(16);
+                            var tilesSampleStr = string.Join(',', sampleTiles);
+                            var spritesSampleStr = string.Join(',', sampleSprites);
+                            var tilesArr = (tiles ?? Array.Empty<int>());
+                            var spritesArr = (sprites ?? Array.Empty<int>());
+                            var nonEmptyTiles = tilesArr.Count(t => t >= 0);
+                            var nonEmptySprites = spritesArr.Count(s => s >= 0);
+                            var distinctTiles = tilesArr.Where(t => t >= 0).Distinct().Take(8);
+                            var distinctTilesStr = string.Join(',', distinctTiles);
+                            var dbgLine = $"{System.DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} OpenSimulatorWindow: tilesLen={tilesArr.Length}, nonEmptyTiles={nonEmptyTiles}, mapWidth={mapWidth}, mapHeight={mapHeight}, spritesLen={spritesArr.Length}, nonEmptySprites={nonEmptySprites}, distinctTilesSample=[{distinctTilesStr}], sampleTiles=[{tilesSampleStr}], sampleSprites=[{spritesSampleStr}]\n";
+                            System.IO.File.AppendAllText(debugPath, dbgLine);
+                        }
+                        catch { }
+                    }
+                    catch { }
+
+                    // Quick workaround: replace sentinel -1 entries with a safe default (0)
+                    var sanitizedTiles = (tiles ?? Array.Empty<int>()).Select(t => t < 0 ? 0 : t).ToArray();
+                    // Preserve sprites as-is. If sprites are sentinel -1, leave them so
+                    // the simulator does not render a sprite 0 on every cell.
+                    var sanitizedSprites = (sprites ?? Array.Empty<int>()).ToArray();
+
                     var sim = new SimulatorWindow(
-                    tiles.ToArray(),
-                    sprites.ToArray(),
+                    sanitizedTiles,
+                    sanitizedSprites,
                     mapWidth,
                     mapHeight,
                     tileImages,
@@ -6255,19 +6442,19 @@ namespace FamidashEditor
                     largeSawFrame1TilesTinted,
                     largeSawFrame2TilesTinted
                     ,
-                    parallaxBitmap,
-                    parallaxImages,
-                    parallaxTonedImages,
+                    effectiveParallaxBitmap,
+                    effectiveParallaxImages,
+                    effectiveParallaxTonedImages,
                     loadedParallaxX,
                     loadedParallaxY,
                     loadedParallaxRepeatX,
                     loadedParallaxRepeatY,
-                    loadedHasParallaxLayer,
+                    simHasParallax,
                     groundImages,
                     groundTonedImages,
                     loadedGroundOffsetY,
                     loadedGroundRepeatX,
-                    loadedHasGroundLayer,
+                    simHasGround,
                     groundTileRows,
                     loadedSimulatorScale
                     );
@@ -6376,24 +6563,9 @@ namespace FamidashEditor
                     break;
                 }
             }
-            // If there is any existing untitled tab, do not show the + new-tab button
+            // Always keep the + tab present. The + tab will only create a new document when
+            // there is no existing untitled document; otherwise selection will focus the existing untitled.
             bool hasUntitled = openFiles.Exists(f => string.IsNullOrEmpty(f.FilePath));
-
-            if (hasUntitled)
-            {
-                // Remove existing + tab if present
-                if (hasNewTabButton)
-                {
-                    for (int i = FileTabControl.Items.Count - 1; i >= 0; i--)
-                    {
-                        if (FileTabControl.Items[i] is TabItem ti && ti.Tag?.ToString() == "NEW")
-                        {
-                            FileTabControl.Items.RemoveAt(i);
-                        }
-                    }
-                }
-                return;
-            }
 
             if (!hasNewTabButton)
             {
@@ -6411,9 +6583,17 @@ namespace FamidashEditor
         {
             e.Handled = true; // Prevent tab selection
             
-            if (sender is Button button && button.Tag is int index)
+            if (sender is Button button)
             {
-                CloseTabAtIndex(index);
+                if (button.Tag is FileTabData td)
+                {
+                    int idx = openFiles.IndexOf(td);
+                    if (idx >= 0) CloseTabAtIndex(idx);
+                }
+                else if (button.Tag is int index)
+                {
+                    CloseTabAtIndex(index);
+                }
             }
         }
 
@@ -6452,27 +6632,13 @@ namespace FamidashEditor
             // Remove the tab
             openFiles.RemoveAt(index);
             
-            // Find and remove the UI tab
+            // Find and remove the UI tab that references the removed tab data
             for (int i = 0; i < FileTabControl.Items.Count; i++)
             {
-                if (FileTabControl.Items[i] is TabItem tab && tab.Tag is int tabIndex && tabIndex == index)
+                if (FileTabControl.Items[i] is TabItem tab && tab.Tag == tabData)
                 {
                     FileTabControl.Items.RemoveAt(i);
                     break;
-                }
-            }
-            
-            // Update tags for remaining tabs
-            for (int i = 0; i < FileTabControl.Items.Count; i++)
-            {
-                if (FileTabControl.Items[i] is TabItem tab && tab.Tag is int tabIndex && tabIndex > index)
-                {
-                    tab.Tag = tabIndex - 1;
-                    // Update close button tag too
-                    if (tab.Header is StackPanel panel && panel.Children[1] is Button btn)
-                    {
-                        btn.Tag = tabIndex - 1;
-                    }
                 }
             }
             
@@ -6504,7 +6670,7 @@ namespace FamidashEditor
             }
         }
 
-        private async void SwitchToTab(int index)
+        private async System.Threading.Tasks.Task SwitchToTab(int index)
         {
             if (index < 0 || index >= openFiles.Count) return;
             
@@ -6645,6 +6811,30 @@ namespace FamidashEditor
                 // Close loading indicator
                 try { loadingWindow?.Close(); } catch { }
             }
+
+            // Ensure the tab control selection matches the active tab visually.
+            try
+            {
+                if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                {
+                    for (int i = 0; i < FileTabControl.Items.Count; i++)
+                    {
+                        if (FileTabControl.Items[i] is TabItem ti && ti.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
+                        {
+                            try
+                            {
+                                isHandlingNewTab = true;
+                                lastProgrammaticSelectedTab = ti;
+                                FileTabControl.SelectedItem = ti;
+                                Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background);
+                            }
+                            finally { isHandlingNewTab = false; }
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { }
         }
 
         private void SaveCurrentTabState()
@@ -6696,11 +6886,23 @@ namespace FamidashEditor
             catch { }
         }
 
-        private void FileTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void FileTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             // Prevent re-entrancy
             if (isHandlingNewTab) return;
-            
+
+            // If this selection was triggered programmatically by our code, ignore it once and clear the marker.
+            try
+            {
+                if (lastProgrammaticSelectedTab != null && ReferenceEquals(lastProgrammaticSelectedTab, FileTabControl.SelectedItem))
+                {
+                    lastProgrammaticSelectedTab = null;
+                    if (FileTabControl.SelectedItem is TabItem t) lastSelectedTab = t;
+                    return;
+                }
+            }
+            catch { }
+
                 if (FileTabControl.SelectedItem is TabItem tab)
             {
                     // Ignore if selection didn't actually change (queued duplicate events)
@@ -6712,22 +6914,49 @@ namespace FamidashEditor
                     // Only trigger new tab creation if the selected tab is the + tab and it is the last tab
                     if (tab.Tag?.ToString() == "NEW" && FileTabControl.Items[FileTabControl.Items.Count - 1] == tab)
                 {
-                    isHandlingNewTab = true;
-                    try
+                    // If there's already an Untitled tab open, switch to it instead of creating another
+                    int existingUntitled = openFiles.FindIndex(f => string.IsNullOrEmpty(f.FilePath));
+                    if (existingUntitled >= 0)
                     {
-                        NewMenuItem_Click(this, new RoutedEventArgs());
+                        for (int i = 0; i < FileTabControl.Items.Count; i++)
+                        {
+                            if (FileTabControl.Items[i] is TabItem ti && ti.Tag is FileTabData td && openFiles.IndexOf(td) == existingUntitled)
+                            {
+                                try
+                                {
+                                    isHandlingNewTab = true; // prevent SelectionChanged recursion
+                                    lastProgrammaticSelectedTab = ti;
+                                    FileTabControl.SelectedItem = ti;
+                                    try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                                }
+                                finally { isHandlingNewTab = false; }
+
+                                try { await SwitchToTab(existingUntitled); } catch { }
+                                if (StatusText != null) StatusText.Text = "Switched to existing Untitled tab.";
+                                break;
+                            }
+                        }
                     }
-                    finally
+                    else
                     {
-                        isHandlingNewTab = false;
+                        isHandlingNewTab = true;
+                        try
+                        {
+                            NewMenuItem_Click(this, new RoutedEventArgs());
+                        }
+                        finally
+                        {
+                            isHandlingNewTab = false;
+                        }
                     }
                 }
-                else if (tab.Tag is int index)
+                else if (tab.Tag is FileTabData td)
                 {
+                    int index = openFiles.IndexOf(td);
                     // Only switch if we're not already on this tab
-                    if (currentFileIndex != index && index >= 0 && index < openFiles.Count)
+                    if (index >= 0 && currentFileIndex != index && index < openFiles.Count)
                     {
-                        SwitchToTab(index);
+                        try { await SwitchToTab(index); } catch { }
                     }
                 }
                     // Track last selected tab reference
@@ -6867,11 +7096,13 @@ namespace FamidashEditor
                     loadedParallaxY = tmxLevel.ParallaxY;
                     loadedParallaxRepeatX = tmxLevel.ParallaxRepeatX;
                     loadedParallaxRepeatY = tmxLevel.ParallaxRepeatY;
-                    loadedHasParallaxLayer = tmxLevel.HasParallaxLayer;
+                    // Treat every level as if it has the parallax/ground image layers
+                    // so the simulator always shows background/ground regardless of TMX contents.
+                    loadedHasParallaxLayer = true;
                     loadedGroundSource = tmxLevel.GroundSource;
                     loadedGroundOffsetY = tmxLevel.GroundOffsetY;
                     loadedGroundRepeatX = tmxLevel.GroundRepeatX;
-                    loadedHasGroundLayer = tmxLevel.HasGroundLayer;
+                    loadedHasGroundLayer = true;
                     // Load deco set from TMX if present; config file may override when LoadTmxConfig runs
                     try { loadedDecoSet = string.IsNullOrEmpty(tmxLevel.DecoSet) ? "deco1" : tmxLevel.DecoSet; } catch { loadedDecoSet = "deco1"; }
                 }
@@ -6927,7 +7158,7 @@ namespace FamidashEditor
                         // Update tab header
                         for (int i = 0; i < FileTabControl.Items.Count; i++)
                         {
-                            if (FileTabControl.Items[i] is TabItem tabItem && tabItem.Tag is int tabFileIndex && tabFileIndex == currentFileIndex)
+                            if (FileTabControl.Items[i] is TabItem tabItem && tabItem.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
                             {
                                 // Create header panel with close button
                                 var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
@@ -6951,7 +7182,7 @@ namespace FamidashEditor
                                     FontWeight = FontWeights.Bold,
                                     Cursor = Cursors.Hand,
                                     Visibility = Visibility.Visible,
-                                    Tag = currentFileIndex
+                                    Tag = openFiles[currentFileIndex]
                                 };
                                 closeButton.Click += CloseTab_Click;
                                 headerPanel.Children.Add(headerText);
@@ -7478,7 +7709,12 @@ namespace FamidashEditor
                 }
                 if (embeddedParallax == null)
                 {
-                    embeddedParallax = LoadEmbeddedImage("parallax.bmp");
+                    // Prefer the project-local branded parallax first if present
+                    embeddedParallax = LoadEmbeddedImage("parallax Blue.bmp");
+                    if (embeddedParallax == null)
+                    {
+                        embeddedParallax = LoadEmbeddedImage("parallax.bmp");
+                    }
                     if (embeddedParallax != null && StatusText != null) StatusText.Text = "Loaded parallax from embedded resources";
                 }
                 if (embeddedParallax != null)
@@ -7487,7 +7723,8 @@ namespace FamidashEditor
                     SliceParallax();
                 }
                 
-                var embeddedGround = LoadEmbeddedImage("ground.bmp");
+                // Prefer project-local embedded ground asset if present
+                var embeddedGround = LoadEmbeddedImage("native_ground.bmp") ?? LoadEmbeddedImage("ground.bmp");
                 if (embeddedGround != null)
                 {
                     groundBitmap = embeddedGround;
@@ -7606,30 +7843,6 @@ namespace FamidashEditor
                     {
                         chainFrame1 = new BitmapSource[1];
                         chainFrame1[0] = new FormatConvertedBitmap(ch, PixelFormats.Pbgra32, null, 0);
-                    }
-                    else
-                    {
-                        var baseDir = AppContext.BaseDirectory;
-                        var p = Path.Combine(baseDir, "chain.png");
-                        var repo = FindRepoRootFor("famidash.bmp");
-                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "chain.png"); if (File.Exists(rp)) p = rp; }
-                        if (File.Exists(p))
-                        {
-                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
-                            chainFrame1 = new BitmapSource[1];
-                            chainFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
-                        }
-                    }
-                }
-                catch { }
-
-                try
-                {
-                    var ch2 = LoadEmbeddedImage("chain-upsidedown.png");
-                    if (ch2 != null)
-                    {
-                        chainUpsideDownFrame1 = new BitmapSource[1];
-                        chainUpsideDownFrame1[0] = new FormatConvertedBitmap(ch2, PixelFormats.Pbgra32, null, 0);
                     }
                     else
                     {
@@ -7786,13 +7999,32 @@ namespace FamidashEditor
                 var resourceNames = assembly.GetManifestResourceNames();
                 // (debug logging removed)
 
-                // Find the resource - it might have the full path prefix
-                var fullResourceName = resourceNames.FirstOrDefault(r => r.EndsWith(resourceName));
-                    if (fullResourceName == null)
+                // Find the resource - it might have the full path prefix.
+                // Try case-insensitive EndsWith first, then fall back to any resource containing the name (case-insensitive),
+                // and finally try a broad "parallax"/"ground" match to be resilient to small naming differences.
+                var fullResourceName = resourceNames.FirstOrDefault(r => r.EndsWith(resourceName, StringComparison.OrdinalIgnoreCase));
+                if (fullResourceName == null)
+                {
+                    fullResourceName = resourceNames.FirstOrDefault(r => r.IndexOf(resourceName, StringComparison.OrdinalIgnoreCase) >= 0);
+                }
+                if (fullResourceName == null)
+                {
+                    // If the requested resource looks like a parallax/ground candidate, try a looser match
+                    if (resourceName.IndexOf("parallax", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Resource not found: {resourceName}");
-                        return null;
+                        fullResourceName = resourceNames.FirstOrDefault(r => r.IndexOf("parallax", StringComparison.OrdinalIgnoreCase) >= 0);
                     }
+                    else if (resourceName.IndexOf("ground", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        fullResourceName = resourceNames.FirstOrDefault(r => r.IndexOf("ground", StringComparison.OrdinalIgnoreCase) >= 0);
+                    }
+                }
+                if (fullResourceName == null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Resource not found: {resourceName}");
+                    System.Diagnostics.Debug.WriteLine($"Available resources: {string.Join(", ", resourceNames)}");
+                    return null;
+                }
                 
                 using (var stream = assembly.GetManifestResourceStream(fullResourceName))
                 {
@@ -16474,20 +16706,21 @@ namespace FamidashEditor
                     // For multiple tabs, switch to existing untitled instead of creating another
                     for (int i = 0; i < FileTabControl.Items.Count; i++)
                     {
-                        if (FileTabControl.Items[i] is TabItem ti && ti.Tag is int idx && idx == existingUntitled)
+                        if (FileTabControl.Items[i] is TabItem ti && ti.Tag is FileTabData td && openFiles.IndexOf(td) == existingUntitled)
                         {
                             try
                             {
                                 isHandlingNewTab = true; // prevent SelectionChanged from creating a new tab
+                                lastProgrammaticSelectedTab = ti;
                                 FileTabControl.SelectedItem = ti;
-                                lastSelectedTab = ti;
+                                try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                             }
                             finally
                             {
                                 isHandlingNewTab = false;
                             }
-                            // Load the tab contents
-                            SwitchToTab(existingUntitled);
+                            // Load the tab contents (don't block UI thread)
+                            try { _ = SwitchToTab(existingUntitled); } catch { }
                             if (StatusText != null) StatusText.Text = "Switched to existing Untitled tab.";
                             return;
                         }
@@ -16924,7 +17157,7 @@ namespace FamidashEditor
                             // Update tab header
                             for (int i = 0; i < FileTabControl.Items.Count; i++)
                             {
-                                if (FileTabControl.Items[i] is TabItem tab && tab.Tag is int idx && idx == currentFileIndex)
+                                if (FileTabControl.Items[i] is TabItem tab && tab.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
                                 {
                                     if (tab.Header is StackPanel panel && panel.Children[0] is TextBlock txt)
                                     {
