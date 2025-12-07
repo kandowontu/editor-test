@@ -254,6 +254,8 @@ namespace FamidashEditor
     private TabItem? lastSelectedTab = null;
     // Track the last tab we set programmatically so SelectionChanged can ignore it.
     private TabItem? lastProgrammaticSelectedTab = null;
+    // Prevent handling selection changes while an async SwitchToTab is running
+    private bool isSwitchingTab = false;
     
     // Store loaded TMX metadata to preserve when saving
     private string? loadedTilesetSource = null;
@@ -6673,11 +6675,14 @@ namespace FamidashEditor
             // If we closed the current tab, switch to another
             if (currentFileIndex == index)
             {
-                    if (openFiles.Count > 0)
-                    {
-                        int newIndex = Math.Min(index, openFiles.Count - 1);
-                        _ = SwitchToTab(newIndex);
-                    }
+                if (openFiles.Count > 0)
+                {
+                    int newIndex = Math.Min(index, openFiles.Count - 1);
+                    // Clear currentFileIndex so SwitchToTab does not save the now-closed
+                    // editor state into the shifted tab slot (which would overwrite it).
+                    currentFileIndex = -1;
+                    _ = SwitchToTab(newIndex);
+                }
                 else
                 {
                     // No tabs left, create a new one
@@ -6700,6 +6705,8 @@ namespace FamidashEditor
 
         private async System.Threading.Tasks.Task SwitchToTab(int index)
         {
+            if (isSwitchingTab) return;
+            isSwitchingTab = true;
             if (index < 0 || index >= openFiles.Count) return;
             
             // Show loading indicator
@@ -6840,6 +6847,7 @@ namespace FamidashEditor
             {
                 // Close loading indicator
                 try { loadingWindow?.Close(); } catch { }
+                isSwitchingTab = false;
             }
 
             // Ensure the tab control selection matches the active tab visually.
@@ -6920,8 +6928,9 @@ namespace FamidashEditor
 
         private async void FileTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            // Prevent re-entrancy
+            // Prevent re-entrancy or handling while a tab switch is in progress
             if (isHandlingNewTab) return;
+            if (isSwitchingTab) return;
 
             // If this selection was triggered programmatically by our code, ignore it once and clear the marker.
             try
