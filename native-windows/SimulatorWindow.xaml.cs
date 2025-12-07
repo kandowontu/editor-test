@@ -1320,12 +1320,12 @@ namespace FamidashEditor
                             }
                         } catch { parallaxTonedImages = parallaxImages; }
                         try {
-                            if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
-                            {
-                                // Preserve/recolor near-white seam pixels using tileTint so object
-                                // outline tints continue to apply to the top seam when ground is black.
-                                groundTonedImages = CreateBlackMaskedImages(groundImages, tileTint);
-                            }
+                                if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
+                                {
+                                    // Preserve the top seam entirely: do NOT recolor near-white seam pixels
+                                    // here so object-color tinting controls the seam. Pass recolorOutline=false.
+                                    groundTonedImages = CreateBlackMaskedImages(groundImages, tileTint, false);
+                                }
                             else
                             {
                                 groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, tileTint);
@@ -1723,7 +1723,7 @@ namespace FamidashEditor
                                                         if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
                                                         {
                                                             // Pure black ground tint: make a black-masked copy (preserve/recolor white lines using tileTint)
-                                                            gt = CreateBlackMaskedImage(tileImages[useTileIndex], tileTint);
+                                                            gt = CreateBlackMaskedImage(tileImages[useTileIndex], tileTint, false);
                                                         }
                                                         else
                                                         {
@@ -2535,7 +2535,7 @@ namespace FamidashEditor
                     catch { tileTonedImages = CreateHslShiftedImages(tileImages, tileTint, tileTint); }
 
                     try { parallaxTonedImages = backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0 ? CreateBlackMaskedImages(parallaxImages) : CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
-                    try { groundTonedImages = groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0 ? CreateBlackMaskedImages(groundImages, tileTint) : CreateHueShiftedImages(groundImages, groundTint, tileTint); } catch { groundTonedImages = groundImages; }
+                    try { groundTonedImages = groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0 ? CreateBlackMaskedImages(groundImages, tileTint, false) : CreateHueShiftedImages(groundImages, groundTint, tileTint); } catch { groundTonedImages = groundImages; }
 
                     // Also create/update a tinted full-parallax bitmap if a full parallax bitmap was provided
                     try
@@ -3338,9 +3338,11 @@ namespace FamidashEditor
         }
 
         // Create a black-masked copy of a single image: non-white pixels become black.
-        // If `outlineTint` is provided (alpha>0), near-white pixels will be recolored to that tint
-        // so object-outline recoloring continues to work when ground is forced black.
-        private ImageSource? CreateBlackMaskedImage(ImageSource? src, Color outlineTint = default)
+        // If `outlineTint` is provided (alpha>0) and `recolorOutline` is true, near-white
+        // pixels will be recolored to that tint so object-outline recoloring continues to
+        // work when appropriate. When `recolorOutline` is false the top seam/near-white
+        // pixels are left untouched so another system (object tinting) can control them.
+        private ImageSource? CreateBlackMaskedImage(ImageSource? src, Color outlineTint = default, bool recolorOutline = true)
         {
             if (src == null) return null;
             if (!(src is BitmapSource bs)) return src;
@@ -3365,7 +3367,7 @@ namespace FamidashEditor
                     bool isWhite = lum >= 0.82;
                     if (isWhite)
                     {
-                        if (outlineTint.A > 0)
+                        if (recolorOutline && outlineTint.A > 0)
                         {
                             // Recolor near-white pixels to the outline tint so object tints still apply.
                             pixels[i + 3] = 255;
@@ -3629,7 +3631,7 @@ namespace FamidashEditor
         // Create images where non-white pixels become solid black (alpha preserved for transparent pixels),
         // and near-white pixels are preserved as white. This produces a 'black with white line' effect
         // useful for pure-black triggers.
-        private ImageSource[]? CreateBlackMaskedImages(ImageSource[]? originals, Color outlineTint = default)
+        private ImageSource[]? CreateBlackMaskedImages(ImageSource[]? originals, Color outlineTint = default, bool recolorOutline = true)
         {
             if (originals == null) return null;
             var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
@@ -3655,7 +3657,7 @@ namespace FamidashEditor
                             bool isWhite = (lum >= 0.82);
                             if (isWhite)
                             {
-                                if (outlineTint.A > 0)
+                                if (recolorOutline && outlineTint.A > 0)
                                 {
                                     pixels[i + 3] = 255;
                                     pixels[i + 2] = outlineTint.R;
