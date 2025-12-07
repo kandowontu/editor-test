@@ -1284,7 +1284,10 @@ namespace FamidashEditor
                         var c = ColorFromTrigger(groundSid.Value);
                         if (groundSid.Value == 0xCF)
                         {
-                            groundTint = Color.FromArgb(255, 0, 0, 0);
+                            // Use white for 0xCF so ground tints follow the same hue-shift
+                            // code path as other ground triggers; this preserves seam
+                            // recoloring by object tints.
+                            groundTint = Color.FromArgb(255, 255, 255, 255);
                         }
                         else
                         {
@@ -2410,7 +2413,10 @@ namespace FamidashEditor
                     // immediately or via the pending-tint path.
                     if (groundSidLocal == 0xCF)
                     {
-                        groundTint = Color.FromArgb(255, 0, 0, 0);
+                        // Use white for 0xCF so ground tints follow the same hue-shift
+                        // code path as other ground triggers; this preserves seam
+                        // recoloring by object tints.
+                        groundTint = Color.FromArgb(255, 255, 255, 255);
                     }
                     else
                     {
