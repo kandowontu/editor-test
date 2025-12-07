@@ -1284,10 +1284,10 @@ namespace FamidashEditor
                         var c = ColorFromTrigger(groundSid.Value);
                         if (groundSid.Value == 0xCF)
                         {
-                            // Use white for 0xCF so ground tints follow the same hue-shift
-                            // code path as other ground triggers; this preserves seam
-                            // recoloring by object tints.
-                            groundTint = Color.FromArgb(255, 255, 255, 255);
+                            // Special-case 0xCF: force the ground tint to pure black so the
+                            // two-tone/ground mapping produces solid black bodies while
+                            // allowing near-white seams to be recolored by object tints.
+                            groundTint = Color.FromArgb(255, 0, 0, 0);
                         }
                         else
                         {
@@ -2422,10 +2422,10 @@ namespace FamidashEditor
                     // immediately or via the pending-tint path.
                     if (groundSidLocal == 0xCF)
                     {
-                        // Use white for 0xCF so ground tints follow the same hue-shift
-                        // code path as other ground triggers; this preserves seam
-                        // recoloring by object tints.
-                        groundTint = Color.FromArgb(255, 255, 255, 255);
+                        // Special-case 0xCF in the pending-path as well: force pure black
+                        // so the ground images are generated as two-tone black and the
+                        // seams remain available for object tinting.
+                        groundTint = Color.FromArgb(255, 0, 0, 0);
                     }
                     else
                     {
