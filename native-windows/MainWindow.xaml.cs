@@ -8752,6 +8752,13 @@ namespace FamidashEditor
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // strength 0 => no change
+            // Special-case: if tint is pure black, use two-tone mapping to black
+            // so non-white areas become pure black while near-white outlines
+            // remain available for `tileTint` to recolor (consistent with simulator).
+            if (tint.A == 255 && tint.R == 0 && tint.G == 0 && tint.B == 0)
+            {
+                return CreateTwoToneTileImages(originals, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), tileTint);
+            }
 
             double strength = tint.A / 255.0;
             // convert tint color to HSL once
@@ -8808,6 +8815,106 @@ namespace FamidashEditor
             }
             return outList.ToArray();
         }
+
+            // Create two-tone tile images: non-white pixels are classified into lighter/darker groups and
+            // mapped to bgPrimary/bgSecondary respectively; white/near-white outlines are mapped to outlineTint.
+            private ImageSource[]? CreateTwoToneTileImages(ImageSource[]? originals, Color bgPrimary, Color bgSecondary, Color outlineTint)
+            {
+                if (originals == null) return null;
+                var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+                foreach (var src in originals)
+                {
+                    if (src is BitmapSource bs)
+                    {
+                        try
+                        {
+                            var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                            int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                            var pixels = new byte[h * stride];
+                            conv.CopyPixels(pixels, stride, 0);
+
+                            // Compute min/max luminance of non-white, non-transparent pixels to determine threshold
+                            double minL = 1.0, maxL = 0.0; int count = 0;
+                            for (int i = 0; i < pixels.Length; i += 4)
+                            {
+                                byte b = pixels[i + 0]; byte g = pixels[i + 1]; byte r = pixels[i + 2]; byte a = pixels[i + 3];
+                                if (a == 0) continue;
+                                double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+                                // Skip near-white when computing min/max (use 0.82 to catch anti-aliased outlines)
+                                if (lum >= 0.82) continue;
+                                if (lum < minL) minL = lum;
+                                if (lum > maxL) maxL = lum;
+                                count++;
+                            }
+                            double threshold = (count > 0) ? ((minL + maxL) / 2.0) : 0.5;
+
+                            // Determine a white-detection threshold. If the outline tint is pure opaque black
+                            // (object trigger like 0xBF), be more aggressive in treating light pixels as "white"
+                            // so object-black triggers recolor thin/anti-aliased whites properly.
+                            double whiteThreshold = 0.82;
+                            if (outlineTint.A == 255 && outlineTint.R == 0 && outlineTint.G == 0 && outlineTint.B == 0)
+                            {
+                                whiteThreshold = 0.70; // treat more pixels as white when applying black outline tint
+                            }
+
+                            for (int i = 0; i < pixels.Length; i += 4)
+                            {
+                                byte ob = pixels[i + 0]; byte og = pixels[i + 1]; byte orr = pixels[i + 2]; byte a = pixels[i + 3];
+                                if (a == 0) continue;
+                                double lum = (0.2126 * orr + 0.7152 * og + 0.0722 * ob) / 255.0;
+                                bool isWhite = lum >= whiteThreshold;
+                                bool isBlack = (orr <= 12 && og <= 12 && ob <= 12);
+
+                                if (isBlack)
+                                {
+                                    // Preserve true black pixels unchanged (do not tint blacks with background)
+                                    continue;
+                                }
+
+                                if (isWhite)
+                                {
+                                    // Only recolor white outlines if an explicit outline tint is provided (alpha>0).
+                                    if (outlineTint.A > 0)
+                                    {
+                                        pixels[i + 3] = 255; // ensure opaque when recoloring
+                                        pixels[i + 2] = outlineTint.R;
+                                        pixels[i + 1] = outlineTint.G;
+                                        pixels[i + 0] = outlineTint.B;
+                                    }
+                                    else
+                                    {
+                                        // leave white as-is
+                                        continue;
+                                    }
+                                }
+                                else
+                                {
+                                    // Map into primary/secondary based on luminance threshold
+                                    Color target = (lum >= threshold) ? bgPrimary : bgSecondary;
+                                    pixels[i + 3] = 255;
+                                    pixels[i + 2] = target.R;
+                                    pixels[i + 1] = target.G;
+                                    pixels[i + 0] = target.B;
+                                }
+                            }
+
+                            var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                            wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                            wb.Freeze();
+                            outList.Add(wb);
+                        }
+                        catch
+                        {
+                            outList.Add(src);
+                        }
+                    }
+                    else
+                    {
+                        outList.Add(src);
+                    }
+                }
+                return outList.ToArray();
+            }
 
         // (No CreateHueShiftedImagesSimple - ground will use the HSL-based CreateHueShiftedImages)
 
