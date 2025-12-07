@@ -1284,9 +1284,10 @@ namespace FamidashEditor
                         var c = ColorFromTrigger(groundSid.Value);
                         if (groundSid.Value == 0xCF)
                         {
-                            // Use black for 0xCF so the ground becomes solid black
-                            // while seam recoloring is handled elsewhere.
-                            groundTint = Color.FromArgb(255, 0, 0, 0);
+                            // Use white for 0xCF so ground tints follow the same hue-shift
+                            // code path as other ground triggers; this preserves seam
+                            // recoloring by object tints.
+                            groundTint = Color.FromArgb(255, 255, 255, 255);
                         }
                         else
                         {
@@ -1324,14 +1325,15 @@ namespace FamidashEditor
                         try {
                                 if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
                                 {
-                                    // Preserve the top seam entirely: do NOT recolor near-white seam pixels
-                                    // here so object-color tinting controls the seam. Pass recolorOutline=false.
-                                    groundTonedImages = CreateBlackMaskedImages(groundImages, tileTint, false);
+                                    // For 0xCF (black-ground) produce two-tone mapping that maps
+                                    // non-white pixels to pure black while leaving near-white
+                                    // outlines to be handled by `tileTint` (object tints).
+                                    groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), tileTint);
                                 }
-                            else
-                            {
-                                groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, tileTint);
-                            }
+                                else
+                                {
+                                    groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, tileTint);
+                                }
                         } catch { groundTonedImages = groundImages; }
 
                         // invalidate cached tile layer so it is rebuilt with new toned images
@@ -1725,7 +1727,15 @@ namespace FamidashEditor
                                                         if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
                                                         {
                                                             // Pure black ground tint: make a black-masked copy (preserve/recolor white lines using tileTint)
-                                                            gt = CreateBlackMaskedImage(tileImages[useTileIndex], tileTint, false);
+                                                            // Use two-tone mapping for this single tile so non-white pixels
+                                                            // become pure black while near-white outlines remain for
+                                                            // object tinting control.
+                                                            try
+                                                            {
+                                                                var arrGt = CreateTwoToneTileImages(new ImageSource[] { tileImages[useTileIndex] }, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                                if (arrGt != null && arrGt.Length > 0) gt = arrGt[0];
+                                                            }
+                                                            catch { gt = CreateBlackMaskedImage(tileImages[useTileIndex], tileTint, false); }
                                                         }
                                                         else
                                                         {
@@ -2412,9 +2422,10 @@ namespace FamidashEditor
                     // immediately or via the pending-tint path.
                     if (groundSidLocal == 0xCF)
                     {
-                        // Use black for 0xCF so the ground becomes solid black
-                        // while seam recoloring is handled elsewhere.
-                        groundTint = Color.FromArgb(255, 0, 0, 0);
+                        // Use white for 0xCF so ground tints follow the same hue-shift
+                        // code path as other ground triggers; this preserves seam
+                        // recoloring by object tints.
+                        groundTint = Color.FromArgb(255, 255, 255, 255);
                     }
                     else
                     {
