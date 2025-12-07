@@ -3076,6 +3076,26 @@ namespace FamidashEditor
         }
 
         // Create hue-shifted images with interpolation towards tint hue (used for ground in MainWindow)
+        // Find the nearest palette index for a given color. Returns null on failure.
+        private int? GetNearestPaletteIndexForColor(Color c, Color[]? palette)
+        {
+            try
+            {
+                if (palette == null || palette.Length == 0) return null;
+                int best = -1; double bestDist = double.MaxValue;
+                for (int i = 0; i < palette.Length; i++)
+                {
+                    var p = palette[i];
+                    double dr = p.R - c.R; double dg = p.G - c.G; double db = p.B - c.B;
+                    double d = dr * dr + dg * dg + db * db;
+                    if (d < bestDist) { bestDist = d; best = i; }
+                }
+                if (best >= 0) return best;
+            }
+            catch { }
+            return null;
+        }
+
         private ImageSource[]? CreateHueShiftedImages(ImageSource[]? originals, Color tint, Color outlineTint = default)
         {
             if (originals == null) return null;
