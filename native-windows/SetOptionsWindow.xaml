@@ -1,7 +1,7 @@
 <Window x:Class="FamidashEditor.SetOptionsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Set Options" Height="380" Width="520" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    Title="Set Options" Height="380" Width="760" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
     <Grid Margin="10">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -10,42 +10,156 @@
 
         <!-- Starting speed will be placed under the left column controls to save space -->
 
-        <StackPanel Grid.Column="0">
-            <TextBlock Text="Sprite/Deco Set:" Margin="0,0,0,6" />
-            <ComboBox x:Name="DecoCombo" Width="160" HorizontalAlignment="Left">
+        <Grid Grid.Column="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Sprite/Deco Set:" Margin="0,0,0,6" />
+            <ComboBox Grid.Row="1" Grid.Column="0" x:Name="DecoCombo" Width="160" HorizontalAlignment="Left">
                 <ComboBoxItem Content="DECO1" />
                 <ComboBoxItem Content="DECOCLOUD" />
                 <ComboBoxItem Content="EXTRASPRITES1" />
             </ComboBox>
-            <CheckBox x:Name="LockSpritesCheckBox" Content="Lock sprites to currently usable set" Margin="0,6,0,0" Width="260" HorizontalAlignment="Left" />
-            <TextBlock Text="Block Set:" Margin="0,8,0,6" />
-            <ComboBox x:Name="BlockCombo" Width="160" HorizontalAlignment="Left">
+            <CheckBox Grid.Row="2" Grid.Column="0" x:Name="LockSpritesCheckBox" Content="Lock sprites to currently usable set" Margin="0,6,0,0" Width="260" HorizontalAlignment="Left" />
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Block Set:" Margin="0,8,0,6" />
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="Starting Background Color:" Margin="8,8,0,6" />
+
+            <ComboBox Grid.Row="4" Grid.Column="0" x:Name="BlockCombo" Width="160" HorizontalAlignment="Left">
                 <ComboBoxItem Content="BLOCKSA" />
                 <ComboBoxItem Content="BLOCKSB" />
                 <ComboBoxItem Content="BLOCKSC" />
                 <ComboBoxItem Content="BLOCKSD" />
             </ComboBox>
-            <TextBlock Text="Spike Set:" Margin="0,8,0,6" />
-            <ComboBox x:Name="SpikeCombo" Width="160" HorizontalAlignment="Left">
+            <ComboBox Grid.Row="4" Grid.Column="1" x:Name="StartingBackgroundColorCombo" Width="140" HorizontalAlignment="Left" Margin="8,0,0,0" VerticalAlignment="Top">
+                <!-- Allowed values: 0x00-0x0C, 0x0F, 0x10-0x1C, 0x20-0x2C -->
+                <ComboBoxItem Content="0x00" />
+                <ComboBoxItem Content="0x01" />
+                <ComboBoxItem Content="0x02" />
+                <ComboBoxItem Content="0x03" />
+                <ComboBoxItem Content="0x04" />
+                <ComboBoxItem Content="0x05" />
+                <ComboBoxItem Content="0x06" />
+                <ComboBoxItem Content="0x07" />
+                <ComboBoxItem Content="0x08" />
+                <ComboBoxItem Content="0x09" />
+                <ComboBoxItem Content="0x0A" />
+                <ComboBoxItem Content="0x0B" />
+                <ComboBoxItem Content="0x0C" />
+                <ComboBoxItem Content="0x0F" />
+                <ComboBoxItem Content="0x10" />
+                <ComboBoxItem Content="0x11" />
+                <ComboBoxItem Content="0x12" />
+                <ComboBoxItem Content="0x13" />
+                <ComboBoxItem Content="0x14" />
+                <ComboBoxItem Content="0x15" />
+                <ComboBoxItem Content="0x16" />
+                <ComboBoxItem Content="0x17" />
+                <ComboBoxItem Content="0x18" />
+                <ComboBoxItem Content="0x19" />
+                <ComboBoxItem Content="0x1A" />
+                <ComboBoxItem Content="0x1B" />
+                <ComboBoxItem Content="0x1C" />
+                <ComboBoxItem Content="0x20" />
+                <ComboBoxItem Content="0x21" />
+                <ComboBoxItem Content="0x22" />
+                <ComboBoxItem Content="0x23" />
+                <ComboBoxItem Content="0x24" />
+                <ComboBoxItem Content="0x25" />
+                <ComboBoxItem Content="0x26" />
+                <ComboBoxItem Content="0x27" />
+                <ComboBoxItem Content="0x28" />
+                <ComboBoxItem Content="0x29" />
+                <ComboBoxItem Content="0x2A" />
+                <ComboBoxItem Content="0x2B" />
+                <ComboBoxItem Content="0x2C" />
+            </ComboBox>
+
+            <TextBlock Grid.Row="5" Grid.Column="0" Text="Spike Set:" Margin="0,8,0,6" />
+            <TextBlock Grid.Row="5" Grid.Column="1" Text="Starting Ground Color:" Margin="8,8,0,6" />
+
+            <ComboBox Grid.Row="6" Grid.Column="0" x:Name="SpikeCombo" Width="160" HorizontalAlignment="Left">
                 <ComboBoxItem Content="SPIKESA" />
                 <ComboBoxItem Content="SPIKESB" />
                 <ComboBoxItem Content="SPIKESC" />
             </ComboBox>
-            <TextBlock Text="Starting Speed:" Margin="0,8,0,6" />
-            <ComboBox x:Name="StartingSpeedCombo" Width="120" HorizontalAlignment="Left">
+            <ComboBox Grid.Row="6" Grid.Column="1" x:Name="StartingGroundColorCombo" Width="140" HorizontalAlignment="Left" Margin="8,0,0,0" VerticalAlignment="Top">
+                <!-- Same allowed values as background -->
+                <ComboBoxItem Content="0x00" />
+                <ComboBoxItem Content="0x01" />
+                <ComboBoxItem Content="0x02" />
+                <ComboBoxItem Content="0x03" />
+                <ComboBoxItem Content="0x04" />
+                <ComboBoxItem Content="0x05" />
+                <ComboBoxItem Content="0x06" />
+                <ComboBoxItem Content="0x07" />
+                <ComboBoxItem Content="0x08" />
+                <ComboBoxItem Content="0x09" />
+                <ComboBoxItem Content="0x0A" />
+                <ComboBoxItem Content="0x0B" />
+                <ComboBoxItem Content="0x0C" />
+                <ComboBoxItem Content="0x0F" />
+                <ComboBoxItem Content="0x10" />
+                <ComboBoxItem Content="0x11" />
+                <ComboBoxItem Content="0x12" />
+                <ComboBoxItem Content="0x13" />
+                <ComboBoxItem Content="0x14" />
+                <ComboBoxItem Content="0x15" />
+                <ComboBoxItem Content="0x16" />
+                <ComboBoxItem Content="0x17" />
+                <ComboBoxItem Content="0x18" />
+                <ComboBoxItem Content="0x19" />
+                <ComboBoxItem Content="0x1A" />
+                <ComboBoxItem Content="0x1B" />
+                <ComboBoxItem Content="0x1C" />
+                <ComboBoxItem Content="0x20" />
+                <ComboBoxItem Content="0x21" />
+                <ComboBoxItem Content="0x22" />
+                <ComboBoxItem Content="0x23" />
+                <ComboBoxItem Content="0x24" />
+                <ComboBoxItem Content="0x25" />
+                <ComboBoxItem Content="0x26" />
+                <ComboBoxItem Content="0x27" />
+                <ComboBoxItem Content="0x28" />
+                <ComboBoxItem Content="0x29" />
+                <ComboBoxItem Content="0x2A" />
+                <ComboBoxItem Content="0x2B" />
+                <ComboBoxItem Content="0x2C" />
+            </ComboBox>
+
+            <!-- Move Show accurate tileset under spike set -->
+            <CheckBox Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowAccurateTilesetCheckBox" Content="Show accurate tileset" Margin="0,8,0,0" Width="320" HorizontalAlignment="Left" VerticalAlignment="Top" />
+
+            <!-- Starting speed and OK/Cancel at bottom -->
+            <TextBlock Grid.Row="8" Grid.Column="0" Text="Starting Speed:" Margin="0,12,0,6" />
+            <ComboBox Grid.Row="9" Grid.Column="0" x:Name="StartingSpeedCombo" Width="120" HorizontalAlignment="Left" VerticalAlignment="Top">
                 <ComboBoxItem Content="0.5x" />
                 <ComboBoxItem Content="1x" />
                 <ComboBoxItem Content="2x" />
                 <ComboBoxItem Content="3x" />
                 <ComboBoxItem Content="4x" />
             </ComboBox>
-            <!-- Simulator Size moved to main Options menu -->
-            <CheckBox x:Name="ShowAccurateTilesetCheckBox" Content="Show accurate tileset" Margin="0,6,0,0" Width="220" HorizontalAlignment="Left" />
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                <Button x:Name="OkButton" Width="75" Margin="4,0">OK</Button>
+            <StackPanel Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,12,0,0">
+                <Button x:Name="OkButton" Width="75" Margin="4,0">K</Button>
                 <Button x:Name="CancelButton" Width="75" Margin="4,0">Cancel</Button>
             </StackPanel>
-        </StackPanel>
+        </Grid>
 
         <!-- Right side: vertical quick-buttons for tints -->
         <StackPanel Grid.Column="1" Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Top">

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Globalization;
 
 namespace FamidashEditor
 {
@@ -22,6 +23,8 @@ namespace FamidashEditor
         public string SelectedSpikeSet { get; private set; } = "SPIKESA";
         public bool LockSpritesToSet { get; private set; } = false;
         public int SelectedStartingSpeedUiIndex { get; private set; } = 1; // UI indices: 0=0.5x,1=1x,2=2x,3=3x,4=4x
+        public int? SelectedStartingBackgroundColor { get; private set; } = null;
+        public int? SelectedStartingGroundColor { get; private set; } = null;
         
         // Store original values for cancel functionality
         private string originalDeco = "DECO1";
@@ -121,6 +124,20 @@ namespace FamidashEditor
                         {
                             SelectedStartingSpeedUiIndex = StartingSpeedCombo.SelectedIndex;
                             mw.LoadedStartingSpeedUiIndex = SelectedStartingSpeedUiIndex;
+                        }
+                    }
+                    catch { }
+
+                    // Save starting background/ground color selections (hex strings -> int)
+                    try
+                    {
+                        if (StartingBackgroundColorCombo != null && StartingBackgroundColorCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbiBg && cbiBg.Content is string sBg)
+                        {
+                            try { mw.LoadedStartingBackgroundColor = int.Parse(sBg.Replace("0x", ""), NumberStyles.HexNumber); } catch { mw.LoadedStartingBackgroundColor = null; }
+                        }
+                        if (StartingGroundColorCombo != null && StartingGroundColorCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbiG && cbiG.Content is string sG)
+                        {
+                            try { mw.LoadedStartingGroundColor = int.Parse(sG.Replace("0x", ""), NumberStyles.HexNumber); } catch { mw.LoadedStartingGroundColor = null; }
                         }
                     }
                     catch { }
@@ -373,6 +390,64 @@ namespace FamidashEditor
                                     catch { }
                                 };
                             }
+                            // Wire StartingBackgroundColor combo: initialize and persist
+                            if (StartingBackgroundColorCombo != null)
+                            {
+                                try {
+                                    if (mwOwner.LoadedStartingBackgroundColor.HasValue)
+                                    {
+                                        string hex = $"0x{mwOwner.LoadedStartingBackgroundColor.Value:X2}";
+                                        for (int i = 0; i < StartingBackgroundColorCombo.Items.Count; i++)
+                                        {
+                                            if (StartingBackgroundColorCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && (string)c.Content == hex)
+                                            {
+                                                StartingBackgroundColorCombo.SelectedIndex = i; break;
+                                            }
+                                        }
+                                    }
+                                } catch { }
+                                StartingBackgroundColorCombo.SelectionChanged += (ss, ee) =>
+                                {
+                                    try
+                                    {
+                                        if (StartingBackgroundColorCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Content is string s)
+                                        {
+                                            try { mwOwner.LoadedStartingBackgroundColor = int.Parse(s.Replace("0x", ""), NumberStyles.HexNumber); } catch { mwOwner.LoadedStartingBackgroundColor = null; }
+                                            try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                        }
+                                    }
+                                    catch { }
+                                };
+                            }
+                            // Wire StartingGroundColor combo: initialize and persist
+                            if (StartingGroundColorCombo != null)
+                            {
+                                try {
+                                    if (mwOwner.LoadedStartingGroundColor.HasValue)
+                                    {
+                                        string hex = $"0x{mwOwner.LoadedStartingGroundColor.Value:X2}";
+                                        for (int i = 0; i < StartingGroundColorCombo.Items.Count; i++)
+                                        {
+                                            if (StartingGroundColorCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && (string)c.Content == hex)
+                                            {
+                                                StartingGroundColorCombo.SelectedIndex = i; break;
+                                            }
+                                        }
+                                    }
+                                } catch { }
+                                StartingGroundColorCombo.SelectionChanged += (ss, ee) =>
+                                {
+                                    try
+                                    {
+                                        if (StartingGroundColorCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Content is string s)
+                                        {
+                                            try { mwOwner.LoadedStartingGroundColor = int.Parse(s.Replace("0x", ""), NumberStyles.HexNumber); } catch { mwOwner.LoadedStartingGroundColor = null; }
+                                            try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                        }
+                                    }
+                                    catch { }
+                                };
+                            }
                             
                                             // Simulator size moved to main Options menu (handled there)
                         }
@@ -558,6 +633,62 @@ namespace FamidashEditor
                         int uiIndex = (jsonVal == 1) ? 0 : (jsonVal == 0) ? 1 : jsonVal;
                         mainWindow.LoadedStartingSpeedUiIndex = uiIndex;
                         if (StartingSpeedCombo != null) StartingSpeedCombo.SelectedIndex = uiIndex;
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+
+                // Apply starting background/ground color metadata (numeric codes). These are provided
+                // in the JSON5 as hex (converted to decimal by ConvertJson5ToJson). Save into mainWindow
+                // so config persists and simulator can pick them up on launch.
+                if (levelData.startingBackgroundColor.HasValue)
+                {
+                    try
+                    {
+                        int code = levelData.startingBackgroundColor.Value;
+                        mainWindow.LoadedStartingBackgroundColor = code;
+                        // Select matching combobox item if present
+                        try
+                        {
+                            string hex = $"0x{code:X2}";
+                            if (StartingBackgroundColorCombo != null)
+                            {
+                                for (int i = 0; i < StartingBackgroundColorCombo.Items.Count; i++)
+                                {
+                                    if (StartingBackgroundColorCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && (string)c.Content == hex)
+                                    {
+                                        StartingBackgroundColorCombo.SelectedIndex = i; break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+
+                if (levelData.startingGroundColor.HasValue)
+                {
+                    try
+                    {
+                        int code = levelData.startingGroundColor.Value;
+                        mainWindow.LoadedStartingGroundColor = code;
+                        try
+                        {
+                            string hex = $"0x{code:X2}";
+                            if (StartingGroundColorCombo != null)
+                            {
+                                for (int i = 0; i < StartingGroundColorCombo.Items.Count; i++)
+                                {
+                                    if (StartingGroundColorCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && (string)c.Content == hex)
+                                    {
+                                        StartingGroundColorCombo.SelectedIndex = i; break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
                         dataChanged = true;
                     }
                     catch { }
@@ -797,6 +928,9 @@ namespace FamidashEditor
             // Optional starting speed metadata. Values are numeric codes per the metadata spec:
             // 0 -> 1x, 1 -> 0.5x, 2 -> 2x, 3 -> 3x, 4 -> 4x
             public int? startingSpeed { get; set; }
+            // Optional starting color metadata (hex codes converted to decimal by parser)
+            public int? startingBackgroundColor { get; set; }
+            public int? startingGroundColor { get; set; }
         }
     }
 }

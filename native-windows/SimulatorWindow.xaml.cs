@@ -479,6 +479,8 @@ namespace FamidashEditor
             bool groundRepeatX = true,
             bool hasGroundLayer = false,
             int groundTileRows = 0,
+            int? startingBackgroundColorCode = null,
+            int? startingGroundColorCode = null,
             int simulatorScale = 1
             )
         {
@@ -596,6 +598,109 @@ namespace FamidashEditor
             this.groundRepeatX = groundRepeatX;
             this.hasGroundLayer = hasGroundLayer;
             this.groundTileRows = groundTileRows;
+
+            // If caller supplied per-level starting color codes, map them to trigger IDs and
+            // apply the resulting tints immediately so the simulator starts with those colors.
+            try
+            {
+                if (startingBackgroundColorCode.HasValue)
+                {
+                    int sc = startingBackgroundColorCode.Value;
+                    int trigger = MapStartingCodeToTrigger(sc, false);
+                    try { this.backgroundTint = ColorFromTrigger(trigger); } catch { }
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (startingGroundColorCode.HasValue)
+                {
+                    int sc = startingGroundColorCode.Value;
+                    int trigger = MapStartingCodeToTrigger(sc, true);
+                    try
+                    {
+                        if (trigger == 0xCF)
+                        {
+                            this.groundTint = Color.FromArgb(255, 0, 0, 0);
+                        }
+                        else
+                        {
+                            this.groundTint = ColorFromTrigger(trigger);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
+            // After applying starting tints, regenerate toned images and update persistent UI brushes
+            try
+            {
+                UpdateTonedImagesForTileTint(tileTint);
+
+                try {
+                    if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
+                    {
+                        parallaxTonedImages = CreateBlackMaskedImages(parallaxImages);
+                    }
+                    else
+                    {
+                        parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint);
+                    }
+                } catch { parallaxTonedImages = parallaxImages; }
+
+                try {
+                    if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
+                    {
+                        groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), tileTint);
+                    }
+                    else
+                    {
+                        groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, tileTint);
+                    }
+                } catch { groundTonedImages = groundImages; }
+
+                // Invalidate cached tile layer so the initial render uses new toned images
+                tileLayerCache = null;
+                try { groundTintedTileCache.Clear(); } catch { }
+
+                // Update persistent background rectangle to use toned parallax if available
+                try
+                {
+                    ImageSource? src = null;
+                    if (parallaxBitmapToned != null) src = parallaxBitmapToned;
+                    else if (parallaxBitmap != null) src = parallaxBitmap;
+                    else if (parallaxTonedImages != null && parallaxTonedImages.Length > 0 && parallaxTonedImages[0] != null) src = parallaxTonedImages[0];
+                    else if (parallaxImages != null && parallaxImages.Length > 0 && parallaxImages[0] != null) src = parallaxImages[0];
+
+                    if (bgRectPersistent != null)
+                    {
+                        if (src is BitmapSource pbs)
+                        {
+                            var brush = new ImageBrush(src)
+                            {
+                                TileMode = TileMode.Tile,
+                                ViewportUnits = BrushMappingMode.Absolute,
+                                Viewport = new Rect(0, 0, Math.Max(1.0, pbs.PixelWidth), Math.Max(1.0, pbs.PixelHeight)),
+                                Stretch = Stretch.None
+                            };
+                            bgRectPersistent.Fill = brush;
+                        }
+                        else
+                        {
+                            bgRectPersistent.Fill = new SolidColorBrush(backgroundTint);
+                        }
+                    }
+
+                    if (groundRectPersistent != null)
+                    {
+                        groundRectPersistent.Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 };
+                    }
+                }
+                catch { }
+            }
+            catch { }
 
             // Robust fallback: if editor didn't provide parallax/ground data, try to load embedded project assets
             // or synthesize a transparent tile so the simulator always has something to render as a background.
@@ -985,6 +1090,12 @@ namespace FamidashEditor
 
         private async void SimulatorWindow_KeyDown(object sender, KeyEventArgs e)
         {
+            // If an unpause/start request is pending, ignore all additional input
+            if (playbackStartPending)
+            {
+                try { e.Handled = true; } catch { }
+                return;
+            }
             if (e.Key == Key.Up) upHeld = true;
             if (e.Key == Key.Down) downHeld = true;
             if (e.Key == Key.Tab)
@@ -1035,6 +1146,12 @@ namespace FamidashEditor
 
         private void SimulatorWindow_KeyUp(object sender, KeyEventArgs e)
         {
+            // Ignore key-up events while start playback is pending to avoid changing held state.
+            if (playbackStartPending)
+            {
+                try { e.Handled = true; } catch { }
+                return;
+            }
             if (e.Key == Key.Up) upHeld = false;
             if (e.Key == Key.Down) downHeld = false;
             if (e.Key == Key.Tab)
@@ -2865,6 +2982,37 @@ namespace FamidashEditor
             byte g = (byte)Math.Round((g1 + m) * 255.0);
             byte b = (byte)Math.Round((b1 + m) * 255.0);
             return Color.FromArgb(255, r, g, b);
+        }
+
+        // Map a starting color code (0x00-0x2C or 0x0F) to the corresponding trigger sprite id.
+        // Background mapping: 0x00-0x0C -> 0x80-0x8C, 0x10-0x1C -> 0x90-0x9C, 0x20-0x2C -> 0xA0-0xAC
+        // Ground mapping: same ranges but mapped to 0xC0/0xD0/0xE0 groups respectively
+        // Special-case: 0x0F -> 0x8F for background, 0xCF for ground.
+        private int MapStartingCodeToTrigger(int code, bool isGround)
+        {
+            try
+            {
+                if (code == 0x0F)
+                {
+                    return isGround ? 0xCF : 0x8F;
+                }
+                int low = code & 0x0F;
+                int high = code & 0xF0;
+                if (high == 0x00)
+                {
+                    return (isGround ? 0xC0 : 0x80) + low;
+                }
+                if (high == 0x10)
+                {
+                    return (isGround ? 0xD0 : 0x90) + low;
+                }
+                if (high == 0x20)
+                {
+                    return (isGround ? 0xE0 : 0xA0) + low;
+                }
+            }
+            catch { }
+            return isGround ? 0xC0 : 0x80; // fallback
         }
 
         // Given a background trigger sprite id, return the corresponding palette index (or null).

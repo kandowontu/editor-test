@@ -218,6 +218,10 @@ namespace FamidashEditor
         public Color TileTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
         public string? SelectedSong { get; set; } = null;
         public int LoadedStartingSpeedUiIndex { get; set; } = 1;
+        private int? loadedStartingBackgroundColor = null;
+        public int? LoadedStartingBackgroundColor { get => loadedStartingBackgroundColor; set => loadedStartingBackgroundColor = value; }
+        private int? loadedStartingGroundColor = null;
+        public int? LoadedStartingGroundColor { get => loadedStartingGroundColor; set => loadedStartingGroundColor = value; }
         private int loadedSimulatorScale = 1;
         public int LoadedSimulatorScale { get => loadedSimulatorScale; set => loadedSimulatorScale = value; }
     }
@@ -278,6 +282,12 @@ namespace FamidashEditor
     public int LoadedStartingSpeedUiIndex { get => loadedStartingSpeedUiIndex; set => loadedStartingSpeedUiIndex = value; }
     private int loadedSimulatorScale = 1; // 1..4
     public int LoadedSimulatorScale { get => loadedSimulatorScale; set => loadedSimulatorScale = value; }
+    // Per-level starting color codes (nullable). These are the authoritative top-level
+    // properties referenced by SetOptionsWindow and used when opening the simulator.
+    private int? loadedStartingBackgroundColor = null;
+    public int? LoadedStartingBackgroundColor { get => loadedStartingBackgroundColor; set => loadedStartingBackgroundColor = value; }
+    private int? loadedStartingGroundColor = null;
+    public int? LoadedStartingGroundColor { get => loadedStartingGroundColor; set => loadedStartingGroundColor = value; }
     private int paletteTileSize = 16;
     private int paletteSpriteSize = 16;
     // Painting state for drag-to-draw
@@ -342,6 +352,8 @@ namespace FamidashEditor
         // Starting speed metadata numeric code (matches JSON metadata scheme):
         // 0 -> 1x, 1 -> 0.5x, 2 -> 2x, 3 -> 3x, 4 -> 4x
         public int? StartingSpeed { get; set; } = null;
+        public int? StartingBackgroundColor { get; set; } = null;
+        public int? StartingGroundColor { get; set; } = null;
         // Simulator scale multiplier (1..4)
         public int? SimulatorScale { get; set; } = null;
     }
@@ -882,6 +894,10 @@ namespace FamidashEditor
             }
             catch { }
 
+            // Save starting background/ground color codes if set
+            try { if (loadedStartingBackgroundColor.HasValue) config.StartingBackgroundColor = loadedStartingBackgroundColor.Value; } catch { }
+            try { if (loadedStartingGroundColor.HasValue) config.StartingGroundColor = loadedStartingGroundColor.Value; } catch { }
+
             // Simulator scale is now a global setting; per-TMX configs must not store it.
 
             // Save sprite offsets
@@ -1068,6 +1084,10 @@ namespace FamidashEditor
                         }
                     }
                     catch { loadedStartingSpeedUiIndex = 1; }
+
+                    // Load starting background/ground codes if present
+                    try { loadedStartingBackgroundColor = config.StartingBackgroundColor.HasValue ? config.StartingBackgroundColor.Value : (int?)null; } catch { loadedStartingBackgroundColor = null; }
+                    try { loadedStartingGroundColor = config.StartingGroundColor.HasValue ? config.StartingGroundColor.Value : (int?)null; } catch { loadedStartingGroundColor = null; }
 
                     // Simulator scale is intentionally not loaded from per-TMX configs.
                     
@@ -6456,6 +6476,8 @@ namespace FamidashEditor
                     loadedGroundRepeatX,
                     simHasGround,
                     groundTileRows,
+                    loadedStartingBackgroundColor,
+                    loadedStartingGroundColor,
                     loadedSimulatorScale
                     );
                     // Pass current simulator-related options into the window
@@ -6762,6 +6784,8 @@ namespace FamidashEditor
                     loadedBlockSet = tabData.LoadedBlockSet;
                     loadedSpikeSet = tabData.LoadedSpikeSet;
                     try { loadedStartingSpeedUiIndex = tabData.LoadedStartingSpeedUiIndex; } catch { loadedStartingSpeedUiIndex = 1; }
+                    try { loadedStartingBackgroundColor = tabData.LoadedStartingBackgroundColor; } catch { loadedStartingBackgroundColor = null; }
+                    try { loadedStartingGroundColor = tabData.LoadedStartingGroundColor; } catch { loadedStartingGroundColor = null; }
                     noParallaxBg = tabData.NoParallaxBg;
                     backgroundTint = tabData.BackgroundTint;
                     groundTint = tabData.GroundTint;
@@ -6872,6 +6896,8 @@ namespace FamidashEditor
             tabData.LoadedBlockSet = loadedBlockSet;
             tabData.LoadedSpikeSet = loadedSpikeSet;
             tabData.LoadedStartingSpeedUiIndex = loadedStartingSpeedUiIndex;
+            tabData.LoadedStartingBackgroundColor = loadedStartingBackgroundColor;
+            tabData.LoadedStartingGroundColor = loadedStartingGroundColor;
             tabData.NoParallaxBg = noParallaxBg;
             tabData.BackgroundTint = backgroundTint;
             tabData.GroundTint = groundTint;
