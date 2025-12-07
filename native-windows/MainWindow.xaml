@@ -110,7 +110,7 @@
                 <MenuItem Header="_File">
                     <MenuItem x:Name="MenuFileNew" Header="_New TMX" InputGestureText="Ctrl+N" />
                     <MenuItem x:Name="MenuFileSave" Header="_Save TMX" InputGestureText="Ctrl+S" />
-                    <MenuItem x:Name="MenuFileSaveAs" Header="Save TMX As..." InputGestureText="Ctrl+Alt+S" />
+                    <MenuItem x:Name="MenuFileSaveAs" Header="Save TMX _As..." InputGestureText="Ctrl+Alt+S" />
                     <MenuItem x:Name="MenuFileLoad" Header="_Open TMX" InputGestureText="Ctrl+O" />
                     <MenuItem x:Name="MenuFileRecent" Header="Open _Recent">
                         <!-- Recent files will be populated dynamically -->

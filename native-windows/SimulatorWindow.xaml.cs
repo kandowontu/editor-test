@@ -2353,7 +2353,12 @@ namespace FamidashEditor
                                             // Ground tiles should only respond to ground color triggers and should not
                                             // participate in background two-tone row-shifting. Use a direct hue-shift
                                             // with the ground tint so the result matches ground visuals exactly.
-                                            var arr = CreateHueShiftedImages(new ImageSource[] { tileImages[i]! }, groundTint, tileTint);
+                                            // Preserve object-trigger outline recolor when an outline tint is present.
+                                            ImageSource[]? arr = null;
+                                            if (tileTint.A > 0)
+                                                arr = CreateHueShiftedImages(new ImageSource[] { tileImages[i]! }, groundTint, tileTint);
+                                            else
+                                                arr = CreateHueShiftedImages(new ImageSource[] { tileImages[i]! }, groundTint);
                                             if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
                                         }
                                     }
@@ -2375,7 +2380,20 @@ namespace FamidashEditor
                     catch { tileTonedImages = CreateHslShiftedImages(tileImages, tileTint, tileTint); }
 
                     try { parallaxTonedImages = backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0 ? CreateBlackMaskedImages(parallaxImages) : CreateHueShiftedImages(parallaxImages, backgroundTint); } catch { parallaxTonedImages = parallaxImages; }
-                    try { groundTonedImages = groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0 ? CreateBlackMaskedImages(groundImages) : CreateHueShiftedImages(groundImages, groundTint, tileTint); } catch { groundTonedImages = groundImages; }
+                    try {
+                        if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
+                        {
+                            groundTonedImages = CreateBlackMaskedImages(groundImages);
+                        }
+                        else
+                        {
+                            // Preserve object-trigger outline recolor on ground tiles when an outline tint is active.
+                            if (tileTint.A > 0)
+                                groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, tileTint);
+                            else
+                                groundTonedImages = CreateHueShiftedImages(groundImages, groundTint);
+                        }
+                    } catch { groundTonedImages = groundImages; }
 
                     // Also create/update a tinted full-parallax bitmap if a full parallax bitmap was provided
                     try
