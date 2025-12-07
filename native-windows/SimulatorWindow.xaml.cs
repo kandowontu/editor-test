@@ -98,15 +98,9 @@ namespace FamidashEditor
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 28-2F
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 30-37
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 38-3F
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x0e, // 40-47
             0x0e,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 48-4F
             0x10,0x10,0x0F,0x0F,0x10,0x10,0x0F,0x0F, // 50-57
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 58-5F
-            0x10,0x10,0x10,0x10,0x10,0x0E,0x30,0x30, // 60-67
-            0x30,0x30,0x10,0x10,0x10,0x10,0x08,0x10, // 68-6F
-            0x10,0x10,0x10,0x10,0x10,0x30,0x30,0x30, // 70-77
-            0x30,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 78-7F
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 80-87
+            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 38-3F
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 88-8F
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 90-97
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 98-9F
@@ -133,7 +127,6 @@ namespace FamidashEditor
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 28-2F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 30-37
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 38-3F
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01, // 40-47
             0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 48-4F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 50-57
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 58-5F
@@ -168,7 +161,6 @@ namespace FamidashEditor
             -0x01,-0x01,0x00,0x00,0x00,0x00,0x00,0x00, // 28-2F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 30-37
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 38-3F
-            0x00,0x00,0x00,0x00,-0x01,-0x01,-0x01,0x04, // 40-47
             0x04,0x00,0x00,-0x02,0x00,-0x01,-0x01,0x00, // 48-4F
             -0x01,-0x01,0x05,0x00,-0x01,-0x01,0x05,0x00, // 50-57
             -0x02,0x00,0x00,-0x01,-0x01,-0x01,-0x01,-0x02, // 58-5F
@@ -357,42 +349,7 @@ namespace FamidashEditor
         // Track color-trigger anchors that have already been processed (so we don't resample every frame)
         private System.Collections.Generic.HashSet<int> processedColorTriggers = new System.Collections.Generic.HashSet<int>();
 
-        // Lightweight one-time debug logging sets to avoid spamming output repeatedly
-        private System.Collections.Generic.HashSet<int> decoLogged = new System.Collections.Generic.HashSet<int>();
-        private System.Collections.Generic.HashSet<int> triggerLogged = new System.Collections.Generic.HashSet<int>();
-        // Track last selected decoration frame so we can log when it actually changes
-        private System.Collections.Generic.Dictionary<int, int> decoLastSelectedFrame = new System.Collections.Generic.Dictionary<int, int>();
-        private bool enableSimulatorDebugLogging = false; // set true to capture helpful messages during diagnosis
-
-        // Internal one-time simulator debug file (used only for local diagnosis when requested)
-        private readonly string simDebugFilePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt");
-        private bool simDebugLoggedFirstFrame = false;
-
-        // Append a small simulator debug line to the diagnosis file next to the exe.
-        private void AppendSimDebug(string msg)
-        {
-            try
-            {
-                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {msg}{Environment.NewLine}";
-                System.IO.File.AppendAllText(simDebugFilePath, line);
-            }
-            catch { }
-        }
-
-        // Append a timestamped simulator debug message to the temp log file.
-        private void WriteTempLog(string message)
-        {
-            if (!enableSimulatorDebugLogging) return;
-            try
-            {
-                string temp = System.IO.Path.GetTempPath();
-                string fn = System.IO.Path.Combine(temp, "FamidashSimulator.log");
-                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}";
-                System.IO.File.AppendAllText(fn, line);
-                try { System.Diagnostics.Debug.WriteLine(message); } catch { }
-            }
-            catch { }
-        }
+        // (simulator debug logging removed for production behavior)
 
         // Start the background simulation (call after the window is shown).
         public void StartSimulation()
@@ -911,7 +868,7 @@ namespace FamidashEditor
             // Write an initial diagnostic snapshot of parallax/ground state for local debugging (Option A)
             try
             {
-                AppendSimDebug($"Constructor: hasParallaxLayer={this.hasParallaxLayer}, parallaxBitmap={(this.parallaxBitmap!=null)}, parallaxImagesLen={(this.parallaxImages==null?0:this.parallaxImages.Length)}, parallaxTonedLen={(this.parallaxTonedImages==null?0:this.parallaxTonedImages.Length)}, hasGroundLayer={this.hasGroundLayer}, groundImagesLen={(this.groundImages==null?0:this.groundImages.Length)}, backgroundTint={this.backgroundTint}");
+                // simulator constructor: debug logging removed
             }
             catch { }
 
@@ -1251,38 +1208,23 @@ namespace FamidashEditor
                 // Apply detected color triggers: compute color and set tints accordingly. Mark anchors processed
                 try
                 {
-                        if (bgIdx.HasValue && bgSid.HasValue)
+                    if (bgIdx.HasValue && bgSid.HasValue)
                     {
                         var c = ColorFromTrigger(bgSid.Value);
                         backgroundTint = c; // update field used for drawing background
                         processedColorTriggers.Add(bgIdx.Value);
-                        if (enableSimulatorDebugLogging && !triggerLogged.Contains(bgIdx.Value))
-                        {
-                            WriteTempLog($"Simulator: Applied background trigger at idx={bgIdx.Value} sid=0x{bgSid.Value:X} color={c}");
-                            triggerLogged.Add(bgIdx.Value);
-                        }
                     }
                     if (tileIdx.HasValue && tileSid.HasValue)
                     {
                         var c = ColorFromTrigger(tileSid.Value);
                         tileTint = c;
                         processedColorTriggers.Add(tileIdx.Value);
-                        if (enableSimulatorDebugLogging && !triggerLogged.Contains(tileIdx.Value))
-                        {
-                            WriteTempLog($"Simulator: Applied tile trigger at idx={tileIdx.Value} sid=0x{tileSid.Value:X} color={c}");
-                            triggerLogged.Add(tileIdx.Value);
-                        }
                     }
                     if (groundIdx.HasValue && groundSid.HasValue)
                     {
                         var c = ColorFromTrigger(groundSid.Value);
                         groundTint = c;
                         processedColorTriggers.Add(groundIdx.Value);
-                        if (enableSimulatorDebugLogging && !triggerLogged.Contains(groundIdx.Value))
-                        {
-                            WriteTempLog($"Simulator: Applied ground trigger at idx={groundIdx.Value} sid=0x{groundSid.Value:X} color={c}");
-                            triggerLogged.Add(groundIdx.Value);
-                        }
                     }
                 }
                 catch { }
@@ -1336,60 +1278,7 @@ namespace FamidashEditor
 
         private void RenderFrame()
         {
-            // One-time first-frame diagnostic snapshot (Option A)
-            try
-            {
-                if (!simDebugLoggedFirstFrame)
-                {
-                    simDebugLoggedFirstFrame = true;
-                    // Determine which ImageSource would be used as the brush source
-                    string chosenSrc = "none";
-                    int srcW = 0, srcH = 0;
-                    try
-                    {
-                        ImageSource? src = null;
-                        if (parallaxBitmapToned != null) src = parallaxBitmapToned;
-                        else if (parallaxBitmap != null) src = parallaxBitmap;
-                        else if (parallaxTonedImages != null && parallaxTonedImages.Length == (parallaxImages==null?0:parallaxImages.Length) && parallaxTonedImages.Length>0) src = parallaxTonedImages[0];
-                        else if (parallaxImages != null && parallaxImages.Length > 0) src = parallaxImages[0];
-                        if (src is BitmapSource bs)
-                        {
-                            chosenSrc = bs.GetType().Name;
-                            srcW = bs.PixelWidth;
-                            srcH = bs.PixelHeight;
-                        }
-                        else if (src != null) chosenSrc = src.GetType().Name;
-                    }
-                    catch { }
-
-                    // Compute parallax offsets as used when creating the brush
-                    double logParallaxOffsetX = -(cameraX_fixed >> 8) * (1.0 - parallaxX);
-                    double logParallaxOffsetY = -(cameraY_fixed >> 8) * (1.0 - parallaxY);
-
-                    string tileLayerSrc = (tileLayerImage?.Source == null) ? "null" : tileLayerImage.Source.GetType().Name;
-
-                    AppendSimDebug($"RenderFrame: hasParallaxLayer={hasParallaxLayer}, chosenSrc={chosenSrc}, srcW={srcW}, srcH={srcH}, parallaxImagesLen={(parallaxImages==null?0:parallaxImages.Length)}, parallaxTonedLen={(parallaxTonedImages==null?0:parallaxTonedImages.Length)}, bgRectFill={(bgRectPersistent?.Fill==null?"null":bgRectPersistent.Fill.GetType().Name)}, backgroundTint={backgroundTint}, parallaxOffsetX={logParallaxOffsetX}, parallaxOffsetY={logParallaxOffsetY}, tileLayerImageSource={tileLayerSrc}");
-
-                    try
-                    {
-                        var sb = new System.Text.StringBuilder();
-                        sb.AppendLine("RenderCanvas children:");
-                        for (int i = 0; i < RenderCanvas.Children.Count; i++)
-                        {
-                            var child = RenderCanvas.Children[i];
-                            int z = 0;
-                            try { z = System.Windows.Controls.Canvas.GetZIndex(child); } catch { }
-                            string tname = child?.GetType().Name ?? "null";
-                            double w = 0, h = 0;
-                            try { w = (child as System.Windows.FrameworkElement)?.Width ?? Double.NaN; h = (child as System.Windows.FrameworkElement)?.Height ?? Double.NaN; } catch { }
-                            sb.AppendLine($"  [{i}] Type={tname} Z={z} Width={w} Height={h} Visible={(child is System.Windows.FrameworkElement fe? (fe.Visibility==Visibility.Visible):true)}");
-                        }
-                        AppendSimDebug(sb.ToString());
-                    }
-                    catch { }
-                }
-            }
-            catch { }
+            // One-time first-frame diagnostic snapshot removed
 
             // Compute pixel offset and starting tile index
             int pixelX = cameraX_fixed >> 8; // full pixels
@@ -1712,7 +1601,7 @@ namespace FamidashEditor
                                                         }
                                                         else
                                                         {
-                                                            var arr = CreateHslShiftedImages(new ImageSource[] { tileImages[useTileIndex] }, groundTint, tileTint);
+                                                            var arr = CreateHslShiftedImages(new ImageSource[] { tileImages[useTileIndex]! }, groundTint, tileTint);
                                                             if (arr != null && arr.Length > 0) gt = arr[0];
                                                         }
                                                     }
@@ -1810,7 +1699,7 @@ namespace FamidashEditor
                     try { spriteBackgroundCompositeCache.Clear(); } catch { }
                     try
                     {
-                        AppendSimDebug($"Built tileLayerCache pxW={pxW} pxH={pxH} hadAnimated={hadAnimated} startTileX={startTileX} startTileY={startTileY} tilesLen={(tiles==null?0:tiles.Length)} mapWidth={mapWidth} mapHeight={mapHeight}");
+                        // tileLayerCache build logging removed
                     }
                     catch { }
                     lastCacheHadAnimatedTiles = hadAnimated;
@@ -1818,7 +1707,7 @@ namespace FamidashEditor
                     cachedStartTileX = startTileX;
                     cachedStartTileY = startTileY;
                     tileLayerImage!.Source = tileLayerCache;
-                    try { AppendSimDebug($"Assigned tileLayerImage.Source={(tileLayerImage.Source==null?"null":tileLayerImage.Source.GetType().Name)}"); } catch { }
+                    try { /* tileLayerImage assignment logging removed */ } catch { }
                     tileLayerImage!.Width = pxW;
                     tileLayerImage!.Height = pxH;
                 }
@@ -1922,22 +1811,7 @@ namespace FamidashEditor
                         }
                         chosenSprite = frames[frame];
                         // Debug: log decoration frames presence/selection when the selected frame changes
-                        try
-                        {
-                            if (enableSimulatorDebugLogging && decorationSpriteIds.Contains(s) && frames.Length == 2)
-                            {
-                                int prevFrame = -1;
-                                decoLastSelectedFrame.TryGetValue(idx, out prevFrame);
-                                if (prevFrame != frame)
-                                {
-                                    string h0 = frames[0] != null ? frames[0]!.GetHashCode().ToString("X8") : "null";
-                                    string h1 = frames[1] != null ? frames[1]!.GetHashCode().ToString("X8") : "null";
-                                    WriteTempLog($"Simulator: Decoration sprite idx={idx} id=0x{s:X} frames=[{(frames[0]!=null?"ok":"null")},{(frames[1]!=null?"ok":"null")}] selectedFrame={frame} hashes=[{h0},{h1}]");
-                                    decoLastSelectedFrame[idx] = frame;
-                                }
-                            }
-                        }
-                        catch { }
+                        // Decoration sprite debug logging removed
                         if (chosenSprite == null)
                         {
                             if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s, out var pimg) && pimg != null)
@@ -2377,19 +2251,16 @@ namespace FamidashEditor
                 {
                     var c = ColorFromTrigger(bgSidLocal);
                     backgroundTint = c; processedColorTriggers.Add(bgIdxLocal);
-                    if (enableSimulatorDebugLogging && !triggerLogged.Contains(bgIdxLocal)) { WriteTempLog($"Simulator: Applied background trigger at idx={bgIdxLocal} sid=0x{bgSidLocal:X} color={c}"); triggerLogged.Add(bgIdxLocal); }
                 }
                 if (tileIdxLocal >= 0 && tileSidLocal >= 0)
                 {
                     var c = ColorFromTrigger(tileSidLocal);
                     tileTint = c; processedColorTriggers.Add(tileIdxLocal);
-                    if (enableSimulatorDebugLogging && !triggerLogged.Contains(tileIdxLocal)) { WriteTempLog($"Simulator: Applied tile trigger at idx={tileIdxLocal} sid=0x{tileSidLocal:X} color={c}"); triggerLogged.Add(tileIdxLocal); }
                 }
                 if (groundIdxLocal >= 0 && groundSidLocal >= 0)
                 {
                     var c = ColorFromTrigger(groundSidLocal);
                     groundTint = c; processedColorTriggers.Add(groundIdxLocal);
-                    if (enableSimulatorDebugLogging && !triggerLogged.Contains(groundIdxLocal)) { WriteTempLog($"Simulator: Applied ground trigger at idx={groundIdxLocal} sid=0x{groundSidLocal:X} color={c}"); triggerLogged.Add(groundIdxLocal); }
                 }
 
                 if (!AreColorsEqual(prevTileTint, tileTint) || !AreColorsEqual(prevBackgroundTint, backgroundTint) || !AreColorsEqual(prevGroundTint, groundTint))
@@ -2462,14 +2333,14 @@ namespace FamidashEditor
                                             // mapping when available; otherwise fall back to using backgroundTint as primary.
                                             if (bgPrimary.HasValue)
                                             {
-                                                var arr = CreateTwoToneTileImages(new ImageSource[] { tileImages[i] }, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                var arr = CreateTwoToneTileImages(new ImageSource[] { tileImages[i]! }, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), tileTint);
                                                 if (arr != null && arr.Length > 0) rep = arr[0];
                                             }
                                             else
                                             {
                                                 // Use backgroundTint for non-white areas and tileTint for outlines.
                                                 // CreateTwoToneTileImages will leave white outlines to outlineTint (tileTint)
-                                                var arr = CreateTwoToneTileImages(new ImageSource[] { tileImages[i] }, backgroundTint, Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                var arr = CreateTwoToneTileImages(new ImageSource[] { tileImages[i]! }, backgroundTint, Color.FromArgb(255, 0, 0, 0), tileTint);
                                                 if (arr != null && arr.Length > 0) rep = arr[0];
                                             }
                                             if (rep != null) tileTonedImages[i] = rep;
@@ -2485,7 +2356,7 @@ namespace FamidashEditor
                                             // Ground tiles should only respond to ground color triggers and should not
                                             // participate in background two-tone row-shifting. Use a direct hue-shift
                                             // with the ground tint so the result matches ground visuals exactly.
-                                            var arr = CreateHueShiftedImages(new ImageSource[] { tileImages[i] }, groundTint, tileTint);
+                                            var arr = CreateHueShiftedImages(new ImageSource[] { tileImages[i]! }, groundTint, tileTint);
                                             if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
                                         }
                                     }
@@ -3074,7 +2945,7 @@ namespace FamidashEditor
                                         // If we couldn't draw the full tile layer, fall back to the persistent background
                                         // brush or a flat color. Prefer the persistent background so parallax/ground
                                         // visuals still show through transparent sprite pixels.
-                                        Brush bgBrush = null;
+                                        Brush? bgBrush = null;
                                         try { if (bgRectPersistent != null && bgRectPersistent.Fill != null) bgBrush = bgRectPersistent.Fill; } catch { bgBrush = null; }
                                         if (bgBrush == null)
                                         {
@@ -3111,8 +2982,8 @@ namespace FamidashEditor
                                                         }
                                                     }
                                                     catch { }
-                                                    ImageSource useImg = srcImg;
-                                                    try { if (srcImg != null) { var arr = CreateHslShiftedImages(new ImageSource[] { srcImg }, darkerBg); if (arr != null && arr.Length > 0 && arr[0] != null) useImg = arr[0]; } } catch { }
+                                                    ImageSource useImg = srcImg ?? new WriteableBitmap(1,1,96,96,PixelFormats.Pbgra32,null);
+                                                    try { if (srcImg != null) { var arr = CreateHslShiftedImages(new ImageSource[] { srcImg! }, darkerBg); if (arr != null && arr.Length > 0 && arr[0] != null) useImg = arr[0]; } } catch { }
                                                     var newIb = new ImageBrush(useImg)
                                                     {
                                                         Stretch = ib.Stretch,
@@ -3146,7 +3017,7 @@ namespace FamidashEditor
                                 }
                                 catch
                                 {
-                                    Brush bgBrush2 = null;
+                                    Brush? bgBrush2 = null;
                                     try { if (bgRectPersistent != null && bgRectPersistent.Fill != null) bgBrush2 = bgRectPersistent.Fill; } catch { bgBrush2 = null; }
                                     if (bgBrush2 == null)
                                     {
@@ -3182,8 +3053,8 @@ namespace FamidashEditor
                                                         }
                                                     }
                                                     catch { }
-                                                    ImageSource useImg2 = srcImg2;
-                                                    try { if (srcImg2 != null) { var arr2 = CreateHslShiftedImages(new ImageSource[] { srcImg2 }, darkerBg2); if (arr2 != null && arr2.Length > 0 && arr2[0] != null) useImg2 = arr2[0]; } } catch { }
+                                                    ImageSource useImg2 = srcImg2 ?? new WriteableBitmap(1,1,96,96,PixelFormats.Pbgra32,null);
+                                                    try { if (srcImg2 != null) { var arr2 = CreateHslShiftedImages(new ImageSource[] { srcImg2! }, darkerBg2); if (arr2 != null && arr2.Length > 0 && arr2[0] != null) useImg2 = arr2[0]; } } catch { }
                                                 var newIb2 = new ImageBrush(useImg2)
                                                 {
                                                     Stretch = ib2.Stretch,
@@ -3226,7 +3097,7 @@ namespace FamidashEditor
                                 }
                                 catch
                                 {
-                                    Brush bgBrush3 = null;
+                                    Brush? bgBrush3 = null;
                                     try { if (bgRectPersistent != null && bgRectPersistent.Fill != null) bgBrush3 = bgRectPersistent.Fill; } catch { bgBrush3 = null; }
                                     if (bgBrush3 == null)
                                     {
@@ -3241,8 +3112,8 @@ namespace FamidashEditor
                                                 var srcImg3 = ib3.ImageSource;
                                                 Color darkerBg3 = bg;
                                                 try { RgbToHsl(bg.R, bg.G, bg.B, out double hh3, out double ss3, out double ll3); ll3 = Math.Max(0.0, ll3 - 0.12); RgbFromHsl(hh3, ss3, ll3, out byte dr3, out byte dg3, out byte db3); darkerBg3 = Color.FromArgb(bg.A, dr3, dg3, db3); } catch { }
-                                                ImageSource useImg3 = srcImg3;
-                                                try { if (srcImg3 != null) { var arr3 = CreateHslShiftedImages(new ImageSource[] { srcImg3 }, darkerBg3); if (arr3 != null && arr3.Length > 0 && arr3[0] != null) useImg3 = arr3[0]; } } catch { }
+                                                    ImageSource useImg3 = srcImg3 ?? new WriteableBitmap(1,1,96,96,PixelFormats.Pbgra32,null);
+                                                try { if (srcImg3 != null) { var arr3 = CreateHslShiftedImages(new ImageSource[] { srcImg3! }, darkerBg3); if (arr3 != null && arr3.Length > 0 && arr3[0] != null) useImg3 = arr3[0]; } } catch { }
                                                 var newIb3 = new ImageBrush(useImg3)
                                                 {
                                                     Stretch = ib3.Stretch,

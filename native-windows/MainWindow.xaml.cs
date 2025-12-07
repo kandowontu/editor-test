@@ -5989,7 +5989,7 @@ namespace FamidashEditor
                 lastProgrammaticSelectedTab = tab;
                 FileTabControl.SelectedItem = tab;
                 // Clear the programmatic marker shortly after the UI processes the selection
-                try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                try { _ = Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
             }
             finally
             {
@@ -5999,7 +5999,7 @@ namespace FamidashEditor
             // Ensure + tab exists
             EnsureNewTabButton();
             // Load the newly created tab's content immediately so the UI shows it
-            try { SwitchToTab(currentFileIndex); } catch { }
+            try { _ = SwitchToTab(currentFileIndex); } catch { }
         }
 
         // Open the simulator window showing the current map state. This is lightweight
@@ -6387,27 +6387,21 @@ namespace FamidashEditor
                         effectiveParallaxTonedImages = null;
                     }
 
+                    // simulator debug logging removed
+
+                    // Ensure we pass non-null-element arrays for parallax images to the simulator
+                    ImageSource[]? nonNullParallaxImages = null;
+                    ImageSource[]? nonNullParallaxTonedImages = null;
                     try
                     {
-                        try
-                        {
-                            var debugPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sim_debug.txt");
-                            var sampleTiles = (tiles ?? Array.Empty<int>()).Take(16);
-                            var sampleSprites = (sprites ?? Array.Empty<int>()).Take(16);
-                            var tilesSampleStr = string.Join(',', sampleTiles);
-                            var spritesSampleStr = string.Join(',', sampleSprites);
-                            var tilesArr = (tiles ?? Array.Empty<int>());
-                            var spritesArr = (sprites ?? Array.Empty<int>());
-                            var nonEmptyTiles = tilesArr.Count(t => t >= 0);
-                            var nonEmptySprites = spritesArr.Count(s => s >= 0);
-                            var distinctTiles = tilesArr.Where(t => t >= 0).Distinct().Take(8);
-                            var distinctTilesStr = string.Join(',', distinctTiles);
-                            var dbgLine = $"{System.DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} OpenSimulatorWindow: tilesLen={tilesArr.Length}, nonEmptyTiles={nonEmptyTiles}, mapWidth={mapWidth}, mapHeight={mapHeight}, spritesLen={spritesArr.Length}, nonEmptySprites={nonEmptySprites}, distinctTilesSample=[{distinctTilesStr}], sampleTiles=[{tilesSampleStr}], sampleSprites=[{spritesSampleStr}]\n";
-                            System.IO.File.AppendAllText(debugPath, dbgLine);
-                        }
-                        catch { }
+                        nonNullParallaxImages = effectiveParallaxImages == null ? null : effectiveParallaxImages.Where(i => i != null).Select(i => i!).ToArray();
                     }
-                    catch { }
+                    catch { nonNullParallaxImages = null; }
+                    try
+                    {
+                        nonNullParallaxTonedImages = effectiveParallaxTonedImages == null ? null : effectiveParallaxTonedImages.Where(i => i != null).Select(i => i!).ToArray();
+                    }
+                    catch { nonNullParallaxTonedImages = null; }
 
                     // Quick workaround: replace sentinel -1 entries with a safe default (0)
                     var sanitizedTiles = (tiles ?? Array.Empty<int>()).Select(t => t < 0 ? 0 : t).ToArray();
@@ -6443,8 +6437,8 @@ namespace FamidashEditor
                     largeSawFrame2TilesTinted
                     ,
                     effectiveParallaxBitmap,
-                    effectiveParallaxImages,
-                    effectiveParallaxTonedImages,
+                    nonNullParallaxImages,
+                    nonNullParallaxTonedImages,
                     loadedParallaxX,
                     loadedParallaxY,
                     loadedParallaxRepeatX,
@@ -6623,7 +6617,7 @@ namespace FamidashEditor
                 else if (result == MessageBoxResult.Yes)
                 {
                     // Switch to that tab and save
-                    SwitchToTab(index);
+                    _ = SwitchToTab(index);
                     SaveButton_Click(this, new RoutedEventArgs());
                     if (hasUnsavedChanges) return; // User cancelled save
                 }
@@ -6645,10 +6639,10 @@ namespace FamidashEditor
             // If we closed the current tab, switch to another
             if (currentFileIndex == index)
             {
-                if (openFiles.Count > 0)
+                    if (openFiles.Count > 0)
                 {
                     int newIndex = Math.Min(index, openFiles.Count - 1);
-                    SwitchToTab(newIndex);
+                    _ = SwitchToTab(newIndex);
                 }
                 else
                 {
@@ -6826,7 +6820,7 @@ namespace FamidashEditor
                                 isHandlingNewTab = true;
                                 lastProgrammaticSelectedTab = ti;
                                 FileTabControl.SelectedItem = ti;
-                                Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background);
+                                _ = Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background);
                             }
                             finally { isHandlingNewTab = false; }
                             break;
@@ -6927,7 +6921,7 @@ namespace FamidashEditor
                                     isHandlingNewTab = true; // prevent SelectionChanged recursion
                                     lastProgrammaticSelectedTab = ti;
                                     FileTabControl.SelectedItem = ti;
-                                    try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                                    try { _ = Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                                 }
                                 finally { isHandlingNewTab = false; }
 
@@ -7268,7 +7262,7 @@ namespace FamidashEditor
             
             // For LEFT/RIGHT positions, recalculate sizes as if app just opened
             // For TOP/BOTTOM, don't change tile sizes
-            this.Dispatcher.BeginInvoke(new Action(() =>
+            _ = this.Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (tileboardPosition == "LEFT" || tileboardPosition == "RIGHT")
                 {
@@ -16686,7 +16680,7 @@ namespace FamidashEditor
                         }
 
                         // Overwrite the single untitled tab with a fresh map
-                        SwitchToTab(existingUntitled);
+                        _ = SwitchToTab(existingUntitled);
                         currentFilePath = "";
                         mapWidth = 200; mapHeight = 27;
                         InitDefaultMap();
@@ -16716,7 +16710,7 @@ namespace FamidashEditor
                                 isHandlingNewTab = true; // prevent SelectionChanged from creating a new tab
                                 lastProgrammaticSelectedTab = ti;
                                 FileTabControl.SelectedItem = ti;
-                                try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                                try { _ = Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                             }
                             finally
                             {
