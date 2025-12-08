@@ -992,12 +992,59 @@ namespace FamidashEditor
             catch { }
 
             string configPath = GetConfigPath(tmxFilePath);
-            // Serialize and write the config file, omitting nulls
-            var opts = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
-            string json = JsonSerializer.Serialize(config, opts);
-            File.WriteAllText(configPath, json);
+            try
+            {
+                // If a config already exists, merge only the fields we intend to change so we don't erase other values.
+                TmxConfig? existing = null;
+                if (File.Exists(configPath))
+                {
+                    try
+                    {
+                        var existingJson = File.ReadAllText(configPath);
+                        existing = JsonSerializer.Deserialize<TmxConfig>(existingJson);
+                    }
+                    catch { existing = null; }
+                }
 
-            System.Diagnostics.Debug.WriteLine($"Saved config to: {configPath}");
+                var merged = existing ?? new TmxConfig();
+
+                // Overwrite merged values with anything we've explicitly set in 'config'.
+                try { if (config.BackgroundTintR.HasValue) { merged.BackgroundTintR = config.BackgroundTintR; merged.BackgroundTintG = config.BackgroundTintG; merged.BackgroundTintB = config.BackgroundTintB; } } catch { }
+                try { if (config.GroundTintR.HasValue) { merged.GroundTintR = config.GroundTintR; merged.GroundTintG = config.GroundTintG; merged.GroundTintB = config.GroundTintB; } } catch { }
+                try { if (config.TileTintR.HasValue) { merged.TileTintR = config.TileTintR; merged.TileTintG = config.TileTintG; merged.TileTintB = config.TileTintB; } } catch { }
+
+                // Booleans and explicit strings: overwrite (these are explicit choices)
+                try { merged.NoParallaxBg = config.NoParallaxBg; } catch { }
+                try { if (!string.IsNullOrEmpty(config.DecoSet)) merged.DecoSet = config.DecoSet; } catch { }
+                try { if (!string.IsNullOrEmpty(config.BlockSet)) merged.BlockSet = config.BlockSet; } catch { }
+                try { if (!string.IsNullOrEmpty(config.SpikeSet)) merged.SpikeSet = config.SpikeSet; } catch { }
+                try { if (!string.IsNullOrEmpty(config.SelectedSong)) merged.SelectedSong = config.SelectedSong; } catch { }
+
+                // StartingSpeed: overwrite if present
+                try { if (config.StartingSpeed.HasValue) merged.StartingSpeed = config.StartingSpeed; } catch { }
+
+                // Primitive starting values: overwrite if present
+                try { if (config.StartingBackgroundColor.HasValue) merged.StartingBackgroundColor = config.StartingBackgroundColor; } catch { }
+                try { if (config.StartingGameMode.HasValue) merged.StartingGameMode = config.StartingGameMode; } catch { }
+                try { if (config.StartingGroundColor.HasValue) merged.StartingGroundColor = config.StartingGroundColor; } catch { }
+                try { if (config.Difficulty.HasValue) merged.Difficulty = config.Difficulty; } catch { }
+                try { if (config.Stars.HasValue) merged.Stars = config.Stars; } catch { }
+                try { if (!string.IsNullOrEmpty(config.LowerText)) merged.LowerText = config.LowerText; } catch { }
+                try { if (!string.IsNullOrEmpty(config.UpperText)) merged.UpperText = config.UpperText; } catch { }
+
+                // Sprite offsets/anchors: replace if we have any new ones, otherwise keep existing
+                try { if (config.SpriteOffsets != null && config.SpriteOffsets.Count > 0) merged.SpriteOffsets = config.SpriteOffsets; } catch { }
+                try { if (config.SpriteAnchors != null && config.SpriteAnchors.Count > 0) merged.SpriteAnchors = config.SpriteAnchors; } catch { }
+
+                var opts = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+                string json = JsonSerializer.Serialize(merged, opts);
+                File.WriteAllText(configPath, json);
+                System.Diagnostics.Debug.WriteLine($"Saved config to: {configPath}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to save (merge) TMX config: {ex.Message}");
+            }
         }
         catch (Exception ex)
         {
@@ -6033,9 +6080,20 @@ namespace FamidashEditor
                 LoadedGroundOffsetY = loadedGroundOffsetY,
                 LoadedGroundRepeatX = loadedGroundRepeatX,
                 LoadedHasGroundLayer = loadedHasGroundLayer,
-                LoadedDecoSet = loadedDecoSet,
-                LoadedBlockSet = loadedBlockSet,
-                LoadedSpikeSet = loadedSpikeSet,
+                // If creating a brand-new (untitled) tab, initialize per-level metadata to defaults
+                LoadedDecoSet = filePath == null ? "DECO1" : loadedDecoSet,
+                LoadedBlockSet = filePath == null ? "BLOCKSA" : loadedBlockSet,
+                LoadedSpikeSet = filePath == null ? "SPIKESA" : loadedSpikeSet,
+                // For file-backed tabs, avoid inheriting previous per-level starting values;
+                // they will be populated by LoadTmxConfig/ SwitchToTab if present in config.
+                LoadedStartingSpeedUiIndex = filePath == null ? 1 : 1,
+                LoadedStartingBackgroundColor = filePath == null ? (int?)null : null,
+                LoadedStartingGameMode = filePath == null ? (int?)null : null,
+                LoadedStartingGroundColor = filePath == null ? (int?)null : null,
+                LoadedStartingLowerText = filePath == null ? null : null,
+                LoadedStartingUpperText = filePath == null ? null : null,
+                LoadedStartingDifficulty = filePath == null ? (int?)null : null,
+                LoadedStartingStars = filePath == null ? (int?)null : null,
                 NoParallaxBg = noParallaxBg,
                 BackgroundTint = backgroundTint,
                 GroundTint = groundTint,
@@ -17023,6 +17081,18 @@ namespace FamidashEditor
                         UpdateParallaxTint(); UpdateGroundTint(); UpdateTileTint();
                         undoStack.Clear(); redoStack.Clear();
                         hasUnsavedChanges = false;
+                        // Reset per-level loaded metadata to defaults so the Untitled tab is fresh
+                        try { loadedDecoSet = "DECO1"; } catch { }
+                        try { loadedBlockSet = "BLOCKSA"; } catch { }
+                        try { loadedSpikeSet = "SPIKESA"; } catch { }
+                        try { loadedStartingSpeedUiIndex = 1; } catch { }
+                        try { loadedStartingDifficulty = null; } catch { }
+                        try { loadedStartingStars = null; } catch { }
+                        try { loadedStartingBackgroundColor = null; } catch { }
+                        try { loadedStartingGroundColor = null; } catch { }
+                        try { loadedStartingGameMode = null; } catch { }
+                        try { loadedStartingLowerText = null; } catch { }
+                        try { loadedStartingUpperText = null; } catch { }
                         SaveCurrentTabState();
                         try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                         try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
