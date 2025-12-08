@@ -6539,6 +6539,8 @@ namespace FamidashEditor
                     sim.Show();
                     // Start simulation only after the window is shown so player doesn't move beforehand
                     try { sim.StartSimulation(); } catch { }
+                    // Request simulator to start running immediately and begin music playback
+                    try { _ = sim.StartRunningAsync(); } catch { }
                 }
                 finally
                 {

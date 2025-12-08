@@ -1215,6 +1215,36 @@ namespace FamidashEditor
             catch { }
         }
 
+        // Public API: start the simulator running and request playback (used by MainWindow to auto-start)
+        public async System.Threading.Tasks.Task StartRunningAsync()
+        {
+            try
+            {
+                // Only act when currently paused.
+                if (!paused) return;
+
+                // If another start is already pending, avoid duplicate starts.
+                if (!playbackStartPending)
+                {
+                    playbackStartPending = true;
+                    try
+                    {
+                        try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
+                        try { SimulateNumericStep(); } catch { }
+                        try { RenderFrame(); } catch { }
+                    }
+                    finally
+                    {
+                        playbackStartPending = false;
+                    }
+                }
+
+                paused = false;
+                try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+            }
+            catch { }
+        }
+
         private void Timer_Tick(object? sender, EventArgs e)
         {
             // Keep previous camera center for later anchor detection

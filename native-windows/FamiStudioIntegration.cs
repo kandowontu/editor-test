@@ -7,6 +7,8 @@ using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.RegularExpressions;
 using NAudio.Wave;
+using NAudio.MediaFoundation;
+using System.Security.Cryptography;
 
 #pragma warning disable CS8601,CS8600
 
@@ -417,120 +419,69 @@ namespace FamidashEditor
                 lastFmsPath = fmsPath;
                 lastTrackIndex = trackIndex;
                 Stop();
-                // No PlayTrack diagnostic logging
 
-                if (alc != null)
-            {
+                // If we have a cached mp3 or wav for this track, play it immediately.
                 try
                 {
-                    foreach (var asm in alc.Assemblies)
+                    var existing = FindExistingCachedMusic(fmsPath, trackIndex);
+                    if (!string.IsNullOrEmpty(existing) && File.Exists(existing))
                     {
-                        Type? playType = asm.GetTypes().FirstOrDefault(t => t.Name.ToLower().Contains("player") || t.Name.ToLower().Contains("audio"));
-                        if (playType != null)
-                        {
-                            // Prefer any in-process method that can render to a Stream or return byte[] before falling back to file-based export
-                            var candidates = playType.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance)
-                                .Where(mi => mi.Name.ToLower().Contains("export") || mi.Name.ToLower().Contains("render") || mi.Name.ToLower().Contains("play"))
-                                .ToList();
-
-                            object? inst = null;
-                            foreach (var method in candidates)
-                            {
-                                try
-                                {
-                                    var parameters = method.GetParameters();
-                                    if (!method.IsStatic && inst == null) inst = Activator.CreateInstance(playType);
-
-                                    // signature: (string path, int index, Stream outStream)
-                                    if (parameters.Length == 3 && parameters[0].ParameterType == typeof(string) && parameters[1].ParameterType == typeof(int) && typeof(Stream).IsAssignableFrom(parameters[2].ParameterType))
-                                    {
-                                        using (var ms = new MemoryStream())
-                                        {
-                                            method.Invoke(inst, new object[] { fmsPath, trackIndex, ms });
-                                            if (ms.Length > 0)
-                                            {
-                                                ms.Position = 0;
-                                                PlayWavStream(ms);
-                                                StatusMessage = "Playing via in-process stream export";
-                                                return;
-                                            }
-                                        }
-                                    }
-
-                                    // signature: (string path, int index) returning byte[]
-                                    if (parameters.Length == 2 && parameters[0].ParameterType == typeof(string) && parameters[1].ParameterType == typeof(int) && method.ReturnType == typeof(byte[]))
-                                    {
-                                        var bytes = method.Invoke(inst, new object[] { fmsPath, trackIndex }) as byte[];
-                                        if (bytes != null && bytes.Length > 0)
-                                        {
-                                            using (var ms = new MemoryStream(bytes))
-                                            {
-                                                PlayWavStream(ms);
-                                                StatusMessage = "Playing via in-process byte[] export";
-                                                return;
-                                            }
-                                        }
-                                    }
-
-                                    // Fallback to file-based third-parameter signature (string outpath)
-                                    if (parameters.Length == 3 && parameters[0].ParameterType == typeof(string) && parameters[1].ParameterType == typeof(int) && parameters[2].ParameterType == typeof(string))
-                                    {
-                                        string tmp = Path.Combine(Path.GetTempPath(), $"fms_play_{Guid.NewGuid()}.wav");
-                                        method.Invoke(inst, new object[] { fmsPath, trackIndex, tmp });
-                                        if (File.Exists(tmp))
-                                        {
-                                            PlayWav(tmp);
-                                            lastTempWav = tmp;
-                                            StatusMessage = "Playing via in-process export";
-                                            return;
-                                        }
-                                    }
-                                }
-                                catch { /* try next candidate */ }
-                            }
-                        }
+                        PlayWav(existing);
+                        StatusMessage = "Playing cached track";
+                        return;
                     }
                 }
-                catch
+                catch { }
+
+                // No cache present. Use FamiStudio CLI to export a WAV, convert to cached MP3 (or WAV fallback), then play.
+                if (famiFolder == null)
                 {
+                    StatusMessage = "FamiStudio not configured";
+                    throw new InvalidOperationException("FamiStudio folder not configured");
                 }
+
+                string exe = Path.Combine(famiFolder, "FamiStudio.exe");
+                if (!File.Exists(exe))
+                {
+                    StatusMessage = "FamiStudio.exe not found in bundled folder";
+                    throw new FileNotFoundException("FamiStudio.exe not found", exe);
+                }
+
+                string tmpWav = Path.Combine(Path.GetTempPath(), $"fms_play_{Guid.NewGuid()}.wav");
+                var args = $"\"{fmsPath}\" wav-export \"{tmpWav}\" -export-songs:{trackIndex} -wav-export-rate:48000";
+                var psi2 = new ProcessStartInfo(exe, args)
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+                using (var p = Process.Start(psi2))
+                {
+                    if (p == null) throw new Exception("Failed to start FamiStudio CLI");
+                    p.WaitForExit(60000);
+                }
+
+                if (!File.Exists(tmpWav)) throw new Exception("Export failed or produced no WAV");
+
+                var cachedTarget = GetCachedMusicPath(fmsPath, trackIndex);
+                var outPath = ConvertWavToCached(tmpWav, cachedTarget);
+                if (!string.IsNullOrEmpty(outPath) && File.Exists(outPath))
+                {
+                    // Play the cached MP3 (or WAV fallback)
+                    PlayWav(outPath);
+                    lastTempWav = null;
+                    StatusMessage = "Playing (cached)";
+                    return;
+                }
+
+                // Fallback: play the exported WAV and leave it as temp
+                PlayWav(tmpWav);
+                lastTempWav = tmpWav;
+                StatusMessage = "Playing (CLI fallback)";
+                return;
             }
-
-            }
-            if (famiFolder == null)
-            {
-                StatusMessage = "FamiStudio not configured";
-                throw new InvalidOperationException("FamiStudio folder not configured");
-            }
-
-            string exe = Path.Combine(famiFolder, "FamiStudio.exe");
-            if (!File.Exists(exe))
-            {
-                StatusMessage = "FamiStudio.exe not found in bundled folder";
-                throw new FileNotFoundException("FamiStudio.exe not found", exe);
-            }
-
-            string tmpWav = Path.Combine(Path.GetTempPath(), $"fms_play_{Guid.NewGuid()}.wav");
-            var args = $"\"{fmsPath}\" wav-export \"{tmpWav}\" -export-songs:{trackIndex} -wav-export-rate:48000";
-            var psi2 = new ProcessStartInfo(exe, args)
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            using (var p = Process.Start(psi2))
-            {
-                if (p == null) throw new Exception("Failed to start FamiStudio CLI");
-                p.WaitForExit(15000);
-            }
-
-            if (!File.Exists(tmpWav)) throw new Exception("Export failed or produced no WAV");
-
-            PlayWav(tmpWav);
-            lastTempWav = tmpWav;
-            StatusMessage = "Playing (CLI fallback)";
         }
 
         private void PlayWav(string wavPath)
@@ -651,6 +602,116 @@ namespace FamidashEditor
                 lastTempWav = null;
                 StatusMessage = "Stopped";
             }
+        }
+
+        // Compute the cache directory and filename for an exported track
+        private string GetMusicCacheDir()
+        {
+            try
+            {
+                var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                var dir = Path.Combine(docs, "Famidash Editor", "Music");
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                return dir;
+            }
+            catch
+            {
+                return Path.GetTempPath();
+            }
+        }
+
+        private string GetCachedMusicPath(string fmsPath, int trackIndex)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(fmsPath)) return null!;
+                using var sha = SHA1.Create();
+                var key = (fmsPath + "|" + trackIndex.ToString());
+                var bytes = System.Text.Encoding.UTF8.GetBytes(key);
+                var hash = sha.ComputeHash(bytes);
+                var hex = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                var fname = $"track_{hex}_{trackIndex}.mp3";
+                return Path.Combine(GetMusicCacheDir(), fname);
+            }
+            catch
+            {
+                return Path.Combine(Path.GetTempPath(), $"track_{trackIndex}.mp3");
+            }
+        }
+
+        // If a cached file exists for this track (either MP3 or WAV), return its path; otherwise return null.
+        private string? FindExistingCachedMusic(string fmsPath, int trackIndex)
+        {
+            try
+            {
+                var mp3 = GetCachedMusicPath(fmsPath, trackIndex);
+                if (File.Exists(mp3)) return mp3;
+                var wav = Path.ChangeExtension(mp3, ".wav");
+                if (File.Exists(wav)) return wav;
+                return null;
+            }
+            catch { return null; }
+        }
+
+        // Ensure a cached MP3 exists for the given track. Returns path to playable file (mp3 or wav fallback).
+        private string EnsureCachedMusic(string fmsPath, int trackIndex)
+        {
+            var cached = GetCachedMusicPath(fmsPath, trackIndex);
+            if (File.Exists(cached)) return cached;
+            // Not cached - attempt to export via CLI and then convert to mp3
+            if (famiFolder == null) return string.Empty;
+            string exe = Path.Combine(famiFolder, "FamiStudio.exe");
+            if (!File.Exists(exe)) return string.Empty;
+            string tmpWav = Path.Combine(Path.GetTempPath(), $"fms_export_{Guid.NewGuid()}.wav");
+            var args = $"\"{fmsPath}\" wav-export \"{tmpWav}\" -export-songs:{trackIndex} -wav-export-rate:48000";
+            var psi = new ProcessStartInfo(exe, args)
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            try { using (var p = Process.Start(psi)) { if (p != null) p.WaitForExit(15000); } } catch { }
+            if (!File.Exists(tmpWav)) return string.Empty;
+            var outPath = ConvertWavToCached(tmpWav, cached);
+            return outPath ?? string.Empty;
+        }
+
+        // Convert a WAV file to the cached MP3 (or WAV fallback) path and return that path.
+        private string ConvertWavToCached(string wavPath, string cachedTarget)
+        {
+            try
+            {
+                if (!File.Exists(wavPath)) return string.Empty;
+                try
+                {
+                    using var reader = new AudioFileReader(wavPath);
+                    try
+                    {
+                        MediaFoundationApi.Startup();
+                        var mp3Out = cachedTarget;
+                        MediaFoundationEncoder.EncodeToMp3(reader, mp3Out, 192000);
+                        try { File.Delete(wavPath); } catch { }
+                        return mp3Out;
+                    }
+                    catch
+                    {
+                        // Encoding failed - fall back to wav copy
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var fallback = Path.ChangeExtension(cachedTarget, ".wav");
+                    File.Copy(wavPath, fallback, true);
+                    try { File.Delete(wavPath); } catch { }
+                    return fallback;
+                }
+                catch { return string.Empty; }
+            }
+            catch { return string.Empty; }
         }
 
         // Request a playback rate multiplier (e.g. 2.0 for 2x).
