@@ -13,7 +13,7 @@
         <Grid Grid.Column="0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="220" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="200" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -39,7 +39,7 @@
             <CheckBox Grid.Row="2" Grid.Column="0" x:Name="LockSpritesCheckBox" Content="Lock sprites to currently usable set" Margin="0,6,0,0" Width="260" HorizontalAlignment="Left" />
 
             <TextBlock Grid.Row="3" Grid.Column="0" Text="Block Set:" Margin="0,8,0,6" />
-            <TextBlock Grid.Row="3" Grid.Column="1" Text="Starting Background Color:" Margin="8,8,0,6" />
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="Starting Background Color:" Margin="8,0,0,6" />
 
             <ComboBox Grid.Row="4" Grid.Column="0" x:Name="BlockCombo" Width="160" HorizontalAlignment="Left">
                 <ComboBoxItem Content="BLOCKSA" />
@@ -47,7 +47,7 @@
                 <ComboBoxItem Content="BLOCKSC" />
                 <ComboBoxItem Content="BLOCKSD" />
             </ComboBox>
-            <ComboBox Grid.Row="4" Grid.Column="1" x:Name="StartingBackgroundColorCombo" Width="140" HorizontalAlignment="Left" Margin="8,0,0,0" VerticalAlignment="Top">
+            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="StartingBackgroundColorCombo" Width="140" HorizontalAlignment="Left" Margin="8,0,0,0" VerticalAlignment="Top">
                 <!-- Allowed values: 0x00-0x0C, 0x0F, 0x10-0x1C, 0x20-0x2C -->
                 <ComboBoxItem Content="0x00" />
                 <ComboBoxItem Content="0x01" />
@@ -92,14 +92,14 @@
             </ComboBox>
 
             <TextBlock Grid.Row="5" Grid.Column="0" Text="Spike Set:" Margin="0,8,0,6" />
-            <TextBlock Grid.Row="5" Grid.Column="1" Text="Starting Ground Color:" Margin="8,8,0,6" />
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="Starting Ground Color:" Margin="8,0,0,6" />
 
             <ComboBox Grid.Row="6" Grid.Column="0" x:Name="SpikeCombo" Width="160" HorizontalAlignment="Left">
                 <ComboBoxItem Content="SPIKESA" />
                 <ComboBoxItem Content="SPIKESB" />
                 <ComboBoxItem Content="SPIKESC" />
             </ComboBox>
-            <ComboBox Grid.Row="6" Grid.Column="1" x:Name="StartingGroundColorCombo" Width="140" HorizontalAlignment="Left" Margin="8,0,0,0" VerticalAlignment="Top">
+            <ComboBox Grid.Row="3" Grid.Column="1" x:Name="StartingGroundColorCombo" Width="140" HorizontalAlignment="Left" Margin="8,0,0,0" VerticalAlignment="Top">
                 <!-- Same allowed values as background -->
                 <ComboBoxItem Content="0x00" />
                 <ComboBoxItem Content="0x01" />
@@ -143,19 +143,35 @@
                 <ComboBoxItem Content="0x2C" />
             </ComboBox>
 
-            <!-- Move Show accurate tileset under spike set -->
-            <CheckBox Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" x:Name="ShowAccurateTilesetCheckBox" Content="Show accurate tileset" Margin="0,8,0,0" Width="320" HorizontalAlignment="Left" VerticalAlignment="Top" />
+            <!-- Starting game mode (placed under Starting Ground Color) -->
+            <TextBlock Grid.Row="4" Grid.Column="1" Text="Starting Game Mode:" Margin="8,0,0,6" />
+            <ComboBox Grid.Row="5" Grid.Column="1" x:Name="StartingGameModeCombo" Width="140" HorizontalAlignment="Left" Margin="8,0,0,0" VerticalAlignment="Top">
+                <ComboBoxItem Content="Cube (default)" Tag="0" />
+                <ComboBoxItem Content="Ship" Tag="1" />
+                <ComboBoxItem Content="Ball" Tag="2" />
+                <ComboBoxItem Content="UFO" Tag="3" />
+                <ComboBoxItem Content="Robot" Tag="4" />
+                <ComboBoxItem Content="Spider" Tag="5" />
+                <ComboBoxItem Content="Wave" Tag="6" />
+                <ComboBoxItem Content="Swing" Tag="7" />
+                <ComboBoxItem Content="Ninja" Tag="8" />
+            </ComboBox>
 
-            <!-- Starting speed and OK/Cancel at bottom -->
-            <TextBlock Grid.Row="8" Grid.Column="0" Text="Starting Speed:" Margin="0,12,0,6" />
-            <ComboBox Grid.Row="9" Grid.Column="0" x:Name="StartingSpeedCombo" Width="120" HorizontalAlignment="Left" VerticalAlignment="Top">
+            <!-- Move Show accurate tileset under spike set -->
+            <CheckBox Grid.Row="7" Grid.Column="0" x:Name="ShowAccurateTilesetCheckBox" Content="Show accurate tileset" Margin="0,8,0,0" Width="320" HorizontalAlignment="Left" VerticalAlignment="Top" />
+
+            <!-- Starting speed moved up to align with other starting options -->
+            <TextBlock Grid.Row="6" Grid.Column="1" Text="Starting Speed:" Margin="8,0,0,6" />
+            <ComboBox Grid.Row="7" Grid.Column="1" x:Name="StartingSpeedCombo" Width="120" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8,0,0,0">
                 <ComboBoxItem Content="0.5x" />
                 <ComboBoxItem Content="1x" />
                 <ComboBoxItem Content="2x" />
                 <ComboBoxItem Content="3x" />
                 <ComboBoxItem Content="4x" />
             </ComboBox>
-            <StackPanel Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,12,0,0">
+
+            <!-- OK/Cancel buttons now sit below the options -->
+            <StackPanel Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,8,0,0">
                 <Button x:Name="OkButton" Width="75" Margin="4,0">K</Button>
                 <Button x:Name="CancelButton" Width="75" Margin="4,0">Cancel</Button>
             </StackPanel>

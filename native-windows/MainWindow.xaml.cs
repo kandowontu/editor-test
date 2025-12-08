@@ -218,6 +218,8 @@ namespace FamidashEditor
         public Color TileTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
         public string? SelectedSong { get; set; } = null;
         public int LoadedStartingSpeedUiIndex { get; set; } = 1;
+        private int? loadedStartingGameMode = null;
+        public int? LoadedStartingGameMode { get => loadedStartingGameMode; set => loadedStartingGameMode = value; }
         private int? loadedStartingBackgroundColor = null;
         public int? LoadedStartingBackgroundColor { get => loadedStartingBackgroundColor; set => loadedStartingBackgroundColor = value; }
         private int? loadedStartingGroundColor = null;
@@ -225,6 +227,9 @@ namespace FamidashEditor
         private int loadedSimulatorScale = 1;
         public int LoadedSimulatorScale { get => loadedSimulatorScale; set => loadedSimulatorScale = value; }
     }
+
+    private int? loadedStartingGameMode = null;
+    public int? LoadedStartingGameMode { get => loadedStartingGameMode; set => loadedStartingGameMode = value; }
 
     private void SetSimulatorSizeFromMenu(int size)
     {
@@ -356,6 +361,8 @@ namespace FamidashEditor
         public int? StartingSpeed { get; set; } = null;
         public int? StartingBackgroundColor { get; set; } = null;
         public int? StartingGroundColor { get; set; } = null;
+        // Per-level starting game mode (0=cube,1=ship,2=ball,3=ufo,4=robot,5=spider,6=wave,7=swing,8=ninja)
+        public int? StartingGameMode { get; set; } = null;
         // Simulator scale multiplier (1..4)
         public int? SimulatorScale { get; set; } = null;
     }
@@ -898,6 +905,7 @@ namespace FamidashEditor
 
             // Save starting background/ground color codes if set
             try { if (loadedStartingBackgroundColor.HasValue) config.StartingBackgroundColor = loadedStartingBackgroundColor.Value; } catch { }
+            try { if (loadedStartingGameMode.HasValue) config.StartingGameMode = loadedStartingGameMode.Value; } catch { }
             try { if (loadedStartingGroundColor.HasValue) config.StartingGroundColor = loadedStartingGroundColor.Value; } catch { }
 
             // Simulator scale is now a global setting; per-TMX configs must not store it.
@@ -1089,6 +1097,7 @@ namespace FamidashEditor
 
                     // Load starting background/ground codes if present
                     try { loadedStartingBackgroundColor = config.StartingBackgroundColor.HasValue ? config.StartingBackgroundColor.Value : (int?)null; } catch { loadedStartingBackgroundColor = null; }
+                    try { loadedStartingGameMode = config.StartingGameMode.HasValue ? config.StartingGameMode.Value : (int?)null; } catch { loadedStartingGameMode = null; }
                     try { loadedStartingGroundColor = config.StartingGroundColor.HasValue ? config.StartingGroundColor.Value : (int?)null; } catch { loadedStartingGroundColor = null; }
 
                     // Simulator scale is intentionally not loaded from per-TMX configs.
@@ -6801,6 +6810,7 @@ namespace FamidashEditor
                     loadedSpikeSet = tabData.LoadedSpikeSet;
                     try { loadedStartingSpeedUiIndex = tabData.LoadedStartingSpeedUiIndex; } catch { loadedStartingSpeedUiIndex = 1; }
                     try { loadedStartingBackgroundColor = tabData.LoadedStartingBackgroundColor; } catch { loadedStartingBackgroundColor = null; }
+                    try { loadedStartingGameMode = tabData.LoadedStartingGameMode; } catch { loadedStartingGameMode = null; }
                     try { loadedStartingGroundColor = tabData.LoadedStartingGroundColor; } catch { loadedStartingGroundColor = null; }
                     noParallaxBg = tabData.NoParallaxBg;
                     backgroundTint = tabData.BackgroundTint;
@@ -6913,6 +6923,7 @@ namespace FamidashEditor
             tabData.LoadedBlockSet = loadedBlockSet;
             tabData.LoadedSpikeSet = loadedSpikeSet;
             tabData.LoadedStartingSpeedUiIndex = loadedStartingSpeedUiIndex;
+            tabData.LoadedStartingGameMode = loadedStartingGameMode;
             tabData.LoadedStartingBackgroundColor = loadedStartingBackgroundColor;
             tabData.LoadedStartingGroundColor = loadedStartingGroundColor;
             tabData.NoParallaxBg = noParallaxBg;
