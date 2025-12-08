@@ -3437,6 +3437,9 @@ namespace FamidashEditor
             
             // Only increment animation frame when we actually render
             animationFrame++;
+
+            // Visible debug: update window title so user can see animation frame advancing
+            try { this.Title = $"Famidash Editor (Preview anim {animationFrame})"; } catch { }
             
             // Debug: Log frame switching every 60 frames (once per second)
             if (animationFrame % 60 == 0)
@@ -17912,6 +17915,9 @@ namespace FamidashEditor
                                     previewMode = false;
                                     StopPreviewTimer();
                                     animationFrame = 0;
+
+                                    // Reset title when preview disabled
+                                    try { this.Title = "Famidash Editor"; } catch { }
                                     if (portalsWb != null)
                                     {
                                         try

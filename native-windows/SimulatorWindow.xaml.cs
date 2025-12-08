@@ -2280,13 +2280,45 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s, out var previewImg) && previewImg != null)
+                        // Special-case rainbow portal (0x64): cycle through the ordered portal
+                        // preview images deterministically per-position and advance by animation frame.
+                        if (s == 0x64)
                         {
-                            chosenSprite = previewImg;
+                            try
+                            {
+                                if (previewSpriteMap != null)
+                                {
+                                    int[] orderIds = new int[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x24, 0x17, 0x4B, 0x58 };
+                                    var list = new System.Collections.Generic.List<ImageSource?>();
+                                    foreach (var id in orderIds)
+                                    {
+                                        if (previewSpriteMap.TryGetValue(id, out var img) && img != null) list.Add(img);
+                                    }
+                                    if (list.Count > 0)
+                                    {
+                                        int len = list.Count;
+                                        int frameAdvance = 0;
+                                        try { frameAdvance = (animationFrame / 8) % Math.Max(1, len); } catch { frameAdvance = 0; }
+                                        uint seed = (uint)idx; // deterministic per-position offset (matches editor behavior)
+                                        uint offset = (uint)((seed * 2654435761u) % (uint)len);
+                                        int sel = (int)((offset + (uint)frameAdvance) % (uint)len);
+                                        chosenSprite = list[sel];
+                                    }
+                                }
+                            }
+                            catch { }
                         }
-                        else if (spriteImages != null && s < spriteImages.Length && spriteImages[s] != null)
+
+                        if (chosenSprite == null)
                         {
-                            chosenSprite = spriteImages[s];
+                            if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s, out var previewImg) && previewImg != null)
+                            {
+                                chosenSprite = previewImg;
+                            }
+                            else if (spriteImages != null && s < spriteImages.Length && spriteImages[s] != null)
+                            {
+                                chosenSprite = spriteImages[s];
+                            }
                         }
                     }
 
@@ -2537,13 +2569,13 @@ namespace FamidashEditor
                     double delta = Math.Max(0.0, now - uiAnimLastMs);
                     uiAnimLastMs = now;
                     uiAnimAccumulatedMs += delta;
-                    if (!paused)
+                    // Advance UI-driven animation counter regardless of pause state so
+                    // decorative/preview animations (eg. rainbow portal) continue animating
+                    // even when numeric simulation is paused.
+                    while (uiAnimAccumulatedMs >= SIM_STEP_MS)
                     {
-                        while (uiAnimAccumulatedMs >= SIM_STEP_MS)
-                        {
-                            animationFrame++;
-                            uiAnimAccumulatedMs -= SIM_STEP_MS;
-                        }
+                        animationFrame++;
+                        uiAnimAccumulatedMs -= SIM_STEP_MS;
                     }
                 }
                 catch { }
