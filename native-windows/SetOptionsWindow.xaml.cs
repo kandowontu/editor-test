@@ -195,6 +195,65 @@ namespace FamidashEditor
                 this.DialogResult = false;
             };
 
+            // Initialize Upper/Lower text UI and handlers (preserve values from MainWindow and persist on change)
+            try
+            {
+                if (this.Owner is MainWindow mw)
+                {
+                    try { if (LowerTextBox != null) LowerTextBox.Text = mw.LoadedStartingLowerText ?? ""; } catch { }
+                    try { if (UpperTextBox != null) UpperTextBox.Text = mw.LoadedStartingUpperText ?? ""; } catch { }
+                    try { if (UpperTextBox != null) UpperTextBox.IsEnabled = !string.IsNullOrEmpty(mw.LoadedStartingLowerText) || !string.IsNullOrEmpty(mw.LoadedStartingUpperText); } catch { }
+
+                    if (LowerTextBox != null)
+                    {
+                        LowerTextBox.TextChanged += (ss, ee) =>
+                        {
+                            try
+                            {
+                                string txt = LowerTextBox.Text ?? "";
+                                txt = txt.ToUpperInvariant();
+                                mw.LoadedStartingLowerText = string.IsNullOrEmpty(txt) ? null : txt;
+                                try
+                                {
+                                    if (UpperTextBox != null)
+                                    {
+                                        if (string.IsNullOrEmpty(txt))
+                                        {
+                                            UpperTextBox.Text = "";
+                                            UpperTextBox.IsEnabled = false;
+                                            mw.LoadedStartingUpperText = null;
+                                        }
+                                        else
+                                        {
+                                            UpperTextBox.IsEnabled = true;
+                                        }
+                                    }
+                                }
+                                catch { }
+                                try { mw.SaveCurrentTmxConfig(); } catch { }
+                            }
+                            catch { }
+                        };
+                    }
+
+                    if (UpperTextBox != null)
+                    {
+                        UpperTextBox.TextChanged += (ss, ee) =>
+                        {
+                            try
+                            {
+                                string txt = UpperTextBox.Text ?? "";
+                                txt = txt.ToUpperInvariant();
+                                mw.LoadedStartingUpperText = string.IsNullOrEmpty(txt) ? null : txt;
+                                try { mw.SaveCurrentTmxConfig(); } catch { }
+                            }
+                            catch { }
+                        };
+                    }
+                }
+            }
+            catch { }
+
             // Wire quick tint buttons to call methods on owner MainWindow
             BgTintButton.Click += (s, e) =>
             {
@@ -880,6 +939,34 @@ namespace FamidashEditor
                     catch { }
                 }
 
+                // Apply lower/upper text metadata if present (force uppercase). If upper text is provided
+                // we enable the upper box even if lower is empty (this is the JSON-load exception).
+                if (!string.IsNullOrEmpty(levelData.lowerText))
+                {
+                    try
+                    {
+                        string lt = levelData.lowerText.Trim().ToUpperInvariant();
+                        mainWindow.LoadedStartingLowerText = lt;
+                        try { if (LowerTextBox != null) LowerTextBox.Text = lt; } catch { }
+                        // If we have lower text, ensure upper is enabled (but don't change its text here)
+                        try { if (UpperTextBox != null) UpperTextBox.IsEnabled = true; } catch { }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+
+                if (!string.IsNullOrEmpty(levelData.upperText))
+                {
+                    try
+                    {
+                        string ut = levelData.upperText.Trim().ToUpperInvariant();
+                        mainWindow.LoadedStartingUpperText = ut;
+                        try { if (UpperTextBox != null) { UpperTextBox.Text = ut; UpperTextBox.IsEnabled = true; } } catch { }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+
                 if (dataChanged)
                 {
                     // Save to level-specific config file
@@ -1114,6 +1201,9 @@ namespace FamidashEditor
             // Optional difficulty/stars
             public string? difficulty { get; set; }
             public int? stars { get; set; }
+            // Optional per-level lower/upper text
+            public string? lowerText { get; set; }
+            public string? upperText { get; set; }
             // Optional starting speed metadata. Values are numeric codes per the metadata spec:
             // 0 -> 1x, 1 -> 0.5x, 2 -> 2x, 3 -> 3x, 4 -> 4x
             public int? startingSpeed { get; set; }

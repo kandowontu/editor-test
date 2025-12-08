@@ -28,6 +28,8 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0" Grid.Column="0" Text="Sprite/Deco Set:" Margin="0,0,0,6" />
@@ -196,8 +198,18 @@
                 <ComboBoxItem Content="10*" Tag="10" />
             </ComboBox>
 
+            <!-- Upper / Lower Text (per-level) -->
+            <StackPanel Grid.Row="10" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="8,8,0,0">
+                <TextBlock Text="Upper Text:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBox x:Name="UpperTextBox" Width="180" CharacterCasing="Upper" />
+            </StackPanel>
+            <StackPanel Grid.Row="11" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="8,8,0,0">
+                <TextBlock Text="Lower Text:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBox x:Name="LowerTextBox" Width="180" CharacterCasing="Upper" />
+            </StackPanel>
+
             <!-- OK/Cancel buttons now sit below the options -->
-            <StackPanel Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,8,0,0">
+            <StackPanel Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,8,0,0">
                 <Button x:Name="OkButton" Width="75" Margin="4,0">K</Button>
                 <Button x:Name="CancelButton" Width="75" Margin="4,0">Cancel</Button>
             </StackPanel>

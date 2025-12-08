@@ -306,6 +306,10 @@ namespace FamidashEditor
     public int? LoadedStartingBackgroundColor { get => loadedStartingBackgroundColor; set => loadedStartingBackgroundColor = value; }
     private int? loadedStartingGroundColor = null;
     public int? LoadedStartingGroundColor { get => loadedStartingGroundColor; set => loadedStartingGroundColor = value; }
+    private string? loadedStartingLowerText = null;
+    public string? LoadedStartingLowerText { get => loadedStartingLowerText; set => loadedStartingLowerText = value; }
+    private string? loadedStartingUpperText = null;
+    public string? LoadedStartingUpperText { get => loadedStartingUpperText; set => loadedStartingUpperText = value; }
     private int paletteTileSize = 16;
     // Provide a snapshot of the per-tab starting values for dialogs that may open
     // while tab switching is taking place. This returns values from the active
