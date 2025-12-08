@@ -67,3 +67,8 @@ Other options include:
 Famistudio playback only possible with BleuBleu and the repo https://github.com/BleuBleu/FamiStudio
 
 Full credits and copyrights to Famistudio 
+
+
+Time-Stretching playback courtesy of The SoundTouch Library Copyright © Olli Parviainen 2001-2024
+
+https://www.surina.net/soundtouch/index.html
