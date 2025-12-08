@@ -1015,11 +1015,6 @@ namespace FamidashEditor
             try
             {
                 var offsets = mainWindow.GetSpriteOffsets();
-                if (offsets.Count == 0)
-                {
-                    MessageBox.Show("No sprite shifts found on this map.", "Information", MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
 
                 // Get map dimensions
                 int mapWidth = mainWindow.MapWidth;
@@ -1043,72 +1038,257 @@ namespace FamidashEditor
                     groupedOffsets[key].Add((x, y));
                 }
 
-                // Build JSON5 output
+                // Build full JSON5 metadata block in the same format and ordering
+                // as lvlset_HUGE_metadata.json5. We'll emit a single level object
+                // inside an array (official_levels) so it's easy to drop into the
+                // existing metadata file.
                 var sb = new System.Text.StringBuilder();
-                sb.AppendLine("\t\t\tobjectOffsets: [");
-                
-                bool firstGroup = true;
-                foreach (var group in groupedOffsets)
-                {
-                    if (!firstGroup)
-                    {
-                        sb.AppendLine(",");
-                    }
-                    firstGroup = false;
-                    
-                    sb.AppendLine("\t\t\t\t{");
-                    
-                    // Write coordinates
-                    var coords = group.Value;
-                    if (coords.Count == 1)
-                    {
-                        // Single coordinate: [x, y]
-                        sb.AppendLine($"\t\t\t\t\tcoordinates: [{coords[0].x}, {coords[0].y}],");
-                    }
-                    else
-                    {
-                        // Multiple coordinates: [[x, y], [x, y], ...]
-                        sb.AppendLine("\t\t\t\t\tcoordinates: [");
-                        for (int i = 0; i < coords.Count; i++)
-                        {
-                            string separator = (i < coords.Count - 1) ? "," : "";
-                            sb.AppendLine($"\t\t\t\t\t\t[{coords[i].x}, {coords[i].y}]{separator}");
-                        }
-                        sb.AppendLine("\t\t\t\t\t],");
-                    }
-                    
-                    // Write offsets
-                    if (group.Key.offsetX != 0 && group.Key.offsetY != 0)
-                    {
-                        string offsetXStr = group.Key.offsetX >= 0 ? $"+{group.Key.offsetX}" : group.Key.offsetX.ToString();
-                        string offsetYStr = group.Key.offsetY >= 0 ? $"+{group.Key.offsetY}" : group.Key.offsetY.ToString();
-                        sb.AppendLine($"\t\t\t\t\toffsetY: {offsetYStr},");
-                        sb.AppendLine($"\t\t\t\t\toffsetX: {offsetXStr}");
-                    }
-                    else if (group.Key.offsetY != 0)
-                    {
-                        string offsetYStr = group.Key.offsetY >= 0 ? $"+{group.Key.offsetY}" : group.Key.offsetY.ToString();
-                        sb.AppendLine($"\t\t\t\t\toffsetY: {offsetYStr}");
-                    }
-                    else if (group.Key.offsetX != 0)
-                    {
-                        string offsetXStr = group.Key.offsetX >= 0 ? $"+{group.Key.offsetX}" : group.Key.offsetX.ToString();
-                        sb.AppendLine($"\t\t\t\t\toffsetX: {offsetXStr}");
-                    }
-                    
-                    sb.Append("\t\t\t\t}");
-                }
-                
-                sb.AppendLine();
-                sb.AppendLine("\t\t\t]");
 
-                // Get current TMX filename
+                // Prepare top-level values
                 string currentTmxPath = mainWindow.GetCurrentTmxPath();
-                string levelName = string.IsNullOrEmpty(currentTmxPath) ? "level" : Path.GetFileNameWithoutExtension(currentTmxPath);
+                string levelName = string.IsNullOrEmpty(currentTmxPath) ? "level" : Path.GetFileNameWithoutExtension(currentTmxPath).ToLowerInvariant();
+
+                // Helper to safely read properties from MainWindow (reflection) so
+                // this exporter remains robust if member names differ between builds.
+                object? GetProp(string name) => mainWindow.GetType().GetProperty(name)?.GetValue(mainWindow);
+                string GetString(string name, string @default = "") => (GetProp(name) as string) ?? @default;
+                int? GetNullableInt(string name)
+                {
+                    var v = GetProp(name);
+                    if (v == null) return null;
+                    try { return Convert.ToInt32(v); } catch { return null; }
+                }
+                bool GetBool(string name)
+                {
+                    var v = GetProp(name);
+                    if (v == null) return false;
+                    try { return Convert.ToBoolean(v); } catch { return false; }
+                }
+
+                // Upper/Lower - uppercase and trim
+                string upper = GetString("LoadedStartingUpperText", "").ToUpperInvariant();
+                string lower = GetString("LoadedStartingLowerText", "").ToUpperInvariant();
+
+                // Helper: try to read the current tab's FileTabData values when available
+                object? TryGetCurrentTabValue(string propName)
+                {
+                    try
+                    {
+                        var openFilesField = mainWindow.GetType().GetField("openFiles", BindingFlags.NonPublic | BindingFlags.Instance);
+                        var currentIndexField = mainWindow.GetType().GetField("currentFileIndex", BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (openFilesField != null && currentIndexField != null)
+                        {
+                            var list = openFilesField.GetValue(mainWindow) as System.Collections.IList;
+                            var idxObj = currentIndexField.GetValue(mainWindow);
+                            if (list != null && idxObj is int idx && idx >= 0 && idx < list.Count)
+                            {
+                                var tabData = list[idx];
+                                if (tabData != null)
+                                {
+                                    // Try property on the FileTabData instance first
+                                    var p = tabData.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                                    if (p != null) return p.GetValue(tabData);
+                                    // Try field
+                                    var f = tabData.GetType().GetField(propName, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                                    if (f != null) return f.GetValue(tabData);
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                    return null;
+                }
+
+                // Deco/block/spike sets - prefer per-tab values if available, then main window props/fields
+                string deco = (TryGetCurrentTabValue("LoadedDecoSet") as string) ?? GetString("LoadedDecoSet", "DECO1");
+                // Block/spike sets may be stored as BLOCKSA/BLOCKSB or SPIKESA/SPIKESB; extract trailing letter if present
+                string blockSet = (TryGetCurrentTabValue("LoadedBlockSet") as string) ?? GetString("LoadedBlockSet", "BLOCKSA");
+                string spikeSet = (TryGetCurrentTabValue("LoadedSpikeSet") as string) ?? GetString("LoadedSpikeSet", "SPIKESA");
+                string blockLetter = blockSet != null && blockSet.StartsWith("BLOCKS", StringComparison.OrdinalIgnoreCase) ? blockSet.Substring(6) : (blockSet ?? "A");
+                string spikeLetter = spikeSet != null && spikeSet.StartsWith("SPIKES", StringComparison.OrdinalIgnoreCase) ? spikeSet.Substring(6) : (spikeSet ?? "A");
+                blockLetter = (blockLetter ?? "").ToUpperInvariant();
+                spikeLetter = (spikeLetter ?? "").ToUpperInvariant();
+
+                // Difficulty / stars
+                string difficulty = "AUTO";
+                var diffVal = GetNullableInt("LoadedStartingDifficulty");
+                try { difficulty = (diffVal.HasValue ? (new string[] { "EASY","NORMAL","HARD","HARDER","INSANE","DEMON","AUTO" })[Math.Clamp(diffVal.Value, 0, 6)] : "AUTO"); } catch { difficulty = "AUTO"; }
+                int stars = GetNullableInt("LoadedStartingStars") ?? 3;
+
+                // Song normalization: prefer per-tab SelectedSong, then main property, then FamiTrackCombo control
+                string rawSong = TryGetCurrentTabValue("SelectedSong") as string ?? GetString("SelectedSong", "");
+                if (string.IsNullOrEmpty(rawSong))
+                {
+                    try
+                    {
+                        var comboProp = mainWindow.GetType().GetProperty("FamiTrackCombo");
+                        object? combo = comboProp?.GetValue(mainWindow);
+                        if (combo != null)
+                        {
+                            var sel = combo.GetType().GetProperty("SelectedItem")?.GetValue(combo);
+                            if (sel != null)
+                            {
+                                // ComboBoxItem.Content
+                                var contentProp = sel.GetType().GetProperty("Content");
+                                if (contentProp != null)
+                                {
+                                    var content = contentProp.GetValue(sel)?.ToString();
+                                    if (!string.IsNullOrEmpty(content)) rawSong = content;
+                                }
+                                else
+                                {
+                                    // Fallback: ToString()
+                                    var s = sel.ToString();
+                                    if (!string.IsNullOrEmpty(s)) rawSong = s;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+                string songId = "";
+                if (!string.IsNullOrEmpty(rawSong))
+                {
+                    string s = rawSong.ToLowerInvariant();
+                    s = Regex.Replace(s, "\\s+", "_");
+                    s = Regex.Replace(s, "[^a-z0-9_]", "");
+                    songId = "song_" + s;
+                }
+
+                // Starting game mode / speed / colors
+                int? gameMode = GetNullableInt("LoadedStartingGameMode");
+                int startingGameMode = gameMode ?? 0;
+                int startingSpeedJson = 0; // default metadata uses 0 -> 1x
+                try { int ui = GetNullableInt("LoadedStartingSpeedUiIndex") ?? 1; startingSpeedJson = (ui == 0) ? 1 : (ui == 1) ? 0 : ui; } catch { startingSpeedJson = 0; }
+                int? bgColor = GetNullableInt("LoadedStartingBackgroundColor");
+                int? groundColor = GetNullableInt("LoadedStartingGroundColor");
+
+                // Build header of one-level object
+                sb.AppendLine("\t\t{ ");
+                sb.AppendLine($"\t\t\tlevel: \"{levelName}\",");
+                if (!string.IsNullOrEmpty(upper)) sb.AppendLine($"\t\t\tupperText: \"{upper}\",");
+                if (!string.IsNullOrEmpty(lower)) sb.AppendLine($"\t\t\tlowerText: \"{lower}\",");
+                sb.AppendLine($"\t\t\tdecoType: \"{deco}\",");
+                sb.AppendLine($"\t\t\tspikeSet: \"{spikeLetter}\",");
+                sb.AppendLine($"\t\t\tblockSet: \"{blockLetter}\",");
+                sb.AppendLine($"\t\t\tsawSet: \"A\",");
+                sb.AppendLine($"\t\t\tdifficulty: \"{difficulty}\",");
+                sb.AppendLine($"\t\t\tstars: {stars},");
+                if (!string.IsNullOrEmpty(songId)) sb.AppendLine($"\t\t\tsongID: \"{songId}\",");
+                sb.AppendLine($"\t\t\tstartingGameMode: {startingGameMode},");
+                sb.AppendLine($"\t\t\tstartingSpeed: {startingSpeedJson},");
+                if (bgColor.HasValue) sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x{bgColor.Value:X2},"); else sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x12,");
+                if (groundColor.HasValue) sb.AppendLine($"\t\t\tstartingGroundColor: 0x{groundColor.Value:X2},"); else sb.AppendLine($"\t\t\tstartingGroundColor: 0x02,");
+
+                // Optionally include parallaxDisable. Try per-tab value then fields/properties and finally menu option state.
+                bool noParallax = false;
+                try { var v = TryGetCurrentTabValue("NoParallaxBg"); if (v is bool vb) noParallax = vb; }
+                catch { }
+                if (!noParallax)
+                {
+                    try { noParallax = GetBool("NoParallaxBg"); } catch { }
+                }
+                if (!noParallax)
+                {
+                    // Try menu option control if available (MenuOptionNoParallax.IsChecked)
+                    try
+                    {
+                        var menuObj = mainWindow.GetType().GetField("MenuOptionNoParallax", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(mainWindow)
+                                      ?? mainWindow.GetType().GetProperty("MenuOptionNoParallax", BindingFlags.Public | BindingFlags.Instance)?.GetValue(mainWindow);
+                        if (menuObj != null)
+                        {
+                            var isCheckedProp = menuObj.GetType().GetProperty("IsChecked");
+                            if (isCheckedProp != null)
+                            {
+                                var chk = isCheckedProp.GetValue(menuObj);
+                                if (chk is bool cb) noParallax = cb;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+                if (noParallax)
+                {
+                    sb.AppendLine($"\t\t\tparallaxDisable: true,");
+                }
+
+                // Try to detect the level set letter from the TMX's internal export target
+                // (many TMX files include an editors/export target path like ".../lvlset_B/...").
+                try
+                {
+                    if (!string.IsNullOrEmpty(currentTmxPath) && File.Exists(currentTmxPath))
+                    {
+                        var tmxContents = File.ReadAllText(currentTmxPath);
+                        var m = Regex.Match(tmxContents, "lvlset_([A-Za-z0-9]+)", RegexOptions.IgnoreCase);
+                        if (m.Success && m.Groups.Count > 1)
+                        {
+                            var setLetter = m.Groups[1].Value.ToUpperInvariant();
+                            // if block/spike letters are single-letter or defaults, prefer the TMX-indicated set
+                            if (blockLetter == "A" || blockLetter.Length == 0) blockLetter = setLetter;
+                            if (spikeLetter == "A" || spikeLetter.Length == 0) spikeLetter = setLetter;
+                        }
+                    }
+                }
+                catch { }
+
+                // objectOffsets: only include if there are any sprite shifts
+                if (groupedOffsets.Count > 0)
+                {
+                    sb.AppendLine("\t\t\tobjectOffsets: [");
+                    bool firstGroup = true;
+                    foreach (var group in groupedOffsets)
+                    {
+                        if (!firstGroup) sb.AppendLine(",");
+                        firstGroup = false;
+
+                        sb.AppendLine("\t\t\t\t{");
+                        var coords = group.Value;
+                        if (coords.Count == 1)
+                        {
+                            sb.AppendLine($"\t\t\t\t\tcoordinates: [{coords[0].x}, {coords[0].y}],");
+                        }
+                        else
+                        {
+                            sb.AppendLine("\t\t\t\t\tcoordinates: [");
+                            for (int i = 0; i < coords.Count; i++)
+                            {
+                                string separator = (i < coords.Count - 1) ? "," : "";
+                                sb.AppendLine($"\t\t\t\t\t\t[{coords[i].x}, {coords[i].y}]{separator}");
+                            }
+                            sb.AppendLine("\t\t\t\t\t],");
+                        }
+
+                        // offsets formatting (+/-)
+                        if (group.Key.offsetX != 0 || group.Key.offsetY != 0)
+                        {
+                            if (group.Key.offsetY != 0)
+                            {
+                                string offsetYStr = group.Key.offsetY >= 0 ? $"+{group.Key.offsetY}" : group.Key.offsetY.ToString();
+                                sb.AppendLine($"\t\t\t\t\toffsetY: {offsetYStr}{(group.Key.offsetX != 0 ? "," : "")} ");
+                            }
+                            if (group.Key.offsetX != 0)
+                            {
+                                string offsetXStr = group.Key.offsetX >= 0 ? $"+{group.Key.offsetX}" : group.Key.offsetX.ToString();
+                                sb.AppendLine($"\t\t\t\t\toffsetX: {offsetXStr}");
+                            }
+                        }
+
+                        sb.Append("\t\t\t\t}");
+                    }
+
+                    sb.AppendLine();
+                    sb.AppendLine("\t\t\t]");
+                    sb.AppendLine("\t\t}");
+                }
+                else
+                {
+                    // Close the level object when there are no offsets
+                    sb.AppendLine("\t\t}");
+                }
 
                 // Save to Documents folder
                 string documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                string fileName = $"{levelName}_sprite_shifts.json5";
+                string fileName = $"{levelName}_metadata.json5";
                 string filePath = Path.Combine(documentsPath, fileName);
 
                 File.WriteAllText(filePath, sb.ToString());
@@ -1127,7 +1307,7 @@ namespace FamidashEditor
                     // If opening fails, just show the path
                 }
 
-                MessageBox.Show($"Exported {offsets.Count} sprite shift(s) to:\n{filePath}\n\nThe file has been opened in your default text editor.", 
+                MessageBox.Show($"Exported JSON metadata to:\n{filePath}\n\nThe file has been opened in your default text editor.", 
                     "Export Successful", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
