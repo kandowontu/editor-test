@@ -228,6 +228,10 @@ namespace FamidashEditor
         public int? LoadedStartingBackgroundColor { get => loadedStartingBackgroundColor; set => loadedStartingBackgroundColor = value; }
         private int? loadedStartingGroundColor = null;
         public int? LoadedStartingGroundColor { get => loadedStartingGroundColor; set => loadedStartingGroundColor = value; }
+        private string? loadedStartingLowerText = null;
+        public string? LoadedStartingLowerText { get => loadedStartingLowerText; set => loadedStartingLowerText = value; }
+        private string? loadedStartingUpperText = null;
+        public string? LoadedStartingUpperText { get => loadedStartingUpperText; set => loadedStartingUpperText = value; }
         private int loadedSimulatorScale = 1;
         public int LoadedSimulatorScale { get => loadedSimulatorScale; set => loadedSimulatorScale = value; }
     }
@@ -397,6 +401,9 @@ namespace FamidashEditor
         // Optional difficulty and star rating
         public int? Difficulty { get; set; } = null;
         public int? Stars { get; set; } = null;
+        // Optional per-level upper/lower text
+        public string? UpperText { get; set; } = null;
+        public string? LowerText { get; set; } = null;
         // Simulator scale multiplier (1..4)
         public int? SimulatorScale { get; set; } = null;
     }
@@ -944,6 +951,9 @@ namespace FamidashEditor
             // Save optional difficulty and stars if set
             try { if (loadedStartingDifficulty.HasValue) config.Difficulty = loadedStartingDifficulty.Value; } catch { }
             try { if (loadedStartingStars.HasValue) config.Stars = loadedStartingStars.Value; } catch { }
+            // Save optional upper/lower text if set
+            try { if (!string.IsNullOrEmpty(loadedStartingLowerText)) config.LowerText = loadedStartingLowerText; } catch { }
+            try { if (!string.IsNullOrEmpty(loadedStartingUpperText)) config.UpperText = loadedStartingUpperText; } catch { }
 
             // Simulator scale is now a global setting; per-TMX configs must not store it.
 
@@ -1138,6 +1148,8 @@ namespace FamidashEditor
                     try { loadedStartingGroundColor = config.StartingGroundColor.HasValue ? config.StartingGroundColor.Value : (int?)null; } catch { loadedStartingGroundColor = null; }
                     try { loadedStartingDifficulty = config.Difficulty.HasValue ? config.Difficulty.Value : (int?)null; } catch { loadedStartingDifficulty = null; }
                     try { loadedStartingStars = config.Stars.HasValue ? config.Stars.Value : (int?)null; } catch { loadedStartingStars = null; }
+                    try { loadedStartingLowerText = !string.IsNullOrEmpty(config.LowerText) ? config.LowerText : null; } catch { loadedStartingLowerText = null; }
+                    try { loadedStartingUpperText = !string.IsNullOrEmpty(config.UpperText) ? config.UpperText : null; } catch { loadedStartingUpperText = null; }
 
                     // Simulator scale is intentionally not loaded from per-TMX configs.
                     
@@ -7002,6 +7014,8 @@ namespace FamidashEditor
             tabData.LoadedStartingGameMode = loadedStartingGameMode;
             tabData.LoadedStartingBackgroundColor = loadedStartingBackgroundColor;
             tabData.LoadedStartingGroundColor = loadedStartingGroundColor;
+            tabData.LoadedStartingLowerText = loadedStartingLowerText;
+            tabData.LoadedStartingUpperText = loadedStartingUpperText;
             tabData.LoadedStartingDifficulty = loadedStartingDifficulty;
             tabData.LoadedStartingStars = loadedStartingStars;
             tabData.NoParallaxBg = noParallaxBg;

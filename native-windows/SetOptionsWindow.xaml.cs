@@ -195,64 +195,7 @@ namespace FamidashEditor
                 this.DialogResult = false;
             };
 
-            // Initialize Upper/Lower text UI and handlers (preserve values from MainWindow and persist on change)
-            try
-            {
-                if (this.Owner is MainWindow mw)
-                {
-                    try { if (LowerTextBox != null) LowerTextBox.Text = mw.LoadedStartingLowerText ?? ""; } catch { }
-                    try { if (UpperTextBox != null) UpperTextBox.Text = mw.LoadedStartingUpperText ?? ""; } catch { }
-                    try { if (UpperTextBox != null) UpperTextBox.IsEnabled = !string.IsNullOrEmpty(mw.LoadedStartingLowerText) || !string.IsNullOrEmpty(mw.LoadedStartingUpperText); } catch { }
-
-                    if (LowerTextBox != null)
-                    {
-                        LowerTextBox.TextChanged += (ss, ee) =>
-                        {
-                            try
-                            {
-                                string txt = LowerTextBox.Text ?? "";
-                                txt = txt.ToUpperInvariant();
-                                mw.LoadedStartingLowerText = string.IsNullOrEmpty(txt) ? null : txt;
-                                try
-                                {
-                                    if (UpperTextBox != null)
-                                    {
-                                        if (string.IsNullOrEmpty(txt))
-                                        {
-                                            UpperTextBox.Text = "";
-                                            UpperTextBox.IsEnabled = false;
-                                            mw.LoadedStartingUpperText = null;
-                                        }
-                                        else
-                                        {
-                                            UpperTextBox.IsEnabled = true;
-                                        }
-                                    }
-                                }
-                                catch { }
-                                try { mw.SaveCurrentTmxConfig(); } catch { }
-                            }
-                            catch { }
-                        };
-                    }
-
-                    if (UpperTextBox != null)
-                    {
-                        UpperTextBox.TextChanged += (ss, ee) =>
-                        {
-                            try
-                            {
-                                string txt = UpperTextBox.Text ?? "";
-                                txt = txt.ToUpperInvariant();
-                                mw.LoadedStartingUpperText = string.IsNullOrEmpty(txt) ? null : txt;
-                                try { mw.SaveCurrentTmxConfig(); } catch { }
-                            }
-                            catch { }
-                        };
-                    }
-                }
-            }
-            catch { }
+            // Upper/Lower text initialization and handlers are wired in Loaded handler (owner available there)
 
             // Wire quick tint buttons to call methods on owner MainWindow
             BgTintButton.Click += (s, e) =>
@@ -607,6 +550,64 @@ namespace FamidashEditor
                                     catch { }
                                 };
                             }
+
+                            // Initialize Upper/Lower text UI and handlers now that Owner (mwOwner) is available
+                            try
+                            {
+                                try { if (LowerTextBox != null) LowerTextBox.Text = mwOwner.LoadedStartingLowerText ?? ""; } catch { }
+                                try { if (UpperTextBox != null) UpperTextBox.Text = mwOwner.LoadedStartingUpperText ?? ""; } catch { }
+                                try { if (UpperTextBox != null) UpperTextBox.IsEnabled = !string.IsNullOrEmpty(mwOwner.LoadedStartingLowerText) || !string.IsNullOrEmpty(mwOwner.LoadedStartingUpperText); } catch { }
+
+                                if (LowerTextBox != null)
+                                {
+                                    LowerTextBox.TextChanged += (ss2, ee2) =>
+                                    {
+                                        try
+                                        {
+                                            string txt = LowerTextBox.Text ?? "";
+                                            txt = txt.ToUpperInvariant();
+                                            if (LowerTextBox.Text != txt) { LowerTextBox.Text = txt; LowerTextBox.CaretIndex = txt.Length; }
+                                            mwOwner.LoadedStartingLowerText = string.IsNullOrEmpty(txt) ? null : txt;
+                                            try
+                                            {
+                                                if (UpperTextBox != null)
+                                                {
+                                                    if (string.IsNullOrEmpty(txt))
+                                                    {
+                                                        UpperTextBox.Text = "";
+                                                        UpperTextBox.IsEnabled = false;
+                                                        mwOwner.LoadedStartingUpperText = null;
+                                                    }
+                                                    else
+                                                    {
+                                                        UpperTextBox.IsEnabled = true;
+                                                    }
+                                                }
+                                            }
+                                            catch { }
+                                            try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                        }
+                                        catch { }
+                                    };
+                                }
+
+                                if (UpperTextBox != null)
+                                {
+                                    UpperTextBox.TextChanged += (ss2, ee2) =>
+                                    {
+                                        try
+                                        {
+                                            string txt = UpperTextBox.Text ?? "";
+                                            txt = txt.ToUpperInvariant();
+                                            if (UpperTextBox.Text != txt) { UpperTextBox.Text = txt; UpperTextBox.CaretIndex = txt.Length; }
+                                            mwOwner.LoadedStartingUpperText = string.IsNullOrEmpty(txt) ? null : txt;
+                                            try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                        }
+                                        catch { }
+                                    };
+                                }
+                            }
+                            catch { }
 
                                             // Simulator size moved to main Options menu (handled there)
                         }
