@@ -212,6 +212,7 @@ namespace FamidashEditor
         public string LoadedDecoSet { get; set; } = "DECO1";
         public string LoadedBlockSet { get; set; } = "BLOCKSA";
         public string LoadedSpikeSet { get; set; } = "SPIKESA";
+        public int LoadedMaxFallSpeed { get; set; } = 0x06; // Default max fall speed
         public bool NoParallaxBg { get; set; }
         public Color BackgroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
         public Color GroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
@@ -336,6 +337,8 @@ namespace FamidashEditor
         return (loadedStartingBackgroundColor, loadedStartingGroundColor, loadedStartingGameMode, loadedStartingSpeedUiIndex, loadedStartingDifficulty, loadedStartingStars);
     }
     private int paletteSpriteSize = 16;
+    private int loadedMaxFallSpeed = 0x06; // default to 0x06 for new files
+    public int LoadedMaxFallSpeed { get => loadedMaxFallSpeed; set => loadedMaxFallSpeed = value; }
     // Painting state for drag-to-draw
     private bool isPainting = false;
     private int lastPaintX = -1;
@@ -405,6 +408,8 @@ namespace FamidashEditor
         // Optional difficulty and star rating
         public int? Difficulty { get; set; } = null;
         public int? Stars { get; set; } = null;
+        // Optional max fall speed: stored as numeric (6 or 7). When absent, default is 6.
+        public int? MaxFallSpeed { get; set; } = null;
         // Optional per-level upper/lower text
         public string? UpperText { get; set; } = null;
         public string? LowerText { get; set; } = null;
@@ -948,6 +953,13 @@ namespace FamidashEditor
             }
             catch { }
 
+            // Save max fall speed (numeric code). Default is 0x06 (6).
+            try
+            {
+                config.MaxFallSpeed = loadedMaxFallSpeed;
+            }
+            catch { }
+
             // Save starting background/ground color codes if set
             try { if (loadedStartingBackgroundColor.HasValue) config.StartingBackgroundColor = loadedStartingBackgroundColor.Value; } catch { }
             try { if (loadedStartingGameMode.HasValue) config.StartingGameMode = loadedStartingGameMode.Value; } catch { }
@@ -1023,6 +1035,9 @@ namespace FamidashEditor
                 try { if (!string.IsNullOrEmpty(config.BlockSet)) merged.BlockSet = config.BlockSet; } catch { }
                 try { if (!string.IsNullOrEmpty(config.SpikeSet)) merged.SpikeSet = config.SpikeSet; } catch { }
                 try { if (!string.IsNullOrEmpty(config.SelectedSong)) merged.SelectedSong = config.SelectedSong; } catch { }
+
+                // MaxFallSpeed: overwrite if present in new config
+                try { if (config.MaxFallSpeed.HasValue) merged.MaxFallSpeed = config.MaxFallSpeed; } catch { }
 
                 // StartingSpeed: overwrite if present
                 try { if (config.StartingSpeed.HasValue) merged.StartingSpeed = config.StartingSpeed; } catch { }
@@ -1201,6 +1216,9 @@ namespace FamidashEditor
                     try { loadedStartingStars = config.Stars.HasValue ? config.Stars.Value : (int?)null; } catch { loadedStartingStars = null; }
                     try { loadedStartingLowerText = !string.IsNullOrEmpty(config.LowerText) ? config.LowerText : null; } catch { loadedStartingLowerText = null; }
                     try { loadedStartingUpperText = !string.IsNullOrEmpty(config.UpperText) ? config.UpperText : null; } catch { loadedStartingUpperText = null; }
+
+                    // Load max fall speed from config (default 0x06 when absent)
+                    try { loadedMaxFallSpeed = config.MaxFallSpeed.HasValue ? config.MaxFallSpeed.Value : 0x06; } catch { loadedMaxFallSpeed = 0x06; }
 
                     // Simulator scale is intentionally not loaded from per-TMX configs.
                     
@@ -6105,6 +6123,7 @@ namespace FamidashEditor
                     LoadedStartingUpperText = null,
                     LoadedStartingDifficulty = 0, // Easy
                     LoadedStartingStars = 3,
+                    LoadedMaxFallSpeed = 0x06,
                     CreatedAsUntitled = true,
                     NoParallaxBg = false,
                     BackgroundTint = backgroundTint,
@@ -6184,6 +6203,7 @@ namespace FamidashEditor
                         loadedStartingUpperText = newTabData.LoadedStartingUpperText;
                         loadedStartingDifficulty = newTabData.LoadedStartingDifficulty;
                         loadedStartingStars = newTabData.LoadedStartingStars;
+                        loadedMaxFallSpeed = newTabData.LoadedMaxFallSpeed;
                         noParallaxBg = newTabData.NoParallaxBg;
 
                         if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
@@ -17982,6 +18002,28 @@ namespace FamidashEditor
                     if (normalizedItemName == normalizedSongId)
                     {
                         FamiTrackCombo.SelectedIndex = i;
+                        try
+                        {
+                            // Also persist into the current tab's FileTabData.SelectedSong so exporters/readers that
+                            // inspect the tab snapshot see the change immediately.
+                            var openFilesField = this.GetType().GetField("openFiles", BindingFlags.NonPublic | BindingFlags.Instance);
+                            var currentIndexField = this.GetType().GetField("currentFileIndex", BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (openFilesField != null && currentIndexField != null)
+                            {
+                                var list = openFilesField.GetValue(this) as System.Collections.IList;
+                                var idxObj = currentIndexField.GetValue(this);
+                                if (list != null && idxObj is int idx && idx >= 0 && idx < list.Count)
+                                {
+                                    var tabData = list[idx];
+                                    if (tabData != null)
+                                    {
+                                        var p = tabData.GetType().GetProperty("SelectedSong", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                                        if (p != null && p.CanWrite) p.SetValue(tabData, item.Content?.ToString());
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
                         foundSong = true;
                         break;
                     }
@@ -17997,6 +18039,26 @@ namespace FamidashEditor
                         item.Content?.ToString()?.Equals("Stereo Madness", StringComparison.OrdinalIgnoreCase) == true)
                     {
                         FamiTrackCombo.SelectedIndex = i;
+                        try
+                        {
+                            var openFilesField = this.GetType().GetField("openFiles", BindingFlags.NonPublic | BindingFlags.Instance);
+                            var currentIndexField = this.GetType().GetField("currentFileIndex", BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (openFilesField != null && currentIndexField != null)
+                            {
+                                var list = openFilesField.GetValue(this) as System.Collections.IList;
+                                var idxObj = currentIndexField.GetValue(this);
+                                if (list != null && idxObj is int idx && idx >= 0 && idx < list.Count)
+                                {
+                                    var tabData = list[idx];
+                                    if (tabData != null)
+                                    {
+                                        var p = tabData.GetType().GetProperty("SelectedSong", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                                        if (p != null && p.CanWrite) p.SetValue(tabData, item.Content?.ToString());
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
                         break;
                     }
                 }

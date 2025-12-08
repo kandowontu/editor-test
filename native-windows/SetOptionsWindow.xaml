@@ -196,6 +196,11 @@
                 <ComboBoxItem Content="8*" Tag="8" />
                 <ComboBoxItem Content="9*" Tag="9" />
                 <ComboBoxItem Content="10*" Tag="10" />
+                    <ComboBoxItem Content="11*" Tag="11" />
+                    <ComboBoxItem Content="12*" Tag="12" />
+                    <ComboBoxItem Content="13*" Tag="13" />
+                    <ComboBoxItem Content="14*" Tag="14" />
+                    <ComboBoxItem Content="15*" Tag="15" />
             </ComboBox>
 
             <!-- Upper / Lower Text (per-level) -->
@@ -222,6 +227,11 @@
             <Button x:Name="GroundTintButton" Content="Ground Tint..." Width="120" Margin="0,4" />
             <Button x:Name="TileTintButton" Content="Tile Tint..." Width="120" Margin="0,4" />
             <CheckBox x:Name="NoParallaxCheckBox" Content="No Parallax BG" Margin="0,10,0,0" Width="120" HorizontalAlignment="Center" />
+            <TextBlock Text="Max Fall Speed:" Margin="0,6,0,0" HorizontalAlignment="Center" />
+            <ComboBox x:Name="MaxFallSpeedCombo" Width="120" Margin="0,4,0,0" HorizontalAlignment="Center">
+                <ComboBoxItem Content="0x06" Tag="6" />
+                <ComboBoxItem Content="0x07" Tag="7" />
+            </ComboBox>
             <Button x:Name="AttemptJsonLoadButton" Content="Attempt JSON Load" Width="120" Margin="0,10,0,0" />
             <Button x:Name="RemoveSpriteShiftsButton" Content="Remove Sprite Shifts" Width="120" Margin="0,4,0,0" />
             <Button x:Name="ExportShiftJsonButton" Content="Export JSON" Width="120" Margin="0,4,0,0" />

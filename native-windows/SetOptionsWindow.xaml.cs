@@ -363,6 +363,32 @@ namespace FamidashEditor
                                 NoParallaxCheckBox.Unchecked += (ss, ee) => { try { mwOwner.SetNoParallax(false); } catch { } };
                             }
 
+                            // Initialize MaxFallSpeed combo and persist on change
+                            try
+                            {
+                                if (MaxFallSpeedCombo != null)
+                                {
+                                    // Read current value from owner
+                                    try { MaxFallSpeedCombo.SelectedIndex = (mwOwner.LoadedMaxFallSpeed == 7) ? 1 : 0; } catch { MaxFallSpeedCombo.SelectedIndex = 0; }
+                                    MaxFallSpeedCombo.SelectionChanged += (ss, ee) =>
+                                    {
+                                        try
+                                        {
+                                            if (MaxFallSpeedCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag != null)
+                                            {
+                                                if (int.TryParse(cbi.Tag.ToString(), out int tagVal))
+                                                {
+                                                    mwOwner.LoadedMaxFallSpeed = tagVal;
+                                                    try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                                }
+                                            }
+                                        }
+                                        catch { }
+                                    };
+                                }
+                            }
+                            catch { }
+
                             if (ShowAccurateTilesetCheckBox != null)
                             {
                                 ShowAccurateTilesetCheckBox.Checked += (ss, ee) =>
@@ -780,6 +806,41 @@ namespace FamidashEditor
                 if (!string.IsNullOrEmpty(levelData.songID))
                 {
                     mainWindow.SetSongFromMetadata(levelData.songID);
+                    // Sync mainWindow.SelectedSong from the combo so exporter/readers that rely on the property see the change immediately
+                    try
+                    {
+                        object? combo = null;
+                        var comboProp = mainWindow.GetType().GetProperty("FamiTrackCombo", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (comboProp != null) combo = comboProp.GetValue(mainWindow);
+                        else
+                        {
+                            var comboField = mainWindow.GetType().GetField("FamiTrackCombo", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (comboField != null) combo = comboField.GetValue(mainWindow);
+                        }
+
+                        if (combo != null)
+                        {
+                            var sel = combo.GetType().GetProperty("SelectedItem")?.GetValue(combo);
+                            if (sel != null)
+                            {
+                                var contentProp = sel.GetType().GetProperty("Content");
+                                string? content = null;
+                                if (contentProp != null) content = contentProp.GetValue(sel)?.ToString();
+                                else content = sel.ToString();
+
+                                if (!string.IsNullOrEmpty(content))
+                                {
+                                    var selectedSongProp = mainWindow.GetType().GetProperty("SelectedSong", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                                    if (selectedSongProp != null && selectedSongProp.CanWrite)
+                                    {
+                                        selectedSongProp.SetValue(mainWindow, content);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
                     dataChanged = true;
                 }
 
@@ -797,6 +858,34 @@ namespace FamidashEditor
                     }
                     catch { }
                 }
+
+                // Load max fall speed from metadata if present; metadata values will be numeric (hex converted to decimal by ConvertJson5ToJson)
+                if (levelData.maxFallSpeed.HasValue)
+                {
+                    try
+                    {
+                        int mf = levelData.maxFallSpeed.Value;
+                        // Only accept 6 or 7; otherwise default to 6
+                        if (mf != 6 && mf != 7) mf = 6;
+                        mainWindow.LoadedMaxFallSpeed = mf;
+                        dataChanged = true;
+                    }
+                    catch { mainWindow.LoadedMaxFallSpeed = 0x06; }
+                }
+                else
+                {
+                    // If absent in metadata, default to 0x06
+                    try { mainWindow.LoadedMaxFallSpeed = 0x06; } catch { }
+                }
+                // Update the MaxFallSpeedCombo in the dialog immediately so the UI reflects the loaded value
+                try
+                {
+                    if (MaxFallSpeedCombo != null)
+                    {
+                        MaxFallSpeedCombo.SelectedIndex = (mainWindow.LoadedMaxFallSpeed == 7) ? 1 : 0;
+                    }
+                }
+                catch { }
 
                 // Apply starting background/ground color metadata (numeric codes). These are provided
                 // in the JSON5 as hex (converted to decimal by ConvertJson5ToJson). Save into mainWindow
@@ -919,7 +1008,7 @@ namespace FamidashEditor
                     try
                     {
                         int starsVal = levelData.stars.Value;
-                        if (starsVal < 1) starsVal = 1; if (starsVal > 10) starsVal = 10;
+                        if (starsVal < 1) starsVal = 1; if (starsVal > 15) starsVal = 15;
                         mainWindow.LoadedStartingStars = starsVal;
                         try
                         {
@@ -1099,11 +1188,11 @@ namespace FamidashEditor
                     return null;
                 }
 
-                // Deco/block/spike sets - prefer per-tab values if available, then main window props/fields
-                string deco = (TryGetCurrentTabValue("LoadedDecoSet") as string) ?? GetString("LoadedDecoSet", "DECO1");
+                // Deco/block/spike sets - prefer live MainWindow properties first, then per-tab snapshots
+                string deco = GetString("LoadedDecoSet", (TryGetCurrentTabValue("LoadedDecoSet") as string) ?? "DECO1");
                 // Block/spike sets may be stored as BLOCKSA/BLOCKSB or SPIKESA/SPIKESB; extract trailing letter if present
-                string blockSet = (TryGetCurrentTabValue("LoadedBlockSet") as string) ?? GetString("LoadedBlockSet", "BLOCKSA");
-                string spikeSet = (TryGetCurrentTabValue("LoadedSpikeSet") as string) ?? GetString("LoadedSpikeSet", "SPIKESA");
+                string blockSet = GetString("LoadedBlockSet", (TryGetCurrentTabValue("LoadedBlockSet") as string) ?? "BLOCKSA");
+                string spikeSet = GetString("LoadedSpikeSet", (TryGetCurrentTabValue("LoadedSpikeSet") as string) ?? "SPIKESA");
                 string blockLetter = blockSet != null && blockSet.StartsWith("BLOCKS", StringComparison.OrdinalIgnoreCase) ? blockSet.Substring(6) : (blockSet ?? "A");
                 string spikeLetter = spikeSet != null && spikeSet.StartsWith("SPIKES", StringComparison.OrdinalIgnoreCase) ? spikeSet.Substring(6) : (spikeSet ?? "A");
                 blockLetter = (blockLetter ?? "").ToUpperInvariant();
@@ -1115,14 +1204,26 @@ namespace FamidashEditor
                 try { difficulty = (diffVal.HasValue ? (new string[] { "EASY","NORMAL","HARD","HARDER","INSANE","DEMON","AUTO" })[Math.Clamp(diffVal.Value, 0, 6)] : "AUTO"); } catch { difficulty = "AUTO"; }
                 int stars = GetNullableInt("LoadedStartingStars") ?? 3;
 
-                // Song normalization: prefer per-tab SelectedSong, then main property, then FamiTrackCombo control
-                string rawSong = TryGetCurrentTabValue("SelectedSong") as string ?? GetString("SelectedSong", "");
+                // Song normalization: prefer live MainWindow property, then per-tab SelectedSong, then FamiTrackCombo control
+                string rawSong = GetString("SelectedSong", "");
+                if (string.IsNullOrEmpty(rawSong)) rawSong = TryGetCurrentTabValue("SelectedSong") as string ?? "";
                 if (string.IsNullOrEmpty(rawSong))
                 {
                     try
                     {
-                        var comboProp = mainWindow.GetType().GetProperty("FamiTrackCombo");
-                        object? combo = comboProp?.GetValue(mainWindow);
+                        // Try to get the FamiTrackCombo as a property or a field (WPF x:Name often generates a field)
+                        object? combo = null;
+                        try
+                        {
+                            var comboProp = mainWindow.GetType().GetProperty("FamiTrackCombo", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (comboProp != null) combo = comboProp.GetValue(mainWindow);
+                            else
+                            {
+                                var comboField = mainWindow.GetType().GetField("FamiTrackCombo", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                                if (comboField != null) combo = comboField.GetValue(mainWindow);
+                            }
+                        }
+                        catch { combo = null; }
                         if (combo != null)
                         {
                             var sel = combo.GetType().GetProperty("SelectedItem")?.GetValue(combo);
@@ -1160,6 +1261,10 @@ namespace FamidashEditor
                 int startingGameMode = gameMode ?? 0;
                 int startingSpeedJson = 0; // default metadata uses 0 -> 1x
                 try { int ui = GetNullableInt("LoadedStartingSpeedUiIndex") ?? 1; startingSpeedJson = (ui == 0) ? 1 : (ui == 1) ? 0 : ui; } catch { startingSpeedJson = 0; }
+                // Max fall speed: prefer live MainWindow property, then per-tab snapshot; default 0x06
+                int maxFallSpeed = 6;
+                try { var ni = GetNullableInt("LoadedMaxFallSpeed"); if (ni.HasValue) maxFallSpeed = ni.Value; else { var tv = TryGetCurrentTabValue("LoadedMaxFallSpeed"); if (tv is int ti) maxFallSpeed = ti; } } catch { try { var tv = TryGetCurrentTabValue("LoadedMaxFallSpeed"); if (tv is int ti) maxFallSpeed = ti; } catch { } }
+                if (maxFallSpeed == 0) maxFallSpeed = 6;
                 int? bgColor = GetNullableInt("LoadedStartingBackgroundColor");
                 int? groundColor = GetNullableInt("LoadedStartingGroundColor");
 
@@ -1177,6 +1282,11 @@ namespace FamidashEditor
                 if (!string.IsNullOrEmpty(songId)) sb.AppendLine($"\t\t\tsongID: \"{songId}\",");
                 sb.AppendLine($"\t\t\tstartingGameMode: {startingGameMode},");
                 sb.AppendLine($"\t\t\tstartingSpeed: {startingSpeedJson},");
+                // Emit maxFallSpeed only when set to 0x07 (default 0x06 should be omitted)
+                if (maxFallSpeed != 6)
+                {
+                    sb.AppendLine($"\t\t\tmaxFallSpeed: 0x{maxFallSpeed:X2},");
+                }
                 if (bgColor.HasValue) sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x{bgColor.Value:X2},"); else sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x12,");
                 if (groundColor.HasValue) sb.AppendLine($"\t\t\tstartingGroundColor: 0x{groundColor.Value:X2},"); else sb.AppendLine($"\t\t\tstartingGroundColor: 0x02,");
 
@@ -1393,6 +1503,8 @@ namespace FamidashEditor
             public int? startingGroundColor { get; set; }
             // Optional starting game mode metadata (numeric code, 0=cube..8=ninja)
             public int? startingGameMode { get; set; }
+            // Optional max fall speed (numeric); metadata may provide 6 or 7. If absent, default to 6.
+            public int? maxFallSpeed { get; set; }
         }
     }
 }
