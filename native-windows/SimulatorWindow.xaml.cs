@@ -2729,9 +2729,11 @@ namespace FamidashEditor
                 if (wasStartup) startupTintApplied = true;
 
                 var prevBackgroundTint = backgroundTint; var prevTileTint = tileTint; var prevGroundTint = groundTint;
-                // Use a transparent outline tint when this change originated from startup so
-                // object/outline recoloring is not applied for initial per-level starting colors.
-                var outlineTintParam = wasStartup ? Color.FromArgb(0, 0, 0, 0) : tileTint;
+                // Only allow outline recoloring when this pending change includes an explicit
+                // object/tile trigger. If this came from startup or is a background/ground-only
+                // change, keep outline tint transparent so white seams/outlines are not recolored.
+                var outlineTintParam = Color.FromArgb(0, 0, 0, 0);
+                if (!wasStartup && tileIdxLocal >= 0) outlineTintParam = tileTint;
 
                 if (bgIdxLocal >= 0 && bgSidLocal >= 0)
                 {
@@ -2811,10 +2813,10 @@ namespace FamidashEditor
                             // get the same background/non-white recoloring behavior). White/near-white
                             // outlines are handled by `outlineTint` (tileTint) so object color triggers
                             // still recolor outlines as intended.
-                            // Always pass the current object-trigger tile tint as the outline tint so
-                            // object color triggers continue to recolor white/near-white outlines
-                            // even when background/ground tints change.
-                            outlineTintParam = wasStartup ? Color.FromArgb(0, 0, 0, 0) : tileTint;
+                            // Only pass the outline tint when this regeneration is a result of an
+                            // explicit object/tile trigger (tileIdxLocal >= 0). Background or
+                            // ground-triggered regenerations should not recolor white seams.
+                            outlineTintParam = wasStartup ? Color.FromArgb(0, 0, 0, 0) : (tileIdxLocal >= 0 ? tileTint : Color.FromArgb(0, 0, 0, 0));
                             if (bgPrimary.HasValue)
                                 tileTonedImages = CreateTwoToneTileImages(tileImages, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), outlineTintParam);
                             else
