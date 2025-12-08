@@ -483,6 +483,72 @@ namespace FamidashEditor
                                 };
                             }
                             
+                            // Wire Difficulty combo: initialize from owner's loaded value and persist on change
+                            if (DifficultyCombo != null)
+                            {
+                                try {
+                                    if (startingVals.startingDifficulty.HasValue)
+                                    {
+                                        int d = startingVals.startingDifficulty.Value;
+                                        for (int i = 0; i < DifficultyCombo.Items.Count; i++)
+                                        {
+                                            if (DifficultyCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && c.Tag != null && int.TryParse(c.Tag.ToString(), out int tagVal) && tagVal == d)
+                                            {
+                                                DifficultyCombo.SelectedIndex = i; break;
+                                            }
+                                        }
+                                    }
+                                } catch { }
+                                DifficultyCombo.SelectionChanged += (ss, ee) =>
+                                {
+                                    try
+                                    {
+                                        if (DifficultyCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag != null)
+                                        {
+                                            if (int.TryParse(cbi.Tag.ToString(), out int tagVal))
+                                            {
+                                                mwOwner.LoadedStartingDifficulty = tagVal;
+                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            }
+                                        }
+                                    }
+                                    catch { }
+                                };
+                            }
+
+                            // Wire Stars combo: initialize from owner's loaded value and persist on change
+                            if (StarsCombo != null)
+                            {
+                                try {
+                                    if (startingVals.startingStars.HasValue)
+                                    {
+                                        int starVal = startingVals.startingStars.Value;
+                                        for (int i = 0; i < StarsCombo.Items.Count; i++)
+                                        {
+                                            if (StarsCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && c.Tag != null && int.TryParse(c.Tag.ToString(), out int tagVal) && tagVal == starVal)
+                                            {
+                                                StarsCombo.SelectedIndex = i; break;
+                                            }
+                                        }
+                                    }
+                                } catch { }
+                                StarsCombo.SelectionChanged += (ss, ee) =>
+                                {
+                                    try
+                                    {
+                                        if (StarsCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag != null)
+                                        {
+                                            if (int.TryParse(cbi.Tag.ToString(), out int tagVal))
+                                            {
+                                                mwOwner.LoadedStartingStars = tagVal;
+                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            }
+                                        }
+                                    }
+                                    catch { }
+                                };
+                            }
+
                                             // Simulator size moved to main Options menu (handled there)
                         }
                     }
@@ -750,6 +816,70 @@ namespace FamidashEditor
                     catch { }
                 }
 
+                // Apply difficulty/stars metadata if present
+                if (!string.IsNullOrEmpty(levelData.difficulty))
+                {
+                    try
+                    {
+                        string diff = levelData.difficulty.Trim().ToUpperInvariant();
+                        int mapped = 6; // AUTO default
+                        switch (diff)
+                        {
+                            case "AUTO": mapped = 6; break;
+                            case "EASY": mapped = 0; break;
+                            case "NORMAL": mapped = 1; break;
+                            case "HARD": mapped = 2; break;
+                            case "HARDER": mapped = 3; break;
+                            case "INSANE": mapped = 4; break;
+                            case "DEMON": mapped = 5; break;
+                            default: mapped = 6; break;
+                        }
+                        mainWindow.LoadedStartingDifficulty = mapped;
+                        try
+                        {
+                            if (DifficultyCombo != null)
+                            {
+                                for (int i = 0; i < DifficultyCombo.Items.Count; i++)
+                                {
+                                    if (DifficultyCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && c.Tag != null && int.TryParse(c.Tag.ToString(), out int tagVal) && tagVal == mapped)
+                                    {
+                                        DifficultyCombo.SelectedIndex = i; break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+
+                if (levelData.stars.HasValue)
+                {
+                    try
+                    {
+                        int starsVal = levelData.stars.Value;
+                        if (starsVal < 1) starsVal = 1; if (starsVal > 10) starsVal = 10;
+                        mainWindow.LoadedStartingStars = starsVal;
+                        try
+                        {
+                            if (StarsCombo != null)
+                            {
+                                for (int i = 0; i < StarsCombo.Items.Count; i++)
+                                {
+                                    if (StarsCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && c.Tag != null && int.TryParse(c.Tag.ToString(), out int tagVal) && tagVal == starsVal)
+                                    {
+                                        StarsCombo.SelectedIndex = i; break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+
                 if (dataChanged)
                 {
                     // Save to level-specific config file
@@ -981,6 +1111,9 @@ namespace FamidashEditor
             public bool? parallaxDisable { get; set; }
             public ObjectOffsetEntry[]? objectOffsets { get; set; }
             public string? songID { get; set; }
+            // Optional difficulty/stars
+            public string? difficulty { get; set; }
+            public int? stars { get; set; }
             // Optional starting speed metadata. Values are numeric codes per the metadata spec:
             // 0 -> 1x, 1 -> 0.5x, 2 -> 2x, 3 -> 3x, 4 -> 4x
             public int? startingSpeed { get; set; }

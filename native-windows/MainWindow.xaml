@@ -179,6 +179,7 @@
                             <MenuItem x:Name="MenuSimulatorSize4x" Header="4x" IsCheckable="True" />
                         </MenuItem>
                         <MenuItem x:Name="MenuOptionShowSpriteHitboxes" Header="Show Sprite Hitboxes" IsCheckable="True" IsChecked="False" />
+                        <MenuItem x:Name="MenuOptionOpenSimulatorPaused" Header="Open Simulator Paused" IsCheckable="True" IsChecked="False" />
                     </MenuItem>
                 </MenuItem>
             </Menu>

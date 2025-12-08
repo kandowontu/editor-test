@@ -218,6 +218,10 @@ namespace FamidashEditor
         public Color TileTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
         public string? SelectedSong { get; set; } = null;
         public int LoadedStartingSpeedUiIndex { get; set; } = 1;
+        private int? loadedStartingDifficulty = null;
+        public int? LoadedStartingDifficulty { get => loadedStartingDifficulty; set => loadedStartingDifficulty = value; }
+        private int? loadedStartingStars = null;
+        public int? LoadedStartingStars { get => loadedStartingStars; set => loadedStartingStars = value; }
         private int? loadedStartingGameMode = null;
         public int? LoadedStartingGameMode { get => loadedStartingGameMode; set => loadedStartingGameMode = value; }
         private int? loadedStartingBackgroundColor = null;
@@ -287,8 +291,15 @@ namespace FamidashEditor
     private string loadedSpikeSet = "SPIKESA";
     private int loadedStartingSpeedUiIndex = 1; // UI indices: 0=0.5x,1=1x,2=2x,3=3x,4=4x
     public int LoadedStartingSpeedUiIndex { get => loadedStartingSpeedUiIndex; set => loadedStartingSpeedUiIndex = value; }
+    private int? loadedStartingDifficulty = null;
+    public int? LoadedStartingDifficulty { get => loadedStartingDifficulty; set => loadedStartingDifficulty = value; }
+    private int? loadedStartingStars = null;
+    public int? LoadedStartingStars { get => loadedStartingStars; set => loadedStartingStars = value; }
     private int loadedSimulatorScale = 1; // 1..4
     public int LoadedSimulatorScale { get => loadedSimulatorScale; set => loadedSimulatorScale = value; }
+    // Global setting: open simulator paused
+    private bool loadedOpenSimulatorPaused = false;
+    public bool LoadedOpenSimulatorPaused { get => loadedOpenSimulatorPaused; set => loadedOpenSimulatorPaused = value; }
     // Per-level starting color codes (nullable). These are the authoritative top-level
     // properties referenced by SetOptionsWindow and used when opening the simulator.
     private int? loadedStartingBackgroundColor = null;
@@ -299,18 +310,18 @@ namespace FamidashEditor
     // Provide a snapshot of the per-tab starting values for dialogs that may open
     // while tab switching is taking place. This returns values from the active
     // FileTabData if available, otherwise falls back to the top-level loaded fields.
-    public (int? startingBackground, int? startingGround, int? startingGameMode, int startingSpeedUiIndex) GetLoadedStartingValues()
+    public (int? startingBackground, int? startingGround, int? startingGameMode, int startingSpeedUiIndex, int? startingDifficulty, int? startingStars) GetLoadedStartingValues()
     {
         try
         {
             if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
             {
                 var fd = openFiles[currentFileIndex];
-                return (fd.LoadedStartingBackgroundColor, fd.LoadedStartingGroundColor, fd.LoadedStartingGameMode, fd.LoadedStartingSpeedUiIndex);
+                return (fd.LoadedStartingBackgroundColor, fd.LoadedStartingGroundColor, fd.LoadedStartingGameMode, fd.LoadedStartingSpeedUiIndex, fd.LoadedStartingDifficulty, fd.LoadedStartingStars);
             }
         }
         catch { }
-        return (loadedStartingBackgroundColor, loadedStartingGroundColor, loadedStartingGameMode, loadedStartingSpeedUiIndex);
+        return (loadedStartingBackgroundColor, loadedStartingGroundColor, loadedStartingGameMode, loadedStartingSpeedUiIndex, loadedStartingDifficulty, loadedStartingStars);
     }
     private int paletteSpriteSize = 16;
     // Painting state for drag-to-draw
@@ -379,6 +390,9 @@ namespace FamidashEditor
         public int? StartingGroundColor { get; set; } = null;
         // Per-level starting game mode (0=cube,1=ship,2=ball,3=ufo,4=robot,5=spider,6=wave,7=swing,8=ninja)
         public int? StartingGameMode { get; set; } = null;
+        // Optional difficulty and star rating
+        public int? Difficulty { get; set; } = null;
+        public int? Stars { get; set; } = null;
         // Simulator scale multiplier (1..4)
         public int? SimulatorScale { get; set; } = null;
     }
@@ -923,6 +937,9 @@ namespace FamidashEditor
             try { if (loadedStartingBackgroundColor.HasValue) config.StartingBackgroundColor = loadedStartingBackgroundColor.Value; } catch { }
             try { if (loadedStartingGameMode.HasValue) config.StartingGameMode = loadedStartingGameMode.Value; } catch { }
             try { if (loadedStartingGroundColor.HasValue) config.StartingGroundColor = loadedStartingGroundColor.Value; } catch { }
+            // Save optional difficulty and stars if set
+            try { if (loadedStartingDifficulty.HasValue) config.Difficulty = loadedStartingDifficulty.Value; } catch { }
+            try { if (loadedStartingStars.HasValue) config.Stars = loadedStartingStars.Value; } catch { }
 
             // Simulator scale is now a global setting; per-TMX configs must not store it.
 
@@ -1115,6 +1132,8 @@ namespace FamidashEditor
                     try { loadedStartingBackgroundColor = config.StartingBackgroundColor.HasValue ? config.StartingBackgroundColor.Value : (int?)null; } catch { loadedStartingBackgroundColor = null; }
                     try { loadedStartingGameMode = config.StartingGameMode.HasValue ? config.StartingGameMode.Value : (int?)null; } catch { loadedStartingGameMode = null; }
                     try { loadedStartingGroundColor = config.StartingGroundColor.HasValue ? config.StartingGroundColor.Value : (int?)null; } catch { loadedStartingGroundColor = null; }
+                    try { loadedStartingDifficulty = config.Difficulty.HasValue ? config.Difficulty.Value : (int?)null; } catch { loadedStartingDifficulty = null; }
+                    try { loadedStartingStars = config.Stars.HasValue ? config.Stars.Value : (int?)null; } catch { loadedStartingStars = null; }
 
                     // Simulator scale is intentionally not loaded from per-TMX configs.
                     
@@ -2502,6 +2521,12 @@ namespace FamidashEditor
                     swapMouseWheelScroll = false;
                     SaveSettingsWithTriggerOption();
                 };
+            }
+            // Open simulator paused option
+            if (MenuOptionOpenSimulatorPaused != null)
+            {
+                MenuOptionOpenSimulatorPaused.Checked += (s, e) => { loadedOpenSimulatorPaused = true; SaveSettingsWithTriggerOption(); };
+                MenuOptionOpenSimulatorPaused.Unchecked += (s, e) => { loadedOpenSimulatorPaused = false; SaveSettingsWithTriggerOption(); };
             }
             // Invert pinch gesture option (some devices report inverted scale)
             if (MenuOptionSwapPinch != null)
@@ -5853,6 +5878,12 @@ namespace FamidashEditor
                         }
                         catch { loadedSimulatorScale = 1; }
                     }
+                    // optional open-simulator-paused (global setting)
+                    if (doc.RootElement.TryGetProperty("openSimulatorPaused", out var osp))
+                    {
+                        try { loadedOpenSimulatorPaused = osp.GetBoolean(); } catch { loadedOpenSimulatorPaused = false; }
+                        if (MenuOptionOpenSimulatorPaused != null) MenuOptionOpenSimulatorPaused.IsChecked = loadedOpenSimulatorPaused;
+                    }
                     
                     // Load tileboard position (default to LEFT if not present)
                     if (doc.RootElement.TryGetProperty("tileboardPosition", out var tbPosElem))
@@ -5929,6 +5960,8 @@ namespace FamidashEditor
                     gridDarkness = gridDarkness,
                     famistudioPath = string.IsNullOrEmpty(famiStudioPath) ? null : famiStudioPath,
                     tileboardPosition = tileboardPosition
+                    ,
+                    openSimulatorPaused = loadedOpenSimulatorPaused
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
                 var dir = AppContext.BaseDirectory;
@@ -6539,8 +6572,8 @@ namespace FamidashEditor
                     sim.Show();
                     // Start simulation only after the window is shown so player doesn't move beforehand
                     try { sim.StartSimulation(); } catch { }
-                    // Request simulator to start running immediately and begin music playback
-                    try { _ = sim.StartRunningAsync(); } catch { }
+                    // If user hasn't requested the simulator to open paused, start running and begin music playback
+                    try { if (!loadedOpenSimulatorPaused) { _ = sim.StartRunningAsync(); } } catch { }
                 }
                 finally
                 {
@@ -6965,6 +6998,8 @@ namespace FamidashEditor
             tabData.LoadedStartingGameMode = loadedStartingGameMode;
             tabData.LoadedStartingBackgroundColor = loadedStartingBackgroundColor;
             tabData.LoadedStartingGroundColor = loadedStartingGroundColor;
+            tabData.LoadedStartingDifficulty = loadedStartingDifficulty;
+            tabData.LoadedStartingStars = loadedStartingStars;
             tabData.NoParallaxBg = noParallaxBg;
             tabData.BackgroundTint = backgroundTint;
             tabData.GroundTint = groundTint;

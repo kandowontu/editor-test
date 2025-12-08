@@ -170,8 +170,34 @@
                 <ComboBoxItem Content="4x" />
             </ComboBox>
 
+            <!-- Difficulty and Stars (per-level) -->
+            <TextBlock Grid.Row="8" Grid.Column="1" Text="Difficulty:" Margin="8,8,0,6" />
+            <ComboBox Grid.Row="9" Grid.Column="1" x:Name="DifficultyCombo" Width="140" HorizontalAlignment="Left" Margin="8,0,0,0" VerticalAlignment="Top">
+                <ComboBoxItem Content="Auto" Tag="6" />
+                <ComboBoxItem Content="Easy" Tag="0" />
+                <ComboBoxItem Content="Normal" Tag="1" />
+                <ComboBoxItem Content="Hard" Tag="2" />
+                <ComboBoxItem Content="Harder" Tag="3" />
+                <ComboBoxItem Content="Insane" Tag="4" />
+                <ComboBoxItem Content="Demon" Tag="5" />
+            </ComboBox>
+
+            <TextBlock Grid.Row="8" Grid.Column="0" Text="Stars:" Margin="0,8,0,6" />
+            <ComboBox Grid.Row="9" Grid.Column="0" x:Name="StarsCombo" Width="120" HorizontalAlignment="Left" Margin="0,0,0,0" VerticalAlignment="Top">
+                <ComboBoxItem Content="1*" Tag="1" />
+                <ComboBoxItem Content="2*" Tag="2" />
+                <ComboBoxItem Content="3*" Tag="3" />
+                <ComboBoxItem Content="4*" Tag="4" />
+                <ComboBoxItem Content="5*" Tag="5" />
+                <ComboBoxItem Content="6*" Tag="6" />
+                <ComboBoxItem Content="7*" Tag="7" />
+                <ComboBoxItem Content="8*" Tag="8" />
+                <ComboBoxItem Content="9*" Tag="9" />
+                <ComboBoxItem Content="10*" Tag="10" />
+            </ComboBox>
+
             <!-- OK/Cancel buttons now sit below the options -->
-            <StackPanel Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,8,0,0">
+            <StackPanel Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,8,0,0">
                 <Button x:Name="OkButton" Width="75" Margin="4,0">K</Button>
                 <Button x:Name="CancelButton" Width="75" Margin="4,0">Cancel</Button>
             </StackPanel>
