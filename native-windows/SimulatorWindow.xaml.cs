@@ -232,6 +232,8 @@ namespace FamidashEditor
         private readonly bool hideColorTriggers;
         private readonly int gridRenderShiftYPx;
         private readonly System.Collections.Generic.Dictionary<int, ImageSource?>? previewSpriteMap;
+        // Simulator-only cached upside-down chain image
+        private ImageSource? chainUpsideSimImage = null;
         private readonly System.Collections.Generic.Dictionary<int, ImageSource?[]>? animationFrames;
         // Tile-level animated saw frames (tinted versions) passed from MainWindow
         private ImageSource?[]? sawFrame1TilesTinted;
@@ -2105,6 +2107,61 @@ namespace FamidashEditor
                     if (s < 0) continue;
 
                     ImageSource? chosenSprite = null;
+                    // Simulator-only special-case: prefer an embedded upside-down chain for sprite 0x3D
+                    if (s == 0x3D)
+                    {
+                        if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s, out var pimg) && pimg != null)
+                        {
+                            chosenSprite = pimg;
+                        }
+                        else
+                        {
+                            if (chainUpsideSimImage == null)
+                            {
+                                try
+                                {
+                                    var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                                    var names = asm.GetManifestResourceNames();
+                                    var fullName = names.FirstOrDefault(r => r.EndsWith("chain-upsidedown.png", StringComparison.OrdinalIgnoreCase) || r.IndexOf("chain-upsidedown.png", StringComparison.OrdinalIgnoreCase) >= 0);
+                                    BitmapImage? bi = null;
+                                    if (fullName != null)
+                                    {
+                                        using (var st = asm.GetManifestResourceStream(fullName))
+                                        {
+                                            if (st != null)
+                                            {
+                                                bi = new BitmapImage();
+                                                bi.BeginInit();
+                                                bi.CacheOption = BitmapCacheOption.OnLoad;
+                                                bi.StreamSource = st;
+                                                bi.EndInit();
+                                                bi.Freeze();
+                                            }
+                                        }
+                                    }
+                                    if (bi == null)
+                                    {
+                                        var p = System.IO.Path.Combine(AppContext.BaseDirectory ?? ".", "chain-upsidedown.png");
+                                        if (System.IO.File.Exists(p))
+                                        {
+                                            bi = new BitmapImage();
+                                            bi.BeginInit();
+                                            bi.CacheOption = BitmapCacheOption.OnLoad;
+                                            bi.UriSource = new Uri(p);
+                                            bi.EndInit();
+                                            bi.Freeze();
+                                        }
+                                    }
+                                    if (bi != null)
+                                    {
+                                        chainUpsideSimImage = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
+                                    }
+                                }
+                                catch { }
+                            }
+                            if (chainUpsideSimImage != null) chosenSprite = chainUpsideSimImage;
+                        }
+                    }
                     if (animationFrames != null && animationFrames.TryGetValue(s, out var frames) && frames != null && frames.Length > 0)
                     {
                         // For 2-frame decoration sprites we want a uniform cadence across all anchors
