@@ -1225,6 +1225,7 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
+                // Note: automatic flip-fallback for upside-down chain removed — 0x3D will not be specially replaced.
                 
                 // Apply the reloaded tints
                 UpdateParallaxTint();
@@ -1359,6 +1360,9 @@ namespace FamidashEditor
     // Preview mode for animations (saws, etc.)
     private bool previewMode = false;
     private int animationFrame = 0; // Increments each frame, used to determine animation states
+
+        // Public accessor so external windows (simulator) can synchronize animation timing
+        public int EditorAnimationFrame { get { return animationFrame; } }
     private int timerTicks = 0; // Counts all timer ticks for frame skipping logic
     private System.Windows.Threading.DispatcherTimer? previewTimer;
     // Animated saw frames: stored as separate tile images (4 tiles per frame, 2 frames)
@@ -1586,7 +1590,7 @@ namespace FamidashEditor
     private BitmapSource[]? poleLongUpsideDownFrame2;
     // Chain decorations (single-frame preview-only)
     private BitmapSource[]? chainFrame1; // sprite 0x2D
-    private BitmapSource[]? chainUpsideDownFrame1; // sprite 0x3D
+    // Note: upside-down chain replacements removed; sprite 0x3D will use original atlas tile.
     // New single-frame decoration previews (spikes)
     private BitmapSource[]? decoSpikesFrame1; // sprite 0x2E
     private BitmapSource[]? decoSpikesUpsideDownFrame1; // sprite 0x2F
@@ -1671,7 +1675,8 @@ namespace FamidashEditor
     // Lock for thread-safe access to the tinted caches when precomputing on background threads
     private readonly object tintedCacheLock = new object();
     // Decoration sprite ids that should receive player tinting
-    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
+    private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
+    private readonly System.Collections.Generic.HashSet<int> nonPlayerTintSpriteIds = new System.Collections.Generic.HashSet<int> { 0x07, 0x1A, 0x1B, 0x6E, 0x3D };
     // Portal debug log path (initialized at startup)
     private string? portalDebugPath = null;
 
@@ -3875,7 +3880,7 @@ namespace FamidashEditor
             if (originalIndex == 0x4A) return GetTwoFrameCustomIndex(2146); // music note (2146/2147)
             // Chain decorations (preview-only, single-frame)
             if (originalIndex == 0x2D) return 2126; // chain (2126)
-            if (originalIndex == 0x3D) return 2127; // chain-upsidedown (2127)
+            // Note: 0x3D (upside-down chain) should not have a preview replacement — render original tile.
             // Deco spikes (single-frame preview-only)
             if (originalIndex == 0x2E) return 2148; // deco-spikes (2148)
             if (originalIndex == 0x2F) return 2149; // deco-spikes-upsidedown (2149)
@@ -4637,11 +4642,6 @@ namespace FamidashEditor
             if (customIndex == 2126)
             {
                 return chainFrame1?[0];
-            }
-            // Chain upside-down single-frame decoration: 2127 (sprite 0x3D)
-            if (customIndex == 2127)
-            {
-                return chainUpsideDownFrame1?[0];
             }
             // Deco spikes single-frame decorations
             if (customIndex == 2148) { return decoSpikesFrame1?[0]; }
@@ -6090,20 +6090,16 @@ namespace FamidashEditor
                     if (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame1.Length > 0) previewMap[0x3C] = poleShortUpsideDownFrame1[0];
                     if (chainFrame1 != null && chainFrame1.Length > 0)
                     {
-                        // Provide preview mapping for upright chain sprite ID
+                        // Provide preview mapping for upright chain sprite ID only.
+                        // Do not map or override 0x3D here so that 0x3D renders its original sprite tile anchor.
                         previewMap[0x2D] = chainFrame1[0];
-                        // If an upside-down chain image is available, use it for the upside-down sprite id;
-                        // otherwise fall back to the upright chain image.
-                        if (chainUpsideDownFrame1 != null && chainUpsideDownFrame1.Length > 0)
-                            previewMap[0x3D] = chainUpsideDownFrame1[0];
-                        else
-                            previewMap[0x3D] = chainFrame1[0];
                     }
                     // Decorative spike previews (single-frame). Ensure small and upside-down variants map.
                     if (decoSpikesFrame1 != null && decoSpikesFrame1.Length > 0) previewMap[0x2E] = decoSpikesFrame1[0];
                     if (decoSpikesUpsideDownFrame1 != null && decoSpikesUpsideDownFrame1.Length > 0) previewMap[0x2F] = decoSpikesUpsideDownFrame1[0];
                     if (decoSpikesSmallFrame1 != null && decoSpikesSmallFrame1.Length > 0) previewMap[0x30] = decoSpikesSmallFrame1[0];
                     if (decoSpikesSmallUpsideDownFrame1 != null && decoSpikesSmallUpsideDownFrame1.Length > 0) previewMap[0x31] = decoSpikesSmallUpsideDownFrame1[0];
+                    // No disk override for upside-down chain: keep 0x3D unmodified.
                     // Blue pad preview mapping: map 0xFD/0xFE to blue pad down/up preview frames
                     try
                     {
@@ -6244,6 +6240,9 @@ namespace FamidashEditor
                     if (questionMarkFrame1 != null && questionMarkFrame2 != null) animationFrames[0x34] = new ImageSource?[] { questionMarkFrame1[0], questionMarkFrame2[0] };
                     if (exclamationFrame1 != null && exclamationFrame2 != null) animationFrames[0x35] = new ImageSource?[] { exclamationFrame1[0], exclamationFrame2[0] };
                     if (xFrame1 != null && xFrame2 != null) animationFrames[0x37] = new ImageSource?[] { xFrame1[0], xFrame2[0] };
+                    // Spider orb two-frame animation mapping for simulator (sprite IDs 0x54/0x55)
+                    if (spiderOrbUpFrame1 != null && spiderOrbUpFrame2 != null) animationFrames[0x54] = new ImageSource?[] { spiderOrbUpFrame1[0], spiderOrbUpFrame2[0] };
+                    if (spiderOrbDownFrame1 != null && spiderOrbDownFrame2 != null) animationFrames[0x55] = new ImageSource?[] { spiderOrbDownFrame1[0], spiderOrbDownFrame2[0] };
                 }
                 catch { }
 
@@ -7866,19 +7865,7 @@ namespace FamidashEditor
                         chainFrame1 = new BitmapSource[1];
                         chainFrame1[0] = new FormatConvertedBitmap(ch, PixelFormats.Pbgra32, null, 0);
                     }
-                    else
-                    {
-                        var baseDir = AppContext.BaseDirectory;
-                        var p = Path.Combine(baseDir, "chain-upsidedown.png");
-                        var repo = FindRepoRootFor("famidash.bmp");
-                        if (!string.IsNullOrEmpty(repo)) { var rp = Path.Combine(repo, "chain-upsidedown.png"); if (File.Exists(rp)) p = rp; }
-                        if (File.Exists(p))
-                        {
-                            var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(p); bi.EndInit(); bi.Freeze();
-                            chainUpsideDownFrame1 = new BitmapSource[1];
-                            chainUpsideDownFrame1[0] = new FormatConvertedBitmap(bi, PixelFormats.Pbgra32, null, 0);
-                        }
-                    }
+                    // Note: do not load or synthesize an upside-down chain image here; 0x3D is left unmodified.
                 }
                 catch { }
                 // Load deco spikes (single-frame preview-only)
@@ -12038,7 +12025,7 @@ namespace FamidashEditor
                                     byte srcG = srcPixels[srcOffset + pixelOffset + 1];
                                     byte srcR = srcPixels[srcOffset + pixelOffset + 2];
 
-                                    if (previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0))
+                                    if (previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !nonPlayerTintSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0))
                                     {
                                         destPtr[pixelOffset + 0] = playerTint.B; // B
                                         destPtr[pixelOffset + 1] = playerTint.G; // G
@@ -12063,7 +12050,7 @@ namespace FamidashEditor
                                     byte srcG = srcPixels[srcOffset + pixelOffset + 1];
                                     byte srcR = srcPixels[srcOffset + pixelOffset + 2];
 
-                                    bool applyTint = previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0);
+                                    bool applyTint = previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !nonPlayerTintSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0);
                                     if (applyTint)
                                     {
                                         srcB = playerTint.B;
@@ -12145,7 +12132,7 @@ namespace FamidashEditor
                                     byte srcG = srcPixels[srcOffset + 1];
                                     byte srcR = srcPixels[srcOffset + 2];
 
-                                    if (previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0))
+                                    if (previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !nonPlayerTintSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0))
                                     {
                                         destPtr[0] = playerTint.B; // B
                                         destPtr[1] = playerTint.G; // G
@@ -12170,7 +12157,7 @@ namespace FamidashEditor
                                     byte srcG = srcPixels[srcOffset + 1];
                                     byte srcR = srcPixels[srcOffset + 2];
 
-                                    bool applyTint = previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0);
+                                    bool applyTint = previewMode && playerTintEnabled && decorationSpriteIds.Contains(spriteIdx) && !nonPlayerTintSpriteIds.Contains(spriteIdx) && !(srcR == 0 && srcG == 0 && srcB == 0);
                                     if (applyTint)
                                     {
                                         srcB = playerTint.B;

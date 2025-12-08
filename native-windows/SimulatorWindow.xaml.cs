@@ -324,6 +324,17 @@ namespace FamidashEditor
         private System.Diagnostics.Stopwatch renderStopwatch = new System.Diagnostics.Stopwatch();
 
         private int animationFrame = 0;
+        // If the simulator has an owner MainWindow, prefer its animation frame so
+        // two-frame decorations (dash-orbs, spider-orbs, deco) pulse in exact sync.
+        private int GetEditorAnimationFrameValue()
+        {
+            try
+            {
+                if (this.Owner is MainWindow mw) return mw.EditorAnimationFrame;
+            }
+            catch { }
+            return animationFrame;
+        }
         // Sprite IDs that should animate at half speed (coins, pads, orbs)
             private static readonly System.Collections.Generic.HashSet<int> slowAnimatedSpriteIds = new System.Collections.Generic.HashSet<int>
         {
@@ -346,11 +357,12 @@ namespace FamidashEditor
         private bool lastCacheHadAnimatedTiles = false;
         private int lastCacheAnimationFrame = -1;
 
-        private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x3D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
+        // Note: spider-orbs (0x54,0x55) are NOT decorations and should not receive player tint.
+        private readonly System.Collections.Generic.HashSet<int> decorationSpriteIds = new System.Collections.Generic.HashSet<int> { 0x36, 0x32, 0x33, 0x34, 0x35, 0x37, 0x2C, 0x3C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x38, 0x39, 0x3E, 0x3F, 0x2B, 0x3B, 0x2A, 0x3A, 0x49, 0x4A };
 
         // Coin-like sprites should composite over exact tile pixels, but they must never
         // receive the player's tint. Keep a small set so we can exclude them from tinting.
-        private readonly System.Collections.Generic.HashSet<int> nonPlayerTintSpriteIds = new System.Collections.Generic.HashSet<int> { 0x07, 0x1A, 0x1B, 0x6E };
+        private readonly System.Collections.Generic.HashSet<int> nonPlayerTintSpriteIds = new System.Collections.Generic.HashSet<int> { 0x07, 0x1A, 0x1B, 0x6E, 0x3D };
 
         // Cache tinted decoration sprites keyed by (spriteId<<32)|ARGB
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> tintedSpriteCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
@@ -609,6 +621,9 @@ namespace FamidashEditor
                 }
             }
             catch { }
+
+            // Diagnostic: report whether spider orb animation frames were provided by the editor
+            // (no-op) removed diagnostic logging
 
             try
             {
@@ -1052,7 +1067,7 @@ namespace FamidashEditor
             if (mapped >= 0x08 && mapped <= 0x0B)
             {
                 // Use the same rhythm as sprite animations (frame math below)
-                bool showFrame2 = (((animationFrame * 9) / 20) % 2) == 1;
+                bool showFrame2 = (((GetEditorAnimationFrameValue() * 9) / 20) % 2) == 1;
                 int tileOffset = mapped - 0x08;
                 return showFrame2 ? 1004 + tileOffset : 1000 + tileOffset;
             }
@@ -2102,22 +2117,23 @@ namespace FamidashEditor
                             offset = spriteFrameOffsets[idx];
                         }
                         int frame = 0;
-                        if (decorationSpriteIds.Contains(s) && frames.Length == 2)
+                        if (frames.Length == 2 && (decorationSpriteIds.Contains(s) || s == 0x54 || s == 0x55))
                         {
-                            // Match editor preview two-frame cadence but slow decorations to half speed
-                            frame = (((animationFrame * 3) / 80)) % 2;
-                            if (frame < 0) frame += 2;
+                            // Match editor preview two-frame cadence used by dash-orbs and decorations
+                            // Make spider-orbs (0x54/0x55) pulse exactly like the dash-orb routine,
+                            // but do NOT treat them as decorations (they are excluded from tinting).
+                            frame = (((GetEditorAnimationFrameValue() * 3) / 40) % 2 + 2) % 2;
                         }
                         else
                         {
                             // Slow down coins/pads/orbs and decorations to half speed
                             if (slowAnimatedSpriteIds.Contains(s) || decorationSpriteIds.Contains(s))
                             {
-                                frame = (((animationFrame * 9) / 40) + offset) % Math.Max(1, frames.Length);
+                                frame = (((GetEditorAnimationFrameValue() * 9) / 40) + offset) % Math.Max(1, frames.Length);
                             }
                             else
                             {
-                                frame = (((animationFrame * 9) / 20) + offset) % Math.Max(1, frames.Length);
+                                frame = (((GetEditorAnimationFrameValue() * 9) / 20) + offset) % Math.Max(1, frames.Length);
                             }
                         }
                         chosenSprite = frames[frame];
@@ -2138,6 +2154,7 @@ namespace FamidashEditor
                             }
                         }
                         catch { }
+                            // (no-op) removed per-request debug logging
                         if (chosenSprite == null)
                         {
                             if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s, out var pimg) && pimg != null)
@@ -2166,6 +2183,8 @@ namespace FamidashEditor
                     // Apply player tint to decoration sprites when enabled
                     try
                     {
+                            // No special-case preview override for 0x3D: let the normal selection/fallbacks apply.
+
                         if (playerTintEnabled && decorationSpriteIds.Contains(s) && !nonPlayerTintSpriteIds.Contains(s) && chosenSprite != null)
                         {
                             chosenSprite = GetPlayerTintedSprite(chosenSprite, s);
@@ -2216,15 +2235,12 @@ namespace FamidashEditor
                             }
                             catch { }
                         }
-                        // Chains should be shifted up 8 pixels in the simulator to match preview
-                        // Upright chains (0x2D) should be nudged up; upside-down chains (0x3D)
-                        // should use the upside-down image and be nudged down instead.
+                        // Upright chains (0x2D) are nudged up to match preview; do not special-case 0x3D.
                         if (s == 0x2D) py -= 8;
-                        else if (s == 0x3D) py += 8;
                         // If this decoration sprite appears upside-down (content at top), nudge it up as well.
                         try
                         {
-                            if (decorationSpriteIds.Contains(s) && s != 0x2D && s != 0x3D && chosenSprite is BitmapSource cbs && cbs.PixelHeight <= (TILE / 2.0))
+                            if (decorationSpriteIds.Contains(s) && s != 0x2D && chosenSprite is BitmapSource cbs && cbs.PixelHeight <= (TILE / 2.0))
                             {
                                 if (IsImageTopHeavy(cbs)) py -= 8;
                             }
