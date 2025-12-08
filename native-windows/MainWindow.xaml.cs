@@ -6811,10 +6811,20 @@ namespace FamidashEditor
                     try
                     {
                         sim.Closed += (s, e) => {
-                            try { sim.StopSimulation(); } catch { }
-                            try { famiIntegration.Stop(); } catch { }
-                            // Ensure the main editor regains focus and stays in front when the simulator closes.
-                            try { this.Activate(); } catch { }
+                            try
+                            {
+                                // Shutdown simulator and audio on background thread to avoid
+                                // blocking the UI thread if stopping audio takes time.
+                                System.Threading.Tasks.Task.Run(() =>
+                                {
+                                    try { sim.StopSimulation(); } catch { }
+                                    try { famiIntegration?.Stop(); } catch { }
+                                });
+                            }
+                            catch { }
+                            // Ensure the main editor regains focus asynchronously so we don't
+                            // block the simulator's UI thread while activating the main window.
+                            try { Dispatcher.BeginInvoke((Action)(() => { try { this.Activate(); } catch { } })); } catch { }
                         };
                     }
                     catch { }

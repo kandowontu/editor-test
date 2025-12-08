@@ -203,6 +203,10 @@ namespace FamidashEditor
         // Player world X (fixed-point, 8 fractional bits)
         // Start the player on the leftmost tile (x = 0)
         private int playerX_fixed = 0;
+        private int playerY_fixed = 0; // fixed-point (8 frac bits) world Y for player
+        // Player visual size in pixels (set during initialization)
+        private int playerVisualWidth = TILE;
+        private int playerVisualHeight = TILE;
         // Prevent multiple simultaneous requests to start playback (clicks/keys)
         private bool playbackStartPending = false;
 
@@ -425,6 +429,18 @@ namespace FamidashEditor
                 simAccumulatedMs = 0.0;
                 // Run timer at a small interval and accumulate elapsed time to drive fixed steps.
                 simTimer = new System.Threading.Timer(_ => { try { TimerSimulationLoop(); } catch { } }, null, 0, 10);
+            // Initialize player Y so player stands one tile above reserved ground rows
+            try
+            {
+                int groundRowsToReserve = 0;
+                try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
+                int playerRow = Math.Max(0, mapHeight - groundRowsToReserve - 1);
+                playerY_fixed = (playerRow * TILE) << 8;
+                // Clamp against map bottom
+                int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+            }
+            catch { playerY_fixed = 0; }
             }
             catch { }
         }
@@ -930,9 +946,18 @@ namespace FamidashEditor
             // Ensure the player starts offscreen with just the first outline pixels visible.
             try
             {
-                int playerVisualWidth = TILE;
-                if (playerImage != null && playerImage.Source != null && playerImage.Width > 0) playerVisualWidth = (int)Math.Ceiling(playerImage.Width);
-                else if (playerRect != null) playerVisualWidth = (int)Math.Ceiling(playerRect.Width);
+                playerVisualWidth = TILE;
+                playerVisualHeight = TILE;
+                if (playerImage != null && playerImage.Source != null && playerImage.Width > 0)
+                {
+                    playerVisualWidth = (int)Math.Ceiling(playerImage.Width);
+                    playerVisualHeight = (int)Math.Ceiling(playerImage.Height);
+                }
+                else if (playerRect != null)
+                {
+                    playerVisualWidth = (int)Math.Ceiling(playerRect.Width);
+                    playerVisualHeight = (int)Math.Ceiling(playerRect.Height);
+                }
 
                 // Place the player so it starts on the leftmost visible tile (x=0)
                 playerX_fixed = 0;
@@ -1307,16 +1332,95 @@ namespace FamidashEditor
 
             // Advance animation frame counter - handled by UI render loop now
 
-            // Vertical panning while keys held - use fixed-point for smoothness
-            // Use smaller step for smoother motion (2 pixels/frame)
-            const int panStep_fixed = 512; // 2 pixels per frame (256 = 1px)
-            if (upHeld) cameraY_fixed -= panStep_fixed;
-            if (downHeld) cameraY_fixed += panStep_fixed;
+            // Vertical player movement & camera-follow behavior
+            // Vertical step (2 pixels/frame) in fixed-point (8 fractional bits)
+            const int vStep_fixed = 512; // 2 px/frame
 
-            // Clamp cameraY to valid range
-            int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+            int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+            int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8; // player cannot go below last tile row
+
+            // Compute player's screen Y before movement (pixels)
+            int playerScreenY_before = (playerY_fixed >> 8) - (cameraY_fixed >> 8);
+
+            if (upHeld)
+            {
+                // Try move player up
+                playerY_fixed -= vStep_fixed;
+                if (playerY_fixed < 0) playerY_fixed = 0;
+
+                int playerScreenY = (playerY_fixed >> 8) - (cameraY_fixed >> 8);
+                // If player crosses the top threshold (4 tiles from top), scroll camera up to follow
+                int topThreshold = 4 * TILE;
+                if (playerScreenY < topThreshold)
+                {
+                    int need = topThreshold - playerScreenY; // pixels camera should move up
+                    int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                    cameraY_fixed -= (camMove << 8);
+                    if (cameraY_fixed < 0) cameraY_fixed = 0;
+                }
+            }
+
+            if (downHeld)
+            {
+                // Attempt to move player down, but if within bottom threshold, prefer to scroll camera first
+                int bottomThreshold = NES_H * TILE - 5 * TILE; // 5 tiles from bottom
+                int playerScreenY = (playerY_fixed >> 8) - (cameraY_fixed >> 8);
+
+                if (playerScreenY <= bottomThreshold)
+                {
+                    // Safe to move player down without scrolling
+                    // Advance player, then clamp to ground. Keep ordering consistent
+                    playerY_fixed += vStep_fixed;
+                    if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                }
+                else
+                {
+                    // Player within 5 tiles of bottom: scroll camera down first until bottom reached
+                        if (cameraY_fixed < maxCameraY_fixed)
+                        {
+                            // Scroll camera down and advance player world Y by same amount so
+                            // perceived downward speed matches upward movement. Keep player
+                            // visually stationary while camera scrolls.
+                            // Scroll camera down first. Advance camera and then advance player
+                            // by the same amount and clamp afterwards to avoid passing through floor
+                            cameraY_fixed += vStep_fixed;
+                            if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
+                            playerY_fixed += vStep_fixed;
+                            if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                        }
+                        else
+                        {
+                            // Camera at bottom: allow player to move down to ground and clamp
+                            playerY_fixed += vStep_fixed;
+                            if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                        }
+                }
+            }
+
+            // Clamp cameraY to valid range after adjustments
             if (cameraY_fixed < 0) cameraY_fixed = 0;
-            if (cameraY_fixed > maxY_fixed) cameraY_fixed = maxY_fixed;
+                if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
+
+            // Final safety clamp: ensure player remains above ground after camera moves
+            if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+
+            // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
+            try
+            {
+                int playerScreenY_now = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
+                int allowedBottom_px = (NES_H * TILE) - (3 * TILE); // require 3 rows visible
+                int playerScreenBottom = playerScreenY_now + playerVisualHeight;
+                if (playerScreenBottom > allowedBottom_px)
+                {
+                    int desiredPlayerScreenY = allowedBottom_px - playerVisualHeight;
+                    int desiredPlayerWorldY = desiredPlayerScreenY + (cameraY_fixed >> 8) - gridRenderShiftYPx;
+                    if (desiredPlayerWorldY < 0) desiredPlayerWorldY = 0;
+                    int desiredPlayerY_fixed = desiredPlayerWorldY << 8;
+                    if (desiredPlayerY_fixed > maxPlayerY_fixed) desiredPlayerY_fixed = maxPlayerY_fixed;
+                    playerY_fixed = desiredPlayerY_fixed;
+                }
+            }
+            catch { }
 
             // After moving camera X, check for speed-portal anchor crossings
             try
@@ -2491,26 +2595,23 @@ namespace FamidashEditor
             // reset hitbox counter for next frame
             hitboxesInUse = 0;
 
-            // Position the player visual so it appears above the reserved ground rows.
+            // Position the player visual based on world Y (`playerY_fixed`) and camera Y
             try
             {
                 int playerPixelX = (playerX_fixed >> 8) - (cameraX_fixed >> 8);
-                // Place player's bottom so it stands one tile above the reserved ground rows
-                int bottomY = NES_H * TILE - groundPixels;
-                int playerTop = bottomY - (TILE * 1) + gridRenderShiftYPx;
+                int playerPixelY = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
 
                 if (playerImage != null && playerImage.Source != null)
                 {
-                    // Position image; center-left semantics preserved from rectangle usage
                     System.Windows.Controls.Canvas.SetLeft(playerImage, playerPixelX);
-                    System.Windows.Controls.Canvas.SetTop(playerImage, playerTop);
+                    System.Windows.Controls.Canvas.SetTop(playerImage, playerPixelY);
                     playerImage.Visibility = Visibility.Visible;
                     if (playerRect != null) playerRect.Visibility = Visibility.Collapsed;
                 }
                 else if (playerRect != null)
                 {
                     System.Windows.Controls.Canvas.SetLeft(playerRect, playerPixelX);
-                    System.Windows.Controls.Canvas.SetTop(playerRect, playerTop);
+                    System.Windows.Controls.Canvas.SetTop(playerRect, playerPixelY);
                     playerRect.Visibility = Visibility.Visible;
                 }
             }
@@ -2656,13 +2757,82 @@ namespace FamidashEditor
 
                 // Advance animation frame (handled by fixed-step simulation loop)
 
-                // Vertical pan keys (smooth)
-                const int panStep_fixed = 512; // 2 px/frame
-                if (upHeld) cameraY_fixed -= panStep_fixed;
-                if (downHeld) cameraY_fixed += panStep_fixed;
-                int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                // Vertical player movement & camera-follow behavior (numeric sim path)
+                const int vStep_fixed_local = 512; // 2 px/frame
+                int maxCameraY_fixed_local = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                int maxPlayerY_fixed_local = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+
+                if (upHeld)
+                {
+                    // Move player up
+                    playerY_fixed -= vStep_fixed_local;
+                    if (playerY_fixed < 0) playerY_fixed = 0;
+
+                    int playerScreenY = (playerY_fixed >> 8) - (cameraY_fixed >> 8);
+                    int topThreshold = 4 * TILE;
+                    if (playerScreenY < topThreshold)
+                    {
+                        int need = topThreshold - playerScreenY;
+                        int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                        cameraY_fixed -= (camMove << 8);
+                        if (cameraY_fixed < 0) cameraY_fixed = 0;
+                    }
+                }
+
+                if (downHeld)
+                {
+                    int bottomThreshold = NES_H * TILE - 5 * TILE; // 5 tiles from bottom
+                    int playerScreenY = (playerY_fixed >> 8) - (cameraY_fixed >> 8);
+                    if (playerScreenY <= bottomThreshold)
+                    {
+                        // Move player down
+                        playerY_fixed += vStep_fixed_local;
+                        if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+                    }
+                    else
+                    {
+                        // Scroll camera down first until it reaches bottom
+                        if (cameraY_fixed < maxCameraY_fixed_local)
+                        {
+                            // Scroll camera down and advance player world Y by same amount
+                            // so perceived downward speed matches upward movement.
+                            cameraY_fixed += vStep_fixed_local;
+                            if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
+                            playerY_fixed += vStep_fixed_local;
+                            if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+                        }
+                        else
+                        {
+                            playerY_fixed += vStep_fixed_local;
+                            if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+                        }
+                    }
+                }
+
+                // Clamp cameraY
                 if (cameraY_fixed < 0) cameraY_fixed = 0;
-                if (cameraY_fixed > maxY_fixed) cameraY_fixed = maxY_fixed;
+                if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
+
+                // Final safety clamp: ensure player remains above ground after camera moves
+                if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+
+                // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
+                try
+                {
+                    int playerScreenY_now_local = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
+                    int allowedBottom_px_local = (NES_H * TILE) - (3 * TILE);
+                    int playerScreenBottom_local = playerScreenY_now_local + playerVisualHeight;
+                    if (playerScreenBottom_local > allowedBottom_px_local)
+                    {
+                        int desiredPlayerScreenY_local = allowedBottom_px_local - playerVisualHeight;
+                        int desiredPlayerWorldY_local = desiredPlayerScreenY_local + (cameraY_fixed >> 8) - gridRenderShiftYPx;
+                        if (desiredPlayerWorldY_local < 0) desiredPlayerWorldY_local = 0;
+                        int desiredPlayerY_fixed_local = desiredPlayerWorldY_local << 8;
+                        if (desiredPlayerY_fixed_local > maxPlayerY_fixed_local) desiredPlayerY_fixed_local = maxPlayerY_fixed_local;
+                        playerY_fixed = desiredPlayerY_fixed_local;
+                    }
+                }
+                catch { }
 
                 // Detect speed portals between prevCameraCenter_fixed and current center
                 int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
