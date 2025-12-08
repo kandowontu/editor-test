@@ -332,7 +332,8 @@ namespace FamidashEditor
         {
             try
             {
-                if (this.Owner is MainWindow mw) return mw.EditorAnimationFrame;
+                // Only use the editor's animation frame when the editor's preview-mode animations are active.
+                if (this.Owner is MainWindow mw && mw.EditorPreviewMode) return mw.EditorAnimationFrame;
             }
             catch { }
             return animationFrame;

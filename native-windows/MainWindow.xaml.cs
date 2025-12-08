@@ -1363,6 +1363,8 @@ namespace FamidashEditor
 
         // Public accessor so external windows (simulator) can synchronize animation timing
         public int EditorAnimationFrame { get { return animationFrame; } }
+        // Public accessor to indicate whether editor preview-mode animations are active
+        public bool EditorPreviewMode { get { return previewMode; } }
     private int timerTicks = 0; // Counts all timer ticks for frame skipping logic
     private System.Windows.Threading.DispatcherTimer? previewTimer;
     // Animated saw frames: stored as separate tile images (4 tiles per frame, 2 frames)
