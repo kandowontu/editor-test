@@ -234,6 +234,10 @@ namespace FamidashEditor
         public string? LoadedStartingUpperText { get => loadedStartingUpperText; set => loadedStartingUpperText = value; }
         private int loadedSimulatorScale = 1;
         public int LoadedSimulatorScale { get => loadedSimulatorScale; set => loadedSimulatorScale = value; }
+        // True when this tab was created as an Untitled new tab. Prevent accidental
+        // writes of per-level upper/lower text into such tabs unless they are
+        // explicitly converted to a file-backed tab.
+        public bool CreatedAsUntitled { get; set; } = false;
     }
 
     private int? loadedStartingGameMode = null;
@@ -6054,6 +6058,156 @@ namespace FamidashEditor
 
         private void CreateNewTab(string? filePath = null)
         {
+            // If this is a brand-new (untitled) tab, enforce explicit defaults so
+            // no transient values from the previous tab are inherited.
+            if (filePath == null)
+            {
+                int defaultW = 200;
+                int defaultH = 27;
+                var defaultTiles = Enumerable.Repeat(-1, defaultW * defaultH).ToArray();
+                var defaultSprites = Enumerable.Repeat(-1, defaultW * defaultH).ToArray();
+
+                var newTabData = new FileTabData
+                {
+                    FilePath = null,
+                    Tiles = defaultTiles,
+                    Sprites = defaultSprites,
+                    SpritePixelOffsets = new Dictionary<int, (int, int)>(),
+                    MapWidth = defaultW,
+                    MapHeight = defaultH,
+                    HasUnsavedChanges = false,
+                    LoadedTilesetSource = loadedTilesetSource,
+                    LoadedSpritesetSource = loadedSpritesetSource,
+                    LoadedHasEditorSettings = loadedHasEditorSettings,
+                    LoadedChunkWidth = loadedChunkWidth,
+                    LoadedChunkHeight = loadedChunkHeight,
+                    LoadedExportTarget = loadedExportTarget,
+                    LoadedExportFormat = loadedExportFormat,
+                    LoadedParallaxSource = loadedParallaxSource,
+                    LoadedParallaxX = loadedParallaxX,
+                    LoadedParallaxY = loadedParallaxY,
+                    LoadedParallaxRepeatX = loadedParallaxRepeatX,
+                    LoadedParallaxRepeatY = loadedParallaxRepeatY,
+                    LoadedHasParallaxLayer = loadedHasParallaxLayer,
+                    LoadedGroundSource = loadedGroundSource,
+                    LoadedGroundOffsetY = loadedGroundOffsetY,
+                    LoadedGroundRepeatX = loadedGroundRepeatX,
+                    LoadedHasGroundLayer = loadedHasGroundLayer,
+                    // Per-user requested defaults for new tabs
+                    LoadedDecoSet = "DECO1",
+                    LoadedBlockSet = "BLOCKSA",
+                    LoadedSpikeSet = "SPIKESA",
+                    LoadedStartingSpeedUiIndex = 1, // 1x
+                    LoadedStartingBackgroundColor = 0x12,
+                    LoadedStartingGameMode = 0, // cube
+                    LoadedStartingGroundColor = 0x02,
+                    LoadedStartingLowerText = null,
+                    LoadedStartingUpperText = null,
+                    LoadedStartingDifficulty = 0, // Easy
+                    LoadedStartingStars = 3,
+                    CreatedAsUntitled = true,
+                    NoParallaxBg = false,
+                    BackgroundTint = backgroundTint,
+                    GroundTint = groundTint,
+                    TileTint = tileTint
+                };
+
+                openFiles.Add(newTabData);
+                currentFileIndex = openFiles.Count - 1;
+
+                // Create tab with close button (rest of function will use this newTabData variable)
+                var newHeaderPanel = new StackPanel { Orientation = Orientation.Horizontal };
+                var newHeaderText = new TextBlock
+                {
+                    Text = "Untitled",
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var newCloseButton = new Button
+                {
+                    Content = "×",
+                    Width = 16,
+                    Height = 16,
+                    Padding = new Thickness(0),
+                    Margin = new Thickness(0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    FontSize = 14,
+                    FontWeight = FontWeights.Bold,
+                    Cursor = Cursors.Hand,
+                    Visibility = Visibility.Visible,
+                    Tag = newTabData
+                };
+                newCloseButton.Click += CloseTab_Click;
+
+                newHeaderPanel.Children.Add(newHeaderText);
+                newHeaderPanel.Children.Add(newCloseButton);
+
+                var newTab = new TabItem
+                {
+                    Header = newHeaderPanel,
+                    Tag = newTabData
+                };
+
+                // Insert before the + tab if it exists
+                int insertIndexNew = FileTabControl.Items.Count;
+                if (insertIndexNew > 0 && FileTabControl.Items[insertIndexNew - 1] is TabItem lastTabNew && lastTabNew.Tag?.ToString() == "NEW")
+                {
+                    insertIndexNew--;
+                }
+                isHandlingNewTab = true;
+                try
+                {
+                    FileTabControl.Items.Insert(insertIndexNew, newTab);
+                    lastProgrammaticSelectedTab = newTab;
+                    FileTabControl.SelectedItem = newTab;
+                    // Apply the default tab data into the live in-memory state so UI/dialogs
+                    // reflect the new-tab defaults (avoid inheriting previous values).
+                    try
+                    {
+                        tiles = defaultTiles.ToArray();
+                        sprites = defaultSprites.ToArray();
+                        mapWidth = defaultW;
+                        mapHeight = defaultH;
+                        currentFilePath = null;
+                        hasUnsavedChanges = false;
+
+                        loadedDecoSet = newTabData.LoadedDecoSet;
+                        loadedBlockSet = newTabData.LoadedBlockSet;
+                        loadedSpikeSet = newTabData.LoadedSpikeSet;
+                        loadedStartingSpeedUiIndex = newTabData.LoadedStartingSpeedUiIndex;
+                        loadedStartingBackgroundColor = newTabData.LoadedStartingBackgroundColor;
+                        loadedStartingGameMode = newTabData.LoadedStartingGameMode;
+                        loadedStartingGroundColor = newTabData.LoadedStartingGroundColor;
+                        loadedStartingLowerText = newTabData.LoadedStartingLowerText;
+                        loadedStartingUpperText = newTabData.LoadedStartingUpperText;
+                        loadedStartingDifficulty = newTabData.LoadedStartingDifficulty;
+                        loadedStartingStars = newTabData.LoadedStartingStars;
+                        noParallaxBg = newTabData.NoParallaxBg;
+
+                        if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
+                        if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
+
+                        UpdateParallaxTint(); UpdateGroundTint(); UpdateTileTint();
+                        try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                        Redraw();
+                    }
+                    catch { }
+                    try { Dispatcher.BeginInvoke(new Action(() => { try { this.Activate(); this.Focus(); } catch { } }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                    try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                }
+                finally
+                {
+                    isHandlingNewTab = false;
+                }
+
+                EnsureNewTabButton();
+                return;
+            }
+
+            // File-backed tab: snapshot current in-memory map state
             var tabData = new FileTabData
             {
                 FilePath = filePath,
@@ -6081,19 +6235,19 @@ namespace FamidashEditor
                 LoadedGroundRepeatX = loadedGroundRepeatX,
                 LoadedHasGroundLayer = loadedHasGroundLayer,
                 // If creating a brand-new (untitled) tab, initialize per-level metadata to defaults
-                LoadedDecoSet = filePath == null ? "DECO1" : loadedDecoSet,
-                LoadedBlockSet = filePath == null ? "BLOCKSA" : loadedBlockSet,
-                LoadedSpikeSet = filePath == null ? "SPIKESA" : loadedSpikeSet,
+                LoadedDecoSet = loadedDecoSet,
+                LoadedBlockSet = loadedBlockSet,
+                LoadedSpikeSet = loadedSpikeSet,
                 // For file-backed tabs, avoid inheriting previous per-level starting values;
                 // they will be populated by LoadTmxConfig/ SwitchToTab if present in config.
-                LoadedStartingSpeedUiIndex = filePath == null ? 1 : 1,
-                LoadedStartingBackgroundColor = filePath == null ? (int?)null : null,
-                LoadedStartingGameMode = filePath == null ? (int?)null : null,
-                LoadedStartingGroundColor = filePath == null ? (int?)null : null,
-                LoadedStartingLowerText = filePath == null ? null : null,
-                LoadedStartingUpperText = filePath == null ? null : null,
-                LoadedStartingDifficulty = filePath == null ? (int?)null : null,
-                LoadedStartingStars = filePath == null ? (int?)null : null,
+                LoadedStartingSpeedUiIndex = loadedStartingSpeedUiIndex,
+                LoadedStartingBackgroundColor = loadedStartingBackgroundColor,
+                LoadedStartingGameMode = loadedStartingGameMode,
+                LoadedStartingGroundColor = loadedStartingGroundColor,
+                LoadedStartingLowerText = loadedStartingLowerText,
+                LoadedStartingUpperText = loadedStartingUpperText,
+                LoadedStartingDifficulty = loadedStartingDifficulty,
+                LoadedStartingStars = loadedStartingStars,
                 NoParallaxBg = noParallaxBg,
                 BackgroundTint = backgroundTint,
                 GroundTint = groundTint,
@@ -7072,8 +7226,21 @@ namespace FamidashEditor
             tabData.LoadedStartingGameMode = loadedStartingGameMode;
             tabData.LoadedStartingBackgroundColor = loadedStartingBackgroundColor;
             tabData.LoadedStartingGroundColor = loadedStartingGroundColor;
-            tabData.LoadedStartingLowerText = loadedStartingLowerText;
-            tabData.LoadedStartingUpperText = loadedStartingUpperText;
+            // Do not overwrite upper/lower text for tabs that were created as
+            // untitled placeholders and have not been converted to a file-backed tab.
+            try
+            {
+                if (!(tabData.CreatedAsUntitled && string.IsNullOrEmpty(tabData.FilePath)))
+                {
+                    tabData.LoadedStartingLowerText = loadedStartingLowerText;
+                    tabData.LoadedStartingUpperText = loadedStartingUpperText;
+                }
+            }
+            catch
+            {
+                tabData.LoadedStartingLowerText = loadedStartingLowerText;
+                tabData.LoadedStartingUpperText = loadedStartingUpperText;
+            }
             tabData.LoadedStartingDifficulty = loadedStartingDifficulty;
             tabData.LoadedStartingStars = loadedStartingStars;
             tabData.NoParallaxBg = noParallaxBg;
@@ -17552,6 +17719,8 @@ namespace FamidashEditor
                             // Update current tab
                             SaveCurrentTabState();
                             openFiles[currentFileIndex].FilePath = dlg.FileName;
+                            // This tab is no longer an untitled placeholder
+                            try { openFiles[currentFileIndex].CreatedAsUntitled = false; } catch { }
                             
                             // Update tab header
                             for (int i = 0; i < FileTabControl.Items.Count; i++)
@@ -17568,6 +17737,17 @@ namespace FamidashEditor
                         }
                         else
                         {
+                            // Clear transient per-level starting fields so they don't inherit
+                            // values from the previously active tab when the loaded TMX
+                            // doesn't have an accompanying .cfg to override them.
+                            try { loadedStartingSpeedUiIndex = 1; } catch { }
+                            try { loadedStartingBackgroundColor = null; } catch { }
+                            try { loadedStartingGameMode = null; } catch { }
+                            try { loadedStartingGroundColor = null; } catch { }
+                            try { loadedStartingDifficulty = null; } catch { }
+                            try { loadedStartingStars = null; } catch { }
+                            try { loadedStartingLowerText = null; } catch { }
+                            try { loadedStartingUpperText = null; } catch { }
                             // Always create a new tab for loaded files
                             CreateNewTab(dlg.FileName);
                         }
