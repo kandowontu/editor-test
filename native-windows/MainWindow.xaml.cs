@@ -2050,6 +2050,8 @@ namespace FamidashEditor
             try { if (StopFamiButton != null) StopFamiButton.Click += StopFamiButton_Click; } catch { }
             // Wire configure FamiStudio menu
             try { if (MenuConfigureFamiStudio != null) MenuConfigureFamiStudio.Click += MenuConfigureFamiStudio_Click; } catch { }
+            // Wire scan FamiStudio tracks menu
+            try { if (MenuScanFamiStudioTracks != null) MenuScanFamiStudioTracks.Click += MenuScanFamiStudioTracks_Click; } catch { }
 
             // Simulator menu click handler added above in constructor wiring
 
@@ -8719,6 +8721,118 @@ namespace FamidashEditor
                 famiIntegration.Stop();
             }
             catch { }
+        }
+
+        private void MenuScanFamiStudioTracks_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                using var dlg = new System.Windows.Forms.OpenFileDialog();
+                dlg.Title = "Select a FamiStudio project (.fms) or text export (.txt)";
+                dlg.Filter = "FamiStudio project (*.fms)|*.fms|Text export (*.txt)|*.txt|All files (*.*)|*.*";
+                dlg.Multiselect = false;
+                var res = dlg.ShowDialog();
+                if (res != System.Windows.Forms.DialogResult.OK) return;
+
+                var path = dlg.FileName;
+                if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return;
+
+                // If the user chose a txt file, parse it directly
+                System.Collections.Generic.List<string> parsed = new System.Collections.Generic.List<string>();
+                string? parsedSource = null;
+
+                if (Path.GetExtension(path).Equals(".txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    parsed = famiIntegration.ParseFamiStudioTextExport(path);
+                    parsedSource = path;
+                }
+                else if (Path.GetExtension(path).Equals(".fms", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Attempt to use configured FamiStudio CLI to produce a text export.
+                    // Require famiStudioPath to be configured, otherwise fall back to best-effort parsing.
+                    bool produced = false;
+                    string tempTxt = Path.Combine(Path.GetTempPath(), $"famistudio_txt_{Guid.NewGuid()}.txt");
+
+                    if (!string.IsNullOrEmpty(famiStudioPath) && Directory.Exists(famiStudioPath))
+                    {
+                        var exe = Path.Combine(famiStudioPath, "FamiStudio.exe");
+                        if (File.Exists(exe))
+                        {
+                            // Try a few common text-export argument styles in case CLI differs by version
+                            var candidates = new string[] { "text-export", "textexport", "txt-export", "export-text", "famistudio-txt-export" };
+                            foreach (var cmd in candidates)
+                            {
+                                try
+                                {
+                                    if (File.Exists(tempTxt)) { try { File.Delete(tempTxt); } catch { } }
+                                    var args = $"\"{path}\" {cmd} \"{tempTxt}\"";
+                                    var psi = new System.Diagnostics.ProcessStartInfo(exe, args)
+                                    {
+                                        CreateNoWindow = true,
+                                        UseShellExecute = false,
+                                        RedirectStandardOutput = true,
+                                        RedirectStandardError = true
+                                    };
+                                    using var p = System.Diagnostics.Process.Start(psi);
+                                    if (p == null) continue;
+                                    p.WaitForExit(5000);
+                                    if (File.Exists(tempTxt) && new FileInfo(tempTxt).Length > 0)
+                                    {
+                                        try { parsed = famiIntegration.ParseFamiStudioTextExport(tempTxt); parsedSource = tempTxt; produced = true; break; } catch { }
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+
+                    if (!produced)
+                    {
+                        // Fallback: try to parse .fms bytes heuristically or use in-process enumeration if available
+                        try { parsed = famiIntegration.TryParseFmsSongNames(path); parsedSource = path; } catch { parsed = new System.Collections.Generic.List<string>(); }
+                        // If still empty and the integration assemblies are loaded, try enumerate via API
+                        if (parsed.Count == 0 && famiIntegration.IsLoaded)
+                        {
+                            try { parsed = famiIntegration.EnumerateTracks(path); parsedSource = path; } catch { }
+                        }
+                    }
+                }
+
+                // Populate the combo with parsed names only (do not persist)
+                FamiTrackCombo.Items.Clear();
+                albumTxtPath = parsedSource; // record current in-memory source for playback only
+                if (parsed != null && parsed.Count > 0)
+                {
+                    for (int i = 0; i < parsed.Count; i++)
+                    {
+                        var item = new System.Windows.Controls.ComboBoxItem() { Content = parsed[i], Tag = i };
+                        FamiTrackCombo.Items.Add(item);
+                    }
+                    // select first or Stereo Madness if present
+                    int defaultIndex = 0;
+                    for (int i = 0; i < FamiTrackCombo.Items.Count; i++)
+                    {
+                        if (FamiTrackCombo.Items[i] is System.Windows.Controls.ComboBoxItem item &&
+                            item.Content?.ToString()?.Equals("Stereo Madness", StringComparison.OrdinalIgnoreCase) == true)
+                        {
+                            defaultIndex = i; break;
+                        }
+                    }
+                    FamiTrackCombo.SelectedIndex = defaultIndex;
+                    if (StatusText != null) StatusText.Text = $"Loaded {parsed.Count} tracks from {Path.GetFileName(parsedSource ?? path)} (transient)";
+                }
+                else
+                {
+                    // Nothing parsed - show placeholders
+                    for (int i = 0; i < 8; i++) FamiTrackCombo.Items.Add(new System.Windows.Controls.ComboBoxItem() { Content = $"Song {i}", Tag = i });
+                    if (FamiTrackCombo.Items.Count > 0) FamiTrackCombo.SelectedIndex = 0;
+                    if (StatusText != null) StatusText.Text = "No parsed song names found in selected file";
+                }
+            }
+            catch (Exception ex)
+            {
+                try { System.Windows.MessageBox.Show(this, "Scan failed: " + ex.Message, "FamiStudio Scan", MessageBoxButton.OK, MessageBoxImage.Error); } catch { }
+            }
         }
 
         // Initialize a reliable portal debug log path and create the file with a header.

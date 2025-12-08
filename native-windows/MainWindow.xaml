@@ -157,7 +157,7 @@
                     <MenuItem x:Name="MenuColorPlayerTint" Header="Player Color..." />
                     <MenuItem Header="FamiStudio">
                         <MenuItem x:Name="MenuConfigureFamiStudio" Header="Configure FamiStudio..." />
-                        <MenuItem x:Name="MenuScanFamiStudioTracks" Header="Scan FamiStudio Tracks..." />
+                            <MenuItem x:Name="MenuScanFamiStudioTracks" Header="Load User FMS..." />
                     </MenuItem>
                     <MenuItem Header="Level Options">
                         <MenuItem x:Name="MenuColorBackgroundTint" Header="Background Tint..." />
