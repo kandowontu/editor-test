@@ -6572,6 +6572,17 @@ namespace FamidashEditor
             catch { }
         }
 
+        // Called by simulator when user pauses so music should pause.
+        public void PauseSimulatorPlayback()
+        {
+            try
+            {
+                if (famiIntegration == null) return;
+                try { _ = System.Threading.Tasks.Task.Run(() => famiIntegration.Pause()); } catch { }
+            }
+            catch { }
+        }
+
         // Called by simulator to request a playback rate multiplier (e.g. 2.0 for 2x)
         // Previously allowed the simulator to request audio playback-rate changes.
         // Reverted to no-op so simulator key presses do not affect music.

@@ -45,6 +45,19 @@ namespace FamidashEditor
             catch { }
         }
 
+        // Pause playback if currently playing. No-op otherwise.
+        public void Pause()
+        {
+            try
+            {
+                if (output != null && output.PlaybackState == PlaybackState.Playing)
+                {
+                    output.Pause();
+                }
+            }
+            catch { }
+        }
+
         public void LoadFromFolder(string folder)
         {
             if (!Directory.Exists(folder)) throw new DirectoryNotFoundException(folder);

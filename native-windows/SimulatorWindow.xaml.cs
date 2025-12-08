@@ -1157,6 +1157,12 @@ namespace FamidashEditor
                     }
                 }
 
+                // Pausing: request the owner to pause music so audio stops when simulator pauses.
+                if (!wasPaused && willBePaused)
+                {
+                    try { if (this.Owner is MainWindow mw) { mw.PauseSimulatorPlayback(); } } catch { }
+                }
+
                 paused = willBePaused;
 
                 // Update overlay visibility
