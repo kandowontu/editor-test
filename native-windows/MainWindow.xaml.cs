@@ -296,6 +296,22 @@ namespace FamidashEditor
     private int? loadedStartingGroundColor = null;
     public int? LoadedStartingGroundColor { get => loadedStartingGroundColor; set => loadedStartingGroundColor = value; }
     private int paletteTileSize = 16;
+    // Provide a snapshot of the per-tab starting values for dialogs that may open
+    // while tab switching is taking place. This returns values from the active
+    // FileTabData if available, otherwise falls back to the top-level loaded fields.
+    public (int? startingBackground, int? startingGround, int? startingGameMode, int startingSpeedUiIndex) GetLoadedStartingValues()
+    {
+        try
+        {
+            if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+            {
+                var fd = openFiles[currentFileIndex];
+                return (fd.LoadedStartingBackgroundColor, fd.LoadedStartingGroundColor, fd.LoadedStartingGameMode, fd.LoadedStartingSpeedUiIndex);
+            }
+        }
+        catch { }
+        return (loadedStartingBackgroundColor, loadedStartingGroundColor, loadedStartingGameMode, loadedStartingSpeedUiIndex);
+    }
     private int paletteSpriteSize = 16;
     // Painting state for drag-to-draw
     private bool isPainting = false;
@@ -6028,6 +6044,8 @@ namespace FamidashEditor
                 // Mark this as a programmatic selection so SelectionChanged ignores it briefly
                 lastProgrammaticSelectedTab = tab;
                 FileTabControl.SelectedItem = tab;
+                // Ensure the main window regains focus after creating a new tab
+                try { Dispatcher.BeginInvoke(new Action(() => { try { this.Activate(); this.Focus(); } catch { } }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                 // Clear the programmatic marker shortly after the UI processes the selection
                 try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
             }
@@ -6623,25 +6641,25 @@ namespace FamidashEditor
             }
         }
 
-        private void CloseTab_Click(object sender, RoutedEventArgs e)
+        private async void CloseTab_Click(object sender, RoutedEventArgs e)
         {
             e.Handled = true; // Prevent tab selection
-            
+
             if (sender is Button button)
             {
                 if (button.Tag is FileTabData td)
                 {
                     int idx = openFiles.IndexOf(td);
-                    if (idx >= 0) CloseTabAtIndex(idx);
+                    if (idx >= 0) await CloseTabAtIndex(idx);
                 }
                 else if (button.Tag is int index)
                 {
-                    CloseTabAtIndex(index);
+                    await CloseTabAtIndex(index);
                 }
             }
         }
 
-        private void CloseTabAtIndex(int index)
+        private async System.Threading.Tasks.Task CloseTabAtIndex(int index)
         {
             if (index < 0 || index >= openFiles.Count) return;
             
@@ -6651,7 +6669,7 @@ namespace FamidashEditor
             var tabData = openFiles[index];
             
             // Check for unsaved changes
-            if (tabData.HasUnsavedChanges)
+                if (tabData.HasUnsavedChanges)
             {
                 var fileName = tabData.FilePath != null ? System.IO.Path.GetFileName(tabData.FilePath) : "Untitled";
                 var result = MessageBox.Show(
@@ -6667,7 +6685,7 @@ namespace FamidashEditor
                 else if (result == MessageBoxResult.Yes)
                 {
                     // Switch to that tab and save
-                    _ = SwitchToTab(index);
+                    await SwitchToTab(index);
                     SaveButton_Click(this, new RoutedEventArgs());
                     if (hasUnsavedChanges) return; // User cancelled save
                 }
@@ -6681,7 +6699,10 @@ namespace FamidashEditor
             {
                 if (FileTabControl.Items[i] is TabItem tab && tab.Tag == tabData)
                 {
-                    FileTabControl.Items.RemoveAt(i);
+                    // Temporarily suppress SelectionChanged handling while we remove the tab
+                    try { isHandlingNewTab = true; } catch { }
+                    try { FileTabControl.Items.RemoveAt(i); } catch { }
+                    try { isHandlingNewTab = false; } catch { }
                     break;
                 }
             }
@@ -6695,12 +6716,15 @@ namespace FamidashEditor
                     // Clear currentFileIndex so SwitchToTab does not save the now-closed
                     // editor state into the shifted tab slot (which would overwrite it).
                     currentFileIndex = -1;
-                    _ = SwitchToTab(newIndex);
+                    await SwitchToTab(newIndex);
+                    // Restore window focus after switching
+                    try { await Dispatcher.InvokeAsync(new Action(() => { try { this.Activate(); this.Focus(); } catch { } }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                 }
                 else
                 {
                     // No tabs left, create a new one
                     NewMenuItem_Click(this, new RoutedEventArgs());
+                    try { await Dispatcher.InvokeAsync(new Action(() => { try { this.Activate(); this.Focus(); } catch { } }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                 }
             }
             else if (currentFileIndex > index)
@@ -6709,11 +6733,11 @@ namespace FamidashEditor
             }
         }
 
-        private void MenuFileClose_Click(object sender, RoutedEventArgs e)
+        private async void MenuFileClose_Click(object sender, RoutedEventArgs e)
         {
             if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
             {
-                CloseTabAtIndex(currentFileIndex);
+                await CloseTabAtIndex(currentFileIndex);
             }
         }
 
@@ -6879,7 +6903,9 @@ namespace FamidashEditor
                                 isHandlingNewTab = true;
                                 lastProgrammaticSelectedTab = ti;
                                 FileTabControl.SelectedItem = ti;
-                                _ = Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background);
+                                try { await Dispatcher.InvokeAsync(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                                // Bring the main window forward after switching tabs
+                                try { await Dispatcher.InvokeAsync(new Action(() => { try { this.Activate(); this.Focus(); } catch { } }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                             }
                             finally { isHandlingNewTab = false; }
                             break;
@@ -16637,10 +16663,19 @@ namespace FamidashEditor
             }
         }
 
-        private void SetOptionsButton_Click(object? sender, RoutedEventArgs e)
+        private async void SetOptionsButton_Click(object? sender, RoutedEventArgs e)
         {
             try
             {
+                // If a tab switch is in progress, wait briefly for it to complete so
+                // the Set Options dialog initializes from fully-loaded tab values.
+                int waited = 0;
+                while (isSwitchingTab && waited < 2000)
+                {
+                    await System.Threading.Tasks.Task.Delay(10);
+                    waited += 10;
+                }
+
                 var dlg = new SetOptionsWindow(loadedDecoSet, loadedBlockSet, loadedSpikeSet) { Owner = this };
                 bool? res = dlg.ShowDialog();
                     if (res == true)

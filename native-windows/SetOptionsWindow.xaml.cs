@@ -373,10 +373,12 @@ namespace FamidashEditor
                                 };
                             }
 
-                            // Wire StartingSpeed combo: initialize from owner's loaded value and persist on change
+                            // Wire StartingSpeed/GameMode/Background/Ground combos: initialize from owner's loaded value (or current tab snapshot) and persist on change
+                            var startingVals = mwOwner.GetLoadedStartingValues();
+                            // Wire StartingSpeed combo
                             if (StartingSpeedCombo != null)
                             {
-                                try { StartingSpeedCombo.SelectedIndex = mwOwner.LoadedStartingSpeedUiIndex; } catch { }
+                                try { StartingSpeedCombo.SelectedIndex = startingVals.startingSpeedUiIndex; } catch { }
                                 StartingSpeedCombo.SelectionChanged += (ss, ee) =>
                                 {
                                     try
@@ -390,13 +392,45 @@ namespace FamidashEditor
                                     catch { }
                                 };
                             }
+                            // Wire StartingGameMode combo: initialize from owner's loaded value and persist on change
+                            if (StartingGameModeCombo != null)
+                            {
+                                try {
+                                    if (startingVals.startingGameMode.HasValue)
+                                    {
+                                        int g = startingVals.startingGameMode.Value;
+                                        for (int i = 0; i < StartingGameModeCombo.Items.Count; i++)
+                                        {
+                                            if (StartingGameModeCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && c.Tag != null && int.TryParse(c.Tag.ToString(), out int tagVal) && tagVal == g)
+                                            {
+                                                StartingGameModeCombo.SelectedIndex = i; break;
+                                            }
+                                        }
+                                    }
+                                } catch { }
+                                StartingGameModeCombo.SelectionChanged += (ss, ee) =>
+                                {
+                                    try
+                                    {
+                                        if (StartingGameModeCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag != null)
+                                        {
+                                            if (int.TryParse(cbi.Tag.ToString(), out int tagVal))
+                                            {
+                                                mwOwner.LoadedStartingGameMode = tagVal;
+                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            }
+                                        }
+                                    }
+                                    catch { }
+                                };
+                            }
                             // Wire StartingBackgroundColor combo: initialize and persist
                             if (StartingBackgroundColorCombo != null)
                             {
                                 try {
-                                    if (mwOwner.LoadedStartingBackgroundColor.HasValue)
+                                    if (startingVals.startingBackground.HasValue)
                                     {
-                                        string hex = $"0x{mwOwner.LoadedStartingBackgroundColor.Value:X2}";
+                                        string hex = $"0x{startingVals.startingBackground.Value:X2}";
                                         for (int i = 0; i < StartingBackgroundColorCombo.Items.Count; i++)
                                         {
                                             if (StartingBackgroundColorCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && (string)c.Content == hex)
@@ -423,9 +457,9 @@ namespace FamidashEditor
                             if (StartingGroundColorCombo != null)
                             {
                                 try {
-                                    if (mwOwner.LoadedStartingGroundColor.HasValue)
+                                    if (startingVals.startingGround.HasValue)
                                     {
-                                        string hex = $"0x{mwOwner.LoadedStartingGroundColor.Value:X2}";
+                                        string hex = $"0x{startingVals.startingGround.Value:X2}";
                                         for (int i = 0; i < StartingGroundColorCombo.Items.Count; i++)
                                         {
                                             if (StartingGroundColorCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && (string)c.Content == hex)
@@ -694,6 +728,28 @@ namespace FamidashEditor
                     catch { }
                 }
 
+                // Apply starting game mode metadata (numeric code, 0=cube..8=ninja)
+                if (levelData.startingGameMode.HasValue)
+                {
+                    try
+                    {
+                        int code = levelData.startingGameMode.Value;
+                        mainWindow.LoadedStartingGameMode = code;
+                        if (StartingGameModeCombo != null)
+                        {
+                            for (int i = 0; i < StartingGameModeCombo.Items.Count; i++)
+                            {
+                                if (StartingGameModeCombo.Items[i] is System.Windows.Controls.ComboBoxItem c && c.Tag != null && int.TryParse(c.Tag.ToString(), out int tagVal) && tagVal == code)
+                                {
+                                    StartingGameModeCombo.SelectedIndex = i; break;
+                                }
+                            }
+                        }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+
                 if (dataChanged)
                 {
                     // Save to level-specific config file
@@ -931,6 +987,8 @@ namespace FamidashEditor
             // Optional starting color metadata (hex codes converted to decimal by parser)
             public int? startingBackgroundColor { get; set; }
             public int? startingGroundColor { get; set; }
+            // Optional starting game mode metadata (numeric code, 0=cube..8=ninja)
+            public int? startingGameMode { get; set; }
         }
     }
 }
