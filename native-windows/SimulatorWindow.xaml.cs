@@ -770,6 +770,22 @@ namespace FamidashEditor
                             }
                         }
                     }
+                    // Also ensure dash-orbs pulse even when the editor didn't provide two-frame images.
+                    int[] dashOrbIds = new int[] { 0x45, 0x46, 0x4C, 0x4D, 0x50, 0x51, 0x5B, 0x5C, 0x5D, 0x5E };
+                    foreach (var id in dashOrbIds)
+                    {
+                        if (!this.animationFrames.ContainsKey(id))
+                        {
+                            ImageSource? sourceImg = null;
+                            if (this.previewSpriteMap.TryGetValue(id, out var pimg) && pimg != null) sourceImg = pimg;
+                            else if (this.spriteImages != null && id >= 0 && id < this.spriteImages.Length && this.spriteImages[id] != null) sourceImg = this.spriteImages[id];
+                            if (sourceImg != null)
+                            {
+                                var frames = CreateTwoFramePulse(sourceImg);
+                                if (frames != null) this.animationFrames[id] = frames;
+                            }
+                        }
+                    }
                 }
             }
             catch { }
@@ -2175,7 +2191,12 @@ namespace FamidashEditor
                             offset = spriteFrameOffsets[idx];
                         }
                         int frame = 0;
-                        if (frames.Length == 2 && (decorationSpriteIds.Contains(s) || s == 0x54 || s == 0x55))
+                        if (frames.Length == 2 && (decorationSpriteIds.Contains(s)
+                                                     || s == 0x54 || s == 0x55
+                                                     // Dash-orbs: sync them to the same two-frame decoration cadence
+                                                     || s == 0x45 || s == 0x46 || s == 0x4C || s == 0x4D
+                                                     || s == 0x50 || s == 0x51 || s == 0x5B || s == 0x5C
+                                                     || s == 0x5D || s == 0x5E))
                         {
                             // Match editor preview two-frame cadence used by dash-orbs and decorations
                             // Make spider-orbs (0x54/0x55) pulse exactly like the dash-orb routine,

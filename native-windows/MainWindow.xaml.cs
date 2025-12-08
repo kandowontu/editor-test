@@ -6253,6 +6253,18 @@ namespace FamidashEditor
                     if (questionMarkFrame1 != null && questionMarkFrame2 != null) animationFrames[0x34] = new ImageSource?[] { questionMarkFrame1[0], questionMarkFrame2[0] };
                     if (exclamationFrame1 != null && exclamationFrame2 != null) animationFrames[0x35] = new ImageSource?[] { exclamationFrame1[0], exclamationFrame2[0] };
                     if (xFrame1 != null && xFrame2 != null) animationFrames[0x37] = new ImageSource?[] { xFrame1[0], xFrame2[0] };
+                    // Dash orb two-frame animation mapping for simulator (sprite IDs 0x45/0x46/0x4C/0x4D/0x50/0x51/0x5B/0x5C/0x5D/0x5E)
+                    if (dashOrbRightFrame1 != null && dashOrbRightFrame2 != null) animationFrames[0x45] = new ImageSource?[] { dashOrbRightFrame1[0], dashOrbRightFrame2[0] };
+                    if (dashGravityOrbRightFrame1 != null && dashGravityOrbRightFrame2 != null) animationFrames[0x46] = new ImageSource?[] { dashGravityOrbRightFrame1[0], dashGravityOrbRightFrame2[0] };
+                    if (dashOrb45UpFrame1 != null && dashOrb45UpFrame2 != null) animationFrames[0x4C] = new ImageSource?[] { dashOrb45UpFrame1[0], dashOrb45UpFrame2[0] };
+                    if (dashGravityOrb45UpFrame1 != null && dashGravityOrb45UpFrame2 != null) animationFrames[0x4D] = new ImageSource?[] { dashGravityOrb45UpFrame1[0], dashGravityOrb45UpFrame2[0] };
+                    if (dashOrb45DownFrame1 != null && dashOrb45DownFrame2 != null) animationFrames[0x50] = new ImageSource?[] { dashOrb45DownFrame1[0], dashOrb45DownFrame2[0] };
+                    if (dashGravityOrb45DownFrame1 != null && dashGravityOrb45DownFrame2 != null) animationFrames[0x51] = new ImageSource?[] { dashGravityOrb45DownFrame1[0], dashGravityOrb45DownFrame2[0] };
+                    if (dashOrbUpFrame1 != null && dashOrbUpFrame2 != null) animationFrames[0x5B] = new ImageSource?[] { dashOrbUpFrame1[0], dashOrbUpFrame2[0] };
+                    if (dashGravityOrbUpFrame1 != null && dashGravityOrbUpFrame2 != null) animationFrames[0x5C] = new ImageSource?[] { dashGravityOrbUpFrame1[0], dashGravityOrbUpFrame2[0] };
+                    if (dashOrbDownFrame1 != null && dashOrbDownFrame2 != null) animationFrames[0x5D] = new ImageSource?[] { dashOrbDownFrame1[0], dashOrbDownFrame2[0] };
+                    if (dashGravityOrbDownFrame1 != null && dashGravityOrbDownFrame2 != null) animationFrames[0x5E] = new ImageSource?[] { dashGravityOrbDownFrame1[0], dashGravityOrbDownFrame2[0] };
+
                     // Spider orb two-frame animation mapping for simulator (sprite IDs 0x54/0x55)
                     if (spiderOrbUpFrame1 != null && spiderOrbUpFrame2 != null) animationFrames[0x54] = new ImageSource?[] { spiderOrbUpFrame1[0], spiderOrbUpFrame2[0] };
                     if (spiderOrbDownFrame1 != null && spiderOrbDownFrame2 != null) animationFrames[0x55] = new ImageSource?[] { spiderOrbDownFrame1[0], spiderOrbDownFrame2[0] };
