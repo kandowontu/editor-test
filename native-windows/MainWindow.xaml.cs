@@ -9045,7 +9045,7 @@ namespace FamidashEditor
         {
             try {
                 var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze(); parallaxBitmap = bi; SliceParallax(); if (StatusText != null) StatusText.Text = "Loaded parallax: " + Path.GetFileName(path);
-                try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Loaded parallax file: " + Path.GetFullPath(path) + Environment.NewLine); } catch { }
+                // No file logging here (respect user's no-logging requirement)
             }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Parallax load failed: " + ex.Message; }
         }
@@ -9053,7 +9053,7 @@ namespace FamidashEditor
         private void LoadGround(string path)
         {
             try { var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze(); groundBitmap = bi; SliceGround(); if (StatusText != null) StatusText.Text = "Loaded ground: " + Path.GetFileName(path);
-                try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Loaded ground file: " + Path.GetFullPath(path) + Environment.NewLine); } catch { }
+                // No file logging here (respect user's no-logging requirement)
             }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Ground load failed: " + ex.Message; }
         }
@@ -9313,6 +9313,10 @@ namespace FamidashEditor
                         var pixels = new byte[h * stride];
                         conv.CopyPixels(pixels, stride, 0);
 
+                        // Determine two-tone mapping: lighter = selected tint, darker = palette row-up (or black)
+                        // Compute luminance range for non-black, non-transparent pixels
+                        double minLum = double.MaxValue, maxLum = double.MinValue;
+                        int nonBlackCount = 0;
                         for (int i = 0; i < pixels.Length; i += 4)
                         {
                             byte b = pixels[i + 0];
@@ -9322,9 +9326,43 @@ namespace FamidashEditor
                             bool isBlack = (r <= 12 && g <= 12 && b <= 12);
                             if (a != 0 && !isBlack)
                             {
-                                pixels[i + 0] = tint.B;
-                                pixels[i + 1] = tint.G;
-                                pixels[i + 2] = tint.R;
+                                double lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                                if (lum < minLum) minLum = lum;
+                                if (lum > maxLum) maxLum = lum;
+                                nonBlackCount++;
+                            }
+                        }
+
+                        // Prepare target colors
+                        var lighter = System.Windows.Media.Color.FromRgb(tint.R, tint.G, tint.B);
+                        var darker = PaletteHelper.RowUpColor(lighter);
+
+                        double threshold = (minLum == double.MaxValue) ? 0.0 : (minLum + maxLum) * 0.5;
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte b = pixels[i + 0];
+                            byte g = pixels[i + 1];
+                            byte r = pixels[i + 2];
+                            byte a = pixels[i + 3];
+                            bool isBlack = (r <= 12 && g <= 12 && b <= 12);
+                            if (a != 0 && !isBlack)
+                            {
+                                if (nonBlackCount <= 1 || maxLum == minLum)
+                                {
+                                    // Single-tone artwork -> map to selected lighter color
+                                    pixels[i + 0] = lighter.B;
+                                    pixels[i + 1] = lighter.G;
+                                    pixels[i + 2] = lighter.R;
+                                }
+                                else
+                                {
+                                    double lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                                    var use = (lum >= threshold) ? lighter : darker;
+                                    pixels[i + 0] = use.B;
+                                    pixels[i + 1] = use.G;
+                                    pixels[i + 2] = use.R;
+                                }
                             }
                         }
 
@@ -10449,6 +10487,57 @@ namespace FamidashEditor
                 CanvasHost.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
             try { UpdateIncompatibleOverlay(); } catch { }
+
+            // Diagnostics: show editor background/parallax state in status text to aid debugging
+            try
+            {
+                if (StatusText != null)
+                {
+                    string bg = (backgroundRtb != null) ? "BG_RTB" : "BG_NULL";
+                    string pb = (parallaxBitmap != null) ? "PARALLAX" : "PAR_NULL";
+                    int pimgs = (parallaxImages != null) ? parallaxImages.Length : 0;
+                    string prtb = (parallaxRtb != null) ? "PRTB" : "PR_NULL";
+                    // Additional runtime diagnostics to help debug visibility issues
+                    int ppx = 0, ppy = 0;
+                    double tileDiuW = 0, tileDiuH = 0;
+                    try { if (parallaxBitmap is System.Windows.Media.Imaging.BitmapSource bs) { ppx = bs.PixelWidth; ppy = bs.PixelHeight; var dpi2 = VisualTreeHelper.GetDpi(this); tileDiuW = (ppx / dpi2.DpiScaleX) * scale; tileDiuH = (ppy / dpi2.DpiScaleY) * scale; } } catch { }
+                    double groundH = 0.0;
+                    try { if (groundBitmap != null && groundImages != null && groundImages.Length > 0) { var dpi2 = VisualTreeHelper.GetDpi(this); groundH = (groundBitmap.PixelHeight / dpi2.DpiScaleY) * scale; } } catch { }
+                    double groundStartY = mapHeight * TileSize * scale + pad;
+                    string bvis = "?", pvis = "?";
+                    double bOp = -1, pOp = -1;
+                    bool bHasSrc = false, pHasSrc = false;
+                    try { if (BackgroundImage != null) { bvis = BackgroundImage.Visibility.ToString(); bOp = BackgroundImage.Opacity; bHasSrc = BackgroundImage.Source != null; } } catch { }
+                    try { if (ParallaxImage != null) { pvis = ParallaxImage.Visibility.ToString(); pOp = ParallaxImage.Opacity; pHasSrc = ParallaxImage.Source != null; } } catch { }
+                    // Sample a few pixels from the parallax RTB (above the ground) to detect transparency
+                    string parSample = "-";
+                    double ptx = 0.0, pty = 0.0;
+                    try { if (parallaxTransform != null) { ptx = parallaxTransform.X; pty = parallaxTransform.Y; } } catch { }
+                    try
+                    {
+                        if (parallaxRtb != null)
+                        {
+                            int pw = parallaxRtb.PixelWidth; int ph = parallaxRtb.PixelHeight;
+                            var dpi2 = VisualTreeHelper.GetDpi(this);
+                            // compute top area pixel height (groundStartY in DIU -> pixels)
+                            int topAreaPx = Math.Max(1, Math.Min(ph, (int)Math.Round(groundStartY * dpi2.DpiScaleY)));
+                            int sx = Math.Max(0, Math.Min(pw - 1, pw / 2));
+                            int sy1 = Math.Max(0, Math.Min(ph - 1, topAreaPx / 4)); // near top
+                            int sy2 = Math.Max(0, Math.Min(ph - 1, topAreaPx / 2)); // middle of parallax area
+                            int sy3 = Math.Max(0, Math.Min(ph - 1, Math.Max(0, topAreaPx - 1))); // just above ground
+                            var buf = new byte[4];
+                            parallaxRtb.CopyPixels(new Int32Rect(sx, sy1, 1, 1), buf, 4, 0); byte b1 = buf[0], g1 = buf[1], r1 = buf[2], a1 = buf[3];
+                            parallaxRtb.CopyPixels(new Int32Rect(sx, sy2, 1, 1), buf, 4, 0); byte b2 = buf[0], g2 = buf[1], r2 = buf[2], a2 = buf[3];
+                            parallaxRtb.CopyPixels(new Int32Rect(sx, sy3, 1, 1), buf, 4, 0); byte b3 = buf[0], g3 = buf[1], r3 = buf[2], a3 = buf[3];
+                            parSample = $"t1=A{a1:X2} R{r1:X2} G{g1:X2} B{b1:X2}; t2=A{a2:X2}; t3=A{a3:X2}";
+                        }
+                    }
+                    catch { }
+
+                    StatusText.Text = $"{bg} {pb} imgs={pimgs} {prtb} canvas={CanvasHost?.Width:0.##}x{CanvasHost?.Height:0.##} par_px={ppx}x{ppy} tileDiu={tileDiuW:0.##}x{tileDiuH:0.##} groundH={groundH:0.##} gStartY={groundStartY:0.##} BVis={bvis} BOp={bOp:0.##} BSrc={bHasSrc} PVis={pvis} POp={pOp:0.##} PSrc={pHasSrc} parSample={parSample} PTrans={ptx:0.##},{pty:0.##}";
+                }
+            }
+            catch { }
         }
 
         private void Redraw() => DrawMap();
@@ -10460,6 +10549,20 @@ namespace FamidashEditor
             // The tint operations (UpdateParallaxTint, UpdateGroundTint, UpdateTileTint)
             // already set backgroundDirty = true, so DrawMap will rebuild the layers
             DrawMap();
+        }
+
+        // Right-click Copy handler for the StatusText TextBlock
+        private void StatusText_Copy_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (StatusText != null)
+                {
+                    var text = StatusText.Text ?? string.Empty;
+                    if (!string.IsNullOrEmpty(text)) System.Windows.Clipboard.SetText(text);
+                }
+            }
+            catch { }
         }
 
         // Ensure the background, tiles and grid bitmaps exist for the current size/scale.
@@ -10585,13 +10688,16 @@ namespace FamidashEditor
         // on scroll instead of re-rendering on every scroll event.
         private void BuildParallaxBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
         {
-            if (parallaxBitmap == null || parallaxImages == null || parallaxImages.Length == 0)
+            // If we don't have any bitmap at all, create an empty RTB and bail out.
+            if (parallaxBitmap == null)
             {
                 parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
                 return;
             }
-            
-            // Use the full parallax bitmap (not individual tiles)
+
+            // Use the full parallax bitmap (not individual tiles). Even if parallaxImages
+            // is null/empty, tile the full bitmap across the editor so users always see
+            // the configured parallax or noparallax image.
             BitmapSource sourceImage = parallaxBitmap;
 
             // Apply tint if needed using cache to avoid recreating on every redraw
@@ -10650,6 +10756,55 @@ namespace FamidashEditor
             
             parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
             parallaxRtb.Render(dv);
+
+            // Recompute render sizes and ground height here so they're available outside
+            // the drawing using() scope for the fallback transparency check.
+            double fbRenderW = pixelPaddedWidth / dpi.DpiScaleX;
+            double fbRenderH = pixelPaddedHeight / dpi.DpiScaleY;
+            double computedGroundHeight = 0.0;
+            try { if (groundBitmap != null && groundImages != null && groundImages.Length > 0) computedGroundHeight = (groundBitmap.PixelHeight / dpi.DpiScaleY) * scale; } catch { }
+            double computedGroundStartY = mapHeight * TileSize * scale + pad;
+
+            // If the tiled brush produced an all-transparent render (can happen with strange bitmap formats
+            // or brush/ViewPort math), detect that and fall back to drawing the full source image stretched
+            // across the parallax area so the user can see the image. This is a safe visual fallback only.
+            try
+            {
+                if (parallaxRtb != null)
+                {
+                    int pw = parallaxRtb.PixelWidth;
+                    int ph = parallaxRtb.PixelHeight;
+                    var dpi2 = dpi;
+                    // compute top area pixel height (area above ground)
+                    int topAreaPx = Math.Max(1, Math.Min(ph, (int)Math.Round((computedGroundHeight > 0 ? computedGroundStartY : fbRenderH) * dpi2.DpiScaleY)));
+                    int sx = Math.Max(0, Math.Min(pw - 1, pw / 2));
+                    // sample a few Y positions in the parallax top area
+                    var buf = new byte[4];
+                    bool allTransparent = true;
+                    for (int i = 1; i <= 3; i++)
+                    {
+                        int sy = Math.Max(0, Math.Min(ph - 1, (topAreaPx * i) / 4));
+                        try { parallaxRtb.CopyPixels(new Int32Rect(sx, sy, 1, 1), buf, 4, 0); } catch { buf[3] = 0; }
+                        byte a = buf[3];
+                        if (a != 0) { allTransparent = false; break; }
+                    }
+
+                    if (allTransparent)
+                    {
+                            // Draw the full source image into the parallax area as a fallback
+                        var dv2 = new DrawingVisual();
+                        using (var dc2 = dv2.RenderOpen())
+                        {
+                                double topH = (computedGroundHeight > 0) ? Math.Max(0.0, computedGroundStartY) : fbRenderH;
+                                dc2.DrawImage(sourceImage, new Rect(0, 0, fbRenderW, topH));
+                        }
+                        var fb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi2.PixelsPerInchX, dpi2.PixelsPerInchY, PixelFormats.Pbgra32);
+                        fb.Render(dv2);
+                        parallaxRtb = fb;
+                    }
+                }
+            }
+            catch { }
         }
 
         private void BuildGroundBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
