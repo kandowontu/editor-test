@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Threading;
 
 namespace FamidashEditor
 {
@@ -26,28 +27,6 @@ namespace FamidashEditor
                     case 3: currentSpeed_fixed = CUBE_SPEED_X3; break;
                     case 4: currentSpeed_fixed = CUBE_SPEED_X4; break;
                     default: currentSpeed_fixed = CUBE_SPEED_X1; break;
-                }
-            }
-            catch { }
-        }
-
-        // Timer loop invoked on threadpool; accumulates elapsed time and runs fixed-step simulation.
-        private void TimerSimulationLoop()
-        {
-            try
-            {
-                double now = simStopwatch.Elapsed.TotalMilliseconds;
-                double delta = Math.Max(0.0, now - simLastMs);
-                // First tick: simLastMs is zero, treat delta as 0 to avoid a large initial jump
-                if (simLastMs <= 0.0) delta = 0.0;
-                simLastMs = now;
-                simAccumulatedMs += delta;
-
-                // Run one or more fixed 60Hz steps as needed
-                while (simAccumulatedMs >= SIM_STEP_MS)
-                {
-                    try { SimulateNumericStep(); } catch { }
-                    simAccumulatedMs -= SIM_STEP_MS;
                 }
             }
             catch { }
@@ -292,6 +271,22 @@ namespace FamidashEditor
         private const int CUBE_SPEED_X3  = 0x0429;
         private const int CUBE_SPEED_X4  = 0x051E;
 
+        // Simple cube physics (fixed-point, 8 fractional bits)
+        private const int CUBE_MAX_FALLSPEED = 0x600; // max downward velocity
+        private const int CUBE_GRAVITY = 0x6B; // gravity added per frame
+        private const int CUBE_JUMP_VEL = -0x590; // jump impulse (negative = upward)
+        private int playerVelY_fixed = 0; // current vertical velocity (fixed-point)
+        private bool physicsEnabled = false; // enable physics after first jump (for testing)
+        // Landing epsilon in fixed-point (1 pixel)
+        private const int LAND_EPS_FIXED = 1 << 8;
+        // Whether the player is currently considered on the ground (true when snapped to ground)
+        private bool onGround = true;
+
+        // P/Invoke to check key state asynchronously from background threads
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+        private static bool IsXDownAsync() { return (GetAsyncKeyState(0x58) & 0x8000) != 0; } // 'X' = 0x58
+
         // Mapping from speed-portal sprite id -> speed value
         private readonly System.Collections.Generic.Dictionary<int, int> speedPortalMap = new System.Collections.Generic.Dictionary<int, int>
         {
@@ -392,7 +387,7 @@ namespace FamidashEditor
         private const int TILE_SELECTION_LOG_LIMIT = 64;
         // Track last selected decoration frame so we can log when it actually changes
         private System.Collections.Generic.Dictionary<int, int> decoLastSelectedFrame = new System.Collections.Generic.Dictionary<int, int>();
-        private bool enableSimulatorDebugLogging = false; // set true to capture helpful messages during diagnosis
+        private bool enableSimulatorDebugLogging = true; // set true to capture helpful messages during diagnosis
 
         // Internal one-time simulator debug file (used only for local diagnosis when requested)
         private readonly string simDebugFilePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt");
@@ -407,40 +402,43 @@ namespace FamidashEditor
             return;
         }
 
-        // Append a timestamped simulator debug message to the temp log file.
+        // Helper to append a temp log when `enableSimulatorDebugLogging` is enabled.
         private void WriteTempLog(string message)
         {
-            // Keep debug output to the Debug console but avoid writing to disk.
-            try { System.Diagnostics.Debug.WriteLine("Simulator: " + message); } catch { }
+            try
+            {
+                if (!enableSimulatorDebugLogging) return;
+                System.IO.File.AppendAllText(simDebugFilePath, DateTime.UtcNow.ToString("o") + " " + message + Environment.NewLine);
+            }
+            catch { }
         }
 
-        // Start the background simulation (call after the window is shown).
+        // Start background simulation timer and initialize player Y.
         public void StartSimulation()
         {
             try
             {
-                // If already running, ignore
-                    if (simTimer != null) return; // Prevent starting multiple timers
-                // Ensure player starts from initial X (do not advance before start)
-                // (playerX_fixed may already be set by caller/constructor)
+                if (simTimer != null) return; // Prevent starting multiple timers
+
                 // Start high-resolution stopwatch and use an accumulator to run fixed 60Hz steps.
                 simStopwatch.Restart();
                 simLastMs = simStopwatch.Elapsed.TotalMilliseconds;
                 simAccumulatedMs = 0.0;
                 // Run timer at a small interval and accumulate elapsed time to drive fixed steps.
                 simTimer = new System.Threading.Timer(_ => { try { TimerSimulationLoop(); } catch { } }, null, 0, 10);
-            // Initialize player Y so player stands one tile above reserved ground rows
-            try
-            {
-                int groundRowsToReserve = 0;
-                try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
-                int playerRow = Math.Max(0, mapHeight - groundRowsToReserve - 1);
-                playerY_fixed = (playerRow * TILE) << 8;
-                // Clamp against map bottom
-                int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
-                if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
-            }
-            catch { playerY_fixed = 0; }
+
+                // Initialize player Y so player stands one tile above reserved ground rows
+                try
+                {
+                    int groundRowsToReserve = 0;
+                    try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
+                    int playerRow = Math.Max(0, mapHeight - groundRowsToReserve - 1);
+                    playerY_fixed = (playerRow * TILE) << 8;
+                    // Clamp against map bottom
+                    int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                    if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                }
+                catch { playerY_fixed = 0; }
             }
             catch { }
         }
@@ -453,8 +451,64 @@ namespace FamidashEditor
             try { simStopwatch.Stop(); } catch { }
         }
 
+        // Timer loop invoked on threadpool; accumulates elapsed time and runs fixed-step simulation.
+        private void TimerSimulationLoop()
+        {
+            try
+            {
+                double now = simStopwatch.Elapsed.TotalMilliseconds;
+                double delta = Math.Max(0.0, now - simLastMs);
+                // First tick: simLastMs is zero, treat delta as 0 to avoid a large initial jump
+                if (simLastMs <= 0.0) delta = 0.0;
+                simLastMs = now;
+                simAccumulatedMs += delta;
+
+                // Run one or more fixed 60Hz steps as needed
+                while (simAccumulatedMs >= SIM_STEP_MS)
+                {
+                    try { SimulateNumericStep(); } catch { }
+                    simAccumulatedMs -= SIM_STEP_MS;
+                // Automatic camera-follow while physics is active: ensure player stays within vertical thresholds
+                try
+                {
+                    if (physicsEnabled && jumpedOnce)
+                    {
+                        int playerCenterScreenY_post = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                        int topThreshold_post = 5 * TILE;
+                        int bottomThreshold_post = NES_H * TILE - 5 * TILE;
+
+                        if (playerCenterScreenY_post <= topThreshold_post)
+                        {
+                            int need = topThreshold_post - playerCenterScreenY_post;
+                            int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                            cameraY_fixed -= (camMove << 8);
+                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                        }
+                        else if (playerCenterScreenY_post >= bottomThreshold_post)
+                        {
+                            int need = playerCenterScreenY_post - bottomThreshold_post;
+                            int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                            int camAvail = (maxCameraY_fixed - cameraY_fixed) >> 8;
+                            int camMove = Math.Min(need, camAvail);
+                            cameraY_fixed += (camMove << 8);
+                            if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
+                        }
+                    }
+                }
+                catch { }
+                }
+            }
+            catch { }
+        }
+
         private bool upHeld = false;
         private bool downHeld = false;
+        // Has the player performed their first jump? When false, Up/Down act as camera-only.
+        private bool jumpedOnce = false;
+        // Per-frame input polling state (set on UI thread, consumed by numeric sim)
+        private bool prevKeyXDown = false;
+        private int keyXPressedCount = 0; // edge-detected press counter (atomic)
+        private bool keyXHeld = false;    // current held state
         // tabHeld was used previously; use tabSpeedMultiplier instead.
         // (removed unused field to silence build warning)
         // Pause state controlled by ESC. Start paused so simulator opens paused.
@@ -1143,6 +1197,20 @@ namespace FamidashEditor
             }
             if (e.Key == Key.Up) upHeld = true;
             if (e.Key == Key.Down) downHeld = true;
+            if (e.Key == Key.X)
+            {
+                // Only trigger on the initial KeyDown (ignore OS key-repeat)
+                try
+                {
+                    if (!e.IsRepeat)
+                    {
+                        playerVelY_fixed += CUBE_JUMP_VEL;
+                        physicsEnabled = true;
+                        jumpedOnce = true;
+                    }
+                }
+                catch { }
+            }
             if (e.Key == Key.Tab)
             {
                 // compute tab multiplier based on modifiers: Tab=2x, Shift+Tab=4x, Ctrl+Shift+Tab=8x
@@ -1278,6 +1346,34 @@ namespace FamidashEditor
 
         private void Timer_Tick(object? sender, EventArgs e)
         {
+            // Poll input on UI thread to generate stable per-frame pressed/held flags for numeric sim
+            try
+            {
+                bool curX = System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.X);
+                bool curUp = System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.Up);
+                bool curDown = System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.Down);
+                lock (simLock)
+                {
+                    // Only register an X press edge if the player is currently on the ground (no queued mid-air presses)
+                    int maxPlayerY_fixed_poll = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                    // Edge detect X regardless of ground so mid-air jumps (for testing) are possible.
+                    // Make the edge sticky until the numeric/UI physics code consumes it so
+                    // the background fixed-step sim cannot miss a short UI-frame edge.
+                    if (curX && !prevKeyXDown)
+                    {
+                        // record an edge atomically so numeric sim cannot miss it
+                        Interlocked.Increment(ref keyXPressedCount);
+                    }
+                    prevKeyXDown = curX;
+                    keyXHeld = curX;
+
+                    // Also poll Up/Down to avoid missing key events; these set the held flags used by movement logic
+                    upHeld = curUp;
+                    downHeld = curDown;
+                }
+            }
+            catch { }
+
             // Keep previous camera center for later anchor detection
             int prevCameraCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
 
@@ -1344,65 +1440,215 @@ namespace FamidashEditor
 
             if (upHeld)
             {
-                // Try move player up
-                playerY_fixed -= vStep_fixed;
-                if (playerY_fixed < 0) playerY_fixed = 0;
-
-                int playerScreenY = (playerY_fixed >> 8) - (cameraY_fixed >> 8);
-                // If player crosses the top threshold (4 tiles from top), scroll camera up to follow
-                int topThreshold = 4 * TILE;
-                if (playerScreenY < topThreshold)
+                // Use player's screen center Y for scrolling decisions to match camera panning behavior
+                int playerCenterScreenY = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                int topThreshold = 5 * TILE; // 5 tiles from top
+                if (!jumpedOnce)
                 {
-                    int need = topThreshold - playerScreenY; // pixels camera should move up
-                    int camMove = Math.Min(need, (cameraY_fixed >> 8));
-                    cameraY_fixed -= (camMove << 8);
-                    if (cameraY_fixed < 0) cameraY_fixed = 0;
+                    // Before first jump: Up is camera-only (do not move player)
+                    if (cameraY_fixed > 0)
+                    {
+                        cameraY_fixed -= vStep_fixed;
+                        if (cameraY_fixed < 0) cameraY_fixed = 0;
+                    }
+                }
+                else
+                {
+                    if (!physicsEnabled)
+                    {
+                        // Try move player up
+                        playerY_fixed -= vStep_fixed;
+                        if (playerY_fixed < 0) playerY_fixed = 0;
+
+                        // Recompute center after moving the player
+                        playerCenterScreenY = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                        // If player's center is at or above the threshold, scroll camera up to follow
+                        if (playerCenterScreenY <= topThreshold)
+                        {
+                            int need = topThreshold - playerCenterScreenY; // pixels camera should move up
+                            int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                            cameraY_fixed -= (camMove << 8);
+                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                        }
+                    }
+                    else
+                    {
+                        // Physics active: do not move player Y directly, but allow camera to scroll up
+                        if (playerCenterScreenY <= topThreshold)
+                        {
+                            int need = topThreshold - playerCenterScreenY;
+                            int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                            cameraY_fixed -= (camMove << 8);
+                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                        }
+                        else
+                        {
+                            // Manual camera pan while physics is enabled: allow small step when holding Up
+                            if (cameraY_fixed > 0)
+                            {
+                                cameraY_fixed -= vStep_fixed;
+                                if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            }
+                        }
+                    }
                 }
             }
 
             if (downHeld)
             {
                 // Attempt to move player down, but if within bottom threshold, prefer to scroll camera first
-                int bottomThreshold = NES_H * TILE - 5 * TILE; // 5 tiles from bottom
-                int playerScreenY = (playerY_fixed >> 8) - (cameraY_fixed >> 8);
-
-                if (playerScreenY <= bottomThreshold)
+                int bottomThreshold = NES_H * TILE - 5 * TILE; // 5 tiles from bottom measured against player center
+                int playerCenterScreenY_down = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                // If before first jump, Down should pan camera only
+                if (!jumpedOnce)
                 {
-                    // Safe to move player down without scrolling
-                    // Advance player, then clamp to ground. Keep ordering consistent
-                    playerY_fixed += vStep_fixed;
-                    if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                    if (cameraY_fixed < maxCameraY_fixed)
+                    {
+                        cameraY_fixed += vStep_fixed;
+                        if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
+                    }
                 }
                 else
                 {
-                    // Player within 5 tiles of bottom: scroll camera down first until bottom reached
-                        if (cameraY_fixed < maxCameraY_fixed)
+                    // If player's center is above the bottom threshold, allow moving player down.
+                    // If player's center has reached or passed the threshold, scroll the camera instead.
+                    if (playerCenterScreenY_down < bottomThreshold)
+                    {
+                        if (!physicsEnabled)
                         {
-                            // Scroll camera down and advance player world Y by same amount so
-                            // perceived downward speed matches upward movement. Keep player
-                            // visually stationary while camera scrolls.
-                            // Scroll camera down first. Advance camera and then advance player
-                            // by the same amount and clamp afterwards to avoid passing through floor
-                            cameraY_fixed += vStep_fixed;
-                            if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
+                            // Safe to move player down without scrolling
+                            // Advance player, then clamp to ground. Keep ordering consistent
                             playerY_fixed += vStep_fixed;
                             if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
                         }
                         else
                         {
-                            // Camera at bottom: allow player to move down to ground and clamp
-                            playerY_fixed += vStep_fixed;
-                            if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                            // Physics active: do not move player Y directly when using down; let physics control position
                         }
+                    }
+                    else
+                    {
+                        // Player within 5 tiles of bottom: scroll camera down first until bottom reached
+                        if (cameraY_fixed < maxCameraY_fixed)
+                        {
+                            // Scroll camera down and advance player world Y by same amount so
+                                // Mark that we've jumped at least once
+                                jumpedOnce = true;
+                            // visually stationary while camera scrolls.
+                            cameraY_fixed += vStep_fixed;
+                            if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
+                            // If physics not active, advance player so perceived speed matches upward movement
+                            if (!physicsEnabled)
+                            {
+                                playerY_fixed += vStep_fixed;
+                                if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                            }
+                        }
+                // Automatic camera-follow while physics is active in numeric path
+                try
+                {
+                    if (physicsEnabled && jumpedOnce)
+                    {
+                        int playerCenterScreenY_post = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                        int topThreshold_post = 5 * TILE;
+                        int bottomThreshold_post = NES_H * TILE - 5 * TILE;
+
+                        if (playerCenterScreenY_post <= topThreshold_post)
+                        {
+                            int need = topThreshold_post - playerCenterScreenY_post;
+                            int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                            cameraY_fixed -= (camMove << 8);
+                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                        }
+                        else if (playerCenterScreenY_post >= bottomThreshold_post)
+                        {
+                            int need = playerCenterScreenY_post - bottomThreshold_post;
+                            int maxCameraY_fixed_local = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                            int camAvail = (maxCameraY_fixed_local - cameraY_fixed) >> 8;
+                            int camMove = Math.Min(need, camAvail);
+                            cameraY_fixed += (camMove << 8);
+                            if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
+                        }
+                    }
                 }
+                catch { }
+
+                // Clamp cameraY
+                        {
+                            // Camera at bottom: allow player to move down to ground and clamp
+                            if (!physicsEnabled)
+                            {
+                                playerY_fixed += vStep_fixed;
+                                if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Apply simple physics if enabled: jump -> gravity -> cap -> integrate -> ground collision
+            // Only run physics here when the numeric sim timer is not running to avoid double-applying
+            if (physicsEnabled && simTimer == null)
+            {
+                try
+                {
+                    // Consume UI-frame jump press if present and on-ground (do this before gravity)
+                    bool jumpAppliedThisFrame = false;
+                    // Atomically grab and clear any pending UI edges
+                    int pendingPress = Interlocked.Exchange(ref keyXPressedCount, 0);
+                    if (pendingPress > 0)
+                    {
+                        // Reset vertical velocity to the jump impulse (do not stack)
+                        playerVelY_fixed = CUBE_JUMP_VEL;
+                        physicsEnabled = true;
+                        onGround = false;
+                        jumpAppliedThisFrame = true;
+                        // Mark that the player has jumped at least once; switch Up/Down to physics-mode
+                        jumpedOnce = true;
+                    }
+
+                    // Apply gravity only if we did not just apply a jump this frame and if moving vertically or sufficiently above ground (use epsilon)
+                    if (!jumpAppliedThisFrame && (playerVelY_fixed != 0 || playerY_fixed < maxPlayerY_fixed - LAND_EPS_FIXED))
+                    {
+                        playerVelY_fixed += CUBE_GRAVITY;
+                        // cap downward velocity
+                        if (playerVelY_fixed > CUBE_MAX_FALLSPEED) playerVelY_fixed = CUBE_MAX_FALLSPEED;
+                    }
+
+                    // integrate velocity
+                    playerY_fixed += playerVelY_fixed;
+
+                    // ground collision: snap to ground with epsilon and zero velocity; set onGround
+                            if (playerY_fixed >= maxPlayerY_fixed - LAND_EPS_FIXED && playerVelY_fixed >= 0)
+                        {
+                            playerY_fixed = maxPlayerY_fixed;
+                            playerVelY_fixed = 0;
+                            onGround = true;
+                            // If player is holding X (UI-polled or async), immediately jump again
+                            if (keyXHeld || IsXDownAsync())
+                            {
+                                // Reset vertical velocity to jump impulse for auto-jump
+                                playerVelY_fixed = CUBE_JUMP_VEL;
+                                onGround = false;
+                                jumpedOnce = true;
+                                // clear any pending edge presses since we've consumed the auto-jump
+                                Interlocked.Exchange(ref keyXPressedCount, 0);
+                            }
+                        }
+                    else
+                    {
+                        onGround = false;
+                    }
+                }
+                catch { }
             }
 
             // Clamp cameraY to valid range after adjustments
             if (cameraY_fixed < 0) cameraY_fixed = 0;
-                if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
+            if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
 
             // Final safety clamp: ensure player remains above ground after camera moves
-            if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+            if (playerY_fixed > maxPlayerY_fixed) { playerY_fixed = maxPlayerY_fixed; playerVelY_fixed = 0; }
 
             // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
             try
@@ -1418,6 +1664,10 @@ namespace FamidashEditor
                     int desiredPlayerY_fixed = desiredPlayerWorldY << 8;
                     if (desiredPlayerY_fixed > maxPlayerY_fixed) desiredPlayerY_fixed = maxPlayerY_fixed;
                     playerY_fixed = desiredPlayerY_fixed;
+                    // When the UI enforces a screen-space clamp we should treat the player as effectively grounded
+                    // (prevent further gravity) and zero vertical velocity so the player doesn't sink while camera constraints apply.
+                    playerVelY_fixed = 0;
+                    onGround = true;
                 }
             }
             catch { }
@@ -2764,49 +3014,191 @@ namespace FamidashEditor
 
                 if (upHeld)
                 {
-                    // Move player up
-                    playerY_fixed -= vStep_fixed_local;
-                    if (playerY_fixed < 0) playerY_fixed = 0;
+                    // Use player's screen center Y for scrolling decisions to match camera panning behavior
+                    int playerCenterScreenY_local = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                    int topThreshold_local = 5 * TILE; // 5 tiles from top
 
-                    int playerScreenY = (playerY_fixed >> 8) - (cameraY_fixed >> 8);
-                    int topThreshold = 4 * TILE;
-                    if (playerScreenY < topThreshold)
+                    if (!jumpedOnce)
                     {
-                        int need = topThreshold - playerScreenY;
-                        int camMove = Math.Min(need, (cameraY_fixed >> 8));
-                        cameraY_fixed -= (camMove << 8);
-                        if (cameraY_fixed < 0) cameraY_fixed = 0;
+                        // Before first jump: Up acts as camera-only
+                        if (cameraY_fixed > 0)
+                        {
+                            cameraY_fixed -= vStep_fixed_local;
+                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                        }
+                    }
+                    else
+                    {
+                        if (!physicsEnabled)
+                        {
+                            // Move player up
+                            playerY_fixed -= vStep_fixed_local;
+                            if (playerY_fixed < 0) playerY_fixed = 0;
+
+                            // Recompute center after moving the player
+                            playerCenterScreenY_local = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                            // If player's center is at or above the threshold, scroll camera up to follow
+                            if (playerCenterScreenY_local <= topThreshold_local)
+                            {
+                                int need = topThreshold_local - playerCenterScreenY_local;
+                                int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                                cameraY_fixed -= (camMove << 8);
+                                if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            }
+                        }
+                        else
+                        {
+                            // Physics active: don't move player Y directly. Allow camera to scroll up if needed.
+                            if (playerCenterScreenY_local <= topThreshold_local)
+                            {
+                                int need = topThreshold_local - playerCenterScreenY_local;
+                                int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                                cameraY_fixed -= (camMove << 8);
+                                if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            }
+                            else
+                            {
+                                // Manual camera pan while physics is enabled: allow small step when holding Up
+                                if (cameraY_fixed > 0)
+                                {
+                                    cameraY_fixed -= vStep_fixed_local;
+                                    if (cameraY_fixed < 0) cameraY_fixed = 0;
+                                }
+                            }
+                        }
                     }
                 }
 
                 if (downHeld)
                 {
-                    int bottomThreshold = NES_H * TILE - 5 * TILE; // 5 tiles from bottom
+                    int bottomThresholdBottom_local = NES_H * TILE - 5 * TILE; // 5 tiles from bottom (measured from bottom edge)
                     int playerScreenY = (playerY_fixed >> 8) - (cameraY_fixed >> 8);
-                    if (playerScreenY <= bottomThreshold)
+                    int playerScreenBottom_local = playerScreenY + playerVisualHeight;
+
+                    if (!jumpedOnce)
                     {
-                        // Move player down
-                        playerY_fixed += vStep_fixed_local;
-                        if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+                        // Before first jump: Down pans camera only
+                        if (cameraY_fixed < maxCameraY_fixed_local)
+                        {
+                            cameraY_fixed += vStep_fixed_local;
+                            if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
+                        }
                     }
                     else
                     {
-                        // Scroll camera down first until it reaches bottom
-                        if (cameraY_fixed < maxCameraY_fixed_local)
+                        // If player's bottom is above the bottom threshold, allow moving player down.
+                        // If player's bottom has reached or passed the threshold, scroll the camera instead.
+                        if (playerScreenBottom_local < bottomThresholdBottom_local)
                         {
-                            // Scroll camera down and advance player world Y by same amount
-                            // so perceived downward speed matches upward movement.
-                            cameraY_fixed += vStep_fixed_local;
-                            if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
-                            playerY_fixed += vStep_fixed_local;
-                            if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+                            if (!physicsEnabled)
+                            {
+                                // Move player down
+                                playerY_fixed += vStep_fixed_local;
+                                if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+                            }
+                            else
+                            {
+                                // Physics active: don't move player Y directly here; camera remains stationary unless thresholds
+                            }
                         }
                         else
                         {
-                            playerY_fixed += vStep_fixed_local;
-                            if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+                            // Scroll camera down first until it reaches bottom
+                            if (cameraY_fixed < maxCameraY_fixed_local)
+                            {
+                                // Scroll camera down
+                                cameraY_fixed += vStep_fixed_local;
+                                if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
+                                // Only advance player when physics is not enabled
+                                if (!physicsEnabled)
+                                {
+                                    playerY_fixed += vStep_fixed_local;
+                                    if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+                                }
+                            }
+                            else
+                            {
+                                // Manual camera pan while physics is enabled: allow small step when holding Down
+                                if (cameraY_fixed < maxCameraY_fixed_local)
+                                {
+                                    cameraY_fixed += vStep_fixed_local;
+                                    if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
+                                }
+                                else
+                                {
+                                    if (!physicsEnabled)
+                                    {
+                                        playerY_fixed += vStep_fixed_local;
+                                        if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+                                    }
+                                }
+                            }
                         }
                     }
+                }
+
+                // Apply simple physics if enabled in numeric path: gravity -> cap -> integrate -> ground collision
+                if (physicsEnabled)
+                {
+                    try
+                        {
+                            // Read input flags atomically so numeric sim doesn't race with UI poll.
+                            bool keyXHeld_local;
+                            lock (simLock)
+                            {
+                                keyXHeld_local = keyXHeld;
+                            }
+
+                            // Detailed trace for diagnosis: record world Y, maxY, vel, and flags (use local copies)
+                            // Read OS-level held state for logic where needed; avoid expensive logging here
+
+                            // Track if a jump was applied this numeric step so we skip immediate gravity application
+                            bool jumpAppliedThisStep_local = false;
+
+                            // Atomically consume any pending UI-edge presses recorded by the UI poll
+                            int pendingPresses_num = Interlocked.Exchange(ref keyXPressedCount, 0);
+                            if (pendingPresses_num > 0)
+                            {
+                                playerVelY_fixed = CUBE_JUMP_VEL;
+                                physicsEnabled = true;
+                                onGround = false;
+                                jumpAppliedThisStep_local = true;
+                                // Record that we've now jumped at least once
+                                jumpedOnce = true;
+                            }
+
+                            // Apply gravity only if we did not just apply a jump and if moving vertically
+                            if (!jumpAppliedThisStep_local && (playerVelY_fixed != 0 || playerY_fixed < maxPlayerY_fixed_local - LAND_EPS_FIXED))
+                            {
+                                playerVelY_fixed += CUBE_GRAVITY;
+                                if (playerVelY_fixed > CUBE_MAX_FALLSPEED) playerVelY_fixed = CUBE_MAX_FALLSPEED;
+                            }
+
+                            playerY_fixed += playerVelY_fixed;
+
+                        // Landing detection with epsilon: snap to ground and zero velocity
+                            if (playerY_fixed >= maxPlayerY_fixed_local - LAND_EPS_FIXED && playerVelY_fixed >= 0)
+                        {
+                            playerY_fixed = maxPlayerY_fixed_local;
+                            playerVelY_fixed = 0;
+                            onGround = true;
+                            // If X is held on landing (UI-held or async), immediately jump
+                            if (keyXHeld_local || IsXDownAsync())
+                            {
+                                // Reset vertical velocity to jump impulse for auto-jump
+                                playerVelY_fixed = CUBE_JUMP_VEL;
+                                onGround = false;
+                                jumpedOnce = true;
+                                // clear any pending edge presses since we've consumed the auto-jump
+                                Interlocked.Exchange(ref keyXPressedCount, 0);
+                            }
+                        }
+                        else
+                        {
+                            onGround = false;
+                        }
+                    }
+                    catch { }
                 }
 
                 // Clamp cameraY
@@ -2814,7 +3206,7 @@ namespace FamidashEditor
                 if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
 
                 // Final safety clamp: ensure player remains above ground after camera moves
-                if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
+                if (playerY_fixed > maxPlayerY_fixed_local) { playerY_fixed = maxPlayerY_fixed_local; playerVelY_fixed = 0; }
 
                 // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
                 try
@@ -2830,6 +3222,9 @@ namespace FamidashEditor
                         int desiredPlayerY_fixed_local = desiredPlayerWorldY_local << 8;
                         if (desiredPlayerY_fixed_local > maxPlayerY_fixed_local) desiredPlayerY_fixed_local = maxPlayerY_fixed_local;
                         playerY_fixed = desiredPlayerY_fixed_local;
+                        // When numeric sim enforces a screen-space clamp, treat the player as grounded so gravity stops.
+                        playerVelY_fixed = 0;
+                        onGround = true;
                     }
                 }
                 catch { }

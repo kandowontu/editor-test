@@ -7432,20 +7432,79 @@ namespace FamidashEditor
 
         private void LoadTMXFile(string filePath)
         {
-            // Prompt to save if there are unsaved changes
-            if (hasUnsavedChanges)
+            // Prompt to save only when the current tab is an untitled tab with unsaved changes
+            bool shouldPromptSave = false;
+            try
+            {
+                if (hasUnsavedChanges && openFiles != null && openFiles.Count == 1)
+                {
+                    var only = openFiles[0];
+                    if (only != null && string.IsNullOrEmpty(only.FilePath)) shouldPromptSave = true;
+                }
+            }
+            catch { }
+
+            if (shouldPromptSave)
             {
                 var result = MessageBox.Show(
-                    "You have unsaved changes. Do you want to save before loading?",
+                    "You have unsaved changes in the untitled tab. Do you want to save before loading?",
                     "Unsaved Changes",
                     MessageBoxButton.YesNoCancel,
                     MessageBoxImage.Question);
-                
+
                 if (result == MessageBoxResult.Yes)
                 {
+                    // Save; SaveButton_Click will prompt Save As for untitled tabs.
                     SaveButton_Click(this, new RoutedEventArgs());
                     // If user cancelled the save dialog, abort the load
                     if (hasUnsavedChanges) return;
+
+                    // If save succeeded, ensure the sole tab is updated to the saved path and remains open
+                    try
+                    {
+                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                        {
+                            openFiles[currentFileIndex].FilePath = currentFilePath;
+                            openFiles[currentFileIndex].HasUnsavedChanges = false;
+
+                            // Update the tab header to the saved filename
+                            for (int i = 0; i < FileTabControl.Items.Count; i++)
+                            {
+                                if (FileTabControl.Items[i] is TabItem tabItem && tabItem.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
+                                {
+                                    var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
+                                    var headerText = new TextBlock
+                                    {
+                                        Text = System.IO.Path.GetFileName(currentFilePath),
+                                        Margin = new Thickness(0, 0, 8, 0),
+                                        VerticalAlignment = VerticalAlignment.Center
+                                    };
+                                    var closeButton = new Button
+                                    {
+                                        Content = "×",
+                                        Width = 16,
+                                        Height = 16,
+                                        Padding = new Thickness(0),
+                                        Margin = new Thickness(0),
+                                        VerticalAlignment = VerticalAlignment.Center,
+                                        Background = Brushes.Transparent,
+                                        BorderThickness = new Thickness(0),
+                                        FontSize = 14,
+                                        FontWeight = FontWeights.Bold,
+                                        Cursor = Cursors.Hand,
+                                        Visibility = Visibility.Visible,
+                                        Tag = openFiles[currentFileIndex]
+                                    };
+                                    closeButton.Click += CloseTab_Click;
+                                    headerPanel.Children.Add(headerText);
+                                    headerPanel.Children.Add(closeButton);
+                                    tabItem.Header = headerPanel;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
                 }
                 else if (result == MessageBoxResult.Cancel)
                 {
@@ -7609,6 +7668,36 @@ namespace FamidashEditor
                     
                     // Full redraw with all bitmaps
                     Redraw();
+
+                    // Position main map scroll roughly two-thirds down the content so the map
+                    // is not pinned to top-left when opened. Compute the maximum allowed
+                    // vertical offset and set it to ~2/3 of that range.
+                    try
+                    {
+                        if (MapScrollViewer != null)
+                        {
+                            double scale = ZoomSlider?.Value ?? 1.0;
+                            double pad = mapViewportPadding;
+                            double fullH = mapHeight * TileSize * scale;
+
+                            // Calculate ground height (if available)
+                            double groundHeight = 0.0;
+                            if (groundBitmap != null && groundImages != null && groundImages.Length > 0)
+                            {
+                                var dpi = VisualTreeHelper.GetDpi(this);
+                                groundHeight = (groundBitmap.PixelHeight / dpi.DpiScaleY) * scale;
+                            }
+
+                            // Add ground height (minus 2 rows to clamp earlier) and padding
+                            fullH += groundHeight - (2 * TileSize * scale);
+                            double paddedFullH = fullH + pad * 2.0;
+
+                            double maxAllowedV = Math.Max(0.0, paddedFullH - SafeViewportHeight());
+                            double desiredV = Math.Round(maxAllowedV * 2.0 / 3.0);
+                            MapScrollViewer?.ScrollToVerticalOffset(desiredV);
+                        }
+                    }
+                    catch { }
                 }
             }
             catch (Exception ex)
