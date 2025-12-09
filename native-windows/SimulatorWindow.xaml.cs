@@ -2047,20 +2047,17 @@ namespace FamidashEditor
                         {
                             if (grdChanged || tileChanged)
                             {
-                                // Prefer using the active tile/object tint for outlining so that
-                                // ground-only triggers do not erase object-applied outline recolors.
-                                var outlineForGround = (outlineTintParam.A > 0) ? outlineTintParam : Color.FromArgb(0, 0, 0, 0);
                                 if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
                                 {
                                     // For 0xCF (black-ground) produce black-masked images so
                                     // non-white/non-player-green pixels become black while
-                                    // leaving the seam available for outline recolor (driven by tileTint).
-                                    try { groundTonedImages = CreateBlackMaskedExceptColorArray(groundImages, playerPlaceholderGreen, outlineForGround, outlineForGround.A > 0); }
-                                    catch { groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), outlineForGround); }
+                                    // leaving the seam unaffected (outline recolor is disabled).
+                                    try { groundTonedImages = CreateBlackMaskedExceptColorArray(groundImages, playerPlaceholderGreen, outlineTintLocal, false); }
+                                    catch { groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), outlineTintLocal); }
                                 }
                                 else
                                 {
-                                    groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, outlineForGround);
+                                    groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, outlineTintLocal);
                                 }
                             }
                         }
@@ -3772,11 +3769,10 @@ namespace FamidashEditor
                         // Explicit tile/object trigger or tile tint changed: use the candidate/new tint
                         outlineTintParam = candidateTileTint;
                     }
-                    else if (grdChanged || bgChanged)
+                    else if (grdChanged)
                     {
-                        // Ground-only or background-only change: preserve existing tile tint
-                        // as outline so object recolors survive updates that don't explicitly
-                        // target object outlines.
+                        // Ground-only change: preserve existing tile tint as outline so object
+                        // recolors survive ground updates.
                         outlineTintParam = tileTint;
                     }
                 }
@@ -3860,9 +3856,8 @@ namespace FamidashEditor
                             // Only pass the outline tint when this regeneration is a result of an
                             // explicit object/tile trigger (tileIdxLocal >= 0). Background or
                             // ground-triggered regenerations should not recolor white seams.
-                            // Do not overwrite the previously-determined `outlineTintParam` here;
-                            // it was computed above to preserve object-applied outline tints
-                            // for ground-only changes. Use the existing `outlineTintParam`.
+                            // NOTE: `outlineTintParam` is computed earlier to preserve object
+                            // outline recolors on ground-only updates; do not overwrite it here.
                             if (bgPrimary.HasValue)
                                 tileTonedImages = CreateTwoToneTileImages(tileImages, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), outlineTintParam);
                             else
@@ -3928,31 +3923,26 @@ namespace FamidashEditor
                                         if (i >= 0 && i < tileImages.Length)
                                         {
                                             // Ground tiles should only respond to ground color triggers and should not
-                                            // participate in background two-tone row-shifting. Use a direct hue-shift
-                                            // with the ground tint so the result matches ground visuals exactly.
-                                            if (bgPrimary.HasValue)
+                                            // participate in ground two-tone mapping the same way the ground images do.
+                                            // Use ground palette mapping (grdPrimary/grdSecondary) when present; otherwise
+                                            // fall back to hue-shift using `groundTint`. Always supply the computed
+                                            // outline tint (or tileTint fallback) so object triggers recolor seams.
+                                            Color outlineForGround = outlineTintParam.A > 0 ? outlineTintParam : tileTint;
+                                            if (grdPrimary.HasValue)
                                             {
-                                                // For ground tiles, flip primary/secondary so ground-like
-                                                // two-tone mapping matches the ground visuals. Use the
-                                                // computed outline tint parameter so object triggers
-                                                // recolor the seams when present.
-                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), bgPrimary.Value, outlineTintParam);
+                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, grdSecondary ?? Color.FromArgb(255, 0, 0, 0), grdPrimary.Value, outlineForGround);
                                                 if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
                                             }
                                             else
                                             {
-                                                // If background is forced to solid black or ground is explicit black,
-                                                // produce a black-masked variant (preserving player green and
-                                                // leaving the seam unaffected) so this tile doesn't get recolored
-                                                // to a non-black background.
                                                 if (backgroundForceSolidBlack || (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0))
                                                 {
-                                                    try { tileTonedImages[i] = CreateBlackMaskedExceptColor(tileImages[i], playerPlaceholderGreen, outlineTintParam, outlineTintParam.A > 0); }
+                                                    try { tileTonedImages[i] = CreateBlackMaskedExceptColor(tileImages[i], playerPlaceholderGreen, outlineForGround, outlineForGround.A > 0); }
                                                     catch { tileTonedImages[i] = tileImages[i]; }
                                                 }
                                                 else
                                                 {
-                                                    var arr = CreateHueShiftedImages(new ImageSource?[] { tileImages[i]! }, groundTint, outlineTintParam);
+                                                    var arr = CreateHueShiftedImages(new ImageSource?[] { tileImages[i]! }, groundTint, outlineForGround);
                                                     if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
                                                 }
                                             }
@@ -4030,16 +4020,14 @@ namespace FamidashEditor
                                     RgbFromHsl(_gh, _gs, _gdarker, out byte _sr, out byte _sg, out byte _sb);
                                     synthesizedGrdSecondary = Color.FromArgb(255, _sr, _sg, _sb);
                                 }
-                                var outlineForGround = (outlineTintParam.A > 0) ? outlineTintParam : Color.FromArgb(0, 0, 0, 0);
-                                groundTonedImages = CreateTwoToneTileImages(groundImages, synthesizedGrdSecondary, grdPrimary.Value, outlineForGround);
+                                groundTonedImages = CreateTwoToneTileImages(groundImages, synthesizedGrdSecondary, grdPrimary.Value, outlineTintParam);
                             }
                             else
                             {
                                 // Preserve previous special-case behavior for pure-black ground tint
                                 if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
                                 {
-                                    var outlineForGround = (tileTint.A > 0) ? tileTint : Color.FromArgb(0, 0, 0, 0);
-                                    groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), outlineForGround);
+                                    groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), outlineTintParam);
                                 }
                                 else
                                 {
@@ -4055,13 +4043,11 @@ namespace FamidashEditor
                                         RgbFromHsl(gh, gs, secL, out byte sr, out byte sg, out byte sb);
                                         var secondaryFromGround = Color.FromArgb(255, sr, sg, sb);
                                         // flip primary/secondary for ground visuals
-                                        var outlineForGround = (outlineTintParam.A > 0) ? outlineTintParam : Color.FromArgb(0, 0, 0, 0);
-                                        groundTonedImages = CreateTwoToneTileImages(groundImages, secondaryFromGround, groundTint, outlineForGround);
+                                        groundTonedImages = CreateTwoToneTileImages(groundImages, secondaryFromGround, groundTint, outlineTintParam);
                                     }
                                     else
                                     {
-                                        var outlineForGround = (outlineTintParam.A > 0) ? outlineTintParam : Color.FromArgb(0, 0, 0, 0);
-                                        groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, outlineForGround);
+                                        groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, outlineTintParam);
                                     }
                                 }
                             }
