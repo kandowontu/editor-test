@@ -280,7 +280,9 @@ namespace FamidashEditor
         // Landing epsilon in fixed-point (1 pixel)
         private const int LAND_EPS_FIXED = 1 << 8;
         // Whether the player is currently considered on the ground (true when snapped to ground)
+    #pragma warning disable CS0414 // assigned but never used - keep for future use
         private bool onGround = true;
+    #pragma warning restore CS0414
 
         // P/Invoke to check key state asynchronously from background threads
         [System.Runtime.InteropServices.DllImport("user32.dll")]

@@ -7474,6 +7474,7 @@ namespace FamidashEditor
 
         private void LoadTMXFile(string filePath)
         {
+    #pragma warning disable CS8602
             // Prompt to save only when the current tab is an untitled tab with unsaved changes
             bool shouldPromptSave = false;
             try
@@ -7510,14 +7511,14 @@ namespace FamidashEditor
                             openFiles[currentFileIndex].HasUnsavedChanges = false;
 
                             // Update the tab header to the saved filename
-                            for (int i = 0; i < FileTabControl.Items.Count; i++)
+                            for (int i = 0; i < FileTabControl!.Items.Count; i++)
                             {
-                                if (FileTabControl.Items[i] is TabItem tabItem && tabItem.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
+                                if (FileTabControl!.Items[i] is TabItem tabItem && tabItem.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
                                 {
                                     var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
                                     var headerText = new TextBlock
                                     {
-                                        Text = System.IO.Path.GetFileName(currentFilePath),
+                                        Text = System.IO.Path.GetFileName(currentFilePath ?? ""),
                                         Margin = new Thickness(0, 0, 8, 0),
                                         VerticalAlignment = VerticalAlignment.Center
                                     };
@@ -7666,9 +7667,9 @@ namespace FamidashEditor
                         openFiles[currentFileIndex].FilePath = filePath;
                         
                         // Update tab header
-                        for (int i = 0; i < FileTabControl.Items.Count; i++)
+                        for (int i = 0; i < FileTabControl!.Items.Count; i++)
                         {
-                            if (FileTabControl.Items[i] is TabItem tabItem && tabItem.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
+                            if (FileTabControl!.Items[i] is TabItem tabItem && tabItem.Tag is FileTabData td && openFiles.IndexOf(td) == currentFileIndex)
                             {
                                 // Create header panel with close button
                                 var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
