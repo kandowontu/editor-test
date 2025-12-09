@@ -54,6 +54,34 @@ namespace FamidashEditor
             catch { /* ignore load failures and fall back to defaults */ }
             PaletteColors = loaded ?? DefaultPaletteColors;
 
+            // Ensure the top 3 rows' first 12 slots match the simulator's color-trigger mapping.
+            // Map sprite groups: 0x80..0x8C -> palette row 0, 0x90..0x9C -> row 1, 0xA0..0xAC -> row 2.
+            try
+            {
+                for (int row = 0; row < 3; row++)
+                {
+                    int baseSprite = 0x80 + row * 0x10;
+                    for (int col = 0; col < 12; col++)
+                    {
+                        int spriteId = baseSprite + col;
+                        int paletteIdx = -1;
+                        if (spriteId >= 0x80 && spriteId <= 0x8C) paletteIdx = (spriteId - 0x80) + (0 * PaletteHelper.Columns);
+                        else if (spriteId >= 0x90 && spriteId <= 0x9C) paletteIdx = (spriteId - 0x90) + (1 * PaletteHelper.Columns);
+                        else if (spriteId >= 0xA0 && spriteId <= 0xAC) paletteIdx = (spriteId - 0xA0) + (2 * PaletteHelper.Columns);
+
+                        if (paletteIdx >= 0 && paletteIdx < PaletteHelper.Palette.Length)
+                        {
+                            int targetIdx = row * PaletteHelper.Columns + col;
+                            if (targetIdx >= 0 && targetIdx < PaletteColors.Length)
+                            {
+                                PaletteColors[targetIdx] = PaletteHelper.Palette[paletteIdx];
+                            }
+                        }
+                    }
+                }
+            }
+            catch { /* be tolerant — fallback to loaded/default palette on any error */ }
+
             // Build palette UI (single-select). Preview on hover, select on click.
             for (int i = 0; i < PaletteColors.Length; i++)
             {

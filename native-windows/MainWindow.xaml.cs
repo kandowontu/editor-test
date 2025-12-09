@@ -9737,8 +9737,10 @@ namespace FamidashEditor
 
         private void UpdateGroundTint()
         {
-            // For ground, use the HSL hue/saturation shifting as in the previous commit.
-            groundTonedImages = CreateHueShiftedImages(groundImages, groundTint);
+            // For ground, use exact RGB replacement/two-tone mapping so the editor
+            // background/ground tint matches the color picker selection. Lighter = selected
+            // color, darker = palette row-up (or black when top row).
+            groundTonedImages = CreateRgbReplacedImages(groundImages, groundTint);
             // mark background/ground cache dirty so the ground RTB is rebuilt with the new tint
             backgroundDirty = true;
             // Status updates removed for ground tinting
@@ -9790,12 +9792,16 @@ namespace FamidashEditor
                 }
                 convToned.CopyPixels(tonedPixels, stride, 0);
 
+                // Replace only the exact green player placeholder color 0xFF322B (R=255,G=50,B=43)
                 byte pr = tint.R, pg = tint.G, pb = tint.B;
                 for (int i = 0; i + 3 < tonedPixels.Length; i += 4)
                 {
                     byte a = (convBase != null) ? basePixels[i + 3] : tonedPixels[i + 3];
+                    byte baseB = (convBase != null) ? basePixels[i + 0] : tonedPixels[i + 0];
                     byte baseG = (convBase != null) ? basePixels[i + 1] : tonedPixels[i + 1];
-                    if (a != 0 && baseG >= 180)
+                    byte baseR = (convBase != null) ? basePixels[i + 2] : tonedPixels[i + 2];
+
+                    if (a != 0 && baseR == 0xFF && baseG == 0x32 && baseB == 0x2B)
                     {
                         tonedPixels[i + 0] = pb;
                         tonedPixels[i + 1] = pg;

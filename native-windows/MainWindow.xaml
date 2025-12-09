@@ -328,7 +328,7 @@
                 <Image x:Name="PortalsImage" Panel.ZIndex="4" />
                 <Image x:Name="SpritesImage" Panel.ZIndex="5" />
                 <Image x:Name="GridImage" Panel.ZIndex="6" />
-                <Canvas x:Name="CanvasHost" Background="Transparent">
+                <Canvas x:Name="CanvasHost" Background="Transparent" Panel.ZIndex="7">
                     <!-- Hover rectangle: shown while mouse is over a tile -->
                     <Rectangle x:Name="HoverRect" Fill="#28FFFF00" Stroke="Yellow" StrokeThickness="1" Visibility="Collapsed" IsHitTestVisible="False" SnapsToDevicePixels="True" />
                     <Border x:Name="HoverBorder" Background="#28FFFF00" BorderBrush="Yellow" BorderThickness="1" Visibility="Collapsed" IsHitTestVisible="False" SnapsToDevicePixels="True" />
