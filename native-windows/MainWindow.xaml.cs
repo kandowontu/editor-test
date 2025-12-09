@@ -9731,25 +9731,7 @@ namespace FamidashEditor
             parallaxTonedImages = CreateRgbReplacedImages(parallaxImages, backgroundTint);
             // mark background/parallax cache dirty so the parallax RTB is rebuilt with the new tint
             backgroundDirty = true;
-            if (StatusText != null)
-            {
-                string info = $"UpdateParallaxTint: tintA={backgroundTint.A} parallaxImages={(parallaxImages!=null?parallaxImages.Length:0)} parallaxToned={(parallaxTonedImages!=null?parallaxTonedImages.Length:0)}";
-                try
-                {
-                    // Sample first pixel from original and toned (if available) for a quick diagnostic
-                    if (parallaxImages != null && parallaxImages.Length > 0 && parallaxImages[0] is BitmapSource orig && parallaxTonedImages != null && parallaxTonedImages.Length > 0 && parallaxTonedImages[0] is BitmapSource toned)
-                    {
-                        var origPixel = new byte[4];
-                        var tonedPixel = new byte[4];
-                        orig.CopyPixels(new Int32Rect(0, 0, 1, 1), origPixel, 4, 0);
-                        toned.CopyPixels(new Int32Rect(0, 0, 1, 1), tonedPixel, 4, 0);
-                        info += $" | origARGB={origPixel[3]},{origPixel[2]},{origPixel[1]},{origPixel[0]}";
-                        info += $" tonedARGB={tonedPixel[3]},{tonedPixel[2]},{tonedPixel[1]},{tonedPixel[0]}";
-                    }
-                }
-                catch { }
-                StatusText.Text = info;
-            }
+            // Status updates removed for parallax tinting (no UI status messages)
         }
 
         private void UpdateGroundTint()
@@ -9758,24 +9740,7 @@ namespace FamidashEditor
             groundTonedImages = CreateHueShiftedImages(groundImages, groundTint);
             // mark background/ground cache dirty so the ground RTB is rebuilt with the new tint
             backgroundDirty = true;
-            if (StatusText != null)
-            {
-                string info = $"UpdateGroundTint: tintA={groundTint.A} groundImages={(groundImages!=null?groundImages.Length:0)} groundToned={(groundTonedImages!=null?groundTonedImages.Length:0)}";
-                try
-                {
-                    if (groundImages != null && groundImages.Length > 0 && groundImages[0] is BitmapSource orig && groundTonedImages != null && groundTonedImages.Length > 0 && groundTonedImages[0] is BitmapSource toned)
-                    {
-                        var origPixel = new byte[4];
-                        var tonedPixel = new byte[4];
-                        orig.CopyPixels(new Int32Rect(0, 0, 1, 1), origPixel, 4, 0);
-                        toned.CopyPixels(new Int32Rect(0, 0, 1, 1), tonedPixel, 4, 0);
-                        info += $" | origARGB={origPixel[3]},{origPixel[2]},{origPixel[1]},{origPixel[0]}";
-                        info += $" tonedARGB={tonedPixel[3]},{tonedPixel[2]},{tonedPixel[1]},{tonedPixel[0]}";
-                    }
-                }
-                catch { }
-                StatusText.Text = info;
-            }
+            // Status updates removed for ground tinting
         }
 
         private void UpdateTileTint()
@@ -9797,11 +9762,7 @@ namespace FamidashEditor
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
             // Refresh palette so the left frame shows tinted tiles as well
             try { PopulateTilesPanel(); } catch { }
-            if (StatusText != null)
-            {
-                string info = $"UpdateTileTint: tintA={tileTint.A} tileImages={(tileImages!=null?tileImages.Length:0)} tileToned={(tileTonedImages!=null?tileTonedImages.Length:0)}";
-                StatusText.Text = info;
-            }
+            // Status updates removed for tile tinting
         }
 
         // Create an ImageSource that uses the toned image for colors but
@@ -10488,56 +10449,7 @@ namespace FamidashEditor
             }
             try { UpdateIncompatibleOverlay(); } catch { }
 
-            // Diagnostics: show editor background/parallax state in status text to aid debugging
-            try
-            {
-                if (StatusText != null)
-                {
-                    string bg = (backgroundRtb != null) ? "BG_RTB" : "BG_NULL";
-                    string pb = (parallaxBitmap != null) ? "PARALLAX" : "PAR_NULL";
-                    int pimgs = (parallaxImages != null) ? parallaxImages.Length : 0;
-                    string prtb = (parallaxRtb != null) ? "PRTB" : "PR_NULL";
-                    // Additional runtime diagnostics to help debug visibility issues
-                    int ppx = 0, ppy = 0;
-                    double tileDiuW = 0, tileDiuH = 0;
-                    try { if (parallaxBitmap is System.Windows.Media.Imaging.BitmapSource bs) { ppx = bs.PixelWidth; ppy = bs.PixelHeight; var dpi2 = VisualTreeHelper.GetDpi(this); tileDiuW = (ppx / dpi2.DpiScaleX) * scale; tileDiuH = (ppy / dpi2.DpiScaleY) * scale; } } catch { }
-                    double groundH = 0.0;
-                    try { if (groundBitmap != null && groundImages != null && groundImages.Length > 0) { var dpi2 = VisualTreeHelper.GetDpi(this); groundH = (groundBitmap.PixelHeight / dpi2.DpiScaleY) * scale; } } catch { }
-                    double groundStartY = mapHeight * TileSize * scale + pad;
-                    string bvis = "?", pvis = "?";
-                    double bOp = -1, pOp = -1;
-                    bool bHasSrc = false, pHasSrc = false;
-                    try { if (BackgroundImage != null) { bvis = BackgroundImage.Visibility.ToString(); bOp = BackgroundImage.Opacity; bHasSrc = BackgroundImage.Source != null; } } catch { }
-                    try { if (ParallaxImage != null) { pvis = ParallaxImage.Visibility.ToString(); pOp = ParallaxImage.Opacity; pHasSrc = ParallaxImage.Source != null; } } catch { }
-                    // Sample a few pixels from the parallax RTB (above the ground) to detect transparency
-                    string parSample = "-";
-                    double ptx = 0.0, pty = 0.0;
-                    try { if (parallaxTransform != null) { ptx = parallaxTransform.X; pty = parallaxTransform.Y; } } catch { }
-                    try
-                    {
-                        if (parallaxRtb != null)
-                        {
-                            int pw = parallaxRtb.PixelWidth; int ph = parallaxRtb.PixelHeight;
-                            var dpi2 = VisualTreeHelper.GetDpi(this);
-                            // compute top area pixel height (groundStartY in DIU -> pixels)
-                            int topAreaPx = Math.Max(1, Math.Min(ph, (int)Math.Round(groundStartY * dpi2.DpiScaleY)));
-                            int sx = Math.Max(0, Math.Min(pw - 1, pw / 2));
-                            int sy1 = Math.Max(0, Math.Min(ph - 1, topAreaPx / 4)); // near top
-                            int sy2 = Math.Max(0, Math.Min(ph - 1, topAreaPx / 2)); // middle of parallax area
-                            int sy3 = Math.Max(0, Math.Min(ph - 1, Math.Max(0, topAreaPx - 1))); // just above ground
-                            var buf = new byte[4];
-                            parallaxRtb.CopyPixels(new Int32Rect(sx, sy1, 1, 1), buf, 4, 0); byte b1 = buf[0], g1 = buf[1], r1 = buf[2], a1 = buf[3];
-                            parallaxRtb.CopyPixels(new Int32Rect(sx, sy2, 1, 1), buf, 4, 0); byte b2 = buf[0], g2 = buf[1], r2 = buf[2], a2 = buf[3];
-                            parallaxRtb.CopyPixels(new Int32Rect(sx, sy3, 1, 1), buf, 4, 0); byte b3 = buf[0], g3 = buf[1], r3 = buf[2], a3 = buf[3];
-                            parSample = $"t1=A{a1:X2} R{r1:X2} G{g1:X2} B{b1:X2}; t2=A{a2:X2}; t3=A{a3:X2}";
-                        }
-                    }
-                    catch { }
-
-                    StatusText.Text = $"{bg} {pb} imgs={pimgs} {prtb} canvas={CanvasHost?.Width:0.##}x{CanvasHost?.Height:0.##} par_px={ppx}x{ppy} tileDiu={tileDiuW:0.##}x{tileDiuH:0.##} groundH={groundH:0.##} gStartY={groundStartY:0.##} BVis={bvis} BOp={bOp:0.##} BSrc={bHasSrc} PVis={pvis} POp={pOp:0.##} PSrc={pHasSrc} parSample={parSample} PTrans={ptx:0.##},{pty:0.##}";
-                }
-            }
-            catch { }
+            // Status messages removed (collapsed by XAML). No diagnostics shown here.
         }
 
         private void Redraw() => DrawMap();
