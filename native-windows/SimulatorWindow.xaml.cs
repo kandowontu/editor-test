@@ -431,7 +431,7 @@ namespace FamidashEditor
                 simStopwatch.Restart();
                 simLastMs = simStopwatch.Elapsed.TotalMilliseconds;
                 simAccumulatedMs = 0.0;
-                    // Start timer to accumulate elapsed time for fixed steps.
+                // Run timer at a small interval and accumulate elapsed time to drive fixed steps.
                 simTimer = new System.Threading.Timer(_ => { try { TimerSimulationLoop(); } catch { } }, null, 0, 10);
 
                 // Initialize player Y so player stands one tile above reserved ground rows
@@ -2071,32 +2071,6 @@ namespace FamidashEditor
                             {
                                 var recol = CreateOutlineTintedTileImages(groundTonedImages, outlineTintParam);
                                 if (recol != null) groundTonedImages = recol;
-                            }
-                        }
-                        catch { }
-
-                            // Conservative fallback: ensure object-applied tile tints recolor seams
-                            // even when outlineTintParam is transparent. This prevents ground
-                            // triggers from forcing seams back to white.
-                            try
-                            {
-                                if (tileTint.A > 0 && groundTonedImages != null)
-                                {
-                                    var recol2 = CreateOutlineTintedTileImages(groundTonedImages, tileTint);
-                                    if (recol2 != null) groundTonedImages = recol2;
-                                }
-                            }
-                            catch { }
-
-                        // As a conservative fallback: if an explicit outline tint wasn't provided
-                        // for this regeneration but `tileTint` is active (objects colored), apply
-                        // an outline-only recolor so object tints survive ground-only updates.
-                        try
-                        {
-                            if (tileTint.A > 0 && groundTonedImages != null)
-                            {
-                                var recol2 = CreateOutlineTintedTileImages(groundTonedImages, tileTint);
-                                if (recol2 != null) groundTonedImages = recol2;
                             }
                         }
                         catch { }
