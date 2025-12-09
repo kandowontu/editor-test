@@ -142,7 +142,10 @@ namespace FamidashEditor
                     }
                     catch { }
 
-                    // Save config
+                    // Persist into current tab snapshot so changes stick for untitled/new tabs
+                    try { mw.PersistLoadedValuesToCurrentTab(); } catch { }
+
+                    // Save config (writes out to disk only when the TMX has a file path)
                     mw.SaveCurrentTmxConfig();
                 }
                 

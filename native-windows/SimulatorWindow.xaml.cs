@@ -746,62 +746,19 @@ namespace FamidashEditor
                         {
                             if (s != null)
                             {
-                                var bi = new BitmapImage();
-                                bi.BeginInit();
-                                bi.CacheOption = BitmapCacheOption.OnLoad;
-                                bi.StreamSource = s;
-                                bi.EndInit();
-                                bi.Freeze();
-                                this.parallaxBitmap = bi;
-                                // Slice into tiles of size TILE
                                 try
                                 {
-                                    int cols = Math.Max(1, bi.PixelWidth / TILE);
-                                    int rows = Math.Max(1, bi.PixelHeight / TILE);
-                                    var list = new System.Collections.Generic.List<ImageSource>();
-                                    for (int y = 0; y < rows; y++)
-                                    for (int x = 0; x < cols; x++)
-                                        list.Add(new CroppedBitmap(bi, new Int32Rect(x * TILE, y * TILE, TILE, TILE)));
-                                    this.parallaxImages = list.ToArray();
+                                    var bi = new BitmapImage();
+                                    bi.BeginInit();
+                                    bi.CacheOption = BitmapCacheOption.OnLoad;
+                                    bi.StreamSource = s;
+                                    bi.EndInit();
+                                    bi.Freeze();
+                                    var imgs = new ImageSource[] { bi };
+                                    this.parallaxImages = imgs;
+                                    this.hasParallaxLayer = true;
                                 }
-                                catch { this.parallaxImages = new ImageSource[] { bi }; }
-                                this.hasParallaxLayer = true;
-                            }
-                        }
-                    }
-
-                    if (this.parallaxImages == null || this.parallaxImages.Length == 0)
-                    {
-                        var wb = new WriteableBitmap(TILE, TILE, 96, 96, PixelFormats.Pbgra32, null);
-                        try { wb.Lock(); wb.AddDirtyRect(new Int32Rect(0, 0, TILE, TILE)); } finally { try { wb.Unlock(); } catch { } }
-                        wb.Freeze();
-                        this.parallaxBitmap = wb;
-                        this.parallaxImages = new ImageSource[] { wb };
-                        this.parallaxTonedImages = null;
-                        this.hasParallaxLayer = true;
-                    }
-                }
-
-                if ((!this.hasGroundLayer) || this.groundImages == null || this.groundImages.Length == 0)
-                {
-                    var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                    var names = asm.GetManifestResourceNames();
-                    var fullName = names.FirstOrDefault(r => r.IndexOf("Assets.ground.bmp", StringComparison.OrdinalIgnoreCase) >= 0);
-                    if (fullName == null) fullName = names.FirstOrDefault(r => r.IndexOf("ground", StringComparison.OrdinalIgnoreCase) >= 0);
-                    if (!string.IsNullOrEmpty(fullName))
-                    {
-                        using (var s = asm.GetManifestResourceStream(fullName))
-                        {
-                            if (s != null)
-                            {
-                                var bi = new BitmapImage();
-                                bi.BeginInit();
-                                bi.CacheOption = BitmapCacheOption.OnLoad;
-                                bi.StreamSource = s;
-                                bi.EndInit();
-                                bi.Freeze();
-                                this.groundImages = new ImageSource[] { bi };
-                                this.hasGroundLayer = true;
+                                catch { /* ignore - fallback below will provide a transparent tile */ }
                             }
                         }
                     }
@@ -1618,10 +1575,156 @@ namespace FamidashEditor
                     // integrate velocity
                     playerY_fixed += playerVelY_fixed;
 
-                    // ground collision: snap to ground with epsilon and zero velocity; set onGround
-                            if (playerY_fixed >= maxPlayerY_fixed - LAND_EPS_FIXED && playerVelY_fixed >= 0)
+                    // ground collision: try tile-based floor collision first, otherwise fall back to map bottom
+                    try
+                    {
+                        // Use a fixed 15x15 hitbox for collision checks per design
+                        const int HITBOX_W = 15;
+                        const int HITBOX_H = 15;
+
+                        int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                        int playerLeft_px = playerCenter_px - (HITBOX_W / 2);
+                        int playerRight_px = playerLeft_px + (HITBOX_W - 1);
+                        int footWorldY_px = (playerY_fixed >> 8) + HITBOX_H; // pixel coordinate of player's feet (using hitbox)
+
+                        int tileBelowY = footWorldY_px / TILE;
+                        int floorDetected = 0; // 0=false, 1=true
+                        int floorTopWorldY_px = (mapHeight * TILE); // default to map bottom
+
+                        // Helper: determine whether given collision type provides floor at a local tile column (0..15).
+                        bool ProvidesFloorAtColumn(MetatileCollision col, int localX, out int topOffsetPx)
                         {
-                            playerY_fixed = maxPlayerY_fixed;
+                            // default no floor
+                            topOffsetPx = int.MaxValue;
+                            // localX in [0..15]
+                            bool inLeft = (localX >= 0 && localX <= 7);
+                            bool inRight = (localX >= 8 && localX <= 15);
+
+                            switch (col)
+                            {
+                                case MetatileCollision.COL_ALL:
+                                case MetatileCollision.COL_FLOOR_CEIL:
+                                    // full tile solid: floor at tile top
+                                    topOffsetPx = 0; return true;
+                                case MetatileCollision.COL_TOP:
+                                case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                                    // top 8 pixels are solid
+                                    topOffsetPx = 0; return true;
+                                case MetatileCollision.COL_BOTTOM:
+                                    // bottom 8 pixels solid
+                                    topOffsetPx = 8; return true;
+                                case MetatileCollision.COL_LEFT:
+                                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                                    // full left column (x 0..7) solid to top
+                                    if (inLeft) { topOffsetPx = 0; return true; }
+                                    // bottom-left stairs also have bottom-right 8x8 (handled below as DOWN_RIGHT)
+                                    break;
+                                case MetatileCollision.COL_RIGHT:
+                                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                                    // full right column (x 8..15) solid to top
+                                    if (inRight) { topOffsetPx = 0; return true; }
+                                    // bottom-right stairs also have bottom-left 8x8 (handled below as DOWN_LEFT)
+                                    break;
+                                case MetatileCollision.COL_UP_LEFT:
+                                    if (inLeft) { topOffsetPx = 0; return true; }
+                                    break;
+                                case MetatileCollision.COL_UP_RIGHT:
+                                    if (inRight) { topOffsetPx = 0; return true; }
+                                    break;
+                                case MetatileCollision.COL_DOWN_LEFT:
+                                    if (inLeft) { topOffsetPx = 8; return true; }
+                                    break;
+                                case MetatileCollision.COL_DOWN_RIGHT:
+                                    if (inRight) { topOffsetPx = 8; return true; }
+                                    break;
+                                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                                    // up-left + down-right
+                                    if (inLeft) { topOffsetPx = 0; return true; }
+                                    if (inRight) { topOffsetPx = 8; return true; }
+                                    break;
+                                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                                    // up-right + down-left
+                                    if (inRight) { topOffsetPx = 0; return true; }
+                                    if (inLeft) { topOffsetPx = 8; return true; }
+                                    break;
+                                // top-left/top-right stairs handled above as top 8 pixels
+                                default:
+                                    // Unknown or non-floor types provide no floor
+                                    break;
+                            }
+                            // Special handling for stairs that combine behaviors
+                            if (col == MetatileCollision.COL_BOTTOM_LEFT_STAIRS)
+                            {
+                                if (inLeft) { topOffsetPx = 0; return true; }
+                                if (inRight) { topOffsetPx = 8; return true; }
+                            }
+                            if (col == MetatileCollision.COL_BOTTOM_RIGHT_STAIRS)
+                            {
+                                if (inRight) { topOffsetPx = 0; return true; }
+                                if (inLeft) { topOffsetPx = 8; return true; }
+                            }
+                            return false;
+                        }
+
+                        if (tileBelowY >= 0 && tileBelowY < mapHeight)
+                        {
+                            // For all tiles under the player's horizontal span, check if any column provides floor
+                            int leftTileX = playerLeft_px / TILE;
+                            int rightTileX = playerRight_px / TILE;
+
+                            for (int tx = leftTileX; tx <= rightTileX; tx++)
+                            {
+                                if (tx < 0 || tx >= mapWidth) continue;
+                                int tid = tiles[tileBelowY * mapWidth + tx];
+
+                                // Temporary test mode: treat any non-empty tile as a full floor (tile top),
+                                // but only when the id corresponds to an actual tile image. This avoids
+                                // treating sprites (which may use ids overlapping tile ids) as collision.
+                                if (tid != 0 && tileImages != null && tid >= 0 && tid < tileImages.Length && tileImages[tid] != null)
+                                {
+                                    int candidateTop = tileBelowY * TILE + 0;
+                                    if (candidateTop < floorTopWorldY_px) floorTopWorldY_px = candidateTop;
+                                    floorDetected = 1;
+                                    if (enableSimulatorDebugLogging && tileSelectionLogCount < TILE_SELECTION_LOG_LIMIT)
+                                    {
+                                        tileSelectionLogCount++;
+                                        WriteTempLog($"Simulator: sample UI landing found tile id={tid} at tx={tx} ty={tileBelowY}");
+                                    }
+                                    continue;
+                                }
+
+                                var col = MetatileCollisionTable.GetCollision((byte)tid);
+
+                                // compute overlap columns within this tile
+                                int tileStartX = tx * TILE;
+                                int localLeft = Math.Max(0, playerLeft_px - tileStartX);
+                                int localRight = Math.Min(TILE - 1, playerRight_px - tileStartX);
+
+                                int bestTopOffset = int.MaxValue;
+                                bool any = false;
+                                for (int lx = localLeft; lx <= localRight; lx++)
+                                {
+                                    if (ProvidesFloorAtColumn(col, lx, out int off))
+                                    {
+                                        any = true;
+                                        if (off < bestTopOffset) bestTopOffset = off;
+                                    }
+                                }
+                                if (any)
+                                {
+                                    int candidateTop = tileBelowY * TILE + bestTopOffset;
+                                    if (candidateTop < floorTopWorldY_px) floorTopWorldY_px = candidateTop;
+                                    floorDetected = 1;
+                                }
+                            }
+                        }
+
+                        int floorTop_fixed = (floorDetected == 1) ? ((floorTopWorldY_px - HITBOX_H) << 8) : maxPlayerY_fixed;
+
+                        if (playerY_fixed >= floorTop_fixed - LAND_EPS_FIXED && playerVelY_fixed >= 0)
+                        {
+                            playerY_fixed = floorTop_fixed;
                             playerVelY_fixed = 0;
                             onGround = true;
                             // If player is holding X (UI-polled or async), immediately jump again
@@ -1635,10 +1738,12 @@ namespace FamidashEditor
                                 Interlocked.Exchange(ref keyXPressedCount, 0);
                             }
                         }
-                    else
-                    {
-                        onGround = false;
+                        else
+                        {
+                            onGround = false;
+                        }
                     }
+                    catch { /* keep previous behavior on error */ }
                 }
                 catch { }
             }
@@ -3176,27 +3281,154 @@ namespace FamidashEditor
 
                             playerY_fixed += playerVelY_fixed;
 
-                        // Landing detection with epsilon: snap to ground and zero velocity
-                            if (playerY_fixed >= maxPlayerY_fixed_local - LAND_EPS_FIXED && playerVelY_fixed >= 0)
+                        // Landing detection with epsilon: prefer tile-based floor collision (per-column 8px logic), fallback to map bottom
+                        try
                         {
-                            playerY_fixed = maxPlayerY_fixed_local;
-                            playerVelY_fixed = 0;
-                            onGround = true;
-                            // If X is held on landing (UI-held or async), immediately jump
-                            if (keyXHeld_local || IsXDownAsync())
+                            const int HITBOX_W_LOCAL = 15;
+                            const int HITBOX_H_LOCAL = 15;
+
+                            int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
+                            int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
+                            int footWorldY_px_local = (playerY_fixed >> 8) + HITBOX_H_LOCAL;
+
+                            int tileBelowY_local = footWorldY_px_local / TILE;
+                            int floorDetected_local = 0;
+                            int floorTopWorldY_px_local = (mapHeight * TILE);
+
+                            // Local function to determine floor provision at a column
+                            bool ProvidesFloorAtColumnLocal(MetatileCollision col_local, int localX, out int topOffsetPx_local)
                             {
-                                // Reset vertical velocity to jump impulse for auto-jump
-                                playerVelY_fixed = CUBE_JUMP_VEL;
+                                topOffsetPx_local = int.MaxValue;
+                                bool inLeft_local = (localX >= 0 && localX <= 7);
+                                bool inRight_local = (localX >= 8 && localX <= 15);
+
+                                switch (col_local)
+                                {
+                                    case MetatileCollision.COL_ALL:
+                                    case MetatileCollision.COL_FLOOR_CEIL:
+                                        topOffsetPx_local = 0; return true;
+                                    case MetatileCollision.COL_TOP:
+                                    case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                                    case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                                        topOffsetPx_local = 0; return true;
+                                    case MetatileCollision.COL_BOTTOM:
+                                        topOffsetPx_local = 8; return true;
+                                    case MetatileCollision.COL_LEFT:
+                                    case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                                        if (inLeft_local) { topOffsetPx_local = 0; return true; }
+                                        break;
+                                    case MetatileCollision.COL_RIGHT:
+                                    case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                                        if (inRight_local) { topOffsetPx_local = 0; return true; }
+                                        break;
+                                    case MetatileCollision.COL_UP_LEFT:
+                                        if (inLeft_local) { topOffsetPx_local = 0; return true; }
+                                        break;
+                                    case MetatileCollision.COL_UP_RIGHT:
+                                        if (inRight_local) { topOffsetPx_local = 0; return true; }
+                                        break;
+                                    case MetatileCollision.COL_DOWN_LEFT:
+                                        if (inLeft_local) { topOffsetPx_local = 8; return true; }
+                                        break;
+                                    case MetatileCollision.COL_DOWN_RIGHT:
+                                        if (inRight_local) { topOffsetPx_local = 8; return true; }
+                                        break;
+                                    case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                                        if (inLeft_local) { topOffsetPx_local = 0; return true; }
+                                        if (inRight_local) { topOffsetPx_local = 8; return true; }
+                                        break;
+                                    case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                                        if (inRight_local) { topOffsetPx_local = 0; return true; }
+                                        if (inLeft_local) { topOffsetPx_local = 8; return true; }
+                                        break;
+                                    default:
+                                        break;
+                                }
+                                if (col_local == MetatileCollision.COL_BOTTOM_LEFT_STAIRS)
+                                {
+                                    if (inLeft_local) { topOffsetPx_local = 0; return true; }
+                                    if (inRight_local) { topOffsetPx_local = 8; return true; }
+                                }
+                                if (col_local == MetatileCollision.COL_BOTTOM_RIGHT_STAIRS)
+                                {
+                                    if (inRight_local) { topOffsetPx_local = 0; return true; }
+                                    if (inLeft_local) { topOffsetPx_local = 8; return true; }
+                                }
+                                return false;
+                            }
+
+                            if (tileBelowY_local >= 0 && tileBelowY_local < mapHeight)
+                            {
+                                int leftTileX_local = playerLeft_px_local / TILE;
+                                int rightTileX_local = playerRight_px_local / TILE;
+
+                                for (int tx_local = leftTileX_local; tx_local <= rightTileX_local; tx_local++)
+                                {
+                                    if (tx_local < 0 || tx_local >= mapWidth) continue;
+                                    int tid_local = tiles[tileBelowY_local * mapWidth + tx_local];
+
+                                    // Temporary test mode: any non-empty tile is treated as full floor,
+                                    // but only when it maps to a tile image (avoid sprite collisions).
+                                    if (tid_local != 0 && tileImages != null && tid_local >= 0 && tid_local < tileImages.Length && tileImages[tid_local] != null)
+                                    {
+                                        int candidateTop_local = tileBelowY_local * TILE + 0;
+                                        if (candidateTop_local < floorTopWorldY_px_local) floorTopWorldY_px_local = candidateTop_local;
+                                        floorDetected_local = 1;
+                                        if (enableSimulatorDebugLogging && tileSelectionLogCount < TILE_SELECTION_LOG_LIMIT)
+                                        {
+                                            tileSelectionLogCount++;
+                                            WriteTempLog($"Simulator: sample numeric landing found tile id={tid_local} at tx={tx_local} ty={tileBelowY_local}");
+                                        }
+                                        continue;
+                                    }
+
+                                    var col_local = MetatileCollisionTable.GetCollision((byte)tid_local);
+
+                                    int tileStartX_local = tx_local * TILE;
+                                    int localLeft_local = Math.Max(0, playerLeft_px_local - tileStartX_local);
+                                    int localRight_local = Math.Min(TILE - 1, playerRight_px_local - tileStartX_local);
+
+                                    int bestTopOffset_local = int.MaxValue;
+                                    bool any_local = false;
+                                    for (int lx_local = localLeft_local; lx_local <= localRight_local; lx_local++)
+                                    {
+                                        if (ProvidesFloorAtColumnLocal(col_local, lx_local, out int off_local))
+                                        {
+                                            any_local = true;
+                                            if (off_local < bestTopOffset_local) bestTopOffset_local = off_local;
+                                        }
+                                    }
+                                    if (any_local)
+                                    {
+                                        int candidateTop_local = tileBelowY_local * TILE + bestTopOffset_local;
+                                        if (candidateTop_local < floorTopWorldY_px_local) floorTopWorldY_px_local = candidateTop_local;
+                                        floorDetected_local = 1;
+                                    }
+                                }
+                            }
+
+                            int floorTop_fixed_local = (floorDetected_local == 1) ? ((floorTopWorldY_px_local - HITBOX_H_LOCAL) << 8) : maxPlayerY_fixed_local;
+
+                            if (playerY_fixed >= floorTop_fixed_local - LAND_EPS_FIXED && playerVelY_fixed >= 0)
+                            {
+                                playerY_fixed = floorTop_fixed_local;
+                                playerVelY_fixed = 0;
+                                onGround = true;
+                                if (keyXHeld_local || IsXDownAsync())
+                                {
+                                    playerVelY_fixed = CUBE_JUMP_VEL;
+                                    onGround = false;
+                                    jumpedOnce = true;
+                                    Interlocked.Exchange(ref keyXPressedCount, 0);
+                                }
+                            }
+                            else
+                            {
                                 onGround = false;
-                                jumpedOnce = true;
-                                // clear any pending edge presses since we've consumed the auto-jump
-                                Interlocked.Exchange(ref keyXPressedCount, 0);
                             }
                         }
-                        else
-                        {
-                            onGround = false;
-                        }
+                        catch { /* keep previous behavior on error */ }
                     }
                     catch { }
                 }
@@ -3369,36 +3601,69 @@ namespace FamidashEditor
 
                 if (!AreColorsEqual(prevTileTint, tileTint) || !AreColorsEqual(prevBackgroundTint, backgroundTint) || !AreColorsEqual(prevGroundTint, groundTint))
                 {
-                    // Recompute tile-toned images. Background triggers should also tint non-white areas of tiles.
-                    // Compute palette-driven primary/secondary colors for background-based two-tone mapping if possible.
+                    // Recompute tile-toned images.
+                    // Compute separate palette-driven primary/secondary colors for background and ground
+                    // so background triggers do not override ground visuals.
                     Color? bgPrimary = null; Color? bgSecondary = null;
+                    Color? grdPrimary = null; Color? grdSecondary = null;
                     try
                     {
+                        var palette = PaletteProvider.GetPalette();
+
+                        // Background palette mapping (only from explicit background trigger)
                         if (bgSidLocal >= 0)
                         {
-                            var palette = PaletteProvider.GetPalette();
-                            int? pidx = GetPaletteIndexForBackgroundTrigger(bgSidLocal);
-                            if (pidx.HasValue && pidx.Value >= 0 && pidx.Value < palette.Length)
+                            // Lighter shade must be the exact trigger color; darker shade comes from the
+                            // trigger one row up (sid - 0x10). If the trigger is in the first row
+                            // (0x80..0x8C) then the darker shade must be pure black.
+                            try
                             {
-                                bgPrimary = palette[pidx.Value];
-                                int col = pidx.Value % 14;
-                                if (col > 12) col = 12;
-                                int row = pidx.Value / 14;
-                                int secRow = row - 1;
-                                if (secRow < 0)
+                                var prim = ColorFromTrigger(bgSidLocal);
+                                bgPrimary = prim;
+                                if (bgSidLocal >= 0x80 && bgSidLocal <= 0x8C)
                                 {
                                     bgSecondary = Color.FromArgb(255, 0, 0, 0);
                                 }
                                 else
                                 {
-                                    int secIdx = secRow * 14 + col;
-                                    if (secIdx >= 0 && secIdx < palette.Length) bgSecondary = palette[secIdx];
-                                    else bgSecondary = Color.FromArgb(255, 0, 0, 0);
+                                    int darkerSid = bgSidLocal - 0x10;
+                                    var darker = ColorFromTrigger(darkerSid);
+                                    bgSecondary = darker;
+                                }
+                            }
+                            catch { bgPrimary = null; bgSecondary = null; }
+                        }
+
+                        // Ground palette mapping (only from explicit ground trigger)
+                        if (groundSidLocal >= 0)
+                        {
+                            int? pidx = GetPaletteIndexForBackgroundTrigger(groundSidLocal);
+                            if (pidx.HasValue && pidx.Value >= 0 && pidx.Value < palette.Length)
+                            {
+                                grdPrimary = palette[pidx.Value];
+                                int col = pidx.Value % 14; if (col > 12) col = 12;
+                                int row = pidx.Value / 14;
+                                // Special-case: triggers in 0xC0..0xCF must have darker secondary = pure black
+                                if (groundSidLocal >= 0xC0 && groundSidLocal <= 0xCF)
+                                {
+                                    grdSecondary = Color.FromArgb(255, 0, 0, 0);
+                                }
+                                else
+                                {
+                                    // Ground two-tone: derive a darker secondary from primary (avoid row-shifting)
+                                    try
+                                    {
+                                        RgbToHsl(grdPrimary.Value.R, grdPrimary.Value.G, grdPrimary.Value.B, out double gh, out double gs, out double gl);
+                                        double darkerL = Math.Max(0.0, gl - 0.12);
+                                        RgbFromHsl(gh, gs, darkerL, out byte sgr, out byte sgg, out byte sgb);
+                                        grdSecondary = Color.FromArgb(255, sgr, sgg, sgb);
+                                    }
+                                    catch { grdSecondary = Color.FromArgb(255, 0, 0, 0); }
                                 }
                             }
                         }
                     }
-                    catch { bgPrimary = null; bgSecondary = null; }
+                    catch { bgPrimary = null; bgSecondary = null; grdPrimary = null; grdSecondary = null; }
 
                     try
                     {
@@ -3459,8 +3724,16 @@ namespace FamidashEditor
                                             // Ground tiles should only respond to ground color triggers and should not
                                             // participate in background two-tone row-shifting. Use a direct hue-shift
                                             // with the ground tint so the result matches ground visuals exactly.
-                                            var arr = CreateHueShiftedImages(new ImageSource?[] { tileImages[i]! }, groundTint, tileTint);
-                                            if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
+                                            if (bgPrimary.HasValue)
+                                            {
+                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
+                                            }
+                                            else
+                                            {
+                                                var arr = CreateHueShiftedImages(new ImageSource?[] { tileImages[i]! }, groundTint, tileTint);
+                                                if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
+                                            }
                                         }
                                     }
 
@@ -3480,8 +3753,79 @@ namespace FamidashEditor
                     }
                     catch { tileTonedImages = CreateHslShiftedImages(tileImages, tileTint, tileTint); }
 
-                    try { parallaxTonedImages = (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0) ? CreateTwoToneTileImages(parallaxImages, Color.FromArgb(255,0,0,0), Color.FromArgb(255,0,0,0), outlineTintParam) : CreateHueShiftedImages(parallaxImages, backgroundTint, outlineTintParam); } catch { parallaxTonedImages = parallaxImages; }
-                    try { groundTonedImages = (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0) ? CreateTwoToneTileImages(groundImages, Color.FromArgb(255,0,0,0), Color.FromArgb(255,0,0,0), outlineTintParam) : CreateHueShiftedImages(groundImages, groundTint, outlineTintParam); } catch { groundTonedImages = groundImages; }
+                    try {
+                        if (parallaxImages != null)
+                        {
+                            // Prefer palette-driven two-tone for the background/parallax images.
+                                if (bgPrimary.HasValue)
+                                {
+                                    // Ensure we have a sensible secondary color: prefer palette-derived, otherwise
+                                    // synthesize a darker secondary from the primary to avoid falling back to pure black.
+                                    Color synthesizedBgSecondary;
+                                    if (bgSecondary.HasValue) synthesizedBgSecondary = bgSecondary.Value;
+                                    else { RgbToHsl(bgPrimary.Value.R, bgPrimary.Value.G, bgPrimary.Value.B, out double _bh, out double _bs, out double _bl); double _darker = Math.Max(0.0, _bl - 0.12); RgbFromHsl(_bh, _bs, _darker, out byte _dbr, out byte _dbg, out byte _dbb); synthesizedBgSecondary = Color.FromArgb(255, _dbr, _dbg, _dbb); }
+                                    // Use primary as the lighter mapping and secondary as darker so the
+                                    // background two-tone matches how ground visuals are derived.
+                                    parallaxTonedImages = CreateTwoToneTileImages(parallaxImages, bgPrimary.Value, synthesizedBgSecondary, outlineTintParam);
+                                }
+                            else if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
+                            {
+                                parallaxTonedImages = CreateTwoToneTileImages(parallaxImages, Color.FromArgb(255,0,0,0), Color.FromArgb(255,0,0,0), outlineTintParam);
+                            }
+                            else
+                            {
+                                parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint, outlineTintParam);
+                            }
+                        }
+                        else parallaxTonedImages = parallaxImages;
+                    } catch { parallaxTonedImages = parallaxImages; }
+                    try {
+                        // Prefer explicit ground-trigger palette-driven two-tone when available
+                        if (grdPrimary.HasValue)
+                        {
+                            // For ground visuals, flip primary/secondary so ground uses swapped two-tone
+                            Color synthesizedGrdSecondary;
+                            if (grdSecondary.HasValue) synthesizedGrdSecondary = grdSecondary.Value;
+                            else { RgbToHsl(grdPrimary.Value.R, grdPrimary.Value.G, grdPrimary.Value.B, out double _gh, out double _gs, out double _gl); double _gdarker = Math.Max(0.0, _gl - 0.12); RgbFromHsl(_gh, _gs, _gdarker, out byte _sr, out byte _sg, out byte _sb); synthesizedGrdSecondary = Color.FromArgb(255, _sr, _sg, _sb); }
+                            groundTonedImages = CreateTwoToneTileImages(groundImages, synthesizedGrdSecondary, grdPrimary.Value, outlineTintParam);
+                        }
+                        else if (bgPrimary.HasValue)
+                        {
+                            // Fall back to background two-tone only when no ground trigger present
+                            // but still flip the order for ground visuals.
+                            Color synthesizedBgSecondary2;
+                            if (bgSecondary.HasValue) synthesizedBgSecondary2 = bgSecondary.Value;
+                            else { RgbToHsl(bgPrimary.Value.R, bgPrimary.Value.G, bgPrimary.Value.B, out double _bh2, out double _bs2, out double _bl2); double _bdarker = Math.Max(0.0, _bl2 - 0.12); RgbFromHsl(_bh2, _bs2, _bdarker, out byte _br2, out byte _bg2, out byte _bb2); synthesizedBgSecondary2 = Color.FromArgb(255, _br2, _bg2, _bb2); }
+                            groundTonedImages = CreateTwoToneTileImages(groundImages, synthesizedBgSecondary2, bgPrimary.Value, outlineTintParam);
+                        }
+                        else
+                        {
+                            // Preserve previous special-case behavior for pure-black ground tint
+                            if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
+                                groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255,0,0,0), Color.FromArgb(255,0,0,0), outlineTintParam);
+                            else
+                            {
+                                // If ground tint is fully-opaque but no palette mapping is available,
+                                // generate a two-tone pair from the ground tint by making a darker
+                                // secondary color instead of performing a full replacement which
+                                // would make the ground a solid color.
+                                    if (groundTint.A == 255)
+                                {
+                                    // compute a darker variant for secondary
+                                    RgbToHsl(groundTint.R, groundTint.G, groundTint.B, out double gh, out double gs, out double gl);
+                                    double secL = Math.Max(0.0, gl - 0.12);
+                                    RgbFromHsl(gh, gs, secL, out byte sr, out byte sg, out byte sb);
+                                    var secondaryFromGround = Color.FromArgb(255, sr, sg, sb);
+                                    // flip primary/secondary for ground visuals
+                                    groundTonedImages = CreateTwoToneTileImages(groundImages, secondaryFromGround, groundTint, outlineTintParam);
+                                }
+                                else
+                                {
+                                    groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, outlineTintParam);
+                                }
+                            }
+                        }
+                    } catch { groundTonedImages = groundImages; }
 
                     // Also create/update a tinted full-parallax bitmap if a full parallax bitmap was provided
                     try
@@ -3489,7 +3833,12 @@ namespace FamidashEditor
                         if (parallaxBitmap != null)
                         {
                             ImageSource?[]? arr = null;
-                            if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
+                            // Prefer palette-driven two-tone for full parallax bitmap when available
+                            if (bgPrimary.HasValue)
+                            {
+                                arr = CreateTwoToneTileImages(new ImageSource?[] { parallaxBitmap! }, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255,0,0,0), outlineTintParam);
+                            }
+                            else if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
                                 arr = CreateBlackMaskedImages(new ImageSource?[] { parallaxBitmap! });
                             else
                                 arr = CreateHueShiftedImages(new ImageSource?[] { parallaxBitmap! }, backgroundTint);
@@ -3787,6 +4136,10 @@ namespace FamidashEditor
 
         // Given a background trigger sprite id, return the corresponding palette index (or null).
         // Mirrors the mapping used by ColorFromTrigger but returns the numeric palette index instead of a color.
+        // Given a background trigger sprite id, return the corresponding palette index (or null).
+        // This mapping returns the exact palette index that corresponds to the trigger sprite
+        // (no automatic up-row shifting). Callers may choose to compute a darker/lighter
+        // variant explicitly if desired.
         private int? GetPaletteIndexForBackgroundTrigger(int spriteIdx)
         {
             try
@@ -3799,20 +4152,13 @@ namespace FamidashEditor
                 else if (spriteIdx >= 0xD0 && spriteIdx <= 0xDC) idx = (spriteIdx - 0xD0) + (1 * 14);
                 else if (spriteIdx >= 0xE0 && spriteIdx <= 0xEC) idx = (spriteIdx - 0xE0) + (2 * 14);
 
-                    if (idx >= 0)
-                    {
-                        int row = idx / 14;
-                        int rowOffset = idx % 14;
-                        if (rowOffset > 12) rowOffset = 12;
-                        // Shift background palette selection up one row (darker) so tile tints match
-                        int shiftedRow = Math.Max(0, row - 1);
-                        int finalIdx = shiftedRow * 14 + rowOffset;
-                        return finalIdx;
-                    }
+                if (idx >= 0) return idx;
             }
             catch { }
             return null;
         }
+
+        // (Deprecated: previous implementation shifted selection to the row above.)
 
         // Create two-tone tile images: non-white pixels are classified into lighter/darker groups and
         // mapped to bgPrimary/bgSecondary respectively; white/near-white outlines are mapped to outlineTint.
@@ -4140,8 +4486,7 @@ namespace FamidashEditor
                                                         {
                                                             int col = nearest.Value % 14;
                                                             int row = nearest.Value / 14;
-                                                            int shiftedRow = Math.Max(0, row - 1);
-                                                            int finalIdx = shiftedRow * 14 + (col > 12 ? 12 : col);
+                                                            int finalIdx = row * 14 + (col > 12 ? 12 : col);
                                                             if (finalIdx >= 0 && finalIdx < palette.Length) darkerBg = Color.FromArgb(bg.A, palette[finalIdx].R, palette[finalIdx].G, palette[finalIdx].B);
                                                         }
                                                         else
@@ -4211,8 +4556,7 @@ namespace FamidashEditor
                                                         {
                                                             int col2 = nearest2.Value % 14;
                                                             int row2 = nearest2.Value / 14;
-                                                            int shiftedRow2 = Math.Max(0, row2 - 1);
-                                                            int finalIdx2 = shiftedRow2 * 14 + (col2 > 12 ? 12 : col2);
+                                                            int finalIdx2 = row2 * 14 + (col2 > 12 ? 12 : col2);
                                                             if (finalIdx2 >= 0 && finalIdx2 < palette2.Length) darkerBg2 = Color.FromArgb(bg.A, palette2[finalIdx2].R, palette2[finalIdx2].G, palette2[finalIdx2].B);
                                                         }
                                                         else
@@ -4420,10 +4764,100 @@ namespace FamidashEditor
         {
             if (originals == null) return null;
             if (tint.A == 0) return originals; // no change requested
+            // If the tint is fully opaque (A==255) and not the special-cased black/white handled above,
+            // perform a full replacement: set non-transparent, non-black pixels to the exact tint RGB.
+            // Preserve near-white outline pixels according to `outlineTint` so seam recoloring still works.
+            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            if (tint.A == 255)
+            {
+                foreach (var src in originals)
+                {
+                    if (src == null)
+                    {
+                        var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                        var pxf = new byte[4];
+                        try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
+                        try { pf.Freeze(); } catch { }
+                        outList.Add(pf);
+                        continue;
+                    }
+                    if (src is BitmapSource bs)
+                    {
+                        try
+                        {
+                            var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                            int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                            var pixels = new byte[h * stride];
+                            conv.CopyPixels(pixels, stride, 0);
+
+                            double nearWhiteThreshold = 0.82;
+                            if (outlineTint.A == 255 && outlineTint.R == 0 && outlineTint.G == 0 && outlineTint.B == 0) nearWhiteThreshold = 0.70;
+
+                            for (int i = 0; i < pixels.Length; i += 4)
+                            {
+                                byte b = pixels[i + 0];
+                                byte g = pixels[i + 1];
+                                byte r = pixels[i + 2];
+                                byte a = pixels[i + 3];
+                                if (a == 0) continue;
+                                double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+                                bool isBlack = (r <= 12 && g <= 12 && b <= 12);
+                                bool isNearWhite = (lum >= nearWhiteThreshold);
+                                if (isBlack) continue;
+                                if (isNearWhite)
+                                {
+                                    if (outlineTint.A > 0)
+                                    {
+                                        pixels[i + 3] = outlineTint.A;
+                                        pixels[i + 2] = outlineTint.R;
+                                        pixels[i + 1] = outlineTint.G;
+                                        pixels[i + 0] = outlineTint.B;
+                                    }
+                                    continue;
+                                }
+                                // Full replacement with tint color
+                                pixels[i + 3] = 255;
+                                pixels[i + 2] = tint.R;
+                                pixels[i + 1] = tint.G;
+                                pixels[i + 0] = tint.B;
+                            }
+
+                            var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                            wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                            wb.Freeze();
+                            outList.Add(wb);
+                        }
+                        catch
+                        {
+                            if (src == null)
+                            {
+                                var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                                try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                                try { pf.Freeze(); } catch { }
+                                outList.Add(pf);
+                            }
+                            else outList.Add(src);
+                        }
+                    }
+                    else
+                    {
+                        if (src == null)
+                        {
+                            var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                            try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                            try { pf.Freeze(); } catch { }
+                            outList.Add(pf);
+                        }
+                        else outList.Add(src);
+                    }
+                }
+                return outList.ToArray();
+            }
+
             // Precompute tint hue
             RgbToHsl(tint.R, tint.G, tint.B, out double tintH, out double tintS, out double tintL);
 
-            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            
             foreach (var src in originals)
             {
                 if (src is BitmapSource bs)
@@ -4594,6 +5028,86 @@ namespace FamidashEditor
             if (tint.A == 255 && tint.R == 255 && tint.G == 255 && tint.B == 255)
             {
                 return CreateWhiteMaskedImages(originals, outlineTint, false);
+            }
+
+            // If the tint is fully opaque (but not pure-black/white handled above),
+            // perform a full replacement of pixel colors with the tint while preserving
+            // near-white outlines according to `outlineTint`.
+            if (tint.A == 255)
+            {
+                var outListFull = new System.Collections.Generic.List<ImageSource>(originals.Length);
+                foreach (var src in originals)
+                {
+                    if (src == null)
+                    {
+                        var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                        var pxf = new byte[4];
+                        try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
+                        try { pf.Freeze(); } catch { }
+                        outListFull.Add(pf);
+                        continue;
+                    }
+                    if (src is BitmapSource bs)
+                    {
+                        try
+                        {
+                            var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                            int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                            var pixels = new byte[h * stride];
+                            conv.CopyPixels(pixels, stride, 0);
+
+                            double nearWhiteThreshold = 0.82;
+                            if (outlineTint.A == 255 && outlineTint.R == 0 && outlineTint.G == 0 && outlineTint.B == 0) nearWhiteThreshold = 0.70;
+
+                            for (int i = 0; i < pixels.Length; i += 4)
+                            {
+                                byte b = pixels[i + 0];
+                                byte g = pixels[i + 1];
+                                byte r = pixels[i + 2];
+                                byte a = pixels[i + 3];
+                                if (a == 0) continue;
+                                double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+                                bool isBlack = (r <= 12 && g <= 12 && b <= 12);
+                                bool isNearWhite = (lum >= nearWhiteThreshold);
+                                if (isBlack) continue;
+                                if (isNearWhite)
+                                {
+                                    if (outlineTint.A > 0)
+                                    {
+                                        pixels[i + 3] = outlineTint.A;
+                                        pixels[i + 2] = outlineTint.R;
+                                        pixels[i + 1] = outlineTint.G;
+                                        pixels[i + 0] = outlineTint.B;
+                                    }
+                                    continue;
+                                }
+                                // Full replacement with tint color
+                                pixels[i + 3] = 255;
+                                pixels[i + 2] = tint.R;
+                                pixels[i + 1] = tint.G;
+                                pixels[i + 0] = tint.B;
+                            }
+
+                            var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                            wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                            wb.Freeze();
+                            outListFull.Add(wb);
+                        }
+                        catch
+                        {
+                            if (src == null)
+                            {
+                                var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                                try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                                try { pf.Freeze(); } catch { }
+                                outListFull.Add(pf);
+                            }
+                            else outListFull.Add(src);
+                        }
+                    }
+                    else outListFull.Add(src);
+                }
+                return outListFull.ToArray();
             }
 
             double strength = tint.A / 255.0;

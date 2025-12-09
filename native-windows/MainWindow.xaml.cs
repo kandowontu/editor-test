@@ -773,72 +773,88 @@ namespace FamidashEditor
     {
         try
         {
-            // If per-level override is requested, try to load embedded noparallax first
-            if (noParallaxBg)
+            // Prefer repo-local parallax assets in src\renderer\assets if present.
+            try
             {
-                var emb = LoadEmbeddedImage("noparallax.bmp");
-                if (emb != null)
+                var repoRoot = FindRepoRootFor("famidash.bmp");
+                string? repoParallax = null;
+                string? repoNoParallax = null;
+                if (!string.IsNullOrEmpty(repoRoot))
                 {
-                    parallaxBitmap = emb;
-                    SliceParallax();
+                    repoParallax = Path.Combine(repoRoot, "src", "renderer", "assets", "parallax.bmp");
+                    repoNoParallax = Path.Combine(repoRoot, "src", "renderer", "assets", "noparallax.bmp");
                 }
-                else
-                {
-                    // If embedded resource not found, try to find a noparallax file on disk in common locations
-                    try
-                    {
-                        var candidates = new List<string>();
-                        var repoRoot = FindRepoRootFor("famidash.bmp");
-                        if (!string.IsNullOrEmpty(repoRoot))
-                        {
-                            candidates.Add(Path.Combine(repoRoot, "src", "renderer", "assets", "noparallax.bmp"));
-                            candidates.Add(Path.Combine(repoRoot, "src", "render", "assets", "noparallax.bmp"));
-                        }
-                        candidates.Add(Path.Combine(AppContext.BaseDirectory, "assets", "noparallax.bmp"));
-                        candidates.Add(Path.Combine(AppContext.BaseDirectory, "noparallax.bmp"));
 
-                        foreach (var cand in candidates)
-                        {
-                            try
-                            {
-                                if (!string.IsNullOrEmpty(cand) && File.Exists(cand))
-                                {
-                                    LoadParallax(cand);
-                                    break;
-                                }
-                            }
-                            catch { }
-                        }
-                    }
-                    catch { }
-                }
-            }
-            else
-            {
-                // Load regular parallax - prefer original parallax source (from TMX); if not available, fall back to embedded parallax
-                if (!string.IsNullOrEmpty(originalParallaxSource) && File.Exists(originalParallaxSource))
+                if (noParallaxBg)
                 {
-                    LoadParallax(originalParallaxSource);
-                }
-                else if (!string.IsNullOrEmpty(loadedParallaxSource) && File.Exists(loadedParallaxSource))
-                {
-                    LoadParallax(loadedParallaxSource);
-                }
-                else
-                {
-                    var emb2 = LoadEmbeddedImage("parallax.bmp");
-                    if (emb2 != null)
+                    // If repo-local noparallax exists, use it unconditionally
+                    if (!string.IsNullOrEmpty(repoNoParallax) && File.Exists(repoNoParallax))
                     {
-                        parallaxBitmap = emb2;
-                        SliceParallax();
+                        System.Diagnostics.Debug.WriteLine($"ApplyParallaxChoice: using repo noparallax -> {repoNoParallax}");
+                        LoadParallax(repoNoParallax);
                     }
                     else
                     {
-                        parallaxBitmap = null;
-                        parallaxImages = null;
+                        // Fallback to previous behavior: try embedded noparallax then known disk candidates
+                        var emb = LoadEmbeddedImage("noparallax.bmp");
+                        if (emb != null)
+                        {
+                            System.Diagnostics.Debug.WriteLine("ApplyParallaxChoice: using embedded noparallax.bmp");
+                            parallaxBitmap = emb;
+                            SliceParallax();
+                        }
+                        else
+                        {
+                            var candidates = new List<string>();
+                            if (!string.IsNullOrEmpty(repoRoot))
+                            {
+                                candidates.Add(Path.Combine(repoRoot, "src", "renderer", "assets", "noparallax.bmp"));
+                                candidates.Add(Path.Combine(repoRoot, "src", "render", "assets", "noparallax.bmp"));
+                            }
+                            candidates.Add(Path.Combine(AppContext.BaseDirectory, "assets", "noparallax.bmp"));
+                            candidates.Add(Path.Combine(AppContext.BaseDirectory, "noparallax.bmp"));
+
+                            foreach (var cand in candidates)
+                            {
+                                try { if (!string.IsNullOrEmpty(cand) && File.Exists(cand)) { System.Diagnostics.Debug.WriteLine($"ApplyParallaxChoice: using disk candidate -> {cand}"); LoadParallax(cand); break; } } catch { }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // Regular parallax: prefer repo-local parallax.bmp
+                    if (!string.IsNullOrEmpty(repoParallax) && File.Exists(repoParallax))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"ApplyParallaxChoice: using repo parallax -> {repoParallax}");
+                        LoadParallax(repoParallax);
+                    }
+                    else if (!string.IsNullOrEmpty(originalParallaxSource) && File.Exists(originalParallaxSource))
+                    {
+                        LoadParallax(originalParallaxSource);
+                    }
+                    else if (!string.IsNullOrEmpty(loadedParallaxSource) && File.Exists(loadedParallaxSource))
+                    {
+                        LoadParallax(loadedParallaxSource);
+                    }
+                    else
+                    {
+                        var emb2 = LoadEmbeddedImage("parallax.bmp");
+                        if (emb2 != null)
+                        {
+                            System.Diagnostics.Debug.WriteLine("ApplyParallaxChoice: using embedded parallax.bmp");
+                            parallaxBitmap = emb2;
+                            SliceParallax();
+                        }
+                        else
+                        {
+                            parallaxBitmap = null;
+                            parallaxImages = null;
+                        }
                     }
                 }
             }
+            catch { }
         }
         catch { }
         
@@ -6599,33 +6615,59 @@ namespace FamidashEditor
                         // Force-prefer the project-embedded parallax. If the per-level "No Parallax"
                         // option is set, prefer the `noparallax.bmp` asset so the simulator shows the
                         // expected flat background. Otherwise prefer the normal parallax assets.
-                        System.Windows.Media.Imaging.BitmapSource? preferredParallax = null;
-                        if (noParallaxBg)
+                        string[] parallaxCandidates = noParallaxBg ? new string[] { "noparallax.bmp", "Assets.parallax.bmp", "parallax.bmp" } : new string[] { "Assets.parallax.bmp", "parallax Blue.bmp", "parallax.bmp", "noparallax.bmp" };
+                        bool parallaxSet = false;
+                        foreach (var candidate in parallaxCandidates)
                         {
-                            preferredParallax = (LoadEmbeddedImage("noparallax.bmp") ?? LoadEmbeddedImage("Assets.parallax.bmp") ?? LoadEmbeddedImage("parallax.bmp")) as System.Windows.Media.Imaging.BitmapSource;
+                            try
+                            {
+                                var embImg = LoadEmbeddedImage(candidate) as System.Windows.Media.Imaging.BitmapSource;
+                                if (embImg != null)
+                                {
+                                    parallaxBitmap = embImg;
+                                    SliceParallax();
+                                    try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Selected embedded parallax resource: " + candidate + Environment.NewLine); } catch { }
+                                    parallaxSet = true;
+                                    break;
+                                }
+                            }
+                            catch { }
                         }
-                        else
-                        {
-                            preferredParallax = (LoadEmbeddedImage("Assets.parallax.bmp") ?? LoadEmbeddedImage("parallax Blue.bmp") ?? LoadEmbeddedImage("parallax.bmp") ?? LoadEmbeddedImage("noparallax.bmp")) as System.Windows.Media.Imaging.BitmapSource;
-                        }
-
-                        if (preferredParallax != null) { parallaxBitmap = preferredParallax; SliceParallax(); }
-                        else if (parallaxBitmap == null)
+                        if (!parallaxSet && parallaxBitmap == null)
                         {
                             var emb = LoadEmbeddedImage("parallax Blue.bmp") ?? LoadEmbeddedImage("parallax.bmp");
-                            if (emb != null) { parallaxBitmap = emb; SliceParallax(); }
+                            if (emb != null)
+                            {
+                                parallaxBitmap = emb; SliceParallax();
+                                try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Selected embedded parallax fallback resource" + Environment.NewLine); } catch { }
+                            }
                         }
                     }
                     catch { }
                     try
                     {
                         // Force-prefer the project-embedded ground asset so simulator always has ground
-                        var preferredGround = LoadEmbeddedImage("Assets.ground.bmp") ?? LoadEmbeddedImage("native_ground.bmp") ?? LoadEmbeddedImage("ground.bmp");
-                        if (preferredGround != null) { groundBitmap = preferredGround; SliceGround(); }
-                        else if (groundBitmap == null)
+                        string[] groundCandidates = new string[] { "Assets.ground.bmp", "native_ground.bmp", "ground.bmp" };
+                        bool groundSet = false;
+                        foreach (var candidate in groundCandidates)
+                        {
+                            try
+                            {
+                                var embg = LoadEmbeddedImage(candidate);
+                                if (embg != null)
+                                {
+                                    groundBitmap = embg; SliceGround();
+                                    try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Selected embedded ground resource: " + candidate + Environment.NewLine); } catch { }
+                                    groundSet = true;
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                        if (!groundSet && groundBitmap == null)
                         {
                             var embg = LoadEmbeddedImage("native_ground.bmp") ?? LoadEmbeddedImage("ground.bmp");
-                            if (embg != null) { groundBitmap = embg; SliceGround(); }
+                            if (embg != null) { groundBitmap = embg; SliceGround(); try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Selected embedded ground fallback resource" + Environment.NewLine); } catch { } }
                         }
                     }
                     catch { }
@@ -9001,13 +9043,18 @@ namespace FamidashEditor
 
         private void LoadParallax(string path)
         {
-            try { var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze(); parallaxBitmap = bi; SliceParallax(); if (StatusText != null) StatusText.Text = "Loaded parallax: " + Path.GetFileName(path); }
+            try {
+                var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze(); parallaxBitmap = bi; SliceParallax(); if (StatusText != null) StatusText.Text = "Loaded parallax: " + Path.GetFileName(path);
+                try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Loaded parallax file: " + Path.GetFullPath(path) + Environment.NewLine); } catch { }
+            }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Parallax load failed: " + ex.Message; }
         }
 
         private void LoadGround(string path)
         {
-            try { var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze(); groundBitmap = bi; SliceGround(); if (StatusText != null) StatusText.Text = "Loaded ground: " + Path.GetFileName(path); }
+            try { var bi = new BitmapImage(); bi.BeginInit(); bi.CacheOption = BitmapCacheOption.OnLoad; bi.UriSource = new Uri(path); bi.EndInit(); bi.Freeze(); groundBitmap = bi; SliceGround(); if (StatusText != null) StatusText.Text = "Loaded ground: " + Path.GetFileName(path);
+                try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Loaded ground file: " + Path.GetFullPath(path) + Environment.NewLine); } catch { }
+            }
             catch (Exception ex) { if (StatusText != null) StatusText.Text = "Ground load failed: " + ex.Message; }
         }
 
@@ -18300,6 +18347,18 @@ namespace FamidashEditor
             try { OpenSimulatorWindow(); } catch { }
             e.Handled = true;
         }
+    }
+
+    // Public helper: persist current loaded per-level values into the active tab snapshot.
+    // This ensures dialogs that modify per-level settings (like SetOptionsWindow) update
+    // the in-memory tab state even when the TMX has not yet been saved to disk.
+    public void PersistLoadedValuesToCurrentTab()
+    {
+        try
+        {
+            SaveCurrentTabState();
+        }
+        catch { }
     }
     
     // Helper method to find a child of a specific type in the visual tree
