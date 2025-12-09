@@ -1041,8 +1041,10 @@ namespace FamidashEditor
                 try {
                     if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
                     {
-                        // Preserve white seam (do not recolor outlines) so ground line stays white.
-                        groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), Color.FromArgb(0, 0, 0, 0));
+                        // For pure-black ground, produce black-masked images that only affect
+                        // non-white/non-player-green pixels; do not recolor the thin seam.
+                        try { groundTonedImages = CreateBlackMaskedExceptColorArray(groundImages, playerPlaceholderGreen, Color.FromArgb(0,0,0,0), false); }
+                        catch { groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), Color.FromArgb(0,0,0,0)); }
                     }
                     else
                     {
@@ -2047,10 +2049,11 @@ namespace FamidashEditor
                             {
                                 if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
                                 {
-                                    // For 0xCF (black-ground) produce two-tone mapping that maps
-                                    // non-white pixels to pure black while leaving near-white
-                                    // outlines to be handled by the outline tint (object tints).
-                                    groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), outlineTintLocal);
+                                    // For 0xCF (black-ground) produce black-masked images so
+                                    // non-white/non-player-green pixels become black while
+                                    // leaving the seam unaffected (outline recolor is disabled).
+                                    try { groundTonedImages = CreateBlackMaskedExceptColorArray(groundImages, playerPlaceholderGreen, outlineTintLocal, false); }
+                                    catch { groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), outlineTintLocal); }
                                 }
                                 else
                                 {
@@ -3714,11 +3717,6 @@ namespace FamidashEditor
                 // uses the up-to-date color even before we assign `tileTint` below.
                 Color candidateTileTint = tileTint;
                 try { if (tileIdxLocal >= 0 && tileSidLocal >= 0) candidateTileTint = ColorFromTrigger(tileSidLocal); } catch { }
-                // Only allow outline recoloring when this pending change includes an explicit
-                // object/tile trigger (or the tint actually changed). If this came from startup or is a background/ground-only
-                // change, keep outline tint transparent so white seams/outlines are not recolored.
-                var outlineTintParam = Color.FromArgb(0, 0, 0, 0);
-                if (!wasStartup && (tileIdxLocal >= 0 || !AreColorsEqual(prevTileTint, candidateTileTint))) outlineTintParam = candidateTileTint;
 
                 if (bgIdxLocal >= 0 && bgSidLocal >= 0)
                 {
@@ -3760,6 +3758,24 @@ namespace FamidashEditor
                 bool bgChanged = !AreColorsEqual(prevBackgroundTint, backgroundTint);
                 bool tileChanged = !AreColorsEqual(prevTileTint, tileTint);
                 bool grdChanged = !AreColorsEqual(prevGroundTint, groundTint);
+
+                // Compute outline tint to use for this regeneration. Preserve object outline
+                // recoloring on ground-only changes so object tints are not cleared by a ground trigger.
+                var outlineTintParam = Color.FromArgb(0, 0, 0, 0);
+                if (!wasStartup)
+                {
+                    if (tileIdxLocal >= 0 || !AreColorsEqual(prevTileTint, candidateTileTint))
+                    {
+                        // Explicit tile/object trigger or tile tint changed: use the candidate/new tint
+                        outlineTintParam = candidateTileTint;
+                    }
+                    else if (grdChanged)
+                    {
+                        // Ground-only change: preserve existing tile tint as outline so object
+                        // recolors survive ground updates.
+                        outlineTintParam = tileTint;
+                    }
+                }
 
                 if (tileChanged || bgChanged || grdChanged)
                 {
@@ -3910,22 +3926,27 @@ namespace FamidashEditor
                                             // with the ground tint so the result matches ground visuals exactly.
                                             if (bgPrimary.HasValue)
                                             {
-                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, bgPrimary.Value, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), tileTint);
+                                                // For ground tiles, flip primary/secondary so ground-like
+                                                // two-tone mapping matches the ground visuals. Use the
+                                                // computed outline tint parameter so object triggers
+                                                // recolor the seams when present.
+                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, bgSecondary ?? Color.FromArgb(255, 0, 0, 0), bgPrimary.Value, outlineTintParam);
                                                 if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
                                             }
                                             else
                                             {
-                                                // If background is forced to solid black, respect that and
-                                                // produce a black-masked variant (preserving player green)
-                                                // so this tile doesn't get recolored to a non-black background.
-                                                if (backgroundForceSolidBlack)
+                                                // If background is forced to solid black or ground is explicit black,
+                                                // produce a black-masked variant (preserving player green and
+                                                // leaving the seam unaffected) so this tile doesn't get recolored
+                                                // to a non-black background.
+                                                if (backgroundForceSolidBlack || (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0))
                                                 {
-                                                    try { tileTonedImages[i] = CreateBlackMaskedExceptColor(tileImages[i], playerPlaceholderGreen, tileTint, false); }
+                                                    try { tileTonedImages[i] = CreateBlackMaskedExceptColor(tileImages[i], playerPlaceholderGreen, outlineTintParam, outlineTintParam.A > 0); }
                                                     catch { tileTonedImages[i] = tileImages[i]; }
                                                 }
                                                 else
                                                 {
-                                                    var arr = CreateHueShiftedImages(new ImageSource?[] { tileImages[i]! }, groundTint, tileTint);
+                                                    var arr = CreateHueShiftedImages(new ImageSource?[] { tileImages[i]! }, groundTint, outlineTintParam);
                                                     if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
                                                 }
                                             }
