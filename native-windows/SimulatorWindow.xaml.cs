@@ -1050,6 +1050,18 @@ namespace FamidashEditor
                     }
                 } catch { groundTonedImages = groundImages; }
 
+                // Forced-outline recolor fallback: if a tile/object tint is present at startup,
+                // ensure the ground seam gets recolored to match other tiles.
+                try
+                {
+                    if (tileTint.A > 0 && groundTonedImages != null)
+                    {
+                        var recol = CreateOutlineTintedTileImages(groundTonedImages, tileTint);
+                        if (recol != null) groundTonedImages = recol;
+                    }
+                }
+                catch { }
+
                 // If ground tint is pure black, also create black-masked tile images so
                 // tiles that visually represent ground (including common index 0) appear
                 // black immediately when the simulator opens paused.
@@ -1987,6 +1999,10 @@ namespace FamidashEditor
                 // If any tint changed, regenerate toned tile images and invalidate tile-layer cache
                 try
                 {
+                    // Compute an outline tint parameter for this regeneration. If a startup-origin
+                    // tint was applied, keep outline tint transparent so outlines are not recolored.
+                    var outlineTintParam = startupTintApplied ? Color.FromArgb(0, 0, 0, 0) : tileTint;
+
                     bool bgChanged = !AreColorsEqual(prevBackgroundTint, backgroundTint);
                     bool tileChanged = !AreColorsEqual(prevTileTint, tileTint);
                     bool grdChanged = !AreColorsEqual(prevGroundTint, groundTint);
@@ -2002,7 +2018,8 @@ namespace FamidashEditor
                         // Only regenerate parallax when the background actually changed or when
                         // the forced-black flag toggled. This prevents ground-only triggers from
                         // accidentally replacing two-tone/parallax backgrounds.
-                        try {
+                        try
+                        {
                             if (bgChanged || prevBackgroundForceSolidBlack != backgroundForceSolidBlack)
                             {
                                 if (backgroundForceSolidBlack)
@@ -2019,31 +2036,96 @@ namespace FamidashEditor
                                     parallaxTonedImages = CreateHueShiftedImages(parallaxImages, backgroundTint);
                                 }
                             }
-                        } catch { parallaxTonedImages = parallaxImages; }
+                        }
+                        catch { parallaxTonedImages = parallaxImages; }
 
-                        // Only regenerate ground visuals when the ground tint actually changed
-                        try {
-                            if (grdChanged)
+                        // Regenerate ground visuals when the ground tint changed OR when
+                        // an object/tile tint changed (object triggers recolor the seam outline).
+                        try
+                        {
+                            if (grdChanged || tileChanged)
                             {
                                 if (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0)
                                 {
                                     // For 0xCF (black-ground) produce two-tone mapping that maps
                                     // non-white pixels to pure black while leaving near-white
-                                    // outlines to be handled by `tileTint` (object tints).
-                                    groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), tileTint);
+                                    // outlines to be handled by the outline tint (object tints).
+                                    groundTonedImages = CreateTwoToneTileImages(groundImages, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), outlineTintLocal);
                                 }
                                 else
                                 {
-                                    groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, tileTint);
+                                    groundTonedImages = CreateHueShiftedImages(groundImages, groundTint, outlineTintLocal);
                                 }
                             }
-                        } catch { groundTonedImages = groundImages; }
+                        }
+                        catch { groundTonedImages = groundImages; }
 
-                        // invalidate cached tile layer so it is rebuilt with new toned images
+                        // Forced-outline recolor fallback: if an outline tint is active for this regeneration,
+                        // ensure thin/anti-aliased ground seams are recolored to match other tiles.
+                        try
+                        {
+                            if (outlineTintParam.A > 0 && groundTonedImages != null)
+                            {
+                                var recol = CreateOutlineTintedTileImages(groundTonedImages, outlineTintParam);
+                                if (recol != null) groundTonedImages = recol;
+                            }
+                        }
+                        catch { }
+
+                        // Also create/update a tinted full-parallax bitmap if a full parallax bitmap was provided
+                        // Only update the full parallax bitmap when the background actually changed or when
+                        // there is an explicit palette mapping for background, or when forced-black toggled.
+                        try
+                        {
+                            if (parallaxBitmap != null && (bgChanged || prevBackgroundForceSolidBlack != backgroundForceSolidBlack))
+                            {
+                                ImageSource?[]? arr = null;
+                                if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
+                                    arr = CreateBlackMaskedImages(new ImageSource?[] { parallaxBitmap! });
+                                else
+                                    arr = CreateHueShiftedImages(new ImageSource?[] { parallaxBitmap! }, backgroundTint);
+
+                                if (arr != null && arr.Length > 0 && arr[0] != null) parallaxBitmapToned = arr[0];
+                                else parallaxBitmapToned = parallaxBitmap;
+                            }
+                            else
+                            {
+                                // If we are not updating the parallax bitmap due to an unrelated ground change,
+                                // leave the previous toned bitmap as-is so background visuals remain stable.
+                            }
+                        }
+                        catch { parallaxBitmapToned = parallaxBitmap; }
+
+                        // If the background tint changed, regenerate saw-frame tinted images
+                        if (!AreColorsEqual(prevBackgroundTint, backgroundTint))
+                        {
+                            try
+                            {
+                                if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
+                                {
+                                    this.sawFrame1TilesTinted = CreateSolidBlackImages(this.sawFrame1TilesOrig);
+                                    this.sawFrame2TilesTinted = CreateSolidBlackImages(this.sawFrame2TilesOrig);
+                                    this.smallSawFrame1TilesTinted = CreateSolidBlackImages(this.smallSawFrame1TilesOrig);
+                                    this.smallSawFrame2TilesTinted = CreateSolidBlackImages(this.smallSawFrame2TilesOrig);
+                                    this.largeSawFrame1TilesTinted = CreateSolidBlackImages(this.largeSawFrame1TilesOrig);
+                                    this.largeSawFrame2TilesTinted = CreateSolidBlackImages(this.largeSawFrame2TilesOrig);
+                                }
+                                else
+                                {
+                                    this.sawFrame1TilesTinted = CreateHslShiftedImages(this.sawFrame1TilesOrig, backgroundTint, outlineTintLocal);
+                                    this.sawFrame2TilesTinted = CreateHslShiftedImages(this.sawFrame2TilesOrig, backgroundTint, outlineTintLocal);
+                                    this.smallSawFrame1TilesTinted = CreateHslShiftedImages(this.smallSawFrame1TilesOrig, backgroundTint, outlineTintLocal);
+                                    this.smallSawFrame2TilesTinted = CreateHslShiftedImages(this.smallSawFrame2TilesOrig, backgroundTint, outlineTintLocal);
+                                    this.largeSawFrame1TilesTinted = CreateHslShiftedImages(this.largeSawFrame1TilesOrig, backgroundTint, outlineTintLocal);
+                                    this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint, outlineTintLocal);
+                                }
+                            }
+                            catch { }
+                        }
+
                         tileLayerCache = null;
-                        // Clear ground-tinted tile cache so tiles using ground tint get regenerated
                         try { groundTintedTileCache.Clear(); } catch { }
-                        try { blackMaskedTileCache.Clear(); } catch { }
+                        try { spriteBackgroundCompositeCache.Clear(); } catch { }
                     }
                 }
                 catch { }
@@ -3627,11 +3709,16 @@ namespace FamidashEditor
 
                 var prevBackgroundTint = backgroundTint; var prevTileTint = tileTint; var prevGroundTint = groundTint;
                 var prevBackgroundForceSolidBlack = backgroundForceSolidBlack;
+                // Determine the candidate tile/object tint for this pending change. If a tile/object
+                // trigger is pending (tileIdxLocal present) prefer its new tint so outline recoloring
+                // uses the up-to-date color even before we assign `tileTint` below.
+                Color candidateTileTint = tileTint;
+                try { if (tileIdxLocal >= 0 && tileSidLocal >= 0) candidateTileTint = ColorFromTrigger(tileSidLocal); } catch { }
                 // Only allow outline recoloring when this pending change includes an explicit
-                // object/tile trigger. If this came from startup or is a background/ground-only
+                // object/tile trigger (or the tint actually changed). If this came from startup or is a background/ground-only
                 // change, keep outline tint transparent so white seams/outlines are not recolored.
                 var outlineTintParam = Color.FromArgb(0, 0, 0, 0);
-                if (!wasStartup && tileIdxLocal >= 0) outlineTintParam = tileTint;
+                if (!wasStartup && (tileIdxLocal >= 0 || !AreColorsEqual(prevTileTint, candidateTileTint))) outlineTintParam = candidateTileTint;
 
                 if (bgIdxLocal >= 0 && bgSidLocal >= 0)
                 {
@@ -3950,6 +4037,19 @@ namespace FamidashEditor
                         }
                     }
                     catch { groundTonedImages = groundImages; }
+
+                        // If an outline tint is active for this regeneration, force-apply an outline-only
+                        // recolor to the ground images so thin/anti-aliased white seams are recolored
+                        // the same way other tiles are when object triggers fire.
+                        try
+                        {
+                            if (outlineTintParam.A > 0 && groundTonedImages != null)
+                            {
+                                var recol = CreateOutlineTintedTileImages(groundTonedImages, outlineTintParam);
+                                if (recol != null) groundTonedImages = recol;
+                            }
+                        }
+                        catch { }
 
                     // Also create/update a tinted full-parallax bitmap if a full parallax bitmap was provided
                     // Only update the full parallax bitmap when the background actually changed or when
