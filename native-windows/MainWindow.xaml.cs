@@ -12392,7 +12392,9 @@ namespace FamidashEditor
                 }
 
                 // Teleport horizontal portals 0x67/0x68 should be shifted up by one tile
-                if (previewMode && !hasCustomOffset && (spriteIdx == 0x67 || spriteIdx == 0x68))
+                // Always apply this visual nudge in preview mode so it remains visible
+                // even when a stored pixel offset exists.
+                if (previewMode && (spriteIdx == 0x67 || spriteIdx == 0x68))
                 {
                     try
                     {
@@ -13036,39 +13038,19 @@ namespace FamidashEditor
             int destX = Math.Max(0, padPxX + x * spritePixelW);
             int destY = Math.Max(0, padPxY + y * spritePixelH);
 
-            // Special-case: in preview mode, certain horizontal gravity portal previews
-            // should be visually shifted up by one tile (16px) to align correctly.
-            // BUT: only apply these if the user hasn't set a custom offset. Some sprites
-            // use an anchor tile for their stored offsets (spriteAnchors); check both
-            // the storage position and the anchor position for a custom offset so we
-            // don't apply the preview nudge when the user has explicitly set an offset.
-            bool hasCustomOffset = false;
-            if (spritePixelOffsets.ContainsKey(portalPosKey)) hasCustomOffset = true;
-            else if (spriteAnchors != null && spriteAnchors.TryGetValue(portalPosKey, out var pAnchor))
-            {
-                int anchorKey = pAnchor.anchorTileY * mapWidth + pAnchor.anchorTileX;
-                if (spritePixelOffsets.ContainsKey(anchorKey)) hasCustomOffset = true;
-            }
-
-            if (previewMode && !hasCustomOffset && (spriteIdx == 0x10 || spriteIdx == 0x12))
-            {
-                destY = Math.Max(0, destY - spritePixelH);
-            }
-            // Horizontal teleport portal previews 0x67/0x68 are designed to be shifted
-            // up by one tile so they visually align with the surrounding tiles.
-            if (previewMode && !hasCustomOffset && (spriteIdx == 0x67 || spriteIdx == 0x68))
-            {
-                destY = Math.Max(0, destY - spritePixelH);
-            }
-
             // Apply sprite pixel offsets (user offset takes priority). Try storage key
             // first, then fallback to anchor key if present (matching simulator semantics).
+            // Compute `hasCustomOffset` so preview nudges are suppressed when an explicit
+            // offset exists. Applying offsets first avoids preview nudges overwriting
+            // user adjustments.
+            bool hasCustomOffset = false;
             if (spritePixelOffsets.TryGetValue(portalPosKey, out var offset))
             {
                 int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
                 int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
                 destX += scaledOffsetX;
                 destY += scaledOffsetY;
+                hasCustomOffset = true;
             }
             else if (spriteAnchors != null && spriteAnchors.TryGetValue(portalPosKey, out var pAnc))
             {
@@ -13079,7 +13061,21 @@ namespace FamidashEditor
                     int scaledOffsetY = (int)Math.Round(aoffset.offsetY * scale * dpi.DpiScaleY);
                     destX += scaledOffsetX;
                     destY += scaledOffsetY;
+                    hasCustomOffset = true;
                 }
+            }
+
+            // Special-case preview nudges for certain portal sprites. These nudges
+            // visually lift some portal types by 1 tile so they align naturally
+            // in preview mode. Apply them regardless of stored offsets so the
+            // visual alignment remains consistent when previewing.
+            if (previewMode && (spriteIdx == 0x10 || spriteIdx == 0x12))
+            {
+                destY = Math.Max(0, destY - spritePixelH);
+            }
+            if (previewMode && (spriteIdx == 0x67 || spriteIdx == 0x68))
+            {
+                destY = Math.Max(0, destY - spritePixelH);
             }
 
             int renderWidth = spritePixelW;
