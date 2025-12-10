@@ -2504,7 +2504,8 @@ namespace FamidashEditor
                                     // Use the animated tile index (useTileIndex) consistently when selecting the image.
                                     // For a few ground-related tile indices, prefer applying the ground tint
                                     // (these tiles should respond to ground tint, not tile tint).
-                                    var groundAffected = (useTileIndex == 0x01 || useTileIndex == 0x02 || useTileIndex == 0x04 || useTileIndex == 0x05 || useTileIndex == 0x88 || useTileIndex == 0x89);
+                                    // These specific tiles should behave exactly like the ground image.
+                                    var groundAffected = (useTileIndex == 0x01 || useTileIndex == 0x02 || useTileIndex == 0x05 || useTileIndex == 0x06 || useTileIndex == 0x88 || useTileIndex == 0x89);
 
                                     if (groundAffected)
                                     {
@@ -2549,8 +2550,23 @@ namespace FamidashEditor
                                                         }
                                                         else
                                                         {
-                                                            var arr = CreateHslShiftedImages(new ImageSource?[] { tileImages[useTileIndex]! }, groundTint, tileTint);
-                                                            if (arr != null && arr.Length > 0) gt = arr[0];
+                                                            // Use two-tone mapping like ground: lighter = selected ground tint,
+                                                            // darker = palette row-up color. If an object/tile outline tint is active
+                                                            // for this regeneration, pass it so seam pixels recolor to the object
+                                                            // color. Otherwise preserve seams by passing transparent outline.
+                                                            try
+                                                            {
+                                                                var darker = PaletteHelper.RowUpColor(Color.FromArgb(groundTint.A, groundTint.R, groundTint.G, groundTint.B));
+                                                                var outlineForThisParam = startupTintApplied ? Color.FromArgb(0, 0, 0, 0) : tileTint;
+                                                                var outlineForThis = (outlineForThisParam.A > 0) ? outlineForThisParam : Color.FromArgb(0, 0, 0, 0);
+                                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[useTileIndex]! }, groundTint, darker, outlineForThis);
+                                                                if (arr != null && arr.Length > 0) gt = arr[0];
+                                                            }
+                                                            catch
+                                                            {
+                                                                var arr = CreateHslShiftedImages(new ImageSource?[] { tileImages[useTileIndex]! }, groundTint, tileTint);
+                                                                if (arr != null && arr.Length > 0) gt = arr[0];
+                                                            }
                                                         }
                                                             }
                                                     }
@@ -3916,33 +3932,39 @@ namespace FamidashEditor
                                         }
                                     }
 
-                                    // Tiles that should get ground tint (exactly like ground): 0x01/02, 0x04/05, 0x88/89
-                                    int[] groundTiles = new[] { 0x01, 0x02, 0x04, 0x05, 0x88, 0x89 };
+                                    // Tiles that should get ground tint (exactly like ground): 0x01/02, 0x05/06, 0x88/89
+                                    int[] groundTiles = new[] { 0x01, 0x02, 0x05, 0x06, 0x88, 0x89 };
                                     foreach (var i in groundTiles)
                                     {
                                         if (i >= 0 && i < tileImages.Length)
                                         {
                                             // Ground tiles should only respond to ground color triggers and should not
-                                            // participate in ground two-tone mapping the same way the ground images do.
+                                            // have their near-white outline pixels recolored here — those outlines
+                                            // must remain untouched so object triggers can recolor them later.
                                             // Use ground palette mapping (grdPrimary/grdSecondary) when present; otherwise
-                                            // fall back to hue-shift using `groundTint`. Always supply the computed
-                                            // outline tint (or tileTint fallback) so object triggers recolor seams.
-                                            Color outlineForGround = outlineTintParam.A > 0 ? outlineTintParam : tileTint;
+                                            // fall back to a two-tone mapping using `groundTint`. Pass a transparent
+                                            // outline tint so white/seam pixels are preserved now.
+                                            // Determine outline behavior: if an outline tint (object/tile) is active
+                                            // for this regeneration, allow seam pixels to be recolored to that color.
+                                            // Otherwise preserve seams by passing a transparent outline tint.
+                                            var outlineForThisTile = (outlineTintParam.A > 0) ? outlineTintParam : Color.FromArgb(0, 0, 0, 0);
                                             if (grdPrimary.HasValue)
                                             {
-                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, grdSecondary ?? Color.FromArgb(255, 0, 0, 0), grdPrimary.Value, outlineForGround);
+                                                var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, grdSecondary ?? Color.FromArgb(255, 0, 0, 0), grdPrimary.Value, outlineForThisTile);
                                                 if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
                                             }
                                             else
                                             {
                                                 if (backgroundForceSolidBlack || (groundTint.A == 255 && groundTint.R == 0 && groundTint.G == 0 && groundTint.B == 0))
                                                 {
-                                                    try { tileTonedImages[i] = CreateBlackMaskedExceptColor(tileImages[i], playerPlaceholderGreen, outlineForGround, outlineForGround.A > 0); }
+                                                    try { tileTonedImages[i] = CreateBlackMaskedExceptColor(tileImages[i], playerPlaceholderGreen, outlineForThisTile, outlineForThisTile.A > 0); }
                                                     catch { tileTonedImages[i] = tileImages[i]; }
                                                 }
                                                 else
                                                 {
-                                                    var arr = CreateHueShiftedImages(new ImageSource?[] { tileImages[i]! }, groundTint, outlineForGround);
+                                                    // Use two-tone mapping based on groundTint and a palette-derived darker color.
+                                                    var darker = PaletteHelper.RowUpColor(Color.FromArgb(groundTint.A, groundTint.R, groundTint.G, groundTint.B));
+                                                    var arr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[i]! }, groundTint, darker, outlineForThisTile);
                                                     if (arr != null && arr.Length > 0 && arr[0] != null) tileTonedImages[i] = arr[0];
                                                 }
                                             }
