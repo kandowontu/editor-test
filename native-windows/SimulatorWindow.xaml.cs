@@ -5832,12 +5832,12 @@ namespace FamidashEditor
                     }
                     catch
                     {
-                        outList.Add(src);
+                        outList.Add(src ?? new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null));
                     }
                 }
                 else
                 {
-                    outList.Add(src);
+                    outList.Add(src ?? new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null));
                 }
             }
             return outList.ToArray();
@@ -5930,7 +5930,7 @@ namespace FamidashEditor
                     var v = CreateBlackMaskedExceptColor(src, excludeColor, outlineTint, recolorOutline);
                     outList.Add(v ?? src ?? new WriteableBitmap(1,1,96,96,PixelFormats.Bgra32,null));
                 }
-                catch { outList.Add(src); }
+                catch { outList.Add(src ?? new WriteableBitmap(1,1,96,96,PixelFormats.Bgra32,null)); }
             }
             return outList.ToArray();
         }

@@ -13040,29 +13040,26 @@ namespace FamidashEditor
 
             // Apply sprite pixel offsets (user offset takes priority). Try storage key
             // first, then fallback to anchor key if present (matching simulator semantics).
-            // Compute `hasCustomOffset` so preview nudges are suppressed when an explicit
-            // offset exists. Applying offsets first avoids preview nudges overwriting
-            // user adjustments.
-            bool hasCustomOffset = false;
+            // Compute whether a custom offset was applied so preview nudges are suppressed
+            // when an explicit offset exists. Applying offsets first avoids preview
+            // nudges overwriting user adjustments.
             if (spritePixelOffsets.TryGetValue(portalPosKey, out var offset))
             {
                 int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
                 int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
                 destX += scaledOffsetX;
                 destY += scaledOffsetY;
-                hasCustomOffset = true;
             }
             else if (spriteAnchors != null && spriteAnchors.TryGetValue(portalPosKey, out var pAnc))
             {
                 int anchorKey = pAnc.anchorTileY * mapWidth + pAnc.anchorTileX;
-                if (spritePixelOffsets.TryGetValue(anchorKey, out var aoffset))
-                {
-                    int scaledOffsetX = (int)Math.Round(aoffset.offsetX * scale * dpi.DpiScaleX);
-                    int scaledOffsetY = (int)Math.Round(aoffset.offsetY * scale * dpi.DpiScaleY);
-                    destX += scaledOffsetX;
-                    destY += scaledOffsetY;
-                    hasCustomOffset = true;
-                }
+                    if (spritePixelOffsets.TryGetValue(anchorKey, out var aoffset))
+                    {
+                        int scaledOffsetX = (int)Math.Round(aoffset.offsetX * scale * dpi.DpiScaleX);
+                        int scaledOffsetY = (int)Math.Round(aoffset.offsetY * scale * dpi.DpiScaleY);
+                        destX += scaledOffsetX;
+                        destY += scaledOffsetY;
+                    }
             }
 
             // Special-case preview nudges for certain portal sprites. These nudges
