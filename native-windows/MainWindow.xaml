@@ -299,7 +299,7 @@
             <TextBlock Text="Height (Y):" VerticalAlignment="Center" Margin="8,0,2,0" />
             <TextBox x:Name="HeightBox" Width="60" Margin="2" />
             <Button x:Name="ResizeButton" Content="Resize" Margin="2" />
-            <TextBlock x:Name="StatusText" Margin="8,2" VerticalAlignment="Center" Visibility="Collapsed">
+            <TextBlock x:Name="StatusText" Margin="8,2" VerticalAlignment="Center" Visibility="Visible">
                 <TextBlock.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="Copy" Click="StatusText_Copy_Click" />

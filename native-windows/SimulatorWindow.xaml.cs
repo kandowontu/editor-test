@@ -396,8 +396,14 @@ namespace FamidashEditor
         private System.Collections.Generic.Dictionary<int, int> decoLastSelectedFrame = new System.Collections.Generic.Dictionary<int, int>();
         private bool enableSimulatorDebugLogging = false; // set true to capture helpful messages during diagnosis
 
+        // When true, print per-simulation-step diagnostics about the player's feet
+        // including tile indices, animated remaps and resolved collision categories.
+        // Enable temporarily for live debugging; remove or set false when done.
+        private bool runtimePerFrameLog = true;
+
         // Internal one-time simulator debug file (used only for local diagnosis when requested)
-        private readonly string simDebugFilePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt");
+        // Use a deterministic, repo-root path so it's easy to find when running from VS/`dotnet run`.
+        private readonly string simDebugFilePath = @"C:\Editor Test\native-windows\sim_debug.txt";
         private bool simDebugLoggedFirstFrame = false;
 
         // Append a small simulator debug line to the diagnosis file next to the exe.
@@ -446,6 +452,16 @@ namespace FamidashEditor
                     if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
                 }
                 catch { playerY_fixed = 0; }
+
+                // Ensure the sim debug file exists and print its resolved path so users can find it.
+                try
+                {
+                    var header = DateTime.UtcNow.ToString("o") + " SIM_LOG_START\n";
+                    System.Console.WriteLine("SIM_DEBUG_PATH: " + simDebugFilePath);
+                    System.IO.File.AppendAllText(simDebugFilePath, header);
+                    simDebugLoggedFirstFrame = true;
+                }
+                catch { }
             }
             catch { }
         }
@@ -454,7 +470,7 @@ namespace FamidashEditor
         public void StopSimulation()
         {
             try { simTimer?.Dispose(); } catch { }
-                simTimer = null; // Clear the timer reference
+            simTimer = null; // Clear the timer reference
             try { simStopwatch.Stop(); } catch { }
         }
 
@@ -697,7 +713,43 @@ namespace FamidashEditor
                     int trigger = MapStartingCodeToTrigger(sc, false);
                     // Simulate activation of the background color trigger so the pending-tint
                     // path runs (same as when the player crosses a trigger in-game).
-                    try { pendingBgIdx = 0; pendingBgSid = trigger; pendingTintChange = true; pendingTintChangeIsStartup = true; } catch { }
+                    try {
+                        // Workaround: queue the exact two-trigger runtime sequence on the UI Dispatcher
+                        // instead of applying synchronously. This better reproduces the timing of
+                        // an in-game crossing (first a different trigger, then the real one).
+                        int firstTrigger = trigger + 1;
+                        if ((trigger & 0x0F) == 0x0C) firstTrigger = trigger + 4;
+
+                        // Queue first trigger at normal priority
+                        try
+                        {
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    pendingBgIdx = 0; pendingBgSid = firstTrigger; pendingTintChange = true; pendingTintChangeIsStartup = false;
+                                    ApplyPendingTints();
+                                }
+                                catch { }
+                            }), System.Windows.Threading.DispatcherPriority.Normal);
+                        }
+                        catch { }
+
+                        // Queue the real trigger at ApplicationIdle so it runs after other UI work
+                        try
+                        {
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    pendingBgIdx = 0; pendingBgSid = trigger; pendingTintChange = true; pendingTintChangeIsStartup = false;
+                                    ApplyPendingTints();
+                                }
+                                catch { }
+                            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                        }
+                        catch { }
+                    } catch { }
                 }
             }
             catch { }
@@ -1611,6 +1663,11 @@ namespace FamidashEditor
 
                     // integrate velocity
                     playerY_fixed += playerVelY_fixed;
+                    // Prevent the player's world Y from going negative (above map top).
+                    // The simulation uses pixel Y coordinates where 0 is the top of the world
+                    // and increasing values go downwards; negative fixed-point Y can cause
+                    // out-of-bounds tile lookups and incorrect floor detection.
+                    if (playerY_fixed < 0) playerY_fixed = 0;
 
                     // ground collision: try tile-based floor collision first, otherwise fall back to map bottom
                     try
@@ -1715,23 +1772,35 @@ namespace FamidashEditor
                                 if (tx < 0 || tx >= mapWidth) continue;
                                 int tid = tiles[tileBelowY * mapWidth + tx];
 
-                                // Temporary test mode: treat any non-empty tile as a full floor (tile top),
-                                // but only when the id corresponds to an actual tile image. This avoids
-                                // treating sprites (which may use ids overlapping tile ids) as collision.
-                                if (tid != 0 && tileImages != null && tid >= 0 && tid < tileImages.Length && tileImages[tid] != null)
+                                // Map animated/preview tile indices back to a base tile index
+                                // suitable for collision lookup. Some tiles are remapped to
+                                // special indices (>=1000) for animation; convert those
+                                // back to their original base indices so collision table
+                                // lookup matches the visible tile geometry.
+                                int useTidForAnim = MapAnimatedTileIndex(tid);
+                                int collisionTid = useTidForAnim;
+                                if (useTidForAnim >= 1000)
                                 {
-                                    int candidateTop = tileBelowY * TILE + 0;
-                                    if (candidateTop < floorTopWorldY_px) floorTopWorldY_px = candidateTop;
-                                    floorDetected = 1;
-                                    if (enableSimulatorDebugLogging && tileSelectionLogCount < TILE_SELECTION_LOG_LIMIT)
+                                    if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
                                     {
-                                        tileSelectionLogCount++;
-                                        WriteTempLog($"Simulator: sample UI landing found tile id={tid} at tx={tx} ty={tileBelowY}");
+                                        collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
                                     }
-                                    continue;
+                                    else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
+                                    {
+                                        int group = (useTidForAnim - 1010) % 3; // 0 -> 0x04, 1 -> 0x7D, 2 -> 0x7F
+                                        collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
+                                    }
+                                    else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
+                                    {
+                                        collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
+                                    }
+                                    else
+                                    {
+                                        // Fallback: use the original tile id
+                                        collisionTid = tid;
+                                    }
                                 }
-
-                                var col = MetatileCollisionTable.GetCollision((byte)tid);
+                                var col = MetatileCollisionTable.GetCollision((byte)collisionTid);
 
                                 // compute overlap columns within this tile
                                 int tileStartX = tx * TILE;
@@ -1758,6 +1827,62 @@ namespace FamidashEditor
                         }
 
                         int floorTop_fixed = (floorDetected == 1) ? ((floorTopWorldY_px - HITBOX_H) << 8) : maxPlayerY_fixed;
+
+                        // Per-frame runtime diagnostics: print the tiles under the player's feet
+                        if (runtimePerFrameLog)
+                        {
+                            try
+                            {
+                                var sb = new System.Text.StringBuilder();
+                                sb.AppendFormat("SIM_FRAME: playerX_px={0} playerY_px={1} footY_px={2} tileBelowY={3}; ", (playerX_fixed >> 8), (playerY_fixed >> 8), footWorldY_px, tileBelowY);
+                                int dbgLeft = playerLeft_px / TILE;
+                                int dbgRight = playerRight_px / TILE;
+                                if (tileBelowY < 0 || tileBelowY >= mapHeight)
+                                {
+                                    sb.AppendFormat("tileBelowY={0}:out_of_bounds; ", tileBelowY);
+                                }
+                                else
+                                {
+                                    for (int tx_dbg = dbgLeft; tx_dbg <= dbgRight; tx_dbg++)
+                                    {
+                                        if (tx_dbg < 0 || tx_dbg >= mapWidth) { sb.AppendFormat("tx={0}:out_of_bounds; ", tx_dbg); continue; }
+                                        int tid_dbg = tiles[tileBelowY * mapWidth + tx_dbg];
+                                    int useTid_dbg = MapAnimatedTileIndex(tid_dbg);
+                                    int collisionTid_dbg = useTid_dbg;
+                                    if (useTid_dbg >= 1000)
+                                    {
+                                        if (useTid_dbg >= 1000 && useTid_dbg <= 1007)
+                                        {
+                                            collisionTid_dbg = 0x08 + ((useTid_dbg - 1000) % 4);
+                                        }
+                                        else if (useTid_dbg >= 1010 && useTid_dbg <= 1015)
+                                        {
+                                            int group_dbg = (useTid_dbg - 1010) % 3;
+                                            collisionTid_dbg = (group_dbg == 0) ? 0x04 : (group_dbg == 1) ? 0x7D : 0x7F;
+                                        }
+                                        else if (useTid_dbg >= 1020 && useTid_dbg <= 1037)
+                                        {
+                                            collisionTid_dbg = 0x74 + ((useTid_dbg - 1020) % 9);
+                                        }
+                                        else
+                                        {
+                                            collisionTid_dbg = tid_dbg;
+                                        }
+                                    }
+                                    var col_dbg = MetatileCollisionTable.GetCollision((byte)collisionTid_dbg);
+                                    sb.AppendFormat("tx={0} tid={1} animRemap={2} collTid=0x{3:X2} coll={4}; ", tx_dbg, tid_dbg, useTid_dbg, collisionTid_dbg, col_dbg);
+                                    }
+                                }
+                                var line = sb.ToString();
+                                System.Console.WriteLine(line);
+                                try
+                                {
+                                    System.IO.File.AppendAllText(simDebugFilePath, DateTime.UtcNow.ToString("o") + " " + line + Environment.NewLine);
+                                }
+                                catch { }
+                            }
+                            catch { }
+                        }
 
                         if (playerY_fixed >= floorTop_fixed - LAND_EPS_FIXED && playerVelY_fixed >= 0)
                         {
@@ -3276,11 +3401,15 @@ namespace FamidashEditor
             {
                 if (!Dispatcher.CheckAccess())
                 {
-                    Dispatcher.Invoke(new Action(() => { try { RenderFrame(); } catch { } }));
+                    Dispatcher.Invoke(new Action(() => {
+                        try { RenderFrame(); } catch { }
+                        try { if (pendingTintChange || pendingTintChangeIsStartup) { try { ApplyPendingTints(); } catch { } try { RenderFrame(); } catch { } } } catch { }
+                    }));
                 }
                 else
                 {
                     try { RenderFrame(); } catch { }
+                    try { if (pendingTintChange || pendingTintChangeIsStartup) { try { ApplyPendingTints(); } catch { } try { RenderFrame(); } catch { } } } catch { }
                 }
             }
             catch { }
@@ -3644,22 +3773,29 @@ namespace FamidashEditor
                                     if (tx_local < 0 || tx_local >= mapWidth) continue;
                                     int tid_local = tiles[tileBelowY_local * mapWidth + tx_local];
 
-                                    // Temporary test mode: any non-empty tile is treated as full floor,
-                                    // but only when it maps to a tile image (avoid sprite collisions).
-                                    if (tid_local != 0 && tileImages != null && tid_local >= 0 && tid_local < tileImages.Length && tileImages[tid_local] != null)
+                                    int useTidForAnim_local = MapAnimatedTileIndex(tid_local);
+                                    int collisionTid_local = useTidForAnim_local;
+                                    if (useTidForAnim_local >= 1000)
                                     {
-                                        int candidateTop_local = tileBelowY_local * TILE + 0;
-                                        if (candidateTop_local < floorTopWorldY_px_local) floorTopWorldY_px_local = candidateTop_local;
-                                        floorDetected_local = 1;
-                                        if (enableSimulatorDebugLogging && tileSelectionLogCount < TILE_SELECTION_LOG_LIMIT)
+                                        if (useTidForAnim_local >= 1000 && useTidForAnim_local <= 1007)
                                         {
-                                            tileSelectionLogCount++;
-                                            WriteTempLog($"Simulator: sample numeric landing found tile id={tid_local} at tx={tx_local} ty={tileBelowY_local}");
+                                            collisionTid_local = 0x08 + ((useTidForAnim_local - 1000) % 4);
                                         }
-                                        continue;
+                                        else if (useTidForAnim_local >= 1010 && useTidForAnim_local <= 1015)
+                                        {
+                                            int group_local = (useTidForAnim_local - 1010) % 3;
+                                            collisionTid_local = (group_local == 0) ? 0x04 : (group_local == 1) ? 0x7D : 0x7F;
+                                        }
+                                        else if (useTidForAnim_local >= 1020 && useTidForAnim_local <= 1037)
+                                        {
+                                            collisionTid_local = 0x74 + ((useTidForAnim_local - 1020) % 9);
+                                        }
+                                        else
+                                        {
+                                            collisionTid_local = tid_local;
+                                        }
                                     }
-
-                                    var col_local = MetatileCollisionTable.GetCollision((byte)tid_local);
+                                    var col_local = MetatileCollisionTable.GetCollision((byte)collisionTid_local);
 
                                     int tileStartX_local = tx_local * TILE;
                                     int localLeft_local = Math.Max(0, playerLeft_px_local - tileStartX_local);
@@ -3881,6 +4017,10 @@ namespace FamidashEditor
                 bool bgChanged = !AreColorsEqual(prevBackgroundTint, backgroundTint);
                 bool tileChanged = !AreColorsEqual(prevTileTint, tileTint);
                 bool grdChanged = !AreColorsEqual(prevGroundTint, groundTint);
+                // If this pending tint application originated from startup, force a regeneration
+                // so two-tone/outline images exist before the first render even when the
+                // starting tint equals the current tint values.
+                bool forceRegenerateOnStartup = wasStartup;
 
                 // Compute outline tint to use for this regeneration. Preserve object outline
                 // recoloring on ground-only changes so object tints are not cleared by a ground trigger.
@@ -3900,7 +4040,7 @@ namespace FamidashEditor
                     }
                 }
 
-                if (tileChanged || bgChanged || grdChanged)
+                if (tileChanged || bgChanged || grdChanged || forceRegenerateOnStartup)
                 {
                     // Recompute tile-toned images.
                     // Compute separate palette-driven primary/secondary colors for background and ground
@@ -4097,7 +4237,9 @@ namespace FamidashEditor
                     try {
                         // Only regenerate parallax when background actually changed or when a palette mapping
                         // is explicitly provided via bgPrimary, or when forced-black flag changed.
-                        if (!AreColorsEqual(prevBackgroundTint, backgroundTint) || prevBackgroundForceSolidBlack != backgroundForceSolidBlack || bgPrimary.HasValue)
+                        // Also regenerate when this was a startup-origin application so initial
+                        // render sees fresh toned images.
+                        if (!AreColorsEqual(prevBackgroundTint, backgroundTint) || prevBackgroundForceSolidBlack != backgroundForceSolidBlack || bgPrimary.HasValue || forceRegenerateOnStartup)
                         {
                             if (parallaxImages != null)
                             {
@@ -4134,7 +4276,9 @@ namespace FamidashEditor
                     {
                         // Only regenerate ground visuals when the ground tint actually changed
                         // or when an explicit ground palette mapping is available.
-                        if (!AreColorsEqual(prevGroundTint, groundTint) || grdPrimary.HasValue)
+                        // Also regenerate on startup-origin so ground visuals are ready
+                        // for the first render.
+                        if (!AreColorsEqual(prevGroundTint, groundTint) || grdPrimary.HasValue || forceRegenerateOnStartup)
                         {
                             if (grdPrimary.HasValue)
                             {
@@ -4226,7 +4370,9 @@ namespace FamidashEditor
                     }
                     catch { parallaxBitmapToned = parallaxBitmap; }
                     // If the background tint changed, regenerate saw-frame tinted images
-                    if (!AreColorsEqual(prevBackgroundTint, backgroundTint))
+                    // Also regenerate saw-frame images when this is startup-origin so they
+                    // appear correctly on the very first render.
+                    if (!AreColorsEqual(prevBackgroundTint, backgroundTint) || forceRegenerateOnStartup)
                     {
                         try
                         {
