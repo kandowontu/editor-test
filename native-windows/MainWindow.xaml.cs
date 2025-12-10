@@ -364,6 +364,11 @@ namespace FamidashEditor
     private bool isDraggingSelection = false;
     // True while a drag-move has moved the ghost outside the valid map area
     private bool dragMovedOffMap = false;
+    // When doing preserveOffsets (shift-drag) operations we need to remember
+    // which storage indices correspond to each cell in the selection so
+    // repeated visual shifts operate on the original stored sprites rather
+    // than the visual destination cells. This map holds relIndex -> srcIdx.
+    private System.Collections.Generic.Dictionary<int,int> selectionStorageMap = null;
     private Point dragStartMouse; // in CanvasHost coords
     private int dragOrigX = 0, dragOrigY = 0; // original selection top-left
     private Point dragOffset; // offset from mouse to selection top-left when dragging
@@ -12318,10 +12323,8 @@ namespace FamidashEditor
 
                 // Apply sprite pixel offsets from JSON metadata (if any)
                 int posKey = y * mapWidth + x;
-                bool hasExplicitOffset = false;
                 if (spritePixelOffsets.TryGetValue(posKey, out var offset))
                 {
-                    hasExplicitOffset = true;
                     // Scale the offset by the current scale and DPI
                     int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
                     int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
@@ -12376,9 +12379,7 @@ namespace FamidashEditor
                 }
 
                 // Teleport horizontal portals 0x67/0x68 should be shifted up by one tile
-                // but if an explicit pixel offset exists for this sprite position, respect
-                // that offset and do not apply the automatic preview nudge.
-                if (previewMode && (spriteIdx == 0x67 || spriteIdx == 0x68) && !hasExplicitOffset)
+                if (previewMode && (spriteIdx == 0x67 || spriteIdx == 0x68))
                 {
                     try
                     {
@@ -13380,17 +13381,20 @@ namespace FamidashEditor
                 
                 if (tileVal != -1 || spriteVal != -1)
                 {
-                    // Double-click on a sprite with offset removes the offset. Require that
-                    // the user double-clicked the sprite's stored tile (not just an overlapping
-                    // area) to avoid reverting unrelated nearby offsets.
-                    int clickedTileIdx = y * mapWidth + x;
-                    if (e.ClickCount >= 2 && spriteVal != -1 && spritePixelOffsets.ContainsKey(idx) && idx == clickedTileIdx)
+                    // Double-click on a sprite with offset removes the offset for the
+                    // sprite that was actually clicked (hit-tested). Recompute the
+                    // hit result to avoid removing offsets from a different nearby sprite.
+                    if (e.ClickCount >= 2 && spriteVal != -1)
                     {
-                        spritePixelOffsets.Remove(idx);
-                        spriteAnchors.Remove(idx); // Also remove the anchor
-                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
-                        SaveCurrentTmxConfig();
-                        return;
+                        int hitIdx = GetSpriteIndexUnderPoint(pos);
+                        if (hitIdx >= 0 && spritePixelOffsets.ContainsKey(hitIdx))
+                        {
+                            spritePixelOffsets.Remove(hitIdx);
+                            spriteAnchors.Remove(hitIdx); // Also remove the anchor
+                            try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                            SaveCurrentTmxConfig();
+                            return;
+                        }
                     }
                     
                     // create a 1x1 selection at this tile/sprite and begin dragging
@@ -14448,6 +14452,52 @@ namespace FamidashEditor
             }
         }
 
+        // Hit-test to find which sprite index (map position key) is under a canvas point.
+        // Returns the index (y*mapWidth + x) of the sprite whose visible pixel area contains
+        // the given point in native canvas coordinates, or -1 if none.
+        private int GetSpriteIndexUnderPoint(Point canvasPos)
+        {
+            try
+            {
+                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                int clickNativeX = (int)Math.Round((canvasPos.X - mapViewportPadding) / scale);
+                int clickNativeY = (int)Math.Round((canvasPos.Y - mapViewportPadding) / scale);
+
+                // Check the tile under cursor and adjacent tiles for sprites with offsets
+                var tt = ViewportPointToTile(canvasPos);
+                int x = tt.x; int y = tt.y;
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int checkX = x + dx;
+                        int checkY = y + dy;
+                        if (checkX < 0 || checkX >= mapWidth || checkY < 0 || checkY >= mapHeight) continue;
+                        int checkIdx = checkY * mapWidth + checkX;
+                        if (sprites[checkIdx] != -1)
+                        {
+                            // If sprite has a pixel offset, use it; otherwise assume tile-aligned
+                            int spriteLeft = checkX * TileSize;
+                            int spriteTop = checkY * TileSize;
+                            if (spritePixelOffsets.TryGetValue(checkIdx, out var off))
+                            {
+                                spriteLeft += off.offsetX;
+                                spriteTop += off.offsetY;
+                            }
+                            int spriteRight = spriteLeft + TileSize;
+                            int spriteBottom = spriteTop + TileSize;
+                            if (clickNativeX >= spriteLeft && clickNativeX < spriteRight && clickNativeY >= spriteTop && clickNativeY < spriteBottom)
+                            {
+                                return checkIdx;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+            return -1;
+        }
+
         private void ConvertRegionToStructure(int sx, int sy)
         {
             if (sx < 0 || sx >= mapWidth || sy < 0 || sy >= mapHeight) return;
@@ -14733,19 +14783,28 @@ namespace FamidashEditor
             
             // Set anchors for sprites in the selection
             // Preserve existing anchors - only set new anchors for sprites without one
-            // This ensures the anchor always references the sprite's ORIGINAL position before any offsets
+            // When selectionStorageMap exists (preserveOffsets), use the original
+            // storage index for anchors so repeated visual shifts continue to
+            // reference the same stored sprite regardless of selectionSet changes.
             for (int yy = 0; yy < selH; yy++)
             {
                 for (int xx = 0; xx < selW; xx++)
                 {
-                    int srcIdx = (selY + yy) * mapWidth + (selX + xx);
-                    if (selectionSet.Contains(srcIdx))
+                    int visualIdx = (selY + yy) * mapWidth + (selX + xx);
+                    int rel = yy * selW + xx;
+                    int storageIdx = (selectionStorageMap != null && selectionStorageMap.ContainsKey(rel))
+                        ? selectionStorageMap[rel]
+                        : visualIdx;
+
+                    if (selectionSet.Contains(visualIdx))
                     {
                         // Only set anchor if this sprite doesn't have one yet
-                        // This preserves the original reference point across moves
-                        if (!spriteAnchors.ContainsKey(srcIdx))
+                        if (!spriteAnchors.ContainsKey(storageIdx))
                         {
-                            spriteAnchors[srcIdx] = (selX + xx, selY + yy);
+                            // Anchor coordinates should reference the tile where the sprite is STORED
+                            int anchorTileX = storageIdx % mapWidth;
+                            int anchorTileY = storageIdx / mapWidth;
+                            spriteAnchors[storageIdx] = (anchorTileX, anchorTileY);
                         }
                     }
                 }
@@ -15017,13 +15076,6 @@ namespace FamidashEditor
                     ClearSelection();
                     return;
                 }
-
-                // Clicked inside the selection but did not move the mouse: treat as selection click
-                // (do not commit a move). Hide ghost and keep selection in place.
-                GhostImage.Visibility = Visibility.Collapsed;
-                GhostImage.Source = null;
-                if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
-                return;
             }
             
             // Check modifier keys and sprite-only mode
@@ -15871,6 +15923,7 @@ namespace FamidashEditor
             selTiles = null; selSprites = null; selW = 0; selH = 0; selX = selY = -1;
             selectionSet.Clear();
             spriteAnchors.Clear(); // Clear anchors when selection is cleared
+            if (selectionStorageMap != null) { selectionStorageMap.Clear(); selectionStorageMap = null; }
             if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
             if (StatusText != null) StatusText.Text = string.Empty;
         }
@@ -15896,15 +15949,40 @@ namespace FamidashEditor
             bool useSparse = (selectionSet != null && selectionSet.Count > 0);
 
             // First pass: collect mappings from source->dest for tiles and sprites (respecting sparse selection)
+            // Ensure we have a stable map of storage indices when doing preserveOffsets so
+            // subsequent repeated shift-drag operations still operate on the original
+            // stored sprite indices rather than the visual destination cells.
+            if (preserveOffsets)
+            {
+                if (selectionStorageMap == null || selectionStorageMap.Count != selW * selH)
+                {
+                    selectionStorageMap = new System.Collections.Generic.Dictionary<int,int>();
+                    for (int yy = 0; yy < selH; yy++)
+                    {
+                        for (int xx = 0; xx < selW; xx++)
+                        {
+                            int rel = yy * selW + xx;
+                            int sIdx = (selY + yy) * mapWidth + (selX + xx);
+                            selectionStorageMap[rel] = sIdx;
+                        }
+                    }
+                }
+            }
             var tileMappings = new System.Collections.Generic.List<(int src, int dst, int val)>();
             var spriteMappings = new System.Collections.Generic.List<(int src, int dst, int val)>();
+
+            
             for (int yy = 0; yy < selH; yy++)
             {
                 for (int xx = 0; xx < selW; xx++)
                 {
-                    int srcIdx = (selY + yy) * mapWidth + (selX + xx);
-                    if (srcIdx < 0 || srcIdx >= tiles.Length) continue;
-                    if (useSparse && (selectionSet == null || !selectionSet.Contains(srcIdx))) continue;
+                    int relIndex = yy * selW + xx;
+                    int visualSrcIdx = (selY + yy) * mapWidth + (selX + xx);
+                    if (visualSrcIdx < 0 || visualSrcIdx >= tiles.Length) continue;
+                    if (useSparse && (selectionSet == null || !selectionSet.Contains(visualSrcIdx))) continue;
+                    int srcIdx = (preserveOffsets && selectionStorageMap != null && selectionStorageMap.ContainsKey(relIndex))
+                        ? selectionStorageMap[relIndex]
+                        : visualSrcIdx;
 
                     if (tilesLayerActive)
                     {
@@ -15927,6 +16005,13 @@ namespace FamidashEditor
                             int sDstIdx = (destY + yy) * mapWidth + (destX + xx);
                             if (sDstIdx >= 0 && sDstIdx < finalSprites.Length)
                             {
+                                // Record mapping for both normal moves and preserveOffsets so
+                                // downstream logic (filtering and src/dst sets) has full
+                                // visibility of intended mappings. When `preserveOffsets` is
+                                // true we will not perform storage relocation later (we only
+                                // apply pixel offsets), but having the mappings helps detect
+                                // which destinations are part of the moved source set and
+                                // avoids accidental clearing or incorrect filtering.
                                 spriteMappings.Add((srcIdx, sDstIdx, sval));
                             }
                         }
@@ -15940,6 +16025,12 @@ namespace FamidashEditor
             var spriteDstSet = new System.Collections.Generic.HashSet<int>();
             foreach (var m in spriteMappings) spriteDstSet.Add(m.dst);
 
+            // Note: do not filter out mappings for preserveOffsets here. We always
+            // record spriteMappings so downstream logic has full visibility of the
+            // intended moves. When preserveOffsets is true, storage relocation is
+            // skipped later and we update pixel offsets on the original storage
+            // indices instead; this preserves any existing destination sprites.
+
             // Apply mappings to finals: set destinations first, then clear sources only if source is not a destination
             foreach (var m in tileMappings)
             {
@@ -15950,13 +16041,19 @@ namespace FamidashEditor
                 if (m.dst != m.src && !tileDstSet.Contains(m.src)) finalTiles[m.src] = -1;
             }
 
-            foreach (var m in spriteMappings)
+            // Apply sprite mappings to final storage only for non-preserveOffsets moves.
+            // For preserveOffsets (shift-drag) we want to keep storage in-place and
+            // only update pixel offsets so destination sprites are preserved.
+            if (!preserveOffsets)
             {
-                finalSprites[m.dst] = m.val;
-            }
-            foreach (var m in spriteMappings)
-            {
-                if (m.dst != m.src && !spriteDstSet.Contains(m.src)) finalSprites[m.src] = -1;
+                foreach (var m in spriteMappings)
+                {
+                    finalSprites[m.dst] = m.val;
+                }
+                foreach (var m in spriteMappings)
+                {
+                    if (m.dst != m.src && !spriteDstSet.Contains(m.src)) finalSprites[m.src] = -1;
+                }
             }
 
             // Build del/put lists for tiles and sprites by comparing final vs current
@@ -16034,8 +16131,11 @@ namespace FamidashEditor
                 sprites[idx] = finalSprites[idx];
             }
             
-            // Update sprite offsets for ALL sprites in the selection, not just ones that moved tiles
-            // This handles cases where sprite stays in same tile but offset changes (e.g., half-tile movement)
+            // Update sprite offsets for ALL sprites in the selection.
+            // For preserveOffsets (shift-drag) we treat the operation as a visual shift only:
+            // do NOT relocate sprite storage entries (so destination sprites are preserved).
+            // Instead, compute and apply pixel offsets on the ORIGINAL storage indices so both
+            // sprites remain present and the moved sprite appears shifted relative to its anchor.
             if (preserveOffsets && selSprites != null && spritesLayerActive)
             {
                 for (int yy = 0; yy < selH; yy++)
@@ -16045,67 +16145,49 @@ namespace FamidashEditor
                         int srcIdx = (selY + yy) * mapWidth + (selX + xx);
                         if (srcIdx < 0 || srcIdx >= sprites.Length) continue;
                         if (useSparse && (selectionSet == null || !selectionSet.Contains(srcIdx))) continue;
-                        
+
                         int sval = selSprites[yy * selW + xx];
                         if (sval == -1) continue; // No sprite in selection at this position
+
+                        // Where the user intended the sprite to appear (visual target)
+                        int targetTileX = destX + xx;
+                        int targetTileY = destY + yy;
                         
-                        int dstIdx = (destY + yy) * mapWidth + (destX + xx);
-                        if (dstIdx < 0 || dstIdx >= sprites.Length) continue;
-                        
-                        // Get anchor for this sprite
+                        // Compute offset relative to the sprite's stored tile (srcIdx)
+                        int storedTileX = srcIdx % mapWidth;
+                        int storedTileY = srcIdx / mapWidth;
+
                         if (spriteAnchors.TryGetValue(srcIdx, out var anchor))
                         {
-                            // The offset needs to be relative to where the sprite is STORED (dstIdx),
-                            // not relative to the anchor. We need to calculate where the sprite should
-                            // APPEAR (relative to anchor) and then convert that to an offset from dstIdx.
-                            
-                            int currentTileX = destX + xx;
-                            int currentTileY = destY + yy;
-                            
                             // Calculate how far we've moved from the anchor (in tiles + sub-tile pixels)
-                            int tileDeltaX = currentTileX - anchor.anchorTileX;
-                            int tileDeltaY = currentTileY - anchor.anchorTileY;
-                            
-                            // The total movement in pixels is: tile movement + sub-tile offset from drag
+                            int tileDeltaX = targetTileX - anchor.anchorTileX;
+                            int tileDeltaY = targetTileY - anchor.anchorTileY;
+
                             int totalMovementX = tileDeltaX * TileSize + pixelOffsetX;
                             int totalMovementY = tileDeltaY * TileSize + pixelOffsetY;
-                            
-                            // Where should the sprite appear? At anchor + total movement
+
                             int targetPixelX = anchor.anchorTileX * TileSize + totalMovementX;
                             int targetPixelY = anchor.anchorTileY * TileSize + totalMovementY;
-                            
-                            // Where is the sprite actually stored?
-                            int storedPixelX = currentTileX * TileSize;
-                            int storedPixelY = currentTileY * TileSize;
-                            
-                            // Offset = where it should appear - where it's stored
+
+                            int storedPixelX = storedTileX * TileSize;
+                            int storedPixelY = storedTileY * TileSize;
+
                             int offsetX = targetPixelX - storedPixelX;
                             int offsetY = targetPixelY - storedPixelY;
-                            
-                            // Always set the offset if there's an anchor (even if offset is 0)
-                            // This ensures the hover tooltip and ghost indicator still work
-                            spritePixelOffsets[dstIdx] = (offsetX, offsetY);
-                            
-                            // Update anchor reference: remove from source, add to destination
-                            // The anchor stays at its original position
-                            if (srcIdx != dstIdx)
-                            {
-                                spriteAnchors.Remove(srcIdx);
-                                // Verify we're preserving the anchor coordinates
-                                System.Diagnostics.Debug.WriteLine($"Transferring anchor from idx {srcIdx} to {dstIdx}, keeping coords ({anchor.anchorTileX}, {anchor.anchorTileY})");
-                                spriteAnchors[dstIdx] = anchor; // Keep original anchor coordinates
-                            }
+
+                            spritePixelOffsets[srcIdx] = (offsetX, offsetY);
+                            // Keep anchor at its original storage location; do not transfer
                         }
                         else
                         {
-                            // No anchor - just use the pixel offset directly
+                            // No anchor - apply pixel offset relative to original stored tile
                             if (pixelOffsetX != 0 || pixelOffsetY != 0)
                             {
-                                spritePixelOffsets[dstIdx] = (pixelOffsetX, pixelOffsetY);
+                                spritePixelOffsets[srcIdx] = (pixelOffsetX, pixelOffsetY);
                             }
-                            else if (spritePixelOffsets.ContainsKey(dstIdx))
+                            else if (spritePixelOffsets.ContainsKey(srcIdx))
                             {
-                                spritePixelOffsets.Remove(dstIdx);
+                                spritePixelOffsets.Remove(srcIdx);
                             }
                         }
                     }
@@ -16156,6 +16238,12 @@ namespace FamidashEditor
                 int newIdx = (destY + yy) * mapWidth + (destX + xx);
                 // if the source cell was part of selectionSet (i.e., non-empty before move), include its destination
                 if (selectionSet != null && selectionSet.Contains(oldIdx)) newSelection.Add(newIdx);
+            }
+            // If this was a preserveOffsets (visual-only) operation, keep the selectionStorageMap so
+            // repeated shifts still reference the original stored indices. Otherwise clear it.
+            if (!preserveOffsets)
+            {
+                if (selectionStorageMap != null) { selectionStorageMap.Clear(); selectionStorageMap = null; }
             }
             selectionSet = newSelection;
             // update selX/selY to the new top-left
@@ -16573,30 +16661,7 @@ namespace FamidashEditor
                             if (currentCompositeSpriteAction == null) currentCompositeSpriteAction = new SpriteChangeAction();
                             currentCompositeSpriteAction.Add(idx, erasedOldSprite, -1);
                         }
-                        // Clear footprint for this sprite (animated anchors/large footprints)
-                        int old = erasedOldSprite;
-                        int animated = GetAnimatedSpriteIndex(old);
-                        int sx = idx % mapWidth; int sy = idx / mapWidth;
-                        int fminX = sx - 1; int fmaxX = sx + 1; int fminY = sy - 2; int fmaxY = sy + 2;
-                        if (animated >= 3000 && animated <= 3029)
-                        {
-                            if (animated >= 3011 && animated <= 3014)
-                            {
-                                fminX = sx; fmaxX = sx + 2; fminY = sy; fmaxY = sy + 1;
-                            }
-                            else
-                            {
-                                fminX = sx; fmaxX = sx + 1; fminY = sy; fmaxY = sy + 2;
-                            }
-                        }
-                        fminX = Math.Max(0, fminX); fminY = Math.Max(0, fminY); fmaxX = Math.Min(mapWidth - 1, fmaxX); fmaxY = Math.Min(mapHeight - 1, fmaxY);
-                        ClearPortalsBitmapTileRect(fminX, fminY, fmaxX, fmaxY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
-                        ClearSpritesBitmapTileRect(fminX, fminY, fmaxX, fmaxY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
-
                         sprites[idx] = -1;
-                        // Clear sprite pixel offset / anchor when deleting sprite from this position
-                        if (spritePixelOffsets.ContainsKey(idx)) spritePixelOffsets.Remove(idx);
-                        if (spriteAnchors.ContainsKey(idx)) spriteAnchors.Remove(idx);
                         changed = true;
                     }
                 }
