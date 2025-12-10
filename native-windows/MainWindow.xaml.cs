@@ -362,6 +362,8 @@ namespace FamidashEditor
     private System.Collections.Generic.HashSet<int> selectionSet = new System.Collections.Generic.HashSet<int>();
     // Dragging selection state
     private bool isDraggingSelection = false;
+    // True while a drag-move has moved the ghost outside the valid map area
+    private bool dragMovedOffMap = false;
     private Point dragStartMouse; // in CanvasHost coords
     private int dragOrigX = 0, dragOrigY = 0; // original selection top-left
     private Point dragOffset; // offset from mouse to selection top-left when dragging
@@ -10213,7 +10215,19 @@ namespace FamidashEditor
                 {
                     if (TilesPanel.Items[i] is Border b)
                     {
-                        bool isSelected = selectedTiles.Contains(i);
+                        // Determine the tile id represented by this palette item. The Items
+                        // collection index `i` is the visual ordering which may differ from the
+                        // tile id when the tileboard is rotated (TOP/BOTTOM). The Image child
+                        // stores the actual tile id in its `Tag` property, so use that for
+                        // selection checks.
+                        int tileId = -1;
+                        try
+                        {
+                            if (b.Child is Image img && img.Tag is int t) tileId = t;
+                        }
+                        catch { }
+
+                        bool isSelected = (tileId >= 0) ? selectedTiles.Contains(tileId) : false;
                         b.BorderBrush = isSelected ? Brushes.Yellow : Brushes.Transparent;
                         b.BorderThickness = isSelected ? new Thickness(2) : new Thickness(0);
                     }
@@ -14240,6 +14254,9 @@ namespace FamidashEditor
                                 if (tile >= 0)
                                 {
                                     selectedTile = tile;
+                                    // Ensure the single-tile selection pattern matches the picked tile
+                                    selectedTiles = new System.Collections.Generic.List<int> { selectedTile };
+                                    selectionWidth = 1; selectionHeight = 1;
                                     pickedTile = true;
                                 }
                             }
@@ -14347,6 +14364,10 @@ namespace FamidashEditor
                     if (tile >= 0)
                     {
                         selectedTile = tile;
+                        // When picking with Move tool, make sure the active selection pattern
+                        // reflects this single tile so subsequent placement uses it.
+                        selectedTiles = new System.Collections.Generic.List<int> { selectedTile };
+                        selectionWidth = 1; selectionHeight = 1;
                         pickedTile = true;
                     }
                 }
@@ -14811,6 +14832,7 @@ namespace FamidashEditor
 
             // capture drag state
             isDraggingSelection = true;
+            dragMovedOffMap = false;
             dragStartMouse = pos;
             dragOrigX = selX; dragOrigY = selY;
             lastDragScale = scale; // Store current scale for zoom rescaling
@@ -14890,10 +14912,21 @@ namespace FamidashEditor
             double minTop = logicalPad;
             double maxLeft = logicalPad + Math.Max(0, mapWidth * logicalTileW - selW * logicalTileW);
             double maxTop = logicalPad + Math.Max(0, mapHeight * logicalTileH - selH * logicalTileH);
-            if (snappedLeft < minLeft) snappedLeft = minLeft;
-            if (snappedLeft > maxLeft) snappedLeft = maxLeft;
-            if (snappedTop < minTop) snappedTop = minTop;
-            if (snappedTop > maxTop) snappedTop = maxTop;
+            // If the computed snapped position is outside the allowed extents, mark
+            // the drag as moved-off-map. We'll use this to cancel the operation on drop.
+            if (snappedLeft < minLeft || snappedLeft > maxLeft || snappedTop < minTop || snappedTop > maxTop)
+            {
+                dragMovedOffMap = true;
+                // clamp to nearest allowed so ghost doesn't disappear entirely
+                if (snappedLeft < minLeft) snappedLeft = minLeft;
+                if (snappedLeft > maxLeft) snappedLeft = maxLeft;
+                if (snappedTop < minTop) snappedTop = minTop;
+                if (snappedTop > maxTop) snappedTop = maxTop;
+            }
+            else
+            {
+                dragMovedOffMap = false;
+            }
             
             // Position ghost at snapped location
             Canvas.SetLeft(GhostImage, snappedLeft);
@@ -15000,6 +15033,14 @@ namespace FamidashEditor
             GhostImage.Visibility = Visibility.Collapsed;
             GhostImage.Source = null;
             if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
+
+            // If the drag moved the selection off-map, cancel the move instead of committing.
+            if (dragMovedOffMap)
+            {
+                // Restore state: do not call MoveSelectionTo. Keep original selection in place.
+                dragMovedOffMap = false;
+                return;
+            }
 
             // commit move with optional pixel offset
             // Preserve offsets only when shift is held (sub-tile positioning mode)
