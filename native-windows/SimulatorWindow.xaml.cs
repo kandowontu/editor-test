@@ -2575,6 +2575,30 @@ namespace FamidashEditor
                                                 groundTintedTileCache[key] = gt;
                                             }
                                             if (gt != null) chosenTile = gt;
+
+                                            // Ensure object (outline) tint recolors the seam for these ground-affected
+                                            // tiles exactly like normal tiles: when an object/tile outline tint is
+                                            // active, regenerate from the ORIGINAL tile image using a two-step
+                                            // process: (1) two-tone ground mapping that PRESERVES seams (transparent
+                                            // outline param), then (2) apply the outline recolor onto that result.
+                                            // This bypasses any cached ground-only images and guarantees parity.
+                                            try
+                                            {
+                                                if (tileTint.A > 0 && tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
+                                                {
+                                                    // Step 1: two-tone from original, preserving seams (transparent outline)
+                                                    var darker2 = PaletteHelper.RowUpColor(Color.FromArgb(groundTint.A, groundTint.R, groundTint.G, groundTint.B));
+                                                    var twoToneArr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[useTileIndex]! }, groundTint, darker2, Color.FromArgb(0, 0, 0, 0));
+                                                    ImageSource? twoToneBase = (twoToneArr != null && twoToneArr.Length > 0) ? twoToneArr[0] : tileImages[useTileIndex];
+                                                    // Step 2: recolor outlines on the two-tone base using the active tileTint
+                                                    var finalArr = CreateOutlineTintedTileImages(new ImageSource?[] { twoToneBase }, tileTint);
+                                                    if (finalArr != null && finalArr.Length > 0 && finalArr[0] != null)
+                                                    {
+                                                        chosenTile = finalArr[0];
+                                                    }
+                                                }
+                                            }
+                                            catch { }
                                         }
                                         catch { }
                                     }
