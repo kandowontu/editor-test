@@ -12318,8 +12318,10 @@ namespace FamidashEditor
 
                 // Apply sprite pixel offsets from JSON metadata (if any)
                 int posKey = y * mapWidth + x;
+                bool hasExplicitOffset = false;
                 if (spritePixelOffsets.TryGetValue(posKey, out var offset))
                 {
+                    hasExplicitOffset = true;
                     // Scale the offset by the current scale and DPI
                     int scaledOffsetX = (int)Math.Round(offset.offsetX * scale * dpi.DpiScaleX);
                     int scaledOffsetY = (int)Math.Round(offset.offsetY * scale * dpi.DpiScaleY);
@@ -12374,7 +12376,9 @@ namespace FamidashEditor
                 }
 
                 // Teleport horizontal portals 0x67/0x68 should be shifted up by one tile
-                if (previewMode && (spriteIdx == 0x67 || spriteIdx == 0x68))
+                // but if an explicit pixel offset exists for this sprite position, respect
+                // that offset and do not apply the automatic preview nudge.
+                if (previewMode && (spriteIdx == 0x67 || spriteIdx == 0x68) && !hasExplicitOffset)
                 {
                     try
                     {
@@ -13376,8 +13380,11 @@ namespace FamidashEditor
                 
                 if (tileVal != -1 || spriteVal != -1)
                 {
-                    // Double-click on a sprite with offset removes the offset
-                    if (e.ClickCount >= 2 && spriteVal != -1 && spritePixelOffsets.ContainsKey(idx))
+                    // Double-click on a sprite with offset removes the offset. Require that
+                    // the user double-clicked the sprite's stored tile (not just an overlapping
+                    // area) to avoid reverting unrelated nearby offsets.
+                    int clickedTileIdx = y * mapWidth + x;
+                    if (e.ClickCount >= 2 && spriteVal != -1 && spritePixelOffsets.ContainsKey(idx) && idx == clickedTileIdx)
                     {
                         spritePixelOffsets.Remove(idx);
                         spriteAnchors.Remove(idx); // Also remove the anchor
@@ -15010,6 +15017,13 @@ namespace FamidashEditor
                     ClearSelection();
                     return;
                 }
+
+                // Clicked inside the selection but did not move the mouse: treat as selection click
+                // (do not commit a move). Hide ghost and keep selection in place.
+                GhostImage.Visibility = Visibility.Collapsed;
+                GhostImage.Source = null;
+                if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
+                return;
             }
             
             // Check modifier keys and sprite-only mode
@@ -16559,7 +16573,30 @@ namespace FamidashEditor
                             if (currentCompositeSpriteAction == null) currentCompositeSpriteAction = new SpriteChangeAction();
                             currentCompositeSpriteAction.Add(idx, erasedOldSprite, -1);
                         }
+                        // Clear footprint for this sprite (animated anchors/large footprints)
+                        int old = erasedOldSprite;
+                        int animated = GetAnimatedSpriteIndex(old);
+                        int sx = idx % mapWidth; int sy = idx / mapWidth;
+                        int fminX = sx - 1; int fmaxX = sx + 1; int fminY = sy - 2; int fmaxY = sy + 2;
+                        if (animated >= 3000 && animated <= 3029)
+                        {
+                            if (animated >= 3011 && animated <= 3014)
+                            {
+                                fminX = sx; fmaxX = sx + 2; fminY = sy; fmaxY = sy + 1;
+                            }
+                            else
+                            {
+                                fminX = sx; fmaxX = sx + 1; fminY = sy; fmaxY = sy + 2;
+                            }
+                        }
+                        fminX = Math.Max(0, fminX); fminY = Math.Max(0, fminY); fmaxX = Math.Min(mapWidth - 1, fmaxX); fmaxY = Math.Min(mapHeight - 1, fmaxY);
+                        ClearPortalsBitmapTileRect(fminX, fminY, fmaxX, fmaxY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                        ClearSpritesBitmapTileRect(fminX, fminY, fmaxX, fmaxY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+
                         sprites[idx] = -1;
+                        // Clear sprite pixel offset / anchor when deleting sprite from this position
+                        if (spritePixelOffsets.ContainsKey(idx)) spritePixelOffsets.Remove(idx);
+                        if (spriteAnchors.ContainsKey(idx)) spriteAnchors.Remove(idx);
                         changed = true;
                     }
                 }
