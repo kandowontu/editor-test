@@ -4538,7 +4538,7 @@ namespace FamidashEditor
         private ImageSource?[]? CreateTwoToneTileImages(ImageSource?[]? originals, Color bgPrimary, Color bgSecondary, Color outlineTint)
         {
             if (originals == null) return null;
-            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            var outList = new System.Collections.Generic.List<ImageSource?>(originals.Length);
             foreach (var src in originals)
             {
                 if (src == null)
@@ -4649,7 +4649,7 @@ namespace FamidashEditor
         private ImageSource?[]? CreateOutlineTintedTileImages(ImageSource?[]? originals, Color outlineTint)
         {
             if (originals == null) return null;
-            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            var outList = new System.Collections.Generic.List<ImageSource?>(originals.Length);
             foreach (var src in originals)
             {
                 if (src == null)
@@ -5272,7 +5272,7 @@ namespace FamidashEditor
             // If the tint is fully opaque (A==255) and not the special-cased black/white handled above,
             // perform a full replacement: set non-transparent, non-black pixels to the exact tint RGB.
             // Preserve near-white outline pixels according to `outlineTint` so seam recoloring still works.
-            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            var outList = new System.Collections.Generic.List<ImageSource?>(originals.Length);
             if (tint.A == 255)
             {
                 foreach (var src in originals)
@@ -5540,7 +5540,7 @@ namespace FamidashEditor
             // near-white outlines according to `outlineTint`.
             if (tint.A == 255)
             {
-                var outListFull = new System.Collections.Generic.List<ImageSource>(originals.Length);
+                var outListFull = new System.Collections.Generic.List<ImageSource?>(originals.Length);
                 foreach (var src in originals)
                 {
                     if (src == null)
@@ -5618,7 +5618,7 @@ namespace FamidashEditor
             double strength = tint.A / 255.0;
             // convert tint color to HSL once
             RgbToHsl(tint.R, tint.G, tint.B, out double tintH, out double tintS, out double tintL);
-            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            var outList = new System.Collections.Generic.List<ImageSource?>(originals.Length);
 
             foreach (var src in originals)
             {
@@ -5703,7 +5703,7 @@ namespace FamidashEditor
         private ImageSource?[]? CreateBlackMaskedImages(ImageSource?[]? originals, Color outlineTint = default, bool recolorOutline = true)
         {
             if (originals == null) return null;
-            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            var outList = new System.Collections.Generic.List<ImageSource?>(originals.Length);
             foreach (var src in originals)
             {
                 if (src == null)
@@ -5776,7 +5776,7 @@ namespace FamidashEditor
         private ImageSource?[]? CreateBlackMaskedExceptColorArray(ImageSource?[]? originals, Color excludeColor, Color outlineTint = default, bool recolorOutline = true)
         {
             if (originals == null) return null;
-            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            var outList = new System.Collections.Generic.List<ImageSource?>(originals.Length);
             foreach (var src in originals)
             {
                 try
@@ -5797,7 +5797,7 @@ namespace FamidashEditor
         private ImageSource?[]? CreateWhiteMaskedImages(ImageSource?[]? originals, Color outlineTint = default, bool recolorOutline = false)
         {
             if (originals == null) return null;
-            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            var outList = new System.Collections.Generic.List<ImageSource?>(originals.Length);
             foreach (var src in originals)
             {
                 if (src == null)
@@ -5869,7 +5869,7 @@ namespace FamidashEditor
         private ImageSource?[]? CreateSolidBlackImages(ImageSource?[]? originals)
         {
             if (originals == null) return null;
-            var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+            var outList = new System.Collections.Generic.List<ImageSource?>(originals.Length);
             foreach (var src in originals)
             {
                 if (src == null)

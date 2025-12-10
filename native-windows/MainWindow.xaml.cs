@@ -368,7 +368,7 @@ namespace FamidashEditor
     // which storage indices correspond to each cell in the selection so
     // repeated visual shifts operate on the original stored sprites rather
     // than the visual destination cells. This map holds relIndex -> srcIdx.
-    private System.Collections.Generic.Dictionary<int,int> selectionStorageMap = null;
+    private System.Collections.Generic.Dictionary<int,int>? selectionStorageMap = null;
     private Point dragStartMouse; // in CanvasHost coords
     private int dragOrigX = 0, dragOrigY = 0; // original selection top-left
     private Point dragOffset; // offset from mouse to selection top-left when dragging
@@ -9564,7 +9564,7 @@ namespace FamidashEditor
             private ImageSource?[]? CreateTwoToneTileImages(ImageSource?[]? originals, Color bgPrimary, Color bgSecondary, Color outlineTint)
             {
                 if (originals == null) return null;
-                var outList = new System.Collections.Generic.List<ImageSource>(originals.Length);
+                var outList = new System.Collections.Generic.List<ImageSource?>(originals.Length);
                 foreach (var src in originals)
                 {
                     if (src is BitmapSource bs)
