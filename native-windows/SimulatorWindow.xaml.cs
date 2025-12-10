@@ -2709,12 +2709,22 @@ namespace FamidashEditor
                                     {
                                         if (backgroundForceSolidBlack && chosenTile != null)
                                         {
+                                            // Choose an exclude color so the black-mask preserves important pixels:
+                                            // - If an object/tile outline tint is active, preserve those outline-colored pixels
+                                            //   by excluding the exact `tileTint` color (outline pixels are set to this color
+                                            //   by the outline recolor pass). Otherwise preserve placeholder-green pixels.
+                                            Color excludeColor = (tileTint.A > 0) ? Color.FromArgb(255, tileTint.R, tileTint.G, tileTint.B) : playerPlaceholderGreen;
+
+                                            // Include the excludeColor in the cache key so different exclude colors
+                                            // produce different masked variants.
                                             int mh = chosenTile.GetHashCode();
-                                            if (!blackMaskedTileCache.TryGetValue(mh, out var masked))
+                                            int compositeKey = mh ^ ((excludeColor.A & 0xFF) << 24 | (excludeColor.R & 0xFF) << 16 | (excludeColor.G & 0xFF) << 8 | (excludeColor.B & 0xFF));
+
+                                            if (!blackMaskedTileCache.TryGetValue(compositeKey, out var masked))
                                             {
-                                                try { masked = CreateBlackMaskedExceptColor(chosenTile, playerPlaceholderGreen, Color.FromArgb(0,0,0,0), false); }
+                                                try { masked = CreateBlackMaskedExceptColor(chosenTile, excludeColor, Color.FromArgb(0, 0, 0, 0), false); }
                                                 catch { masked = chosenTile; }
-                                                try { blackMaskedTileCache[mh] = masked; } catch { }
+                                                try { blackMaskedTileCache[compositeKey] = masked; } catch { }
                                             }
                                             if (masked != null) chosenTile = masked;
                                         }
