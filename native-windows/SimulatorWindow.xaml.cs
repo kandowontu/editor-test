@@ -2649,6 +2649,31 @@ namespace FamidashEditor
                                     }
                                 }
 
+                                // Safety: ensure non-ground tiles receive outline recolor when an object tint is active.
+                                try
+                                {
+                                    if ((useTileIndex != 0x01 && useTileIndex != 0x02 && useTileIndex != 0x05 && useTileIndex != 0x06 && useTileIndex != 0x88 && useTileIndex != 0x89) && tileTint.A > 0 && useTileIndex >= 0)
+                                    {
+                                        ImageSource? baseSrc = null;
+                                        if (tileTonedImages != null && useTileIndex >= 0 && useTileIndex < tileTonedImages.Length)
+                                            baseSrc = tileTonedImages[useTileIndex];
+                                        if (baseSrc == null && tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length)
+                                            baseSrc = tileImages[useTileIndex];
+
+                                        if (baseSrc != null)
+                                        {
+                                            try
+                                            {
+                                                var trecol = CreateOutlineTintedTileImages(new ImageSource?[] { baseSrc }, tileTint);
+                                                if (trecol != null && trecol.Length > 0 && trecol[0] != null)
+                                                    chosenTile = trecol[0];
+                                            }
+                                            catch { }
+                                        }
+                                    }
+                                }
+                                catch { }
+
                                 if (chosenTile != null)
                                 {
                                     try

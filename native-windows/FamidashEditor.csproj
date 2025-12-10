@@ -290,4 +290,12 @@
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.1.0" />
   </ItemGroup>
+  <!-- Ensure the top-level `tilesets` folder is copied to build and publish outputs so
+       runtime and published packages can find external tileset image files. -->
+  <ItemGroup>
+    <Content Include="..\tilesets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 </Project>
