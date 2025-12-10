@@ -394,7 +394,7 @@ namespace FamidashEditor
         private const int TILE_SELECTION_LOG_LIMIT = 64;
         // Track last selected decoration frame so we can log when it actually changes
         private System.Collections.Generic.Dictionary<int, int> decoLastSelectedFrame = new System.Collections.Generic.Dictionary<int, int>();
-        private bool enableSimulatorDebugLogging = true; // set true to capture helpful messages during diagnosis
+        private bool enableSimulatorDebugLogging = false; // set true to capture helpful messages during diagnosis
 
         // Internal one-time simulator debug file (used only for local diagnosis when requested)
         private readonly string simDebugFilePath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt");
@@ -1025,7 +1025,23 @@ namespace FamidashEditor
             // Regenerate toned images now that parallax/ground images and persistent UI elements exist.
             try
             {
-                UpdateTonedImagesForTileTint(tileTint, startupTintApplied ? (Color?)Color.FromArgb(0, 0, 0, 0) : null);
+                // Emulate triggering object trigger 0xB0 before the initial render so
+                // outlines default to white the same way an in-map trigger would.
+                try
+                {
+                    // Use pending fields the same way the numeric sim does when it finds a trigger.
+                    pendingTileIdx = 0;             // synthetic index used to mark we've set a trigger
+                    pendingTileSid = 0xB0;         // sprite id to emulate
+                    pendingTintChange = true;
+                    pendingTintChangeIsStartup = true;
+                    // Apply immediately (we're on the UI thread in the constructor) so toned images
+                    // are generated with the triggered outline color before the renderer runs.
+                    try { ApplyPendingTints(); } catch { }
+                    try { EnsureInitialRender(); } catch { }
+                }
+                catch { }
+                // Ensure UpdateTonedImagesForTileTint still runs to build any remaining caches.
+                try { UpdateTonedImagesForTileTint(tileTint, startupTintApplied ? (Color?)Color.FromArgb(0, 0, 0, 0) : null); } catch { }
 
                 try {
                     if (backgroundTint.A == 255 && backgroundTint.R == 0 && backgroundTint.G == 0 && backgroundTint.B == 0)
@@ -2584,17 +2600,28 @@ namespace FamidashEditor
                                             // This bypasses any cached ground-only images and guarantees parity.
                                             try
                                             {
-                                                if (tileTint.A > 0 && tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
+                                                if (tileImages != null && useTileIndex >= 0 && useTileIndex < tileImages.Length && tileImages[useTileIndex] != null)
                                                 {
-                                                    // Step 1: two-tone from original, preserving seams (transparent outline)
                                                     var darker2 = PaletteHelper.RowUpColor(Color.FromArgb(groundTint.A, groundTint.R, groundTint.G, groundTint.B));
-                                                    var twoToneArr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[useTileIndex]! }, groundTint, darker2, Color.FromArgb(0, 0, 0, 0));
-                                                    ImageSource? twoToneBase = (twoToneArr != null && twoToneArr.Length > 0) ? twoToneArr[0] : tileImages[useTileIndex];
-                                                    // Step 2: recolor outlines on the two-tone base using the active tileTint
-                                                    var finalArr = CreateOutlineTintedTileImages(new ImageSource?[] { twoToneBase }, tileTint);
-                                                    if (finalArr != null && finalArr.Length > 0 && finalArr[0] != null)
+                                                    if (tileTint.A > 0)
                                                     {
-                                                        chosenTile = finalArr[0];
+                                                        // Active object tint: preserve seams during two-tone, then recolor outlines to object tint
+                                                        var twoToneArr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[useTileIndex]! }, groundTint, darker2, Color.FromArgb(0, 0, 0, 0));
+                                                        ImageSource? twoToneBase = (twoToneArr != null && twoToneArr.Length > 0) ? twoToneArr[0] : tileImages[useTileIndex];
+                                                        var finalArr = CreateOutlineTintedTileImages(new ImageSource?[] { twoToneBase }, tileTint);
+                                                        if (finalArr != null && finalArr.Length > 0 && finalArr[0] != null)
+                                                        {
+                                                            chosenTile = finalArr[0];
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        // No object tint yet: force seams to opaque white in the two-tone pass
+                                                        var twoToneArr = CreateTwoToneTileImages(new ImageSource?[] { tileImages[useTileIndex]! }, groundTint, darker2, Color.FromArgb(255, 255, 255, 255));
+                                                        if (twoToneArr != null && twoToneArr.Length > 0 && twoToneArr[0] != null)
+                                                        {
+                                                            chosenTile = twoToneArr[0];
+                                                        }
                                                     }
                                                 }
                                             }
