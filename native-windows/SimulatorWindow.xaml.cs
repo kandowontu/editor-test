@@ -2707,13 +2707,34 @@ namespace FamidashEditor
                                     // repeated pixel processing.
                                     try
                                     {
+                                        // If this tile contains the special-deco green, ensure those
+                                        // pixels are recolored to `playerTint` now so masking uses
+                                        // the player-colored pixels and doesn't accidentally black them.
+                                        try
+                                        {
+                                            int[] special = new int[] { 0x0C, 0x0D, 0x0E, 0x0F, 0x13, 0x14, 0x80, 0x81, 0x84, 0x85, 0x86, 0x87 };
+                                            if (chosenTile != null && tileImages != null && useTileIndex >= 0 && System.Array.IndexOf(special, useTileIndex) >= 0)
+                                            {
+                                                try { chosenTile = ApplyPlayerTintToGreenPixels(chosenTile, tileImages[useTileIndex], playerTint); } catch { }
+                                            }
+                                        }
+                                        catch { }
+
                                         if (backgroundForceSolidBlack && chosenTile != null)
                                         {
                                             // Choose an exclude color so the black-mask preserves important pixels:
-                                            // - If an object/tile outline tint is active, preserve those outline-colored pixels
-                                            //   by excluding the exact `tileTint` color (outline pixels are set to this color
-                                            //   by the outline recolor pass). Otherwise preserve placeholder-green pixels.
-                                            Color excludeColor = (tileTint.A > 0) ? Color.FromArgb(255, tileTint.R, tileTint.G, tileTint.B) : playerPlaceholderGreen;
+                                            // - If this tile contains player-green deco, preserve the player-tinted color for those
+                                            //   pixels. Otherwise preserve outline-colored pixels (tileTint) or placeholder green.
+                                            Color excludeColor;
+                                            int[] special2 = new int[] { 0x0C, 0x0D, 0x0E, 0x0F, 0x13, 0x14, 0x80, 0x81, 0x84, 0x85, 0x86, 0x87 };
+                                            if (tileImages != null && useTileIndex >= 0 && System.Array.IndexOf(special2, useTileIndex) >= 0)
+                                            {
+                                                excludeColor = (playerTint.A > 0) ? playerTint : Color.FromArgb(255, 0x5A, 0xCE, 0x52);
+                                            }
+                                            else
+                                            {
+                                                excludeColor = (tileTint.A > 0) ? Color.FromArgb(255, tileTint.R, tileTint.G, tileTint.B) : playerPlaceholderGreen;
+                                            }
 
                                             // Include the excludeColor in the cache key so different exclude colors
                                             // produce different masked variants.
@@ -5046,6 +5067,26 @@ namespace FamidashEditor
                     }
                 }
 
+                // For a small set of tiles that contain decorative green pixels (#5ACE52),
+                // ensure those pixels are not affected by tile/bg/obj tints and instead
+                // receive only the player tint. Post-process the generated `tileTonedImages`
+                // so the green pixels from the original tile images are replaced by `playerTint`.
+                try
+                {
+                    if (tileTonedImages != null && tileImages != null)
+                    {
+                        int[] special = new int[] { 0x0C, 0x0D, 0x0E, 0x0F, 0x13, 0x14, 0x80, 0x81, 0x84, 0x85, 0x86, 0x87 };
+                        foreach (var si in special)
+                        {
+                            if (si >= 0 && si < tileTonedImages.Length && si >= 0 && si < tileImages.Length && tileTonedImages[si] != null && tileImages[si] != null)
+                            {
+                                try { tileTonedImages[si] = ApplyPlayerTintToGreenPixels(tileTonedImages[si], tileImages[si], playerTint); } catch { }
+                            }
+                        }
+                    }
+                }
+                catch { }
+
                 if (sawFrame1TilesTinted != null && sawFrame1TilesTinted.Length > 0)
                 {
                     // If we already had tinted saw frames passed in, re-tint the original saw frames
@@ -5166,6 +5207,55 @@ namespace FamidashEditor
                 }
                 var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
                 wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                wb.Freeze();
+                return wb;
+            }
+            catch { return src; }
+        }
+
+        // Recolor exact-match green pixels (#5ACE52) from the original image to the given playerTint
+        // in the provided source image. This preserves the pixel layout from `src` while ensuring
+        // only the special green areas receive the player tint color.
+        private ImageSource? ApplyPlayerTintToGreenPixels(ImageSource? src, ImageSource? original, Color playerTint)
+        {
+            if (src == null || original == null) return src;
+            if (!(src is BitmapSource sb) || !(original is BitmapSource ob)) return src;
+
+            try
+            {
+                var convSrc = new FormatConvertedBitmap(sb, PixelFormats.Bgra32, null, 0);
+                var convOrig = new FormatConvertedBitmap(ob, PixelFormats.Bgra32, null, 0);
+                int w = Math.Max(1, convSrc.PixelWidth);
+                int h = Math.Max(1, convSrc.PixelHeight);
+                if (convOrig.PixelWidth != w || convOrig.PixelHeight != h) return src;
+                int stride = w * 4;
+                var pixelsSrc = new byte[h * stride];
+                var pixelsOrig = new byte[h * stride];
+                convSrc.CopyPixels(pixelsSrc, stride, 0);
+                convOrig.CopyPixels(pixelsOrig, stride, 0);
+
+                // special green RGB
+                byte gR = 0x5A; byte gG = 0xCE; byte gB = 0x52; // #5ACE52
+
+                for (int i = 0; i < pixelsSrc.Length; i += 4)
+                {
+                    byte ob_b = pixelsOrig[i + 0];
+                    byte ob_g = pixelsOrig[i + 1];
+                    byte ob_r = pixelsOrig[i + 2];
+                    byte ob_a = pixelsOrig[i + 3];
+                    if (ob_a == 0) continue;
+                    if (ob_r == gR && ob_g == gG && ob_b == gB)
+                    {
+                        // apply playerTint (opaque)
+                        pixelsSrc[i + 3] = playerTint.A;
+                        pixelsSrc[i + 2] = playerTint.R;
+                        pixelsSrc[i + 1] = playerTint.G;
+                        pixelsSrc[i + 0] = playerTint.B;
+                    }
+                }
+
+                var wb = new WriteableBitmap(w, h, convSrc.DpiX, convSrc.DpiY, PixelFormats.Bgra32, null);
+                wb.WritePixels(new Int32Rect(0, 0, w, h), pixelsSrc, stride, 0);
                 wb.Freeze();
                 return wb;
             }

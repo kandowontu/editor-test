@@ -9792,7 +9792,11 @@ namespace FamidashEditor
                 }
                 convToned.CopyPixels(tonedPixels, stride, 0);
 
-                // Replace only the exact green player placeholder color 0xFF322B (R=255,G=50,B=43)
+                // Replace specific player placeholder colors in the base image with the chosen
+                // player tint while preserving the toned (shaded) pixels for everything else.
+                // Historically we used 0xFF322B (R=255,G=50,B=43) as a placeholder; the simulator
+                // also uses the deco green #5ACE52 (R=0x5A,G=0xCE,B=0x52) for certain tiles.
+                // Treat both as player-replaceable so the editor matches simulator previews.
                 byte pr = tint.R, pg = tint.G, pb = tint.B;
                 for (int i = 0; i + 3 < tonedPixels.Length; i += 4)
                 {
@@ -9801,7 +9805,14 @@ namespace FamidashEditor
                     byte baseG = (convBase != null) ? basePixels[i + 1] : tonedPixels[i + 1];
                     byte baseR = (convBase != null) ? basePixels[i + 2] : tonedPixels[i + 2];
 
-                    if (a != 0 && baseR == 0xFF && baseG == 0x32 && baseB == 0x2B)
+                    if (a == 0) continue;
+
+                    // Match either the legacy player placeholder (0xFF322B)
+                    // or the deco green used by the simulator (0x5ACE52).
+                    bool isLegacyPlayerGreen = (baseR == 0xFF && baseG == 0x32 && baseB == 0x2B);
+                    bool isDecoGreen = (baseR == 0x5A && baseG == 0xCE && baseB == 0x52);
+
+                    if (isLegacyPlayerGreen || isDecoGreen)
                     {
                         tonedPixels[i + 0] = pb;
                         tonedPixels[i + 1] = pg;
