@@ -914,14 +914,24 @@ namespace FamidashEditor
         {
             var config = new TmxConfig();
 
+            // Prefer per-tab stored values for this file if available to avoid
+            // accidentally writing global editor state into another level's config.
+            FileTabData? fd = null;
+            try { fd = openFiles?.Find(f => !string.IsNullOrEmpty(f.FilePath) && Path.GetFullPath(f.FilePath).Equals(Path.GetFullPath(tmxFilePath), StringComparison.OrdinalIgnoreCase)); } catch { fd = null; }
+
+            // Decide source values (per-tab if present, otherwise globals)
+            Color srcBackgroundTint = fd != null ? fd.BackgroundTint : backgroundTint;
+            Color srcGroundTint = fd != null ? fd.GroundTint : groundTint;
+            Color srcTileTint = fd != null ? fd.TileTint : tileTint;
+
             // Only write tint components when a tint is actively set (alpha != 0)
             try
             {
-                if (backgroundTint.A != 0)
+                if (srcBackgroundTint.A != 0)
                 {
-                    config.BackgroundTintR = backgroundTint.R;
-                    config.BackgroundTintG = backgroundTint.G;
-                    config.BackgroundTintB = backgroundTint.B;
+                    config.BackgroundTintR = srcBackgroundTint.R;
+                    config.BackgroundTintG = srcBackgroundTint.G;
+                    config.BackgroundTintB = srcBackgroundTint.B;
                 }
             }
             catch { }
@@ -930,31 +940,31 @@ namespace FamidashEditor
 
             try
             {
-                if (groundTint.A != 0)
+                if (srcGroundTint.A != 0)
                 {
-                    config.GroundTintR = groundTint.R;
-                    config.GroundTintG = groundTint.G;
-                    config.GroundTintB = groundTint.B;
+                    config.GroundTintR = srcGroundTint.R;
+                    config.GroundTintG = srcGroundTint.G;
+                    config.GroundTintB = srcGroundTint.B;
                 }
             }
             catch { }
 
             try
             {
-                if (tileTint.A != 0)
+                if (srcTileTint.A != 0)
                 {
-                    config.TileTintR = tileTint.R;
-                    config.TileTintG = tileTint.G;
-                    config.TileTintB = tileTint.B;
+                    config.TileTintR = srcTileTint.R;
+                    config.TileTintG = srcTileTint.G;
+                    config.TileTintB = srcTileTint.B;
                 }
             }
             catch { }
 
-            // Always persist these explicit options
-            config.NoParallaxBg = noParallaxBg;
-            config.DecoSet = loadedDecoSet;
-            config.BlockSet = loadedBlockSet;
-            config.SpikeSet = loadedSpikeSet;
+            // Always persist these explicit options (prefer per-tab values when available)
+            config.NoParallaxBg = fd != null ? fd.NoParallaxBg : noParallaxBg;
+            config.DecoSet = fd != null ? (fd.LoadedDecoSet ?? loadedDecoSet) : loadedDecoSet;
+            config.BlockSet = fd != null ? (fd.LoadedBlockSet ?? loadedBlockSet) : loadedBlockSet;
+            config.SpikeSet = fd != null ? (fd.LoadedSpikeSet ?? loadedSpikeSet) : loadedSpikeSet;
             
             // Save currently selected song
             try
@@ -969,7 +979,7 @@ namespace FamidashEditor
             // Save starting speed (convert UI index -> metadata numeric code)
             try
             {
-                int ui = loadedStartingSpeedUiIndex;
+                int ui = fd != null ? fd.LoadedStartingSpeedUiIndex : loadedStartingSpeedUiIndex;
                 int mapped = (ui == 0) ? 1 : (ui == 1) ? 0 : ui; // 0->1, 1->0, else identity
                 config.StartingSpeed = mapped;
             }
@@ -978,30 +988,31 @@ namespace FamidashEditor
             // Save max fall speed (numeric code). Default is 0x06 (6).
             try
             {
-                config.MaxFallSpeed = loadedMaxFallSpeed;
+                config.MaxFallSpeed = fd != null ? fd.LoadedMaxFallSpeed : loadedMaxFallSpeed;
             }
             catch { }
 
             // Save starting background/ground color codes if set
-            try { if (loadedStartingBackgroundColor.HasValue) config.StartingBackgroundColor = loadedStartingBackgroundColor.Value; } catch { }
-            try { if (loadedStartingGameMode.HasValue) config.StartingGameMode = loadedStartingGameMode.Value; } catch { }
-            try { if (loadedStartingGroundColor.HasValue) config.StartingGroundColor = loadedStartingGroundColor.Value; } catch { }
+            try { var v = fd != null ? fd.LoadedStartingBackgroundColor : loadedStartingBackgroundColor; if (v.HasValue) config.StartingBackgroundColor = v.Value; } catch { }
+            try { var v2 = fd != null ? fd.LoadedStartingGameMode : loadedStartingGameMode; if (v2.HasValue) config.StartingGameMode = v2.Value; } catch { }
+            try { var v3 = fd != null ? fd.LoadedStartingGroundColor : loadedStartingGroundColor; if (v3.HasValue) config.StartingGroundColor = v3.Value; } catch { }
             // Save optional difficulty and stars if set
-            try { if (loadedStartingDifficulty.HasValue) config.Difficulty = loadedStartingDifficulty.Value; } catch { }
-            try { if (loadedStartingStars.HasValue) config.Stars = loadedStartingStars.Value; } catch { }
+            try { var v4 = fd != null ? fd.LoadedStartingDifficulty : loadedStartingDifficulty; if (v4.HasValue) config.Difficulty = v4.Value; } catch { }
+            try { var v5 = fd != null ? fd.LoadedStartingStars : loadedStartingStars; if (v5.HasValue) config.Stars = v5.Value; } catch { }
             // Save optional upper/lower text if set
-            try { if (!string.IsNullOrEmpty(loadedStartingLowerText)) config.LowerText = loadedStartingLowerText; } catch { }
-            try { if (!string.IsNullOrEmpty(loadedStartingUpperText)) config.UpperText = loadedStartingUpperText; } catch { }
+            try { var vl = fd != null ? fd.LoadedStartingLowerText : loadedStartingLowerText; if (!string.IsNullOrEmpty(vl)) config.LowerText = vl; } catch { }
+            try { var vu = fd != null ? fd.LoadedStartingUpperText : loadedStartingUpperText; if (!string.IsNullOrEmpty(vu)) config.UpperText = vu; } catch { }
 
             // Simulator scale is now a global setting; per-TMX configs must not store it.
 
             // Save sprite offsets
             try
             {
-                if (spritePixelOffsets.Count > 0)
+                var offsetsSource = fd != null ? fd.SpritePixelOffsets : spritePixelOffsets;
+                if (offsetsSource != null && offsetsSource.Count > 0)
                 {
                     config.SpriteOffsets = new Dictionary<string, int[]>();
-                    foreach (var kvp in spritePixelOffsets)
+                    foreach (var kvp in offsetsSource)
                     {
                         int x = kvp.Key % mapWidth;
                         int y = kvp.Key / mapWidth;
@@ -1012,10 +1023,10 @@ namespace FamidashEditor
             }
             catch { }
 
-            // Save sprite anchors
+            // Save sprite anchors (stored only in-memory globally)
             try
             {
-                if (spriteAnchors.Count > 0)
+                if (spriteAnchors != null && spriteAnchors.Count > 0)
                 {
                     config.SpriteAnchors = new Dictionary<string, int[]>();
                     foreach (var kvp in spriteAnchors)
@@ -6217,7 +6228,7 @@ namespace FamidashEditor
                         mapWidth = defaultW;
                         mapHeight = defaultH;
                         currentFilePath = null;
-                        hasUnsavedChanges = false;
+                        SetHasUnsavedChanges(false);
 
                         loadedDecoSet = newTabData.LoadedDecoSet;
                         loadedBlockSet = newTabData.LoadedBlockSet;
@@ -7343,6 +7354,41 @@ namespace FamidashEditor
             catch { }
         }
 
+                // Update the tab header text for a given tab index to reflect unsaved changes
+                private void UpdateTabHeaderForIndex(int index)
+                {
+                    if (index < 0 || index >= openFiles.Count) return;
+                    if (FileTabControl == null) return;
+                    var tabData = openFiles[index];
+                    for (int i = 0; i < FileTabControl.Items.Count; i++)
+                    {
+                        if (FileTabControl.Items[i] is TabItem ti && ti.Tag == tabData)
+                        {
+                            try
+                            {
+                                if (ti.Header is StackPanel sp && sp.Children.Count > 0 && sp.Children[0] is TextBlock tb)
+                                {
+                                    string name = tabData.FilePath != null ? System.IO.Path.GetFileName(tabData.FilePath) : "Untitled";
+                                    tb.Text = tabData.HasUnsavedChanges ? name + " *" : name;
+                                }
+                            }
+                            catch { }
+                            break;
+                        }
+                    }
+                }
+
+                // Central setter to mark current tab dirty/clean and update UI
+                private void SetHasUnsavedChanges(bool unsaved)
+                {
+                    hasUnsavedChanges = unsaved;
+                    if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                    {
+                        openFiles[currentFileIndex].HasUnsavedChanges = unsaved;
+                        try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
+                    }
+                }
+
         private async void FileTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             // Prevent re-entrancy or handling while a tab switch is in progress
@@ -7648,7 +7694,7 @@ namespace FamidashEditor
                     
                     // Update current file and clear dirty flag
                     currentFilePath = filePath;
-                    hasUnsavedChanges = false;
+                    SetHasUnsavedChanges(false);
                     
                     // Add to recent files
                     AddToRecentFiles(filePath);
@@ -14242,7 +14288,7 @@ namespace FamidashEditor
             {
                 undoStack.Push(action);
                 redoStack.Clear();
-                hasUnsavedChanges = true;
+                SetHasUnsavedChanges(true);
             }
             // update tiles bitmap after flood
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
@@ -14268,7 +14314,7 @@ namespace FamidashEditor
             {
                 undoStack.Push(action);
                 redoStack.Clear();
-                hasUnsavedChanges = true;
+                SetHasUnsavedChanges(true);
             }
             // update sprites bitmap after flood
             try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
@@ -14651,7 +14697,7 @@ namespace FamidashEditor
             {
                 undoStack.Push(action);
                 redoStack.Clear();
-                hasUnsavedChanges = true;
+                SetHasUnsavedChanges(true);
             }
 
             // Update visuals for affected tiles
@@ -15344,8 +15390,8 @@ namespace FamidashEditor
                             int oldS = sprites[idx]; if (oldS != -1) { eraseSpriteAction.Add(idx, oldS, -1); sprites[idx] = -1; }
                         }
                     }
-                    if (!eraseTileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseTileAction); redoStack.Clear(); hasUnsavedChanges = true; }
-                    if (!eraseSpriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseSpriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    if (!eraseTileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseTileAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
+                    if (!eraseSpriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseSpriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
                     try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                     try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
                 }
@@ -15389,8 +15435,8 @@ namespace FamidashEditor
                             int oldS = sprites[idx]; int neuS = selectedSprite; if (oldS != neuS) { spriteAction.Add(idx, oldS, neuS); sprites[idx] = neuS; }
                         }
                     }
-                    if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
-                    if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
+                    if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
                     try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                     try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
                 }
@@ -15774,8 +15820,8 @@ namespace FamidashEditor
                             int oldS = sprites[idx]; if (oldS != -1) { eraseSpriteAction.Add(idx, oldS, -1); sprites[idx] = -1; }
                         }
                     }
-                    if (!eraseTileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseTileAction); redoStack.Clear(); hasUnsavedChanges = true; }
-                    if (!eraseSpriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseSpriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    if (!eraseTileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseTileAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
+                    if (!eraseSpriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(eraseSpriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
                     try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                     try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
                     isDeferredDrawing = false; drawStartX = drawStartY = drawCurrentX = drawCurrentY = -1; ClearDeferredPreview(); if (CanvasHost != null && CanvasHost.IsMouseCaptured) CanvasHost.ReleaseMouseCapture();
@@ -15836,8 +15882,8 @@ namespace FamidashEditor
                         int oldS = sprites[idx]; int neuS = selectedSprite; if (oldS != neuS) { spriteAction.Add(idx, oldS, neuS); sprites[idx] = neuS; }
                     }
                 }
-                if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
-                if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
+                if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
                 try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                 try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
             }
@@ -16291,8 +16337,8 @@ namespace FamidashEditor
                 spriteChanges.CaptureNewOffsets(this);
             }
 
-            if (!tileChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileChanges); redoStack.Clear(); hasUnsavedChanges = true; }
-            if (!spriteChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteChanges); redoStack.Clear(); hasUnsavedChanges = true; }
+            if (!tileChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileChanges); redoStack.Clear(); SetHasUnsavedChanges(true); }
+            if (!spriteChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteChanges); redoStack.Clear(); SetHasUnsavedChanges(true); }
 
             // Auto-save TMX config if sprite offsets were modified
             if (!spriteChanges.IsEmpty() && !string.IsNullOrEmpty(currentFilePath))
@@ -16369,8 +16415,8 @@ namespace FamidashEditor
                     }
                 }
 
-                if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
-                if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
+                if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
 
                 try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                 try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
@@ -16387,7 +16433,7 @@ namespace FamidashEditor
                         int old = tiles[idx]; if (old != -1) tileAction.Add(idx, old, -1);
                         tiles[idx] = -1;
                     }
-                    if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
                     try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
                 }
 
@@ -16401,7 +16447,7 @@ namespace FamidashEditor
                         int old = sprites[idx]; if (old != -1) spriteAction.Add(idx, old, -1);
                         sprites[idx] = -1;
                     }
-                    if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+                    if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
                     try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
                 }
             }
@@ -16474,8 +16520,8 @@ namespace FamidashEditor
                 }
             }
 
-            if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); hasUnsavedChanges = true; }
-            if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); hasUnsavedChanges = true; }
+            if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
+            if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
 
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
             try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
@@ -16520,13 +16566,13 @@ namespace FamidashEditor
                 {
                     undoStack.Push(currentCompositeAction);
                     redoStack.Clear();
-                    hasUnsavedChanges = true;
+                    SetHasUnsavedChanges(true);
                 }
                 if (!suppressUndoRecording && currentCompositeSpriteAction != null && !currentCompositeSpriteAction.IsEmpty())
                 {
                     undoStack.Push(currentCompositeSpriteAction);
                     redoStack.Clear();
-                    hasUnsavedChanges = true;
+                    SetHasUnsavedChanges(true);
                 }
             }
             finally 
@@ -17257,7 +17303,7 @@ namespace FamidashEditor
                         File.WriteAllText(target, JsonSerializer.Serialize(model));
                     }
 
-                    hasUnsavedChanges = false;
+                    SetHasUnsavedChanges(false);
                     if (StatusText != null) StatusText.Text = "Saved " + target;
                 }
                 catch (Exception ex)
@@ -17326,7 +17372,21 @@ namespace FamidashEditor
                     }
 
                     currentFilePath = dlg.FileName;
-                    hasUnsavedChanges = false;
+                    SetHasUnsavedChanges(false);
+                    // If there is a current tab, update its recorded file path and UI header
+                    try
+                    {
+                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                        {
+                            openFiles[currentFileIndex].FilePath = currentFilePath;
+                            openFiles[currentFileIndex].HasUnsavedChanges = false;
+                            try { openFiles[currentFileIndex].CreatedAsUntitled = false; } catch { }
+                            try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
+                        }
+                    }
+                    catch { }
+                    // Add to recent files
+                    try { AddToRecentFiles(dlg.FileName); } catch { }
                     if (StatusText != null) StatusText.Text = "Saved " + dlg.FileName;
                 }
                 catch (Exception ex)
@@ -17746,6 +17806,8 @@ namespace FamidashEditor
                 RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
             } 
             catch { Redraw(); }
+            // Update dirty flag: if no remaining undo actions, consider the tab clean
+            try { SetHasUnsavedChanges(undoStack.Count > 0); } catch { }
             if (StatusText != null) StatusText.Text = "Undid action";
         }
 
@@ -17770,6 +17832,8 @@ namespace FamidashEditor
                 RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
             } 
             catch { Redraw(); }
+            // After redo we have at least one undo entry -> mark dirty
+            try { SetHasUnsavedChanges(true); } catch { }
             if (StatusText != null) StatusText.Text = "Redid action";
         }
 
@@ -17828,7 +17892,7 @@ namespace FamidashEditor
                         if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
                         UpdateParallaxTint(); UpdateGroundTint(); UpdateTileTint();
                         undoStack.Clear(); redoStack.Clear();
-                        hasUnsavedChanges = false;
+                        SetHasUnsavedChanges(false);
                         // Reset per-level loaded metadata to defaults so the Untitled tab is fresh
                         try { loadedDecoSet = "DECO1"; } catch { }
                         try { loadedBlockSet = "BLOCKSA"; } catch { }
@@ -17876,7 +17940,7 @@ namespace FamidashEditor
                 // Switch to a fresh state for the new tab
                 InitDefaultMap();
                 currentFilePath = null;
-                hasUnsavedChanges = false;
+                SetHasUnsavedChanges(false);
                 
                 // Load default tints
                 try
@@ -18017,7 +18081,7 @@ namespace FamidashEditor
             redoStack.Clear();
             
             // File path already cleared at the start
-            hasUnsavedChanges = false;
+            SetHasUnsavedChanges(false);
             
             // Create a new tab
             CreateNewTab(null);
@@ -18279,7 +18343,7 @@ namespace FamidashEditor
                         
                         // Update current file and clear dirty flag
                         currentFilePath = dlg.FileName;
-                        hasUnsavedChanges = false;
+                        SetHasUnsavedChanges(false);
                         
                         // Add to recent files
                         AddToRecentFiles(dlg.FileName);
