@@ -94,6 +94,9 @@ namespace FamidashEditor
         private Point rightMouseDownPosition;
         private bool rightDragStarted = false;
         private const double RightDragThreshold = 4.0; // pixels
+        // When a selection is created on MouseDown and we should only begin dragging
+        // after the user moves beyond the drag threshold, mark this as pending.
+        private bool pendingDrag = false;
     // Timer used to perform continuous 1-px fine scrolling while Shift+Left/Right are held
     private System.Windows.Threading.DispatcherTimer? shiftArrowScrollTimer = null;
     private int shiftArrowScrollDir = 0; // -1 = left, +1 = right
@@ -11741,8 +11744,10 @@ namespace FamidashEditor
             {
                 spritesWb.Unlock();
             }
-            // Ensure overlay reflects any change to this single sprite cell
-            try { UpdateIncompatibleOverlay(); } catch { }
+            // Ensure overlay reflects any change to this single sprite cell.
+            // Queue a debounced full overlay update instead of updating immediately
+            // to avoid rebuilding the whole overlay on every small sprite change.
+            try { QueueUpdateIncompatibleOverlay(x, y, x, y); } catch { }
         }
 
         // Fast version of UpdateTileBitmapAt that works with a locked WriteableBitmap
@@ -11950,6 +11955,15 @@ namespace FamidashEditor
         private bool portalDirtyScheduled = false;
         private System.Windows.Threading.DispatcherTimer? portalDirtyTimer = null;
 
+        // Debounced overlay update for incompatible-sprites overlay to avoid rebuilding
+        // the entire overlay on every single sprite change (reduces flicker).
+        private int incompatibleDirtyMinX = int.MaxValue;
+        private int incompatibleDirtyMinY = int.MaxValue;
+        private int incompatibleDirtyMaxX = int.MinValue;
+        private int incompatibleDirtyMaxY = int.MinValue;
+        private bool incompatibleDirtyScheduled = false;
+        private System.Windows.Threading.DispatcherTimer? incompatibleDirtyTimer = null;
+
         private void EnsurePortalDirtyTimer()
         {
             if (portalDirtyTimer != null) return;
@@ -11977,6 +11991,20 @@ namespace FamidashEditor
             };
         }
 
+        private void EnsureIncompatibleDirtyTimer()
+        {
+            if (incompatibleDirtyTimer != null) return;
+            incompatibleDirtyTimer = new System.Windows.Threading.DispatcherTimer();
+            incompatibleDirtyTimer.Interval = TimeSpan.FromMilliseconds(40);
+            incompatibleDirtyTimer.Tick += (s, e) =>
+            {
+                var t = incompatibleDirtyTimer; if (t == null) return; t.Stop(); incompatibleDirtyScheduled = false;
+                int minX = incompatibleDirtyMinX; int minY = incompatibleDirtyMinY; int maxX = incompatibleDirtyMaxX; int maxY = incompatibleDirtyMaxY;
+                incompatibleDirtyMinX = int.MaxValue; incompatibleDirtyMinY = int.MaxValue; incompatibleDirtyMaxX = int.MinValue; incompatibleDirtyMaxY = int.MinValue;
+                try { UpdateIncompatibleOverlay(); } catch { }
+            };
+        }
+
         private void QueueRebuildPortalsRegion(int minX, int minY, int maxX, int maxY)
         {
             // Merge request
@@ -11989,6 +12017,21 @@ namespace FamidashEditor
             {
                 portalDirtyScheduled = true;
                 portalDirtyTimer.Start();
+            }
+        }
+
+        private void QueueUpdateIncompatibleOverlay(int minX, int minY, int maxX, int maxY)
+        {
+            // Merge request bounds
+            incompatibleDirtyMinX = Math.Min(incompatibleDirtyMinX, minX);
+            incompatibleDirtyMinY = Math.Min(incompatibleDirtyMinY, minY);
+            incompatibleDirtyMaxX = Math.Max(incompatibleDirtyMaxX, maxX);
+            incompatibleDirtyMaxY = Math.Max(incompatibleDirtyMaxY, maxY);
+            EnsureIncompatibleDirtyTimer();
+            if (!incompatibleDirtyScheduled && incompatibleDirtyTimer != null)
+            {
+                incompatibleDirtyScheduled = true;
+                incompatibleDirtyTimer.Start();
             }
         }
 
@@ -13356,7 +13399,10 @@ namespace FamidashEditor
                     }
                     
                     // start drag-move of selection (click was on selection or sprite's visual footprint)
-                    StartDragMove(pos);
+                    // Instead of starting the drag immediately on MouseDown, mark drag as pending
+                    // and only begin the drag when the user actually moves the mouse past the
+                    // usual drag threshold. This prevents a single click from initiating a move.
+                    pendingDrag = true;
                     return;
                 }
                 
@@ -13419,14 +13465,15 @@ namespace FamidashEditor
                         return;
                     }
                     
-                    // create a 1x1 selection at this tile/sprite and begin dragging
+                    // create a 1x1 selection at this tile/sprite and prepare for dragging
+                    // (do not start the actual drag until movement is detected)
                     selX = foundX; selY = foundY; selW = 1; selH = 1;
                     selTiles = new int[1] { tileVal };
                     selSprites = new int[1] { spriteVal };
                     selectionSet!.Clear(); selectionSet.Add(idx);
                     // show selection visuals
                     UpdateSelectionVisuals(selX, selY, selW, selH);
-                    StartDragMove(pos);
+                    pendingDrag = true;
                     return;
                 }
                 // otherwise nothing to drag
@@ -13626,6 +13673,8 @@ namespace FamidashEditor
                     }
                 }
             }
+            // Clear any pending drag started on MouseDown but never triggered
+            pendingDrag = false;
         }
 
         private void CanvasHost_MouseMove(object sender, MouseEventArgs e)
@@ -13662,6 +13711,21 @@ namespace FamidashEditor
                 if (Math.Sqrt(dx * dx + dy * dy) > dragThreshold)
                 {
                     hasMouseMoved = true;
+                    // If a drag was pending from MouseDown for MoveTool, start actual drag now
+                    try
+                    {
+                        if (pendingDrag)
+                        {
+                            pendingDrag = false;
+                            // Only start drag when MoveTool is active and we have a selection
+                            if (MoveTool != null && MoveTool.IsChecked == true && selectionSet != null && selectionSet.Count > 0)
+                            {
+                                StartDragMove(pos);
+                                // mark hasMouseMoved already true
+                            }
+                        }
+                    }
+                    catch { pendingDrag = false; }
                 }
             }
 
@@ -14325,6 +14389,8 @@ namespace FamidashEditor
                         // Clear right-button down state
                         isRightMouseDown = false;
                         rightDragStarted = false;
+                        // Clear any pending left-button drag that wasn't started
+                        pendingDrag = false;
                         e.Handled = true;
                         return;
                     }
@@ -14338,6 +14404,8 @@ namespace FamidashEditor
                     // Clear right-button state
                     isRightMouseDown = false;
                     rightDragStarted = false;
+                    // cancel any pending left-button drag
+                    pendingDrag = false;
                     e.Handled = true;
                     return;
                 }
