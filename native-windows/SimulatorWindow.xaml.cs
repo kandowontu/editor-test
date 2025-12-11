@@ -1682,6 +1682,17 @@ namespace FamidashEditor
                         int footWorldY_px = (playerY_fixed >> 8) + HITBOX_H; // pixel coordinate of player's feet (using hitbox)
 
                         int tileBelowY = footWorldY_px / TILE;
+                        // If a ground image layer is present we reserve a few bottom rows for ground
+                        // rendering. The visible map Y is offset by those reserved rows, so when
+                        // converting a world tile Y to the tiles[] map index we must add the
+                        // reserved ground rows. Compute the same reservation used by the renderer.
+                        try
+                        {
+                            int groundRowsToReserve_calc = 0;
+                            if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve_calc = Math.Min(3, groundTileRows);
+                            tileBelowY = tileBelowY + groundRowsToReserve_calc;
+                        }
+                        catch { }
                         int floorDetected = 0; // 0=false, 1=true
                         int floorTopWorldY_px = (mapHeight * TILE); // default to map bottom
 
@@ -1819,7 +1830,9 @@ namespace FamidashEditor
                                 }
                                 if (any)
                                 {
-                                    int candidateTop = tileBelowY * TILE + bestTopOffset;
+                                    // Convert the map tile index back to a world pixel Y by subtracting
+                                    // the reserved ground rows so candidateTop is in world coordinates.
+                                    int candidateTop = (tileBelowY - (hasGroundLayer && groundTileRows > 0 ? Math.Min(3, groundTileRows) : 0)) * TILE + bestTopOffset;
                                     if (candidateTop < floorTopWorldY_px) floorTopWorldY_px = candidateTop;
                                     floorDetected = 1;
                                 }
@@ -3698,6 +3711,14 @@ namespace FamidashEditor
                             int footWorldY_px_local = (playerY_fixed >> 8) + HITBOX_H_LOCAL;
 
                             int tileBelowY_local = footWorldY_px_local / TILE;
+                            // Account for reserved ground rows (same logic as renderer).
+                            try
+                            {
+                                int groundRowsToReserve_local = 0;
+                                if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve_local = Math.Min(3, groundTileRows);
+                                tileBelowY_local = tileBelowY_local + groundRowsToReserve_local;
+                            }
+                            catch { }
                             int floorDetected_local = 0;
                             int floorTopWorldY_px_local = (mapHeight * TILE);
 
@@ -3813,7 +3834,8 @@ namespace FamidashEditor
                                     }
                                     if (any_local)
                                     {
-                                        int candidateTop_local = tileBelowY_local * TILE + bestTopOffset_local;
+                                        int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                                        int candidateTop_local = (tileBelowY_local - groundRowsToReserve_local) * TILE + bestTopOffset_local;
                                         if (candidateTop_local < floorTopWorldY_px_local) floorTopWorldY_px_local = candidateTop_local;
                                         floorDetected_local = 1;
                                     }
