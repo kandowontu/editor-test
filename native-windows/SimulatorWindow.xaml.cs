@@ -239,6 +239,74 @@ namespace FamidashEditor
         private const int NES_H = 15; // vertical tiles (was 16)
         private const int TILE = 16;
 
+        // Centralized helper for determining whether a collision category provides
+        // a floor at a given local tile column (0..15). Returns true and sets
+        // `topOffsetPx` to the Y offset (0..15) of the floor within the tile
+        // when a floor exists; otherwise returns false.
+        private static bool ProvidesFloorAtColumnStatic(MetatileCollision col, int localX, out int topOffsetPx)
+        {
+            topOffsetPx = int.MaxValue;
+            bool inLeft = (localX >= 0 && localX <= 7);
+            bool inRight = (localX >= 8 && localX <= 15);
+
+            switch (col)
+            {
+                case MetatileCollision.COL_ALL:
+                case MetatileCollision.COL_FLOOR_CEIL:
+                    topOffsetPx = 0; return true;
+                case MetatileCollision.COL_TOP:
+                case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                    topOffsetPx = 0; return true;
+                case MetatileCollision.COL_BOTTOM:
+                    topOffsetPx = 8; return true;
+                case MetatileCollision.COL_LEFT:
+                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                    if (inLeft) { topOffsetPx = 0; return true; }
+                    break;
+                case MetatileCollision.COL_RIGHT:
+                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                    if (inRight) { topOffsetPx = 0; return true; }
+                    break;
+                case MetatileCollision.COL_UP_LEFT:
+                    if (inLeft) { topOffsetPx = 0; return true; }
+                    break;
+                case MetatileCollision.COL_UP_RIGHT:
+                    if (inRight) { topOffsetPx = 0; return true; }
+                    break;
+                case MetatileCollision.COL_DOWN_LEFT:
+                    if (inLeft) { topOffsetPx = 8; return true; }
+                    break;
+                case MetatileCollision.COL_DOWN_RIGHT:
+                    if (inRight) { topOffsetPx = 8; return true; }
+                    break;
+                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                    if (inLeft) { topOffsetPx = 0; return true; }
+                    if (inRight) { topOffsetPx = 8; return true; }
+                    break;
+                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                    if (inRight) { topOffsetPx = 0; return true; }
+                    if (inLeft) { topOffsetPx = 8; return true; }
+                    break;
+                default:
+                    break;
+            }
+
+            // Additional combined-stair behavior for bottom-left / bottom-right stairs
+            if (col == MetatileCollision.COL_BOTTOM_LEFT_STAIRS)
+            {
+                if (inLeft) { topOffsetPx = 0; return true; }
+                if (inRight) { topOffsetPx = 8; return true; }
+            }
+            if (col == MetatileCollision.COL_BOTTOM_RIGHT_STAIRS)
+            {
+                if (inRight) { topOffsetPx = 0; return true; }
+                if (inLeft) { topOffsetPx = 8; return true; }
+            }
+
+            return false;
+        }
+
         // Parallax / ground data passed from the editor so simulator can mirror preview-mode
         private ImageSource?[]? parallaxImages;
         private ImageSource?[]? parallaxTonedImages;
@@ -1696,145 +1764,75 @@ namespace FamidashEditor
                         int floorDetected = 0; // 0=false, 1=true
                         int floorTopWorldY_px = (mapHeight * TILE); // default to map bottom
 
-                        // Helper: determine whether given collision type provides floor at a local tile column (0..15).
+                        // Delegate to centralized helper for floor checks.
                         bool ProvidesFloorAtColumn(MetatileCollision col, int localX, out int topOffsetPx)
                         {
-                            // default no floor
-                            topOffsetPx = int.MaxValue;
-                            // localX in [0..15]
-                            bool inLeft = (localX >= 0 && localX <= 7);
-                            bool inRight = (localX >= 8 && localX <= 15);
-
-                            switch (col)
-                            {
-                                case MetatileCollision.COL_ALL:
-                                case MetatileCollision.COL_FLOOR_CEIL:
-                                    // full tile solid: floor at tile top
-                                    topOffsetPx = 0; return true;
-                                case MetatileCollision.COL_TOP:
-                                case MetatileCollision.COL_TOP_LEFT_STAIRS:
-                                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
-                                    // top 8 pixels are solid
-                                    topOffsetPx = 0; return true;
-                                case MetatileCollision.COL_BOTTOM:
-                                    // bottom 8 pixels solid
-                                    topOffsetPx = 8; return true;
-                                case MetatileCollision.COL_LEFT:
-                                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
-                                    // full left column (x 0..7) solid to top
-                                    if (inLeft) { topOffsetPx = 0; return true; }
-                                    // bottom-left stairs also have bottom-right 8x8 (handled below as DOWN_RIGHT)
-                                    break;
-                                case MetatileCollision.COL_RIGHT:
-                                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
-                                    // full right column (x 8..15) solid to top
-                                    if (inRight) { topOffsetPx = 0; return true; }
-                                    // bottom-right stairs also have bottom-left 8x8 (handled below as DOWN_LEFT)
-                                    break;
-                                case MetatileCollision.COL_UP_LEFT:
-                                    if (inLeft) { topOffsetPx = 0; return true; }
-                                    break;
-                                case MetatileCollision.COL_UP_RIGHT:
-                                    if (inRight) { topOffsetPx = 0; return true; }
-                                    break;
-                                case MetatileCollision.COL_DOWN_LEFT:
-                                    if (inLeft) { topOffsetPx = 8; return true; }
-                                    break;
-                                case MetatileCollision.COL_DOWN_RIGHT:
-                                    if (inRight) { topOffsetPx = 8; return true; }
-                                    break;
-                                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
-                                    // up-left + down-right
-                                    if (inLeft) { topOffsetPx = 0; return true; }
-                                    if (inRight) { topOffsetPx = 8; return true; }
-                                    break;
-                                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
-                                    // up-right + down-left
-                                    if (inRight) { topOffsetPx = 0; return true; }
-                                    if (inLeft) { topOffsetPx = 8; return true; }
-                                    break;
-                                // top-left/top-right stairs handled above as top 8 pixels
-                                default:
-                                    // Unknown or non-floor types provide no floor
-                                    break;
-                            }
-                            // Special handling for stairs that combine behaviors
-                            if (col == MetatileCollision.COL_BOTTOM_LEFT_STAIRS)
-                            {
-                                if (inLeft) { topOffsetPx = 0; return true; }
-                                if (inRight) { topOffsetPx = 8; return true; }
-                            }
-                            if (col == MetatileCollision.COL_BOTTOM_RIGHT_STAIRS)
-                            {
-                                if (inRight) { topOffsetPx = 0; return true; }
-                                if (inLeft) { topOffsetPx = 8; return true; }
-                            }
-                            return false;
+                            return ProvidesFloorAtColumnStatic(col, localX, out topOffsetPx);
                         }
 
                         if (tileBelowY >= 0 && tileBelowY < mapHeight)
                         {
-                            // For all tiles under the player's horizontal span, check if any column provides floor
+                            // For all tiles under the player's horizontal span, check a small vertical
+                            // window of tiles (the tile under the feet and the one above) so slabs
+                            // that occupy the top half of a tile are detected correctly.
                             int leftTileX = playerLeft_px / TILE;
                             int rightTileX = playerRight_px / TILE;
 
-                            for (int tx = leftTileX; tx <= rightTileX; tx++)
+                            int groundRowsToReserve_calc = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int startRow = Math.Max(0, tileBelowY - 1);
+                            int endRow = Math.Min(mapHeight - 1, tileBelowY);
+
+                            for (int ty = startRow; ty <= endRow; ty++)
                             {
-                                if (tx < 0 || tx >= mapWidth) continue;
-                                int tid = tiles[tileBelowY * mapWidth + tx];
-
-                                // Map animated/preview tile indices back to a base tile index
-                                // suitable for collision lookup. Some tiles are remapped to
-                                // special indices (>=1000) for animation; convert those
-                                // back to their original base indices so collision table
-                                // lookup matches the visible tile geometry.
-                                int useTidForAnim = MapAnimatedTileIndex(tid);
-                                int collisionTid = useTidForAnim;
-                                if (useTidForAnim >= 1000)
+                                for (int tx = leftTileX; tx <= rightTileX; tx++)
                                 {
-                                    if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
-                                    {
-                                        collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
-                                    }
-                                    else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
-                                    {
-                                        int group = (useTidForAnim - 1010) % 3; // 0 -> 0x04, 1 -> 0x7D, 2 -> 0x7F
-                                        collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
-                                    }
-                                    else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
-                                    {
-                                        collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
-                                    }
-                                    else
-                                    {
-                                        // Fallback: use the original tile id
-                                        collisionTid = tid;
-                                    }
-                                }
-                                var col = MetatileCollisionTable.GetCollision((byte)collisionTid);
+                                    if (tx < 0 || tx >= mapWidth) continue;
+                                    int tid = tiles[ty * mapWidth + tx];
 
-                                // compute overlap columns within this tile
-                                int tileStartX = tx * TILE;
-                                int localLeft = Math.Max(0, playerLeft_px - tileStartX);
-                                int localRight = Math.Min(TILE - 1, playerRight_px - tileStartX);
-
-                                int bestTopOffset = int.MaxValue;
-                                bool any = false;
-                                for (int lx = localLeft; lx <= localRight; lx++)
-                                {
-                                    if (ProvidesFloorAtColumn(col, lx, out int off))
+                                    int useTidForAnim = MapAnimatedTileIndex(tid);
+                                    int collisionTid = useTidForAnim;
+                                    if (useTidForAnim >= 1000)
                                     {
-                                        any = true;
-                                        if (off < bestTopOffset) bestTopOffset = off;
+                                        if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
+                                        {
+                                            collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
+                                        }
+                                        else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
+                                        {
+                                            int group = (useTidForAnim - 1010) % 3; // 0 -> 0x04, 1 -> 0x7D, 2 -> 0x7F
+                                            collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
+                                        }
+                                        else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
+                                        {
+                                            collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
+                                        }
+                                        else
+                                        {
+                                            collisionTid = tid;
+                                        }
                                     }
-                                }
-                                if (any)
-                                {
-                                    // Convert the map tile index back to a world pixel Y by subtracting
-                                    // the reserved ground rows so candidateTop is in world coordinates.
-                                    int candidateTop = (tileBelowY - (hasGroundLayer && groundTileRows > 0 ? Math.Min(3, groundTileRows) : 0)) * TILE + bestTopOffset;
-                                    if (candidateTop < floorTopWorldY_px) floorTopWorldY_px = candidateTop;
-                                    floorDetected = 1;
+                                    var col = MetatileCollisionTable.GetCollision((byte)collisionTid);
+
+                                    int tileStartX = tx * TILE;
+                                    int localLeft = Math.Max(0, playerLeft_px - tileStartX);
+                                    int localRight = Math.Min(TILE - 1, playerRight_px - tileStartX);
+
+                                    int bestTopOffset = int.MaxValue;
+                                    bool any = false;
+                                    for (int lx = localLeft; lx <= localRight; lx++)
+                                    {
+                                        if (ProvidesFloorAtColumn(col, lx, out int off))
+                                        {
+                                            any = true;
+                                            if (off < bestTopOffset) bestTopOffset = off;
+                                        }
+                                    }
+                                    if (any)
+                                    {
+                                        int candidateTop = (ty - groundRowsToReserve_calc) * TILE + bestTopOffset;
+                                        if (candidateTop < floorTopWorldY_px) floorTopWorldY_px = candidateTop;
+                                        floorDetected = 1;
+                                    }
                                 }
                             }
                         }
@@ -1860,30 +1858,30 @@ namespace FamidashEditor
                                     {
                                         if (tx_dbg < 0 || tx_dbg >= mapWidth) { sb.AppendFormat("tx={0}:out_of_bounds; ", tx_dbg); continue; }
                                         int tid_dbg = tiles[tileBelowY * mapWidth + tx_dbg];
-                                    int useTid_dbg = MapAnimatedTileIndex(tid_dbg);
-                                    int collisionTid_dbg = useTid_dbg;
-                                    if (useTid_dbg >= 1000)
-                                    {
-                                        if (useTid_dbg >= 1000 && useTid_dbg <= 1007)
+                                        int useTid_dbg = MapAnimatedTileIndex(tid_dbg);
+                                        int collisionTid_dbg = useTid_dbg;
+                                        if (useTid_dbg >= 1000)
                                         {
-                                            collisionTid_dbg = 0x08 + ((useTid_dbg - 1000) % 4);
+                                            if (useTid_dbg >= 1000 && useTid_dbg <= 1007)
+                                            {
+                                                collisionTid_dbg = 0x08 + ((useTid_dbg - 1000) % 4);
+                                            }
+                                            else if (useTid_dbg >= 1010 && useTid_dbg <= 1015)
+                                            {
+                                                int group_dbg = (useTid_dbg - 1010) % 3;
+                                                collisionTid_dbg = (group_dbg == 0) ? 0x04 : (group_dbg == 1) ? 0x7D : 0x7F;
+                                            }
+                                            else if (useTid_dbg >= 1020 && useTid_dbg <= 1037)
+                                            {
+                                                collisionTid_dbg = 0x74 + ((useTid_dbg - 1020) % 9);
+                                            }
+                                            else
+                                            {
+                                                collisionTid_dbg = tid_dbg;
+                                            }
                                         }
-                                        else if (useTid_dbg >= 1010 && useTid_dbg <= 1015)
-                                        {
-                                            int group_dbg = (useTid_dbg - 1010) % 3;
-                                            collisionTid_dbg = (group_dbg == 0) ? 0x04 : (group_dbg == 1) ? 0x7D : 0x7F;
-                                        }
-                                        else if (useTid_dbg >= 1020 && useTid_dbg <= 1037)
-                                        {
-                                            collisionTid_dbg = 0x74 + ((useTid_dbg - 1020) % 9);
-                                        }
-                                        else
-                                        {
-                                            collisionTid_dbg = tid_dbg;
-                                        }
-                                    }
-                                    var col_dbg = MetatileCollisionTable.GetCollision((byte)collisionTid_dbg);
-                                    sb.AppendFormat("tx={0} tid={1} animRemap={2} collTid=0x{3:X2} coll={4}; ", tx_dbg, tid_dbg, useTid_dbg, collisionTid_dbg, col_dbg);
+                                        var col_dbg = MetatileCollisionTable.GetCollision((byte)collisionTid_dbg);
+                                        sb.AppendFormat("tx={0} tid={1} animRemap={2} collTid=0x{3:X2} coll={4}; ", tx_dbg, tid_dbg, useTid_dbg, collisionTid_dbg, col_dbg);
                                     }
                                 }
                                 var line = sb.ToString();
@@ -1895,23 +1893,6 @@ namespace FamidashEditor
                                 catch { }
                             }
                             catch { }
-                        }
-
-                        if (playerY_fixed >= floorTop_fixed - LAND_EPS_FIXED && playerVelY_fixed >= 0)
-                        {
-                            playerY_fixed = floorTop_fixed;
-                            playerVelY_fixed = 0;
-                            onGround = true;
-                            // If player is holding X (UI-polled or async), immediately jump again
-                            if (keyXHeld || IsXDownAsync())
-                            {
-                                // Reset vertical velocity to jump impulse for auto-jump
-                                playerVelY_fixed = CUBE_JUMP_VEL;
-                                onGround = false;
-                                jumpedOnce = true;
-                                // clear any pending edge presses since we've consumed the auto-jump
-                                Interlocked.Exchange(ref keyXPressedCount, 0);
-                            }
                         }
                         else
                         {
@@ -3722,66 +3703,10 @@ namespace FamidashEditor
                             int floorDetected_local = 0;
                             int floorTopWorldY_px_local = (mapHeight * TILE);
 
-                            // Local function to determine floor provision at a column
+                            // Delegate to centralized helper for local floor checks.
                             bool ProvidesFloorAtColumnLocal(MetatileCollision col_local, int localX, out int topOffsetPx_local)
                             {
-                                topOffsetPx_local = int.MaxValue;
-                                bool inLeft_local = (localX >= 0 && localX <= 7);
-                                bool inRight_local = (localX >= 8 && localX <= 15);
-
-                                switch (col_local)
-                                {
-                                    case MetatileCollision.COL_ALL:
-                                    case MetatileCollision.COL_FLOOR_CEIL:
-                                        topOffsetPx_local = 0; return true;
-                                    case MetatileCollision.COL_TOP:
-                                    case MetatileCollision.COL_TOP_LEFT_STAIRS:
-                                    case MetatileCollision.COL_TOP_RIGHT_STAIRS:
-                                        topOffsetPx_local = 0; return true;
-                                    case MetatileCollision.COL_BOTTOM:
-                                        topOffsetPx_local = 8; return true;
-                                    case MetatileCollision.COL_LEFT:
-                                    case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
-                                        if (inLeft_local) { topOffsetPx_local = 0; return true; }
-                                        break;
-                                    case MetatileCollision.COL_RIGHT:
-                                    case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
-                                        if (inRight_local) { topOffsetPx_local = 0; return true; }
-                                        break;
-                                    case MetatileCollision.COL_UP_LEFT:
-                                        if (inLeft_local) { topOffsetPx_local = 0; return true; }
-                                        break;
-                                    case MetatileCollision.COL_UP_RIGHT:
-                                        if (inRight_local) { topOffsetPx_local = 0; return true; }
-                                        break;
-                                    case MetatileCollision.COL_DOWN_LEFT:
-                                        if (inLeft_local) { topOffsetPx_local = 8; return true; }
-                                        break;
-                                    case MetatileCollision.COL_DOWN_RIGHT:
-                                        if (inRight_local) { topOffsetPx_local = 8; return true; }
-                                        break;
-                                    case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
-                                        if (inLeft_local) { topOffsetPx_local = 0; return true; }
-                                        if (inRight_local) { topOffsetPx_local = 8; return true; }
-                                        break;
-                                    case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
-                                        if (inRight_local) { topOffsetPx_local = 0; return true; }
-                                        if (inLeft_local) { topOffsetPx_local = 8; return true; }
-                                        break;
-                                    default:
-                                        break;
-                                }
-                                if (col_local == MetatileCollision.COL_BOTTOM_LEFT_STAIRS)
-                                {
-                                    if (inLeft_local) { topOffsetPx_local = 0; return true; }
-                                    if (inRight_local) { topOffsetPx_local = 8; return true; }
-                                }
-                                if (col_local == MetatileCollision.COL_BOTTOM_RIGHT_STAIRS)
-                                {
-                                    if (inRight_local) { topOffsetPx_local = 0; return true; }
-                                    if (inLeft_local) { topOffsetPx_local = 8; return true; }
-                                }
-                                return false;
+                                return ProvidesFloorAtColumnStatic(col_local, localX, out topOffsetPx_local);
                             }
 
                             if (tileBelowY_local >= 0 && tileBelowY_local < mapHeight)
