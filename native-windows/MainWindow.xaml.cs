@@ -6629,7 +6629,7 @@ namespace FamidashEditor
                                 {
                                     parallaxBitmap = embImg;
                                     SliceParallax();
-                                    try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Selected embedded parallax resource: " + candidate + Environment.NewLine); } catch { }
+                                    // Debug logging disabled: avoid creating sim_debug.txt during normal runs.
                                     parallaxSet = true;
                                     break;
                                 }
@@ -6642,7 +6642,7 @@ namespace FamidashEditor
                             if (emb != null)
                             {
                                 parallaxBitmap = emb; SliceParallax();
-                                try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Selected embedded parallax fallback resource" + Environment.NewLine); } catch { }
+                                // Debug logging disabled: avoid creating sim_debug.txt during normal runs.
                             }
                         }
                     }
@@ -6660,7 +6660,7 @@ namespace FamidashEditor
                                 if (embg != null)
                                 {
                                     groundBitmap = embg; SliceGround();
-                                    try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Selected embedded ground resource: " + candidate + Environment.NewLine); } catch { }
+                                    // Debug logging disabled: avoid creating sim_debug.txt during normal runs.
                                     groundSet = true;
                                     break;
                                 }
@@ -6670,7 +6670,7 @@ namespace FamidashEditor
                         if (!groundSet && groundBitmap == null)
                         {
                             var embg = LoadEmbeddedImage("native_ground.bmp") ?? LoadEmbeddedImage("ground.bmp");
-                            if (embg != null) { groundBitmap = embg; SliceGround(); try { var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? ".", "sim_debug.txt"); System.IO.File.AppendAllText(logPath, DateTime.UtcNow.ToString("o") + " Selected embedded ground fallback resource" + Environment.NewLine); } catch { } }
+                            if (embg != null) { groundBitmap = embg; SliceGround(); /* Debug logging disabled: avoid creating sim_debug.txt during normal runs. */ }
                         }
                     }
                     catch { }

@@ -565,13 +565,17 @@ namespace FamidashEditor
                 }
                 catch { playerY_fixed = 0; }
 
-                // Ensure the sim debug file exists and print its resolved path so users can find it.
+                // Ensure the sim debug file exists and print its resolved path only when
+                // `enableSimulatorDebugLogging` is set. Normal runs should not create the file.
                 try
                 {
-                    var header = DateTime.UtcNow.ToString("o") + " SIM_LOG_START\n";
-                    System.Console.WriteLine("SIM_DEBUG_PATH: " + simDebugFilePath);
-                    System.IO.File.AppendAllText(simDebugFilePath, header);
-                    simDebugLoggedFirstFrame = true;
+                    if (enableSimulatorDebugLogging)
+                    {
+                        var header = DateTime.UtcNow.ToString("o") + " SIM_LOG_START\n";
+                        System.Console.WriteLine("SIM_DEBUG_PATH: " + simDebugFilePath);
+                        System.IO.File.AppendAllText(simDebugFilePath, header);
+                        simDebugLoggedFirstFrame = true;
+                    }
                 }
                 catch { }
             }
