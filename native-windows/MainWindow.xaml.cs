@@ -6843,7 +6843,8 @@ namespace FamidashEditor
                     groundTileRows,
                     loadedStartingBackgroundColor,
                     loadedStartingGroundColor,
-                    loadedSimulatorScale
+                    loadedSimulatorScale,
+                    loadedMaxFallSpeed
                     );
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }

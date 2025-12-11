@@ -32,9 +32,30 @@ namespace FamidashEditor
             catch { }
         }
 
+        // Update effective gravity/jump/max-fall based on the reversal flag and current CUBE_* constants
+        private void UpdateEffectiveGravity()
+        {
+            try
+            {
+                if (gravityReversed)
+                {
+                    effectiveGravity_fixed = -CUBE_GRAVITY;
+                    effectiveJumpVel_fixed = -CUBE_JUMP_VEL;
+                    effectiveMaxFall_fixed = -CUBE_MAX_FALLSPEED;
+                }
+                else
+                {
+                    effectiveGravity_fixed = CUBE_GRAVITY;
+                    effectiveJumpVel_fixed = CUBE_JUMP_VEL;
+                    effectiveMaxFall_fixed = CUBE_MAX_FALLSPEED;
+                }
+            }
+            catch { }
+        }
+
         // Sprite geometry tables (from user-provided data). Non-numeric placeholders use sensible defaults.
         private static readonly int[] sprite_heights = new int[] {
-            0x34,0x34,0x34,0x34,0x34,0x12,0x12,0x10, // 00-07 (SPBH->0x10)
+            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 00-07
             0x28,0x28,0x03,0x12,0x03,0x03,0x03,0x10, // 08-0F
             0x0e,0x0e,0x0e,0x0e,0x24,0x24,0x24,0x34, // 10-17
             0x34,0x34,0x10,0x10,0x10,0x10,0x10,0x12, // 18-1F
@@ -307,6 +328,17 @@ namespace FamidashEditor
             return false;
         }
 
+        // Conservative ceiling blocking test: returns true when this metatile should block
+        // upward movement for the given local X within the tile. We treat `COL_TOP` as
+        // pass-through from below (top slabs), but otherwise consider non-none tiles
+        // as blocking to prevent the player from moving through ceilings.
+        private static bool BlocksCeilingAtColumn(MetatileCollision col, int localX)
+        {
+            if (col == MetatileCollision.COL_NONE) return false;
+            if (col == MetatileCollision.COL_TOP) return false; // top slabs are pass-through from below
+            return true;
+        }
+
         // Parallax / ground data passed from the editor so simulator can mirror preview-mode
         private ImageSource?[]? parallaxImages;
         private ImageSource?[]? parallaxTonedImages;
@@ -342,9 +374,16 @@ namespace FamidashEditor
         private const int CUBE_SPEED_X4  = 0x051E;
 
         // Simple cube physics (fixed-point, 8 fractional bits)
-        private const int CUBE_MAX_FALLSPEED = 0x600; // max downward velocity
+        // Max downward velocity (fixed-point). Default 0x0600 (0x06 << 8).
+        // This is now a runtime-configurable field so simulator can reflect level settings.
+        private int CUBE_MAX_FALLSPEED = 0x600; // max downward velocity
         private const int CUBE_GRAVITY = 0x6B; // gravity added per frame
         private const int CUBE_JUMP_VEL = -0x590; // jump impulse (negative = upward)
+        // Runtime-effective physics values (adjusted when gravity is reversed)
+        private int effectiveGravity_fixed;
+        private int effectiveJumpVel_fixed;
+        private int effectiveMaxFall_fixed;
+        private bool gravityReversed = false;
         private int playerVelY_fixed = 0; // current vertical velocity (fixed-point)
         private bool physicsEnabled = false; // enable physics after first jump (for testing)
         // Landing epsilon in fixed-point (1 pixel)
@@ -353,6 +392,11 @@ namespace FamidashEditor
     #pragma warning disable CS0414 // assigned but never used - keep for future use
         private bool onGround = true;
     #pragma warning restore CS0414
+
+        // Jump-buffer: when the player presses jump slightly before landing, store a small
+        // frame window so the jump fires on landing. Timer_Tick sets this under `simLock`.
+        private int jumpBufferCounter = 0;
+        private const int JUMP_BUFFER_FRAMES = 6; // ~100ms @60Hz
 
         // P/Invoke to check key state asynchronously from background threads
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -600,6 +644,7 @@ namespace FamidashEditor
         private bool prevKeyXDown = false;
         private int keyXPressedCount = 0; // edge-detected press counter (atomic)
         private bool keyXHeld = false;    // current held state
+        // Jump buffer frames (atomic). When >0, a landing will consume this and trigger a jump.
         // tabHeld was used previously; use tabSpeedMultiplier instead.
         // (removed unused field to silence build warning)
         // Pause state controlled by ESC. Start paused so simulator opens paused.
@@ -653,7 +698,8 @@ namespace FamidashEditor
             int groundTileRows = 0,
             int? startingBackgroundColorCode = null,
             int? startingGroundColorCode = null,
-            int simulatorScale = 1
+            int simulatorScale = 1,
+            int? maxFallSpeed = null
             )
         {
             InitializeComponent();
@@ -719,6 +765,29 @@ namespace FamidashEditor
                 {
                     this.spritePixelOffsets[SPRITE_ID_SHIFT_B] = (0, -8);
                 }
+            }
+            catch { }
+
+            // Configure max fall speed from optional parameter. If the passed value is
+            // a small numeric code (e.g. 0x06 or 0x07) convert to fixed-point by
+            // shifting left 8; if the value already appears to be a fixed-point
+            // value (>= 0x100) use it directly.
+            try
+            {
+                if (maxFallSpeed.HasValue)
+                {
+                    int v = maxFallSpeed.Value;
+                    if (v >= 0x100)
+                    {
+                        CUBE_MAX_FALLSPEED = v;
+                    }
+                    else
+                    {
+                        CUBE_MAX_FALLSPEED = (v << 8);
+                    }
+                }
+                // Initialize effective physics values based on current reversal flag
+                UpdateEffectiveGravity();
             }
             catch { }
             this.backgroundTint = backgroundTint;
@@ -1314,13 +1383,32 @@ namespace FamidashEditor
             if (e.Key == Key.X)
             {
                 // Only trigger on the initial KeyDown (ignore OS key-repeat)
+                // Use the same edge-driven mechanism the UI poll uses so the
+                // numeric sim applies a single consistent jump impulse.
                 try
                 {
                     if (!e.IsRepeat)
                     {
-                        playerVelY_fixed += CUBE_JUMP_VEL;
+                        Interlocked.Increment(ref keyXPressedCount);
+                        try { lock (simLock) { jumpBufferCounter = JUMP_BUFFER_FRAMES; } } catch { }
+                        // Keep physicsEnabled/jumpedOnce so camera/input behavior remains similar
                         physicsEnabled = true;
                         jumpedOnce = true;
+                    }
+                }
+                catch { }
+            }
+            if (e.Key == Key.W)
+            {
+                try
+                {
+                    if (!e.IsRepeat)
+                    {
+                        lock (simLock)
+                        {
+                            gravityReversed = !gravityReversed;
+                            UpdateEffectiveGravity();
+                        }
                     }
                 }
                 catch { }
@@ -1475,8 +1563,10 @@ namespace FamidashEditor
                     // the background fixed-step sim cannot miss a short UI-frame edge.
                     if (curX && !prevKeyXDown)
                     {
-                        // record an edge atomically so numeric sim cannot miss it
-                        Interlocked.Increment(ref keyXPressedCount);
+                            // record an edge atomically so numeric sim cannot miss it
+                            Interlocked.Increment(ref keyXPressedCount);
+                            // also set jump-buffer so a pre-press will trigger on landing
+                            try { jumpBufferCounter = JUMP_BUFFER_FRAMES; } catch { }
                     }
                     prevKeyXDown = curX;
                     keyXHeld = curX;
@@ -1713,7 +1803,7 @@ namespace FamidashEditor
                     if (pendingPress > 0)
                     {
                         // Reset vertical velocity to the jump impulse (do not stack)
-                        playerVelY_fixed = CUBE_JUMP_VEL;
+                        playerVelY_fixed = effectiveJumpVel_fixed;
                         physicsEnabled = true;
                         onGround = false;
                         jumpAppliedThisFrame = true;
@@ -1721,12 +1811,22 @@ namespace FamidashEditor
                         jumpedOnce = true;
                     }
 
+                    // Do not age the jump-buffer here (would race with numeric sim).
+                    // We'll atomically consume the buffer at the moment of landing below.
+
                     // Apply gravity only if we did not just apply a jump this frame and if moving vertically or sufficiently above ground (use epsilon)
                     if (!jumpAppliedThisFrame && (playerVelY_fixed != 0 || playerY_fixed < maxPlayerY_fixed - LAND_EPS_FIXED))
                     {
-                        playerVelY_fixed += CUBE_GRAVITY;
-                        // cap downward velocity
-                        if (playerVelY_fixed > CUBE_MAX_FALLSPEED) playerVelY_fixed = CUBE_MAX_FALLSPEED;
+                        playerVelY_fixed += effectiveGravity_fixed;
+                        // cap downward velocity (works for normal and reversed gravity)
+                        if (!gravityReversed)
+                        {
+                            if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                        }
+                        else
+                        {
+                            if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                        }
                     }
 
                     // integrate velocity
@@ -1736,6 +1836,87 @@ namespace FamidashEditor
                     // and increasing values go downwards; negative fixed-point Y can cause
                     // out-of-bounds tile lookups and incorrect floor detection.
                     if (playerY_fixed < 0) playerY_fixed = 0;
+
+                    // Ceiling collision (UI-path): if moving up, check for tiles above player's head that should block upward movement.
+                    try
+                    {
+                        if (playerVelY_fixed < 0)
+                        {
+                            const int HITBOX_W = 15;
+                            const int HITBOX_H = 15;
+                            int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            int playerLeft_px = playerCenter_px - (HITBOX_W / 2);
+                            int playerRight_px = playerLeft_px + (HITBOX_W - 1);
+                            int headWorldY_px = (playerY_fixed >> 8);
+
+                            int tileAboveY_world = headWorldY_px / TILE;
+                            int groundRowsToReserve_calc = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int tileIndexY = tileAboveY_world + groundRowsToReserve_calc;
+                            if (tileIndexY >= 0 && tileIndexY < mapHeight)
+                            {
+                                int leftTileX = playerLeft_px / TILE;
+                                int rightTileX = playerRight_px / TILE;
+                                bool blocked = false;
+                                int blockingTileWorldBottom_px = int.MaxValue;
+                                for (int tx = leftTileX; tx <= rightTileX; tx++)
+                                {
+                                    if (tx < 0 || tx >= mapWidth) continue;
+                                    int tid = tiles[tileIndexY * mapWidth + tx];
+                                    int useTidForAnim = MapAnimatedTileIndex(tid);
+                                    int collisionTid = useTidForAnim;
+                                    if (useTidForAnim >= 1000)
+                                    {
+                                        if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
+                                        {
+                                            collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
+                                        }
+                                        else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
+                                        {
+                                            int group = (useTidForAnim - 1010) % 3;
+                                            collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
+                                        }
+                                        else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
+                                        {
+                                            collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
+                                        }
+                                        else
+                                        {
+                                            collisionTid = tid;
+                                        }
+                                    }
+                                    var col = MetatileCollisionTable.GetCollision((byte)collisionTid);
+                                    int tileStartX = tx * TILE;
+                                    int localLeft = Math.Max(0, playerLeft_px - tileStartX);
+                                    int localRight = Math.Min(TILE - 1, playerRight_px - tileStartX);
+                                    for (int lx = localLeft; lx <= localRight; lx++)
+                                    {
+                                        if (BlocksCeilingAtColumn(col, lx))
+                                        {
+                                            blocked = true;
+                                            int tileWorldBottom_px = (tileAboveY_world + 1) * TILE;
+                                            if (tileWorldBottom_px < blockingTileWorldBottom_px) blockingTileWorldBottom_px = tileWorldBottom_px;
+                                            break;
+                                        }
+                                    }
+                                    if (blocked) break;
+                                }
+
+                                if (blocked && blockingTileWorldBottom_px < int.MaxValue)
+                                {
+                                    int desiredTop_px = blockingTileWorldBottom_px + 1;
+                                    int desiredPlayerY_fixed = desiredTop_px << 8;
+                                    if (desiredPlayerY_fixed < 0) desiredPlayerY_fixed = 0;
+                                    playerY_fixed = desiredPlayerY_fixed;
+                                    // ceiling/roof ejection should move in the correct direction
+                                    if (!gravityReversed)
+                                        playerVelY_fixed = Math.Min(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                    else
+                                        playerVelY_fixed = Math.Max(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                }
+                            }
+                        }
+                    }
+                    catch { }
 
                     // ground collision: try tile-based floor collision first, otherwise fall back to map bottom
                     try
@@ -1770,7 +1951,7 @@ namespace FamidashEditor
                             return ProvidesFloorAtColumnStatic(col, localX, out topOffsetPx);
                         }
 
-                        if (tileBelowY >= 0 && tileBelowY < mapHeight)
+                            if (tileBelowY >= 0 && tileBelowY < mapHeight)
                         {
                             // For all tiles under the player's horizontal span, check a small vertical
                             // window of tiles (the tile under the feet and the one above) so slabs
@@ -1837,6 +2018,19 @@ namespace FamidashEditor
                             }
                         }
 
+                        // If no tile-based floor found but a ground layer exists, treat the top
+                        // of the reserved ground rows as a solid floor so landing on ground counts.
+                        if (floorDetected == 0)
+                        {
+                            int groundRowsToReserve_calc2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            if (groundRowsToReserve_calc2 > 0)
+                            {
+                                int topOfGround_px = (mapHeight - groundRowsToReserve_calc2) * TILE;
+                                if (topOfGround_px < floorTopWorldY_px) floorTopWorldY_px = topOfGround_px;
+                                floorDetected = 1;
+                            }
+                        }
+
                         int floorTop_fixed = (floorDetected == 1) ? ((floorTopWorldY_px - HITBOX_H) << 8) : maxPlayerY_fixed;
 
                         // Per-frame runtime diagnostics: print the tiles under the player's feet
@@ -1896,7 +2090,56 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            onGround = false;
+                            // If not running runtime diagnostics, perform landing resolution here
+                            // by atomically consuming any jump buffer and snapping the player to floor.
+                            int buffered_ui = Interlocked.Exchange(ref jumpBufferCounter, 0);
+                            if (!gravityReversed)
+                            {
+                                if (playerY_fixed >= floorTop_fixed - LAND_EPS_FIXED && playerVelY_fixed >= 0)
+                                {
+                                    int nudged = floorTop_fixed - (1 << 8);
+                                    if (nudged < 0) nudged = 0;
+                                    playerY_fixed = nudged;
+                                    playerVelY_fixed = 0;
+                                    onGround = true;
+
+                                    // If player is holding/jump-pressed or had a buffered press, jump immediately from landing
+                                    if (buffered_ui > 0 || keyXHeld || IsXDownAsync())
+                                    {
+                                        playerVelY_fixed = effectiveJumpVel_fixed;
+                                        onGround = false;
+                                        jumpedOnce = true;
+                                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                                    }
+                                }
+                                else
+                                {
+                                    onGround = false;
+                                }
+                            }
+                            else
+                            {
+                                // Reversed gravity: landing occurs when moving upward and reaching the floor from below
+                                if (playerY_fixed <= floorTop_fixed + LAND_EPS_FIXED && playerVelY_fixed <= 0)
+                                {
+                                    int nudged = floorTop_fixed + (1 << 8);
+                                    playerY_fixed = nudged;
+                                    playerVelY_fixed = 0;
+                                    onGround = true;
+
+                                    if (buffered_ui > 0 || keyXHeld || IsXDownAsync())
+                                    {
+                                        playerVelY_fixed = effectiveJumpVel_fixed;
+                                        onGround = false;
+                                        jumpedOnce = true;
+                                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                                    }
+                                }
+                                else
+                                {
+                                    onGround = false;
+                                }
+                            }
                         }
                     }
                     catch { /* keep previous behavior on error */ }
@@ -3481,6 +3724,11 @@ namespace FamidashEditor
                 // Move the player forward in world coordinates first
                 playerX_fixed = attemptedPlayerX_fixed;
 
+                    // Atomically consume any jump-buffer frames at the start of the physics step
+                    // so landing code can check a stable value. We clear the buffer here and
+                    // test the captured value when resolving landing to avoid races with UI thread.
+                    int jumpBuffered_local = Interlocked.Exchange(ref jumpBufferCounter, 0);
+
                 // Interaction crossing detection
                 bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
                 if (crossedInteraction)
@@ -3573,6 +3821,8 @@ namespace FamidashEditor
                     }
                 }
 
+                        
+
                 if (downHeld)
                 {
                     int bottomThresholdBottom_local = NES_H * TILE - 5 * TILE; // 5 tiles from bottom (measured from bottom edge)
@@ -3663,7 +3913,7 @@ namespace FamidashEditor
                             int pendingPresses_num = Interlocked.Exchange(ref keyXPressedCount, 0);
                             if (pendingPresses_num > 0)
                             {
-                                playerVelY_fixed = CUBE_JUMP_VEL;
+                                playerVelY_fixed = effectiveJumpVel_fixed;
                                 physicsEnabled = true;
                                 onGround = false;
                                 jumpAppliedThisStep_local = true;
@@ -3674,11 +3924,105 @@ namespace FamidashEditor
                             // Apply gravity only if we did not just apply a jump and if moving vertically
                             if (!jumpAppliedThisStep_local && (playerVelY_fixed != 0 || playerY_fixed < maxPlayerY_fixed_local - LAND_EPS_FIXED))
                             {
-                                playerVelY_fixed += CUBE_GRAVITY;
-                                if (playerVelY_fixed > CUBE_MAX_FALLSPEED) playerVelY_fixed = CUBE_MAX_FALLSPEED;
+                                playerVelY_fixed += effectiveGravity_fixed;
+                                if (!gravityReversed)
+                                {
+                                    if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                }
+                                else
+                                {
+                                    if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                }
                             }
 
+                            // integrate
                             playerY_fixed += playerVelY_fixed;
+
+                            // Ceiling collision: if moving up (negative velocity), prevent passing through ceilings.
+                            try
+                            {
+                                if (playerVelY_fixed < 0)
+                                {
+                                    const int HITBOX_W_LOCAL = 15;
+                                    const int HITBOX_H_LOCAL = 15;
+                                    int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                                    int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
+                                    int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
+                                    int headWorldY_px_local = (playerY_fixed >> 8); // player's top
+
+                                    int tileAboveY_world = headWorldY_px_local / TILE;
+                                    int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                                    int tileIndexY = tileAboveY_world + groundRowsToReserve_local;
+
+                                    if (tileIndexY >= 0 && tileIndexY < mapHeight)
+                                    {
+                                        int leftTileX_local = playerLeft_px_local / TILE;
+                                        int rightTileX_local = playerRight_px_local / TILE;
+                                        bool blocked = false;
+                                        int blockingTileWorldBottom_px = int.MaxValue;
+                                        for (int tx_local = leftTileX_local; tx_local <= rightTileX_local; tx_local++)
+                                        {
+                                            if (tx_local < 0 || tx_local >= mapWidth) continue;
+                                            int tid_local = tiles[tileIndexY * mapWidth + tx_local];
+                                            int useTidForAnim_local = MapAnimatedTileIndex(tid_local);
+                                            int collisionTid_local = useTidForAnim_local;
+                                            if (useTidForAnim_local >= 1000)
+                                            {
+                                                if (useTidForAnim_local >= 1000 && useTidForAnim_local <= 1007)
+                                                {
+                                                    collisionTid_local = 0x08 + ((useTidForAnim_local - 1000) % 4);
+                                                }
+                                                else if (useTidForAnim_local >= 1010 && useTidForAnim_local <= 1015)
+                                                {
+                                                    int group_local = (useTidForAnim_local - 1010) % 3;
+                                                    collisionTid_local = (group_local == 0) ? 0x04 : (group_local == 1) ? 0x7D : 0x7F;
+                                                }
+                                                else if (useTidForAnim_local >= 1020 && useTidForAnim_local <= 1037)
+                                                {
+                                                    collisionTid_local = 0x74 + ((useTidForAnim_local - 1020) % 9);
+                                                }
+                                                else
+                                                {
+                                                    collisionTid_local = tid_local;
+                                                }
+                                            }
+                                            var col_local = MetatileCollisionTable.GetCollision((byte)collisionTid_local);
+
+                                            int tileStartX_local = tx_local * TILE;
+                                            int localLeft_local = Math.Max(0, playerLeft_px_local - tileStartX_local);
+                                            int localRight_local = Math.Min(TILE - 1, playerRight_px_local - tileStartX_local);
+
+                                            for (int lx_local = localLeft_local; lx_local <= localRight_local; lx_local++)
+                                            {
+                                                if (BlocksCeilingAtColumn(col_local, lx_local))
+                                                {
+                                                    blocked = true;
+                                                    // world bottom of this tile row
+                                                    int tileWorldBottom_px = (tileAboveY_world + 1) * TILE;
+                                                    if (tileWorldBottom_px < blockingTileWorldBottom_px) blockingTileWorldBottom_px = tileWorldBottom_px;
+                                                    break;
+                                                }
+                                            }
+                                            if (blocked) break;
+                                        }
+
+                                        if (blocked && blockingTileWorldBottom_px < int.MaxValue)
+                                        {
+                                            // Place player just below the blocking tile and give a small downward ejection so they don't cling
+                                            int desiredTop_px = blockingTileWorldBottom_px + 1;
+                                            int desiredPlayerY_fixed = desiredTop_px << 8;
+                                            if (desiredPlayerY_fixed < 0) desiredPlayerY_fixed = 0;
+                                            playerY_fixed = desiredPlayerY_fixed;
+                                            // Give a small downward velocity (one gravity step) so player falls away from ceiling
+                                            if (!gravityReversed)
+                                                playerVelY_fixed = Math.Min(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                            else
+                                                playerVelY_fixed = Math.Max(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
 
                         // Landing detection with epsilon: prefer tile-based floor collision (per-column 8px logic), fallback to map bottom
                         try
@@ -3767,24 +4111,70 @@ namespace FamidashEditor
                                 }
                             }
 
+                            // If no tile-based floor was detected, but a ground layer exists, treat
+                            // the top of the reserved ground rows as a solid floor so landing on
+                            // the visible ground counts as a collision.
+                            if (floorDetected_local == 0)
+                            {
+                                int groundRowsToReserve_local2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                                if (groundRowsToReserve_local2 > 0)
+                                {
+                                    int topOfGround_px_local = (mapHeight - groundRowsToReserve_local2) * TILE;
+                                    if (topOfGround_px_local < floorTopWorldY_px_local) floorTopWorldY_px_local = topOfGround_px_local;
+                                    floorDetected_local = 1;
+                                }
+                            }
+
                             int floorTop_fixed_local = (floorDetected_local == 1) ? ((floorTopWorldY_px_local - HITBOX_H_LOCAL) << 8) : maxPlayerY_fixed_local;
 
-                            if (playerY_fixed >= floorTop_fixed_local - LAND_EPS_FIXED && playerVelY_fixed >= 0)
+                            if (!gravityReversed)
                             {
-                                playerY_fixed = floorTop_fixed_local;
-                                playerVelY_fixed = 0;
-                                onGround = true;
-                                if (keyXHeld_local || IsXDownAsync())
+                                if (playerY_fixed >= floorTop_fixed_local - LAND_EPS_FIXED && playerVelY_fixed >= 0)
                                 {
-                                    playerVelY_fixed = CUBE_JUMP_VEL;
+                                    // Snap to just above floor and zero vertical velocity; provide a 1px
+                                    // upward nudge so small penetrations are resolved consistently.
+                                    int nudged = floorTop_fixed_local - (1 << 8);
+                                    if (nudged < 0) nudged = 0;
+                                    playerY_fixed = nudged;
+                                    playerVelY_fixed = 0;
+                                    onGround = true;
+
+                                    // If player is holding/jump-pressed or had a buffered press, jump immediately from landing
+                                    if (jumpBuffered_local > 0 || keyXHeld_local || IsXDownAsync())
+                                    {
+                                        playerVelY_fixed = effectiveJumpVel_fixed;
+                                        onGround = false;
+                                        jumpedOnce = true;
+                                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                                    }
+                                }
+                                else
+                                {
                                     onGround = false;
-                                    jumpedOnce = true;
-                                    Interlocked.Exchange(ref keyXPressedCount, 0);
                                 }
                             }
                             else
                             {
-                                onGround = false;
+                                // Reversed gravity: landing occurs when moving upward and reaching the floor from below
+                                if (playerY_fixed <= floorTop_fixed_local + LAND_EPS_FIXED && playerVelY_fixed <= 0)
+                                {
+                                    int nudged = floorTop_fixed_local + (1 << 8);
+                                    playerY_fixed = nudged;
+                                    playerVelY_fixed = 0;
+                                    onGround = true;
+
+                                    if (jumpBuffered_local > 0 || keyXHeld_local || IsXDownAsync())
+                                    {
+                                        playerVelY_fixed = effectiveJumpVel_fixed;
+                                        onGround = false;
+                                        jumpedOnce = true;
+                                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                                    }
+                                }
+                                else
+                                {
+                                    onGround = false;
+                                }
                             }
                         }
                         catch { /* keep previous behavior on error */ }
