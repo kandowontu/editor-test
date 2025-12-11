@@ -494,7 +494,7 @@ namespace FamidashEditor
         private readonly System.Collections.Generic.Dictionary<long, ImageSource?> groundTintedTileCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
 
         // Cache for black-masked tile variants used when backgroundForceSolidBlack is true.
-        private readonly System.Collections.Generic.Dictionary<int, ImageSource?> blackMaskedTileCache = new System.Collections.Generic.Dictionary<int, ImageSource?>();
+        private readonly System.Collections.Generic.Dictionary<long, ImageSource?> blackMaskedTileCache = new System.Collections.Generic.Dictionary<long, ImageSource?>();
 
         // Track color-trigger anchors that have already been processed (so we don't resample every frame)
         private System.Collections.Generic.HashSet<int> processedColorTriggers = new System.Collections.Generic.HashSet<int>();
@@ -3104,8 +3104,13 @@ namespace FamidashEditor
 
                                             // Include the excludeColor in the cache key so different exclude colors
                                             // produce different masked variants.
-                                            int mh = chosenTile.GetHashCode();
-                                            int compositeKey = mh ^ ((excludeColor.A & 0xFF) << 24 | (excludeColor.R & 0xFF) << 16 | (excludeColor.G & 0xFF) << 8 | (excludeColor.B & 0xFF));
+                                            // Use tile index + exclude color as the cache key to avoid sharing
+                                            // masked ImageSource instances between different tile indices.
+                                            long compositeKey = (((long)useTileIndex & 0xFFFFL) << 32)
+                                                                | (((long)excludeColor.A & 0xFFL) << 24)
+                                                                | (((long)excludeColor.R & 0xFFL) << 16)
+                                                                | (((long)excludeColor.G & 0xFFL) << 8)
+                                                                | (((long)excludeColor.B & 0xFFL));
 
                                             if (!blackMaskedTileCache.TryGetValue(compositeKey, out var masked))
                                             {
@@ -3177,6 +3182,7 @@ namespace FamidashEditor
 
                     var rtb = new RenderTargetBitmap(pxW, pxH, 96, 96, PixelFormats.Pbgra32);
                     rtb.Render(dv);
+                    try { rtb.Freeze(); } catch { }
                     tileLayerCache = rtb;
                     try { spriteBackgroundCompositeCache.Clear(); } catch { }
                     try
@@ -3362,8 +3368,8 @@ namespace FamidashEditor
                                 decoLastSelectedFrame.TryGetValue(idx, out prevFrame);
                                 if (prevFrame != frame)
                                 {
-                                    string h0 = frames[0] != null ? frames[0]!.GetHashCode().ToString("X8") : "null";
-                                    string h1 = frames[1] != null ? frames[1]!.GetHashCode().ToString("X8") : "null";
+                                    string h0 = frames[0] != null ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(frames[0]!).ToString("X8") : "null";
+                                    string h1 = frames[1] != null ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(frames[1]!).ToString("X8") : "null";
                                     WriteTempLog($"Simulator: Decoration sprite idx={idx} id=0x{s:X} frames=[{(frames[0]!=null?"ok":"null")},{(frames[1]!=null?"ok":"null")}] selectedFrame={frame} hashes=[{h0},{h1}]");
                                     decoLastSelectedFrame[idx] = frame;
                                 }
@@ -4862,7 +4868,7 @@ namespace FamidashEditor
             {
                 try
                 {
-                    var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                    var conv = new FormatConvertedBitmap(bs, PixelFormats.Pbgra32, null, 0);
                     int w = Math.Max(1, conv.PixelWidth);
                     int h = Math.Max(1, conv.PixelHeight);
                     int stride = w * 4;
@@ -4898,10 +4904,10 @@ namespace FamidashEditor
             try
             {
                 if (bs == null) return false;
-                int key = bs.GetHashCode();
+                int key = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(bs);
                 if (imageTopHeavyCache.TryGetValue(key, out var val)) return val;
 
-                var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                var conv = new FormatConvertedBitmap(bs, PixelFormats.Pbgra32, null, 0);
                 int w = Math.Max(1, conv.PixelWidth);
                 int h = Math.Max(1, conv.PixelHeight);
                 int stride = w * 4;
@@ -5030,7 +5036,7 @@ namespace FamidashEditor
             {
                 if (src == null)
                 {
-                    var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                    var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
                     var pxf = new byte[4];
                     try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
                     try { pf.Freeze(); } catch { }
@@ -5041,7 +5047,7 @@ namespace FamidashEditor
                 {
                     try
                     {
-                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Pbgra32, null, 0);
                         int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
                         var pixels = new byte[h * stride];
                         conv.CopyPixels(pixels, stride, 0);
@@ -5111,7 +5117,7 @@ namespace FamidashEditor
                             }
                         }
 
-                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                         wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
                         wb.Freeze();
                         outList.Add(wb);
@@ -5119,13 +5125,13 @@ namespace FamidashEditor
                     catch
                     {
                             if (src != null) outList.Add(src);
-                            else outList.Add(new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null));
+                            else outList.Add(new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null));
                     }
                 }
                 else
                 {
                         if (src != null) outList.Add(src);
-                        else outList.Add(new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null));
+                        else outList.Add(new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null));
                 }
             }
             return outList.ToArray();
@@ -5141,7 +5147,7 @@ namespace FamidashEditor
             {
                 if (src == null)
                 {
-                    var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                    var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
                     var pxf = new byte[4];
                     try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
                     try { pf.Freeze(); } catch { }
@@ -5152,7 +5158,7 @@ namespace FamidashEditor
                 {
                     try
                     {
-                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Pbgra32, null, 0);
                         int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
                         var pixels = new byte[h * stride];
                         conv.CopyPixels(pixels, stride, 0);
@@ -5176,7 +5182,7 @@ namespace FamidashEditor
                             }
                         }
 
-                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                         wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
                         wb.Freeze();
                         outList.Add(wb);
@@ -5202,13 +5208,13 @@ namespace FamidashEditor
             {
                 // Include the source image identity in the cache key so different frames
                 // of the same sprite id don't collapse to the same cached tinted image.
-                int srcHash = src?.GetHashCode() ?? 0;
+                int srcHash = src != null ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(src) : 0;
                 long key = (((long)spriteId) << 48) | (((long)srcHash & 0xFFFF) << 32) | ((long)playerTint.A << 24) | ((long)playerTint.R << 16) | ((long)playerTint.G << 8) | playerTint.B;
                 if (tintedSpriteCache.TryGetValue(key, out var cached)) return cached;
 
                 if (src is BitmapSource bs)
                 {
-                    var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                    var conv = new FormatConvertedBitmap(bs, PixelFormats.Pbgra32, null, 0);
                     int w = Math.Max(1, conv.PixelWidth);
                     int h = Math.Max(1, conv.PixelHeight);
                     int stride = w * 4;
@@ -5236,7 +5242,7 @@ namespace FamidashEditor
                         // alpha unchanged
                     }
 
-                    var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                    var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                     wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
                     wb.Freeze();
                     tintedSpriteCache[key] = wb;
@@ -5263,7 +5269,7 @@ namespace FamidashEditor
             if (!(src is BitmapSource bs)) return src;
             try
             {
-                int srcHash = bs.GetHashCode();
+                int srcHash = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(bs);
                 // Include animationFrame and tile-layer canvas offsets so cached composites
                 // update when animated tiles/frame or fractional camera offsets change.
                 int layerLeft = 0, layerTop = 0;
@@ -5597,7 +5603,7 @@ namespace FamidashEditor
             if (!(src is BitmapSource bs)) return src;
             try
             {
-                var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                var conv = new FormatConvertedBitmap(bs, PixelFormats.Pbgra32, null, 0);
                 int w = Math.Max(1, conv.PixelWidth);
                 int h = Math.Max(1, conv.PixelHeight);
                 int stride = w * 4;
@@ -5639,7 +5645,7 @@ namespace FamidashEditor
                         pixels[i + 3] = 255;
                     }
                 }
-                var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                 wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
                 wb.Freeze();
                 return wb;
@@ -5655,7 +5661,7 @@ namespace FamidashEditor
             if (!(src is BitmapSource bs)) return src;
             try
             {
-                var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                var conv = new FormatConvertedBitmap(bs, PixelFormats.Pbgra32, null, 0);
                 int w = Math.Max(1, conv.PixelWidth);
                 int h = Math.Max(1, conv.PixelHeight);
                 int stride = w * 4;
@@ -5692,7 +5698,7 @@ namespace FamidashEditor
                         pixels[i + 0] = 0; pixels[i + 1] = 0; pixels[i + 2] = 0; pixels[i + 3] = 255;
                     }
                 }
-                var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                 wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
                 wb.Freeze();
                 return wb;
@@ -5710,8 +5716,8 @@ namespace FamidashEditor
 
             try
             {
-                var convSrc = new FormatConvertedBitmap(sb, PixelFormats.Bgra32, null, 0);
-                var convOrig = new FormatConvertedBitmap(ob, PixelFormats.Bgra32, null, 0);
+                var convSrc = new FormatConvertedBitmap(sb, PixelFormats.Pbgra32, null, 0);
+                var convOrig = new FormatConvertedBitmap(ob, PixelFormats.Pbgra32, null, 0);
                 int w = Math.Max(1, convSrc.PixelWidth);
                 int h = Math.Max(1, convSrc.PixelHeight);
                 if (convOrig.PixelWidth != w || convOrig.PixelHeight != h) return src;
@@ -5741,7 +5747,7 @@ namespace FamidashEditor
                     }
                 }
 
-                var wb = new WriteableBitmap(w, h, convSrc.DpiX, convSrc.DpiY, PixelFormats.Bgra32, null);
+                var wb = new WriteableBitmap(w, h, convSrc.DpiX, convSrc.DpiY, PixelFormats.Pbgra32, null);
                 wb.WritePixels(new Int32Rect(0, 0, w, h), pixelsSrc, stride, 0);
                 wb.Freeze();
                 return wb;
@@ -5766,7 +5772,7 @@ namespace FamidashEditor
                 {
                     if (src == null)
                     {
-                        var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                        var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
                         var pxf = new byte[4];
                         try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), pxf, 4, 0); } catch { }
                         try { pf.Freeze(); } catch { }
@@ -5777,7 +5783,7 @@ namespace FamidashEditor
                     {
                         try
                         {
-                            var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                            var conv = new FormatConvertedBitmap(bs, PixelFormats.Pbgra32, null, 0);
                             int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
                             var pixels = new byte[h * stride];
                             conv.CopyPixels(pixels, stride, 0);
@@ -5814,7 +5820,7 @@ namespace FamidashEditor
                                 pixels[i + 0] = tint.B;
                             }
 
-                            var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                            var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                             wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
                             wb.Freeze();
                             outList.Add(wb);
@@ -5823,7 +5829,7 @@ namespace FamidashEditor
                         {
                             if (src == null)
                             {
-                                var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                                var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
                                 try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
                                 try { pf.Freeze(); } catch { }
                                 outList.Add(pf);
