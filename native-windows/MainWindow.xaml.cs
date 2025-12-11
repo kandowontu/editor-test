@@ -62,6 +62,25 @@ namespace FamidashEditor
             catch { }
         }
 
+        // Menu handlers for new menu options
+        private void MenuOptionHideTriggerSprites_Checked(object? sender, RoutedEventArgs e)
+        {
+            try { SetHideTriggerSprites(true); } catch { }
+        }
+        private void MenuOptionHideTriggerSprites_Unchecked(object? sender, RoutedEventArgs e)
+        {
+            try { SetHideTriggerSprites(false); } catch { }
+        }
+
+        private void MenuOptionShowAccurateTileset_Checked(object? sender, RoutedEventArgs e)
+        {
+            try { SetShowAccurateTileset(true); } catch { }
+        }
+        private void MenuOptionShowAccurateTileset_Unchecked(object? sender, RoutedEventArgs e)
+        {
+            try { SetShowAccurateTileset(false); } catch { }
+        }
+
         // Structure tool set state
         private int structureSetOffset = 0; // in tiles (0, 0x20, 0x40)
         private int structureSetBaseTile = 0x20; // 0x20 for A, 0x40 for B, 0x60 for C
@@ -127,6 +146,40 @@ namespace FamidashEditor
     private bool swapMouseWheelScroll = false; // when true, swap shift/no-modifier wheel scroll behavior
     private bool invertPinchGesture = true; // if true, invert pinch scale (device-dependent)
     private bool pinchDirectionDetected = false;
+    // Global simulator option: hide trigger sprites (default true)
+    private bool hideTriggerSprites = true;
+
+    // Suppress saving editor settings while the main window is initializing
+    // (InitializeComponent can fire menu Checked handlers before LoadSettings runs).
+    private bool suppressSettingsSave = true;
+
+    public bool GetHideTriggerSprites() { try { return hideTriggerSprites; } catch { return true; } }
+
+    // Set the global hide-trigger-sprites option and persist as an editor setting.
+    public void SetHideTriggerSprites(bool enabled)
+    {
+        try
+        {
+            hideTriggerSprites = enabled;
+            // Persist global editor settings
+            try { SaveEditorSettings(); } catch { }
+
+            // Propagate to any open simulator windows so they update visuals immediately
+            try
+            {
+                foreach (Window w in Application.Current.Windows)
+                {
+                    try
+                    {
+                        if (w is SimulatorWindow sw) sw.SetHideTriggerSprites(enabled);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+        catch { }
+    }
     private string tileboardPosition = "LEFT"; // LEFT, RIGHT, TOP, or BOTTOM
     private double lastManipulationCumulativeScale = 1.0;
     private bool manipulationActive = false;
@@ -309,8 +362,8 @@ namespace FamidashEditor
     public int? LoadedStartingStars { get => loadedStartingStars; set => loadedStartingStars = value; }
     private int loadedSimulatorScale = 1; // 1..4
     public int LoadedSimulatorScale { get => loadedSimulatorScale; set => loadedSimulatorScale = value; }
-    // Global setting: open simulator paused
-    private bool loadedOpenSimulatorPaused = false;
+    // Global setting: open simulator paused (default ON)
+    private bool loadedOpenSimulatorPaused = true;
     public bool LoadedOpenSimulatorPaused { get => loadedOpenSimulatorPaused; set => loadedOpenSimulatorPaused = value; }
     // Per-level starting color codes (nullable). These are the authoritative top-level
     // properties referenced by SetOptionsWindow and used when opening the simulator.
@@ -907,6 +960,17 @@ namespace FamidashEditor
         
         return Path.Combine(configFolder, configFileName);
     }
+
+    // Persist editor-global settings (merged into editor-settings.json alongside any existing values).
+    private void SaveEditorSettings()
+    {
+        try
+        {
+            // Use the centralized save routine that writes typed values for all editor-global settings.
+            SaveSettingsWithTriggerOption();
+        }
+        catch { }
+    }
     
     private void SaveTmxConfig(string tmxFilePath)
     {
@@ -1384,6 +1448,25 @@ namespace FamidashEditor
                             var b = (byte)tt[3].GetInt32();
                             tileTint = Color.FromArgb(a, r, g, b);
                         }
+
+                        // Load global hide-trigger-sprites option if present (default true)
+                        try
+                        {
+                            if (doc.RootElement.TryGetProperty("hideTriggerSprites", out var hts))
+                            {
+                                try { hideTriggerSprites = hts.GetBoolean(); } catch { hideTriggerSprites = true; }
+                                // Propagate to any open simulator windows
+                                try
+                                {
+                                    foreach (Window w in Application.Current.Windows)
+                                    {
+                                        try { if (w is SimulatorWindow sw) sw.SetHideTriggerSprites(hideTriggerSprites); } catch { }
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                        catch { }
                     }
                 }
                 catch { }
@@ -2068,7 +2151,13 @@ namespace FamidashEditor
 
                 // Ensure simulator menu opens simulator window and passes preview/animation maps
             LoadSettings();
+            // Allow subsequent changes to persist to disk
+            try { suppressSettingsSave = false; } catch { }
             LoadRecentFiles();
+            // Initialize menu checkbox states from current settings
+            try { if (MenuOptionHideTriggerSprites != null) MenuOptionHideTriggerSprites.IsChecked = GetHideTriggerSprites(); } catch { }
+            try { if (MenuOptionShowAccurateTileset != null) MenuOptionShowAccurateTileset.IsChecked = ShowAccurateTileset; } catch { }
+            try { if (MenuOptionOpenSimulatorPaused != null) MenuOptionOpenSimulatorPaused.IsChecked = loadedOpenSimulatorPaused; } catch { }
             
             // Initialize default map before creating tab
             InitDefaultMap();
@@ -6098,6 +6187,7 @@ namespace FamidashEditor
         {
             try
             {
+                if (suppressSettingsSave) return; // Avoid writing during initialization
                 var c = mapBackground is SolidColorBrush sb ? sb.Color : Color.FromRgb(59, 59, 59);
                 SaveSettings(c);
             }

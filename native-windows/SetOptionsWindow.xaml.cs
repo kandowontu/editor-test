@@ -145,6 +145,7 @@ namespace FamidashEditor
                     // Persist into current tab snapshot so changes stick for untitled/new tabs
                     try { mw.PersistLoadedValuesToCurrentTab(); } catch { }
 
+                        
                     // Save config (writes out to disk only when the TMX has a file path)
                     mw.SaveCurrentTmxConfig();
                 }
@@ -365,6 +366,8 @@ namespace FamidashEditor
                                 NoParallaxCheckBox.Checked += (ss, ee) => { try { mwOwner.SetNoParallax(true); } catch { } };
                                 NoParallaxCheckBox.Unchecked += (ss, ee) => { try { mwOwner.SetNoParallax(false); } catch { } };
                             }
+
+                            
 
                             // Initialize MaxFallSpeed combo and persist on change
                             try

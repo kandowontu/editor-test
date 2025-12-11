@@ -11,6 +11,33 @@ namespace FamidashEditor
 {
     public partial class SimulatorWindow : Window
     {
+        // Global option: when true, hide certain trigger sprites visually in the simulator.
+        private bool hideTriggerSprites = true;
+
+        public void SetHideTriggerSprites(bool v) { try { hideTriggerSprites = v; } catch { } }
+
+        private bool IsHiddenTriggerSprite(int s)
+        {
+            try
+            {
+                int id = s & 0xFF;
+                // Hide these specific trigger sprite IDs (hex):
+                // 0x0F, 0x47, 0x48, 0x6F, 0x7F, 0x70-0x78, 0x7D, 0x8E, 0x9E, 0xDD-0xDF, 0xED-0xEF, 0xF0-0xFC
+                if (id == 0x0F) return true;
+                if (id == 0x47 || id == 0x48) return true;
+                if (id == 0x6F) return true;
+                if (id == 0x7F) return true;
+                if (id >= 0x70 && id <= 0x78) return true;
+                if (id == 0x7D) return true;
+                if (id == 0x8E) return true;
+                if (id == 0x9E) return true;
+                if (id >= 0xDD && id <= 0xDF) return true;
+                if (id >= 0xED && id <= 0xEF) return true;
+                if (id >= 0xF0 && id <= 0xFC) return true;
+                return false;
+            }
+            catch { return false; }
+        }
         // Option: show yellow translucent hitboxes for sprites (non-trigger sprites only)
         public bool ShowSpriteHitboxes { get; set; } = false;
 
@@ -49,8 +76,54 @@ namespace FamidashEditor
                     effectiveJumpVel_fixed = CUBE_JUMP_VEL;
                     effectiveMaxFall_fixed = CUBE_MAX_FALLSPEED;
                 }
+
+                if (effectiveInvertedByW)
+                {
+                    effectiveGravity_fixed = -effectiveGravity_fixed;
+                    effectiveJumpVel_fixed = -effectiveJumpVel_fixed;
+                    effectiveMaxFall_fixed = -effectiveMaxFall_fixed;
+                }
+
+                // Debug: log effective values and flags so we can verify W toggles work
+                try { System.Diagnostics.Debug.WriteLine($"UpdateEffectiveGravity: gravityReversed={gravityReversed} effectiveInvertedByW={effectiveInvertedByW} effectiveGravity={effectiveGravity_fixed} effectiveJump={effectiveJumpVel_fixed} effectiveMaxFall={effectiveMaxFall_fixed}"); } catch { }
             }
             catch { }
+        }
+
+        // Map certain simulator tile indices to alternative indices for display.
+        // This allows specific tile codes to render exactly like other tiles
+        // (or be rendered as fully transparent by mapping to 0x00).
+        private int ResolveSimulatorTileIndex(int idx)
+        {
+            try
+            {
+                if (idx >= 1000 || idx < 0) return idx;
+                switch (idx)
+                {
+                    // Examples: render these special tiles as other tile graphics
+                    case 0xD9:
+                    case 0xDA:
+                        return 0x11; // render like tile 0x11
+                    case 0xDB:
+                    case 0xDC:
+                        return 0x1B; // render like tile 0x1B
+                    case 0x8F:
+                        return 0x2F; // render like tile 0x2F
+
+                    // Render these indices as fully transparent (map to 0x00)
+                    case 0xFC:
+                    case 0xDF:
+                    case 0xE3:
+                    case 0xFE:
+                    case 0xFF:
+                        return 0x00;
+
+                    // Add additional remaps here as needed.
+                    default:
+                        return idx;
+                }
+            }
+            catch { return idx; }
         }
 
         // Sprite geometry tables (from user-provided data). Non-numeric placeholders use sensible defaults.
@@ -384,6 +457,10 @@ namespace FamidashEditor
         private int effectiveJumpVel_fixed;
         private int effectiveMaxFall_fixed;
         private bool gravityReversed = false;
+        // When true, the W key has inverted the effective numeric physics values
+        // (effectiveGravity_fixed, effectiveJumpVel_fixed, effectiveMaxFall_fixed)
+        // without changing the logical gravity direction used by collision code.
+        private bool effectiveInvertedByW = false;
         private int playerVelY_fixed = 0; // current vertical velocity (fixed-point)
         private bool physicsEnabled = false; // enable physics after first jump (for testing)
         // Landing epsilon in fixed-point (1 pixel)
@@ -454,12 +531,7 @@ namespace FamidashEditor
             return animationFrame;
         }
         // Sprite IDs that should animate at half speed (coins, pads, orbs)
-            private static readonly System.Collections.Generic.HashSet<int> slowAnimatedSpriteIds = new System.Collections.Generic.HashSet<int>
-        {
-            0x05, 0x06, 0x27, 0x28, 0x44, 0x7A, // orbs
-            0x07, 0x1A, 0x1B, 0x6E,               // coins / mini-coin
-            0x52, 0x0A, 0x0C, 0x0D, 0x0E, 0x25, 0x26, 0xFD, 0xFE // pads (include 0xFD/0xFE aliases)
-        };
+        private static readonly System.Collections.Generic.HashSet<int> slowAnimatedSpriteIds = new System.Collections.Generic.HashSet<int> { 0x07, 0x1A, 0x1B, 0x6E };
         private System.Collections.Generic.Dictionary<int, int> spriteFrameOffsets = new System.Collections.Generic.Dictionary<int, int>();
         private Random spriteAnimationRandom = new Random();
 
@@ -1410,7 +1482,10 @@ namespace FamidashEditor
                     {
                         lock (simLock)
                         {
-                            gravityReversed = !gravityReversed;
+                            // Toggle only the numeric inversion of effective physics values
+                            // (gravity, jump impulse, max-fall) without changing the
+                            // logical gravity direction used by collision/landing code.
+                            effectiveInvertedByW = !effectiveInvertedByW;
                             UpdateEffectiveGravity();
                         }
                     }
@@ -1822,15 +1897,19 @@ namespace FamidashEditor
                     if (!jumpAppliedThisFrame && (playerVelY_fixed != 0 || playerY_fixed < maxPlayerY_fixed - LAND_EPS_FIXED))
                     {
                         playerVelY_fixed += effectiveGravity_fixed;
-                        // cap downward velocity (works for normal and reversed gravity)
-                        if (!gravityReversed)
+                        // cap velocity according to the sign of effectiveMaxFall_fixed
+                        try
                         {
-                            if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                            if (effectiveMaxFall_fixed >= 0)
+                            {
+                                if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                            }
+                            else
+                            {
+                                if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                            }
                         }
-                        else
-                        {
-                            if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
-                        }
+                        catch { }
                     }
 
                     // integrate velocity
@@ -1847,7 +1926,6 @@ namespace FamidashEditor
                         if (playerVelY_fixed < 0)
                         {
                             const int HITBOX_W = 15;
-                            const int HITBOX_H = 15;
                             int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                             int playerLeft_px = playerCenter_px - (HITBOX_W / 2);
                             int playerRight_px = playerLeft_px + (HITBOX_W - 1);
@@ -2788,6 +2866,9 @@ namespace FamidashEditor
                                 int t = tiles[idx];
                                 int animatedTileIndex = MapAnimatedTileIndex(t);
                                 int useTileIndex = animatedTileIndex;
+                                // Apply simulator-specific remapping so certain tile codes
+                                // render exactly like other tile indices (or transparent).
+                                useTileIndex = ResolveSimulatorTileIndex(useTileIndex);
                                 if (animatedTileIndex != t || useTileIndex >= 1000) hadAnimated = true;
                                 ImageSource? chosenTile = null;
                                 try
@@ -3265,6 +3346,11 @@ namespace FamidashEditor
                     int idx = mapY * mapWidth + mapX;
                     int s = sprites[idx];
                     if (s < 0) continue;
+
+                    // If the global 'hide trigger sprites' option is enabled, skip drawing
+                    // these specific trigger sprite images while still allowing them to
+                    // function (triggers remain active in the simulation logic).
+                    try { if (hideTriggerSprites && IsHiddenTriggerSprite(s)) continue; } catch { }
 
                     ImageSource? chosenSprite = null;
                     // Simulator-only special-case: prefer an embedded upside-down chain for sprite 0x3D
@@ -3935,14 +4021,18 @@ namespace FamidashEditor
                             if (!jumpAppliedThisStep_local && (playerVelY_fixed != 0 || playerY_fixed < maxPlayerY_fixed_local - LAND_EPS_FIXED))
                             {
                                 playerVelY_fixed += effectiveGravity_fixed;
-                                if (!gravityReversed)
+                                try
                                 {
-                                    if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                    if (effectiveMaxFall_fixed >= 0)
+                                    {
+                                        if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                    }
+                                    else
+                                    {
+                                        if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                    }
                                 }
-                                else
-                                {
-                                    if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
-                                }
+                                catch { }
                             }
 
                             // integrate
@@ -3954,7 +4044,6 @@ namespace FamidashEditor
                                 if (playerVelY_fixed < 0)
                                 {
                                     const int HITBOX_W_LOCAL = 15;
-                                    const int HITBOX_H_LOCAL = 15;
                                     int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                                     int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
                                     int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
