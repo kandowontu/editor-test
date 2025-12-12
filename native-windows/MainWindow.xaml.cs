@@ -6949,6 +6949,8 @@ namespace FamidashEditor
                     loadedStartingGroundColor,
                     loadedSimulatorScale,
                     loadedMaxFallSpeed
+                    ,
+                    (loadedStartingGameMode.HasValue ? loadedStartingGameMode.Value : 0)
                     );
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
@@ -9438,6 +9440,71 @@ namespace FamidashEditor
             return outList.ToArray();
         }
 
+        // Create exact RGB-replaced copies of images. For every non-transparent pixel
+        // we replace the RGB channels with the tint's RGB (preserve original alpha).
+        // This differs from CreateRgbReplacedImages by forcing a single-color mapping
+        // (no two-tone / darker mapping) which is useful for ground/floor art where
+        // the user expects the entire surface to change to the selected color.
+        private ImageSource?[]? CreateExactRgbReplacedImages(ImageSource?[]? originals, Color tint)
+        {
+            if (originals == null) return null;
+            if (tint.A == 0) return originals; // no change requested
+            var outList = new List<ImageSource>(originals.Length);
+            foreach (var src in originals)
+            {
+                if (src is BitmapSource bs)
+                {
+                    try
+                    {
+                        var conv = new FormatConvertedBitmap(bs, PixelFormats.Bgra32, null, 0);
+                        int w = conv.PixelWidth; int h = conv.PixelHeight; int stride = w * 4;
+                        var pixels = new byte[h * stride];
+                        conv.CopyPixels(pixels, stride, 0);
+
+                        for (int i = 0; i < pixels.Length; i += 4)
+                        {
+                            byte a = pixels[i + 3];
+                            if (a != 0)
+                            {
+                                pixels[i + 0] = tint.B;
+                                pixels[i + 1] = tint.G;
+                                pixels[i + 2] = tint.R;
+                                // keep original alpha
+                            }
+                        }
+
+                        var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
+                        wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                        wb.Freeze();
+                        outList.Add(wb);
+                    }
+                    catch
+                    {
+                        if (src == null)
+                        {
+                            var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                            try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                            try { pf.Freeze(); } catch { }
+                            outList.Add(pf);
+                        }
+                        else outList.Add(src);
+                    }
+                }
+                else
+                {
+                    if (src == null)
+                    {
+                        var pf = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+                        try { pf.WritePixels(new Int32Rect(0, 0, 1, 1), new byte[4], 4, 0); } catch { }
+                        try { pf.Freeze(); } catch { }
+                        outList.Add(pf);
+                    }
+                    else outList.Add(src);
+                }
+            }
+            return outList.ToArray();
+        }
+
         // Create exact RGB-replaced copies of images. For every non-black, non-transparent pixel
         // we replace the RGB channels with the tint's RGB (preserve original alpha). If tint.A == 0
         // the originals are returned unchanged.
@@ -9883,7 +9950,10 @@ namespace FamidashEditor
             // For ground, use exact RGB replacement/two-tone mapping so the editor
             // background/ground tint matches the color picker selection. Lighter = selected
             // color, darker = palette row-up (or black when top row).
-            groundTonedImages = CreateRgbReplacedImages(groundImages, groundTint);
+            // Use exact replacement for ground so the floor becomes the specified palette
+            // color completely instead of preserving darker shading. This maps every
+            // non-transparent pixel to the chosen RGB while preserving alpha.
+            groundTonedImages = CreateExactRgbReplacedImages(groundImages, groundTint);
             // mark background/ground cache dirty so the ground RTB is rebuilt with the new tint
             backgroundDirty = true;
             // Status updates removed for ground tinting

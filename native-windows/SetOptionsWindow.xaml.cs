@@ -1065,7 +1065,11 @@ namespace FamidashEditor
 
                 if (dataChanged)
                 {
-                    // Save to level-specific config file
+                    // Persist loaded values into the current tab snapshot so untitled/new tabs
+                    // immediately reflect the changes (this fixes stale-export behavior).
+                    try { mainWindow.PersistLoadedValuesToCurrentTab(); } catch { }
+
+                    // Save to level-specific config file (writes only when TMX has a file path)
                     mainWindow.SaveCurrentTmxConfig();
                     MessageBox.Show("Settings loaded successfully from JSON and saved to config.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
                 }

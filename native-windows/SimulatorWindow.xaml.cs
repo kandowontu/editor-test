@@ -134,12 +134,6 @@ namespace FamidashEditor
             0x34,0x34,0x10,0x10,0x10,0x10,0x10,0x12, // 18-1F
             0x24,0x24,0x34,0x34,0x34,0x03,0x03,0x12, // 20-27
             0x12,0x12,0x10,0x10,0x10,0x10,0x10,0x10, // 28-2F (DECO->0x10)
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 30-37
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 38-3F
-            0x10,0x10,0x10,0x10,0x12,0x12,0x12,0x28, // 40-47
-            0x28,0x10,0x10,0x34,0x12,0x12,0x30,0x10, // 48-4F (SPBH->0x10)
-            0x12,0x12,0x03,0x03,0x12,0x12,0x03,0x03, // 50-57
-            0x34,0x10,0x10,0x12,0x12,0x12,0x12,0x34, // 58-5F (SPBH->0x10)
             0x34,0x34,0x34,0x34,0x34,0x02,0x10,0x10, // 60-67 (SPBH->0x10)
             0x10,0x10,0x34,0x34,0x34,0x20,0x08,0x10, // 68-6F (SPBH->0x10)
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 70-77 (SPBH->0x10)
@@ -452,6 +446,17 @@ namespace FamidashEditor
         private int CUBE_MAX_FALLSPEED = 0x600; // max downward velocity
         private const int CUBE_GRAVITY = 0x6B; // gravity added per frame
         private const int CUBE_JUMP_VEL = -0x590; // jump impulse (negative = upward)
+        // Ship physics constants (fixed-point, 8 fractional bits)
+        // Values provided by user in high-byte pixel / low-byte subpixel format
+        private const int SHIP_MAX_FALLSPEED = 0x0369;
+        private const int SHIP_MAX_FALLSPEED_HOLD = 0x0443;
+        private const int SHIP_GRAVITY_BASE = 0x003C;
+        private const int SHIP_GRAVITY = 0x0030;
+        private const int SHIP_GRAVITY_AFTER_HOLD = 0x0049;
+        private const int SHIP_GRAVITY_HOLD_FALL = 0x004C;
+
+        // Current player game mode: 0 = cube, 1 = ship, etc. Defaults to cube.
+        private int currentGameMode = 0;
         // Runtime-effective physics values (adjusted when gravity is reversed)
         private int effectiveGravity_fixed;
         private int effectiveJumpVel_fixed;
@@ -775,7 +780,8 @@ namespace FamidashEditor
             int? startingBackgroundColorCode = null,
             int? startingGroundColorCode = null,
             int simulatorScale = 1,
-            int? maxFallSpeed = null
+            int? maxFallSpeed = null,
+            int startingGameMode = 0
             )
         {
             InitializeComponent();
@@ -818,6 +824,8 @@ namespace FamidashEditor
                 this.largeSawFrame2TilesTinted = CreateHslShiftedImages(this.largeSawFrame2TilesOrig, backgroundTint, tileTint);
             }
             // Simulator-specific tweak: shift sprite 0x2B and 0x2C up 8 pixels to match editor preview
+            // Initialize starting game mode
+            try { currentGameMode = startingGameMode; } catch { currentGameMode = 0; }
             try
             {
                 const int SPRITE_ID_SHIFT_A = 0x2B;
@@ -1879,7 +1887,7 @@ namespace FamidashEditor
                     bool jumpAppliedThisFrame = false;
                     // Atomically grab and clear any pending UI edges
                     int pendingPress = Interlocked.Exchange(ref keyXPressedCount, 0);
-                    if (pendingPress > 0)
+                    if (pendingPress > 0 && currentGameMode != 1)
                     {
                         // Reset vertical velocity to the jump impulse (do not stack)
                         playerVelY_fixed = effectiveJumpVel_fixed;
@@ -1896,20 +1904,60 @@ namespace FamidashEditor
                     // Apply gravity only if we did not just apply a jump this frame and if moving vertically or sufficiently above ground (use epsilon)
                     if (!jumpAppliedThisFrame && (playerVelY_fixed != 0 || playerY_fixed < maxPlayerY_fixed - LAND_EPS_FIXED))
                     {
-                        playerVelY_fixed += effectiveGravity_fixed;
-                        // cap velocity according to the sign of effectiveMaxFall_fixed
-                        try
+                        if (currentGameMode == 1)
                         {
-                            if (effectiveMaxFall_fixed >= 0)
+                            try
                             {
-                                if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                // Determine whether gravity is "downwards" (positive Y) for numeric sign
+                                int gravitySign = gravityReversed ? -1 : 1;
+                                if (effectiveInvertedByW) gravitySign = -gravitySign;
+
+                                bool movingUpRelative = gravitySign > 0 ? (playerVelY_fixed < 0) : (playerVelY_fixed > 0);
+                                bool xheld = IsXDownAsync() || keyXHeld;
+
+                                int tmpMag = movingUpRelative ? (xheld ? SHIP_GRAVITY_HOLD_FALL : SHIP_GRAVITY_BASE)
+                                                               : (xheld ? SHIP_GRAVITY_AFTER_HOLD : SHIP_GRAVITY);
+
+                                int tmpgravity = tmpMag * gravitySign;
+                                if (xheld) tmpgravity = -tmpgravity; // X = thrust opposite to gravity
+
+                                playerVelY_fixed += tmpgravity;
+
+                                try
+                                {
+                                    // Enforce frame clamps per design: choose clamping bounds depending on gravity direction
+                                    if (gravitySign < 0)
+                                    {
+                                        if (playerVelY_fixed < -SHIP_MAX_FALLSPEED) playerVelY_fixed = -SHIP_MAX_FALLSPEED;
+                                        if (playerVelY_fixed > SHIP_MAX_FALLSPEED_HOLD) playerVelY_fixed = SHIP_MAX_FALLSPEED_HOLD;
+                                    }
+                                    else
+                                    {
+                                        if (playerVelY_fixed < -SHIP_MAX_FALLSPEED_HOLD) playerVelY_fixed = -SHIP_MAX_FALLSPEED_HOLD;
+                                        if (playerVelY_fixed > SHIP_MAX_FALLSPEED) playerVelY_fixed = SHIP_MAX_FALLSPEED;
+                                    }
+                                }
+                                catch { }
                             }
-                            else
-                            {
-                                if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
-                            }
+                            catch { playerVelY_fixed += effectiveGravity_fixed; }
                         }
-                        catch { }
+                        else
+                        {
+                            playerVelY_fixed += effectiveGravity_fixed;
+                            // cap velocity according to the sign of effectiveMaxFall_fixed
+                            try
+                            {
+                                if (effectiveMaxFall_fixed >= 0)
+                                {
+                                    if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                }
+                                else
+                                {
+                                    if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                }
+                            }
+                            catch { }
+                        }
                     }
 
                     // integrate velocity
@@ -2186,7 +2234,7 @@ namespace FamidashEditor
                                     onGround = true;
 
                                     // If player is holding/jump-pressed or had a buffered press, jump immediately from landing
-                                    if (buffered_ui > 0 || keyXHeld || IsXDownAsync())
+                                    if (currentGameMode == 0 && (buffered_ui > 0 || keyXHeld || IsXDownAsync()))
                                     {
                                         playerVelY_fixed = effectiveJumpVel_fixed;
                                         onGround = false;
@@ -2209,7 +2257,7 @@ namespace FamidashEditor
                                     playerVelY_fixed = 0;
                                     onGround = true;
 
-                                    if (buffered_ui > 0 || keyXHeld || IsXDownAsync())
+                                    if (currentGameMode == 0 && (buffered_ui > 0 || keyXHeld || IsXDownAsync()))
                                     {
                                         playerVelY_fixed = effectiveJumpVel_fixed;
                                         onGround = false;
@@ -2282,6 +2330,22 @@ namespace FamidashEditor
                     {
                         int sid = sprites[idx];
                         if (sid < 0) continue;
+                        // Portal handling: ship portal (0x01) -> ship mode, cube portal (0x00) -> cube mode
+                        try
+                        {
+                            if (sid == 0x01 || sid == 0x00)
+                            {
+                                int anchorTileX_sp = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a_sp)) ? a_sp.anchorTileX : idx % mapWidth;
+                                int anchorX_center_fixed_sp = ((anchorTileX_sp * TILE) + (TILE / 2)) << 8;
+                                if (anchorX_center_fixed_sp > prevPlayerCenter_fixed && anchorX_center_fixed_sp <= INTERACTION_LINE_FIXED)
+                                {
+                                    if (sid == 0x01) currentGameMode = 1;
+                                    else currentGameMode = 0;
+                                    break;
+                                }
+                            }
+                        }
+                        catch { }
                         if (!speedPortalMap.ContainsKey(sid)) continue;
 
                         int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
@@ -4007,7 +4071,7 @@ namespace FamidashEditor
 
                             // Atomically consume any pending UI-edge presses recorded by the UI poll
                             int pendingPresses_num = Interlocked.Exchange(ref keyXPressedCount, 0);
-                            if (pendingPresses_num > 0)
+                            if (pendingPresses_num > 0 && currentGameMode == 0)
                             {
                                 playerVelY_fixed = effectiveJumpVel_fixed;
                                 physicsEnabled = true;
@@ -4020,19 +4084,60 @@ namespace FamidashEditor
                             // Apply gravity only if we did not just apply a jump and if moving vertically
                             if (!jumpAppliedThisStep_local && (playerVelY_fixed != 0 || playerY_fixed < maxPlayerY_fixed_local - LAND_EPS_FIXED))
                             {
-                                playerVelY_fixed += effectiveGravity_fixed;
-                                try
+                                if (currentGameMode == 1)
                                 {
-                                    if (effectiveMaxFall_fixed >= 0)
+                                    // Ship-mode numeric sim gravity selection (use local key state)
+                                    try
                                     {
-                                        if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                        bool normalGravity = !gravityReversed;
+                                        bool movingUpRelative = normalGravity ? (playerVelY_fixed < 0) : (playerVelY_fixed > 0);
+                                        bool xheld_local = IsXDownAsync() || keyXHeld_local;
+
+                                                int gravitySign_local = gravityReversed ? -1 : 1;
+                                                if (effectiveInvertedByW) gravitySign_local = -gravitySign_local;
+
+                                                bool movingUpRelative_local = gravitySign_local > 0 ? (playerVelY_fixed < 0) : (playerVelY_fixed > 0);
+                                                int tmpMag_local = movingUpRelative_local ? (xheld_local ? SHIP_GRAVITY_HOLD_FALL : SHIP_GRAVITY_BASE)
+                                                                                      : (xheld_local ? SHIP_GRAVITY_AFTER_HOLD : SHIP_GRAVITY);
+
+                                                int tmpgravity_local = tmpMag_local * gravitySign_local;
+                                                if (xheld_local) tmpgravity_local = -tmpgravity_local; // X = thrust opposite to gravity
+
+                                                playerVelY_fixed += tmpgravity_local;
+
+                                                try
+                                                {
+                                                    if (gravitySign_local < 0)
+                                                    {
+                                                        if (playerVelY_fixed < -SHIP_MAX_FALLSPEED) playerVelY_fixed = -SHIP_MAX_FALLSPEED;
+                                                        if (playerVelY_fixed > SHIP_MAX_FALLSPEED_HOLD) playerVelY_fixed = SHIP_MAX_FALLSPEED_HOLD;
+                                                    }
+                                                    else
+                                                    {
+                                                        if (playerVelY_fixed < -SHIP_MAX_FALLSPEED_HOLD) playerVelY_fixed = -SHIP_MAX_FALLSPEED_HOLD;
+                                                        if (playerVelY_fixed > SHIP_MAX_FALLSPEED) playerVelY_fixed = SHIP_MAX_FALLSPEED;
+                                                    }
+                                                }
+                                                catch { }
                                     }
-                                    else
-                                    {
-                                        if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
-                                    }
+                                    catch { playerVelY_fixed += effectiveGravity_fixed; }
                                 }
-                                catch { }
+                                else
+                                {
+                                    playerVelY_fixed += effectiveGravity_fixed;
+                                    try
+                                    {
+                                        if (effectiveMaxFall_fixed >= 0)
+                                        {
+                                            if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                        }
+                                        else
+                                        {
+                                            if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                        }
+                                    }
+                                    catch { }
+                                }
                             }
 
                             // integrate
@@ -4239,7 +4344,7 @@ namespace FamidashEditor
                                     onGround = true;
 
                                     // If player is holding/jump-pressed or had a buffered press, jump immediately from landing
-                                    if (jumpBuffered_local > 0 || keyXHeld_local || IsXDownAsync())
+                                    if (currentGameMode == 0 && (jumpBuffered_local > 0 || keyXHeld_local || IsXDownAsync()))
                                     {
                                         playerVelY_fixed = effectiveJumpVel_fixed;
                                         onGround = false;
@@ -4262,7 +4367,7 @@ namespace FamidashEditor
                                     playerVelY_fixed = 0;
                                     onGround = true;
 
-                                    if (jumpBuffered_local > 0 || keyXHeld_local || IsXDownAsync())
+                                    if (currentGameMode == 0 && (jumpBuffered_local > 0 || keyXHeld_local || IsXDownAsync()))
                                     {
                                         playerVelY_fixed = effectiveJumpVel_fixed;
                                         onGround = false;
@@ -4316,6 +4421,22 @@ namespace FamidashEditor
                 {
                     int sid = sprites[idx];
                     if (sid < 0) continue;
+                    // Portal handling: ship portal (0x01) -> ship mode, cube portal (0x00) -> cube mode
+                    try
+                    {
+                        if (sid == 0x01 || sid == 0x00)
+                        {
+                            int anchorTileX_sp = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a_sp)) ? a_sp.anchorTileX : idx % mapWidth;
+                            int anchorX_center_fixed_sp = ((anchorTileX_sp * TILE) + (TILE / 2)) << 8;
+                            if (anchorX_center_fixed_sp > prevCameraCenter_fixed && anchorX_center_fixed_sp <= center_fixed)
+                            {
+                                if (sid == 0x01) currentGameMode = 1;
+                                else currentGameMode = 0;
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
                     if (!speedPortalMap.ContainsKey(sid)) continue;
                     int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                     int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
