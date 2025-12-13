@@ -450,6 +450,10 @@ namespace FamidashEditor
         // Values provided by user in high-byte pixel / low-byte subpixel format
         private const int SHIP_MAX_FALLSPEED = 0x0369;
         private const int SHIP_MAX_FALLSPEED_HOLD = 0x0443;
+        // Ball mode constants
+        private const int BALL_GRAVITY = 0x0066;
+        private const int BALL_MAX_FALLSPEED = 0x0733;
+        private const int BALL_IMMEDIATE_VEL = 0x0266;
         private const int SHIP_GRAVITY_BASE = 0x003C;
         private const int SHIP_GRAVITY = 0x0030;
         private const int SHIP_GRAVITY_AFTER_HOLD = 0x0049;
@@ -479,6 +483,15 @@ namespace FamidashEditor
         // frame window so the jump fires on landing. Timer_Tick sets this under `simLock`.
         private int jumpBufferCounter = 0;
         private const int JUMP_BUFFER_FRAMES = 6; // ~100ms @60Hz
+        // Ball mode buffer: allow buffering an X press for ball gravity switch
+        // Ball toggle request + lock: pressing X requests a one-time gravity toggle
+        // `ballToggleRequested` is set to 1 by the UI when an edge occurs and cleared
+        // by the physics code when consumed on landing. `ballToggleLocked` prevents
+        // additional toggle requests until the next surface contact (landing).
+        private int ballToggleRequested = 0;
+        private int ballToggleLocked = 0;
+        private const int BALL_BUFFER_FRAMES = 6;
+        private bool ballGoingDown = true; // true = downwards, false = upwards
 
         // P/Invoke to check key state asynchronously from background threads
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -611,6 +624,20 @@ namespace FamidashEditor
             {
                 if (!enableSimulatorDebugLogging) return;
                 System.IO.File.AppendAllText(simDebugFilePath, DateTime.UtcNow.ToString("o") + " " + message + Environment.NewLine);
+            }
+            catch { }
+        }
+
+        // Lightweight ball-mode event logging for diagnosis
+        private readonly string simBallLogPath = @"C:\Editor Test\native-windows\sim-ball.log";
+        private void LogBallEvent(string evt)
+        {
+            try
+            {
+                using (var sw = new System.IO.StreamWriter(simBallLogPath, true))
+                {
+                    sw.WriteLine($"{DateTime.UtcNow:O} {evt}");
+                }
             }
             catch { }
         }
@@ -826,6 +853,7 @@ namespace FamidashEditor
             // Simulator-specific tweak: shift sprite 0x2B and 0x2C up 8 pixels to match editor preview
             // Initialize starting game mode
             try { currentGameMode = startingGameMode; } catch { currentGameMode = 0; }
+            try { if (currentGameMode == 2) ballGoingDown = !gravityReversed; } catch { }
             try
             {
                 const int SPRITE_ID_SHIFT_A = 0x2B;
@@ -1473,11 +1501,48 @@ namespace FamidashEditor
                 {
                     if (!e.IsRepeat)
                     {
-                        Interlocked.Increment(ref keyXPressedCount);
-                        try { lock (simLock) { jumpBufferCounter = JUMP_BUFFER_FRAMES; } } catch { }
-                        // Keep physicsEnabled/jumpedOnce so camera/input behavior remains similar
-                        physicsEnabled = true;
-                        jumpedOnce = true;
+                        lock (simLock)
+                        {
+                            if (currentGameMode == 2)
+                            {
+                                // Ball mode: only accept the first X-edge until the next surface hit.
+                                // Atomically set the locked flag; if we were previously unlocked,
+                                // register a toggle request (or perform immediate toggle if on surface).
+                                int prevLock = Interlocked.CompareExchange(ref ballToggleLocked, 1, 0);
+                                if (prevLock == 0)
+                                {
+                                    if (onGround)
+                                    {
+                                        // Immediate switch when on surface
+                                        ballGoingDown = !ballGoingDown;
+                                        int sign = ballGoingDown ? 1 : -1;
+                                        playerVelY_fixed = sign * BALL_IMMEDIATE_VEL;
+                                        onGround = false;
+                                        physicsEnabled = true;
+                                        jumpedOnce = true;
+                                        LogBallEvent($"KeyDown: immediate-toggle performed; ballGoingDown={ballGoingDown} sign={sign}");
+                                    }
+                                    else
+                                    {
+                                        // Queue the toggle for the next landing
+                                        Interlocked.Exchange(ref ballToggleRequested, 1);
+                                        LogBallEvent($"KeyDown: queued toggle; ballToggleLocked=1");
+                                    }
+                                }
+                                else
+                                {
+                                    LogBallEvent($"KeyDown: ignored because lock != 0 (lock={prevLock}) onGround={onGround} ballGoingDown={ballGoingDown}");
+                                }
+                            }
+                            else
+                            {
+                                Interlocked.Increment(ref keyXPressedCount);
+                                try { jumpBufferCounter = JUMP_BUFFER_FRAMES; } catch { }
+                                // Keep physicsEnabled/jumpedOnce so camera/input behavior remains similar
+                                physicsEnabled = true;
+                                jumpedOnce = true;
+                            }
+                        }
                     }
                 }
                 catch { }
@@ -1562,6 +1627,21 @@ namespace FamidashEditor
             }
             if (e.Key == Key.Up) upHeld = false;
             if (e.Key == Key.Down) downHeld = false;
+            if (e.Key == Key.X)
+            {
+                // If the player released X, cancel any queued ball toggle request.
+                try
+                {
+                    int prev = Interlocked.Exchange(ref ballToggleRequested, 0);
+                    // If we cancelled an outstanding queued request, allow new toggles again.
+                    if (prev > 0)
+                    {
+                        try { Interlocked.Exchange(ref ballToggleLocked, 0); } catch { }
+                        LogBallEvent($"KeyUp: cancelled queued toggle; cleared lock");
+                    }
+                }
+                catch { }
+            }
             if (e.Key == Key.Tab)
             {
                 tabSpeedMultiplier = 1;
@@ -1650,10 +1730,40 @@ namespace FamidashEditor
                     // the background fixed-step sim cannot miss a short UI-frame edge.
                     if (curX && !prevKeyXDown)
                     {
-                            // record an edge atomically so numeric sim cannot miss it
+                        // record an edge atomically so numeric sim cannot miss it
+                        if (currentGameMode == 2)
+                        {
+                            // Only accept the first edge until the next surface contact. If unlocked,
+                            // set the locked flag and either toggle immediately (if onGround)
+                            // or queue a toggle for landing.
+                            int prevLock_local = Interlocked.CompareExchange(ref ballToggleLocked, 1, 0);
+                            if (prevLock_local == 0)
+                            {
+                                if (onGround)
+                                {
+                                    ballGoingDown = !ballGoingDown;
+                                    int sign_local = ballGoingDown ? 1 : -1;
+                                    playerVelY_fixed = sign_local * BALL_IMMEDIATE_VEL;
+                                    onGround = false;
+                                    physicsEnabled = true;
+                                    jumpedOnce = true;
+                                }
+                                else
+                                {
+                                    Interlocked.Exchange(ref ballToggleRequested, 1);
+                                }
+                            }
+                            else
+                            {
+                                LogBallEvent($"Timer_Tick: ignored X-edge because lock != 0 (lock={prevLock_local}) onGround={onGround} ballGoingDown={ballGoingDown}");
+                            }
+                        }
+                        else
+                        {
                             Interlocked.Increment(ref keyXPressedCount);
                             // also set jump-buffer so a pre-press will trigger on landing
                             try { jumpBufferCounter = JUMP_BUFFER_FRAMES; } catch { }
+                        }
                     }
                     prevKeyXDown = curX;
                     keyXHeld = curX;
@@ -1941,6 +2051,38 @@ namespace FamidashEditor
                             }
                             catch { playerVelY_fixed += effectiveGravity_fixed; }
                         }
+                        else if (currentGameMode == 2)
+                        {
+                            try
+                            {
+                                // For ball mode, gravity direction is controlled by `ballGoingDown`.
+                                int gravitySign = ballGoingDown ? 1 : -1;
+                                if (gravityReversed) gravitySign = -gravitySign;
+                                if (effectiveInvertedByW) gravitySign = -gravitySign;
+
+                                int tmpMag = BALL_GRAVITY;
+                                int tmpgravity = tmpMag * gravitySign;
+
+                                playerVelY_fixed += tmpgravity;
+
+                                try
+                                {
+                                    // Enforce sign-aware max-fall similar to other modes:
+                                    // compute an effectiveMaxFall (positive when gravity pushes down, negative when up)
+                                    int effectiveBallMaxFall = gravitySign >= 0 ? BALL_MAX_FALLSPEED : -BALL_MAX_FALLSPEED;
+                                    if (effectiveBallMaxFall >= 0)
+                                    {
+                                        if (playerVelY_fixed > effectiveBallMaxFall) playerVelY_fixed = effectiveBallMaxFall;
+                                    }
+                                    else
+                                    {
+                                        if (playerVelY_fixed < effectiveBallMaxFall) playerVelY_fixed = effectiveBallMaxFall;
+                                    }
+                                }
+                                catch { }
+                            }
+                            catch { playerVelY_fixed += effectiveGravity_fixed; }
+                        }
                         else
                         {
                             playerVelY_fixed += effectiveGravity_fixed;
@@ -2031,17 +2173,35 @@ namespace FamidashEditor
                                     if (blocked) break;
                                 }
 
-                                if (blocked && blockingTileWorldBottom_px < int.MaxValue)
+                                        if (blocked && blockingTileWorldBottom_px < int.MaxValue)
                                 {
                                     int desiredTop_px = blockingTileWorldBottom_px + 1;
                                     int desiredPlayerY_fixed = desiredTop_px << 8;
                                     if (desiredPlayerY_fixed < 0) desiredPlayerY_fixed = 0;
                                     playerY_fixed = desiredPlayerY_fixed;
                                     // ceiling/roof ejection should move in the correct direction
-                                    if (!gravityReversed)
-                                        playerVelY_fixed = Math.Min(effectiveGravity_fixed, effectiveMaxFall_fixed);
-                                    else
-                                        playerVelY_fixed = Math.Max(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                    // For Ball mode, if gravity is currently upwards (ballGoingDown==false),
+                                    // hitting a blocking tile above should be treated as a landing (snap)
+                                    // rather than an upward-ceiling collision ejection. In that case skip
+                                    // the ejection so landing detection can handle it.
+                                    bool skipEjection = false;
+                                    try
+                                    {
+                                        if (currentGameMode == 2)
+                                        {
+                                            int gravityDir_forCollision = ballGoingDown ? 1 : -1;
+                                            if (gravityDir_forCollision < 0) skipEjection = true;
+                                        }
+                                    }
+                                    catch { }
+
+                                    if (!skipEjection)
+                                    {
+                                        if (!gravityReversed)
+                                            playerVelY_fixed = Math.Min(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                        else
+                                            playerVelY_fixed = Math.Max(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                    }
                                 }
                             }
                         }
@@ -2233,14 +2393,31 @@ namespace FamidashEditor
                                     playerVelY_fixed = 0;
                                     onGround = true;
 
-                                    // If player is holding/jump-pressed or had a buffered press, jump immediately from landing
-                                    if (currentGameMode == 0 && (buffered_ui > 0 || keyXHeld || IsXDownAsync()))
-                                    {
-                                        playerVelY_fixed = effectiveJumpVel_fixed;
-                                        onGround = false;
-                                        jumpedOnce = true;
-                                        Interlocked.Exchange(ref keyXPressedCount, 0);
-                                    }
+                                            // If player is holding/jump-pressed or had a buffered press, jump immediately from landing
+                                            if (currentGameMode == 0 && (buffered_ui > 0 || keyXHeld || IsXDownAsync()))
+                                            {
+                                                playerVelY_fixed = effectiveJumpVel_fixed;
+                                                onGround = false;
+                                                jumpedOnce = true;
+                                                Interlocked.Exchange(ref keyXPressedCount, 0);
+                                            }
+                                            else
+                                            {
+                                                // Ball mode: consume any pending toggle request and perform surface-switch
+                                                int buffered_ball_ui = Interlocked.Exchange(ref ballToggleRequested, 0);
+                                                if (currentGameMode == 2 && buffered_ball_ui > 0)
+                                                {
+                                                    ballGoingDown = !ballGoingDown;
+                                                    playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL;
+                                                    onGround = false;
+                                                    jumpedOnce = true;
+                                                    LogBallEvent($"UI-Landing: consumed queued toggle; ballGoingDown={ballGoingDown}");
+                                                }
+                                                // Unlock toggle acceptance now that we've hit a surface
+                                                try { Interlocked.Exchange(ref ballToggleLocked, 0); } catch { }
+                                                LogBallEvent($"UI-Landing: unlock (ballToggleLocked=0) onGround={onGround}");
+                                            }
+                                            
                                 }
                                 else
                                 {
@@ -2263,6 +2440,22 @@ namespace FamidashEditor
                                         onGround = false;
                                         jumpedOnce = true;
                                         Interlocked.Exchange(ref keyXPressedCount, 0);
+                                    }
+                                    else
+                                    {
+                                        // Ball mode: consume any pending toggle request and perform surface-switch
+                                        int buffered_ball_ui = Interlocked.Exchange(ref ballToggleRequested, 0);
+                                        if (currentGameMode == 2 && buffered_ball_ui > 0)
+                                        {
+                                            ballGoingDown = !ballGoingDown;
+                                            playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL;
+                                            onGround = false;
+                                            jumpedOnce = true;
+                                            LogBallEvent($"UI-ReversedLanding: consumed queued toggle; ballGoingDown={ballGoingDown}");
+                                        }
+                                        // Unlock toggle acceptance now that we've hit a surface
+                                        try { Interlocked.Exchange(ref ballToggleLocked, 0); } catch { }
+                                        LogBallEvent($"UI-ReversedLanding: unlock (ballToggleLocked=0) onGround={onGround}");
                                     }
                                 }
                                 else
@@ -4122,22 +4315,56 @@ namespace FamidashEditor
                                     }
                                     catch { playerVelY_fixed += effectiveGravity_fixed; }
                                 }
-                                else
-                                {
-                                    playerVelY_fixed += effectiveGravity_fixed;
-                                    try
-                                    {
-                                        if (effectiveMaxFall_fixed >= 0)
+                                        else if (currentGameMode == 2)
                                         {
-                                            if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                            try
+                                            {
+                                                int gravitySign_local = gravityReversed ? -1 : 1;
+                                                if (effectiveInvertedByW) gravitySign_local = -gravitySign_local;
+                                                bool xheld_local = IsXDownAsync() || keyXHeld_local;
+
+                                                int tmpMag_local = BALL_GRAVITY;
+                                                // Use ballGoingDown as the authoritative gravity direction for ball mode
+                                                int gravityDir_local = ballGoingDown ? 1 : -1;
+                                                if (gravityReversed) gravityDir_local = -gravityDir_local;
+                                                if (effectiveInvertedByW) gravityDir_local = -gravityDir_local;
+
+                                                int tmpgravity_local = tmpMag_local * gravityDir_local;
+
+                                                playerVelY_fixed += tmpgravity_local;
+
+                                                try
+                                                {
+                                                    int effectiveBallMaxFall_local = gravityDir_local >= 0 ? BALL_MAX_FALLSPEED : -BALL_MAX_FALLSPEED;
+                                                    if (effectiveBallMaxFall_local >= 0)
+                                                    {
+                                                        if (playerVelY_fixed > effectiveBallMaxFall_local) playerVelY_fixed = effectiveBallMaxFall_local;
+                                                    }
+                                                    else
+                                                    {
+                                                        if (playerVelY_fixed < effectiveBallMaxFall_local) playerVelY_fixed = effectiveBallMaxFall_local;
+                                                    }
+                                                }
+                                                catch { }
+                                            }
+                                            catch { playerVelY_fixed += effectiveGravity_fixed; }
                                         }
                                         else
                                         {
-                                            if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                            playerVelY_fixed += effectiveGravity_fixed;
+                                            try
+                                            {
+                                                if (effectiveMaxFall_fixed >= 0)
+                                                {
+                                                    if (playerVelY_fixed > effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                                }
+                                                else
+                                                {
+                                                    if (playerVelY_fixed < effectiveMaxFall_fixed) playerVelY_fixed = effectiveMaxFall_fixed;
+                                                }
+                                            }
+                                            catch { }
                                         }
-                                    }
-                                    catch { }
-                                }
                             }
 
                             // integrate
@@ -4217,11 +4444,50 @@ namespace FamidashEditor
                                             int desiredPlayerY_fixed = desiredTop_px << 8;
                                             if (desiredPlayerY_fixed < 0) desiredPlayerY_fixed = 0;
                                             playerY_fixed = desiredPlayerY_fixed;
-                                            // Give a small downward velocity (one gravity step) so player falls away from ceiling
-                                            if (!gravityReversed)
-                                                playerVelY_fixed = Math.Min(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                            // For Ball mode when gravity is upward, treat this ceiling collision as a landing
+                                            // (avoid applying an ejection velocity which would prevent landing from being detected).
+                                            bool skipEjection_local = false;
+                                            try
+                                            {
+                                                if (currentGameMode == 2)
+                                                {
+                                                    int gravityDir_local = ballGoingDown ? 1 : -1;
+                                                    if (gravityDir_local < 0) skipEjection_local = true;
+                                                }
+                                            }
+                                            catch { }
+
+                                            if (skipEjection_local)
+                                            {
+                                                // Mark as grounded on the ceiling so numeric landing logic can run equivalently.
+                                                onGround = true;
+
+                                                // Consume any queued toggle (numeric path) and perform switch if requested.
+                                                try
+                                                {
+                                                    int buffered_toggle_local2 = Interlocked.Exchange(ref ballToggleRequested, 0);
+                                                    if (currentGameMode == 2 && buffered_toggle_local2 > 0)
+                                                    {
+                                                        ballGoingDown = !ballGoingDown;
+                                                        playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL;
+                                                        onGround = false;
+                                                        jumpedOnce = true;
+                                                        LogBallEvent($"NUM-CeilCollision: consumed queued toggle; ballGoingDown={ballGoingDown}");
+                                                    }
+                                                }
+                                                catch { }
+
+                                                // Unlock toggle acceptance now that we've hit a surface
+                                                try { Interlocked.Exchange(ref ballToggleLocked, 0); } catch { }
+                                                LogBallEvent($"NUM-CeilCollision: unlock (ballToggleLocked=0) onGround={onGround}");
+                                            }
                                             else
-                                                playerVelY_fixed = Math.Max(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                            {
+                                                if (!gravityReversed)
+                                                    playerVelY_fixed = Math.Min(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                                else
+                                                    playerVelY_fixed = Math.Max(effectiveGravity_fixed, effectiveMaxFall_fixed);
+                                            }
                                         }
                                     }
                                 }
@@ -4350,6 +4616,22 @@ namespace FamidashEditor
                                         onGround = false;
                                         jumpedOnce = true;
                                         Interlocked.Exchange(ref keyXPressedCount, 0);
+                                    }
+                                    else
+                                    {
+                                        // Ball mode: consume any pending toggle request queued by UI and perform switch
+                                        int buffered_toggle_local = Interlocked.Exchange(ref ballToggleRequested, 0);
+                                        if (currentGameMode == 2 && buffered_toggle_local > 0)
+                                        {
+                                            ballGoingDown = !ballGoingDown;
+                                            playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL;
+                                            onGround = false;
+                                            jumpedOnce = true;
+                                            LogBallEvent($"NUM-Landing: consumed queued toggle; ballGoingDown={ballGoingDown}");
+                                        }
+                                        // Unlock toggle acceptance now that we've hit a surface
+                                        try { Interlocked.Exchange(ref ballToggleLocked, 0); } catch { }
+                                        LogBallEvent($"NUM-Landing: unlock (ballToggleLocked=0) onGround={onGround}");
                                     }
                                 }
                                 else

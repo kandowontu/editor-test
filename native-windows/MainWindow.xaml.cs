@@ -11469,12 +11469,18 @@ namespace FamidashEditor
                         {
                             int x = i % mapWidth;
                             int y = i / mapWidth;
-                            int idx = tiles[y * mapWidth + x];
+                            // Guard against concurrent map resize/replace which can modify mapWidth/mapHeight/tiles
+                            if (tiles == null) continue;
+                            if (x < 0 || y < 0) continue;
+                            if (y >= mapHeight || x >= mapWidth) continue;
+                            int idxIndex = y * mapWidth + x;
+                            if (idxIndex < 0 || idxIndex >= tiles.Length) continue;
+                            int idx = tiles[idxIndex];
                             if (idx >= 0)
                             {
                                 // Pre-render this tile into cache
                                 int scaleKey = (int)Math.Round(scale * 100.0);
-                                GetOrRenderCachedTile(idx, scaleKey, tilePixelW, tilePixelH, dpi);
+                                try { GetOrRenderCachedTile(idx, scaleKey, tilePixelW, tilePixelH, dpi); } catch { }
                             }
                         }
                     });
@@ -11491,7 +11497,14 @@ namespace FamidashEditor
                         {
                             int x = i % mapWidth;
                             int y = i / mapWidth;
-                            UpdateTileBitmapAtLocked(x, y, scale, pad, tilePixelW, tilePixelH, dpi);
+                            if (tilesWb == null) continue;
+                            // Guard against concurrent map resize/replace
+                            if (tiles == null) continue;
+                            if (x < 0 || y < 0) continue;
+                            if (y >= mapHeight || x >= mapWidth) continue;
+                            int idxIndexUi = y * mapWidth + x;
+                            if (idxIndexUi < 0 || idxIndexUi >= tiles.Length) continue;
+                            try { UpdateTileBitmapAtLocked(x, y, scale, pad, tilePixelW, tilePixelH, dpi); } catch { }
                         }
                         // Mark this batch area as dirty
                         int minY = batchStart / mapWidth;
