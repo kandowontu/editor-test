@@ -2526,13 +2526,14 @@ namespace FamidashEditor
                         // Portal handling: ship portal (0x01) -> ship mode, cube portal (0x00) -> cube mode
                         try
                         {
-                            if (sid == 0x01 || sid == 0x00)
+                            if (sid == 0x01 || sid == 0x00 || sid == 0x02)
                             {
                                 int anchorTileX_sp = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a_sp)) ? a_sp.anchorTileX : idx % mapWidth;
                                 int anchorX_center_fixed_sp = ((anchorTileX_sp * TILE) + (TILE / 2)) << 8;
                                 if (anchorX_center_fixed_sp > prevPlayerCenter_fixed && anchorX_center_fixed_sp <= INTERACTION_LINE_FIXED)
                                 {
                                     if (sid == 0x01) currentGameMode = 1;
+                                    else if (sid == 0x02) currentGameMode = 2;
                                     else currentGameMode = 0;
                                     break;
                                 }
@@ -4706,13 +4707,14 @@ namespace FamidashEditor
                     // Portal handling: ship portal (0x01) -> ship mode, cube portal (0x00) -> cube mode
                     try
                     {
-                        if (sid == 0x01 || sid == 0x00)
+                        if (sid == 0x01 || sid == 0x00 || sid == 0x02)
                         {
                             int anchorTileX_sp = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a_sp)) ? a_sp.anchorTileX : idx % mapWidth;
                             int anchorX_center_fixed_sp = ((anchorTileX_sp * TILE) + (TILE / 2)) << 8;
                             if (anchorX_center_fixed_sp > prevCameraCenter_fixed && anchorX_center_fixed_sp <= center_fixed)
                             {
                                 if (sid == 0x01) currentGameMode = 1;
+                                else if (sid == 0x02) currentGameMode = 2;
                                 else currentGameMode = 0;
                                 break;
                             }
