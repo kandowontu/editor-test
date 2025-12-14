@@ -2788,10 +2788,18 @@ namespace FamidashEditor
 
                                 if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_now, playerRight_px_now, playerTop_px_now, playerBottom_px_now))
                                 {
-                                    if (sid == 0x01) currentGameMode = 1;
-                                    else if (sid == 0x02) currentGameMode = 2;
-                                    else currentGameMode = 0;
-                                    try { UpdatePlayerImageForMode(); } catch { }
+                                    try
+                                    {
+                                        int oldMode = currentGameMode;
+                                        int newMode = (sid == 0x01) ? 1 : (sid == 0x02 ? 2 : 0);
+                                        if (newMode != oldMode)
+                                        {
+                                            currentGameMode = newMode;
+                                            try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                                        }
+                                        try { UpdatePlayerImageForMode(); } catch { }
+                                    }
+                                    catch { }
                                     break;
                                 }
                             }
@@ -5073,10 +5081,18 @@ namespace FamidashEditor
 
                             if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_local, playerRight_px_local, playerTop_px_local, playerBottom_px_local))
                             {
-                                if (sid == 0x01) currentGameMode = 1;
-                                else if (sid == 0x02) currentGameMode = 2;
-                                else currentGameMode = 0;
-                                try { Dispatcher.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
+                                try
+                                {
+                                    int oldMode = currentGameMode;
+                                    int newMode = (sid == 0x01) ? 1 : (sid == 0x02 ? 2 : 0);
+                                    if (newMode != oldMode)
+                                    {
+                                        currentGameMode = newMode;
+                                        try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                                    }
+                                    try { Dispatcher.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
+                                }
+                                catch { }
                                 break;
                             }
                         }
