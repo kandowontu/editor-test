@@ -544,6 +544,68 @@ namespace FamidashEditor
             return true;
         }
 
+        // Helper: returns true when the player's head is overlapping a blocking ceiling
+        // in the current world position. This mirrors the ceiling-collision check used
+        // in the numeric integration path but does not modify player state.
+        private bool IsTouchingCeiling()
+        {
+            try
+            {
+                const int HITBOX_W_LOCAL = 15;
+                int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
+                int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
+                int headWorldY_px_local = (playerY_fixed >> 8); // player's top
+
+                int tileAboveY_world = headWorldY_px_local / TILE;
+                int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                int tileIndexY = tileAboveY_world + groundRowsToReserve_local;
+
+                if (tileIndexY < 0 || tileIndexY >= mapHeight) return false;
+
+                for (int tx_local = playerLeft_px_local / TILE; tx_local <= playerRight_px_local / TILE; tx_local++)
+                {
+                    if (tx_local < 0 || tx_local >= mapWidth) continue;
+                    int tid_local = tiles[tileIndexY * mapWidth + tx_local];
+                    int useTidForAnim_local = MapAnimatedTileIndex(tid_local);
+                    int collisionTid_local = useTidForAnim_local;
+                    if (useTidForAnim_local >= 1000)
+                    {
+                        if (useTidForAnim_local >= 1000 && useTidForAnim_local <= 1007)
+                        {
+                            collisionTid_local = 0x08 + ((useTidForAnim_local - 1000) % 4);
+                        }
+                        else if (useTidForAnim_local >= 1010 && useTidForAnim_local <= 1015)
+                        {
+                            int group_local = (useTidForAnim_local - 1010) % 3;
+                            collisionTid_local = (group_local == 0) ? 0x04 : (group_local == 1) ? 0x7D : 0x7F;
+                        }
+                        else if (useTidForAnim_local >= 1020 && useTidForAnim_local <= 1037)
+                        {
+                            collisionTid_local = 0x74 + ((useTidForAnim_local - 1020) % 9);
+                        }
+                        else
+                        {
+                            collisionTid_local = tid_local;
+                        }
+                    }
+                    var col_local = MetatileCollisionTable.GetCollision((byte)collisionTid_local);
+
+                    int tileStartX_local = tx_local * TILE;
+                    int localLeft_local = Math.Max(0, playerLeft_px_local - tileStartX_local);
+                    int localRight_local = Math.Min(TILE - 1, playerRight_px_local - tileStartX_local);
+
+                    for (int lx_local = localLeft_local; lx_local <= localRight_local; lx_local++)
+                    {
+                        if (BlocksCeilingAtColumn(col_local, lx_local)) return true;
+                    }
+                }
+
+                return false;
+            }
+            catch { return false; }
+        }
+
         // Parallax / ground data passed from the editor so simulator can mirror preview-mode
         private ImageSource?[]? parallaxImages;
         private ImageSource?[]? parallaxTonedImages;
@@ -1819,6 +1881,23 @@ namespace FamidashEditor
                                 // Keep physicsEnabled/jumpedOnce so camera/input behavior remains similar
                                 physicsEnabled = true;
                                 jumpedOnce = true;
+
+                                // If gravity is reversed and the cube is touching a blocking ceiling,
+                                // perform the jump immediately on the UI thread so the input is not
+                                // lost due to timing between UI and numeric threads.
+                                try
+                                {
+                                    if (currentGameMode == 0 && (gravityReversed || effectiveInvertedByW) && IsTouchingCeiling())
+                                    {
+                                        // Consume the queued edge so numeric path doesn't double-apply
+                                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                                        playerVelY_fixed = effectiveJumpVel_fixed;
+                                        physicsEnabled = true;
+                                        onGround = false;
+                                        jumpedOnce = true;
+                                    }
+                                }
+                                catch { }
                             }
                         }
                     }
@@ -4705,8 +4784,11 @@ namespace FamidashEditor
                             {
                                 if (currentGameMode == 0)
                                 {
-                                    // Cube: only allow immediate jump when on ground
-                                    if (onGround)
+                                    // Cube: allow immediate jump when on ground or when gravity is
+                                    // reversed and the player is touching the ceiling (so the
+                                    // ceiling acts like a floor).
+                                    bool touchingCeiling_local = (gravityReversed || effectiveInvertedByW) && IsTouchingCeiling();
+                                    if (onGround || touchingCeiling_local)
                                     {
                                         playerVelY_fixed = effectiveJumpVel_fixed;
                                         physicsEnabled = true;
@@ -4911,12 +4993,32 @@ namespace FamidashEditor
                                             }
                                             catch { }
 
-                                            if (skipEjection_local)
+                                            if (skipEjection_local || (currentGameMode == 0 && (gravityReversed || effectiveInvertedByW)))
                                             {
-                                                // Mark as grounded on the ceiling so numeric landing logic can run equivalently.
+                                                // Treat this as a landing on the ceiling for Ball (when gravity dir applies)
+                                                // and for Cube when logical gravity is reversed so the ceiling acts like ground.
                                                 onGround = true;
 
-                                                // Consume any queued toggle (numeric path) and perform switch if requested.
+                                                // If Cube and the player has a buffered/held jump, perform the jump immediately
+                                                // so the cube can jump off the ceiling the same as it does off the floor.
+                                                try
+                                                {
+                                                    if (currentGameMode == 0)
+                                                    {
+                                                        if (jumpBuffered_local > 0 || keyXHeld_local || IsXDownAsync())
+                                                        {
+                                                            playerVelY_fixed = effectiveJumpVel_fixed;
+                                                            physicsEnabled = true;
+                                                            onGround = false;
+                                                            jumpAppliedThisStep_local = true;
+                                                            jumpedOnce = true;
+                                                            Interlocked.Exchange(ref keyXPressedCount, 0);
+                                                        }
+                                                    }
+                                                }
+                                                catch { }
+
+                                                // Also preserve Ball-mode toggle consumption behavior when applicable.
                                                 try
                                                 {
                                                     int buffered_toggle_local2 = Interlocked.Exchange(ref ballToggleRequested, 0);

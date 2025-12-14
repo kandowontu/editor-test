@@ -126,5 +126,41 @@ namespace FamidashEditor
             }
             catch { return src as BitmapSource; }
         }
+
+        // Maximum texture dimension we will allow when preparing images for render.
+        // Keep this conservative to reduce VRAM pressure on older AMD GPUs.
+        public const int MAX_RENDER_TEXTURE_SIZE = 4096;
+
+        // Prepare a BitmapSource for safe rendering: ensure it's decoded on the UI thread,
+        // optionally downscale very large images to `MAX_RENDER_TEXTURE_SIZE`, and
+        // return an unfrozen BitmapSource suitable for passing into DrawingContext/RTB.
+        public static BitmapSource? EnsureSafeBitmapForRender(ImageSource? src)
+        {
+            try
+            {
+                if (src == null) return null;
+            if (!(src is BitmapSource bs)) return null;
+
+                // If it's already a WriteableBitmap, return as-is (must remain writable)
+                if (bs is WriteableBitmap) return bs;
+
+                // If it's already reasonably small, just return an unfrozen pixel copy.
+                if (bs.PixelWidth <= MAX_RENDER_TEXTURE_SIZE && bs.PixelHeight <= MAX_RENDER_TEXTURE_SIZE)
+                {
+                    return EnsureUnfrozenForRender(bs) ?? bs;
+                }
+
+                // Need to downscale large bitmap to avoid allocating huge GPU textures.
+                double scale = Math.Min((double)MAX_RENDER_TEXTURE_SIZE / bs.PixelWidth, (double)MAX_RENDER_TEXTURE_SIZE / bs.PixelHeight);
+                if (scale <= 0.0 || scale >= 1.0) return EnsureUnfrozenForRender(bs) ?? bs;
+
+                // Create a scaled bitmap using a TransformedBitmap which is lightweight.
+                var tb = new TransformedBitmap(bs, new ScaleTransform(scale, scale));
+
+                // Force a pixel-copy into Pbgra32 and return unfrozen copy.
+                return EnsureUnfrozenForRender(tb) ?? tb;
+            }
+            catch { return src as BitmapSource; }
+        }
     }
 }
