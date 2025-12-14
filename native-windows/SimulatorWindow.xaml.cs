@@ -59,24 +59,49 @@ namespace FamidashEditor
             catch { }
         }
 
-        // Update effective gravity/jump/max-fall based on the reversal flag and current CUBE_* constants
+        // Update effective gravity/jump/max-fall based on the current mode and flags
         private void UpdateEffectiveGravity()
         {
             try
             {
-                if (gravityReversed)
+                // Choose base values depending on the current game mode.
+                switch (currentGameMode)
                 {
-                    effectiveGravity_fixed = -CUBE_GRAVITY;
-                    effectiveJumpVel_fixed = -CUBE_JUMP_VEL;
-                    effectiveMaxFall_fixed = -CUBE_MAX_FALLSPEED;
-                }
-                else
-                {
-                    effectiveGravity_fixed = CUBE_GRAVITY;
-                    effectiveJumpVel_fixed = CUBE_JUMP_VEL;
-                    effectiveMaxFall_fixed = CUBE_MAX_FALLSPEED;
+                    case 1: // ship
+                        effectiveGravity_fixed = SHIP_GRAVITY;
+                        effectiveJumpVel_fixed = 0; // ship doesn't use the generic jump impulse
+                        effectiveMaxFall_fixed = SHIP_MAX_FALLSPEED;
+                        break;
+                    case 2: // ball
+                        effectiveGravity_fixed = BALL_GRAVITY;
+                        effectiveJumpVel_fixed = BALL_IMMEDIATE_VEL;
+                        effectiveMaxFall_fixed = BALL_MAX_FALLSPEED;
+                        break;
+                    case 3: // UFO
+                        effectiveGravity_fixed = UFO_GRAVITY;
+                        effectiveJumpVel_fixed = UFO_JUMP_VEL;
+                        effectiveMaxFall_fixed = UFO_MAX_FALLSPEED;
+                        break;
+                    case 0: // cube (default)
+                    default:
+                        effectiveGravity_fixed = CUBE_GRAVITY;
+                        effectiveJumpVel_fixed = CUBE_JUMP_VEL;
+                        effectiveMaxFall_fixed = CUBE_MAX_FALLSPEED;
+                        break;
                 }
 
+                // If logical gravity is reversed, flip numeric signs so integration moves
+                // in the opposite direction. This affects collision indirectly only via
+                // the resulting velocities; collision logic still consults `gravityReversed`.
+                if (gravityReversed)
+                {
+                    effectiveGravity_fixed = -effectiveGravity_fixed;
+                    effectiveJumpVel_fixed = -effectiveJumpVel_fixed;
+                    effectiveMaxFall_fixed = -effectiveMaxFall_fixed;
+                }
+
+                // If the numeric inversion flag is set (toggled by W or ball toggle),
+                // negate the numeric effective values without changing logical gravity.
                 if (effectiveInvertedByW)
                 {
                     effectiveGravity_fixed = -effectiveGravity_fixed;
@@ -84,7 +109,7 @@ namespace FamidashEditor
                     effectiveMaxFall_fixed = -effectiveMaxFall_fixed;
                 }
 
-                // Debug: log effective values and flags so we can verify W toggles work
+                // Debug: log effective values and flags so we can verify toggles work
                 try { System.Diagnostics.Debug.WriteLine($"UpdateEffectiveGravity: gravityReversed={gravityReversed} effectiveInvertedByW={effectiveInvertedByW} effectiveGravity={effectiveGravity_fixed} effectiveJump={effectiveJumpVel_fixed} effectiveMaxFall={effectiveMaxFall_fixed}"); } catch { }
             }
             catch { }
@@ -559,6 +584,10 @@ namespace FamidashEditor
         private int CUBE_MAX_FALLSPEED = 0x600; // max downward velocity
         private const int CUBE_GRAVITY = 0x6B; // gravity added per frame
         private const int CUBE_JUMP_VEL = -0x590; // jump impulse (negative = upward)
+        // UFO mode constants (allow mid-air pulses / different gravity)
+        private const int UFO_GRAVITY = 0x0032;
+        private const int UFO_MAX_FALLSPEED = 0x0320;
+        private const int UFO_JUMP_VEL = -0x0330;
         // Ship physics constants (fixed-point, 8 fractional bits)
         // Values provided by user in high-byte pixel / low-byte subpixel format
         private const int SHIP_MAX_FALLSPEED = 0x0369;
@@ -579,10 +608,13 @@ namespace FamidashEditor
         private int effectiveJumpVel_fixed;
         private int effectiveMaxFall_fixed;
         private bool gravityReversed = false;
-        // When true, the W key has inverted the effective numeric physics values
+        // Flag toggled by W (and ball toggle) to invert numeric effective physics
         // (effectiveGravity_fixed, effectiveJumpVel_fixed, effectiveMaxFall_fixed)
-        // without changing the logical gravity direction used by collision code.
+        // without changing the logical gravity direction used by collision/landing code.
         private bool effectiveInvertedByW = false;
+        // NOTE: `gravityReversed` remains the canonical logical gravity direction
+        // used by collision/landing logic. We do not toggle it from W; portals or
+        // other game events may set it.
         private int playerVelY_fixed = 0; // current vertical velocity (fixed-point)
         private bool physicsEnabled = false; // enable physics after first jump (for testing)
         // Landing epsilon in fixed-point (1 pixel)
@@ -616,6 +648,7 @@ namespace FamidashEditor
                 string choice = "cube.png";
                 if (currentGameMode == 1) choice = "ship.png";
                 else if (currentGameMode == 2) choice = "ball.png";
+                else if (currentGameMode == 3) choice = "ufo.png";
 
                 BitmapImage? bi = null;
 
@@ -692,6 +725,22 @@ namespace FamidashEditor
                     if (playerRect != null) playerRect.Visibility = Visibility.Collapsed;
                     playerVisualWidth = (int)Math.Ceiling(playerImage.Width);
                     playerVisualHeight = (int)Math.Ceiling(playerImage.Height);
+                    try
+                    {
+                        // If we're in UFO mode and gravity is reversed (logical) or the
+                        // numeric inversion flag is active (W/ball), flip the sprite vertically
+                        if (currentGameMode == 3 && (gravityReversed || effectiveInvertedByW))
+                        {
+                            playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                            playerImage.RenderTransform = new ScaleTransform(1, -1);
+                        }
+                        else
+                        {
+                            // Ensure no transform remains for other modes
+                            playerImage.RenderTransform = Transform.Identity;
+                        }
+                    }
+                    catch { }
                     return;
                 }
 
@@ -1735,14 +1784,19 @@ namespace FamidashEditor
                                 {
                                     if (onGround)
                                     {
-                                        // Immediate switch when on surface
-                                        ballGoingDown = !ballGoingDown;
-                                        int sign = ballGoingDown ? 1 : -1;
-                                        playerVelY_fixed = sign * BALL_IMMEDIATE_VEL;
-                                        onGround = false;
-                                        physicsEnabled = true;
-                                        jumpedOnce = true;
-                                        LogBallEvent($"KeyDown: immediate-toggle performed; ballGoingDown={ballGoingDown} sign={sign}");
+                                            // Immediate switch when on surface: flip ballGoingDown and
+                                            // also toggle the numeric inversion flag so W and ball
+                                            // toggles share the same numeric effect.
+                                            ballGoingDown = !ballGoingDown;
+                                            int sign = ballGoingDown ? 1 : -1;
+                                            playerVelY_fixed = sign * BALL_IMMEDIATE_VEL;
+                                            onGround = false;
+                                            physicsEnabled = true;
+                                            jumpedOnce = true;
+                                            try { effectiveInvertedByW = !effectiveInvertedByW; } catch { }
+                                            try { UpdateEffectiveGravity(); } catch { }
+                                            try { UpdatePlayerImageForMode(); } catch { }
+                                            LogBallEvent($"KeyDown: immediate-toggle performed; effectiveInvertedByW={effectiveInvertedByW} ballGoingDown={ballGoingDown} sign={sign}");
                                     }
                                     else
                                     {
@@ -1777,11 +1831,12 @@ namespace FamidashEditor
                     {
                         lock (simLock)
                         {
-                            // Toggle only the numeric inversion of effective physics values
-                            // (gravity, jump impulse, max-fall) without changing the
-                            // logical gravity direction used by collision/landing code.
+                            // Toggle the numeric-inversion flag (shared by W and ball toggles).
+                            // This negates the numeric effective physics values but does not
+                            // change the logical gravity direction used by collision/landing.
                             effectiveInvertedByW = !effectiveInvertedByW;
                             UpdateEffectiveGravity();
+                            try { UpdatePlayerImageForMode(); } catch { }
                         }
                     }
                 }
@@ -2249,13 +2304,22 @@ namespace FamidashEditor
                     int pendingPress = Interlocked.Exchange(ref keyXPressedCount, 0);
                     if (pendingPress > 0 && currentGameMode != 1)
                     {
-                        // Reset vertical velocity to the jump impulse (do not stack)
-                        playerVelY_fixed = effectiveJumpVel_fixed;
-                        physicsEnabled = true;
-                        onGround = false;
-                        jumpAppliedThisFrame = true;
-                        // Mark that the player has jumped at least once; switch Up/Down to physics-mode
-                        jumpedOnce = true;
+                        // Cube: only allow immediate jump when on ground (preserve jump-buffer semantics)
+                        if (currentGameMode == 0 && !onGround)
+                        {
+                            // Ignore immediate jump while mid-air for cube; buffer will be
+                            // consumed on landing elsewhere.
+                        }
+                        else
+                        {
+                            // Reset vertical velocity to the jump impulse (do not stack)
+                            playerVelY_fixed = effectiveJumpVel_fixed;
+                            physicsEnabled = true;
+                            onGround = false;
+                            jumpAppliedThisFrame = true;
+                            // Mark that the player has jumped at least once; switch Up/Down to physics-mode
+                            jumpedOnce = true;
+                        }
                     }
 
                     // Do not age the jump-buffer here (would race with numeric sim).
@@ -2270,7 +2334,7 @@ namespace FamidashEditor
                             {
                                 // Determine whether gravity is "downwards" (positive Y) for numeric sign
                                 int gravitySign = gravityReversed ? -1 : 1;
-                                if (effectiveInvertedByW) gravitySign = -gravitySign;
+                                // canonical gravity flag already applied via gravityReversed
 
                                 bool movingUpRelative = gravitySign > 0 ? (playerVelY_fixed < 0) : (playerVelY_fixed > 0);
                                 bool xheld = IsXDownAsync() || keyXHeld;
@@ -2308,7 +2372,7 @@ namespace FamidashEditor
                                 // For ball mode, gravity direction is controlled by `ballGoingDown`.
                                 int gravitySign = ballGoingDown ? 1 : -1;
                                 if (gravityReversed) gravitySign = -gravitySign;
-                                if (effectiveInvertedByW) gravitySign = -gravitySign;
+                                // canonical gravity flag already applied via gravityReversed
 
                                 int tmpMag = BALL_GRAVITY;
                                 int tmpgravity = tmpMag * gravitySign;
@@ -2776,7 +2840,7 @@ namespace FamidashEditor
                         // Portal handling: ship portal (0x01) -> ship mode, cube portal (0x00) -> cube mode
                         try
                         {
-                            if (sid == 0x01 || sid == 0x00 || sid == 0x02)
+                            if (sid == 0x01 || sid == 0x00 || sid == 0x02 || sid == 0x03)
                             {
                                 // Require actual 2D AABB overlap between player hitbox and sprite hitbox
                                 const int HITBOX_W = 15; const int HITBOX_H = 15;
@@ -2791,10 +2855,11 @@ namespace FamidashEditor
                                     try
                                     {
                                         int oldMode = currentGameMode;
-                                        int newMode = (sid == 0x01) ? 1 : (sid == 0x02 ? 2 : 0);
+                                        int newMode = (sid == 0x01) ? 1 : (sid == 0x02 ? 2 : (sid == 0x03 ? 3 : 0));
                                         if (newMode != oldMode)
                                         {
                                             currentGameMode = newMode;
+                                            try { UpdateEffectiveGravity(); } catch { }
                                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
                                         }
                                         try { UpdatePlayerImageForMode(); } catch { }
@@ -4627,14 +4692,31 @@ namespace FamidashEditor
 
                             // Atomically consume any pending UI-edge presses recorded by the UI poll
                             int pendingPresses_num = Interlocked.Exchange(ref keyXPressedCount, 0);
-                            if (pendingPresses_num > 0 && currentGameMode == 0)
+                            if (pendingPresses_num > 0)
                             {
-                                playerVelY_fixed = effectiveJumpVel_fixed;
-                                physicsEnabled = true;
-                                onGround = false;
-                                jumpAppliedThisStep_local = true;
-                                // Record that we've now jumped at least once
-                                jumpedOnce = true;
+                                if (currentGameMode == 0)
+                                {
+                                    // Cube: only allow immediate jump when on ground
+                                    if (onGround)
+                                    {
+                                        playerVelY_fixed = effectiveJumpVel_fixed;
+                                        physicsEnabled = true;
+                                        onGround = false;
+                                        jumpAppliedThisStep_local = true;
+                                        // Record that we've now jumped at least once
+                                        jumpedOnce = true;
+                                    }
+                                }
+                                else if (currentGameMode == 3)
+                                {
+                                    // UFO: allow jump anytime (mid-air allowed)
+                                    playerVelY_fixed = effectiveJumpVel_fixed;
+                                    physicsEnabled = true;
+                                    onGround = false;
+                                    jumpAppliedThisStep_local = true;
+                                    jumpedOnce = true;
+                                }
+                                // Other modes (ball/ship) have their own jump handling elsewhere
                             }
 
                             // Apply gravity only if we did not just apply a jump and if moving vertically
@@ -4650,7 +4732,7 @@ namespace FamidashEditor
                                         bool xheld_local = IsXDownAsync() || keyXHeld_local;
 
                                                 int gravitySign_local = gravityReversed ? -1 : 1;
-                                                if (effectiveInvertedByW) gravitySign_local = -gravitySign_local;
+                                                // canonical gravity flag already applied via gravityReversed
 
                                                 bool movingUpRelative_local = gravitySign_local > 0 ? (playerVelY_fixed < 0) : (playerVelY_fixed > 0);
                                                 int tmpMag_local = movingUpRelative_local ? (xheld_local ? SHIP_GRAVITY_HOLD_FALL : SHIP_GRAVITY_BASE)
@@ -4683,14 +4765,14 @@ namespace FamidashEditor
                                             try
                                             {
                                                 int gravitySign_local = gravityReversed ? -1 : 1;
-                                                if (effectiveInvertedByW) gravitySign_local = -gravitySign_local;
+                                                // canonical gravity flag already applied via gravityReversed
                                                 bool xheld_local = IsXDownAsync() || keyXHeld_local;
 
                                                 int tmpMag_local = BALL_GRAVITY;
                                                 // Use ballGoingDown as the authoritative gravity direction for ball mode
                                                 int gravityDir_local = ballGoingDown ? 1 : -1;
                                                 if (gravityReversed) gravityDir_local = -gravityDir_local;
-                                                if (effectiveInvertedByW) gravityDir_local = -gravityDir_local;
+                                                // canonical gravity flag already applied via gravityReversed
 
                                                 int tmpgravity_local = tmpMag_local * gravityDir_local;
 
@@ -5069,7 +5151,7 @@ namespace FamidashEditor
                     // Portal handling: ship portal (0x01) -> ship mode, cube portal (0x00) -> cube mode
                     try
                     {
-                        if (sid == 0x01 || sid == 0x00 || sid == 0x02)
+                        if (sid == 0x01 || sid == 0x00 || sid == 0x02 || sid == 0x03)
                         {
                             // require 2D overlap with player's hitbox for portal activation
                             const int HITBOX_W_LOCAL = 15; const int HITBOX_H_LOCAL = 15;
@@ -5084,10 +5166,11 @@ namespace FamidashEditor
                                 try
                                 {
                                     int oldMode = currentGameMode;
-                                    int newMode = (sid == 0x01) ? 1 : (sid == 0x02 ? 2 : 0);
+                                    int newMode = (sid == 0x01) ? 1 : (sid == 0x02 ? 2 : (sid == 0x03 ? 3 : 0));
                                     if (newMode != oldMode)
                                     {
                                         currentGameMode = newMode;
+                                        try { UpdateEffectiveGravity(); } catch { }
                                         try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
                                     }
                                     try { Dispatcher.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
