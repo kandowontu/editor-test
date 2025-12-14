@@ -650,7 +650,7 @@ namespace FamidashEditor
                 else if (currentGameMode == 2) choice = "ball.png";
                 else if (currentGameMode == 3) choice = "ufo.png";
 
-                BitmapImage? bi = null;
+                BitmapSource? bi = null;
 
                 // 1) Prefer copy in output directory
                 try
@@ -658,12 +658,13 @@ namespace FamidashEditor
                     string candidateOut = System.IO.Path.Combine(exeDir, choice);
                     if (System.IO.File.Exists(candidateOut))
                     {
-                        bi = new BitmapImage();
-                        bi.BeginInit();
-                        bi.UriSource = new Uri(candidateOut);
-                        bi.CacheOption = BitmapCacheOption.OnLoad;
-                        bi.EndInit();
-                        bi.Freeze();
+                        var tmp = new BitmapImage();
+                        tmp.BeginInit();
+                        tmp.UriSource = new Uri(candidateOut);
+                        tmp.CacheOption = BitmapCacheOption.OnLoad;
+                        tmp.EndInit();
+                        tmp.Freeze();
+                        bi = tmp;
                     }
                 }
                 catch { bi = null; }
@@ -708,7 +709,7 @@ namespace FamidashEditor
                                     b3.StreamSource = s;
                                     b3.EndInit();
                                     b3.Freeze();
-                                    bi = b3;
+                                    bi = App.EnsureUnfrozenForRender(b3) ?? b3;
                                 }
                             }
                         }
@@ -718,7 +719,7 @@ namespace FamidashEditor
 
                 if (bi != null)
                 {
-                    playerImage.Source = bi;
+                    playerImage.Source = App.EnsureUnfrozenForRender(bi) ?? bi;
                     playerImage.Width = bi.PixelWidth;
                     playerImage.Height = bi.PixelHeight;
                     playerImage.Visibility = Visibility.Visible;
@@ -1465,7 +1466,7 @@ namespace FamidashEditor
                         bi.CacheOption = BitmapCacheOption.OnLoad;
                         bi.EndInit();
                         bi.Freeze();
-                        playerImage.Source = bi;
+                        playerImage.Source = App.EnsureUnfrozenForRender(bi) ?? bi;
                         playerImage.Width = bi.PixelWidth;
                         playerImage.Height = bi.PixelHeight;
                         loaded = true;
@@ -1491,7 +1492,7 @@ namespace FamidashEditor
                                         bi.StreamSource = s;
                                         bi.EndInit();
                                         bi.Freeze();
-                                        playerImage.Source = bi;
+                                        playerImage.Source = App.EnsureUnfrozenForRender(bi) ?? bi;
                                         playerImage.Width = bi.PixelWidth;
                                         playerImage.Height = bi.PixelHeight;
                                         loaded = true;
@@ -1684,7 +1685,8 @@ namespace FamidashEditor
 
                 if (bgRectPersistent != null && src is BitmapSource pbs)
                 {
-                    var brush = new ImageBrush(src)
+                    var brushImg = App.EnsureUnfrozenForRender(src) ?? src;
+                    var brush = new ImageBrush(brushImg)
                     {
                         TileMode = TileMode.Tile,
                         ViewportUnits = BrushMappingMode.Absolute,
@@ -3308,7 +3310,8 @@ namespace FamidashEditor
                     {
                         double imgW = Math.Max(1.0, pbs.PixelWidth);
                         double imgH = Math.Max(1.0, pbs.PixelHeight);
-                        var brush = new ImageBrush(src)
+                        var brushImg = App.EnsureUnfrozenForRender(src) ?? src;
+                        var brush = new ImageBrush(brushImg)
                         {
                             TileMode = TileMode.Tile,
                             ViewportUnits = BrushMappingMode.Absolute,
@@ -3353,7 +3356,8 @@ namespace FamidashEditor
                                         this.parallaxTonedImages = null;
                                         this.hasParallaxLayer = true;
 
-                                        var brush2 = new ImageBrush(bi)
+                                        var brush2Img = App.EnsureUnfrozenForRender(bi) ?? bi;
+                                        var brush2 = new ImageBrush(brush2Img)
                                         {
                                             TileMode = TileMode.Tile,
                                             ViewportUnits = BrushMappingMode.Absolute,
@@ -3885,7 +3889,7 @@ namespace FamidashEditor
                     lastCacheAnimationFrame = animationFrame;
                     cachedStartTileX = startTileX;
                     cachedStartTileY = startTileY;
-                    tileLayerImage!.Source = tileLayerCache;
+                    tileLayerImage!.Source = App.EnsureUnfrozenForRender(tileLayerCache) ?? tileLayerCache;
                     try { AppendSimDebug($"Assigned tileLayerImage.Source={(tileLayerImage.Source==null?"null":tileLayerImage.Source.GetType().Name)}"); } catch { }
                     tileLayerImage!.Width = pxW;
                     tileLayerImage!.Height = pxH;
@@ -3908,7 +3912,8 @@ namespace FamidashEditor
                         {
                             double tileW = Math.Max(1.0, gbs.PixelWidth);
                             double tileH = Math.Max(1.0, gbs.PixelHeight);
-                            var brush = new ImageBrush(src)
+                            var brushImg = App.EnsureUnfrozenForRender(src) ?? src;
+                            var brush = new ImageBrush(brushImg)
                             {
                                 TileMode = TileMode.Tile,
                                 ViewportUnits = BrushMappingMode.Absolute,
@@ -4231,7 +4236,7 @@ namespace FamidashEditor
                     }
                     catch { }
 
-                    simg.Source = finalSprite;
+                    simg.Source = App.EnsureUnfrozenForRender(finalSprite) ?? finalSprite;
                     if (finalSprite is BitmapSource fbs) { simg.Width = fbs.PixelWidth; simg.Height = fbs.PixelHeight; }
                     System.Windows.Controls.Canvas.SetLeft(simg, px);
                     System.Windows.Controls.Canvas.SetTop(simg, py);
@@ -6258,7 +6263,8 @@ namespace FamidashEditor
                                 try
                                 {
                                     var cropped = new CroppedBitmap(layer, new Int32Rect(ovLeft, ovTop, ovW, ovH));
-                                    var brush = new ImageBrush(cropped) { Stretch = Stretch.None, TileMode = TileMode.None };
+                                    var brushImg = App.EnsureUnfrozenForRender(cropped) ?? cropped;
+                                    var brush = new ImageBrush(brushImg) { Stretch = Stretch.None, TileMode = TileMode.None };
                                     // Draw the full visible tile layer translated into sprite-local coordinates
                                     // so transparent sprite pixels reveal the exact rendered pixels beneath them.
                                     // If the full visible layer isn't available, fall back to the persistent
@@ -6322,7 +6328,8 @@ namespace FamidashEditor
                                                     catch { }
                                                     ImageSource useImg = srcImg ?? new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
                                                     try { if (srcImg != null) { var arr = CreateHslShiftedImages(new ImageSource?[] { srcImg! }, darkerBg); if (arr != null && arr.Length > 0 && arr[0] != null) useImg = arr[0]!; } } catch { }
-                                                    var newIb = new ImageBrush(useImg)
+                                                    var newIbImg = App.EnsureUnfrozenForRender(useImg) ?? useImg;
+                                                    var newIb = new ImageBrush(newIbImg)
                                                     {
                                                         Stretch = ib.Stretch,
                                                         TileMode = ib.TileMode,
@@ -6392,7 +6399,8 @@ namespace FamidashEditor
                                                     catch { }
                                                     ImageSource useImg2 = srcImg2 ?? new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
                                                     try { if (srcImg2 != null) { var arr2 = CreateHslShiftedImages(new ImageSource?[] { srcImg2! }, darkerBg2); if (arr2 != null && arr2.Length > 0 && arr2[0] != null) useImg2 = arr2[0]!; } } catch { }
-                                                var newIb2 = new ImageBrush(useImg2)
+                                                var newIb2Img = App.EnsureUnfrozenForRender(useImg2) ?? useImg2;
+                                                var newIb2 = new ImageBrush(newIb2Img)
                                                 {
                                                     Stretch = ib2.Stretch,
                                                     TileMode = ib2.TileMode,
@@ -6452,7 +6460,8 @@ namespace FamidashEditor
                                                 try { RgbToHsl(bg.R, bg.G, bg.B, out double hh3, out double ss3, out double ll3); ll3 = Math.Max(0.0, ll3 - 0.12); RgbFromHsl(hh3, ss3, ll3, out byte dr3, out byte dg3, out byte db3); darkerBg3 = Color.FromArgb(bg.A, dr3, dg3, db3); } catch { }
                                                 ImageSource useImg3 = srcImg3 ?? new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
                                                 try { if (srcImg3 != null) { var arr3 = CreateHslShiftedImages(new ImageSource?[] { srcImg3! }, darkerBg3); if (arr3 != null && arr3.Length > 0 && arr3[0] != null) useImg3 = arr3[0]!; } } catch { }
-                                                var newIb3 = new ImageBrush(useImg3)
+                                                var newIb3Img = App.EnsureUnfrozenForRender(useImg3) ?? useImg3;
+                                                var newIb3 = new ImageBrush(newIb3Img)
                                                 {
                                                     Stretch = ib3.Stretch,
                                                     TileMode = ib3.TileMode,
