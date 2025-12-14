@@ -1342,7 +1342,7 @@ namespace FamidashEditor
                     {
                         var wb = new WriteableBitmap(TILE, TILE, 96, 96, PixelFormats.Pbgra32, null);
                         try { wb.Lock(); wb.AddDirtyRect(new Int32Rect(0, 0, TILE, TILE)); } finally { try { wb.Unlock(); } catch { } }
-                        wb.Freeze();
+                        // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                         this.groundImages = new ImageSource[] { wb };
                         this.groundTonedImages = null;
                         this.hasGroundLayer = true;
@@ -3429,6 +3429,7 @@ namespace FamidashEditor
                                         if (gimg == null && groundImages != null && arrIdx >= 0 && arrIdx < groundImages.Length) gimg = groundImages[arrIdx];
                                         if (gimg != null)
                                         {
+                                            var gdraw = App.EnsureUnfrozenForRender(gimg) ?? gimg;
                                             if (gimg is BitmapSource gbs)
                                             {
                                                 double imgW = Math.Max(1.0, gbs.PixelWidth);
@@ -3437,16 +3438,16 @@ namespace FamidashEditor
                                                 {
                                                     double x = dest.X + (TILE - imgW) / 2.0;
                                                     double y = dest.Y + (TILE - imgH);
-                                                    dc.DrawImage(gimg, new Rect(x, y, imgW, imgH));
+                                                    dc.DrawImage(gdraw, new Rect(x, y, imgW, imgH));
                                                 }
                                                 else
                                                 {
-                                                    dc.DrawImage(gimg, dest);
+                                                    dc.DrawImage(gdraw, dest);
                                                 }
                                             }
                                             else
                                             {
-                                                dc.DrawImage(gimg, dest);
+                                                dc.DrawImage(gdraw, dest);
                                             }
                                         }
                                         else
@@ -3846,17 +3847,20 @@ namespace FamidashEditor
                                                 }
                                                 catch { }
 
-                                            dc.DrawImage(chosenTile, new Rect(x, y, imgW, imgH));
+                                            var drawTile = App.EnsureUnfrozenForRender(chosenTile) ?? chosenTile;
+                                            dc.DrawImage(drawTile, new Rect(x, y, imgW, imgH));
                                         }
                                         else
                                         {
                                             // image larger than tile: fall back to scaling to tile
-                                            dc.DrawImage(chosenTile, dest);
+                                            var drawTile = App.EnsureUnfrozenForRender(chosenTile) ?? chosenTile;
+                                            dc.DrawImage(drawTile, dest);
                                         }
                                     }
                                     else
                                     {
-                                        dc.DrawImage(chosenTile, dest);
+                                        var drawTile = App.EnsureUnfrozenForRender(chosenTile) ?? chosenTile;
+                                        dc.DrawImage(drawTile, dest);
                                     }
                                 }
                                 else
@@ -6070,7 +6074,7 @@ namespace FamidashEditor
 
                         var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                         wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                        wb.Freeze();
+                        // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                         outList.Add(wb);
                     }
                     catch
@@ -6135,7 +6139,7 @@ namespace FamidashEditor
 
                         var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                         wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                        wb.Freeze();
+                        // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                         outList.Add(wb);
                     }
                     catch { outList.Add(src); }
@@ -6195,7 +6199,7 @@ namespace FamidashEditor
 
                     var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                     wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                    wb.Freeze();
+                    // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                     tintedSpriteCache[key] = wb;
                     return wb;
                 }
@@ -6267,7 +6271,8 @@ namespace FamidashEditor
                                             double tx = layerLeft - destX;
                                             double ty = layerTop - destY;
                                             dc.PushTransform(new TranslateTransform(tx, ty));
-                                            dc.DrawImage(fullLayer, new Rect(0, 0, fullLayer.PixelWidth, fullLayer.PixelHeight));
+                                            var drawFull = App.EnsureUnfrozenForRender(fullLayer) ?? fullLayer;
+                                            dc.DrawImage(drawFull, new Rect(0, 0, fullLayer.PixelWidth, fullLayer.PixelHeight));
                                             dc.Pop();
                                             drewFullLayer = true;
                                         }
@@ -6402,7 +6407,7 @@ namespace FamidashEditor
                                         }
                                         catch { }
                                     }
-                                    dc.DrawRectangle(bgBrush2 ?? new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                                        dc.DrawRectangle(bgBrush2 ?? new SolidColorBrush(Color.FromArgb(bg.A, bg.R, bg.G, bg.B)), null, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                                 }
                             }
                             else
@@ -6419,7 +6424,8 @@ namespace FamidashEditor
                                         double tx = layerLeft - destX;
                                         double ty = layerTop - destY;
                                         dc.PushTransform(new TranslateTransform(tx, ty));
-                                        dc.DrawImage(fullLayer, new Rect(0, 0, fullLayer.PixelWidth, fullLayer.PixelHeight));
+                                        var drawFull2 = App.EnsureUnfrozenForRender(fullLayer) ?? fullLayer;
+                                        dc.DrawImage(drawFull2, new Rect(0, 0, fullLayer.PixelWidth, fullLayer.PixelHeight));
                                         dc.Pop();
                                     }
                                     else
@@ -6476,7 +6482,8 @@ namespace FamidashEditor
                     }
 
                     // Draw the sprite on top; WPF will handle alpha blending correctly
-                    dc.DrawImage(bs, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
+                    var drawBs = App.EnsureUnfrozenForRender(bs) ?? bs;
+                    dc.DrawImage(drawBs, new Rect(0, 0, bs.PixelWidth, bs.PixelHeight));
                 }
 
                 var rtb = new RenderTargetBitmap((int)bs.PixelWidth, (int)bs.PixelHeight, 96, 96, PixelFormats.Pbgra32);
@@ -6598,7 +6605,7 @@ namespace FamidashEditor
                 }
                 var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                 wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                wb.Freeze();
+                // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                 return wb;
             }
             catch { return src; }
@@ -6651,7 +6658,7 @@ namespace FamidashEditor
                 }
                 var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                 wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                wb.Freeze();
+                // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                 return wb;
             }
             catch { return src; }
@@ -6700,7 +6707,7 @@ namespace FamidashEditor
 
                 var wb = new WriteableBitmap(w, h, convSrc.DpiX, convSrc.DpiY, PixelFormats.Pbgra32, null);
                 wb.WritePixels(new Int32Rect(0, 0, w, h), pixelsSrc, stride, 0);
-                wb.Freeze();
+                // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                 return wb;
             }
             catch { return src; }
@@ -6773,7 +6780,7 @@ namespace FamidashEditor
 
                             var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Pbgra32, null);
                             wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                            wb.Freeze();
+                            // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                             outList.Add(wb);
                         }
                         catch
@@ -6860,7 +6867,7 @@ namespace FamidashEditor
 
                         var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
                         wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                        wb.Freeze();
+                        // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                         outList.Add(wb);
                     }
                     catch
@@ -7039,7 +7046,7 @@ namespace FamidashEditor
 
                             var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
                             wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                            wb.Freeze();
+                            // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                             outListFull.Add(wb);
                         }
                         catch
@@ -7125,7 +7132,7 @@ namespace FamidashEditor
 
                         var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
                         wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                        wb.Freeze();
+                        // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                         outList.Add(wb);
                     }
                     catch
@@ -7201,7 +7208,7 @@ namespace FamidashEditor
 
                         var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
                         wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                        wb.Freeze();
+                        // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                         outList.Add(wb);
                     }
                     catch
@@ -7298,7 +7305,7 @@ namespace FamidashEditor
 
                         var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
                         wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                        wb.Freeze();
+                        // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                         outList.Add(wb);
                     }
                     catch { outList.Add(src); }
@@ -7346,7 +7353,7 @@ namespace FamidashEditor
                         }
                         var wb = new WriteableBitmap(w, h, conv.DpiX, conv.DpiY, PixelFormats.Bgra32, null);
                         wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
-                        wb.Freeze();
+                        // Do not freeze WriteableBitmap; it must remain writable for Lock/WritePixels.
                         outList.Add(wb);
                     }
                     catch { outList.Add(src); }
@@ -7415,3 +7422,4 @@ namespace FamidashEditor
         }
     }
 }
+

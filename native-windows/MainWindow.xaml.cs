@@ -10990,7 +10990,8 @@ namespace FamidashEditor
                 double startX = -(pad % tileDiuW);
                 double startY = -(pad % tileDiuH);
 
-                var brush = new ImageBrush(sourceImage)
+                var brushImage = App.EnsureUnfrozenForRender(sourceImage) ?? sourceImage;
+                var brush = new ImageBrush(brushImage)
                 {
                     TileMode = TileMode.Tile,
                     ViewportUnits = BrushMappingMode.Absolute,
@@ -11103,7 +11104,8 @@ namespace FamidashEditor
                 double tileWidthDiu = (sourceImage.PixelWidth / dpi.DpiScaleX) * scale;
                 double groundHeightDiu = (sourceImage.PixelHeight / dpi.DpiScaleY) * scale;
 
-                var brush = new ImageBrush(sourceImage)
+                var brushImage = App.EnsureUnfrozenForRender(sourceImage) ?? sourceImage;
+                var brush = new ImageBrush(brushImage)
                 {
                     TileMode = TileMode.Tile,
                     ViewportUnits = BrushMappingMode.Absolute,

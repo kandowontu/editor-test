@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace FamidashEditor
 {
@@ -89,6 +91,40 @@ namespace FamidashEditor
                 }
             }
             catch { }
+        }
+
+        // Create an unfrozen BitmapSource copy suitable for rendering inside DrawingVisuals.
+        // Avoid returning frozen BitmapImage instances directly because WPF's ImageVisualManager
+        // may reject frozen images in some Render paths. This copies pixels into a Pbgra32
+        // BitmapSource and returns it unfrozen.
+        public static BitmapSource? EnsureUnfrozenForRender(ImageSource? src)
+        {
+            try
+            {
+                if (src == null) return null;
+                if (!(src is BitmapSource bs)) return null;
+
+                // If already unfrozen and not a WriteableBitmap, it's safe to use
+                if (bs is System.Windows.Freezable f && !f.IsFrozen) return bs;
+                if (bs is System.Windows.Media.Imaging.WriteableBitmap) return bs;
+
+                // Convert to Pbgra32 to ensure consistent pixel format
+                BitmapSource conv = bs;
+                if (conv.Format != PixelFormats.Pbgra32)
+                {
+                    conv = new FormatConvertedBitmap(conv, PixelFormats.Pbgra32, null, 0);
+                }
+
+                int w = Math.Max(1, conv.PixelWidth);
+                int h = Math.Max(1, conv.PixelHeight);
+                int stride = (w * conv.Format.BitsPerPixel + 7) / 8;
+                var buffer = new byte[stride * h];
+                conv.CopyPixels(buffer, stride, 0);
+                var copy = BitmapSource.Create(w, h, conv.DpiX, conv.DpiY, conv.Format, null, buffer, stride);
+                // Intentionally do not freeze this copy — the render path will accept unfrozen images.
+                return copy;
+            }
+            catch { return src as BitmapSource; }
         }
     }
 }
