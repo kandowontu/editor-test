@@ -261,9 +261,122 @@ namespace FamidashEditor
             0x00,0x00,-0x07,0x00,0x00,0x05,0x02,0x00  // F8-FF
         };
 
+        // Returns true when the sprite at storage index `idx` (with sprite id `sid`) overlaps
+        // the player's axis-aligned hitbox in world pixel coordinates. This uses the
+        // sprite geometry tables (`sprite_widths`, `sprite_heights`, `sprite_x_offset`, `sprite_y_offset`)
+        // and any per-position `spritePixelOffsets`. If the sprite has an anchor, the anchor's
+        // recorded offsets are used as a fallback so simulator rendering and collision match.
+        private bool SpriteIntersectsPlayer(int idx, int sid, int playerLeft_px, int playerRight_px, int playerTop_px, int playerBottom_px)
+        {
+            try
+            {
+                int storageTileX = idx % mapWidth;
+                int storageTileY = idx / mapWidth;
+
+                // If anchored, prefer the anchored sprite id for geometry lookup so preview matches editor
+                int id_for_geom = sid & 0xFF;
+                int anchorKey = -1;
+                if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
+                {
+                    anchorKey = anchor.anchorTileY * mapWidth + anchor.anchorTileX;
+                    // Prefer the anchor's sprite id for geometry lookup when anchored
+                    if (anchorKey >= 0 && anchorKey < sprites.Length)
+                    {
+                        int anchoredId = sprites[anchorKey];
+                        if (anchoredId >= 0 && anchoredId < 256) id_for_geom = anchoredId & 0xFF;
+                    }
+
+                    // Do NOT change storageTileX/Y -- keep the sprite instance's own tile position
+                    // as the base. The displayed sprite position uses the anchor + tileDelta offsets,
+                    // and the hitbox offsets in the tables are applied relative to the sprite's
+                    // displayed origin (so using the instance tile + anchor pixel offsets yields
+                    // the correct world rect).
+                }
+
+                int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
+                int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
+                int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
+                int hyoff = (id_for_geom >= 0 && id_for_geom < sprite_y_offset.Length) ? sprite_y_offset[id_for_geom] : 0;
+
+                // Per-position pixel offset (visual shift).
+                // When anchored, prefer the anchor tile's pixel offset so collision and
+                // overlay visuals match the anchored geometry base. Otherwise prefer
+                // the sprite's own per-position offset.
+                int pxOff = 0; int pyOff = 0;
+                if (anchorKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs2))
+                {
+                    pxOff = aoffs2.offsetX; pyOff = aoffs2.offsetY;
+                }
+                else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs2))
+                {
+                    pxOff = offs2.offsetX; pyOff = offs2.offsetY;
+                }
+
+                // Compute world-space sprite rectangle (inclusive pixels)
+                // Rendering subtracts `groundRowsToReserve` from the displayed anchor Y to
+                // reserve bottom ground rows. Adjust collision to match displayed origin
+                // by applying the same vertical shift when computing world sprite rect.
+                int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                int spriteLeft_world_px = storageTileX * TILE + hxoff + pxOff;
+                int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff;
+                int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw) - 1;
+                int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh) - 1;
+
+                // If the hitbox table entry is the default TILE size but a larger sprite image
+                // is available (either in preview map or spriteImages), prefer the image size
+                // for collision so portals rendered from larger bitmaps get correct functional area.
+                try
+                {
+                    if (hw == TILE && hh == TILE)
+                    {
+                        BitmapSource? bs = null;
+                        // Prefer preview image for the resolved geometry id; if unavailable,
+                        // fall back to the instance sprite id so collision matches the renderer's
+                        // final sprite selection (which sometimes uses the instance id).
+                        int keyGeom = id_for_geom & 0xFF;
+                        int keyInst = sid & 0xFF;
+                        if (previewSpriteMap != null && previewSpriteMap.TryGetValue(keyGeom, out var pimgG) && pimgG is BitmapSource pbsG) bs = pbsG;
+                        else if (previewSpriteMap != null && previewSpriteMap.TryGetValue(keyInst, out var pimgI) && pimgI is BitmapSource pbsI) bs = pbsI;
+                        else if (spriteImages != null && keyGeom >= 0 && keyGeom < spriteImages.Length && spriteImages[keyGeom] is BitmapSource sbsG) bs = sbsG;
+                        else if (spriteImages != null && keyInst >= 0 && keyInst < spriteImages.Length && spriteImages[keyInst] is BitmapSource sbsI) bs = sbsI;
+                        if (bs != null)
+                        {
+                            hw = Math.Max(1, bs.PixelWidth);
+                            hh = Math.Max(1, bs.PixelHeight);
+                            spriteRight_world_px = spriteLeft_world_px + hw - 1;
+                            spriteBottom_world_px = spriteTop_world_px + hh - 1;
+                        }
+                    }
+                }
+                catch { }
+
+                // If a cached hitbox for this sprite was populated during rendering this frame,
+                // prefer that rectangle (it exactly matches the overlay) to avoid subtle
+                // geometry mismatches from duplicate math paths.
+                try
+                {
+                    if (hitboxWorldCache != null && hitboxWorldCache.TryGetValue(idx, out var cached) && cached.frame == renderFrameCounter)
+                    {
+                        int cLeft = cached.left; int cTop = cached.top; int cRight = cached.right; int cBottom = cached.bottom;
+                        bool cov = !(playerRight_px < cLeft || playerLeft_px > cRight || playerBottom_px < cTop || playerTop_px > cBottom);
+                        return cov;
+                    }
+                }
+                catch { }
+
+                bool overlap = !(playerRight_px < spriteLeft_world_px || playerLeft_px > spriteRight_world_px || playerBottom_px < spriteTop_world_px || playerTop_px > spriteBottom_world_px);
+                return overlap;
+            }
+            catch { return false; }
+        }
+
         // Pool for hitbox rectangles
         private System.Collections.Generic.List<System.Windows.Shapes.Rectangle> hitboxPool = new System.Collections.Generic.List<System.Windows.Shapes.Rectangle>();
         private int hitboxesInUse = 0;
+        // Cache of world-space hitbox rectangles populated during rendering so collision
+        // can use the exact same geometry as the overlay (key = sprite storage idx).
+        private System.Collections.Generic.Dictionary<int, (int left, int top, int right, int bottom, int frame)> hitboxWorldCache = new System.Collections.Generic.Dictionary<int, (int, int, int, int, int)>();
+        private int renderFrameCounter = 0;
         // Interaction line: player's center (fixed-point) where scrolling begins
         private const int INTERACTION_LINE_FIXED = 0x5000;
 
@@ -492,6 +605,110 @@ namespace FamidashEditor
         private int ballToggleLocked = 0;
         private const int BALL_BUFFER_FRAMES = 6;
         private bool ballGoingDown = true; // true = downwards, false = upwards
+
+        // Update the player image based on `currentGameMode`.
+        private void UpdatePlayerImageForMode()
+        {
+            try
+            {
+                if (playerImage == null) return;
+                string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
+                string choice = "cube.png";
+                if (currentGameMode == 1) choice = "ship.png";
+                else if (currentGameMode == 2) choice = "ball.png";
+
+                BitmapImage? bi = null;
+
+                // 1) Prefer copy in output directory
+                try
+                {
+                    string candidateOut = System.IO.Path.Combine(exeDir, choice);
+                    if (System.IO.File.Exists(candidateOut))
+                    {
+                        bi = new BitmapImage();
+                        bi.BeginInit();
+                        bi.UriSource = new Uri(candidateOut);
+                        bi.CacheOption = BitmapCacheOption.OnLoad;
+                        bi.EndInit();
+                        bi.Freeze();
+                    }
+                }
+                catch { bi = null; }
+
+                // 2) Fallback: repo root relative (four levels up) for developer tree
+                if (bi == null)
+                {
+                    try
+                    {
+                        string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\" + choice));
+                        if (System.IO.File.Exists(candidate))
+                        {
+                            var b2 = new BitmapImage();
+                            b2.BeginInit();
+                            b2.UriSource = new Uri(candidate);
+                            b2.CacheOption = BitmapCacheOption.OnLoad;
+                            b2.EndInit();
+                            b2.Freeze();
+                            bi = b2;
+                        }
+                    }
+                    catch { }
+                }
+
+                // 3) Final fallback: embedded resource in the assembly
+                if (bi == null)
+                {
+                    try
+                    {
+                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                        var names = asm.GetManifestResourceNames();
+                        var found = names.FirstOrDefault(n => n.EndsWith(choice, StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrEmpty(found))
+                        {
+                            using (var s = asm.GetManifestResourceStream(found))
+                            {
+                                if (s != null)
+                                {
+                                    var b3 = new BitmapImage();
+                                    b3.BeginInit();
+                                    b3.CacheOption = BitmapCacheOption.OnLoad;
+                                    b3.StreamSource = s;
+                                    b3.EndInit();
+                                    b3.Freeze();
+                                    bi = b3;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (bi != null)
+                {
+                    playerImage.Source = bi;
+                    playerImage.Width = bi.PixelWidth;
+                    playerImage.Height = bi.PixelHeight;
+                    playerImage.Visibility = Visibility.Visible;
+                    if (playerRect != null) playerRect.Visibility = Visibility.Collapsed;
+                    playerVisualWidth = (int)Math.Ceiling(playerImage.Width);
+                    playerVisualHeight = (int)Math.Ceiling(playerImage.Height);
+                    return;
+                }
+
+                // Could not load image: fall back to magenta rectangle
+                if (playerRect == null)
+                {
+                    playerRect = new System.Windows.Shapes.Rectangle { Width = TILE, Height = TILE, Fill = new SolidColorBrush(Colors.Magenta) };
+                    System.Windows.Controls.Canvas.SetZIndex(playerRect, 1000);
+                    RenderCanvas.Children.Add(playerRect);
+                }
+                playerRect.Visibility = Visibility.Visible;
+                if (playerImage != null) playerImage.Visibility = Visibility.Collapsed;
+                playerVisualWidth = (int)Math.Ceiling(playerRect.Width);
+                playerVisualHeight = (int)Math.Ceiling(playerRect.Height);
+            }
+            catch { }
+        }
 
         // P/Invoke to check key state asynchronously from background threads
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -854,6 +1071,7 @@ namespace FamidashEditor
             // Initialize starting game mode
             try { currentGameMode = startingGameMode; } catch { currentGameMode = 0; }
             try { if (currentGameMode == 2) ballGoingDown = !gravityReversed; } catch { }
+            try { UpdatePlayerImageForMode(); } catch { }
             try
             {
                 const int SPRITE_ID_SHIFT_A = 0x2B;
@@ -1262,6 +1480,10 @@ namespace FamidashEditor
                 }
             }
             catch { }
+            // Ensure player image matches starting game mode
+            try { UpdatePlayerImageForMode(); } catch { }
+            // Ensure player image matches starting game mode
+            try { UpdatePlayerImageForMode(); } catch { }
             // Ensure the player starts offscreen with just the first outline pixels visible.
             try
             {
@@ -1561,6 +1783,34 @@ namespace FamidashEditor
                             effectiveInvertedByW = !effectiveInvertedByW;
                             UpdateEffectiveGravity();
                         }
+                    }
+                }
+                catch { }
+            }
+            if (e.Key == Key.F2)
+            {
+                try
+                {
+                    if (!e.IsRepeat)
+                    {
+                        ShowSpriteHitboxes = !ShowSpriteHitboxes;
+                        // Mirror the editor's canonical option so F2 in simulator updates visuals everywhere
+                        try
+                        {
+                            MainWindow.Option_ShowSimulatorSpriteHitboxes = ShowSpriteHitboxes;
+                            if (Application.Current != null)
+                            {
+                                // Update the main menu item's checked state if present
+                                try { if (Application.Current.MainWindow is MainWindow mw && mw.MenuOptionShowSpriteHitboxes != null) mw.MenuOptionShowSpriteHitboxes.IsChecked = ShowSpriteHitboxes; } catch { }
+                                // Propagate to any other open simulators
+                                foreach (Window w2 in Application.Current.Windows)
+                                {
+                                    try { if (w2 is SimulatorWindow sw2) sw2.ShowSpriteHitboxes = ShowSpriteHitboxes; } catch { }
+                                }
+                            }
+                        }
+                        catch { }
+                        try { MainWindow.ShowTransientInfo($"Show Sprite Hitboxes: {(ShowSpriteHitboxes ? "ON" : "OFF")}", this, 1500); } catch { }
                     }
                 }
                 catch { }
@@ -2528,13 +2778,20 @@ namespace FamidashEditor
                         {
                             if (sid == 0x01 || sid == 0x00 || sid == 0x02)
                             {
-                                int anchorTileX_sp = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a_sp)) ? a_sp.anchorTileX : idx % mapWidth;
-                                int anchorX_center_fixed_sp = ((anchorTileX_sp * TILE) + (TILE / 2)) << 8;
-                                if (anchorX_center_fixed_sp > prevPlayerCenter_fixed && anchorX_center_fixed_sp <= INTERACTION_LINE_FIXED)
+                                // Require actual 2D AABB overlap between player hitbox and sprite hitbox
+                                const int HITBOX_W = 15; const int HITBOX_H = 15;
+                                int playerCenter_px_now = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                                int playerLeft_px_now = playerCenter_px_now - (HITBOX_W / 2);
+                                int playerRight_px_now = playerLeft_px_now + (HITBOX_W - 1);
+                                int playerTop_px_now = (playerY_fixed >> 8);
+                                int playerBottom_px_now = playerTop_px_now + (HITBOX_H - 1);
+
+                                if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_now, playerRight_px_now, playerTop_px_now, playerBottom_px_now))
                                 {
                                     if (sid == 0x01) currentGameMode = 1;
                                     else if (sid == 0x02) currentGameMode = 2;
                                     else currentGameMode = 0;
+                                    try { UpdatePlayerImageForMode(); } catch { }
                                     break;
                                 }
                             }
@@ -2545,7 +2802,15 @@ namespace FamidashEditor
                         int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                         int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
 
-                        if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
+                        // Require actual sprite hitbox overlap with player before changing speed
+                        const int PORTAL_HIT_W = 15; const int PORTAL_HIT_H = 15;
+                        int playerCenter_px_check = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                        int playerLeft_px_check = playerCenter_px_check - (PORTAL_HIT_W / 2);
+                        int playerRight_px_check = playerLeft_px_check + (PORTAL_HIT_W - 1);
+                        int playerTop_px_check = (playerY_fixed >> 8);
+                        int playerBottom_px_check = playerTop_px_check + (PORTAL_HIT_H - 1);
+
+                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_check, playerRight_px_check, playerTop_px_check, playerBottom_px_check))
                         {
                             if (anchorX_center_fixed < bestAnchor_fixed)
                             {
@@ -2567,7 +2832,15 @@ namespace FamidashEditor
                         int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                         int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
 
-                        if (anchorX_center_fixed > prevCameraCenter_fixed && anchorX_center_fixed <= center_fixed)
+                        // Require actual 2D overlap with player before selecting this portal
+                        const int HITBOX_W_LOCAL = 15; const int HITBOX_H_LOCAL = 15;
+                        int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                        int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
+                        int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
+                        int playerTop_px_local = (playerY_fixed >> 8);
+                        int playerBottom_px_local = playerTop_px_local + (HITBOX_H_LOCAL - 1);
+
+                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_local, playerRight_px_local, playerTop_px_local, playerBottom_px_local))
                         {
                             if (anchorX_center_fixed < bestAnchor_fixed)
                             {
@@ -2862,6 +3135,8 @@ namespace FamidashEditor
 
         private void RenderFrame()
         {
+            // Advance per-frame counter used for caching overlay-computed hitboxes
+            try { renderFrameCounter++; } catch { renderFrameCounter = 1; }
             // One-time first-frame diagnostic snapshot (Option A)
             try
             {
@@ -3885,10 +4160,58 @@ namespace FamidashEditor
                     System.Windows.Controls.Canvas.SetTop(simg, py);
                     spritesInUse++;
 
+                    // Cache the world-space hitbox rect derived from the same values the renderer
+                    // used so collisions can match the visible sprite even when overlays are off.
+                    try
+                    {
+                        int id_for_overlay = s & 0xFF;
+                        if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anch2))
+                        {
+                            int anchorKey2 = anch2.anchorTileY * mapWidth + anch2.anchorTileX;
+                            if (anchorKey2 >= 0 && anchorKey2 < sprites.Length)
+                            {
+                                int anchoredId2 = sprites[anchorKey2];
+                                if (anchoredId2 >= 0 && anchoredId2 < 256) id_for_overlay = anchoredId2 & 0xFF;
+                            }
+                        }
+
+                        int hw_o = 0x10; int hh_o = 0x10; int hxoff_o = 0; int hyoff_o = 0;
+                        if (id_for_overlay >= 0 && id_for_overlay < sprite_widths.Length) hw_o = sprite_widths[id_for_overlay];
+                        if (id_for_overlay >= 0 && id_for_overlay < sprite_heights.Length) hh_o = sprite_heights[id_for_overlay];
+                        if (id_for_overlay >= 0 && id_for_overlay < sprite_x_offset.Length) hxoff_o = sprite_x_offset[id_for_overlay];
+                        if (id_for_overlay >= 0 && id_for_overlay < sprite_y_offset.Length) hyoff_o = sprite_y_offset[id_for_overlay];
+
+                        try
+                        {
+                            if (hw_o == TILE && hh_o == TILE && finalSprite is BitmapSource fbs3)
+                            {
+                                hw_o = Math.Max(1, fbs3.PixelWidth);
+                                hh_o = Math.Max(1, fbs3.PixelHeight);
+                            }
+                        }
+                        catch { }
+
+                        double hx_screen = (int)Math.Round(px) + hxoff_o;
+                        double hy_screen = (int)Math.Round(py) + hyoff_o;
+                        var padDownIds2 = new System.Collections.Generic.HashSet<int> { 0x52, 0x0A, 0x0D, 0x25, 0xFD };
+                        if (padDownIds2.Contains(id_for_overlay)) hy_screen += 8;
+
+                        int pixelX_now2 = cameraX_fixed >> 8;
+                        int pixelY_now2 = cameraY_fixed >> 8;
+                        int worldLeft2 = (int)Math.Round(hx_screen) + pixelX_now2;
+                        int worldTop2 = (int)Math.Round(hy_screen) + pixelY_now2 - gridRenderShiftYPx;
+                        int worldRight2 = worldLeft2 + Math.Max(1, hw_o) - 1;
+                        int worldBottom2 = worldTop2 + Math.Max(1, hh_o) - 1;
+                        try { hitboxWorldCache[idx] = (worldLeft2, worldTop2, worldRight2, worldBottom2, renderFrameCounter); } catch { }
+                    }
+                    catch { }
+
                     // Draw hitbox overlay if requested and this is not a color-trigger sprite
                     try
                     {
-                        if (ShowSpriteHitboxes && !IsColorTriggerSprite(s) && !decorationSpriteIds.Contains(s))
+                        // Only render overlays when the main editor option is enabled and
+                        // this simulator's instance toggle is set.
+                        if (MainWindow.Option_ShowSimulatorSpriteHitboxes && ShowSpriteHitboxes && !IsColorTriggerSprite(s) && !decorationSpriteIds.Contains(s))
                         {
                             System.Windows.Shapes.Rectangle hrect;
                             if (hitboxesInUse < hitboxPool.Count)
@@ -3907,16 +4230,46 @@ namespace FamidashEditor
                                 RenderCanvas.Children.Add(hrect);
                             }
 
-                            // Determine hitbox from sprite tables; fallback to image bounds
+                            // Determine hitbox from sprite tables; prefer anchor's sprite id for geometry when anchored
                             int id = s & 0xFF;
+                            // Use the rendered `px`/`py` (which already include anchor tileDelta adjustments)
+                            // as the hitbox base so the overlay aligns with the visible sprite instance.
+                            int hitbase_px_x = (int)Math.Round(px);
+                            int hitbase_px_y = (int)Math.Round(py);
+                            if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anch))
+                            {
+                                int anchorKey = anch.anchorTileY * mapWidth + anch.anchorTileX;
+                                if (anchorKey >= 0 && anchorKey < sprites.Length)
+                                {
+                                    int anchoredId = sprites[anchorKey];
+                                    if (anchoredId >= 0 && anchoredId < 256) id = anchoredId & 0xFF;
+                                }
+
+                                // Do not re-apply anchor pixel offsets here: `px`/`py` already include
+                                // any per-position or anchor pixel offsets earlier in the renderer.
+                            }
+
                             int hw = 0x10; int hh = 0x10; int hxoff = 0; int hyoff = 0;
                             if (id >= 0 && id < sprite_widths.Length) hw = sprite_widths[id];
                             if (id >= 0 && id < sprite_heights.Length) hh = sprite_heights[id];
                             if (id >= 0 && id < sprite_x_offset.Length) hxoff = sprite_x_offset[id];
                             if (id >= 0 && id < sprite_y_offset.Length) hyoff = sprite_y_offset[id];
 
-                            double hx = px + hxoff; // px already in screen space
-                            double hy = py + hyoff;
+                            // If the hitbox table entry is the default TILE size but the final sprite
+                            // image used for rendering is larger, prefer the image size for the overlay
+                            // so the drawn rectangle reflects the actual graphic.
+                            try
+                            {
+                                if (hw == TILE && hh == TILE && finalSprite is BitmapSource fbs2)
+                                {
+                                    hw = Math.Max(1, fbs2.PixelWidth);
+                                    hh = Math.Max(1, fbs2.PixelHeight);
+                                }
+                            }
+                            catch { }
+
+                            double hx = hitbase_px_x + hxoff; // screen-space base + offsets
+                            double hy = hitbase_px_y + hyoff;
                             // If this sprite is a non-upside-down pad, shift hitbox down an extra 8 px on top of specified offsets
                             // Known non-upside-down pad IDs include typical down variants; extend set as needed.
                             var padDownIds = new System.Collections.Generic.HashSet<int> { 0x52, 0x0A, 0x0D, 0x25, 0xFD };
@@ -3925,6 +4278,7 @@ namespace FamidashEditor
                             hrect.Height = Math.Max(1, hh);
                             System.Windows.Controls.Canvas.SetLeft(hrect, hx);
                             System.Windows.Controls.Canvas.SetTop(hrect, hy);
+                            
                             hitboxesInUse++;
                         }
                     }
@@ -4709,13 +5063,20 @@ namespace FamidashEditor
                     {
                         if (sid == 0x01 || sid == 0x00 || sid == 0x02)
                         {
-                            int anchorTileX_sp = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a_sp)) ? a_sp.anchorTileX : idx % mapWidth;
-                            int anchorX_center_fixed_sp = ((anchorTileX_sp * TILE) + (TILE / 2)) << 8;
-                            if (anchorX_center_fixed_sp > prevCameraCenter_fixed && anchorX_center_fixed_sp <= center_fixed)
+                            // require 2D overlap with player's hitbox for portal activation
+                            const int HITBOX_W_LOCAL = 15; const int HITBOX_H_LOCAL = 15;
+                            int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
+                            int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
+                            int playerTop_px_local = (playerY_fixed >> 8);
+                            int playerBottom_px_local = playerTop_px_local + (HITBOX_H_LOCAL - 1);
+
+                            if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_local, playerRight_px_local, playerTop_px_local, playerBottom_px_local))
                             {
                                 if (sid == 0x01) currentGameMode = 1;
                                 else if (sid == 0x02) currentGameMode = 2;
                                 else currentGameMode = 0;
+                                try { Dispatcher.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
                                 break;
                             }
                         }
@@ -4724,21 +5085,18 @@ namespace FamidashEditor
                     if (!speedPortalMap.ContainsKey(sid)) continue;
                     int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                     int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
-                    if (crossedInteraction)
+                    // Require 2D overlap (player hitbox) before applying speed portal
+                    const int PORTAL_HIT_W = 15; const int PORTAL_HIT_H = 15;
+                    int playerCenter_px_check = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                    int playerLeft_px_check = playerCenter_px_check - (PORTAL_HIT_W / 2);
+                    int playerRight_px_check = playerLeft_px_check + (PORTAL_HIT_W - 1);
+                    int playerTop_px_check = (playerY_fixed >> 8);
+                    int playerBottom_px_check = playerTop_px_check + (PORTAL_HIT_H - 1);
+
+                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_check, playerRight_px_check, playerTop_px_check, playerBottom_px_check))
                     {
-                        if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
-                        {
-                            newSpeed_fixed = speedPortalMap[sid];
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        if (anchorX_center_fixed > prevCameraCenter_fixed && anchorX_center_fixed <= center_fixed)
-                        {
-                            newSpeed_fixed = speedPortalMap[sid];
-                            break;
-                        }
+                        newSpeed_fixed = speedPortalMap[sid];
+                        break;
                     }
                 }
                 if (newSpeed_fixed.HasValue) currentSpeed_fixed = newSpeed_fixed.Value;

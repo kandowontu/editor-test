@@ -18,6 +18,9 @@ namespace FamidashEditor
 {
     public partial class MainWindow : Window
     {
+        // Option: whether simulator sprite hitbox overlays are enabled (this mirrors the
+        // existing "Options -> Simulator Options" setting). F2 should toggle this.
+        public static bool Option_ShowSimulatorSpriteHitboxes = false;
         // Layer visibility toggles (eye buttons)
         // These are wired to the UI ToggleButtons to hide/show layers
         private void TileEyeButton_Checked(object? sender, RoutedEventArgs e)
@@ -70,6 +73,35 @@ namespace FamidashEditor
         private void MenuOptionHideTriggerSprites_Unchecked(object? sender, RoutedEventArgs e)
         {
             try { SetHideTriggerSprites(false); } catch { }
+        }
+
+        // Menu handlers for simulator sprite hitbox overlay (keeps canonical option and UI in sync)
+        private void MenuOptionShowSpriteHitboxes_Checked(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Option_ShowSimulatorSpriteHitboxes = true;
+                foreach (Window w in Application.Current.Windows)
+                {
+                    try { if (w is SimulatorWindow sw) sw.ShowSpriteHitboxes = true; } catch { }
+                }
+                try { SaveEditorSettings(); } catch { }
+            }
+            catch { }
+        }
+
+        private void MenuOptionShowSpriteHitboxes_Unchecked(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Option_ShowSimulatorSpriteHitboxes = false;
+                foreach (Window w in Application.Current.Windows)
+                {
+                    try { if (w is SimulatorWindow sw) sw.ShowSpriteHitboxes = false; } catch { }
+                }
+                try { SaveEditorSettings(); } catch { }
+            }
+            catch { }
         }
 
         private void MenuOptionShowAccurateTileset_Checked(object? sender, RoutedEventArgs e)
@@ -149,6 +181,36 @@ namespace FamidashEditor
     // Global simulator option: hide trigger sprites (default true)
     private bool hideTriggerSprites = true;
 
+    // Allow toggling simulator sprite hitbox overlays from the main editor via F2
+    protected override void OnKeyDown(System.Windows.Input.KeyEventArgs e)
+    {
+        try
+        {
+            if (e.Key == System.Windows.Input.Key.F2)
+            {
+                try
+                {
+                    // Toggle the canonical editor option directly so editor F2 always flips the
+                    // authoritative setting (avoid relying on per-simulator state which can
+                    // be inconsistent if simulators are closed/created).
+                    bool newState = !Option_ShowSimulatorSpriteHitboxes;
+                    Option_ShowSimulatorSpriteHitboxes = newState;
+                    try { if (MenuOptionShowSpriteHitboxes != null) MenuOptionShowSpriteHitboxes.IsChecked = newState; } catch { }
+                    foreach (Window w in Application.Current.Windows)
+                    {
+                        try { if (w is SimulatorWindow sw) sw.ShowSpriteHitboxes = newState; } catch { }
+                    }
+                    ShowTransientInfo($"Show Sprite Hitboxes: {(newState ? "ON" : "OFF")}", this, 1500);
+                    e.Handled = true;
+                    return;
+                }
+                catch { }
+            }
+        }
+        catch { }
+        base.OnKeyDown(e);
+    }
+
     // Suppress saving editor settings while the main window is initializing
     // (InitializeComponent can fire menu Checked handlers before LoadSettings runs).
     private bool suppressSettingsSave = true;
@@ -177,6 +239,57 @@ namespace FamidashEditor
                 }
             }
             catch { }
+        }
+        catch { }
+    }
+    // Show a temporary, non-blocking informational overlay window (default ~1.5s).
+    public static void ShowTransientInfo(string text, Window? owner = null, int ms = 1500)
+    {
+        try
+        {
+            Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    var popup = new Window()
+                    {
+                        WindowStyle = WindowStyle.None,
+                        AllowsTransparency = true,
+                        Background = new SolidColorBrush(Color.FromArgb(220, 0, 0, 0)),
+                        Width = 260,
+                        Height = 56,
+                        ShowInTaskbar = false,
+                        Topmost = true,
+                        ResizeMode = ResizeMode.NoResize,
+                        Owner = owner,
+                        Content = new System.Windows.Controls.TextBlock
+                        {
+                            Text = text,
+                            Foreground = Brushes.White,
+                            FontSize = 14,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextAlignment = TextAlignment.Center,
+                            Margin = new Thickness(8)
+                        }
+                    };
+
+                    if (owner != null)
+                    {
+                        popup.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+                    }
+                    else
+                    {
+                        popup.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+                    }
+
+                    popup.Show();
+                    var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
+                    t.Tick += (s, e) => { try { t.Stop(); popup.Close(); } catch { } };
+                    t.Start();
+                }
+                catch { }
+            }));
         }
         catch { }
     }
@@ -18328,6 +18441,22 @@ namespace FamidashEditor
                     currentFilePath = dlg.FileName;
                     SaveButton_Click(this, e);
                     currentFilePath = dlg.FileName; // keep new path
+
+                    // Ensure the current tab metadata is updated when SaveButton_Click executed
+                    try
+                    {
+                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                        {
+                            openFiles[currentFileIndex].FilePath = currentFilePath;
+                            openFiles[currentFileIndex].HasUnsavedChanges = false;
+                            try { openFiles[currentFileIndex].CreatedAsUntitled = false; } catch { }
+                            try { UpdateTabHeaderForIndex(currentFileIndex); } catch { }
+                        }
+                    }
+                    catch { }
+
+                    // Add to recent files list for untitled -> saved transitions
+                    try { AddToRecentFiles(currentFilePath); } catch { }
                 }
                 catch (Exception ex)
                 {

@@ -19,6 +19,16 @@
 
   <!-- Removed .fms from project: we now work exclusively with the FamiStudio text export (the album.txt) -->
   
+
+  <!-- Include player icons so they are copied to output and available at runtime -->
+  <ItemGroup>
+    <Content Include="..\ship.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\ball.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
   <ItemGroup>
     <!-- Include app config for DLL probing -->
     <None Include="FamidashEditor.exe.config">
