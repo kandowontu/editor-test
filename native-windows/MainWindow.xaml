@@ -183,6 +183,8 @@
                         <MenuItem x:Name="MenuOptionShowSpriteHitboxes" Header="Show Sprite Hitboxes" IsCheckable="True" IsChecked="False" InputGestureText="F2" Checked="MenuOptionShowSpriteHitboxes_Checked" Unchecked="MenuOptionShowSpriteHitboxes_Unchecked" />
                         <MenuItem x:Name="MenuOptionHideTriggerSprites" Header="Hide Trigger Sprites" IsCheckable="True" IsChecked="True" Checked="MenuOptionHideTriggerSprites_Checked" Unchecked="MenuOptionHideTriggerSprites_Unchecked" />
                         <MenuItem x:Name="MenuOptionOpenSimulatorPaused" Header="Open Simulator Paused" IsCheckable="True" IsChecked="False" />
+                        <Separator />
+                        <MenuItem x:Name="MenuOptionClearPlayerPath" Header="Clear Player Path" InputGestureText="F12" Click="MenuOptionClearPlayerPath_Click" />
                     </MenuItem>
                 </MenuItem>
             </Menu>

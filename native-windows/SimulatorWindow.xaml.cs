@@ -402,6 +402,8 @@ namespace FamidashEditor
         // can use the exact same geometry as the overlay (key = sprite storage idx).
         private System.Collections.Generic.Dictionary<int, (int left, int top, int right, int bottom, int frame)> hitboxWorldCache = new System.Collections.Generic.Dictionary<int, (int, int, int, int, int)>();
         private int renderFrameCounter = 0;
+        // Experimental: record player world positions each rendered frame for editor overlay
+        private System.Collections.Generic.List<(int x, int y)> recordedPlayerPath = new System.Collections.Generic.List<(int x, int y)>();
         // Interaction line: player's center (fixed-point) where scrolling begins
         private const int INTERACTION_LINE_FIXED = 0x5000;
 
@@ -1011,6 +1013,17 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
+                // When opening the simulator, clear any previous player-path overlay in the editor
+                try
+                {
+                    if (this.Owner is MainWindow mw)
+                    {
+                        try { mw.ClearPlayerPathOverlay(); } catch { }
+                    }
+                }
+                catch { }
+                // Clear any previously recorded path for a fresh run
+                try { recordedPlayerPath.Clear(); } catch { }
             }
             catch { }
         }
@@ -1021,6 +1034,26 @@ namespace FamidashEditor
             try { simTimer?.Dispose(); } catch { }
             simTimer = null; // Clear the timer reference
             try { simStopwatch.Stop(); } catch { }
+        }
+
+        // When the simulator window closes, send the recorded player path back to the editor
+        protected override void OnClosed(EventArgs e)
+        {
+            try
+            {
+                base.OnClosed(e);
+                try
+                {
+                    if (this.Owner is MainWindow mw)
+                    {
+                        // Send a copy of the recorded path
+                        var copy = new System.Collections.Generic.List<(int x, int y)>(recordedPlayerPath);
+                        mw.ShowPlayerPathFromSimulator(copy);
+                    }
+                }
+                catch { }
+            }
+            catch { base.OnClosed(e); }
         }
 
         // Timer loop invoked on threadpool; accumulates elapsed time and runs fixed-step simulation.
@@ -3366,6 +3399,17 @@ namespace FamidashEditor
             // remains consistent with the editor. We'll subtract ground rows when sampling map tiles.
             int startTileY = pixelY / TILE;
             int offsetY = pixelY % TILE;
+
+            // Record the player's world pixel position for editor overlay (experimental)
+            try
+            {
+                // Record player's center point (world pixels) so the overlay aligns with the
+                // visible sprite rather than the player's top-left hitbox.
+                int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+                recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+            }
+            catch { }
 
             // Update persistent background: draw parallax tiled image when available
             try

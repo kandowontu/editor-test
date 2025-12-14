@@ -104,6 +104,16 @@ namespace FamidashEditor
             catch { }
         }
 
+        private void MenuOptionClearPlayerPath_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                ClearPlayerPathOverlay();
+                ShowTransientInfo("Player path cleared", this, 900);
+            }
+            catch { }
+        }
+
         private void MenuOptionShowAccurateTileset_Checked(object? sender, RoutedEventArgs e)
         {
             try { SetShowAccurateTileset(true); } catch { }
@@ -201,6 +211,18 @@ namespace FamidashEditor
                         try { if (w is SimulatorWindow sw) sw.ShowSpriteHitboxes = newState; } catch { }
                     }
                     ShowTransientInfo($"Show Sprite Hitboxes: {(newState ? "ON" : "OFF")}", this, 1500);
+                    e.Handled = true;
+                    return;
+                }
+                catch { }
+            }
+            // F12 clears any simulator player-path overlay
+            if (e.Key == System.Windows.Input.Key.F12)
+            {
+                try
+                {
+                    ClearPlayerPathOverlay();
+                    ShowTransientInfo("Player path cleared", this, 900);
                     e.Handled = true;
                     return;
                 }
@@ -1715,6 +1737,9 @@ namespace FamidashEditor
     // The Y offset applied to the grid image at commit time; applied to overlays as well
     private double gridRenderShiftY = 0.0;
     private int gridRenderShiftYPx = 0;
+    // Player-path overlay state (populated by simulator on close)
+    private System.Collections.Generic.List<(int x, int y)> playerPathPoints = new System.Collections.Generic.List<(int x, int y)>();
+    private Shapes.Polyline? playerPathPolyline = null;
     // Preview mode for animations (saws, etc.)
     private bool previewMode = false;
     private int animationFrame = 0; // Increments each frame, used to determine animation states
@@ -10804,6 +10829,7 @@ namespace FamidashEditor
                 CanvasHost.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
             }
             try { UpdateIncompatibleOverlay(); } catch { }
+            try { UpdatePlayerPathOverlay(); } catch { }
 
             // Status messages removed (collapsed by XAML). No diagnostics shown here.
         }
@@ -10817,6 +10843,79 @@ namespace FamidashEditor
             // The tint operations (UpdateParallaxTint, UpdateGroundTint, UpdateTileTint)
             // already set backgroundDirty = true, so DrawMap will rebuild the layers
             DrawMap();
+        }
+
+        // Update the player-path overlay from stored raw points (world pixel coords)
+        private void UpdatePlayerPathOverlay()
+        {
+            try
+            {
+                if (CanvasHost == null) return;
+                // Remove previous polyline
+                if (playerPathPolyline != null)
+                {
+                    try { CanvasHost.Children.Remove(playerPathPolyline); } catch { }
+                    playerPathPolyline = null;
+                }
+
+                if (playerPathPoints == null || playerPathPoints.Count == 0) return;
+
+                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double pad = mapViewportPadding;
+
+                var poly = new Shapes.Polyline()
+                {
+                    Stroke = new SolidColorBrush(Color.FromArgb(0xE0, 0x90, 0xEE, 0x90)),
+                    StrokeThickness = Math.Max(1.0, 2.0 * scale),
+                    IsHitTestVisible = false
+                };
+
+                foreach (var p in playerPathPoints)
+                {
+                    double dx = pad + p.x * scale;
+                    // Shift path down 3 tiles so it lines up with player visuals/ground
+                    double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                    poly.Points.Add(new System.Windows.Point(dx, dy));
+                }
+
+                playerPathPolyline = poly;
+                // Put overlay above normal canvas content
+                Canvas.SetZIndex(poly, 2000);
+                CanvasHost.Children.Add(poly);
+            }
+            catch { }
+        }
+
+        // Public: called by simulator to set the player path (raw world pixel coords)
+        public void ShowPlayerPathFromSimulator(System.Collections.Generic.IEnumerable<(int x, int y)> pts)
+        {
+            try
+            {
+                Dispatcher?.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        playerPathPoints = pts?.ToList() ?? new System.Collections.Generic.List<(int x, int y)>();
+                        UpdatePlayerPathOverlay();
+                    }
+                    catch { }
+                }));
+            }
+            catch { }
+        }
+
+        public void ClearPlayerPathOverlay()
+        {
+            try
+            {
+                playerPathPoints.Clear();
+                if (playerPathPolyline != null && CanvasHost != null)
+                {
+                    try { CanvasHost.Children.Remove(playerPathPolyline); } catch { }
+                    playerPathPolyline = null;
+                }
+            }
+            catch { }
         }
 
         // Right-click Copy handler for the StatusText TextBlock
