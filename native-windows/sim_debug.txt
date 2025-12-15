@@ -1,0 +1,58 @@
+2025-12-14T22:12:25.2065480Z NUM: consumed pendingPresses_num=1 onGround=True playerY_fixed=94208 playerVelY_fixed=0
+2025-12-14T22:12:25.2252048Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:25.2547178Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:25.2944840Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:25.4353916Z NUM: consumed pendingPresses_num=1 onGround=True playerY_fixed=94208 playerVelY_fixed=0
+2025-12-14T22:12:25.4546102Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:25.4854465Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:25.6248698Z NUM: consumed pendingPresses_num=1 onGround=False playerY_fixed=94315 playerVelY_fixed=107
+2025-12-14T22:12:25.6297800Z NUM-Landing: applying jump (cube) - reason: buffer
+2025-12-14T22:12:25.6554118Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:25.7855928Z NUM: consumed pendingPresses_num=1 onGround=False playerY_fixed=94315 playerVelY_fixed=107
+2025-12-14T22:12:25.7859278Z NUM-Landing: applying jump (cube) - reason: buffer
+2025-12-14T22:12:25.8248614Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:25.9548699Z NUM: consumed pendingPresses_num=1 onGround=False playerY_fixed=94315 playerVelY_fixed=107
+2025-12-14T22:12:25.9551906Z NUM-Landing: applying jump (cube) - reason: buffer
+2025-12-14T22:12:25.9946512Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.1049789Z NUM: consumed pendingPresses_num=1 onGround=True playerY_fixed=94208 playerVelY_fixed=0
+2025-12-14T22:12:26.1245472Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.1546063Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.1948988Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.2755887Z NUM: consumed pendingPresses_num=1 onGround=True playerY_fixed=94208 playerVelY_fixed=0
+2025-12-14T22:12:26.2850117Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.3248398Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.3547996Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.4447347Z NUM: consumed pendingPresses_num=1 onGround=True playerY_fixed=94208 playerVelY_fixed=0
+2025-12-14T22:12:26.4548077Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.4950075Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.5246051Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.6046506Z NUM: consumed pendingPresses_num=1 onGround=True playerY_fixed=94208 playerVelY_fixed=0
+2025-12-14T22:12:26.6246931Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.6558648Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.7555351Z NUM: consumed pendingPresses_num=1 onGround=False playerY_fixed=94315 playerVelY_fixed=107
+2025-12-14T22:12:26.7559197Z NUM-Landing: applying jump (cube) - reason: buffer
+2025-12-14T22:12:26.7954968Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.8246989Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.8547613Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.9246040Z NUM: consumed pendingPresses_num=1 onGround=False playerY_fixed=94315 playerVelY_fixed=107
+2025-12-14T22:12:26.9251130Z NUM-Landing: applying jump (cube) - reason: buffer
+2025-12-14T22:12:26.9547437Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:26.9855932Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:27.1054406Z NUM: consumed pendingPresses_num=1 onGround=True playerY_fixed=94208 playerVelY_fixed=0
+2025-12-14T22:12:27.1249091Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:27.1555464Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:27.2545564Z NUM: consumed pendingPresses_num=1 onGround=False playerY_fixed=94315 playerVelY_fixed=107
+2025-12-14T22:12:27.2548498Z NUM-Landing: applying jump (cube) - reason: buffer
+2025-12-14T22:12:27.2856808Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:27.3245878Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:27.3549759Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:27.4248241Z NUM: consumed pendingPresses_num=1 onGround=False playerY_fixed=94315 playerVelY_fixed=107
+2025-12-14T22:12:27.4253218Z NUM-Landing: applying jump (cube) - reason: buffer
+2025-12-14T22:12:27.4547505Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:27.4947188Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:27.5946848Z NUM: consumed pendingPresses_num=1 onGround=False playerY_fixed=94315 playerVelY_fixed=107
+2025-12-14T22:12:27.5951651Z NUM-Landing: applying jump (cube) - reason: buffer
+2025-12-14T22:12:27.6253996Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:27.7449834Z NUM: consumed pendingPresses_num=1 onGround=True playerY_fixed=94208 playerVelY_fixed=0
+2025-12-14T22:12:27.7555382Z NUM-Landing: applying jump (cube) - reason: hold
+2025-12-14T22:12:27.7850963Z NUM-Landing: applying jump (cube) - reason: hold
