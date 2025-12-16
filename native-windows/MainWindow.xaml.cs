@@ -1740,10 +1740,6 @@ namespace FamidashEditor
     // Player-path overlay state (populated by simulator on close)
     private System.Collections.Generic.List<(int x, int y)> playerPathPoints = new System.Collections.Generic.List<(int x, int y)>();
     private Shapes.Polyline? playerPathPolyline = null;
-    // Whether we've already shown the FamiStudio-not-configured warning this app run
-    private bool famiIntegrationWarningShown = false;
-    private Shapes.Line? playerDeathMarkerA = null;
-    private Shapes.Line? playerDeathMarkerB = null;
     // Preview mode for animations (saws, etc.)
     private bool previewMode = false;
     private int animationFrame = 0; // Increments each frame, used to determine animation states
@@ -7126,19 +7122,6 @@ namespace FamidashEditor
                     // Warm audio and preload the selected track to reduce first-play latency.
                     try { if (!string.IsNullOrEmpty(albumTxtPath)) famiIntegration.WarmAndPrime(albumTxtPath); } catch { }
 
-                    // If the FamiStudio integration isn't loaded, show a one-time warning
-                    // to the user that playback won't be available; allow the simulator
-                    // to run without music regardless.
-                    try
-                    {
-                        if (!famiIntegration.IsLoaded && !famiIntegrationWarningShown)
-                        {
-                            famiIntegrationWarningShown = true;
-                            try { System.Windows.MessageBox.Show(this, "FamiStudio integration not configured or could not be loaded. The simulator will run without music.", "FamiStudio Not Available", MessageBoxButton.OK, MessageBoxImage.Warning); } catch { }
-                        }
-                    }
-                    catch { }
-
                     sim.Show();
                     // Start simulation only after the window is shown so player doesn't move beforehand
                     try { sim.StartSimulation(); } catch { }
@@ -7182,16 +7165,6 @@ namespace FamidashEditor
             {
                 if (famiIntegration == null) return;
                 try { _ = System.Threading.Tasks.Task.Run(() => famiIntegration.Pause()); } catch { }
-            }
-            catch { }
-        }
-
-        // Called by simulator when the player dies to stop music playback immediately.
-        public void StopSimulatorPlayback()
-        {
-            try
-            {
-                try { famiIntegration.Stop(); } catch { }
             }
             catch { }
         }
@@ -10909,49 +10882,6 @@ namespace FamidashEditor
                 // Put overlay above normal canvas content
                 Canvas.SetZIndex(poly, 2000);
                 CanvasHost.Children.Add(poly);
-
-                // Remove any previous death markers
-                try { if (playerDeathMarkerA != null) { CanvasHost.Children.Remove(playerDeathMarkerA); playerDeathMarkerA = null; } } catch { }
-                try { if (playerDeathMarkerB != null) { CanvasHost.Children.Remove(playerDeathMarkerB); playerDeathMarkerB = null; } } catch { }
-
-                // Draw a red X at the last recorded point
-                try
-                {
-                    if (playerPathPoints != null && playerPathPoints.Count > 0)
-                    {
-                        var last = playerPathPoints[playerPathPoints.Count - 1];
-                        double lx = pad + last.x * scale;
-                        double ly = pad + (last.y + (3 * TileSize)) * scale + gridRenderShiftY;
-                        double s = Math.Max(4.0, 6.0 * scale);
-                        var lineA = new Shapes.Line()
-                        {
-                            X1 = lx - s,
-                            Y1 = ly - s,
-                            X2 = lx + s,
-                            Y2 = ly + s,
-                            Stroke = new SolidColorBrush(Colors.Red),
-                            StrokeThickness = Math.Max(1.0, 2.0 * scale),
-                            IsHitTestVisible = false
-                        };
-                        var lineB = new Shapes.Line()
-                        {
-                            X1 = lx - s,
-                            Y1 = ly + s,
-                            X2 = lx + s,
-                            Y2 = ly - s,
-                            Stroke = new SolidColorBrush(Colors.Red),
-                            StrokeThickness = Math.Max(1.0, 2.0 * scale),
-                            IsHitTestVisible = false
-                        };
-                        Canvas.SetZIndex(lineA, 2010);
-                        Canvas.SetZIndex(lineB, 2010);
-                        CanvasHost.Children.Add(lineA);
-                        CanvasHost.Children.Add(lineB);
-                        playerDeathMarkerA = lineA;
-                        playerDeathMarkerB = lineB;
-                    }
-                }
-                catch { }
             }
             catch { }
         }
@@ -10984,8 +10914,6 @@ namespace FamidashEditor
                     try { CanvasHost.Children.Remove(playerPathPolyline); } catch { }
                     playerPathPolyline = null;
                 }
-                try { if (playerDeathMarkerA != null && CanvasHost != null) { CanvasHost.Children.Remove(playerDeathMarkerA); playerDeathMarkerA = null; } } catch { }
-                try { if (playerDeathMarkerB != null && CanvasHost != null) { CanvasHost.Children.Remove(playerDeathMarkerB); playerDeathMarkerB = null; } } catch { }
             }
             catch { }
         }
