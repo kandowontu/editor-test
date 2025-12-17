@@ -24,6 +24,9 @@ namespace FamidashEditor
         // Option: when true, disable all collision-based deaths in simulators.
         // Default: false (deaths enabled). This is persisted in editor-settings.json.
         public static bool Option_NoDeath = false;
+        // Option: when true, simulator runs in camera-only mode (Up/Down control camera pan only).
+        // When false, physics runs immediately and Up/Down do not pan the camera manually.
+        public static bool Option_CamMode = false;
         // Layer visibility toggles (eye buttons)
         // These are wired to the UI ToggleButtons to hide/show layers
         private void TileEyeButton_Checked(object? sender, RoutedEventArgs e)
@@ -241,6 +244,21 @@ namespace FamidashEditor
                     try { if (MenuOptionNoDeath != null) MenuOptionNoDeath.IsChecked = newState; } catch { }
                     try { SaveSettingsWithTriggerOption(); } catch { }
                     ShowTransientInfo($"No Death: {(newState ? "ON" : "OFF")}", this, 1200);
+                    e.Handled = true;
+                    return;
+                }
+                catch { }
+            }
+            // F10 toggles Cam Mode global option
+            if (e.Key == System.Windows.Input.Key.F10)
+            {
+                try
+                {
+                    bool newState = !Option_CamMode;
+                    Option_CamMode = newState;
+                    try { if (MenuOptionCamMode != null) MenuOptionCamMode.IsChecked = newState; } catch { }
+                    try { SaveSettingsWithTriggerOption(); } catch { }
+                    ShowTransientInfo($"Cam Mode: {(newState ? "ON" : "OFF")}", this, 1200);
                     e.Handled = true;
                     return;
                 }
@@ -2903,6 +2921,12 @@ namespace FamidashEditor
             {
                 MenuOptionNoDeath.Checked += (s, e) => { Option_NoDeath = true; SaveSettingsWithTriggerOption(); };
                 MenuOptionNoDeath.Unchecked += (s, e) => { Option_NoDeath = false; SaveSettingsWithTriggerOption(); };
+            }
+            // Camera-only mode for simulator
+            if (MenuOptionCamMode != null)
+            {
+                MenuOptionCamMode.Checked += (s, e) => { Option_CamMode = true; SaveSettingsWithTriggerOption(); };
+                MenuOptionCamMode.Unchecked += (s, e) => { Option_CamMode = false; SaveSettingsWithTriggerOption(); };
             }
             // Invert pinch gesture option (some devices report inverted scale)
             if (MenuOptionSwapPinch != null)
@@ -6269,6 +6293,12 @@ namespace FamidashEditor
                         try { Option_NoDeath = nd.GetBoolean(); } catch { Option_NoDeath = false; }
                         if (MenuOptionNoDeath != null) MenuOptionNoDeath.IsChecked = Option_NoDeath;
                     }
+                    // optional cam-mode (global setting)
+                    if (doc.RootElement.TryGetProperty("camMode", out var cm))
+                    {
+                        try { Option_CamMode = cm.GetBoolean(); } catch { Option_CamMode = false; }
+                        if (MenuOptionCamMode != null) MenuOptionCamMode.IsChecked = Option_CamMode;
+                    }
                     
                     // Load tileboard position (default to LEFT if not present)
                     if (doc.RootElement.TryGetProperty("tileboardPosition", out var tbPosElem))
@@ -6347,6 +6377,7 @@ namespace FamidashEditor
                     tileboardPosition = tileboardPosition
                     ,
                     noDeath = Option_NoDeath,
+                    camMode = Option_CamMode,
                     openSimulatorPaused = loadedOpenSimulatorPaused
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
