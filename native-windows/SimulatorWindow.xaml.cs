@@ -4830,8 +4830,26 @@ namespace FamidashEditor
                             {
                                 if (currentGameMode == 0)
                                 {
-                                    // Defer for cube; we'll apply this after integration below
-                                    pendingPresses_forLater = pendingPresses_num;
+                                    // For cube: only defer the jump when gravity is normal. When
+                                    // gravity is reversed (or numeric inversion applied), apply
+                                    // the jump immediately to avoid penetrating the ceiling.
+                                    if (gravityReversed || effectiveInvertedByW)
+                                    {
+                                        bool touchingCeiling_local = (gravityReversed || effectiveInvertedByW) && IsTouchingCeiling();
+                                        if (onGround || touchingCeiling_local)
+                                        {
+                                            playerVelY_fixed = effectiveJumpVel_fixed;
+                                            physicsEnabled = true;
+                                            onGround = false;
+                                            jumpAppliedThisStep_local = true;
+                                            jumpedOnce = true;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // Defer the cube jump until after gravity+integration
+                                        pendingPresses_forLater = pendingPresses_num;
+                                    }
                                 }
                                 else if (currentGameMode == 3)
                                 {
@@ -5157,7 +5175,12 @@ namespace FamidashEditor
                                                     {
                                                         if (currentGameMode == 0)
                                                         {
-                                                            if (jumpBuffered_local > 0 || keyXHeld_local || IsXDownAsync())
+                                                            // Trigger a jump from a buffered/edge press always.
+                                                            // Additionally, when gravity is reversed (player is
+                                                            // upside-down touching the ceiling), allow a held X
+                                                            // (or IsXDownAsync polling) to trigger the jump so
+                                                            // players can hold jump to jump off the ceiling.
+                                                            if (jumpBuffered_local > 0 || ((gravityReversed || effectiveInvertedByW) && (keyXHeld_local || IsXDownAsync())))
                                                             {
                                                                 playerVelY_fixed = effectiveJumpVel_fixed;
                                                                 physicsEnabled = true;
@@ -5318,8 +5341,9 @@ namespace FamidashEditor
                                     playerVelY_fixed = 0;
                                     onGround = true;
 
-                                    // If player is holding/jump-pressed or had a buffered press, jump immediately from landing
-                                    if (currentGameMode == 0 && (jumpBuffered_local > 0 || keyXHeld_local || IsXDownAsync()))
+                                    // If a buffered/edge press exists, jump immediately from landing.
+                                    // Do NOT treat a held X or IsXDownAsync as a continuous trigger.
+                                    if (currentGameMode == 0 && jumpBuffered_local > 0)
                                     {
                                         playerVelY_fixed = effectiveJumpVel_fixed;
                                         onGround = false;
@@ -5358,7 +5382,7 @@ namespace FamidashEditor
                                     playerVelY_fixed = 0;
                                     onGround = true;
 
-                                    if (currentGameMode == 0 && (jumpBuffered_local > 0 || keyXHeld_local || IsXDownAsync()))
+                                    if (currentGameMode == 0 && jumpBuffered_local > 0)
                                     {
                                         playerVelY_fixed = effectiveJumpVel_fixed;
                                         onGround = false;
