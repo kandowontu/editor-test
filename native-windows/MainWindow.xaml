@@ -181,6 +181,7 @@
                             <MenuItem x:Name="MenuSimulatorSize4x" Header="4x" IsCheckable="True" />
                         </MenuItem>
                         <MenuItem x:Name="MenuOptionShowSpriteHitboxes" Header="Show Sprite Hitboxes" IsCheckable="True" IsChecked="False" InputGestureText="F2" Checked="MenuOptionShowSpriteHitboxes_Checked" Unchecked="MenuOptionShowSpriteHitboxes_Unchecked" />
+                        <MenuItem x:Name="MenuOptionNoDeath" Header="No Death" IsCheckable="True" IsChecked="False" InputGestureText="F11" />
                         <MenuItem x:Name="MenuOptionHideTriggerSprites" Header="Hide Trigger Sprites" IsCheckable="True" IsChecked="True" Checked="MenuOptionHideTriggerSprites_Checked" Unchecked="MenuOptionHideTriggerSprites_Unchecked" />
                         <MenuItem x:Name="MenuOptionOpenSimulatorPaused" Header="Open Simulator Paused" IsCheckable="True" IsChecked="False" />
                         <Separator />

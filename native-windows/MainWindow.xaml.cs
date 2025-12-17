@@ -21,6 +21,9 @@ namespace FamidashEditor
         // Option: whether simulator sprite hitbox overlays are enabled (this mirrors the
         // existing "Options -> Simulator Options" setting). F2 should toggle this.
         public static bool Option_ShowSimulatorSpriteHitboxes = false;
+        // Option: when true, disable all collision-based deaths in simulators.
+        // Default: false (deaths enabled). This is persisted in editor-settings.json.
+        public static bool Option_NoDeath = false;
         // Layer visibility toggles (eye buttons)
         // These are wired to the UI ToggleButtons to hide/show layers
         private void TileEyeButton_Checked(object? sender, RoutedEventArgs e)
@@ -223,6 +226,21 @@ namespace FamidashEditor
                 {
                     ClearPlayerPathOverlay();
                     ShowTransientInfo("Player path cleared", this, 900);
+                    e.Handled = true;
+                    return;
+                }
+                catch { }
+            }
+            // F11 toggles No-Death global option
+            if (e.Key == System.Windows.Input.Key.F11)
+            {
+                try
+                {
+                    bool newState = !Option_NoDeath;
+                    Option_NoDeath = newState;
+                    try { if (MenuOptionNoDeath != null) MenuOptionNoDeath.IsChecked = newState; } catch { }
+                    try { SaveSettingsWithTriggerOption(); } catch { }
+                    ShowTransientInfo($"No Death: {(newState ? "ON" : "OFF")}", this, 1200);
                     e.Handled = true;
                     return;
                 }
@@ -500,6 +518,8 @@ namespace FamidashEditor
     // Global setting: open simulator paused (default ON)
     private bool loadedOpenSimulatorPaused = true;
     public bool LoadedOpenSimulatorPaused { get => loadedOpenSimulatorPaused; set => loadedOpenSimulatorPaused = value; }
+    // Global setting loaded from editor-settings.json: No Death (true = disable deaths)
+    private bool loadedNoDeath = false;
     // Per-level starting color codes (nullable). These are the authoritative top-level
     // properties referenced by SetOptionsWindow and used when opening the simulator.
     private int? loadedStartingBackgroundColor = null;
@@ -1740,6 +1760,9 @@ namespace FamidashEditor
     // Player-path overlay state (populated by simulator on close)
     private System.Collections.Generic.List<(int x, int y)> playerPathPoints = new System.Collections.Generic.List<(int x, int y)>();
     private Shapes.Polyline? playerPathPolyline = null;
+    // Optional death marker (red X) placed by simulator when a death occurs
+    private Shapes.Line? playerDeathMarkerA = null;
+    private Shapes.Line? playerDeathMarkerB = null;
     // Preview mode for animations (saws, etc.)
     private bool previewMode = false;
     private int animationFrame = 0; // Increments each frame, used to determine animation states
@@ -2874,6 +2897,12 @@ namespace FamidashEditor
             {
                 MenuOptionOpenSimulatorPaused.Checked += (s, e) => { loadedOpenSimulatorPaused = true; SaveSettingsWithTriggerOption(); };
                 MenuOptionOpenSimulatorPaused.Unchecked += (s, e) => { loadedOpenSimulatorPaused = false; SaveSettingsWithTriggerOption(); };
+            }
+            // No Death global option (disable/enable collision death)
+            if (MenuOptionNoDeath != null)
+            {
+                MenuOptionNoDeath.Checked += (s, e) => { Option_NoDeath = true; SaveSettingsWithTriggerOption(); };
+                MenuOptionNoDeath.Unchecked += (s, e) => { Option_NoDeath = false; SaveSettingsWithTriggerOption(); };
             }
             // Invert pinch gesture option (some devices report inverted scale)
             if (MenuOptionSwapPinch != null)
@@ -6234,6 +6263,12 @@ namespace FamidashEditor
                         try { loadedOpenSimulatorPaused = osp.GetBoolean(); } catch { loadedOpenSimulatorPaused = false; }
                         if (MenuOptionOpenSimulatorPaused != null) MenuOptionOpenSimulatorPaused.IsChecked = loadedOpenSimulatorPaused;
                     }
+                    // optional no-death (global setting)
+                    if (doc.RootElement.TryGetProperty("noDeath", out var nd))
+                    {
+                        try { Option_NoDeath = nd.GetBoolean(); } catch { Option_NoDeath = false; }
+                        if (MenuOptionNoDeath != null) MenuOptionNoDeath.IsChecked = Option_NoDeath;
+                    }
                     
                     // Load tileboard position (default to LEFT if not present)
                     if (doc.RootElement.TryGetProperty("tileboardPosition", out var tbPosElem))
@@ -6311,6 +6346,7 @@ namespace FamidashEditor
                     famistudioPath = string.IsNullOrEmpty(famiStudioPath) ? null : famiStudioPath,
                     tileboardPosition = tileboardPosition
                     ,
+                    noDeath = Option_NoDeath,
                     openSimulatorPaused = loadedOpenSimulatorPaused
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
@@ -10914,6 +10950,44 @@ namespace FamidashEditor
                     try { CanvasHost.Children.Remove(playerPathPolyline); } catch { }
                     playerPathPolyline = null;
                 }
+                // Remove any death marker as well
+                try { if (playerDeathMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerA); } catch { }
+                try { if (playerDeathMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerB); } catch { }
+                playerDeathMarkerA = null; playerDeathMarkerB = null;
+            }
+            catch { }
+        }
+
+        // Public: draw a red X at the given world pixel coords (used when top-death occurs)
+        public void AddDeathMarker(int worldX_px, int worldY_px)
+        {
+            try
+            {
+                Dispatcher?.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (CanvasHost == null) return;
+                        // Remove previous
+                        try { if (playerDeathMarkerA != null) CanvasHost.Children.Remove(playerDeathMarkerA); } catch { }
+                        try { if (playerDeathMarkerB != null) CanvasHost.Children.Remove(playerDeathMarkerB); } catch { }
+                        playerDeathMarkerA = null; playerDeathMarkerB = null;
+
+                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        double pad = mapViewportPadding;
+                        // Convert world pixel -> canvas coordinates (re-use path overlay transform)
+                        double dx = pad + worldX_px * scale;
+                        double dy = pad + (worldY_px + (3 * TileSize)) * scale + gridRenderShiftY;
+
+                        double size = Math.Max(4.0, 8.0 * scale);
+                        var lineA = new Shapes.Line() { X1 = dx - size, Y1 = dy - size, X2 = dx + size, Y2 = dy + size, Stroke = Brushes.Red, StrokeThickness = Math.Max(1.0, 2.0 * scale), IsHitTestVisible = false };
+                        var lineB = new Shapes.Line() { X1 = dx - size, Y1 = dy + size, X2 = dx + size, Y2 = dy - size, Stroke = Brushes.Red, StrokeThickness = Math.Max(1.0, 2.0 * scale), IsHitTestVisible = false };
+                        playerDeathMarkerA = lineA; playerDeathMarkerB = lineB;
+                        Canvas.SetZIndex(lineA, 2001); Canvas.SetZIndex(lineB, 2001);
+                        CanvasHost.Children.Add(lineA); CanvasHost.Children.Add(lineB);
+                    }
+                    catch { }
+                }));
             }
             catch { }
         }
