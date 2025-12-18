@@ -21,6 +21,8 @@ namespace FamidashEditor
         // Option: whether simulator sprite hitbox overlays are enabled (this mirrors the
         // existing "Options -> Simulator Options" setting). F2 should toggle this.
         public static bool Option_ShowSimulatorSpriteHitboxes = false;
+        // Option: when true, show per-tile hitboxes in simulator (filled red boxes)
+        public static bool Option_ShowTileHitboxes = false;
         // Option: when true, disable all collision-based deaths in simulators.
         // Default: false (deaths enabled). This is persisted in editor-settings.json.
         public static bool Option_NoDeath = false;
@@ -104,6 +106,34 @@ namespace FamidashEditor
                 foreach (Window w in Application.Current.Windows)
                 {
                     try { if (w is SimulatorWindow sw) sw.ShowSpriteHitboxes = false; } catch { }
+                }
+                try { SaveEditorSettings(); } catch { }
+            }
+            catch { }
+        }
+
+        private void MenuOptionTileHitboxes_Checked(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Option_ShowTileHitboxes = true;
+                foreach (Window w in Application.Current.Windows)
+                {
+                    try { if (w is SimulatorWindow sw) sw.ShowTileHitboxes = true; } catch { }
+                }
+                try { SaveEditorSettings(); } catch { }
+            }
+            catch { }
+        }
+
+        private void MenuOptionTileHitboxes_Unchecked(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Option_ShowTileHitboxes = false;
+                foreach (Window w in Application.Current.Windows)
+                {
+                    try { if (w is SimulatorWindow sw) sw.ShowTileHitboxes = false; } catch { }
                 }
                 try { SaveEditorSettings(); } catch { }
             }
@@ -202,13 +232,31 @@ namespace FamidashEditor
     {
         try
         {
-            if (e.Key == System.Windows.Input.Key.F2)
+            // F2: Toggle Tile Hitboxes (ignore repeats)
+            if (e.Key == System.Windows.Input.Key.F2 && !e.IsRepeat)
             {
                 try
                 {
-                    // Toggle the canonical editor option directly so editor F2 always flips the
-                    // authoritative setting (avoid relying on per-simulator state which can
-                    // be inconsistent if simulators are closed/created).
+                    bool newState = !Option_ShowTileHitboxes;
+                    Option_ShowTileHitboxes = newState;
+                    try { if (MenuOptionTileHitboxes != null) MenuOptionTileHitboxes.IsChecked = newState; } catch { }
+                    foreach (Window w in Application.Current.Windows)
+                    {
+                        try { if (w is SimulatorWindow sw) sw.ShowTileHitboxes = newState; } catch { }
+                    }
+                    try { SaveEditorSettings(); } catch { }
+                    ShowTransientInfo($"Show Tile Hitboxes: {(newState ? "ON" : "OFF")}", this, 1500);
+                    e.Handled = true;
+                    return;
+                }
+                catch { }
+            }
+
+            // F3: Toggle Sprite Hitboxes (ignore repeats)
+            if (e.Key == System.Windows.Input.Key.F3 && !e.IsRepeat)
+            {
+                try
+                {
                     bool newState = !Option_ShowSimulatorSpriteHitboxes;
                     Option_ShowSimulatorSpriteHitboxes = newState;
                     try { if (MenuOptionShowSpriteHitboxes != null) MenuOptionShowSpriteHitboxes.IsChecked = newState; } catch { }
@@ -216,39 +264,14 @@ namespace FamidashEditor
                     {
                         try { if (w is SimulatorWindow sw) sw.ShowSpriteHitboxes = newState; } catch { }
                     }
+                    try { SaveEditorSettings(); } catch { }
                     ShowTransientInfo($"Show Sprite Hitboxes: {(newState ? "ON" : "OFF")}", this, 1500);
                     e.Handled = true;
                     return;
                 }
                 catch { }
             }
-            // F12 clears any simulator player-path overlay
-            if (e.Key == System.Windows.Input.Key.F12)
-            {
-                try
-                {
-                    ClearPlayerPathOverlay();
-                    ShowTransientInfo("Player path cleared", this, 900);
-                    e.Handled = true;
-                    return;
-                }
-                catch { }
-            }
-            // F11 toggles No-Death global option
-            if (e.Key == System.Windows.Input.Key.F11)
-            {
-                try
-                {
-                    bool newState = !Option_NoDeath;
-                    Option_NoDeath = newState;
-                    try { if (MenuOptionNoDeath != null) MenuOptionNoDeath.IsChecked = newState; } catch { }
-                    try { SaveSettingsWithTriggerOption(); } catch { }
-                    ShowTransientInfo($"No Death: {(newState ? "ON" : "OFF")}", this, 1200);
-                    e.Handled = true;
-                    return;
-                }
-                catch { }
-            }
+
             // F10 toggles Cam Mode global option
             if (e.Key == System.Windows.Input.Key.F10)
             {
@@ -257,7 +280,7 @@ namespace FamidashEditor
                     bool newState = !Option_CamMode;
                     Option_CamMode = newState;
                     try { if (MenuOptionCamMode != null) MenuOptionCamMode.IsChecked = newState; } catch { }
-                    try { SaveSettingsWithTriggerOption(); } catch { }
+                    try { SaveEditorSettings(); } catch { }
                     ShowTransientInfo($"Cam Mode: {(newState ? "ON" : "OFF")}", this, 1200);
                     e.Handled = true;
                     return;
@@ -6293,6 +6316,12 @@ namespace FamidashEditor
                         try { Option_NoDeath = nd.GetBoolean(); } catch { Option_NoDeath = false; }
                         if (MenuOptionNoDeath != null) MenuOptionNoDeath.IsChecked = Option_NoDeath;
                     }
+                    // optional tile hitboxes (global setting)
+                    if (doc.RootElement.TryGetProperty("showTileHitboxes", out var sth))
+                    {
+                        try { Option_ShowTileHitboxes = sth.GetBoolean(); } catch { Option_ShowTileHitboxes = false; }
+                        if (MenuOptionTileHitboxes != null) MenuOptionTileHitboxes.IsChecked = Option_ShowTileHitboxes;
+                    }
                     // optional cam-mode (global setting)
                     if (doc.RootElement.TryGetProperty("camMode", out var cm))
                     {
@@ -6377,6 +6406,7 @@ namespace FamidashEditor
                     tileboardPosition = tileboardPosition
                     ,
                     noDeath = Option_NoDeath,
+                    showTileHitboxes = Option_ShowTileHitboxes,
                     camMode = Option_CamMode,
                     openSimulatorPaused = loadedOpenSimulatorPaused
                 };

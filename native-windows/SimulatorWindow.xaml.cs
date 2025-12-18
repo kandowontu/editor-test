@@ -19,6 +19,28 @@ namespace FamidashEditor
         // Public toggle to show sprite hitboxes in the simulator viewport.
         public bool ShowSpriteHitboxes { get; set; } = false;
 
+        // Public toggle to show per-tile hitboxes (filled red boxes) in the simulator viewport.
+        private bool _showTileHitboxes = false;
+        public bool ShowTileHitboxes
+        {
+            get { return _showTileHitboxes; }
+            set
+            {
+                try
+                {
+                    _showTileHitboxes = value;
+                    AppendSimDebug($"ShowTileHitboxes set to {_showTileHitboxes}");
+                    // Ensure UI updates on the dispatcher thread
+                    try { Dispatcher.BeginInvoke(new Action(() => { try { RenderFrame(); } catch { } })); } catch { }
+                }
+                catch { }
+            }
+        }
+
+        // Pool of rectangle overlays used to draw per-tile hitboxes above the tile layer.
+        private System.Collections.Generic.List<System.Windows.Shapes.Rectangle> tileHitboxPool = new System.Collections.Generic.List<System.Windows.Shapes.Rectangle>();
+        private int tileHitboxesInUse = 0;
+
         // Starting speed UI index (0=0.5x,1=1x,2=2x,3=3x,4=4x)
         private int startingSpeedUiIndex = 1;
 
@@ -697,6 +719,12 @@ namespace FamidashEditor
         // Jump-buffer: when the player presses jump slightly before landing, store a small
         // frame window so the jump fires on landing. Timer_Tick sets this under `simLock`.
         private int jumpBufferCounter = 0;
+        // Toggle to show player's Y velocity in top-left when Shift+F12 is pressed
+        private bool showYVelocityOverlay = false;
+        private System.Windows.Controls.TextBlock? yVelTextBlock = null;
+        // Simulation time scale (1.0 = normal). Adjusting this slows/speeds the simulation
+        // in even 10% increments when the user presses +/-.
+        private double simTimeScale = 1.0;
         private const int JUMP_BUFFER_FRAMES = 6; // ~100ms @60Hz
         // Ball mode buffer: allow buffering an X press for ball gravity switch
         // Ball toggle request + lock: pressing X requests a one-time gravity toggle
@@ -1042,6 +1070,9 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
+                // Initialize per-simulator overlay flags from global editor options
+                try { ShowTileHitboxes = (this.Owner is MainWindow mw3) ? MainWindow.Option_ShowTileHitboxes : false; } catch { }
+                try { ShowSpriteHitboxes = (this.Owner is MainWindow mw4) ? MainWindow.Option_ShowSimulatorSpriteHitboxes : false; } catch { }
             }
             catch { }
         }
@@ -1698,6 +1729,7 @@ namespace FamidashEditor
                 tileLayerImage.SnapsToDevicePixels = true;
                 System.Windows.Media.RenderOptions.SetEdgeMode(tileLayerImage, EdgeMode.Aliased);
                 RenderCanvas.Children.Add(tileLayerImage);
+                try { System.Windows.Controls.Canvas.SetZIndex(tileLayerImage, 0); } catch { }
 
                 groundRectPersistent = new System.Windows.Shapes.Rectangle
                 {
@@ -1910,7 +1942,7 @@ namespace FamidashEditor
                                             // toggles share the same numeric effect.
                                             ballGoingDown = !ballGoingDown;
                                             int sign = ballGoingDown ? 1 : -1;
-                                            playerVelY_fixed = sign * BALL_IMMEDIATE_VEL;
+                                            try { playerVelY_fixed = (int)Math.Round((sign * BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = sign * BALL_IMMEDIATE_VEL; }
                                             onGround = false;
                                             physicsEnabled = true;
                                             jumpedOnce = true;
@@ -1948,7 +1980,7 @@ namespace FamidashEditor
                                     {
                                         // Consume the queued edge so numeric path doesn't double-apply
                                         Interlocked.Exchange(ref keyXPressedCount, 0);
-                                        playerVelY_fixed = effectiveJumpVel_fixed;
+                                        try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
                                         physicsEnabled = true;
                                         onGround = false;
                                         jumpedOnce = true;
@@ -1958,6 +1990,57 @@ namespace FamidashEditor
                             }
                         }
                     }
+                }
+                catch { }
+            }
+            // Shift+F12: toggle Y-velocity overlay for debugging
+            if (e.Key == Key.F12 && (Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+            {
+                try
+                {
+                    showYVelocityOverlay = !showYVelocityOverlay;
+                    if (showYVelocityOverlay)
+                    {
+                        try
+                        {
+                            if (yVelTextBlock == null)
+                            {
+                                yVelTextBlock = new System.Windows.Controls.TextBlock();
+                                yVelTextBlock.Foreground = new SolidColorBrush(Colors.Yellow);
+                                yVelTextBlock.FontWeight = FontWeights.Bold;
+                                yVelTextBlock.FontSize = 14;
+                                yVelTextBlock.IsHitTestVisible = false;
+                                RenderCanvas.Children.Add(yVelTextBlock);
+                                try { System.Windows.Controls.Canvas.SetZIndex(yVelTextBlock, 2000); } catch { }
+                            }
+                        }
+                        catch { }
+                    }
+                    else
+                    {
+                        try { if (yVelTextBlock != null) yVelTextBlock.Visibility = Visibility.Collapsed; } catch { }
+                    }
+                    try { RenderFrame(); } catch { }
+                }
+                catch { }
+            }
+
+            // Speed adjustment: '-' decrease sim time scale by 10%, '+' increase by 10% (even 10% steps)
+            if (e.Key == Key.OemMinus || e.Key == Key.Subtract)
+            {
+                try
+                {
+                    simTimeScale = Math.Max(0.1, Math.Round((simTimeScale - 0.1) * 10.0) / 10.0);
+                    try { MainWindow.ShowTransientInfo($"Sim time: {(simTimeScale * 100):F0}%", this, 300); } catch { }
+                }
+                catch { }
+            }
+            if (e.Key == Key.OemPlus || e.Key == Key.Add)
+            {
+                try
+                {
+                    simTimeScale = Math.Min(4.0, Math.Round((simTimeScale + 0.1) * 10.0) / 10.0);
+                    try { MainWindow.ShowTransientInfo($"Sim time: {(simTimeScale * 100):F0}%", this, 300); } catch { }
                 }
                 catch { }
             }
@@ -2246,7 +2329,7 @@ namespace FamidashEditor
             int speedMultiplier = tabSpeedMultiplier;
             int centerOffset_fixed = (TILE / 2) << 8;
             int prevPlayerCenter_fixed = playerX_fixed + centerOffset_fixed;
-            int attemptedPlayerX_fixed = playerX_fixed + currentSpeed_fixed * speedMultiplier;
+            int attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplier) * simTimeScale);
             int attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
 
             // Move the player forward in world coordinates first
@@ -2474,7 +2557,7 @@ namespace FamidashEditor
                         else
                         {
                             // Reset vertical velocity to the jump impulse (do not stack)
-                            playerVelY_fixed = effectiveJumpVel_fixed;
+                            try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
                             physicsEnabled = true;
                             onGround = false;
                             jumpAppliedThisFrame = true;
@@ -2506,7 +2589,7 @@ namespace FamidashEditor
                                 int tmpgravity = tmpMag * gravitySign;
                                 if (xheld) tmpgravity = -tmpgravity; // X = thrust opposite to gravity
 
-                                playerVelY_fixed += tmpgravity;
+                                try { playerVelY_fixed += (int)Math.Round(tmpgravity * simTimeScale * simTimeScale); } catch { playerVelY_fixed += tmpgravity; }
 
                                 try
                                 {
@@ -2524,7 +2607,7 @@ namespace FamidashEditor
                                 }
                                 catch { }
                             }
-                            catch { playerVelY_fixed += effectiveGravity_fixed; }
+                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; } }
                         }
                         else if (currentGameMode == 2)
                         {
@@ -2538,7 +2621,7 @@ namespace FamidashEditor
                                 int tmpMag = BALL_GRAVITY;
                                 int tmpgravity = tmpMag * gravitySign;
 
-                                playerVelY_fixed += tmpgravity;
+                                try { playerVelY_fixed += (int)Math.Round(tmpgravity * simTimeScale * simTimeScale); } catch { playerVelY_fixed += tmpgravity; }
 
                                 try
                                 {
@@ -2556,11 +2639,11 @@ namespace FamidashEditor
                                 }
                                 catch { }
                             }
-                            catch { playerVelY_fixed += effectiveGravity_fixed; }
+                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; } }
                         }
                         else
                         {
-                            playerVelY_fixed += effectiveGravity_fixed;
+                            try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; }
                             // cap velocity according to the sign of effectiveMaxFall_fixed
                             try
                             {
@@ -2872,6 +2955,9 @@ namespace FamidashEditor
                             // If not running runtime diagnostics, perform landing resolution here
                             // by atomically consuming any jump buffer and snapping the player to floor.
                             int buffered_ui = Interlocked.Exchange(ref jumpBufferCounter, 0);
+                            // Also read the raw edge-press counter without clearing it so held/edge presses
+                            // recorded by the UI poll are considered when landing.
+                            int pendingPressesNow = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                             if (!gravityReversed)
                             {
                                 if (playerY_fixed >= floorTop_fixed - LAND_EPS_FIXED && playerVelY_fixed >= 0)
@@ -2883,9 +2969,9 @@ namespace FamidashEditor
                                     onGround = true;
 
                                             // If player is holding/jump-pressed or had a buffered press, jump immediately from landing
-                                            if (currentGameMode == 0 && (buffered_ui > 0 || keyXHeld || IsXDownAsync()))
+                                            if (currentGameMode == 0 && (buffered_ui > 0 || pendingPressesNow > 0 || keyXHeld || IsXDownAsync()))
                                             {
-                                                playerVelY_fixed = effectiveJumpVel_fixed;
+                                                try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
                                                 onGround = false;
                                                 jumpedOnce = true;
                                                 Interlocked.Exchange(ref keyXPressedCount, 0);
@@ -2897,7 +2983,7 @@ namespace FamidashEditor
                                                 if (currentGameMode == 2 && buffered_ball_ui > 0)
                                                 {
                                                     ballGoingDown = !ballGoingDown;
-                                                    playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL;
+                                                    try { playerVelY_fixed = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
                                                     onGround = false;
                                                     jumpedOnce = true;
                                                     LogBallEvent($"UI-Landing: consumed queued toggle; ballGoingDown={ballGoingDown}");
@@ -2925,7 +3011,7 @@ namespace FamidashEditor
 
                                     if (currentGameMode == 0 && (buffered_ui > 0 || keyXHeld || IsXDownAsync()))
                                     {
-                                        playerVelY_fixed = effectiveJumpVel_fixed;
+                                        try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
                                         onGround = false;
                                         jumpedOnce = true;
                                         Interlocked.Exchange(ref keyXPressedCount, 0);
@@ -2937,7 +3023,7 @@ namespace FamidashEditor
                                         if (currentGameMode == 2 && buffered_ball_ui > 0)
                                         {
                                             ballGoingDown = !ballGoingDown;
-                                            playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL;
+                                                    try { playerVelY_fixed = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
                                             onGround = false;
                                             jumpedOnce = true;
                                             LogBallEvent($"UI-ReversedLanding: consumed queued toggle; ballGoingDown={ballGoingDown}");
@@ -3580,6 +3666,17 @@ namespace FamidashEditor
                     bool hadAnimated = false;
                     using (var dc = dv.RenderOpen())
                     {
+                        // Pre-create a semi-transparent red brush for tile hitbox overlay
+                        Brush? tileHitBrush = null;
+                        try
+                        {
+                            if (ShowTileHitboxes)
+                            {
+                                tileHitBrush = new SolidColorBrush(Color.FromArgb(160, 0xFF, 0x00, 0x00));
+                                try { tileHitBrush.Freeze(); } catch { }
+                            }
+                        }
+                        catch { tileHitBrush = null; }
                         int cacheTilesY_local = NES_H + 1;
                         int groundRowsToReserve_local = groundRowsToReserve;
                         int groundStartRow_local = cacheTilesY_local - groundRowsToReserve_local;
@@ -4081,8 +4178,90 @@ namespace FamidashEditor
             }
             catch { }
 
-            // Position the tile layer to account for fractional pixel offset
+                // Position the tile layer to account for fractional pixel offset
             try { if (tileLayerImage != null) { System.Windows.Controls.Canvas.SetLeft(tileLayerImage, -offsetX); System.Windows.Controls.Canvas.SetTop(tileLayerImage, -offsetY); } } catch { }
+
+            // Update per-tile hitbox overlays so they render above the tile layer but below sprites.
+            try
+            {
+                tileHitboxesInUse = 0;
+                if (ShowTileHitboxes)
+                {
+                    // Reuse visible tile rects: iterate the same visible tile grid used for cache
+                    for (int vx = 0; vx <= NES_W; vx++)
+                    {
+                        int mapX = startTileX + vx;
+                        for (int vy = 0; vy <= NES_H; vy++)
+                        {
+                            int mapY = startTileY + groundRowsToReserve + vy;
+                            if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) continue;
+
+                            // Determine collision type for this visible tile and skip COL_NONE tiles
+                            try
+                            {
+                                int tid = tiles[mapY * mapWidth + mapX];
+                                int useTidForAnim = MapAnimatedTileIndex(tid);
+                                int collisionTid = useTidForAnim;
+                                if (useTidForAnim >= 1000)
+                                {
+                                    if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
+                                    {
+                                        collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
+                                    }
+                                    else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
+                                    {
+                                        int group = (useTidForAnim - 1010) % 3;
+                                        collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
+                                    }
+                                    else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
+                                    {
+                                        collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
+                                    }
+                                    else
+                                    {
+                                        collisionTid = tid;
+                                    }
+                                }
+                                var col = MetatileCollisionTable.GetCollision((byte)collisionTid);
+                                if (col == MetatileCollision.COL_NONE) continue; // skip transparent/no-collision tiles
+                            }
+                            catch { }
+
+                            Rect dest = new Rect(vx * TILE - offsetX, vy * TILE - offsetY, TILE, TILE);
+
+                            System.Windows.Shapes.Rectangle r;
+                            if (tileHitboxesInUse < tileHitboxPool.Count)
+                            {
+                                r = tileHitboxPool[tileHitboxesInUse];
+                                r.Visibility = Visibility.Visible;
+                            }
+                            else
+                            {
+                                r = new System.Windows.Shapes.Rectangle();
+                                r.Fill = new SolidColorBrush(Color.FromArgb(160, 0xFF, 0x00, 0x00));
+                                r.IsHitTestVisible = false;
+                                r.Stroke = null;
+                                tileHitboxPool.Add(r);
+                                RenderCanvas.Children.Add(r);
+                                try { System.Windows.Controls.Canvas.SetZIndex(r, 100); } catch { }
+                            }
+
+                            r.Width = dest.Width;
+                            r.Height = dest.Height;
+                            System.Windows.Controls.Canvas.SetLeft(r, dest.X);
+                            System.Windows.Controls.Canvas.SetTop(r, dest.Y + gridRenderShiftYPx);
+                            tileHitboxesInUse++;
+                        }
+                    }
+                }
+
+                // Hide unused pooled rectangles
+                for (int i = tileHitboxesInUse; i < tileHitboxPool.Count; i++)
+                {
+                    try { tileHitboxPool[i].Visibility = Visibility.Collapsed; } catch { }
+                }
+            }
+            catch { }
 
             // Update ground rectangle (render tiled ground image if available)
             try
@@ -4600,6 +4779,38 @@ namespace FamidashEditor
             }
 
             RenderCanvas.RenderTransform = new TranslateTransform(-fracX, -fracY);
+
+            // Update Y-velocity overlay if enabled
+            try
+            {
+                if (showYVelocityOverlay)
+                {
+                    if (yVelTextBlock == null)
+                    {
+                        yVelTextBlock = new System.Windows.Controls.TextBlock();
+                        yVelTextBlock.Foreground = new SolidColorBrush(Colors.Yellow);
+                        yVelTextBlock.FontWeight = FontWeights.Bold;
+                        yVelTextBlock.FontSize = 14;
+                        yVelTextBlock.IsHitTestVisible = false;
+                        RenderCanvas.Children.Add(yVelTextBlock);
+                        try { System.Windows.Controls.Canvas.SetZIndex(yVelTextBlock, 2000); } catch { }
+                    }
+                    try
+                    {
+                        double vel_px = playerVelY_fixed / 256.0;
+                        yVelTextBlock.Text = $"Y vel: {vel_px:F2} px/frame";
+                        yVelTextBlock.Visibility = Visibility.Visible;
+                        System.Windows.Controls.Canvas.SetLeft(yVelTextBlock, 4);
+                        System.Windows.Controls.Canvas.SetTop(yVelTextBlock, 4);
+                    }
+                    catch { }
+                }
+                else
+                {
+                    try { if (yVelTextBlock != null) yVelTextBlock.Visibility = Visibility.Collapsed; } catch { }
+                }
+            }
+            catch { }
         }
 
         // Ensure initial render is performed on the UI thread so toned images and
@@ -4692,7 +4903,7 @@ namespace FamidashEditor
                 prevPlayerCenter_fixed = playerX_fixed + centerOffset_fixed;
 
                 speedMultiplierLocal = tabSpeedMultiplier; // atomic read of volatile-like field
-                attemptedPlayerX_fixed = playerX_fixed + currentSpeed_fixed * speedMultiplierLocal;
+                attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplierLocal) * simTimeScale);
                 attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
 
                 // Move the player forward in world coordinates first
@@ -4701,7 +4912,9 @@ namespace FamidashEditor
                     // Atomically consume any jump-buffer frames at the start of the physics step
                     // so landing code can check a stable value. We clear the buffer here and
                     // test the captured value when resolving landing to avoid races with UI thread.
-                    int jumpBuffered_local = Interlocked.Exchange(ref jumpBufferCounter, 0);
+                            int jumpBuffered_local = Interlocked.Exchange(ref jumpBufferCounter, 0);
+                            // Read keyX pressed count without clearing so we can respect held/edge presses
+                            int pendingKeyX_local = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
 
                 // Interaction crossing detection
                 bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
@@ -4900,7 +5113,7 @@ namespace FamidashEditor
                                         bool touchingCeiling_local = (gravityReversed || effectiveInvertedByW) && IsTouchingCeiling();
                                         if (onGround || touchingCeiling_local)
                                         {
-                                            playerVelY_fixed = effectiveJumpVel_fixed;
+                                            try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
                                             physicsEnabled = true;
                                             onGround = false;
                                             jumpAppliedThisStep_local = true;
@@ -4916,7 +5129,7 @@ namespace FamidashEditor
                                 else if (currentGameMode == 3)
                                 {
                                     // UFO: allow jump anytime (mid-air allowed) — apply immediately
-                                    playerVelY_fixed = effectiveJumpVel_fixed;
+                                    try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
                                     physicsEnabled = true;
                                     onGround = false;
                                     jumpAppliedThisStep_local = true;
@@ -4947,7 +5160,7 @@ namespace FamidashEditor
                                                 int tmpgravity_local = tmpMag_local * gravitySign_local;
                                                 if (xheld_local) tmpgravity_local = -tmpgravity_local; // X = thrust opposite to gravity
 
-                                                playerVelY_fixed += tmpgravity_local;
+                                                try { playerVelY_fixed += (int)Math.Round(tmpgravity_local * simTimeScale * simTimeScale); } catch { playerVelY_fixed += tmpgravity_local; }
 
                                                 try
                                                 {
@@ -4963,8 +5176,8 @@ namespace FamidashEditor
                                                     }
                                                 }
                                                 catch { }
-                                    }
-                                    catch { playerVelY_fixed += effectiveGravity_fixed; }
+                                            }
+                                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; } }
                                 }
                                         else if (currentGameMode == 2)
                                         {
@@ -4982,7 +5195,7 @@ namespace FamidashEditor
 
                                                 int tmpgravity_local = tmpMag_local * gravityDir_local;
 
-                                                playerVelY_fixed += tmpgravity_local;
+                                                try { playerVelY_fixed += (int)Math.Round(tmpgravity_local * simTimeScale * simTimeScale); } catch { playerVelY_fixed += tmpgravity_local; }
 
                                                 try
                                                 {
@@ -4998,11 +5211,11 @@ namespace FamidashEditor
                                                 }
                                                 catch { }
                                             }
-                                            catch { playerVelY_fixed += effectiveGravity_fixed; }
+                                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; } }
                                         }
                                         else
                                         {
-                                            playerVelY_fixed += effectiveGravity_fixed;
+                                            try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; }
                                             try
                                             {
                                                 if (effectiveMaxFall_fixed >= 0)
@@ -5025,12 +5238,12 @@ namespace FamidashEditor
                             // Frame 1 applies gravity/integration first, then sets jump velocity.
                             try
                             {
-                                if (pendingPresses_forLater > 0 && currentGameMode == 0)
+                                        if (pendingPresses_forLater > 0 && currentGameMode == 0)
                                 {
                                     bool touchingCeiling_local = (gravityReversed || effectiveInvertedByW) && IsTouchingCeiling();
                                     if (onGround || touchingCeiling_local)
                                     {
-                                        playerVelY_fixed = effectiveJumpVel_fixed;
+                                        try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
                                         physicsEnabled = true;
                                         onGround = false;
                                         jumpAppliedThisStep_local = true; // consumed this step
@@ -5255,9 +5468,9 @@ namespace FamidashEditor
                                                             // upside-down touching the ceiling), allow a held X
                                                             // (or IsXDownAsync polling) to trigger the jump so
                                                             // players can hold jump to jump off the ceiling.
-                                                            if (jumpBuffered_local > 0 || ((gravityReversed || effectiveInvertedByW) && (keyXHeld_local || IsXDownAsync())))
+                                                            if (jumpBuffered_local > 0 || pendingKeyX_local > 0 || ((gravityReversed || effectiveInvertedByW) && (keyXHeld_local || IsXDownAsync())))
                                                             {
-                                                                playerVelY_fixed = effectiveJumpVel_fixed;
+                                                                try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
                                                                 physicsEnabled = true;
                                                                 onGround = false;
                                                                 jumpAppliedThisStep_local = true;
@@ -5277,7 +5490,7 @@ namespace FamidashEditor
                                                             ballGoingDown = !ballGoingDown;
                                                             // Ensure global gravity follows ball direction
                                                             try { gravityReversed = !ballGoingDown; effectiveInvertedByW = gravityReversed; } catch { }
-                                                            playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL;
+                                                            try { playerVelY_fixed = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
                                                             onGround = false;
                                                             jumpedOnce = true;
                                                             LogBallEvent($"NUM-CeilCollision: consumed queued toggle; ballGoingDown={ballGoingDown} gravityReversed={gravityReversed}");
@@ -5420,10 +5633,10 @@ namespace FamidashEditor
                                     onGround = true;
 
                                     // If a buffered/edge press exists, jump immediately from landing.
-                                    // Do NOT treat a held X or IsXDownAsync as a continuous trigger.
-                                    if (currentGameMode == 0 && jumpBuffered_local > 0)
+                                    // Also allow held or raw edge presses to trigger a jump on landing
+                                    if (currentGameMode == 0 && (jumpBuffered_local > 0 || pendingKeyX_local > 0 || keyXHeld_local || IsXDownAsync()))
                                     {
-                                        playerVelY_fixed = effectiveJumpVel_fixed;
+                                        try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
                                         onGround = false;
                                         jumpedOnce = true;
                                         Interlocked.Exchange(ref keyXPressedCount, 0);
@@ -5436,7 +5649,7 @@ namespace FamidashEditor
                                         {
                                             ballGoingDown = !ballGoingDown;
                                             try { gravityReversed = !ballGoingDown; effectiveInvertedByW = gravityReversed; } catch { }
-                                            playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL;
+                                            try { playerVelY_fixed = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
                                             onGround = false;
                                             jumpedOnce = true;
                                             LogBallEvent($"NUM-Landing: consumed queued toggle; ballGoingDown={ballGoingDown} gravityReversed={gravityReversed}");
@@ -5560,7 +5773,7 @@ namespace FamidashEditor
 
                                         if (currentGameMode == 0 && jumpBuffered_local > 0)
                                         {
-                                            playerVelY_fixed = effectiveJumpVel_fixed;
+                                            try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
                                             onGround = false;
                                             jumpedOnce = true;
                                             Interlocked.Exchange(ref keyXPressedCount, 0);
