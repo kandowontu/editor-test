@@ -155,6 +155,59 @@ namespace FamidashEditor
             catch { }
         }
 
+        // Apply a gravity target the same way pressing W would: unify collision and numeric behavior.
+        // If the editor `Option_NoDeath` is OFF, flip the canonical `gravityReversed` to the provided
+        // target and also set `effectiveInvertedByW` to match so numeric integration follows.
+        // If `Option_NoDeath` is ON, only toggle the numeric inversion flag (compatibility mode).
+        private void ApplyGravityTarget(bool targetReversed)
+        {
+            try
+            {
+                if (!MainWindow.Option_NoDeath)
+                {
+                    gravityReversed = targetReversed;
+                    effectiveInvertedByW = gravityReversed;
+                }
+                else
+                {
+                    // No Death: only invert numeric gravity (preserve collision semantics)
+                    effectiveInvertedByW = !effectiveInvertedByW;
+                }
+                UpdateEffectiveGravity();
+                // Match W behavior: ensure toggling gravity does not introduce an instantaneous
+                // vertical impulse.
+                try { playerVelY_fixed = 0; } catch { }
+                try { UpdatePlayerImageForMode(); } catch { }
+            }
+            catch { }
+        }
+
+        // Apply gravity flip originating from a gravity-portal contact.
+        // Mirrors `ApplyGravityTarget` except it halves the vertical velocity
+        // instead of zeroing it so the portal provides a momentum-preserving
+        // flip on the collision frame.
+        private void ApplyGravityPortal(bool targetReversed)
+        {
+            try
+            {
+                if (!MainWindow.Option_NoDeath)
+                {
+                    gravityReversed = targetReversed;
+                    effectiveInvertedByW = gravityReversed;
+                }
+                else
+                {
+                    // No Death: only invert numeric gravity (preserve collision semantics)
+                    effectiveInvertedByW = !effectiveInvertedByW;
+                }
+                UpdateEffectiveGravity();
+                // Portal behavior: halve the vertical velocity on activation (preserve sign)
+                try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                try { UpdatePlayerImageForMode(); } catch { }
+            }
+            catch { }
+        }
+
         // Map certain simulator tile indices to alternative indices for display.
         // This allows specific tile codes to render exactly like other tiles
         // (or be rendered as fully transparent by mapping to 0x00).
@@ -442,6 +495,8 @@ namespace FamidashEditor
         // can use the exact same geometry as the overlay (key = sprite storage idx).
         private System.Collections.Generic.Dictionary<int, (int left, int top, int right, int bottom, int frame)> hitboxWorldCache = new System.Collections.Generic.Dictionary<int, (int, int, int, int, int)>();
         private int renderFrameCounter = 0;
+        // Track gravity portals that have been activated so they remain visible but inactive
+        private System.Collections.Generic.HashSet<int> usedGravityPortals = new System.Collections.Generic.HashSet<int>();
         // Experimental: record player world positions each rendered frame for editor overlay
         private System.Collections.Generic.List<(int x, int y)> recordedPlayerPath = new System.Collections.Generic.List<(int x, int y)>();
         // Interaction line: player's center (fixed-point) where scrolling begins
@@ -883,6 +938,16 @@ namespace FamidashEditor
             { 0x16, CUBE_SPEED_X2  },
             { 0x20, CUBE_SPEED_X3  },
             { 0x21, CUBE_SPEED_X4  }
+        };
+
+        // Mapping for gravity portals: sprite id -> target gravityReversed state (true = reversed/upside-down)
+        // Normal gravity portals set gravity to normal (false). Reverse gravity portals set gravity to reversed (true).
+        private readonly System.Collections.Generic.Dictionary<int, bool> gravityPortalMap = new System.Collections.Generic.Dictionary<int, bool>
+        {
+            // Normal gravity portals (make gravity normal)
+            { 0x08, false }, { 0x10, false }, { 0x11, false }, { 0xFC, false },
+            // Reverse gravity portals (flip gravity upside-down)
+            { 0x09, true },  { 0x12, true },  { 0x13, true },  { 0xFB, true }
         };
 
         private readonly System.Windows.Threading.DispatcherTimer timer;
@@ -3149,6 +3214,33 @@ namespace FamidashEditor
                             }
                         }
                         catch { }
+                        // Gravity portal handling: check for gravity portals that switch gravity when touched.
+                        try
+                        {
+                            if (gravityPortalMap.ContainsKey(sid))
+                            {
+                                if (usedGravityPortals.Contains(idx)) { continue; }
+                                const int PORTAL_HIT_W_G = 15; const int PORTAL_HIT_H_G = 15;
+                                int playerCenter_px_check_g = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                                int playerLeft_px_check_g = playerCenter_px_check_g - (PORTAL_HIT_W_G / 2);
+                                int playerRight_px_check_g = playerLeft_px_check_g + (PORTAL_HIT_W_G - 1);
+                                int playerTop_px_check_g = (playerY_fixed >> 8);
+                                int playerBottom_px_check_g = playerTop_px_check_g + (PORTAL_HIT_H_G - 1);
+                                if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_check_g, playerRight_px_check_g, playerTop_px_check_g, playerBottom_px_check_g))
+                                {
+                                    bool targetReversed = gravityPortalMap[sid];
+                                    // Only activate if current logical gravity is opposite of the target (one-shot behavior)
+                                    if (gravityReversed != targetReversed)
+                                    {
+                                        try { ApplyGravityPortal(targetReversed); } catch { }
+                                        try { usedGravityPortals.Add(idx); } catch { }
+                                    }
+                                    // Portal activated (or already matched) - do not also process as speed portal
+                                    continue;
+                                }
+                            }
+                        }
+                        catch { }
                         if (!speedPortalMap.ContainsKey(sid)) continue;
 
                         int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
@@ -3179,6 +3271,31 @@ namespace FamidashEditor
                     {
                         int sid = sprites[idx];
                         if (sid < 0) continue;
+                        // Gravity portal handling for camera-centered detection as well
+                        try
+                        {
+                            if (gravityPortalMap.ContainsKey(sid))
+                            {
+                                if (usedGravityPortals.Contains(idx)) { continue; }
+                                const int HITBOX_W_G = 15; const int HITBOX_H_G = 15;
+                                int playerCenter_px_local_g = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                                int playerLeft_px_local_g = playerCenter_px_local_g - (HITBOX_W_G / 2);
+                                int playerRight_px_local_g = playerLeft_px_local_g + (HITBOX_W_G - 1);
+                                int playerTop_px_local_g = (playerY_fixed >> 8);
+                                int playerBottom_px_local_g = playerTop_px_local_g + (HITBOX_H_G - 1);
+                                if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_local_g, playerRight_px_local_g, playerTop_px_local_g, playerBottom_px_local_g))
+                                {
+                                    bool targetReversed = gravityPortalMap[sid];
+                                    if (gravityReversed != targetReversed)
+                                    {
+                                        try { ApplyGravityPortal(targetReversed); } catch { }
+                                        try { usedGravityPortals.Add(idx); } catch { }
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                        catch { }
                         if (!speedPortalMap.ContainsKey(sid)) continue;
 
                         int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
@@ -5874,6 +5991,31 @@ namespace FamidashEditor
                                 }
                                 catch { }
                                 break;
+                            }
+                        }
+                    }
+                    catch { }
+                    // Gravity portal handling (numeric sim path)
+                    try
+                    {
+                        if (gravityPortalMap.ContainsKey(sid))
+                        {
+                            if (usedGravityPortals.Contains(idx)) { continue; }
+                            const int PORTAL_HIT_W_G = 15; const int PORTAL_HIT_H_G = 15;
+                            int playerCenter_px_check_g = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            int playerLeft_px_check_g = playerCenter_px_check_g - (PORTAL_HIT_W_G / 2);
+                            int playerRight_px_check_g = playerLeft_px_check_g + (PORTAL_HIT_W_G - 1);
+                            int playerTop_px_check_g = (playerY_fixed >> 8);
+                            int playerBottom_px_check_g = playerTop_px_check_g + (PORTAL_HIT_H_G - 1);
+                            if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_check_g, playerRight_px_check_g, playerTop_px_check_g, playerBottom_px_check_g))
+                            {
+                                bool targetReversed = gravityPortalMap[sid];
+                                if (gravityReversed != targetReversed)
+                                {
+                                    try { ApplyGravityPortal(targetReversed); } catch { }
+                                    try { usedGravityPortals.Add(idx); } catch { }
+                                }
+                                continue;
                             }
                         }
                     }
