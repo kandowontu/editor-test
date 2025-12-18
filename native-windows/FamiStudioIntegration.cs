@@ -8,6 +8,7 @@ using System.Runtime.Loader;
 using System.Text.RegularExpressions;
 using NAudio.Wave;
 using NAudio.MediaFoundation;
+using NAudio.Wave.SampleProviders;
 using System.Security.Cryptography;
 
 #pragma warning disable CS8601,CS8600
@@ -16,6 +17,8 @@ namespace FamidashEditor
 {
     public class FamiStudioIntegration
     {
+        // Logging removed per user request.
+
         private readonly object playLock = new object();
 
         private AssemblyLoadContext? alc;
@@ -23,6 +26,9 @@ namespace FamidashEditor
         private WaveOutEvent? output;
         private WaveStream? reader;
         private string? lastTempWav;
+        // Path of the currently opened playable file (mp3/wav) so we can reopen a fresh
+        // reader at the same file when adjusting playback rate.
+        private string? currentPlayingPath;
         private string? lastFmsPath = null;
         private int lastTrackIndex = -1;
         // Playback rate multiplier (1.0 == normal). When possible, audio output will be resampled to match.
@@ -499,6 +505,7 @@ namespace FamidashEditor
 
         private void PlayWav(string wavPath)
         {
+            try { currentPlayingPath = wavPath; } catch { currentPlayingPath = wavPath; }
             try
             {
                 reader = new AudioFileReader(wavPath);
@@ -514,9 +521,11 @@ namespace FamidashEditor
                 {
                     try
                     {
-                        var newFormat = new WaveFormat((int)(reader.WaveFormat.SampleRate * playbackRate), reader.WaveFormat.BitsPerSample, reader.WaveFormat.Channels);
-                        var resampler = new MediaFoundationResampler(reader, newFormat) { ResamplerQuality = 60 };
-                        output.Init(resampler);
+                        // Use managed varispeed provider to change playback speed (affects pitch).
+                        var sp = reader.ToSampleProvider();
+                        var varispeed = new VarispeedSampleProvider(sp, playbackRate);
+                        var waveProvider = new SampleToWaveProvider16(varispeed);
+                        output.Init(waveProvider);
                     }
                     catch
                     {
@@ -525,6 +534,7 @@ namespace FamidashEditor
                 }
                 else
                 {
+                    
                     output.Init(reader);
                 }
             }
@@ -537,6 +547,7 @@ namespace FamidashEditor
                 try { reader?.Dispose(); } catch { }
                 try { output?.Dispose(); } catch { }
                 reader = null; output = null;
+                try { currentPlayingPath = null; } catch { }
                 if (lastTempWav != null)
                 {
                     try { File.Delete(lastTempWav); } catch { }
@@ -735,7 +746,91 @@ namespace FamidashEditor
             {
                 if (rate <= 0) return;
                 playbackRate = rate;
-                // Do not restart or reinitialize audio here; simulator no longer affects music.
+                // If audio is currently playing, attempt to reinitialize the output so the
+                // new playback rate takes effect without fully restarting the track list.
+                lock (playLock)
+                {
+                    try
+                    {
+                        if (output == null && reader == null) return;
+                        // Capture current playback time and re-open a fresh reader from the
+                        // currently playing file so we can reliably seek and reconnect the
+                        // resampler without odd state in the existing stream.
+                        TimeSpan currentTime = TimeSpan.Zero;
+                        try { if (reader is AudioFileReader afr) currentTime = afr.CurrentTime; } catch { currentTime = TimeSpan.Zero; }
+
+                        try { output?.Stop(); } catch { }
+                        try { output?.Dispose(); } catch { }
+
+                        // Create a fresh reader instance from the same file path and position it.
+                        WaveStream? newReader = null;
+                        try
+                        {
+                            if (!string.IsNullOrEmpty(currentPlayingPath))
+                            {
+                                try { newReader = new AudioFileReader(currentPlayingPath); } catch { newReader = new WaveFileReader(currentPlayingPath); }
+                                try { if (newReader is AudioFileReader afr2) afr2.CurrentTime = currentTime; else newReader.Position = (long)(currentTime.TotalSeconds * newReader.WaveFormat.AverageBytesPerSecond); } catch { }
+                            }
+                            else if (reader != null)
+                            {
+                                // Last-resort: reuse old reader if we couldn't create a fresh one.
+                                newReader = reader;
+                            }
+                        }
+                        catch { newReader = reader; }
+
+                        // Swap in the new reader
+                        try { reader?.Dispose(); } catch { }
+                        reader = newReader;
+
+                        // Re-create output and init with desired resampler/format.
+                        output = new WaveOutEvent();
+                        try
+                        {
+                            if (reader != null && Math.Abs(playbackRate - 1.0) > 0.0001)
+                            {
+                                try
+                                {
+                                    var sp = reader.ToSampleProvider();
+                                    var varispeed = new VarispeedSampleProvider(sp, playbackRate);
+                                    var waveProvider = new SampleToWaveProvider16(varispeed);
+                                    output.Init(waveProvider);
+                                }
+                                catch
+                                {
+                                    output.Init(reader);
+                                }
+                            }
+                            else
+                            {
+                                output.Init(reader);
+                            }
+                        }
+                        catch
+                        {
+                            try { output.Init(reader); } catch { }
+                        }
+
+                        output.Play();
+                    }
+                    catch { }
+                }
+                // If reinitialization did not produce audible output (some resamplers or device
+                // combinations may fail for certain rates), attempt a full restart of the current
+                // track using the cached path. This is heavier but more robust.
+                try
+                {
+                    if ((output == null || output.PlaybackState != PlaybackState.Playing) && !string.IsNullOrEmpty(lastFmsPath) && lastTrackIndex >= 0)
+                    {
+                        try
+                        {
+                            // Fire-and-forget restart so UI doesn't block.
+                            _ = System.Threading.Tasks.Task.Run(() => PlayTrack(lastFmsPath!, lastTrackIndex));
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
             }
             catch { }
         }

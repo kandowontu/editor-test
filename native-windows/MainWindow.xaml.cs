@@ -560,7 +560,7 @@ namespace FamidashEditor
     private bool loadedOpenSimulatorPaused = true;
     public bool LoadedOpenSimulatorPaused { get => loadedOpenSimulatorPaused; set => loadedOpenSimulatorPaused = value; }
     // Global setting loaded from editor-settings.json: No Death (true = disable deaths)
-    private bool loadedNoDeath = false;
+    // (removed unused field)
     // Per-level starting color codes (nullable). These are the authoritative top-level
     // properties referenced by SetOptionsWindow and used when opening the simulator.
     private int? loadedStartingBackgroundColor = null;
@@ -7271,7 +7271,12 @@ namespace FamidashEditor
         // Reverted to no-op so simulator key presses do not affect music.
         public void SetSimulatorPlaybackRate(double rate)
         {
-            // Intentionally left blank.
+            try
+            {
+                if (famiIntegration == null) return;
+                try { famiIntegration.SetPlaybackRate(rate); } catch { }
+            }
+            catch { }
         }
 
         // Start playback and await until the audio output reports playing (or timeout).

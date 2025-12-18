@@ -11,6 +11,8 @@ namespace FamidashEditor
 {
     public partial class SimulatorWindow : Window
     {
+        // Base window title (without sim %). Used to display sim speed in title bar.
+        private string baseWindowTitle = "Simulator";
         // Global option: when true, hide certain trigger sprites visually in the simulator.
         private bool hideTriggerSprites = true;
 
@@ -36,6 +38,16 @@ namespace FamidashEditor
                 catch { }
             }
         }
+
+            private void UpdateSimTitle()
+            {
+                try
+                {
+                    string s = $"{baseWindowTitle} — Sim {(simTimeScale * 100.0):F0}%";
+                    try { this.Title = s; } catch { }
+                }
+                catch { }
+            }
 
         // Pool of rectangle overlays used to draw per-tile hitboxes above the tile layer.
         private System.Collections.Generic.List<System.Windows.Shapes.Rectangle> tileHitboxPool = new System.Collections.Generic.List<System.Windows.Shapes.Rectangle>();
@@ -1227,6 +1239,7 @@ namespace FamidashEditor
             )
         {
             InitializeComponent();
+            try { baseWindowTitle = this.Title ?? "Simulator"; } catch { baseWindowTitle = "Simulator"; }
             // Ensure pause overlay reflects initial paused state
             try { PauseOverlay.Visibility = paused ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed; } catch { }
             this.tiles = tiles.ToArray();
@@ -1588,6 +1601,9 @@ namespace FamidashEditor
                 System.Windows.Media.RenderOptions.SetBitmapScalingMode(RenderCanvas, BitmapScalingMode.NearestNeighbor);
             }
             catch { }
+
+            // Update window title to include sim time initially
+            try { UpdateSimTitle(); } catch { }
 
             // Ensure the window receives keyboard input for panning
 
@@ -2031,7 +2047,8 @@ namespace FamidashEditor
                 try
                 {
                     simTimeScale = Math.Max(0.1, Math.Round((simTimeScale - 0.1) * 10.0) / 10.0);
-                    try { MainWindow.ShowTransientInfo($"Sim time: {(simTimeScale * 100):F0}%", this, 300); } catch { }
+                    try { UpdateSimTitle(); } catch { }
+                    try { if (this.Owner is MainWindow mw) { mw.SetSimulatorPlaybackRate(simTimeScale); } } catch { }
                 }
                 catch { }
             }
@@ -2040,7 +2057,8 @@ namespace FamidashEditor
                 try
                 {
                     simTimeScale = Math.Min(4.0, Math.Round((simTimeScale + 0.1) * 10.0) / 10.0);
-                    try { MainWindow.ShowTransientInfo($"Sim time: {(simTimeScale * 100):F0}%", this, 300); } catch { }
+                    try { UpdateSimTitle(); } catch { }
+                    try { if (this.Owner is MainWindow mw) { mw.SetSimulatorPlaybackRate(simTimeScale); } } catch { }
                 }
                 catch { }
             }
@@ -4199,6 +4217,7 @@ namespace FamidashEditor
                             // Determine collision type for this visible tile and skip COL_NONE tiles
                             try
                             {
+                                if (tiles == null) continue;
                                 int tid = tiles[mapY * mapWidth + mapX];
                                 int useTidForAnim = MapAnimatedTileIndex(tid);
                                 int collisionTid = useTidForAnim;
