@@ -9584,10 +9584,20 @@ namespace FamidashEditor
         private void SliceParallax()
         {
             if (parallaxBitmap == null) { parallaxImages = null; return; }
-            int cols = Math.Max(1, parallaxBitmap.PixelWidth / TileSize);
-            int rows = Math.Max(1, parallaxBitmap.PixelHeight / TileSize);
+            // Safety: very large parallax bitmaps can cause render-thread failures on some drivers
+            // (observed on some AMD GPUs). Downsample extremely large images before slicing to reduce
+            // GPU memory pressure and avoid heavy WriteableBitmap/CroppedBitmap churn.
+            const int MaxImageDim = 2048; // maximum width/height to keep when slicing
+            BitmapSource effective = parallaxBitmap as BitmapSource;
+            if (effective == null) { parallaxImages = null; return; }
+            if (Math.Max(effective.PixelWidth, effective.PixelHeight) > MaxImageDim)
+            {
+                effective = DownsampleBitmap(effective, MaxImageDim);
+            }
+            int cols = Math.Max(1, effective.PixelWidth / TileSize);
+            int rows = Math.Max(1, effective.PixelHeight / TileSize);
             var list = new List<ImageSource>();
-            for (int y = 0; y < rows; y++) for (int x = 0; x < cols; x++) list.Add(new CroppedBitmap(parallaxBitmap, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
+            for (int y = 0; y < rows; y++) for (int x = 0; x < cols; x++) list.Add(new CroppedBitmap(effective, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
             parallaxImages = list.ToArray();
             // update tinted cache only if tint is active (not transparent)
             if (backgroundTint.A != 0)
@@ -9603,8 +9613,17 @@ namespace FamidashEditor
         private void SliceGround()
         {
             if (groundBitmap == null) { groundImages = null; groundTileRows = 0; return; }
-            int cols = Math.Max(1, groundBitmap.PixelWidth / TileSize);
-            int rows = Math.Max(1, groundBitmap.PixelHeight / TileSize);
+            // Safety: downsample very large ground bitmaps before slicing to avoid exhausting
+            // render-thread resources on problematic drivers (AMD edge cases observed).
+            const int MaxImageDim = 2048;
+            BitmapSource effective = groundBitmap as BitmapSource;
+            if (effective == null) { groundImages = null; groundTileRows = 0; return; }
+            if (Math.Max(effective.PixelWidth, effective.PixelHeight) > MaxImageDim)
+            {
+                effective = DownsampleBitmap(effective, MaxImageDim);
+            }
+            int cols = Math.Max(1, effective.PixelWidth / TileSize);
+            int rows = Math.Max(1, effective.PixelHeight / TileSize);
             groundTileRows = rows;
             var list = new List<ImageSource>();
             // slice all rows and columns so the ground can be stacked to its full bitmap height
@@ -9612,7 +9631,7 @@ namespace FamidashEditor
             {
                 for (int x = 0; x < cols; x++)
                 {
-                    list.Add(new CroppedBitmap(groundBitmap, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
+                    list.Add(new CroppedBitmap(effective, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
                 }
             }
             groundImages = list.ToArray();
@@ -9624,6 +9643,31 @@ namespace FamidashEditor
             else
             {
                 groundTonedImages = null; // clear toned images when no tint
+            }
+        }
+
+        // Downsample a large bitmap to keep its maximum dimension <= maxDim.
+        // Uses a TransformedBitmap to avoid creating a new large WriteableBitmap and
+        // minimizes GPU memory usage compared to rendering to a large RenderTargetBitmap.
+        private BitmapSource DownsampleBitmap(BitmapSource src, int maxDim)
+        {
+            if (src == null) return src;
+            int w = src.PixelWidth;
+            int h = src.PixelHeight;
+            int max = Math.Max(w, h);
+            if (max <= maxDim) return src;
+            double scale = (double)maxDim / (double)max;
+            try
+            {
+                var tb = new TransformedBitmap(src, new System.Windows.Media.ScaleTransform(scale, scale));
+                try { tb.Freeze(); } catch { }
+                return tb;
+            }
+            catch
+            {
+                // On any failure, return original to preserve functionality; callers should
+                // already be prepared to handle large images via try/catch.
+                return src;
             }
         }
 
