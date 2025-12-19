@@ -648,7 +648,7 @@ namespace FamidashEditor
         {
             try
             {
-                const int HITBOX_W_LOCAL = 14;
+                const int HITBOX_W_LOCAL = 15;
                 int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                 int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
                 int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
@@ -1370,75 +1370,6 @@ namespace FamidashEditor
                 else
                 {
                     this.spritePixelOffsets[SPRITE_ID_SHIFT_B] = (0, -8);
-                }
-            }
-            catch { }
-
-            // Right-side collision death (UI path): check the center pixel on the player's right edge
-            // Only apply when NoDeath option is OFF.
-            try
-            {
-                if (!MainWindow.Option_NoDeath)
-                {
-                    const int HITBOX_W_LOCAL = 14;
-                    int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                    int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
-                    int rightEdgeX_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
-                    int centerY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
-                    int tileX = rightEdgeX_px / TILE;
-                    int tileY = centerY_px / TILE;
-                    int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                    int tileIndexY_center = tileY + groundRowsToReserve_local;
-                    if (tileIndexY_center >= 0 && tileIndexY_center < mapHeight && tileX >= 0 && tileX < mapWidth)
-                    {
-                        int tid_check = tiles[tileIndexY_center * mapWidth + tileX];
-                        int useTidForAnim_check = MapAnimatedTileIndex(tid_check);
-                        int collisionTid_check = useTidForAnim_check;
-                        if (useTidForAnim_check >= 1000)
-                        {
-                            if (useTidForAnim_check >= 1000 && useTidForAnim_check <= 1007)
-                            {
-                                collisionTid_check = 0x08 + ((useTidForAnim_check - 1000) % 4);
-                            }
-                            else if (useTidForAnim_check >= 1010 && useTidForAnim_check <= 1015)
-                            {
-                                int group_check = (useTidForAnim_check - 1010) % 3;
-                                collisionTid_check = (group_check == 0) ? 0x04 : (group_check == 1) ? 0x7D : 0x7F;
-                            }
-                            else if (useTidForAnim_check >= 1020 && useTidForAnim_check <= 1037)
-                            {
-                                collisionTid_check = 0x74 + ((useTidForAnim_check - 1020) % 9);
-                            }
-                            else
-                            {
-                                collisionTid_check = tid_check;
-                            }
-                        }
-                        var col_check = MetatileCollisionTable.GetCollision((byte)collisionTid_check);
-                        if (col_check != MetatileCollision.COL_NONE)
-                        {
-                            try
-                            {
-                                AppendSimDebug($"RightDeath(UI): pos=({rightEdgeX_px},{centerY_px}) tid=0x{collisionTid_check:X} gravityReversed={gravityReversed} Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
-                                deathTriggered = true;
-                                paused = true;
-                                try
-                                {
-                                    Dispatcher.BeginInvoke(new Action(() =>
-                                    {
-                                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                        if (this.Owner is MainWindow mw)
-                                        {
-                                            try { mw.PauseSimulatorPlayback(); } catch { }
-                                            try { mw.AddDeathMarker(rightEdgeX_px, centerY_px); } catch { }
-                                        }
-                                    }));
-                                }
-                                catch { }
-                            }
-                            catch { }
-                        }
-                    }
                 }
             }
             catch { }
@@ -2825,7 +2756,7 @@ namespace FamidashEditor
                     {
                         if (playerVelY_fixed < 0)
                         {
-                            const int HITBOX_W = 14;
+                            const int HITBOX_W = 15;
                             int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                             int playerLeft_px = playerCenter_px - (HITBOX_W / 2);
                             int playerRight_px = playerLeft_px + (HITBOX_W - 1);
@@ -2843,12 +2774,6 @@ namespace FamidashEditor
                                 for (int tx = leftTileX; tx <= rightTileX; tx++)
                                 {
                                     if (tx < 0 || tx >= mapWidth) continue;
-                                    // When deaths are enabled (NoDeath == OFF), allow passing through blocks on the right edge
-                                    // by ignoring the rightmost overlapped tile column for lateral pass-through.
-                                    if (!MainWindow.Option_NoDeath && tx == rightTileX) continue;
-                                    // When deaths are enabled (NoDeath == OFF), allow passing through blocks on the right edge
-                                    // by ignoring the rightmost overlapped tile column for lateral pass-through.
-                                    if (!MainWindow.Option_NoDeath && tx == rightTileX) continue;
                                     int tid = tiles[tileIndexY * mapWidth + tx];
                                     int useTidForAnim = MapAnimatedTileIndex(tid);
                                     int collisionTid = useTidForAnim;
@@ -2941,9 +2866,9 @@ namespace FamidashEditor
                     // ground collision: try tile-based floor collision first, otherwise fall back to map bottom
                     try
                     {
-                        // Use a fixed 14x14 hitbox for collision checks per design
-                        const int HITBOX_W = 14;
-                        const int HITBOX_H = 14;
+                        // Use a fixed 15x15 hitbox for collision checks per design
+                        const int HITBOX_W = 15;
+                        const int HITBOX_H = 15;
 
                         int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                         int playerLeft_px = playerCenter_px - (HITBOX_W / 2);
@@ -3262,7 +3187,7 @@ namespace FamidashEditor
                             if (sid == 0x01 || sid == 0x00 || sid == 0x02 || sid == 0x03)
                             {
                                 // Require actual 2D AABB overlap between player hitbox and sprite hitbox
-                                const int HITBOX_W = 14; const int HITBOX_H = 14;
+                                const int HITBOX_W = 15; const int HITBOX_H = 15;
                                 int playerCenter_px_now = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                                 int playerLeft_px_now = playerCenter_px_now - (HITBOX_W / 2);
                                 int playerRight_px_now = playerLeft_px_now + (HITBOX_W - 1);
@@ -3352,7 +3277,7 @@ namespace FamidashEditor
                             if (gravityPortalMap.ContainsKey(sid))
                             {
                                 if (usedGravityPortals.Contains(idx)) { continue; }
-                                const int HITBOX_W_G = 14; const int HITBOX_H_G = 14;
+                                const int HITBOX_W_G = 15; const int HITBOX_H_G = 15;
                                 int playerCenter_px_local_g = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                                 int playerLeft_px_local_g = playerCenter_px_local_g - (HITBOX_W_G / 2);
                                 int playerRight_px_local_g = playerLeft_px_local_g + (HITBOX_W_G - 1);
@@ -3377,7 +3302,7 @@ namespace FamidashEditor
                         int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
 
                         // Require actual 2D overlap with player before selecting this portal
-                        const int HITBOX_W_LOCAL = 14; const int HITBOX_H_LOCAL = 14;
+                        const int HITBOX_W_LOCAL = 15; const int HITBOX_H_LOCAL = 15;
                         int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                         int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
                         int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
@@ -5469,7 +5394,7 @@ namespace FamidashEditor
                             {
                                 if (playerVelY_fixed < 0)
                                 {
-                                    const int HITBOX_W_LOCAL = 14;
+                                    const int HITBOX_W_LOCAL = 15;
                                     int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                                     int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
                                     int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
@@ -5576,7 +5501,6 @@ namespace FamidashEditor
                                         for (int tx_local = leftTileX_local; tx_local <= rightTileX_local; tx_local++)
                                         {
                                             if (tx_local < 0 || tx_local >= mapWidth) continue;
-                                            if (!MainWindow.Option_NoDeath && tx_local == rightTileX_local) continue;
                                             int tid_local = tiles[tileIndexY * mapWidth + tx_local];
                                             int useTidForAnim_local = MapAnimatedTileIndex(tid_local);
                                             int collisionTid_local = useTidForAnim_local;
@@ -5766,7 +5690,6 @@ namespace FamidashEditor
                                 for (int tx_local = leftTileX_local; tx_local <= rightTileX_local; tx_local++)
                                 {
                                     if (tx_local < 0 || tx_local >= mapWidth) continue;
-                                    if (!MainWindow.Option_NoDeath && tx_local == rightTileX_local) continue;
                                     int tid_local = tiles[tileBelowY_local * mapWidth + tx_local];
 
                                     int useTidForAnim_local = MapAnimatedTileIndex(tid_local);
@@ -6028,75 +5951,6 @@ namespace FamidashEditor
                         // When numeric sim enforces a screen-space clamp, treat the player as grounded so gravity stops.
                         playerVelY_fixed = 0;
                         onGround = true;
-                    }
-                }
-                catch { }
-
-                // Right-side collision death: check the center pixel on the player's right edge
-                // Only apply when NoDeath option is OFF (i.e., deaths are enabled).
-                try
-                {
-                    if (!MainWindow.Option_NoDeath)
-                    {
-                        const int HITBOX_W_LOCAL = 14;
-                        int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                        int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
-                        int rightEdgeX_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
-                        int centerY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
-                        int tileX = rightEdgeX_px / TILE;
-                        int tileY = centerY_px / TILE;
-                        int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                        int tileIndexY_center = tileY + groundRowsToReserve_local;
-                        if (tileIndexY_center >= 0 && tileIndexY_center < mapHeight && tileX >= 0 && tileX < mapWidth)
-                        {
-                            int tid_check = tiles[tileIndexY_center * mapWidth + tileX];
-                            int useTidForAnim_check = MapAnimatedTileIndex(tid_check);
-                            int collisionTid_check = useTidForAnim_check;
-                            if (useTidForAnim_check >= 1000)
-                            {
-                                if (useTidForAnim_check >= 1000 && useTidForAnim_check <= 1007)
-                                {
-                                    collisionTid_check = 0x08 + ((useTidForAnim_check - 1000) % 4);
-                                }
-                                else if (useTidForAnim_check >= 1010 && useTidForAnim_check <= 1015)
-                                {
-                                    int group_check = (useTidForAnim_check - 1010) % 3;
-                                    collisionTid_check = (group_check == 0) ? 0x04 : (group_check == 1) ? 0x7D : 0x7F;
-                                }
-                                else if (useTidForAnim_check >= 1020 && useTidForAnim_check <= 1037)
-                                {
-                                    collisionTid_check = 0x74 + ((useTidForAnim_check - 1020) % 9);
-                                }
-                                else
-                                {
-                                    collisionTid_check = tid_check;
-                                }
-                            }
-                            var col_check = MetatileCollisionTable.GetCollision((byte)collisionTid_check);
-                            if (col_check != MetatileCollision.COL_NONE)
-                            {
-                                try
-                                {
-                                    AppendSimDebug($"RightDeath: pos=({rightEdgeX_px},{centerY_px}) tid=0x{collisionTid_check:X} gravityReversed={gravityReversed} Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
-                                    deathTriggered = true;
-                                    paused = true;
-                                    try
-                                    {
-                                        Dispatcher.BeginInvoke(new Action(() =>
-                                        {
-                                            try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                            if (this.Owner is MainWindow mw)
-                                            {
-                                                try { mw.PauseSimulatorPlayback(); } catch { }
-                                                try { mw.AddDeathMarker(rightEdgeX_px, centerY_px); } catch { }
-                                            }
-                                        }));
-                                    }
-                                    catch { }
-                                }
-                                catch { }
-                            }
-                        }
                     }
                 }
                 catch { }
