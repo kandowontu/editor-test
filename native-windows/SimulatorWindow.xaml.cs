@@ -4545,6 +4545,9 @@ namespace FamidashEditor
                     int s = sprites[idx];
                     if (s < 0) continue;
 
+                    // Visual alias: make sprite 0x7B render identically to 0x05
+                    int s_vis = (s == 0x7B) ? 0x05 : s;
+
                     // If the global 'hide trigger sprites' option is enabled, skip drawing
                     // these specific trigger sprite images while still allowing them to
                     // function (triggers remain active in the simulation logic).
@@ -4606,7 +4609,7 @@ namespace FamidashEditor
                             if (chainUpsideSimImage != null) chosenSprite = chainUpsideSimImage;
                         }
                     }
-                    if (animationFrames != null && animationFrames.TryGetValue(s, out var frames) && frames != null && frames.Length > 0)
+                    if (animationFrames != null && animationFrames.TryGetValue(s_vis, out var frames) && frames != null && frames.Length > 0)
                     {
                         // For 2-frame decoration sprites we want a uniform cadence across all anchors
                         // so do not apply a per-anchor random offset. For other sprites/lengths, preserve
@@ -4663,10 +4666,10 @@ namespace FamidashEditor
                             // (no-op) removed per-request debug logging
                         if (chosenSprite == null)
                         {
-                            if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s, out var pimg) && pimg != null)
+                            if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s_vis, out var pimg) && pimg != null)
                                 chosenSprite = pimg;
-                            else if (spriteImages != null && s < spriteImages.Length && spriteImages[s] != null)
-                                chosenSprite = spriteImages[s];
+                            else if (spriteImages != null && s_vis < spriteImages.Length && spriteImages[s_vis] != null)
+                                chosenSprite = spriteImages[s_vis];
                         }
                     }
                     else
@@ -4702,13 +4705,13 @@ namespace FamidashEditor
 
                         if (chosenSprite == null)
                         {
-                            if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s, out var previewImg) && previewImg != null)
+                            if (forcePreviewMode && previewSpriteMap != null && previewSpriteMap.TryGetValue(s_vis, out var previewImg) && previewImg != null)
                             {
                                 chosenSprite = previewImg;
                             }
-                            else if (spriteImages != null && s < spriteImages.Length && spriteImages[s] != null)
+                            else if (spriteImages != null && s_vis < spriteImages.Length && spriteImages[s_vis] != null)
                             {
-                                chosenSprite = spriteImages[s];
+                                chosenSprite = spriteImages[s_vis];
                             }
                         }
                     }
@@ -4725,7 +4728,7 @@ namespace FamidashEditor
 
                         if (playerTintEnabled && decorationSpriteIds.Contains(s) && !nonPlayerTintSpriteIds.Contains(s) && chosenSprite != null)
                         {
-                            chosenSprite = GetPlayerTintedSprite(chosenSprite, s);
+                            chosenSprite = GetPlayerTintedSprite(chosenSprite, s_vis);
                         }
                     }
                     catch { }
@@ -5760,14 +5763,17 @@ namespace FamidashEditor
                                     if (sid < 0) continue;
                                     // Support multiple orb kinds: map sprite id -> PadOrbHeights row
                                     int orbRow = -1;
+                                    bool isBlueOrb = false;
                                     if (sid == 0x0B) orbRow = 0; // yellow orb (original)
                                     else if (sid == 0x06) orbRow = 2; // pink orb
                                     else if (sid == 0x28) orbRow = 4; // red orb
                                     else if (sid == 0x1F) orbRow = 5; // yellow orb bigger
                                     else if (sid == 0x44) orbRow = 6; // black orb
                                     else if (sid == 0x29) orbRow = 7; // yellow orb smaller
-                                    if (orbRow < 0) continue;
-                                    if (processedOrbs.Contains(idx)) continue; // already activated
+                                    else if (sid == 0x05 || sid == 0x7B) { isBlueOrb = true; }
+                                    if (orbRow < 0 && !isBlueOrb) continue;
+                                    // Blue orb 0x7B may be activated multiple times; do not treat it as processed
+                                    if (sid != 0x7B && processedOrbs.Contains(idx)) continue; // already activated
 
                                     if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px_orb, playerRight_px_orb, playerTop_px_orb, playerBottom_px_orb)) continue;
 
@@ -5813,16 +5819,46 @@ namespace FamidashEditor
                                                 orbHoldSuppressing = true;
                                             }
                                             processedOrbs.Add(idx);
-                                            int vel = 0;
-                                            if (PadOrbHeights.Length > orbRow && PadOrbHeights[orbRow].Length > currentGameMode && currentGameMode >= 0)
-                                                vel = PadOrbHeights[orbRow][currentGameMode];
+                                            if (isBlueOrb)
+                                            {
+                                                // Blue orb: toggle gravity and apply fixed velocities.
+                                                // Ball mode uses a different magnitude.
+                                                try
+                                                {
+                                                    int mag = (currentGameMode == 2) ? 0x01F3 : 0x04FB;
+                                                    // If gravity currently inverted (numericInvert==true), apply positive magnitude
+                                                    // and normalize gravity. If gravity normal, apply negative magnitude and invert.
+                                                    bool numericInvert_local = gravityReversed || effectiveInvertedByW;
+                                                    if (numericInvert_local)
+                                                    {
+                                                        playerVelY_fixed = mag;
+                                                        try { gravityReversed = false; effectiveInvertedByW = gravityReversed; } catch { }
+                                                    }
+                                                    else
+                                                    {
+                                                        playerVelY_fixed = -mag;
+                                                        try { gravityReversed = true; effectiveInvertedByW = gravityReversed; } catch { }
+                                                    }
+                                                    try { UpdateEffectiveGravity(); } catch { }
+                                                    try { UpdatePlayerImageForMode(); } catch { }
+                                                }
+                                                catch { }
+                                            }
                                             else
-                                                vel = PadOrbHeights[0][0];
-                                            bool numericInvert = gravityReversed || effectiveInvertedByW;
-                                            if (!numericInvert) vel = -vel;
-                                            playerVelY_fixed = vel;
+                                            {
+                                                int vel = 0;
+                                                if (PadOrbHeights.Length > orbRow && PadOrbHeights[orbRow].Length > currentGameMode && currentGameMode >= 0)
+                                                    vel = PadOrbHeights[orbRow][currentGameMode];
+                                                else
+                                                    vel = PadOrbHeights[0][0];
+                                                bool numericInvert = gravityReversed || effectiveInvertedByW;
+                                                if (!numericInvert) vel = -vel;
+                                                playerVelY_fixed = vel;
+                                            }
                                             physicsEnabled = true;
                                             onGround = false;
+                                            // For standard orbs mark processed; blue 0x7B intentionally may be multi-used
+                                            if (!isBlueOrb || sid == 0x05) processedOrbs.Add(idx);
                                             break; // only one orb activation per frame
                                         }
                                     }
@@ -5861,6 +5897,39 @@ namespace FamidashEditor
                                 {
                                     int sid = sprites[idx];
                                     if (sid < 0) continue;
+                                    // Blue pad special-case: floor pad (0x0D/0xFD) and ceiling pad (0x0E/0xFE)
+                                    if (sid == 0x0D || sid == 0xFD)
+                                    {
+                                        // Blue floor pad: only activate when gravity is NOT inverted
+                                        // Require player overlap like other pads.
+                                        if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px_pad2, playerRight_px_pad2, playerTop_px_pad2, playerBottom_px_pad2)) continue;
+                                        if (!gravityReversed)
+                                        {
+                                            try { playerVelY_fixed = -0x04FB; } catch { playerVelY_fixed = -0x04FB; }
+                                            physicsEnabled = true;
+                                            onGround = false;
+                                            try { gravityReversed = true; effectiveInvertedByW = gravityReversed; } catch { }
+                                            try { UpdateEffectiveGravity(); } catch { }
+                                            try { UpdatePlayerImageForMode(); } catch { }
+                                        }
+                                        break;
+                                    }
+                                    else if (sid == 0x0E || sid == 0xFE)
+                                    {
+                                        // Blue ceiling pad: only activate when gravity IS inverted
+                                        // Require player overlap like other pads.
+                                        if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px_pad2, playerRight_px_pad2, playerTop_px_pad2, playerBottom_px_pad2)) continue;
+                                        if (gravityReversed)
+                                        {
+                                            try { playerVelY_fixed = 0x04FB; } catch { playerVelY_fixed = 0x04FB; }
+                                            physicsEnabled = true;
+                                            onGround = false;
+                                            try { gravityReversed = false; effectiveInvertedByW = gravityReversed; } catch { }
+                                            try { UpdateEffectiveGravity(); } catch { }
+                                            try { UpdatePlayerImageForMode(); } catch { }
+                                        }
+                                        break;
+                                    }
                                     int padRow2 = -1;
                                     if (sid == 0x0A || sid == 0x0C) padRow2 = 1; // yellow pad
                                     else if (sid == 0x25 || sid == 0x26) padRow2 = 3; // pink pad
