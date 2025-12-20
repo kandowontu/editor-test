@@ -320,6 +320,29 @@ namespace FamidashEditor
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // F0-F7
             0x00,0x00,-0x07,0x00,0x00,0x05,0x02,0x00  // F8-FF
         };
+        // Pad / Orb velocity matrix (rows = pad/orb kind, cols = game mode)
+        // Columns: 0=cube,1=ship,2=ball,3=ufo,4=robot,5=spider,6=wave,7=swing
+        // Rows (by author matrix):
+        // 0: yellow orb
+        // 1: yellow pad
+        // 2: pink orb
+        // 3: pink pad
+        // 4: red orb
+        // 5: yellow orb bigger
+        // 6: black orb
+        // 7: yellow orb smaller
+        // 8: red pad
+        private static readonly int[][] PadOrbHeights = new int[][] {
+            new int[] { 0x590, 0x450, 0x410, 0x3B0, 0x590, 0x440, 0x000, 0x3A0 }, // 0 yellow orb
+            new int[] { 0x7C0, 0x3C0, 0x4F0, 0x330, 0x8B0, 0x500, 0x000, 0x450 }, // 1 yellow pad
+            new int[] { 0x3D0, 0x200, 0x330, 0x220, 0x450, 0x350, 0x000, 0x2D0 }, // 2 pink orb
+            new int[] { 0x510, 0x270, 0x360, 0x250, 0x550, 0x350, 0x000, 0x360 }, // 3 pink pad
+            new int[] { 0x750, 0x5D0, 0x550, 0x510, 0x750, 0x500, 0x000, 0x4D0 }, // 4 red orb
+            new int[] { 0x590, 0x590, 0x5D0, 0x590, 0x590, 0x590, 0x000, 0x5D0 }, // 5 yellow orb bigger
+            new int[] { -0x990, -0x990, -0x970, -0x990, -0x990, -0x990, 0x000, -0x970 }, // 6 black orb
+            new int[] { 0x540, 0x540, 0x472, 0x4B0, 0x770, 0x4B0, 0x000, 0x472 }, // 7 yellow orb smaller
+            new int[] { 0x9F0, 0x620, 0x630, 0x400, 0xA50, 0x690, 0x000, 0x660 }  // 8 red pad
+        };
 
         // Returns true when the sprite at storage index `idx` (with sprite id `sid`) overlaps
         // the player's axis-aligned hitbox in world pixel coordinates. This uses the
@@ -3271,7 +3294,7 @@ namespace FamidashEditor
                         int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
 
                         // Require actual sprite hitbox overlap with player before changing speed
-                        const int PORTAL_HIT_W = 15; const int PORTAL_HIT_H = 15;
+                        const int PORTAL_HIT_W = 14; const int PORTAL_HIT_H = 14;
                         int playerCenter_px_check = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                         int playerLeft_px_check = playerCenter_px_check - (PORTAL_HIT_W / 2);
                         int playerRight_px_check = playerLeft_px_check + (PORTAL_HIT_W - 1);
@@ -4381,7 +4404,51 @@ namespace FamidashEditor
                                 RenderCanvas.Children.Add(r);
                                 try { System.Windows.Controls.Canvas.SetZIndex(r, 100); } catch { }
                             }
+                            
+                            // Pad/orb numeric activation: detect yellow-pad overlap and apply Y velocity
+                            try
+                            {
+                                // Use full small hitbox (match portal logic) so any pixel overlap activates the pad
+                                const int PAD_HIT_W_NUM = 14; const int PAD_HIT_H_NUM = 14;
+                                int playerCenter_px_pad = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                                int playerLeft_px_pad = playerCenter_px_pad - (PAD_HIT_W_NUM / 2);
+                                int playerRight_px_pad = playerLeft_px_pad + (PAD_HIT_W_NUM - 1);
+                                int playerTop_px_pad = (playerY_fixed >> 8);
+                                int playerBottom_px_pad = playerTop_px_pad + (PAD_HIT_H_NUM - 1);
 
+                                for (int idx = 0; idx < sprites.Length; idx++)
+                                {
+                                    int sid = sprites[idx];
+                                    if (sid < 0) continue;
+                                    // Support multiple pad kinds: yellow (0x0A/0x0C), pink (0x25/0x26), red (0x52/0x53)
+                                    int padRow = -1;
+                                    if (sid == 0x0A || sid == 0x0C) padRow = 1; // yellow pad row
+                                    else if (sid == 0x25 || sid == 0x26) padRow = 3; // pink pad row
+                                    else if (sid == 0x52 || sid == 0x53) padRow = 8; // red pad row
+                                    if (padRow < 0) continue;
+
+                                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_pad, playerRight_px_pad, playerTop_px_pad, playerBottom_px_pad))
+                                    {
+                                        try
+                                        {
+                                            int vel = 0;
+                                            if (PadOrbHeights.Length > padRow && PadOrbHeights[padRow].Length > currentGameMode && currentGameMode >= 0)
+                                                vel = PadOrbHeights[padRow][currentGameMode];
+                                            else
+                                                vel = PadOrbHeights[1][0];
+                                            bool numericInvert = gravityReversed || effectiveInvertedByW;
+                                            if (!numericInvert) vel = -vel; // table authored for reverse gravity
+                                            try { AppendSimDebug($"PadHit idx={idx} sid=0x{sid:X2} row={padRow} gm={currentGameMode} vel=0x{vel:X} numericInvert={numericInvert} playerY_fixed=0x{playerY_fixed:X}"); } catch { }
+                                            playerVelY_fixed = vel;
+                                            physicsEnabled = true;
+                                            onGround = false;
+                                        }
+                                        catch { }
+                                        break; // only apply one pad per frame
+                                    }
+                                }
+                            }
+                            catch { }
                             r.Width = dest.Width;
                             r.Height = dest.Height;
                             System.Windows.Controls.Canvas.SetLeft(r, dest.X);
@@ -5543,7 +5610,7 @@ namespace FamidashEditor
                             try
                             {
                                 // Use the same hitbox as other portal checks
-                                const int PORTAL_HIT_W_NUM = 15; const int PORTAL_HIT_H_NUM = 15;
+                                const int PORTAL_HIT_W_NUM = 14; const int PORTAL_HIT_H_NUM = 14;
                                 int playerCenter_px_num = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                                 int playerLeft_px_num = playerCenter_px_num - (PORTAL_HIT_W_NUM / 2);
                                 int playerRight_px_num = playerLeft_px_num + (PORTAL_HIT_W_NUM - 1);
@@ -5590,6 +5657,47 @@ namespace FamidashEditor
 
                             // If a cube jump was pending, apply it now (after gravity+integration) so
                             // Frame 1 applies gravity/integration first, then sets jump velocity.
+                            // Pad/orb numeric activation (post-integration): ensure pads apply during sim
+                            try
+                            {
+                                const int PAD_HIT_W_NUM2 = 14; const int PAD_HIT_H_NUM2 = 14;
+                                int playerCenter_px_pad2 = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                                int playerLeft_px_pad2 = playerCenter_px_pad2 - (PAD_HIT_W_NUM2 / 2);
+                                int playerRight_px_pad2 = playerLeft_px_pad2 + (PAD_HIT_W_NUM2 - 1);
+                                int playerTop_px_pad2 = (playerY_fixed >> 8);
+                                int playerBottom_px_pad2 = playerTop_px_pad2 + (PAD_HIT_H_NUM2 - 1);
+
+                                for (int idx = 0; idx < sprites.Length; idx++)
+                                {
+                                    int sid = sprites[idx];
+                                    if (sid < 0) continue;
+                                    int padRow2 = -1;
+                                    if (sid == 0x0A || sid == 0x0C) padRow2 = 1; // yellow pad
+                                    else if (sid == 0x25 || sid == 0x26) padRow2 = 3; // pink pad
+                                    else if (sid == 0x52 || sid == 0x53) padRow2 = 8; // red pad
+                                    if (padRow2 < 0) continue;
+                                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_pad2, playerRight_px_pad2, playerTop_px_pad2, playerBottom_px_pad2))
+                                    {
+                                        try
+                                        {
+                                            int vel = 0;
+                                            if (PadOrbHeights.Length > padRow2 && PadOrbHeights[padRow2].Length > currentGameMode && currentGameMode >= 0)
+                                                vel = PadOrbHeights[padRow2][currentGameMode];
+                                            else
+                                                vel = PadOrbHeights[1][0];
+                                            bool numericInvert = gravityReversed || effectiveInvertedByW;
+                                            if (!numericInvert) vel = -vel;
+                                            try { AppendSimDebug($"PadHit(num) idx={idx} sid=0x{sid:X2} row={padRow2} gm={currentGameMode} vel=0x{vel:X} numericInvert={numericInvert} playerY_fixed=0x{playerY_fixed:X}"); } catch { }
+                                            playerVelY_fixed = vel;
+                                            physicsEnabled = true;
+                                            onGround = false;
+                                        }
+                                        catch { }
+                                        break;
+                                    }
+                                }
+                            }
+                            catch { }
                             try
                             {
                                         if (pendingPresses_forLater > 0 && currentGameMode == 0)
@@ -6289,7 +6397,7 @@ namespace FamidashEditor
                     int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                     int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
                     // Require 2D overlap (player hitbox) before applying speed portal
-                    const int PORTAL_HIT_W = 15; const int PORTAL_HIT_H = 15;
+                    const int PORTAL_HIT_W = 14; const int PORTAL_HIT_H = 14;
                     int playerCenter_px_check = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                     int playerLeft_px_check = playerCenter_px_check - (PORTAL_HIT_W / 2);
                     int playerRight_px_check = playerLeft_px_check + (PORTAL_HIT_W - 1);
