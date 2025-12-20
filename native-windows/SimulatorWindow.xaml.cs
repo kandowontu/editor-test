@@ -11,47 +11,18 @@ namespace FamidashEditor
 {
     public partial class SimulatorWindow : Window
     {
-        // Base window title (without sim %). Used to display sim speed in title bar.
+        // Window base title used for UI string formatting
         private string baseWindowTitle = "Simulator";
-        // Global option: when true, hide certain trigger sprites visually in the simulator.
-        private bool hideTriggerSprites = true;
+        // Option to hide trigger sprites in simulator rendering
+        private bool hideTriggerSprites = false;
 
         public void SetHideTriggerSprites(bool v) { try { hideTriggerSprites = v; } catch { } }
 
         // Public toggle to show sprite hitboxes in the simulator viewport.
         public bool ShowSpriteHitboxes { get; set; } = false;
 
-        // Public toggle to show per-tile hitboxes (filled red boxes) in the simulator viewport.
-        private bool _showTileHitboxes = false;
-        public bool ShowTileHitboxes
-        {
-            get { return _showTileHitboxes; }
-            set
-            {
-                try
-                {
-                    _showTileHitboxes = value;
-                    AppendSimDebug($"ShowTileHitboxes set to {_showTileHitboxes}");
-                    // Ensure UI updates on the dispatcher thread
-                    try { Dispatcher.BeginInvoke(new Action(() => { try { RenderFrame(); } catch { } })); } catch { }
-                }
-                catch { }
-            }
-        }
-
-            private void UpdateSimTitle()
-            {
-                try
-                {
-                    string s = $"{baseWindowTitle} — Sim {(simTimeScale * 100.0):F0}%";
-                    try { this.Title = s; } catch { }
-                }
-                catch { }
-            }
-
-        // Pool of rectangle overlays used to draw per-tile hitboxes above the tile layer.
-        private System.Collections.Generic.List<System.Windows.Shapes.Rectangle> tileHitboxPool = new System.Collections.Generic.List<System.Windows.Shapes.Rectangle>();
-        private int tileHitboxesInUse = 0;
+        // Public toggle used by the main window: show tile/hitbox overlays in the simulator.
+        public bool ShowTileHitboxes { get; set; } = false;
 
         // Starting speed UI index (0=0.5x,1=1x,2=2x,3=3x,4=4x)
         private int startingSpeedUiIndex = 1;
@@ -61,19 +32,22 @@ namespace FamidashEditor
         {
             try
             {
-                startingSpeedUiIndex = Math.Max(0, Math.Min(4, idx));
-                switch (startingSpeedUiIndex)
-                {
-                    case 0: currentSpeed_fixed = CUBE_SPEED_X05; break;
-                    case 1: currentSpeed_fixed = CUBE_SPEED_X1; break;
-                    case 2: currentSpeed_fixed = CUBE_SPEED_X2; break;
-                    case 3: currentSpeed_fixed = CUBE_SPEED_X3; break;
-                    case 4: currentSpeed_fixed = CUBE_SPEED_X4; break;
-                    default: currentSpeed_fixed = CUBE_SPEED_X1; break;
-                }
+                startingSpeedUiIndex = idx;
+                try { Dispatcher.BeginInvoke(new Action(() => { try { RenderFrame(); } catch { } })); } catch { }
             }
             catch { }
         }
+
+            private void UpdateSimTitle()
+            {
+                try
+                {
+                    string s = $"{baseWindowTitle} — Sim {(simTimeScale * 100.0):F0}%";
+                        try { this.Title = s; } catch { }
+                        orbHoldSuppressing = false;
+                }
+                catch { }
+            }
 
         private bool IsHiddenTriggerSprite(int s)
         {
@@ -217,11 +191,8 @@ namespace FamidashEditor
         };
 
         private static readonly int[] sprite_widths = new int[] {
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 00-07
-            0x0e,0x0e,0x0F,0x10,0x0F,0x0F,0x0F,0x10, // 08-0F
-            0x28,0x28,0x28,0x28,0x10,0x10,0x10,0x10, // 10-17
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 18-1F
-            0x10,0x10,0x10,0x10,0x10,0x0F,0x0F,0x10, // 20-27
+                0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 00-07
+                0x10,0x10,0x10,0x10,0x10,0x0F,0x0F,0x10, // 20-27
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 28-2F
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 30-37
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 38-3F
@@ -255,7 +226,6 @@ namespace FamidashEditor
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 00-07
             0x01,0x01,0x00,0x00,0x00,0x00,0x00,0x00, // 08-0F
             0x04,0x04,0x04,0x04,0x00,0x00,0x00,0x00, // 10-17
-            0x08,0x08,0x00,0x00,0x00,0x00,0x00,0x00, // 18-1F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 20-27
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 28-2F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 30-37
@@ -456,6 +426,9 @@ namespace FamidashEditor
         // Pool for hitbox rectangles
         private System.Collections.Generic.List<System.Windows.Shapes.Rectangle> hitboxPool = new System.Collections.Generic.List<System.Windows.Shapes.Rectangle>();
         private int hitboxesInUse = 0;
+        // Pool of rectangle overlays used to draw per-tile hitboxes above the tile layer.
+        private System.Collections.Generic.List<System.Windows.Shapes.Rectangle> tileHitboxPool = new System.Collections.Generic.List<System.Windows.Shapes.Rectangle>();
+        private int tileHitboxesInUse = 0;
         // Cache of world-space hitbox rectangles populated during rendering so collision
         // can use the exact same geometry as the overlay (key = sprite storage idx).
         private System.Collections.Generic.Dictionary<int, (int left, int top, int right, int bottom, int frame)> hitboxWorldCache = new System.Collections.Generic.Dictionary<int, (int, int, int, int, int)>();
@@ -739,6 +712,23 @@ namespace FamidashEditor
         // Track gravity portals we've already activated this pass so each
         // portal activates only once per crossing.
         private System.Collections.Generic.HashSet<int> processedGravityPortals = new System.Collections.Generic.HashSet<int>();
+        // Track orbs that have been activated so they only fire once
+        private System.Collections.Generic.HashSet<int> processedOrbs = new System.Collections.Generic.HashSet<int>();
+        // Orb buffer: true when the player has pressed/held X in-air and is eligible
+        // to activate orbs. This is cleared on ground, when X is released, when
+        // the player jumps, or when an orb is activated.
+        private bool orbBufferActive = false;
+        // When a hold-based activation consumes the held X, set this so further
+        // hold-based activations are suppressed until X is released and pressed again.
+        private bool orbHoldConsumed = false;
+        // True when a hold-based activation consumed the currently-held X and
+        // the key is still down; used to prevent re-priming from sustained
+        // hardware-held state until an explicit release occurs.
+        private bool orbHoldConsumedKeyStillDown = false;
+        // When true, suppress all orb-buffer priming and fresh-press activations
+        // until an explicit KeyUp is observed. Set when a hold-based activation
+        // consumes the currently-held X so further activations require release.
+        private bool orbHoldSuppressing = false;
         private int playerVelY_fixed = 0; // current vertical velocity (fixed-point)
         private bool physicsEnabled = false; // enable physics after first jump (for testing)
         // Landing epsilon in fixed-point (1 pixel)
@@ -1203,6 +1193,11 @@ namespace FamidashEditor
         private bool prevKeyXDown = false;
         private int keyXPressedCount = 0; // edge-detected press counter (atomic)
         private bool keyXHeld = false;    // current held state
+        // Atomic flags to indicate whether a recorded press/hold started while the player
+        // was on the ground. These are set by the UI/polling on the press edge and
+        // consumed by the numeric thread when it processes pending presses.
+        private int keyXPressStartedOnGroundInt = 0; // 0 = false, 1 = true
+        private int keyXHeldStartedOnGroundInt = 0; // 0 = false, 1 = true
         // Jump buffer frames (atomic). When >0, a landing will consume this and trigger a jump.
         // tabHeld was used previously; use tabSpeedMultiplier instead.
         // (removed unused field to silence build warning)
@@ -2015,6 +2010,13 @@ namespace FamidashEditor
                                 // Keep physicsEnabled/jumpedOnce so camera/input behavior remains similar
                                 physicsEnabled = true;
                                 jumpedOnce = true;
+                                try
+                                {
+                                    int onG = onGround ? 1 : 0;
+                                    Interlocked.Exchange(ref keyXPressStartedOnGroundInt, onG);
+                                    Interlocked.Exchange(ref keyXHeldStartedOnGroundInt, onG);
+                                }
+                                catch { }
 
                                 // If gravity is reversed and the cube is touching a blocking ceiling,
                                 // perform the jump immediately on the UI thread so the input is not
@@ -2234,6 +2236,13 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
+                try { Interlocked.Exchange(ref keyXHeldStartedOnGroundInt, 0); } catch { }
+                try { Interlocked.Exchange(ref keyXPressStartedOnGroundInt, 0); } catch { }
+                // Clear orb buffer immediately on UI release so holds cannot persist.
+                try { orbBufferActive = false; } catch { }
+                try { orbHoldConsumed = false; } catch { }
+                try { orbHoldConsumedKeyStillDown = false; } catch { }
+                try { orbHoldSuppressing = false; } catch { }
             }
             if (e.Key == Key.Tab)
             {
@@ -2358,6 +2367,13 @@ namespace FamidashEditor
                             Interlocked.Increment(ref keyXPressedCount);
                             // also set jump-buffer so a pre-press will trigger on landing
                             try { jumpBufferCounter = JUMP_BUFFER_FRAMES; } catch { }
+                            try
+                            {
+                                int onG_local = onGround ? 1 : 0;
+                                Interlocked.Exchange(ref keyXPressStartedOnGroundInt, onG_local);
+                                Interlocked.Exchange(ref keyXHeldStartedOnGroundInt, onG_local);
+                            }
+                            catch { }
                         }
                     }
                     prevKeyXDown = curX;
@@ -3389,6 +3405,7 @@ namespace FamidashEditor
                             // Anchor is to the right of the interaction line; clear processed flags so they can trigger again when recrossed
                             if (processedColorTriggers.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedColorTriggers.Remove(idx);
                             if (processedGravityPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityPortals.Remove(idx);
+                            if (processedOrbs.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedOrbs.Remove(idx);
                         }
                     }
                     else
@@ -5453,9 +5470,11 @@ namespace FamidashEditor
                             catch { }
                             // Read input flags atomically so numeric sim doesn't race with UI poll.
                             bool keyXHeld_local;
+                            int keyXHeldStartedOnGround_local_int = 0;
                             lock (simLock)
                             {
                                 keyXHeld_local = keyXHeld;
+                                try { keyXHeldStartedOnGround_local_int = Interlocked.CompareExchange(ref keyXHeldStartedOnGroundInt, 0, 0); } catch { keyXHeldStartedOnGround_local_int = 0; }
                             }
 
                             // Detailed trace for diagnosis: record world Y, maxY, vel, and flags (use local copies)
@@ -5468,6 +5487,8 @@ namespace FamidashEditor
 
                             // Atomically consume any pending UI-edge presses recorded by the UI poll
                             int pendingPresses_num = Interlocked.Exchange(ref keyXPressedCount, 0);
+                            // Also consume whether the pending press was recorded as starting on-ground
+                            int pendingPressStartedOnGround = Interlocked.Exchange(ref keyXPressStartedOnGroundInt, 0);
                             // For Cube mode we want to defer applying the jump until after gravity+integration
                             // so the first frame applies gravity/integration before jump velocity is set.
                             int pendingPresses_forLater = 0;
@@ -5487,13 +5508,26 @@ namespace FamidashEditor
                                             physicsEnabled = true;
                                             onGround = false;
                                             jumpAppliedThisStep_local = true;
+                                            orbBufferActive = false;
                                             jumpedOnce = true;
                                         }
                                     }
                                     else
                                     {
-                                        // Defer the cube jump until after gravity+integration
-                                        pendingPresses_forLater = pendingPresses_num;
+                                        // Defer the cube jump only when the press originated on-ground.
+                                        // If the player pressed X while already airborne, treat it as a
+                                        // fresh in-air press (useful for orb buffering) rather than
+                                        // deferring the jump.
+                                        if (pendingPressStartedOnGround != 0)
+                                        {
+                                            // Defer the cube jump until after gravity+integration
+                                            pendingPresses_forLater = pendingPresses_num;
+                                        }
+                                        else
+                                        {
+                                            // Press started in-air: do not defer; allow fresh-press
+                                            // behavior (handled by freshPressAvailable logic).
+                                        }
                                     }
                                 }
                                 else if (currentGameMode == 3)
@@ -5503,10 +5537,65 @@ namespace FamidashEditor
                                     physicsEnabled = true;
                                     onGround = false;
                                     jumpAppliedThisStep_local = true;
+                                    orbBufferActive = false;
                                     jumpedOnce = true;
                                 }
                                 // Other modes (ball/ship) have their own jump handling elsewhere
                             }
+
+                            // Update orb buffer: set/clear according to strict rules
+                            try
+                            {
+                                // Clear buffer and hold-consumption when landing
+                                if (effectiveOnGround_local)
+                                {
+                                    orbBufferActive = false;
+                                    orbHoldConsumed = false;
+                                    orbHoldConsumedKeyStillDown = false;
+                                }
+                                else if (jumpAppliedThisStep_local)
+                                {
+                                    // A jump used this frame should not also prime the orb buffer
+                                    orbBufferActive = false;
+                                    orbHoldConsumed = false;
+                                    orbHoldConsumedKeyStillDown = false;
+                                }
+                                else
+                                {
+                                    // Do not consider cube's deferred jump as a fresh press for buffering
+                                    // Also ensure the pending press did NOT originate on ground.
+                                    bool freshPressEdge = (pendingPresses_num > 0) && (pendingPressStartedOnGround == 0) && !(currentGameMode == 0 && pendingPresses_forLater > 0);
+
+                                    // Set buffer when a fresh press occurs while airborne
+                                    // Do not allow fresh presses to prime if a previous
+                                    // hold-activation consumed the held X and suppression
+                                    // is active; a release is required to reset.
+                                    if (freshPressEdge && !effectiveOnGround_local && !orbHoldSuppressing)
+                                    {
+                                        orbBufferActive = true;
+                                        orbHoldConsumed = false;
+                                    }
+
+                                    // Also allow holding X in-air to prime the buffer (if not already active).
+                                    // This covers the case where X was pressed earlier and the player became
+                                    // airborne before we could set the buffer on the press frame.
+                                    if (!orbBufferActive && (keyXHeld_local || IsXDownAsync()) && !effectiveOnGround_local && keyXHeldStartedOnGround_local_int == 0 && !orbHoldConsumedKeyStillDown && !orbHoldSuppressing)
+                                    {
+                                        orbBufferActive = true;
+                                        // Do not mark orbHoldConsumed here; consumption happens when a hold-based
+                                        // activation actually fires.
+                                    }
+
+                                    // NOTE: clearing the orb buffer when X is released is handled
+                                    // after orb activation checks below to avoid races where the
+                                    // UI thread primes the buffer and the numeric thread clears
+                                    // it before activations can consume it.
+
+                                    // A fresh press edge should reset hold-consumption so a new hold can be used
+                                    if (freshPressEdge) { orbHoldConsumed = false; orbHoldConsumedKeyStillDown = false; }
+                                }
+                            }
+                            catch { }
 
                             // Apply gravity only if we did not just apply a jump, are not grounded,
                             // and if moving vertically or not at the bottom clamp. Prevents gravity
@@ -5651,6 +5740,107 @@ namespace FamidashEditor
                                             break; // only one portal per frame
                                         }
                                     }
+                                }
+                            }
+                            catch { }
+
+                            // Yellow-orb numeric activation: one-shot orbs (sprite 0x0B)
+                            try
+                            {
+                                const int ORB_HIT_W = 14; const int ORB_HIT_H = 14;
+                                int playerCenter_px_orb = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                                int playerLeft_px_orb = playerCenter_px_orb - (ORB_HIT_W / 2);
+                                int playerRight_px_orb = playerLeft_px_orb + (ORB_HIT_W - 1);
+                                int playerTop_px_orb = (playerY_fixed >> 8);
+                                int playerBottom_px_orb = playerTop_px_orb + (ORB_HIT_H - 1);
+
+                                for (int idx = 0; idx < sprites.Length; idx++)
+                                {
+                                    int sid = sprites[idx];
+                                    if (sid < 0) continue;
+                                    // Support multiple orb kinds: map sprite id -> PadOrbHeights row
+                                    int orbRow = -1;
+                                    if (sid == 0x0B) orbRow = 0; // yellow orb (original)
+                                    else if (sid == 0x06) orbRow = 2; // pink orb
+                                    else if (sid == 0x28) orbRow = 4; // red orb
+                                    else if (sid == 0x1F) orbRow = 5; // yellow orb bigger
+                                    else if (sid == 0x44) orbRow = 6; // black orb
+                                    else if (sid == 0x29) orbRow = 7; // yellow orb smaller
+                                    if (orbRow < 0) continue;
+                                    if (processedOrbs.Contains(idx)) continue; // already activated
+
+                                    if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px_orb, playerRight_px_orb, playerTop_px_orb, playerBottom_px_orb)) continue;
+
+                                    try
+                                    {
+                                        // Fresh press available (not consumed by a jump this step)
+                                        // Exclude cube deferred-jump presses (they're treated as ground jumps)
+                                        // Require pending press to have started in-air (pendingPressStartedOnGround==0)
+                                        bool freshPressAvailable = (pendingPresses_num > 0) && (pendingPressStartedOnGround == 0) && !jumpAppliedThisStep_local && !(currentGameMode == 0 && pendingPresses_forLater > 0) && !orbHoldSuppressing;
+                                        // Hold-based activation: accept either the orb buffer or a currently-held X
+                                        // while airborne. Require no fresh pending presses and that a jump
+                                        // was not applied this step. Ship(1) and UFO(3) still require fresh presses.
+                                        // Require the orb buffer to be active for hold-based activations.
+                                        // Holding X alone (even if it started in-air) must only
+                                        // prime the buffer; activations consume the buffer.
+                                        bool keyHoldEligible = keyXHeld_local && (keyXHeldStartedOnGround_local_int == 0) && !effectiveOnGround_local;
+                                        bool holdAvailable = orbBufferActive
+                                                             && (pendingPresses_num == 0) && !jumpAppliedThisStep_local && !orbHoldConsumed;
+
+                                        bool activated = false;
+                                        bool usedHold = false;
+                                        // Ship(1) and UFO(3) require a fresh press while overlapping (no buffering)
+                                        if (currentGameMode == 1 || currentGameMode == 3)
+                                        {
+                                            if (freshPressAvailable) { activated = true; usedHold = false; }
+                                        }
+                                        else
+                                        {
+                                            if (freshPressAvailable) { activated = true; usedHold = false; }
+                                            else if (holdAvailable) { activated = true; usedHold = true; }
+                                        }
+
+                                            if (activated)
+                                        {
+                                            // consume pending UI press and clear orb buffer when activating an orb
+                                            try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
+                                            orbBufferActive = false;
+                                            if (usedHold)
+                                            {
+                                                orbHoldConsumed = true;
+                                                orbHoldConsumedKeyStillDown = (keyXHeld_local || IsXDownAsync());
+                                                // Engage suppression so further priming/presses are ignored
+                                                orbHoldSuppressing = true;
+                                            }
+                                            processedOrbs.Add(idx);
+                                            int vel = 0;
+                                            if (PadOrbHeights.Length > orbRow && PadOrbHeights[orbRow].Length > currentGameMode && currentGameMode >= 0)
+                                                vel = PadOrbHeights[orbRow][currentGameMode];
+                                            else
+                                                vel = PadOrbHeights[0][0];
+                                            bool numericInvert = gravityReversed || effectiveInvertedByW;
+                                            if (!numericInvert) vel = -vel;
+                                            playerVelY_fixed = vel;
+                                            physicsEnabled = true;
+                                            onGround = false;
+                                            break; // only one orb activation per frame
+                                        }
+                                    }
+                                    catch { }
+                                }
+                            }
+                            catch { }
+
+                            // Clear orb buffer when X released and no pending presses.
+                            // This runs after orb/pad activation checks to avoid clearing
+                            // a UI-primed buffer before numeric activation can consume it.
+                            try
+                            {
+                                if (!(keyXHeld_local || pendingPresses_num > 0))
+                                {
+                                    orbBufferActive = false;
+                                    orbHoldConsumed = false;
+                                    orbHoldConsumedKeyStillDown = false;
                                 }
                             }
                             catch { }
@@ -5935,6 +6125,7 @@ namespace FamidashEditor
                                                                 physicsEnabled = true;
                                                                 onGround = false;
                                                                 jumpAppliedThisStep_local = true;
+                                                                orbBufferActive = false;
                                                                 jumpedOnce = true;
                                                                 Interlocked.Exchange(ref keyXPressedCount, 0);
                                                                 
@@ -5989,6 +6180,7 @@ namespace FamidashEditor
                                                                 physicsEnabled = true;
                                                                 onGround = false;
                                                                 jumpAppliedThisStep_local = true;
+                                                                orbBufferActive = false;
                                                                 jumpedOnce = true;
                                                                 Interlocked.Exchange(ref keyXPressedCount, 0);
                                                             }
@@ -6449,7 +6641,7 @@ namespace FamidashEditor
                                 else if (IsGroundTrigger(sid)) { if (anchorX_center_fixed < bestGround_fixed) { bestGround_fixed = anchorX_center_fixed; groundIdxLocal = idx; groundSidLocal = sid; } }
                             }
                         }
-                        else { if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx); if (processedGravityPortals.Contains(idx)) processedGravityPortals.Remove(idx); }
+                        else { if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx); if (processedGravityPortals.Contains(idx)) processedGravityPortals.Remove(idx); if (processedOrbs.Contains(idx)) processedOrbs.Remove(idx); }
                     }
                 }
 
