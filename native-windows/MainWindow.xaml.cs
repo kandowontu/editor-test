@@ -9597,7 +9597,33 @@ namespace FamidashEditor
             int cols = Math.Max(1, effective.PixelWidth / TileSize);
             int rows = Math.Max(1, effective.PixelHeight / TileSize);
             var list = new List<ImageSource>();
-            for (int y = 0; y < rows; y++) for (int x = 0; x < cols; x++) list.Add(new CroppedBitmap(effective, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
+            const int batchRows = 8; // process rows in small batches to reduce peak memory use
+            for (int by = 0; by < rows; by += batchRows)
+            {
+                int endY = Math.Min(rows, by + batchRows);
+                for (int y = by; y < endY; y++)
+                {
+                    for (int x = 0; x < cols; x++)
+                    {
+                        try
+                        {
+                            var cropped = new CroppedBitmap(effective, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize));
+                            if (cropped.CanFreeze) try { cropped.Freeze(); } catch { }
+                            list.Add(cropped);
+                        }
+                        catch
+                        {
+                            var wb = new WriteableBitmap(TileSize, TileSize, 96, 96, PixelFormats.Bgra32, null);
+                            try { wb.WritePixels(new Int32Rect(0, 0, TileSize, TileSize), new byte[TileSize * TileSize * 4], TileSize * 4, 0); } catch { }
+                            try { wb.Freeze(); } catch { }
+                            list.Add(wb);
+                        }
+                    }
+                }
+                // Yield to UI and release any transient memory
+                try { Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                try { GC.Collect(); GC.WaitForPendingFinalizers(); } catch { }
+            }
             parallaxImages = list.ToArray();
             // update tinted cache only if tint is active (not transparent)
             if (backgroundTint.A != 0)
@@ -9626,13 +9652,31 @@ namespace FamidashEditor
             int rows = Math.Max(1, effective.PixelHeight / TileSize);
             groundTileRows = rows;
             var list = new List<ImageSource>();
-            // slice all rows and columns so the ground can be stacked to its full bitmap height
-            for (int y = 0; y < rows; y++)
+            const int batchRowsGround = 8;
+            for (int by = 0; by < rows; by += batchRowsGround)
             {
-                for (int x = 0; x < cols; x++)
+                int endY = Math.Min(rows, by + batchRowsGround);
+                for (int y = by; y < endY; y++)
                 {
-                    list.Add(new CroppedBitmap(effective, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize)));
+                    for (int x = 0; x < cols; x++)
+                    {
+                        try
+                        {
+                            var cropped = new CroppedBitmap(effective, new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize));
+                            if (cropped.CanFreeze) try { cropped.Freeze(); } catch { }
+                            list.Add(cropped);
+                        }
+                        catch
+                        {
+                            var wb = new WriteableBitmap(TileSize, TileSize, 96, 96, PixelFormats.Bgra32, null);
+                            try { wb.WritePixels(new Int32Rect(0, 0, TileSize, TileSize), new byte[TileSize * TileSize * 4], TileSize * 4, 0); } catch { }
+                            try { wb.Freeze(); } catch { }
+                            list.Add(wb);
+                        }
+                    }
                 }
+                try { Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background); } catch { }
+                try { GC.Collect(); GC.WaitForPendingFinalizers(); } catch { }
             }
             groundImages = list.ToArray();
             // update tinted cache only if tint is active (not transparent)
@@ -11200,8 +11244,22 @@ namespace FamidashEditor
                 // their own RenderTargetBitmaps so they can be translated independently.
                 dc.DrawRectangle(mapBackground, null, new Rect(pad, pad, fullW, fullH));
             }
-            backgroundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-            backgroundRtb.Render(dv);
+            try
+            {
+                backgroundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                backgroundRtb.Render(dv);
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                // Render thread failure (possibly GPU driver). Force software rendering and retry once.
+                App.EnableSoftwareRendering();
+                try
+                {
+                    backgroundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                    backgroundRtb.Render(dv);
+                }
+                catch { backgroundRtb = null; }
+            }
         }
 
         // Create or retrieve a cached tinted BitmapSource for parallax/ground
@@ -11306,8 +11364,22 @@ namespace FamidashEditor
                 }
             }
             
-            parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-            parallaxRtb.Render(dv);
+            try
+            {
+                parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                parallaxRtb.Render(dv);
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                // If GPU render thread failed, force software rendering and retry once.
+                App.EnableSoftwareRendering();
+                try
+                {
+                    parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                    parallaxRtb.Render(dv);
+                }
+                catch { parallaxRtb = null; }
+            }
 
             // Recompute render sizes and ground height here so they're available outside
             // the drawing using() scope for the fallback transparency check.
@@ -11402,8 +11474,22 @@ namespace FamidashEditor
                 dc.DrawRectangle(brush, null, new Rect(0, groundY, fillWidth, groundHeightDiu));
             }
             
-            groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-            groundRtb.Render(dv);
+            try
+            {
+                groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                groundRtb.Render(dv);
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                // GPU render thread failure; force software rendering and retry once.
+                App.EnableSoftwareRendering();
+                try
+                {
+                    groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                    groundRtb.Render(dv);
+                }
+                catch { groundRtb = null; }
+            }
         }
 
         // Deferred async rebuild of parallax and ground bitmaps for large maps

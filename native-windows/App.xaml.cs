@@ -13,6 +13,12 @@ namespace FamidashEditor
         
         private void Application_Startup(object sender, StartupEventArgs e)
         {
+            // Early GPU detection: before creating any windows, check whether the
+            // system likely has an AMD GPU and proactively force software rendering
+            // to avoid render-thread failures on some drivers. Honor an environment
+            // variable `FAMIDASH_FORCE_SOFTWARE=1` to force this behavior for testing.
+            try { DetectAndForceSoftwareRenderingIfNeeded(); } catch { }
+
             // Install global exception handlers so we capture crashes to disk for diagnosis.
             AppDomain.CurrentDomain.UnhandledException += (s, ev) =>
             {
@@ -21,6 +27,24 @@ namespace FamidashEditor
             this.DispatcherUnhandledException += (s, ev) =>
             {
                 try { LogException(ev.Exception, "DispatcherUnhandledException"); } catch { }
+                try
+                {
+                    // If the render thread failed (common AMD driver issue), attempt
+                    // to switch to software rendering and prevent the process from
+                    // terminating immediately so the user can restart the app.
+                    if (ev.Exception is System.Runtime.InteropServices.COMException cex && unchecked((int)cex.HResult) == unchecked((int)0x88980406))
+                    {
+                        try { EnableSoftwareRendering(); } catch { }
+                        try
+                        {
+                            System.Windows.MessageBox.Show("Render thread failure detected. The application has switched to software rendering. Please save your work and restart the application to ensure stability.", "Render thread failure", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                        catch { }
+                        ev.Handled = true;
+                        return;
+                    }
+                }
+                catch { }
             };
             System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (s, ev) =>
             {
@@ -64,6 +88,51 @@ namespace FamidashEditor
                 // Re-throw after logging to allow normal crash behavior
                 throw;
             }
+        }
+
+        private void DetectAndForceSoftwareRenderingIfNeeded()
+        {
+            try
+            {
+                // Allow users to force via env var for testing
+                var env = Environment.GetEnvironmentVariable("FAMIDASH_FORCE_SOFTWARE");
+                if (!string.IsNullOrEmpty(env) && env == "1")
+                {
+                    EnableSoftwareRendering();
+                    return;
+                }
+
+                // Try a lightweight WMIC query to detect AMD/ATI keywords without
+                // taking a compile-time dependency on System.Management.
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo("wmic", "path win32_VideoController get Name,AdapterCompatibility /format:csv")
+                    {
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    };
+                    using (var p = System.Diagnostics.Process.Start(psi))
+                    {
+                        if (p != null)
+                        {
+                            string outp = p.StandardOutput.ReadToEnd();
+                            try { p.WaitForExit(1500); } catch { }
+                            var text = outp.ToLowerInvariant();
+                            if (text.Contains("amd") || text.Contains("radeon") || text.Contains("advanced micro devices") || text.Contains("ati"))
+                            {
+                                EnableSoftwareRendering();
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // ignore detection errors
+                }
+            }
+            catch { }
         }
         
         private void DoEvents()
@@ -161,6 +230,23 @@ namespace FamidashEditor
                 return EnsureUnfrozenForRender(tb) ?? tb;
             }
             catch { return src as BitmapSource; }
+        }
+
+        // If the WPF render thread fails (common with some AMD drivers for very large
+        // GPU allocations), fall back to forcing software rendering for the whole
+        // process. This is a global, irrevocable choice for the current process;
+        // call only when a RenderTargetBitmap.Render throws a COMException.
+        private static bool softwareRenderForced = false;
+        public static void EnableSoftwareRendering()
+        {
+            try
+            {
+                if (softwareRenderForced) return;
+                // Use the static property on RenderOptions to force software rendering
+                System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+                softwareRenderForced = true;
+            }
+            catch { }
         }
     }
 }
