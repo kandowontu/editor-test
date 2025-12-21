@@ -718,6 +718,10 @@ namespace FamidashEditor
         // to activate orbs. This is cleared on ground, when X is released, when
         // the player jumps, or when an orb is activated.
         private bool orbBufferActive = false;
+        // Prevent multiple orb activations from a single UI press: set when an orb
+        // was activated in response to the current pressed state and cleared when
+        // X is released or player lands.
+        private bool orbActivationConsumedThisPress = false;
         // When a hold-based activation consumes the held X, set this so further
         // hold-based activations are suppressed until X is released and pressed again.
         private bool orbHoldConsumed = false;
@@ -5555,6 +5559,7 @@ namespace FamidashEditor
                                     orbBufferActive = false;
                                     orbHoldConsumed = false;
                                     orbHoldConsumedKeyStillDown = false;
+                                    orbActivationConsumedThisPress = false;
                                 }
                                 else if (jumpAppliedThisStep_local)
                                 {
@@ -5562,6 +5567,7 @@ namespace FamidashEditor
                                     orbBufferActive = false;
                                     orbHoldConsumed = false;
                                     orbHoldConsumedKeyStillDown = false;
+                                    orbActivationConsumedThisPress = false;
                                 }
                                 else
                                 {
@@ -5757,45 +5763,53 @@ namespace FamidashEditor
                                 int playerTop_px_orb = (playerY_fixed >> 8);
                                 int playerBottom_px_orb = playerTop_px_orb + (ORB_HIT_H - 1);
 
-                                for (int idx = 0; idx < sprites.Length; idx++)
+                                // Collect eligible orb candidates (overlapping and not already processed),
+                                // then pick the one closest to the player's center and activate only that orb.
+                                try
                                 {
-                                    int sid = sprites[idx];
-                                    if (sid < 0) continue;
-                                    // Support multiple orb kinds: map sprite id -> PadOrbHeights row
-                                    int orbRow = -1;
-                                    bool isBlueOrb = false;
-                                    if (sid == 0x0B) orbRow = 0; // yellow orb (original)
-                                    else if (sid == 0x06) orbRow = 2; // pink orb
-                                    else if (sid == 0x28) orbRow = 4; // red orb
-                                    else if (sid == 0x1F) orbRow = 5; // yellow orb bigger
-                                    else if (sid == 0x44) orbRow = 6; // black orb
-                                    else if (sid == 0x29) orbRow = 7; // yellow orb smaller
-                                    else if (sid == 0x05 || sid == 0x7B) { isBlueOrb = true; }
-                                    if (orbRow < 0 && !isBlueOrb) continue;
-                                    // Blue orb 0x7B may be activated multiple times; do not treat it as processed
-                                    if (sid != 0x7B && processedOrbs.Contains(idx)) continue; // already activated
-
-                                    if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px_orb, playerRight_px_orb, playerTop_px_orb, playerBottom_px_orb)) continue;
-
-                                    try
+                                    var candidates = new System.Collections.Generic.List<(int idx, int sid, int orbRow, bool isBlueOrb, bool isGreenOrb, int tileCenterX_px)>();
+                                    int playerCenter_px_orb_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                                    for (int idx = 0; idx < sprites.Length; idx++)
                                     {
-                                        // Fresh press available (not consumed by a jump this step)
-                                        // Exclude cube deferred-jump presses (they're treated as ground jumps)
-                                        // Require pending press to have started in-air (pendingPressStartedOnGround==0)
-                                        bool freshPressAvailable = (pendingPresses_num > 0) && (pendingPressStartedOnGround == 0) && !jumpAppliedThisStep_local && !(currentGameMode == 0 && pendingPresses_forLater > 0) && !orbHoldSuppressing;
-                                        // Hold-based activation: accept either the orb buffer or a currently-held X
-                                        // while airborne. Require no fresh pending presses and that a jump
-                                        // was not applied this step. Ship(1) and UFO(3) still require fresh presses.
-                                        // Require the orb buffer to be active for hold-based activations.
-                                        // Holding X alone (even if it started in-air) must only
-                                        // prime the buffer; activations consume the buffer.
-                                        bool keyHoldEligible = keyXHeld_local && (keyXHeldStartedOnGround_local_int == 0) && !effectiveOnGround_local;
-                                        bool holdAvailable = orbBufferActive
-                                                             && (pendingPresses_num == 0) && !jumpAppliedThisStep_local && !orbHoldConsumed;
+                                        int sid = sprites[idx];
+                                        if (sid < 0) continue;
+                                        int orbRow = -1;
+                                        bool isBlueOrb = false;
+                                        bool isGreenOrb = false;
+                                        if (sid == 0x0B) orbRow = 0; // yellow orb (original)
+                                        else if (sid == 0x06) orbRow = 2; // pink orb
+                                        else if (sid == 0x28) orbRow = 4; // red orb
+                                        else if (sid == 0x1F) orbRow = 5; // yellow orb bigger
+                                        else if (sid == 0x44) orbRow = 6; // black orb
+                                        else if (sid == 0x29) orbRow = 7; // yellow orb smaller
+                                        else if (sid == 0x27) { orbRow = 0; isGreenOrb = true; }
+                                        else if (sid == 0x05 || sid == 0x7B) { isBlueOrb = true; }
+                                        if (orbRow < 0 && !isBlueOrb) continue;
+                                        if (sid != 0x7B && processedOrbs.Contains(idx)) continue;
+                                        if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px_orb, playerRight_px_orb, playerTop_px_orb, playerBottom_px_orb)) continue;
 
+                                        int tileX = idx % mapWidth;
+                                        int tileCenterX_px = tileX * TILE + (TILE / 2);
+                                        candidates.Add((idx, sid, orbRow, isBlueOrb, isGreenOrb, tileCenterX_px));
+                                    }
+
+                                    if (candidates.Count > 0 && !orbActivationConsumedThisPress)
+                                    {
+                                        // Choose the candidate closest to the player's center (horizontal distance)
+                                        (int idx, int sid, int orbRow, bool isBlueOrb, bool isGreenOrb, int tileCenterX_px) best = candidates[0];
+                                        int bestDist = Math.Abs(playerCenter_px_orb_local - best.tileCenterX_px);
+                                        for (int i = 1; i < candidates.Count; i++)
+                                        {
+                                            var c = candidates[i];
+                                            int d = Math.Abs(playerCenter_px_orb_local - c.tileCenterX_px);
+                                            if (d < bestDist) { best = c; bestDist = d; }
+                                        }
+
+                                        // Determine activation eligibility (fresh press vs hold) using the chosen candidate
+                                        bool freshPressAvailable = (pendingPresses_num > 0) && (pendingPressStartedOnGround == 0) && !jumpAppliedThisStep_local && !(currentGameMode == 0 && pendingPresses_forLater > 0) && !orbHoldSuppressing;
+                                        bool holdAvailable = orbBufferActive && (pendingPresses_num == 0) && !jumpAppliedThisStep_local && !orbHoldConsumed;
                                         bool activated = false;
                                         bool usedHold = false;
-                                        // Ship(1) and UFO(3) require a fresh press while overlapping (no buffering)
                                         if (currentGameMode == 1 || currentGameMode == 3)
                                         {
                                             if (freshPressAvailable) { activated = true; usedHold = false; }
@@ -5806,28 +5820,23 @@ namespace FamidashEditor
                                             else if (holdAvailable) { activated = true; usedHold = true; }
                                         }
 
-                                            if (activated)
+                                        if (activated)
                                         {
-                                            // consume pending UI press and clear orb buffer when activating an orb
                                             try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
                                             orbBufferActive = false;
                                             if (usedHold)
                                             {
                                                 orbHoldConsumed = true;
                                                 orbHoldConsumedKeyStillDown = (keyXHeld_local || IsXDownAsync());
-                                                // Engage suppression so further priming/presses are ignored
                                                 orbHoldSuppressing = true;
                                             }
-                                            processedOrbs.Add(idx);
+
+                                            int idx = best.idx; int sid = best.sid; int orbRow = best.orbRow; bool isBlueOrb = best.isBlueOrb; bool isGreenOrb = best.isGreenOrb;
                                             if (isBlueOrb)
                                             {
-                                                // Blue orb: toggle gravity and apply fixed velocities.
-                                                // Ball mode uses a different magnitude.
                                                 try
                                                 {
                                                     int mag = (currentGameMode == 2) ? 0x01F3 : 0x04FB;
-                                                    // If gravity currently inverted (numericInvert==true), apply positive magnitude
-                                                    // and normalize gravity. If gravity normal, apply negative magnitude and invert.
                                                     bool numericInvert_local = gravityReversed || effectiveInvertedByW;
                                                     if (numericInvert_local)
                                                     {
@@ -5846,6 +5855,12 @@ namespace FamidashEditor
                                             }
                                             else
                                             {
+                                                if (isGreenOrb)
+                                                {
+                                                    try { gravityReversed = !gravityReversed; effectiveInvertedByW = gravityReversed; } catch { }
+                                                    try { UpdateEffectiveGravity(); } catch { }
+                                                    try { UpdatePlayerImageForMode(); } catch { }
+                                                }
                                                 int vel = 0;
                                                 if (PadOrbHeights.Length > orbRow && PadOrbHeights[orbRow].Length > currentGameMode && currentGameMode >= 0)
                                                     vel = PadOrbHeights[orbRow][currentGameMode];
@@ -5857,13 +5872,25 @@ namespace FamidashEditor
                                             }
                                             physicsEnabled = true;
                                             onGround = false;
-                                            // For standard orbs mark processed; blue 0x7B intentionally may be multi-used
+                                            // Mark the chosen orb processed (respecting 0x7B multi-use)
                                             if (!isBlueOrb || sid == 0x05) processedOrbs.Add(idx);
-                                            break; // only one orb activation per frame
+                                            // Also mark any other overlapping candidates processed so they do not
+                                            // activate from the same press (respect 0x7B multi-use behavior).
+                                            try
+                                            {
+                                                foreach (var c in candidates)
+                                                {
+                                                    if (c.idx == idx) continue;
+                                                    if (!c.isBlueOrb || c.sid == 0x05) processedOrbs.Add(c.idx);
+                                                }
+                                            }
+                                            catch { }
+                                            // Mark that this UI press has already caused an orb activation
+                                            orbActivationConsumedThisPress = true;
                                         }
                                     }
-                                    catch { }
                                 }
+                                catch { }
                             }
                             catch { }
 
@@ -5877,6 +5904,7 @@ namespace FamidashEditor
                                     orbBufferActive = false;
                                     orbHoldConsumed = false;
                                     orbHoldConsumedKeyStillDown = false;
+                                    orbActivationConsumedThisPress = false;
                                 }
                             }
                             catch { }
