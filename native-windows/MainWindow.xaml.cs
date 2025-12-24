@@ -9592,7 +9592,7 @@ namespace FamidashEditor
             if (effective == null) { parallaxImages = null; return; }
             if (Math.Max(effective.PixelWidth, effective.PixelHeight) > MaxImageDim)
             {
-                effective = DownsampleBitmap(effective, MaxImageDim);
+                effective = DownsampleBitmap(effective, MaxImageDim) ?? effective;
             }
             int cols = Math.Max(1, effective.PixelWidth / TileSize);
             int rows = Math.Max(1, effective.PixelHeight / TileSize);
@@ -9646,7 +9646,7 @@ namespace FamidashEditor
             if (effective == null) { groundImages = null; groundTileRows = 0; return; }
             if (Math.Max(effective.PixelWidth, effective.PixelHeight) > MaxImageDim)
             {
-                effective = DownsampleBitmap(effective, MaxImageDim);
+                effective = DownsampleBitmap(effective, MaxImageDim) ?? effective;
             }
             int cols = Math.Max(1, effective.PixelWidth / TileSize);
             int rows = Math.Max(1, effective.PixelHeight / TileSize);
@@ -9693,7 +9693,7 @@ namespace FamidashEditor
         // Downsample a large bitmap to keep its maximum dimension <= maxDim.
         // Uses a TransformedBitmap to avoid creating a new large WriteableBitmap and
         // minimizes GPU memory usage compared to rendering to a large RenderTargetBitmap.
-        private BitmapSource DownsampleBitmap(BitmapSource src, int maxDim)
+        private BitmapSource? DownsampleBitmap(BitmapSource? src, int maxDim)
         {
             if (src == null) return src;
             int w = src.PixelWidth;

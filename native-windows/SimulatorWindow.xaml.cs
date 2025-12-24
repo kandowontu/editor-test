@@ -62,16 +62,64 @@ namespace FamidashEditor
             catch { return false; }
         }
 
-        // Simple, resilient debug logger for simulator collision/pass-through decisions.
-        // Writes to the system temp folder so users can reproduce and paste the file.
+        // In-memory debug buffer for simulator collision/pass-through decisions.
+        // We avoid writing persistent log files by default; this buffer captures
+        // recent messages and also forwards them to Debug.WriteLine so IDEs
+        // can show them during runs. The buffer is bounded to avoid unbounded
+        // memory growth.
+        private readonly System.Collections.Generic.List<string> simDebugBuffer = new System.Collections.Generic.List<string>();
+        private const int SIM_DEBUG_BUFFER_MAX = 4096;
+        // By default we write debug output to a timestamped temp file so you can
+        // open it after reproducing the issue. Change to false to disable file
+        // writes.
+        private readonly bool simDebugWriteToFile = true;
+        private readonly string simDebugLogPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"famidash_sim_debug_{System.DateTime.UtcNow:yyyyMMdd_HHmmss}.txt");
+
         private void AppendSimDebug(string msg)
         {
             try
             {
-                var fn = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "famidash_sim_debug.txt");
-                System.IO.File.AppendAllText(fn, DateTime.UtcNow.ToString("o") + " " + msg + Environment.NewLine);
+                string t = DateTime.UtcNow.ToString("o") + " " + msg;
+                lock (simDebugBuffer)
+                {
+                    simDebugBuffer.Add(t);
+                    if (simDebugBuffer.Count > SIM_DEBUG_BUFFER_MAX)
+                    {
+                        // Trim oldest entries
+                        int remove = simDebugBuffer.Count - SIM_DEBUG_BUFFER_MAX;
+                        simDebugBuffer.RemoveRange(0, remove);
+                    }
+                }
+                try { System.Diagnostics.Debug.WriteLine(t); } catch { }
+                if (simDebugWriteToFile)
+                {
+                    try
+                    {
+                        System.IO.File.AppendAllText(simDebugLogPath, t + System.Environment.NewLine);
+                    }
+                    catch { }
+                }
             }
             catch { }
+        }
+
+        // Return a snapshot of the current in-memory debug buffer (most-recent last).
+        public string[] GetSimDebugSnapshot()
+        {
+            try
+            {
+                lock (simDebugBuffer)
+                {
+                    return simDebugBuffer.ToArray();
+                }
+            }
+            catch { return new string[0]; }
+        }
+
+        // Return the path to the on-disk debug log (may not exist until a message is written).
+        public string GetSimDebugLogPath()
+        {
+            try { return simDebugLogPath; } catch { return string.Empty; }
         }
 
         // Update effective gravity/jump/max-fall based on the current mode and flags
@@ -577,6 +625,99 @@ namespace FamidashEditor
             return true;
         }
 
+        // Returns true when the tile's collision occupies the pixel at (localX, localY)
+        // within the 16x16 metatile. `localX` and `localY` are 0..15 (local coords).
+        // This helper understands death-categorized collisions (maps them to shape
+        // components) so death-only tiles respect half-slab shapes instead of acting
+        // as full 16x16 solids.
+        private static bool TileOccupiesPixel(MetatileCollision col, int localX, int localY)
+        {
+            // Handle explicit death-category variants by composing underlying shapes
+            switch (col)
+            {
+                case MetatileCollision.COL_DEATH_TOP:
+                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY);
+                case MetatileCollision.COL_DEATH_BOTTOM:
+                    return TileOccupiesPixel(MetatileCollision.COL_BOTTOM, localX, localY);
+                case MetatileCollision.COL_DEATH_LEFT:
+                    return TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY);
+                case MetatileCollision.COL_DEATH_RIGHT:
+                    return TileOccupiesPixel(MetatileCollision.COL_RIGHT, localX, localY);
+                case MetatileCollision.COL_DEATH_TOP_RIGHT:
+                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_RIGHT, localX, localY);
+                case MetatileCollision.COL_DEATH_TOP_LEFT:
+                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY);
+                case MetatileCollision.COL_DEATH_BOTTOM_RIGHT:
+                    return TileOccupiesPixel(MetatileCollision.COL_BOTTOM, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_RIGHT, localX, localY);
+                case MetatileCollision.COL_DEATH_BOTTOM_LEFT:
+                    return TileOccupiesPixel(MetatileCollision.COL_BOTTOM, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY);
+                case MetatileCollision.COL_DEATH_TOP_RIGHT_LEFT:
+                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_RIGHT, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY);
+                case MetatileCollision.COL_DEATH_TOP_BOTTOM:
+                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_BOTTOM, localX, localY);
+                case MetatileCollision.COL_DEATH_LEFT_RIGHT:
+                    return TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_RIGHT, localX, localY);
+                case MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM:
+                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_BOTTOM, localX, localY);
+                case MetatileCollision.COL_DEATH:
+                    // Generic death: treat as full solid
+                    return true;
+                default:
+                    break;
+            }
+
+            // Handle top-oriented collision categories (top-half slabs and combos).
+            // Top slabs occupy the top 8 pixels (localY 0..7). For combined tiles
+            // that have top on one half and bottom on the other, choose behavior by
+            // column.
+            bool inLeft = (localX >= 0 && localX <= 7);
+            bool inRight = (localX >= 8 && localX <= 15);
+
+            switch (col)
+            {
+                case MetatileCollision.COL_TOP:
+                    return (localY <= 7);
+                case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                    if (inLeft) return (localY <= 7);
+                    break;
+                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                    if (inRight) return (localY <= 7);
+                    break;
+                case MetatileCollision.COL_UP_LEFT:
+                    if (inLeft) return (localY <= 7);
+                    break;
+                case MetatileCollision.COL_UP_RIGHT:
+                    if (inRight) return (localY <= 7);
+                    break;
+                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                    if (inLeft) return (localY <= 7);
+                    if (inRight) return (localY >= 8);
+                    break;
+                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                    if (inRight) return (localY <= 7);
+                    if (inLeft) return (localY >= 8);
+                    break;
+                default:
+                    break;
+            }
+
+            // For other normal collision categories, attempt to derive a vertical
+            // floor offset using the existing `ProvidesFloorAtColumnStatic` helper.
+            // If that helper reports a floor offset for this column, treat any
+            // localY >= topOffsetPx as occupied by solid (this captures bottom-half
+            // slabs and floor-like shapes).
+            if (ProvidesFloorAtColumnStatic(col, localX, out int topOffsetPx))
+            {
+                if (localY >= topOffsetPx) return true;
+                return false;
+            }
+
+            // Fallback: for ceiling-like categories that don't provide floor offsets
+            // treat non-none as fully blocking at this stage.
+            if (col != MetatileCollision.COL_NONE) return true;
+            return false;
+        }
+
         // Helper: returns true when the player's head is overlapping a blocking ceiling
         // in the current world position. This mirrors the ceiling-collision check used
         // in the numeric integration path but does not modify player state.
@@ -630,7 +771,90 @@ namespace FamidashEditor
 
                     for (int lx_local = localLeft_local; lx_local <= localRight_local; lx_local++)
                     {
+                        // Note: here we respect pass-through semantics elsewhere by default.
+                        // This function is the permissive check used by most systems; for
+                        // jump eligibility we also provide a strict variant below.
+                        int worldPx = tileStartX_local + lx_local;
+                        int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                        if (!MainWindow.Option_NoDeath)
+                        {
+                            if (worldPx >= playerCenter_px) continue;
+                        }
                         if (BlocksCeilingAtColumn(col_local, lx_local)) return true;
+                    }
+                }
+
+                return false;
+            }
+            catch { return false; }
+        }
+
+        // Strict variant of ceiling check that ignores right-side pass-through.
+        // Used for jump eligibility so a player who is overlapping a blocking
+        // ceiling can still jump even when right-side pass-through is enabled.
+        private bool IsTouchingCeilingStrict()
+        {
+            try
+            {
+                const int HITBOX_W_LOCAL = 15;
+                int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
+                int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
+                int headWorldY_px_local = (playerY_fixed >> 8); // player's top
+
+                int tileAboveY_world = headWorldY_px_local / TILE;
+                int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                int tileIndexY = tileAboveY_world + groundRowsToReserve_local;
+
+                if (tileIndexY < 0 || tileIndexY >= mapHeight) return false;
+
+                for (int tx_local = playerLeft_px_local / TILE; tx_local <= playerRight_px_local / TILE; tx_local++)
+                {
+                    if (tx_local < 0 || tx_local >= mapWidth) continue;
+                    int tid_local = tiles[tileIndexY * mapWidth + tx_local];
+                    int useTidForAnim_local = MapAnimatedTileIndex(tid_local);
+                    int collisionTid_local = useTidForAnim_local;
+                    if (useTidForAnim_local >= 1000)
+                    {
+                        if (useTidForAnim_local >= 1000 && useTidForAnim_local <= 1007)
+                        {
+                            collisionTid_local = 0x08 + ((useTidForAnim_local - 1000) % 4);
+                        }
+                        else if (useTidForAnim_local >= 1010 && useTidForAnim_local <= 1015)
+                        {
+                            int group_local = (useTidForAnim_local - 1010) % 3;
+                            collisionTid_local = (group_local == 0) ? 0x04 : (group_local == 1) ? 0x7D : 0x7F;
+                        }
+                        else if (useTidForAnim_local >= 1020 && useTidForAnim_local <= 1037)
+                        {
+                            collisionTid_local = 0x74 + ((useTidForAnim_local - 1020) % 9);
+                        }
+                        else
+                        {
+                            collisionTid_local = tid_local;
+                        }
+                    }
+                    var col_local = MetatileCollisionTable.GetCollision((byte)collisionTid_local);
+
+                    int tileStartX_local = tx_local * TILE;
+                    int localLeft_local = Math.Max(0, playerLeft_px_local - tileStartX_local);
+                    int localRight_local = Math.Min(TILE - 1, playerRight_px_local - tileStartX_local);
+
+                    // Compute the local Y within the tile corresponding to the player's head
+                    int tileStartY_local = tileAboveY_world * TILE;
+                    int localY_local = Math.Max(0, Math.Min(TILE - 1, headWorldY_px_local - tileStartY_local));
+
+                    for (int lx_local = localLeft_local; lx_local <= localRight_local; lx_local++)
+                    {
+                        // Use per-pixel occupancy so top-half slabs (COL_TOP etc.) are
+                        // considered blocking for the strict ceiling check used by jump
+                        // eligibility. This treats any occupied pixel at the player's
+                        // head Y as a blocking ceiling regardless of pass-through semantics.
+                        try
+                        {
+                            if (TileOccupiesPixel(col_local, lx_local, localY_local)) return true;
+                        }
+                        catch { if (BlocksCeilingAtColumn(col_local, lx_local)) return true; }
                     }
                 }
 
@@ -999,8 +1223,8 @@ namespace FamidashEditor
 
         // When true, print per-simulation-step diagnostics about the player's feet
         // including tile indices, animated remaps and resolved collision categories.
-        // Enable temporarily for live debugging; remove or set false when done.
-        private bool runtimePerFrameLog = true;
+        // Disabled by default to avoid writing runtime logs.
+        private bool runtimePerFrameLog = false;
 
         // Internal one-time simulator debug file (used only for local diagnosis when requested)
         // Use a deterministic, repo-root path so it's easy to find when running from VS/`dotnet run`.
@@ -1010,28 +1234,18 @@ namespace FamidashEditor
         // (Note: actual AppendSimDebug implementation exists earlier and writes to temp.)
 
         // Helper to append a temp log when `enableSimulatorDebugLogging` is enabled.
+        // Disabled: do not write temporary logs to disk.
         private void WriteTempLog(string message)
         {
-            try
-            {
-                if (!enableSimulatorDebugLogging) return;
-                System.IO.File.AppendAllText(simDebugFilePath, DateTime.UtcNow.ToString("o") + " " + message + Environment.NewLine);
-            }
-            catch { }
+            // No-op
+            return;
         }
 
-        // Lightweight ball-mode event logging for diagnosis
-        private readonly string simBallLogPath = @"C:\Editor Test\native-windows\sim-ball.log";
+        // Lightweight ball-mode event logging for diagnosis (disabled)
         private void LogBallEvent(string evt)
         {
-            try
-            {
-                using (var sw = new System.IO.StreamWriter(simBallLogPath, true))
-                {
-                    sw.WriteLine($"{DateTime.UtcNow:O} {evt}");
-                }
-            }
-            catch { }
+            // No-op: ball event logging disabled.
+            return;
         }
 
         // Start background simulation timer and initialize player Y.
@@ -1308,7 +1522,7 @@ namespace FamidashEditor
             // Simulator-specific tweak: shift sprite 0x2B and 0x2C up 8 pixels to match editor preview
             // Initialize starting game mode
             try { currentGameMode = startingGameMode; } catch { currentGameMode = 0; }
-            try { if (currentGameMode == 2) ballGoingDown = !gravityReversed; } catch { }
+            try { ModeDispatch_ApplyModeState(); } catch { }
             try { UpdatePlayerImageForMode(); } catch { }
             try
             {
@@ -1970,77 +2184,17 @@ namespace FamidashEditor
                         try { if (this.Owner is MainWindow && MainWindow.Option_CamMode) { e.Handled = true; return; } } catch { }
                         lock (simLock)
                         {
-                            if (currentGameMode == 2)
+                            // Dispatch X-edge handling to the current mode. Mode handlers
+                            // will decide whether to buffer, toggle, or jump immediately.
+                            ProcessModeXEdge();
+                            // For cube-mode immediate ceiling-jump behavior, keep existing
+                            // immediate UI-side jump path by checking mode-specific condition.
+                            try
                             {
-                                // Ball mode: only accept the first X-edge until the next surface hit.
-                                // Atomically set the locked flag; if we were previously unlocked,
-                                // register a toggle request (or perform immediate toggle if on surface).
-                                int prevLock = Interlocked.CompareExchange(ref ballToggleLocked, 1, 0);
-                                if (prevLock == 0)
-                                {
-                                    if (onGround)
-                                    {
-                                            // Immediate switch when on surface: flip ballGoingDown and
-                                            // also toggle the numeric inversion flag so W and ball
-                                            // toggles share the same numeric effect.
-                                            ballGoingDown = !ballGoingDown;
-                                            int sign = ballGoingDown ? 1 : -1;
-                                            try { playerVelY_fixed = (int)Math.Round((sign * BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = sign * BALL_IMMEDIATE_VEL; }
-                                            onGround = false;
-                                            groundStabilizeCounter = 0;
-                                            physicsEnabled = true;
-                                            jumpedOnce = true;
-                                                    try { gravityReversed = !ballGoingDown; effectiveInvertedByW = gravityReversed; } catch { }
-                                            try { UpdateEffectiveGravity(); } catch { }
-                                            try { UpdatePlayerImageForMode(); } catch { }
-                                            LogBallEvent($"KeyDown: immediate-toggle performed; gravityReversed={gravityReversed} ballGoingDown={ballGoingDown} sign={sign}");
-                                    }
-                                    else
-                                    {
-                                        // Queue the toggle for the next landing
-                                        Interlocked.Exchange(ref ballToggleRequested, 1);
-                                        LogBallEvent($"KeyDown: queued toggle; ballToggleLocked=1");
-                                    }
-                                }
-                                else
-                                {
-                                    LogBallEvent($"KeyDown: ignored because lock != 0 (lock={prevLock}) onGround={onGround} ballGoingDown={ballGoingDown}");
-                                }
+                                // Delegate UI-side immediate cube jump behavior to cube-mode handler
+                                Cube_HandleUIImmediateJump();
                             }
-                            else
-                            {
-                                Interlocked.Increment(ref keyXPressedCount);
-                                try { jumpBufferCounter = JUMP_BUFFER_FRAMES; } catch { }
-                                // Keep physicsEnabled/jumpedOnce so camera/input behavior remains similar
-                                physicsEnabled = true;
-                                jumpedOnce = true;
-                                try
-                                {
-                                    int onG = onGround ? 1 : 0;
-                                    Interlocked.Exchange(ref keyXPressStartedOnGroundInt, onG);
-                                    Interlocked.Exchange(ref keyXHeldStartedOnGroundInt, onG);
-                                }
-                                catch { }
-
-                                // If gravity is reversed and the cube is touching a blocking ceiling,
-                                // perform the jump immediately on the UI thread so the input is not
-                                // lost due to timing between UI and numeric threads.
-                                try
-                                {
-                                    if (currentGameMode == 0 && (gravityReversed || effectiveInvertedByW) && (IsTouchingCeiling() || onGround))
-                                    {
-                                        // Consume the queued edge so numeric path doesn't double-apply
-                                        Interlocked.Exchange(ref keyXPressedCount, 0);
-                                        try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                                        physicsEnabled = true;
-                                        onGround = false;
-                                        groundStabilizeCounter = 0;
-                                        jumpedOnce = true;
-                                        
-                                    }
-                                }
-                                catch { }
-                            }
+                            catch { }
                         }
                     }
                 }
@@ -2119,6 +2273,8 @@ namespace FamidashEditor
                                     // treated as grounded so gravity takes effect immediately.
                                     onGround = false;
                                     groundStabilizeCounter = 0;
+                                    // Keep ball-mode direction consistent with canonical gravity
+                                    try { if (currentGameMode == 2) ballGoingDown = !gravityReversed; } catch { }
                                 }
                                 else
                                 {
@@ -2337,48 +2493,7 @@ namespace FamidashEditor
                     if (curX && !prevKeyXDown)
                     {
                         // record an edge atomically so numeric sim cannot miss it
-                        if (currentGameMode == 2)
-                        {
-                            // Only accept the first edge until the next surface contact. If unlocked,
-                            // set the locked flag and either toggle immediately (if onGround)
-                            // or queue a toggle for landing.
-                            int prevLock_local = Interlocked.CompareExchange(ref ballToggleLocked, 1, 0);
-                            if (prevLock_local == 0)
-                            {
-                                if (onGround)
-                                {
-                                    ballGoingDown = !ballGoingDown;
-                                    int sign_local = ballGoingDown ? 1 : -1;
-                                    playerVelY_fixed = sign_local * BALL_IMMEDIATE_VEL;
-                                    onGround = false;
-                                    groundStabilizeCounter = 0;
-                                    groundStabilizeCounter = 0;
-                                    physicsEnabled = true;
-                                    jumpedOnce = true;
-                                }
-                                else
-                                {
-                                    Interlocked.Exchange(ref ballToggleRequested, 1);
-                                }
-                            }
-                            else
-                            {
-                                LogBallEvent($"Timer_Tick: ignored X-edge because lock != 0 (lock={prevLock_local}) onGround={onGround} ballGoingDown={ballGoingDown}");
-                            }
-                        }
-                        else
-                        {
-                            Interlocked.Increment(ref keyXPressedCount);
-                            // also set jump-buffer so a pre-press will trigger on landing
-                            try { jumpBufferCounter = JUMP_BUFFER_FRAMES; } catch { }
-                            try
-                            {
-                                int onG_local = onGround ? 1 : 0;
-                                Interlocked.Exchange(ref keyXPressStartedOnGroundInt, onG_local);
-                                Interlocked.Exchange(ref keyXHeldStartedOnGroundInt, onG_local);
-                            }
-                            catch { }
-                        }
+                        ProcessModeXEdge();
                     }
                     prevKeyXDown = curX;
                     keyXHeld = curX;
@@ -2681,25 +2796,9 @@ namespace FamidashEditor
                     bool jumpAppliedThisFrame = false;
                     // Atomically grab and clear any pending UI edges
                     int pendingPress = Interlocked.Exchange(ref keyXPressedCount, 0);
-                    if (pendingPress > 0 && currentGameMode != 1)
+                    if (pendingPress > 0)
                     {
-                        // Cube: only allow immediate jump when on ground (preserve jump-buffer semantics)
-                        if (currentGameMode == 0 && !effectiveOnGround_local)
-                        {
-                            // Ignore immediate jump while mid-air for cube; buffer will be
-                            // consumed on landing elsewhere.
-                        }
-                        else
-                        {
-                            // Reset vertical velocity to the jump impulse (do not stack)
-                            try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                            physicsEnabled = true;
-                            onGround = false;
-                            jumpAppliedThisFrame = true;
-                            
-                            // Mark that the player has jumped at least once; switch Up/Down to physics-mode
-                            jumpedOnce = true;
-                        }
+                        try { ProcessModeSimPendingPress(pendingPress, effectiveOnGround_local, ref jumpAppliedThisFrame); } catch { }
                     }
 
                     // Do not age the jump-buffer here (would race with numeric sim).
@@ -2858,6 +2957,13 @@ namespace FamidashEditor
                                     int localRight = Math.Min(TILE - 1, playerRight_px - tileStartX);
                                     for (int lx = localLeft; lx <= localRight; lx++)
                                     {
+                                        // When NoDeath is OFF, allow the player's right side to pass through tiles.
+                                        // Skip checking any columns that are on or to the right of the player's visual center.
+                                        if (!MainWindow.Option_NoDeath)
+                                        {
+                                            int worldPx = tileStartX + lx;
+                                            if (worldPx >= playerCenter_px) continue;
+                                        }
                                         if (BlocksCeilingAtColumn(col, lx))
                                         {
                                             blocked = true;
@@ -2869,50 +2975,10 @@ namespace FamidashEditor
                                     if (blocked) break;
                                 }
 
-                                        if (blocked && blockingTileWorldBottom_px < int.MaxValue)
-                                        {
-                                            // Symmetric pass-through special-case for reversed gravity: when
-                                            // running Cube mode with logical gravity reversed and the NoDeath
-                                            // option is OFF, allow the player to pass through this floor-like
-                                            // surface (which acts like a ceiling) until an explicit center
-                                            // collision check triggers death. Skip ejection/snapping here.
-                                            if (currentGameMode == 0 && gravityReversed && !MainWindow.Option_NoDeath && !deathTriggered)
+                                            if (blocked && blockingTileWorldBottom_px < int.MaxValue)
                                             {
-                                                // Intentionally skip position correction/ejection for this frame.
-                                                // Leave playerY_fixed and playerVelY_fixed untouched so the cube can continue.
+                                                try { Cube_HandleCeilingCollision_NoLocals(); } catch { }
                                             }
-                                            else
-                                            {
-                                                int desiredTop_px = blockingTileWorldBottom_px + 1;
-                                                int desiredPlayerY_fixed = desiredTop_px << 8;
-                                                if (desiredPlayerY_fixed < 0) desiredPlayerY_fixed = 0;
-                                                playerY_fixed = desiredPlayerY_fixed;
-                                                // ceiling/roof ejection should move in the correct direction
-                                                // For Ball mode, if gravity is currently upwards (ballGoingDown==false),
-                                                // hitting a blocking tile above should be treated as a landing (snap)
-                                                // rather than an upward-ceiling collision ejection. In that case skip
-                                                // the ejection so landing detection can handle it.
-                                                bool skipEjection = false;
-                                                try
-                                                {
-                                                    if (currentGameMode == 2)
-                                                    {
-                                                        int gravityDir_forCollision = ballGoingDown ? 1 : -1;
-                                                        if (gravityDir_forCollision < 0) skipEjection = true;
-                                                    }
-                                                }
-                                                catch { }
-
-                                                if (!skipEjection)
-                                                {
-                                                    bool numericInvert_local = gravityReversed;
-                                                    if (!numericInvert_local)
-                                                        playerVelY_fixed = Math.Min(effectiveGravity_fixed, effectiveMaxFall_fixed);
-                                                    else
-                                                        playerVelY_fixed = Math.Max(effectiveGravity_fixed, effectiveMaxFall_fixed);
-                                                }
-                                            }
-                                        }
                             }
                         }
                     }
@@ -3002,10 +3068,21 @@ namespace FamidashEditor
                                     bool any = false;
                                     for (int lx = localLeft; lx <= localRight; lx++)
                                     {
+                                        // Prefer detecting a local floor first (so bottom-half slabs are honored).
                                         if (ProvidesFloorAtColumn(col, lx, out int off))
                                         {
                                             any = true;
                                             if (off < bestTopOffset) bestTopOffset = off;
+                                            continue;
+                                        }
+
+                                        // If no local floor found at this column and deaths are enabled,
+                                        // skip columns on/after the player's visual center to allow
+                                        // right-edge passthrough. This avoids ignoring actual floors.
+                                        if (!MainWindow.Option_NoDeath)
+                                        {
+                                            int worldPx = tileStartX + lx;
+                                            if (worldPx >= playerCenter_px) continue;
                                         }
                                     }
                                     if (any)
@@ -3108,17 +3185,11 @@ namespace FamidashEditor
                                     
                                     groundStabilizeCounter = 2;
 
-                                            // If player is holding/jump-pressed or had a buffered press, jump immediately from landing
-                                            if (currentGameMode == 0 && (buffered_ui > 0 || pendingPressesNow > 0 || keyXHeld || IsXDownAsync()))
+                                            try { Cube_HandleUILanding_NoLocals(); } catch { }
+
+                                            // Ball handling (non-cube modes)
+                                            if (currentGameMode != 0)
                                             {
-                                                try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                                                onGround = false;
-                                                jumpedOnce = true;
-                                                Interlocked.Exchange(ref keyXPressedCount, 0);
-                                            }
-                                            else
-                                            {
-                                                // Ball mode: consume any pending toggle request and perform surface-switch
                                                 int buffered_ball_ui = Interlocked.Exchange(ref ballToggleRequested, 0);
                                                 if (currentGameMode == 2 && buffered_ball_ui > 0)
                                                 {
@@ -3128,7 +3199,6 @@ namespace FamidashEditor
                                                     jumpedOnce = true;
                                                     LogBallEvent($"UI-Landing: consumed queued toggle; ballGoingDown={ballGoingDown}");
                                                 }
-                                                // Unlock toggle acceptance now that we've hit a surface
                                                 try { Interlocked.Exchange(ref ballToggleLocked, 0); } catch { }
                                                 LogBallEvent($"UI-Landing: unlock (ballToggleLocked=0) onGround={onGround}");
                                             }
@@ -3150,26 +3220,19 @@ namespace FamidashEditor
                                     playerVelY_fixed = 0;
                                     onGround = true;
 
-                                    if (currentGameMode == 0 && (buffered_ui > 0 || keyXHeld || IsXDownAsync()))
+                                    try { Cube_HandleUILanding_NoLocals(); } catch { }
+
+                                    if (currentGameMode != 0)
                                     {
-                                        try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                                        onGround = false;
-                                        jumpedOnce = true;
-                                        Interlocked.Exchange(ref keyXPressedCount, 0);
-                                    }
-                                    else
-                                    {
-                                        // Ball mode: consume any pending toggle request and perform surface-switch
                                         int buffered_ball_ui = Interlocked.Exchange(ref ballToggleRequested, 0);
                                         if (currentGameMode == 2 && buffered_ball_ui > 0)
                                         {
                                             ballGoingDown = !ballGoingDown;
-                                                    try { playerVelY_fixed = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
+                                            try { playerVelY_fixed = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
                                             onGround = false;
                                             jumpedOnce = true;
                                             LogBallEvent($"UI-ReversedLanding: consumed queued toggle; ballGoingDown={ballGoingDown}");
                                         }
-                                        // Unlock toggle acceptance now that we've hit a surface
                                         try { Interlocked.Exchange(ref ballToggleLocked, 0); } catch { }
                                         LogBallEvent($"UI-ReversedLanding: unlock (ballToggleLocked=0) onGround={onGround}");
                                     }
@@ -4437,37 +4500,7 @@ namespace FamidashEditor
                                 int playerTop_px_pad = (playerY_fixed >> 8);
                                 int playerBottom_px_pad = playerTop_px_pad + (PAD_HIT_H_NUM - 1);
 
-                                for (int idx = 0; idx < sprites.Length; idx++)
-                                {
-                                    int sid = sprites[idx];
-                                    if (sid < 0) continue;
-                                    // Support multiple pad kinds: yellow (0x0A/0x0C), pink (0x25/0x26), red (0x52/0x53)
-                                    int padRow = -1;
-                                    if (sid == 0x0A || sid == 0x0C) padRow = 1; // yellow pad row
-                                    else if (sid == 0x25 || sid == 0x26) padRow = 3; // pink pad row
-                                    else if (sid == 0x52 || sid == 0x53) padRow = 8; // red pad row
-                                    if (padRow < 0) continue;
-
-                                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_pad, playerRight_px_pad, playerTop_px_pad, playerBottom_px_pad))
-                                    {
-                                        try
-                                        {
-                                            int vel = 0;
-                                            if (PadOrbHeights.Length > padRow && PadOrbHeights[padRow].Length > currentGameMode && currentGameMode >= 0)
-                                                vel = PadOrbHeights[padRow][currentGameMode];
-                                            else
-                                                vel = PadOrbHeights[1][0];
-                                            bool numericInvert = gravityReversed || effectiveInvertedByW;
-                                            if (!numericInvert) vel = -vel; // table authored for reverse gravity
-                                            try { AppendSimDebug($"PadHit idx={idx} sid=0x{sid:X2} row={padRow} gm={currentGameMode} vel=0x{vel:X} numericInvert={numericInvert} playerY_fixed=0x{playerY_fixed:X}"); } catch { }
-                                            playerVelY_fixed = vel;
-                                            physicsEnabled = true;
-                                            onGround = false;
-                                        }
-                                        catch { }
-                                        break; // only apply one pad per frame
-                                    }
-                                }
+                                try { OrbPad_HandleUIPads(); } catch { }
                             }
                             catch { }
                             r.Width = dest.Width;
@@ -5381,100 +5414,7 @@ namespace FamidashEditor
                             // zero and mark `onGround` so gravity is suppressed this frame.
                             // This is checked every numeric frame (deterministic) rather
                             // than relying on a time window to avoid jitter.
-                            try
-                            {
-                                if ((gravityReversed || effectiveInvertedByW) && currentGameMode == 0)
-                                {
-                                    // Per-pixel scan across the player's top edge for any blocking
-                                    // ceiling contact. Check both the tile row containing the
-                                    // head and the row above it. If any blocking pixel is found,
-                                    // snap the player's Y to just below the nearest blocking
-                                    // tile bottom and zero the vertical velocity to eliminate
-                                    // rhythmic jitter.
-                                    try
-                                    {
-                                        int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                                        int playerLeft_px = playerCenter_px - (15 / 2);
-                                        int playerRight_px = playerLeft_px + (15 - 1);
-                                        int headWorldY_px = (playerY_fixed >> 8);
-                                        int headTileY = headWorldY_px / TILE;
-                                        int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-
-                                        int nearestBlockingTileBottom_px = int.MaxValue;
-                                        bool anyBlocking = false;
-
-                                        for (int px = playerLeft_px; px <= playerRight_px; px++)
-                                        {
-                                            int tx = px / TILE;
-                                            if (tx < 0 || tx >= mapWidth) continue;
-
-                                            for (int ty = headTileY - 1; ty <= headTileY; ty++)
-                                            {
-                                                int tileIndexY = ty + groundRowsToReserve_local;
-                                                if (tileIndexY < 0 || tileIndexY >= mapHeight) continue;
-                                                int tid = tiles[tileIndexY * mapWidth + tx];
-                                                int useTidForAnim = MapAnimatedTileIndex(tid);
-                                                int collisionTid = useTidForAnim;
-                                                if (useTidForAnim >= 1000)
-                                                {
-                                                    if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
-                                                        collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
-                                                    else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
-                                                    {
-                                                        int group = (useTidForAnim - 1010) % 3;
-                                                        collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
-                                                    }
-                                                    else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
-                                                        collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
-                                                    else
-                                                        collisionTid = tid;
-                                                }
-
-                                                var col = MetatileCollisionTable.GetCollision((byte)collisionTid);
-                                                int tileStartX = tx * TILE;
-                                                int localX = Math.Max(0, Math.Min(TILE - 1, px - tileStartX));
-                                                if (BlocksCeilingAtColumn(col, localX))
-                                                {
-                                                    int tileWorldTop_px = ty * TILE;
-                                                    int tileWorldBottom_px = (ty + 1) * TILE;
-                                                    // Only treat this tile as blocking if the player's head
-                                                    // actually vertically overlaps the tile row. This prevents
-                                                    // snapping when gravity is toggled (W) but there is no
-                                                    // physical tile above the player.
-                                                    if (headWorldY_px >= tileWorldTop_px && headWorldY_px < tileWorldBottom_px)
-                                                    {
-                                                        anyBlocking = true;
-                                                        if (tileWorldBottom_px < nearestBlockingTileBottom_px) nearestBlockingTileBottom_px = tileWorldBottom_px;
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        if (anyBlocking && nearestBlockingTileBottom_px < int.MaxValue)
-                                        {
-                                            int desiredTop_px = nearestBlockingTileBottom_px + 1;
-                                            int desiredPlayerY_fixed = desiredTop_px << 8;
-                                            if (desiredPlayerY_fixed < 0) desiredPlayerY_fixed = 0;
-                                            playerY_fixed = desiredPlayerY_fixed;
-                                            playerVelY_fixed = 0;
-                                            onGround = true;
-                                            // Hold grounded state for a few frames so gravity doesn't
-                                            // re-apply on the next numeric step and cause a small
-                                            // upward velocity that then gets snapped back to zero.
-                                            invertedCeilingHoldCounter = 4;
-                                        }
-                                        else
-                                        {
-                                            // No blocking tile found this frame: decay the hold counter
-                                            // so we only fully release grounded status after a few
-                                            // consecutive frames without overlap.
-                                            if (invertedCeilingHoldCounter > 0) invertedCeilingHoldCounter--;
-                                        }
-                                    }
-                                    catch { playerVelY_fixed = 0; onGround = true; }
-                                }
-                            }
-                            catch { }
+                            try { Cube_HandleCeilingStabilization(); } catch { }
                             // Read input flags atomically so numeric sim doesn't race with UI poll.
                             bool keyXHeld_local;
                             int keyXHeldStartedOnGround_local_int = 0;
@@ -5501,53 +5441,7 @@ namespace FamidashEditor
                             int pendingPresses_forLater = 0;
                             if (pendingPresses_num > 0)
                             {
-                                if (currentGameMode == 0)
-                                {
-                                    // For cube: only defer the jump when gravity is normal. When
-                                    // gravity is reversed (or numeric inversion applied), apply
-                                    // the jump immediately to avoid penetrating the ceiling.
-                                    if (gravityReversed)
-                                    {
-                                        bool touchingCeiling_local = (gravityReversed || effectiveInvertedByW) && IsTouchingCeiling();
-                                        if (effectiveOnGround_local || touchingCeiling_local)
-                                        {
-                                            try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                                            physicsEnabled = true;
-                                            onGround = false;
-                                            jumpAppliedThisStep_local = true;
-                                            orbBufferActive = false;
-                                            jumpedOnce = true;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // Defer the cube jump only when the press originated on-ground.
-                                        // If the player pressed X while already airborne, treat it as a
-                                        // fresh in-air press (useful for orb buffering) rather than
-                                        // deferring the jump.
-                                        if (pendingPressStartedOnGround != 0)
-                                        {
-                                            // Defer the cube jump until after gravity+integration
-                                            pendingPresses_forLater = pendingPresses_num;
-                                        }
-                                        else
-                                        {
-                                            // Press started in-air: do not defer; allow fresh-press
-                                            // behavior (handled by freshPressAvailable logic).
-                                        }
-                                    }
-                                }
-                                else if (currentGameMode == 3)
-                                {
-                                    // UFO: allow jump anytime (mid-air allowed) — apply immediately
-                                    try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                                    physicsEnabled = true;
-                                    onGround = false;
-                                    jumpAppliedThisStep_local = true;
-                                    orbBufferActive = false;
-                                    jumpedOnce = true;
-                                }
-                                // Other modes (ball/ship) have their own jump handling elsewhere
+                                try { Cube_HandlePendingPresses_NoLocals(pendingPresses_num, pendingPressStartedOnGround, ref pendingPresses_forLater, ref jumpAppliedThisStep_local); } catch { }
                             }
 
                             // Update orb buffer: set/clear according to strict rules
@@ -5571,9 +5465,8 @@ namespace FamidashEditor
                                 }
                                 else
                                 {
-                                    // Do not consider cube's deferred jump as a fresh press for buffering
-                                    // Also ensure the pending press did NOT originate on ground.
-                                    bool freshPressEdge = (pendingPresses_num > 0) && (pendingPressStartedOnGround == 0) && !(currentGameMode == 0 && pendingPresses_forLater > 0);
+                                    // Do not consider deferred pending presses as a fresh press for buffering
+                                    bool freshPressEdge = (pendingPresses_num > 0) && (pendingPressStartedOnGround == 0) && !(pendingPresses_forLater > 0);
 
                                     // Set buffer when a fresh press occurs while airborne
                                     // Do not allow fresh presses to prime if a previous
@@ -5753,826 +5646,32 @@ namespace FamidashEditor
                             }
                             catch { }
 
-                            // Yellow-orb numeric activation: one-shot orbs (sprite 0x0B)
+                            try { OrbPad_HandleNumericActivations(pendingPresses_num, pendingPressStartedOnGround, keyXHeld_local, ref jumpAppliedThisStep_local, pendingPresses_forLater); } catch { }
                             try
                             {
-                                const int ORB_HIT_W = 14; const int ORB_HIT_H = 14;
-                                int playerCenter_px_orb = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                                int playerLeft_px_orb = playerCenter_px_orb - (ORB_HIT_W / 2);
-                                int playerRight_px_orb = playerLeft_px_orb + (ORB_HIT_W - 1);
-                                int playerTop_px_orb = (playerY_fixed >> 8);
-                                int playerBottom_px_orb = playerTop_px_orb + (ORB_HIT_H - 1);
-
-                                // Collect eligible orb candidates (overlapping and not already processed),
-                                // then pick the one closest to the player's center and activate only that orb.
-                                try
-                                {
-                                    var candidates = new System.Collections.Generic.List<(int idx, int sid, int orbRow, bool isBlueOrb, bool isGreenOrb, int tileCenterX_px)>();
-                                    int playerCenter_px_orb_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                                    for (int idx = 0; idx < sprites.Length; idx++)
-                                    {
-                                        int sid = sprites[idx];
-                                        if (sid < 0) continue;
-                                        int orbRow = -1;
-                                        bool isBlueOrb = false;
-                                        bool isGreenOrb = false;
-                                        if (sid == 0x0B) orbRow = 0; // yellow orb (original)
-                                        else if (sid == 0x06) orbRow = 2; // pink orb
-                                        else if (sid == 0x28) orbRow = 4; // red orb
-                                        else if (sid == 0x1F) orbRow = 5; // yellow orb bigger
-                                        else if (sid == 0x44) orbRow = 6; // black orb
-                                        else if (sid == 0x29) orbRow = 7; // yellow orb smaller
-                                        else if (sid == 0x27) { orbRow = 0; isGreenOrb = true; }
-                                        else if (sid == 0x05 || sid == 0x7B) { isBlueOrb = true; }
-                                        if (orbRow < 0 && !isBlueOrb) continue;
-                                        if (sid != 0x7B && processedOrbs.Contains(idx)) continue;
-                                        if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px_orb, playerRight_px_orb, playerTop_px_orb, playerBottom_px_orb)) continue;
-
-                                        int tileX = idx % mapWidth;
-                                        int tileCenterX_px = tileX * TILE + (TILE / 2);
-                                        candidates.Add((idx, sid, orbRow, isBlueOrb, isGreenOrb, tileCenterX_px));
-                                    }
-
-                                    if (candidates.Count > 0 && !orbActivationConsumedThisPress)
-                                    {
-                                        // Choose the candidate closest to the player's center (horizontal distance)
-                                        (int idx, int sid, int orbRow, bool isBlueOrb, bool isGreenOrb, int tileCenterX_px) best = candidates[0];
-                                        int bestDist = Math.Abs(playerCenter_px_orb_local - best.tileCenterX_px);
-                                        for (int i = 1; i < candidates.Count; i++)
-                                        {
-                                            var c = candidates[i];
-                                            int d = Math.Abs(playerCenter_px_orb_local - c.tileCenterX_px);
-                                            if (d < bestDist) { best = c; bestDist = d; }
-                                        }
-
-                                        // Determine activation eligibility (fresh press vs hold) using the chosen candidate
-                                        bool freshPressAvailable = (pendingPresses_num > 0) && (pendingPressStartedOnGround == 0) && !jumpAppliedThisStep_local && !(currentGameMode == 0 && pendingPresses_forLater > 0) && !orbHoldSuppressing;
-                                        bool holdAvailable = orbBufferActive && (pendingPresses_num == 0) && !jumpAppliedThisStep_local && !orbHoldConsumed;
-                                        bool activated = false;
-                                        bool usedHold = false;
-                                        if (currentGameMode == 1 || currentGameMode == 3)
-                                        {
-                                            if (freshPressAvailable) { activated = true; usedHold = false; }
-                                        }
-                                        else
-                                        {
-                                            if (freshPressAvailable) { activated = true; usedHold = false; }
-                                            else if (holdAvailable) { activated = true; usedHold = true; }
-                                        }
-
-                                        if (activated)
-                                        {
-                                            try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
-                                            orbBufferActive = false;
-                                            if (usedHold)
-                                            {
-                                                orbHoldConsumed = true;
-                                                orbHoldConsumedKeyStillDown = (keyXHeld_local || IsXDownAsync());
-                                                orbHoldSuppressing = true;
-                                            }
-
-                                            int idx = best.idx; int sid = best.sid; int orbRow = best.orbRow; bool isBlueOrb = best.isBlueOrb; bool isGreenOrb = best.isGreenOrb;
-                                            if (isBlueOrb)
-                                            {
-                                                try
-                                                {
-                                                    int mag = (currentGameMode == 2) ? 0x01F3 : 0x04FB;
-                                                    bool numericInvert_local = gravityReversed || effectiveInvertedByW;
-                                                    if (numericInvert_local)
-                                                    {
-                                                        playerVelY_fixed = mag;
-                                                        try { gravityReversed = false; effectiveInvertedByW = gravityReversed; } catch { }
-                                                    }
-                                                    else
-                                                    {
-                                                        playerVelY_fixed = -mag;
-                                                        try { gravityReversed = true; effectiveInvertedByW = gravityReversed; } catch { }
-                                                    }
-                                                    try { UpdateEffectiveGravity(); } catch { }
-                                                    try { UpdatePlayerImageForMode(); } catch { }
-                                                }
-                                                catch { }
-                                            }
-                                            else
-                                            {
-                                                if (isGreenOrb)
-                                                {
-                                                    try { gravityReversed = !gravityReversed; effectiveInvertedByW = gravityReversed; } catch { }
-                                                    try { UpdateEffectiveGravity(); } catch { }
-                                                    try { UpdatePlayerImageForMode(); } catch { }
-                                                }
-                                                int vel = 0;
-                                                if (PadOrbHeights.Length > orbRow && PadOrbHeights[orbRow].Length > currentGameMode && currentGameMode >= 0)
-                                                    vel = PadOrbHeights[orbRow][currentGameMode];
-                                                else
-                                                    vel = PadOrbHeights[0][0];
-                                                bool numericInvert = gravityReversed || effectiveInvertedByW;
-                                                if (!numericInvert) vel = -vel;
-                                                playerVelY_fixed = vel;
-                                            }
-                                            physicsEnabled = true;
-                                            onGround = false;
-                                            // Mark the chosen orb processed (respecting 0x7B multi-use)
-                                            if (!isBlueOrb || sid == 0x05) processedOrbs.Add(idx);
-                                            // Also mark any other overlapping candidates processed so they do not
-                                            // activate from the same press (respect 0x7B multi-use behavior).
-                                            try
-                                            {
-                                                foreach (var c in candidates)
-                                                {
-                                                    if (c.idx == idx) continue;
-                                                    if (!c.isBlueOrb || c.sid == 0x05) processedOrbs.Add(c.idx);
-                                                }
-                                            }
-                                            catch { }
-                                            // Mark that this UI press has already caused an orb activation
-                                            orbActivationConsumedThisPress = true;
-                                        }
-                                    }
-                                }
-                                catch { }
+                                Cube_HandleDeferredJump(pendingPresses_forLater, ref jumpAppliedThisStep_local);
                             }
                             catch { }
 
-                            // Clear orb buffer when X released and no pending presses.
-                            // This runs after orb/pad activation checks to avoid clearing
-                            // a UI-primed buffer before numeric activation can consume it.
                             try
                             {
-                                if (!(keyXHeld_local || pendingPresses_num > 0))
-                                {
-                                    orbBufferActive = false;
-                                    orbHoldConsumed = false;
-                                    orbHoldConsumedKeyStillDown = false;
-                                    orbActivationConsumedThisPress = false;
-                                }
+                                Cube_HandleHeldJump(jumpBuffered_local, pendingPresses_num, keyXHeld_local, ref jumpAppliedThisStep_local);
                             }
                             catch { }
 
-                            // If a cube jump was pending, apply it now (after gravity+integration) so
-                            // Frame 1 applies gravity/integration first, then sets jump velocity.
-                            // Pad/orb numeric activation (post-integration): ensure pads apply during sim
+                            // Ceiling collision handled by cube-mode specific handler
                             try
                             {
-                                const int PAD_HIT_W_NUM2 = 14; const int PAD_HIT_H_NUM2 = 14;
-                                int playerCenter_px_pad2 = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                                int playerLeft_px_pad2 = playerCenter_px_pad2 - (PAD_HIT_W_NUM2 / 2);
-                                int playerRight_px_pad2 = playerLeft_px_pad2 + (PAD_HIT_W_NUM2 - 1);
-                                int playerTop_px_pad2 = (playerY_fixed >> 8);
-                                int playerBottom_px_pad2 = playerTop_px_pad2 + (PAD_HIT_H_NUM2 - 1);
-
-                                for (int idx = 0; idx < sprites.Length; idx++)
-                                {
-                                    int sid = sprites[idx];
-                                    if (sid < 0) continue;
-                                    // Blue pad special-case: floor pad (0x0D/0xFD) and ceiling pad (0x0E/0xFE)
-                                    if (sid == 0x0D || sid == 0xFD)
-                                    {
-                                        // Blue floor pad: only activate when gravity is NOT inverted
-                                        // Require player overlap like other pads.
-                                        if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px_pad2, playerRight_px_pad2, playerTop_px_pad2, playerBottom_px_pad2)) continue;
-                                        if (!gravityReversed)
-                                        {
-                                            try { playerVelY_fixed = -0x04FB; } catch { playerVelY_fixed = -0x04FB; }
-                                            physicsEnabled = true;
-                                            onGround = false;
-                                            try { gravityReversed = true; effectiveInvertedByW = gravityReversed; } catch { }
-                                            try { UpdateEffectiveGravity(); } catch { }
-                                            try { UpdatePlayerImageForMode(); } catch { }
-                                        }
-                                        break;
-                                    }
-                                    else if (sid == 0x0E || sid == 0xFE)
-                                    {
-                                        // Blue ceiling pad: only activate when gravity IS inverted
-                                        // Require player overlap like other pads.
-                                        if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px_pad2, playerRight_px_pad2, playerTop_px_pad2, playerBottom_px_pad2)) continue;
-                                        if (gravityReversed)
-                                        {
-                                            try { playerVelY_fixed = 0x04FB; } catch { playerVelY_fixed = 0x04FB; }
-                                            physicsEnabled = true;
-                                            onGround = false;
-                                            try { gravityReversed = false; effectiveInvertedByW = gravityReversed; } catch { }
-                                            try { UpdateEffectiveGravity(); } catch { }
-                                            try { UpdatePlayerImageForMode(); } catch { }
-                                        }
-                                        break;
-                                    }
-                                    int padRow2 = -1;
-                                    if (sid == 0x0A || sid == 0x0C) padRow2 = 1; // yellow pad
-                                    else if (sid == 0x25 || sid == 0x26) padRow2 = 3; // pink pad
-                                    else if (sid == 0x52 || sid == 0x53) padRow2 = 8; // red pad
-                                    if (padRow2 < 0) continue;
-                                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_pad2, playerRight_px_pad2, playerTop_px_pad2, playerBottom_px_pad2))
-                                    {
-                                        try
-                                        {
-                                            int vel = 0;
-                                            if (PadOrbHeights.Length > padRow2 && PadOrbHeights[padRow2].Length > currentGameMode && currentGameMode >= 0)
-                                                vel = PadOrbHeights[padRow2][currentGameMode];
-                                            else
-                                                vel = PadOrbHeights[1][0];
-                                            bool numericInvert = gravityReversed || effectiveInvertedByW;
-                                            if (!numericInvert) vel = -vel;
-                                            try { AppendSimDebug($"PadHit(num) idx={idx} sid=0x{sid:X2} row={padRow2} gm={currentGameMode} vel=0x{vel:X} numericInvert={numericInvert} playerY_fixed=0x{playerY_fixed:X}"); } catch { }
-                                            playerVelY_fixed = vel;
-                                            physicsEnabled = true;
-                                            onGround = false;
-                                        }
-                                        catch { }
-                                        break;
-                                    }
-                                }
-                            }
-                            catch { }
-                            try
-                            {
-                                        if (pendingPresses_forLater > 0 && currentGameMode == 0)
-                                {
-                                    bool touchingCeiling_local = (gravityReversed || effectiveInvertedByW) && IsTouchingCeiling();
-                                    if (onGround || touchingCeiling_local)
-                                    {
-                                        try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                                        physicsEnabled = true;
-                                        onGround = false;
-                                        jumpAppliedThisStep_local = true; // consumed this step
-                                        jumpedOnce = true;
-                                    }
-                                }
+                                Cube_HandleCeilingCollision(jumpBuffered_local, pendingKeyX_local, keyXHeld_local, pendingPresses_num, pendingPressStartedOnGround, pendingPresses_forLater, ref jumpAppliedThisStep_local);
                             }
                             catch { }
 
-                            // Ceiling collision: if moving up (negative velocity), prevent passing through ceilings.
-                            try
-                            {
-                                if (playerVelY_fixed < 0)
-                                {
-                                    const int HITBOX_W_LOCAL = 15;
-                                    int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                                    int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
-                                    int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
-                                    int headWorldY_px_local = (playerY_fixed >> 8); // player's top
-
-                                    int tileAboveY_world = headWorldY_px_local / TILE;
-                                    int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                                    int tileIndexY = tileAboveY_world + groundRowsToReserve_local;
-
-                                    if (tileIndexY >= 0 && tileIndexY < mapHeight)
-                                    {
-                                        // Top-death check (cube mode, normal gravity only, center 2x2 pixels)
-                                        try
-                                        {
-                                            if (!MainWindow.Option_NoDeath && !deathTriggered && currentGameMode == 0 && !gravityReversed)
-                                            {
-                                                int playerCenterX = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                                                int playerCenterY = (playerY_fixed >> 8) + (playerVisualHeight / 2);
-                                                // Move collision sampling slightly upward so top-death is not exactly at visual center
-                                                const int SAMPLE_Y_OFFSET = -2; // pixels (negative = up)
-                                                int sampledCenterY = playerCenterY + SAMPLE_Y_OFFSET;
-                                                // compute center tile row (respect ground rows reserved)
-                                                int centerTileY = sampledCenterY / TILE;
-                                                int groundRowsToReserve_local2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                                                int tileIndexY_center = centerTileY + groundRowsToReserve_local2;
-                                                if (tileIndexY_center >= 0 && tileIndexY_center < mapHeight)
-                                                {
-                                                    bool blocked_center = false;
-                                                    int[] dxs = new int[] { -1, 0 };
-                                                    int[] dys = new int[] { -1, 0 };
-                                                    foreach (var dx in dxs)
-                                                    {
-                                                        foreach (var dy in dys)
-                                                        {
-                                                            int px = playerCenterX + dx;
-                                                            int py = sampledCenterY + dy; // sample around center Y (moved up slightly)
-                                                            int tx_local = px / TILE;
-                                                            if (tx_local < 0 || tx_local >= mapWidth) continue;
-                                                            int tid_local = tiles[tileIndexY_center * mapWidth + tx_local];
-                                                            int useTidForAnim_local = MapAnimatedTileIndex(tid_local);
-                                                            int collisionTid_local = useTidForAnim_local;
-                                                            if (useTidForAnim_local >= 1000)
-                                                            {
-                                                                if (useTidForAnim_local >= 1000 && useTidForAnim_local <= 1007)
-                                                                {
-                                                                    collisionTid_local = 0x08 + ((useTidForAnim_local - 1000) % 4);
-                                                                }
-                                                                else if (useTidForAnim_local >= 1010 && useTidForAnim_local <= 1015)
-                                                                {
-                                                                    int group_local = (useTidForAnim_local - 1010) % 3;
-                                                                    collisionTid_local = (group_local == 0) ? 0x04 : (group_local == 1) ? 0x7D : 0x7F;
-                                                                }
-                                                                else if (useTidForAnim_local >= 1020 && useTidForAnim_local <= 1037)
-                                                                {
-                                                                    collisionTid_local = 0x74 + ((useTidForAnim_local - 1020) % 9);
-                                                                }
-                                                                else
-                                                                {
-                                                                    collisionTid_local = tid_local;
-                                                                }
-                                                            }
-                                                            var col_center = MetatileCollisionTable.GetCollision((byte)collisionTid_local);
-                                                            int tileStartX_local = tx_local * TILE;
-                                                            int localX_local = Math.Max(0, Math.Min(TILE - 1, px - tileStartX_local));
-                                                            if (BlocksCeilingAtColumn(col_center, localX_local)) { blocked_center = true; break; }
-                                                        }
-                                                        if (blocked_center) break;
-                                                    }
-
-                                                    if (blocked_center)
-                                                    {
-                                                        // Trigger death: log, mark, pause sim (without overlay), and ask UI thread
-                                                        try
-                                                        {
-                                                            AppendSimDebug($"TopDeath: center=({playerCenterX},{playerCenterY}) gravityReversed={gravityReversed} Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
-                                                            deathTriggered = true;
-                                                            paused = true;
-                                                            // Invoke UI actions on dispatcher to ensure proper UI/audio handling
-                                                            try
-                                                            {
-                                                                Dispatcher.BeginInvoke(new Action(() =>
-                                                                {
-                                                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                                                    if (this.Owner is MainWindow mw)
-                                                                    {
-                                                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                                                        try { mw.AddDeathMarker(playerCenterX, playerCenterY); } catch { }
-                                                                    }
-                                                                }));
-                                                            }
-                                                            catch { }
-                                                        }
-                                                        catch { }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        catch { }
-
-                                        int leftTileX_local = playerLeft_px_local / TILE;
-                                        int rightTileX_local = playerRight_px_local / TILE;
-                                        bool blocked = false;
-                                        int blockingTileWorldBottom_px = int.MaxValue;
-                                        for (int tx_local = leftTileX_local; tx_local <= rightTileX_local; tx_local++)
-                                        {
-                                            if (tx_local < 0 || tx_local >= mapWidth) continue;
-                                            int tid_local = tiles[tileIndexY * mapWidth + tx_local];
-                                            int useTidForAnim_local = MapAnimatedTileIndex(tid_local);
-                                            int collisionTid_local = useTidForAnim_local;
-                                            if (useTidForAnim_local >= 1000)
-                                            {
-                                                if (useTidForAnim_local >= 1000 && useTidForAnim_local <= 1007)
-                                                {
-                                                    collisionTid_local = 0x08 + ((useTidForAnim_local - 1000) % 4);
-                                                }
-                                                else if (useTidForAnim_local >= 1010 && useTidForAnim_local <= 1015)
-                                                {
-                                                    int group_local = (useTidForAnim_local - 1010) % 3;
-                                                    collisionTid_local = (group_local == 0) ? 0x04 : (group_local == 1) ? 0x7D : 0x7F;
-                                                }
-                                                else if (useTidForAnim_local >= 1020 && useTidForAnim_local <= 1037)
-                                                {
-                                                    collisionTid_local = 0x74 + ((useTidForAnim_local - 1020) % 9);
-                                                }
-                                                else
-                                                {
-                                                    collisionTid_local = tid_local;
-                                                }
-                                            }
-                                            var col_local = MetatileCollisionTable.GetCollision((byte)collisionTid_local);
-
-                                            int tileStartX_local = tx_local * TILE;
-                                            int localLeft_local = Math.Max(0, playerLeft_px_local - tileStartX_local);
-                                            int localRight_local = Math.Min(TILE - 1, playerRight_px_local - tileStartX_local);
-
-                                            for (int lx_local = localLeft_local; lx_local <= localRight_local; lx_local++)
-                                            {
-                                                if (BlocksCeilingAtColumn(col_local, lx_local))
-                                                {
-                                                    blocked = true;
-                                                    // world bottom of this tile row
-                                                    int tileWorldBottom_px = (tileAboveY_world + 1) * TILE;
-                                                    if (tileWorldBottom_px < blockingTileWorldBottom_px) blockingTileWorldBottom_px = tileWorldBottom_px;
-                                                    break;
-                                                }
-                                            }
-                                            if (blocked) break;
-                                        }
-
-                                        if (blocked && blockingTileWorldBottom_px < int.MaxValue)
-                                        {
-                                            // Special case: when running Cube mode in normal gravity and top-death is enabled
-                                            // (i.e. `Option_NoDeath` is false), do NOT perform the usual ceiling ejection.
-                                            // This allows the cube to pass through the ceiling space until the explicit
-                                            // top-death detection or until it later collides/lands.
-                                            if (currentGameMode == 0 && !gravityReversed && !MainWindow.Option_NoDeath)
-                                            {
-                                                // Intentionally skip position correction/ejection for this frame.
-                                                // Leave playerY_fixed and playerVelY_fixed untouched so the cube can continue.
-                                                AppendSimDebug($"CeilCollision: SKIP_PASS_THROUGH normal-gravity currentGameMode={currentGameMode} gravityReversed={gravityReversed} Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
-                                            }
-                                            // Symmetric special-case: when logical gravity is reversed and the cube mode
-                                            // should use the reversed-bottom-death behavior (NoDeath==false), allow the
-                                            // player to pass through the floor (which acts like a ceiling) until the
-                                            // explicit reversed-center death detection fires. Skip the usual ejection/snap.
-                                            // NOTE: Do not allow reversed-gravity to use the pass-through behavior.
-                                            // Pass-through (skip) should only occur for normal gravity when deaths
-                                            // are enabled; reversed gravity will fall through the normal ejection
-                                            // path below so the ceiling behaves as a solid surface.
-                                            else
-                                            {
-                                                AppendSimDebug($"CeilCollision: EJECTING currentGameMode={currentGameMode} gravityReversed={gravityReversed} Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
-                                                // Place player just below the blocking tile and give a small downward ejection so they don't cling
-                                                int desiredTop_px = blockingTileWorldBottom_px + 1;
-                                                int desiredPlayerY_fixed = desiredTop_px << 8;
-                                                if (desiredPlayerY_fixed < 0) desiredPlayerY_fixed = 0;
-                                                playerY_fixed = desiredPlayerY_fixed;
-                                                // For Ball mode when gravity is upward, treat this ceiling collision as a landing
-                                                // (avoid applying an ejection velocity which would prevent landing from being detected).
-                                                bool skipEjection_local = false;
-                                                try
-                                                {
-                                                    if (currentGameMode == 2)
-                                                    {
-                                                        int gravityDir_local = ballGoingDown ? 1 : -1;
-                                                        if (gravityDir_local < 0) skipEjection_local = true;
-                                                    }
-                                                }
-                                                catch { }
-
-                                                if (skipEjection_local)
-                                                {
-                                                    // Ball-mode special-case: when gravity direction makes the ceiling
-                                                    // act like a landing surface for ball, preserve landing behavior.
-                                                    onGround = true;
-                                                    groundStabilizeCounter = 2;
-                                                    // Ensure vertical velocity is zero while grounded so the player
-                                                    // does not retain residual motion that would cause jitter.
-                                                    try { playerVelY_fixed = 0; } catch { }
-
-                                                    
-
-                                                    // If Cube and the player has a buffered/held jump, perform the jump immediately
-                                                    // so the cube can jump off the ceiling the same as it does off the floor.
-                                                    try
-                                                    {
-                                                        if (currentGameMode == 0)
-                                                        {
-                                                            if (jumpBuffered_local > 0 || pendingKeyX_local > 0 || (gravityReversed && (keyXHeld_local || IsXDownAsync())))
-                                                            {
-                                                                try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                                                                physicsEnabled = true;
-                                                                onGround = false;
-                                                                jumpAppliedThisStep_local = true;
-                                                                orbBufferActive = false;
-                                                                jumpedOnce = true;
-                                                                Interlocked.Exchange(ref keyXPressedCount, 0);
-                                                                
-                                                            }
-                                                        }
-                                                    }
-                                                    catch { }
-
-                                                    // Also preserve Ball-mode toggle consumption behavior when applicable.
-                                                    try
-                                                    {
-                                                        int buffered_toggle_local2 = Interlocked.Exchange(ref ballToggleRequested, 0);
-                                                        if (currentGameMode == 2 && buffered_toggle_local2 > 0)
-                                                        {
-                                                            ballGoingDown = !ballGoingDown;
-                                                            // Ensure global gravity follows ball direction
-                                                            try { gravityReversed = !ballGoingDown; effectiveInvertedByW = gravityReversed; } catch { }
-                                                            try { playerVelY_fixed = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
-                                                            onGround = false;
-                                                            jumpedOnce = true;
-                                                            LogBallEvent($"NUM-CeilCollision: consumed queued toggle; ballGoingDown={ballGoingDown} gravityReversed={gravityReversed}");
-                                                            
-                                                        }
-                                                    }
-                                                    catch { }
-
-                                                    // Unlock toggle acceptance now that we've hit a surface
-                                                    try { Interlocked.Exchange(ref ballToggleLocked, 0); } catch { }
-                                                    LogBallEvent($"NUM-CeilCollision: unlock (ballToggleLocked=0) onGround={onGround}");
-                                                }
-                                                else
-                                                {
-                                                    // For cube mode when colliding with the ceiling in reversed-gravity
-                                                    // treat the surface like a floor: snap velocity to zero and
-                                                    // enter a short ground-stabilize period. This mirrors the
-                                                    // floor landing behavior where `playerVelY_fixed` is set to 0
-                                                    // preventing the ceiling from using the immediate gravity
-                                                    // impulse which caused the observed 0xD6 flicker.
-                                                    if (currentGameMode == 0)
-                                                    {
-                                                        onGround = true;
-                                                        groundStabilizeCounter = 2;
-                                                        try { playerVelY_fixed = 0; } catch { }
-
-                                                        // If the cube has a buffered/held jump, apply it immediately
-                                                        // so the cube can jump off the ceiling like it does off floors.
-                                                        try
-                                                        {
-                                                            if (jumpBuffered_local > 0 || pendingKeyX_local > 0 || (gravityReversed && (keyXHeld_local || IsXDownAsync())))
-                                                            {
-                                                                try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                                                                physicsEnabled = true;
-                                                                onGround = false;
-                                                                jumpAppliedThisStep_local = true;
-                                                                orbBufferActive = false;
-                                                                jumpedOnce = true;
-                                                                Interlocked.Exchange(ref keyXPressedCount, 0);
-                                                            }
-                                                        }
-                                                        catch { }
-                                                    }
-                                                    else
-                                                    {
-                                                        bool numericInvert_local = gravityReversed;
-                                                        if (!numericInvert_local)
-                                                            playerVelY_fixed = Math.Min(effectiveGravity_fixed, effectiveMaxFall_fixed);
-                                                        else
-                                                            playerVelY_fixed = Math.Max(effectiveGravity_fixed, effectiveMaxFall_fixed);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            catch { }
-
-                        // Landing detection with epsilon: prefer tile-based floor collision (per-column 8px logic), fallback to map bottom
+                        // Landing detection replaced by cube-mode handler
                         try
                         {
-                            const int HITBOX_W_LOCAL = 15;
-                            const int HITBOX_H_LOCAL = 15;
-
-                            int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                            int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
-                            int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
-                            int footWorldY_px_local = (playerY_fixed >> 8) + HITBOX_H_LOCAL;
-
-                            int tileBelowY_local = footWorldY_px_local / TILE;
-                            // Account for reserved ground rows (same logic as renderer).
-                            try
-                            {
-                                int groundRowsToReserve_local = 0;
-                                if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve_local = Math.Min(3, groundTileRows);
-                                tileBelowY_local = tileBelowY_local + groundRowsToReserve_local;
-                            }
-                            catch { }
-                            int floorDetected_local = 0;
-                            int floorTopWorldY_px_local = (mapHeight * TILE);
-
-                            // Delegate to centralized helper for local floor checks.
-                            bool ProvidesFloorAtColumnLocal(MetatileCollision col_local, int localX, out int topOffsetPx_local)
-                            {
-                                return ProvidesFloorAtColumnStatic(col_local, localX, out topOffsetPx_local);
-                            }
-
-                            if (tileBelowY_local >= 0 && tileBelowY_local < mapHeight)
-                            {
-                                int leftTileX_local = playerLeft_px_local / TILE;
-                                int rightTileX_local = playerRight_px_local / TILE;
-
-                                for (int tx_local = leftTileX_local; tx_local <= rightTileX_local; tx_local++)
-                                {
-                                    if (tx_local < 0 || tx_local >= mapWidth) continue;
-                                    int tid_local = tiles[tileBelowY_local * mapWidth + tx_local];
-
-                                    int useTidForAnim_local = MapAnimatedTileIndex(tid_local);
-                                    int collisionTid_local = useTidForAnim_local;
-                                    if (useTidForAnim_local >= 1000)
-                                    {
-                                        if (useTidForAnim_local >= 1000 && useTidForAnim_local <= 1007)
-                                        {
-                                            collisionTid_local = 0x08 + ((useTidForAnim_local - 1000) % 4);
-                                        }
-                                        else if (useTidForAnim_local >= 1010 && useTidForAnim_local <= 1015)
-                                        {
-                                            int group_local = (useTidForAnim_local - 1010) % 3;
-                                            collisionTid_local = (group_local == 0) ? 0x04 : (group_local == 1) ? 0x7D : 0x7F;
-                                        }
-                                        else if (useTidForAnim_local >= 1020 && useTidForAnim_local <= 1037)
-                                        {
-                                            collisionTid_local = 0x74 + ((useTidForAnim_local - 1020) % 9);
-                                        }
-                                        else
-                                        {
-                                            collisionTid_local = tid_local;
-                                        }
-                                    }
-                                    var col_local = MetatileCollisionTable.GetCollision((byte)collisionTid_local);
-
-                                    int tileStartX_local = tx_local * TILE;
-                                    int localLeft_local = Math.Max(0, playerLeft_px_local - tileStartX_local);
-                                    int localRight_local = Math.Min(TILE - 1, playerRight_px_local - tileStartX_local);
-
-                                    int bestTopOffset_local = int.MaxValue;
-                                    bool any_local = false;
-                                    for (int lx_local = localLeft_local; lx_local <= localRight_local; lx_local++)
-                                    {
-                                        if (ProvidesFloorAtColumnLocal(col_local, lx_local, out int off_local))
-                                        {
-                                            any_local = true;
-                                            if (off_local < bestTopOffset_local) bestTopOffset_local = off_local;
-                                        }
-                                    }
-                                    if (any_local)
-                                    {
-                                        int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                                        int candidateTop_local = (tileBelowY_local - groundRowsToReserve_local) * TILE + bestTopOffset_local;
-                                        if (candidateTop_local < floorTopWorldY_px_local) floorTopWorldY_px_local = candidateTop_local;
-                                        floorDetected_local = 1;
-                                    }
-                                }
-                            }
-
-                            // If no tile-based floor was detected, but a ground layer exists, treat
-                            // the top of the reserved ground rows as a solid floor so landing on
-                            // the visible ground counts as a collision.
-                            if (floorDetected_local == 0)
-                            {
-                                int groundRowsToReserve_local2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                                if (groundRowsToReserve_local2 > 0)
-                                {
-                                    int topOfGround_px_local = (mapHeight - groundRowsToReserve_local2) * TILE;
-                                    if (topOfGround_px_local < floorTopWorldY_px_local) floorTopWorldY_px_local = topOfGround_px_local;
-                                    floorDetected_local = 1;
-                                }
-                            }
-
-                            int floorTop_fixed_local = (floorDetected_local == 1) ? ((floorTopWorldY_px_local - HITBOX_H_LOCAL) << 8) : maxPlayerY_fixed_local;
-
-                            if (!gravityReversed)
-                            {
-                                if (playerY_fixed >= floorTop_fixed_local - LAND_EPS_FIXED && playerVelY_fixed >= 0)
-                                {
-                                    // Snap to just above floor and zero vertical velocity; provide a 1px
-                                    // upward nudge so small penetrations are resolved consistently.
-                                    int nudged = floorTop_fixed_local - (1 << 8);
-                                    if (nudged < 0) nudged = 0;
-                                    playerY_fixed = nudged;
-                                    playerVelY_fixed = 0;
-                                    onGround = true;
-
-                                    // If a buffered/edge press exists, jump immediately from landing.
-                                    // Also allow held or raw edge presses to trigger a jump on landing
-                                    if (currentGameMode == 0 && (jumpBuffered_local > 0 || pendingKeyX_local > 0 || keyXHeld_local || IsXDownAsync()))
-                                    {
-                                        try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                                        onGround = false;
-                                        jumpedOnce = true;
-                                        Interlocked.Exchange(ref keyXPressedCount, 0);
-                                    }
-                                    else
-                                    {
-                                        // Ball mode: consume any pending toggle request queued by UI and perform switch
-                                        int buffered_toggle_local = Interlocked.Exchange(ref ballToggleRequested, 0);
-                                        if (currentGameMode == 2 && buffered_toggle_local > 0)
-                                        {
-                                            ballGoingDown = !ballGoingDown;
-                                            try { gravityReversed = !ballGoingDown; effectiveInvertedByW = gravityReversed; } catch { }
-                                            try { playerVelY_fixed = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
-                                            onGround = false;
-                                            jumpedOnce = true;
-                                            LogBallEvent($"NUM-Landing: consumed queued toggle; ballGoingDown={ballGoingDown} gravityReversed={gravityReversed}");
-                                        }
-                                        // Unlock toggle acceptance now that we've hit a surface
-                                        try { Interlocked.Exchange(ref ballToggleLocked, 0); } catch { }
-                                        LogBallEvent($"NUM-Landing: unlock (ballToggleLocked=0) onGround={onGround}");
-                                    }
-                                }
-                                else
-                                {
-                                    onGround = false;
-                                }
-                            }
-                            else
-                            {
-                                // Reversed gravity: landing occurs when moving upward and reaching the floor from below
-                                // If running Cube mode and the reversed-bottom-death behavior is enabled
-                                // (NoDeath == false), allow the cube to pass through the floor until an
-                                // explicit center collision triggers death. In that case, skip the landing
-                                // snap/ejection here so the cube continues moving into the tiles until
-                                // the separate reversed-center check handles death.
-                                if (currentGameMode == 0 && gravityReversed && !MainWindow.Option_NoDeath && !deathTriggered)
-                                {
-                                    // Sample slightly below the player's visual center to detect
-                                    // reversed-bottom death (when the player's middle pixel enters
-                                    // a floor tile while passing through). Use a small 2x2 sample
-                                    // area like the top-death logic.
-                                    try
-                                    {
-                                        // reuse outer-scope `playerCenter_px_local` declared above
-                                        int playerCenterY = (playerY_fixed >> 8) + (playerVisualHeight / 2);
-                                        const int SAMPLE_Y_OFFSET_REV = 2; // sample slightly downwards
-                                        int sampledCenterY_rev = playerCenterY + SAMPLE_Y_OFFSET_REV;
-                                        int centerTileY_rev = sampledCenterY_rev / TILE;
-                                        int groundRowsToReserve_rev = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                                        int tileIndexY_center_rev = centerTileY_rev + groundRowsToReserve_rev;
-                                        if (tileIndexY_center_rev >= 0 && tileIndexY_center_rev < mapHeight)
-                                        {
-                                            bool floor_center = false;
-                                            int[] dxs_rev = new int[] { -1, 0 };
-                                            int[] dys_rev = new int[] { -1, 0 };
-                                            foreach (var dx in dxs_rev)
-                                            {
-                                                foreach (var dy in dys_rev)
-                                                {
-                                                    int px = playerCenter_px_local + dx;
-                                                    int py = sampledCenterY_rev + dy;
-                                                    int tx_local = px / TILE;
-                                                    if (tx_local < 0 || tx_local >= mapWidth) continue;
-                                                    int tid_local = tiles[tileIndexY_center_rev * mapWidth + tx_local];
-                                                    int useTidForAnim_local = MapAnimatedTileIndex(tid_local);
-                                                    int collisionTid_local = useTidForAnim_local;
-                                                    if (useTidForAnim_local >= 1000)
-                                                    {
-                                                        if (useTidForAnim_local >= 1000 && useTidForAnim_local <= 1007)
-                                                        {
-                                                            collisionTid_local = 0x08 + ((useTidForAnim_local - 1000) % 4);
-                                                        }
-                                                        else if (useTidForAnim_local >= 1010 && useTidForAnim_local <= 1015)
-                                                        {
-                                                            int group_local = (useTidForAnim_local - 1010) % 3;
-                                                            collisionTid_local = (group_local == 0) ? 0x04 : (group_local == 1) ? 0x7D : 0x7F;
-                                                        }
-                                                        else if (useTidForAnim_local >= 1020 && useTidForAnim_local <= 1037)
-                                                        {
-                                                            collisionTid_local = 0x74 + ((useTidForAnim_local - 1020) % 9);
-                                                        }
-                                                        else
-                                                        {
-                                                            collisionTid_local = tid_local;
-                                                        }
-                                                    }
-                                                    var col_center = MetatileCollisionTable.GetCollision((byte)collisionTid_local);
-                                                    int tileStartX_local = tx_local * TILE;
-                                                    int localX_local = Math.Max(0, Math.Min(TILE - 1, px - tileStartX_local));
-                                                    if (ProvidesFloorAtColumnStatic(col_center, localX_local, out int _)) { floor_center = true; break; }
-                                                }
-                                                if (floor_center) break;
-                                            }
-
-                                            if (floor_center)
-                                            {
-                                                try
-                                                {
-                                                    AppendSimDebug($"BottomDeath: center=({playerCenter_px_local},{playerCenterY}) gravityReversed={gravityReversed} Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
-                                                    deathTriggered = true;
-                                                    paused = true;
-                                                    try
-                                                    {
-                                                        Dispatcher.BeginInvoke(new Action(() =>
-                                                        {
-                                                            try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                                            if (this.Owner is MainWindow mw)
-                                                            {
-                                                                try { mw.PauseSimulatorPlayback(); } catch { }
-                                                                try { mw.AddDeathMarker(playerCenter_px_local, playerCenterY); } catch { }
-                                                            }
-                                                        }));
-                                                    }
-                                                    catch { }
-                                                }
-                                                catch { }
-                                            }
-                                        }
-                                    }
-                                    catch { }
-
-                                    // NOTE: reversed gravity should not use the pass-through landing behavior.
-                                    // Fall through to the normal landing/ejection code below so the ceiling
-                                    // behaves as a solid surface when gravity is inverted.
-                                    AppendSimDebug($"UI-Landing: REVERSED_GRAVITY_NO_SKIP currentGameMode={currentGameMode} gravityReversed={gravityReversed} Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
-                                }
-                                else
-                                {
-                                    if (playerY_fixed <= floorTop_fixed_local + LAND_EPS_FIXED && playerVelY_fixed <= 0)
-                                    {
-                                        int nudged = floorTop_fixed_local + (1 << 8);
-                                        playerY_fixed = nudged;
-                                        playerVelY_fixed = 0;
-                                        onGround = true;
-                                        AppendSimDebug($"NUM-REVERSED-LAND: mode={currentGameMode} gravityReversed={gravityReversed} playerY={playerY_fixed} vel={playerVelY_fixed}");
-                                        groundStabilizeCounter = 2;
-
-                                        if (currentGameMode == 0 && jumpBuffered_local > 0)
-                                        {
-                                            try { playerVelY_fixed = (int)Math.Round(effectiveJumpVel_fixed * simTimeScale); } catch { playerVelY_fixed = effectiveJumpVel_fixed; }
-                                            onGround = false;
-                                            jumpedOnce = true;
-                                            Interlocked.Exchange(ref keyXPressedCount, 0);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        onGround = false;
-                                    }
-                                }
-                            }
+                            Cube_HandleLandingAndReversed(jumpBuffered_local, pendingKeyX_local, keyXHeld_local, pendingPresses_num, pendingPressStartedOnGround, pendingPresses_forLater, ref jumpAppliedThisStep_local);
                         }
-                        catch { /* keep previous behavior on error */ }
+                        catch { }
                     }
                     catch { }
                 }
@@ -6584,6 +5683,88 @@ namespace FamidashEditor
                 // Final safety clamp: ensure player remains above ground after camera moves
                 if (playerY_fixed > maxPlayerY_fixed_local) { playerY_fixed = maxPlayerY_fixed_local; playerVelY_fixed = 0; }
 
+                // Right-edge pass-through / center-right death check:
+                // When deaths are enabled (`Option_NoDeath == false`), allow the player's
+                // right side to pass through tiles (no horizontal snapping). However,
+                // if the center pixel on the right edge overlaps a blocking tile, trigger
+                // a death (same pause/marker flow used by top/bottom death checks).
+                try
+                {
+                    if (!MainWindow.Option_NoDeath && !deathTriggered)
+                    {
+                        int playerRightEdge_px = (playerX_fixed >> 8) + playerVisualWidth - 1; // rightmost pixel of visual
+                        int playerCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+
+                        // Sample the center-right pixel (no offset). Account for reserved ground rows
+                        int sampledX = playerRightEdge_px;
+                        int sampledY = playerCenterY_px;
+                        int sampleTileX = sampledX / TILE;
+                        int sampleTileY = sampledY / TILE;
+                        int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                        int tileIndexY_center = sampleTileY + groundRowsToReserve_local;
+
+                        if (tileIndexY_center >= 0 && tileIndexY_center < mapHeight && sampleTileX >= 0 && sampleTileX < mapWidth)
+                        {
+                            int tid = tiles[tileIndexY_center * mapWidth + sampleTileX];
+                            int useTidForAnim = MapAnimatedTileIndex(tid);
+                            int collisionTid = useTidForAnim;
+                            if (useTidForAnim >= 1000)
+                            {
+                                if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
+                                {
+                                    collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
+                                }
+                                else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
+                                {
+                                    int group = (useTidForAnim - 1010) % 3;
+                                    collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
+                                }
+                                else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
+                                {
+                                    collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
+                                }
+                                else
+                                {
+                                    collisionTid = tid;
+                                }
+                            }
+                            var col_center = MetatileCollisionTable.GetCollision((byte)collisionTid);
+                            int tileStartX = sampleTileX * TILE;
+                            int localX = Math.Max(0, Math.Min(TILE - 1, sampledX - tileStartX));
+                            int tileStartY = sampleTileY * TILE;
+                            int localY = Math.Max(0, Math.Min(TILE - 1, sampledY - tileStartY));
+
+                            // Use per-pixel occupancy to determine if the sampled pixel lies
+                            // within the tile's blocking/death shape (handles half-slabs).
+                            bool blocked_center = TileOccupiesPixel(col_center, localX, localY);
+
+                            if (blocked_center)
+                            {
+                                try
+                                {
+                                    AppendSimDebug($"RightEdgeDeath: sample=({sampledX},{sampledY}) Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
+                                    deathTriggered = true;
+                                    paused = true;
+                                    try
+                                    {
+                                        Dispatcher.BeginInvoke(new Action(() =>
+                                        {
+                                            try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                            if (this.Owner is MainWindow mw)
+                                            {
+                                                try { mw.PauseSimulatorPlayback(); } catch { }
+                                                try { mw.AddDeathMarker(sampledX, sampledY); } catch { }
+                                            }
+                                        }));
+                                    }
+                                    catch { }
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                }
+                catch { }
                 // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
                 try
                 {
