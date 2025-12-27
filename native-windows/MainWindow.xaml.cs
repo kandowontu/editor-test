@@ -42,6 +42,166 @@ namespace FamidashEditor
             catch { }
         }
 
+        // Open the FillTool's context menu when its '+' button is clicked.
+        private void FillToolMore_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is Button btn && btn.ContextMenu != null)
+                {
+                    btn.ContextMenu.PlacementTarget = btn;
+                    btn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                    btn.ContextMenu.IsOpen = true;
+                }
+            }
+            catch { }
+        }
+
+        // Open the SelectTool's context menu when its '+' button is clicked.
+        private void SelectToolMore_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is Button btn && btn.ContextMenu != null)
+                {
+                    btn.ContextMenu.PlacementTarget = btn;
+                    btn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                    btn.ContextMenu.IsOpen = true;
+                }
+            }
+            catch { }
+        }
+
+        private async void RenderIndicesToOverlayAsync(int[] indices, double scale, DpiScale dpi)
+        {
+            if (SelectSameOverlay == null) return;
+            // Capture values for background work
+            int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+            int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+            int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+            int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+            int gShiftYpx = gridRenderShiftYPx;
+
+            // If map is small enough and many indices match, build a 1px-per-tile mask bitmap then scale it (much faster)
+            long totalPixels = (long)mapWidth * (long)mapHeight;
+            if (indices.Length >= MaskRenderIndexThreshold && totalPixels <= MaskRenderMaxPixels)
+            {
+                try { await RenderMaskToCanvasAsync(SelectSameOverlay, indices, scale, dpi); return; } catch { }
+            }
+
+            // Compute rectangle list on background thread (fallback)
+            var rects = await System.Threading.Tasks.Task.Run(() =>
+            {
+                var list = new System.Collections.Generic.List<System.Windows.Rect>(indices.Length);
+                for (int i = 0; i < indices.Length; i++)
+                {
+                    int idx = indices[i];
+                    int tx = idx % mapWidth; int ty = idx / mapWidth;
+                    double left = (padPxX + tx * tilePixelW) / dpi.DpiScaleX;
+                    double top = (padPxY + ty * tilePixelH) / dpi.DpiScaleY + (double)gShiftYpx / dpi.DpiScaleY;
+                    double rw = (double)tilePixelW / dpi.DpiScaleX;
+                    double rh = (double)tilePixelH / dpi.DpiScaleY;
+                    list.Add(new System.Windows.Rect(left, top, rw, rh));
+                }
+                return list.ToArray();
+            });
+
+            // Render on UI thread
+            try
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        SelectSameOverlay.Children.Clear();
+                        var dv = new DrawingVisual();
+                        using (var dc = dv.RenderOpen())
+                        {
+                            var fill = SelectSameFillBrush;
+                            var stroke = SelectSameStrokeBrush;
+                            var pen = new Pen(stroke, 1.0 / dpi.DpiScaleX);
+                            foreach (var r in rects) dc.DrawRectangle(fill, pen, r);
+                        }
+                        int canvasWpx = Math.Max(1, (int)Math.Round((mapWidth * TileSize * scale + mapViewportPadding * 2) * dpi.DpiScaleX));
+                        int canvasHpx = Math.Max(1, (int)Math.Round((mapHeight * TileSize * scale + mapViewportPadding * 2) * dpi.DpiScaleY));
+                        var rtb = new RenderTargetBitmap(canvasWpx, canvasHpx, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                        rtb.Render(dv);
+                        var img = new System.Windows.Controls.Image { Source = rtb, IsHitTestVisible = false };
+                        SelectSameOverlay.Children.Add(img);
+                        Canvas.SetLeft(img, 0); Canvas.SetTop(img, 0);
+                    }
+                    catch { }
+                }, System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        // Build a compact 1px-per-tile mask bitmap (Pbgra32) and scale it in the UI for very fast rendering
+        // Generalized mask renderer: write a 1px-per-tile mask into the target canvas
+        private async System.Threading.Tasks.Task RenderMaskToCanvasAsync(System.Windows.Controls.Canvas targetCanvas, int[] indices, double scale, DpiScale dpi)
+        {
+            if (targetCanvas == null) return;
+            int w = mapWidth; int h = mapHeight;
+            int stride = w * 4;
+            var pixels = new byte[stride * h];
+
+            // Choose fill color from brush if possible (use SelectSameFillBrush color)
+            System.Windows.Media.Color fillColor = Colors.LimeGreen; // default closer to desired hue
+            try { if (SelectSameFillBrush is SolidColorBrush scb) fillColor = scb.Color; } catch { }
+            // Slightly lighten the color for mask to better match lighter hue
+            byte lightenFactor = 0x20;
+            byte a = fillColor.A;
+            byte r = (byte)Math.Min(255, fillColor.R + lightenFactor);
+            byte g = (byte)Math.Min(255, fillColor.G + lightenFactor);
+            byte b = (byte)Math.Min(255, fillColor.B + lightenFactor);
+            // premultiply
+            byte pr = (byte)((r * a) / 255);
+            byte pg = (byte)((g * a) / 255);
+            byte pb = (byte)((b * a) / 255);
+
+            foreach (var idx in indices)
+            {
+                if (idx < 0 || idx >= w * h) continue;
+                int px = idx % w; int py = idx / w;
+                int off = (py * stride) + px * 4;
+                pixels[off + 0] = pb;
+                pixels[off + 1] = pg;
+                pixels[off + 2] = pr;
+                pixels[off + 3] = a;
+            }
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                try
+                {
+                    targetCanvas.Children.Clear();
+                    var wb = new WriteableBitmap(w, h, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32, null);
+                    wb.WritePixels(new Int32Rect(0, 0, w, h), pixels, stride, 0);
+                    var img = new System.Windows.Controls.Image { Source = wb, IsHitTestVisible = false };
+                    double imgW = (double)w * TileSize * scale;
+                    double imgH = (double)h * TileSize * scale;
+                    img.Width = imgW; img.Height = imgH;
+                    Canvas.SetLeft(img, mapViewportPadding);
+                    Canvas.SetTop(img, mapViewportPadding + (double)gridRenderShiftYPx / dpi.DpiScaleY);
+                    RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
+                    targetCanvas.Children.Add(img);
+                }
+                catch { }
+            }, System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        // Similar to RenderIndicesToOverlayAsync but targets SelectionOverlay (for actual selection visuals)
+        private async void RenderIndicesToSelectionOverlayAsync(int[]? indices, double scale, DpiScale dpi)
+        {
+            if (indices == null || indices.Length == 0) return;
+            try
+            {
+                // Use mask rendering for selection overlay for speed
+                try { await RenderMaskToCanvasAsync(SelectionOverlay!, indices, scale, dpi); } catch { }
+            }
+            catch { }
+        }
+
         private void TileEyeButton_Unchecked(object? sender, RoutedEventArgs e)
         {
             try
@@ -49,6 +209,77 @@ namespace FamidashEditor
                 if (TilesImage != null) TilesImage.Visibility = Visibility.Collapsed;
                 if (PortalsImage != null) PortalsImage.Visibility = Visibility.Collapsed;
                 if (TileEyeButton != null) TileEyeButton.Content = "🙈";
+            }
+            catch { }
+        }
+
+        // Perform Select All Same at current cursor/hover position
+        private void PerformSelectAllSameAtCursor()
+        {
+            try
+            {
+                // Use last hover or last click coordinates
+                int x = lastHoverX >= 0 ? lastHoverX : (lastClickX >= 0 ? lastClickX : -1);
+                int y = lastHoverY >= 0 ? lastHoverY : (lastClickY >= 0 ? lastClickY : -1);
+                if (x < 0 || y < 0) return;
+                int idx = y * mapWidth + x;
+                // Determine effective layers: if neither is active treat both as active
+                bool effectiveTiles = tilesLayerActive || (!tilesLayerActive && !spritesLayerActive);
+                bool effectiveSprites = spritesLayerActive || (!tilesLayerActive && !spritesLayerActive);
+
+                // Prefer tile under cursor when tiles are effective and a tile exists; otherwise prefer sprite
+                bool useTiles = effectiveTiles && tiles[idx] != -1;
+                bool useSprites = !useTiles && effectiveSprites && sprites[idx] != -1;
+                int id = -1;
+                if (useTiles) id = tiles[idx]; else if (useSprites) id = sprites[idx];
+                if (id == -1) return;
+                IndexInfo? info = null;
+                if (useTiles) tileIndexMap.TryGetValue(id, out info); else spriteIndexMap.TryGetValue(id, out info);
+                if (info == null || info.Count == 0) return;
+
+                // Replace selection with all matching indices
+                selectionSet = new System.Collections.Generic.HashSet<int>(info.Indices);
+                selectionIsLarge = selectionSet.Count > LargeSelectionThreshold;
+
+                // Compute bounding box and update visuals
+                int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+                foreach (var i in selectionSet) { int sx = i % mapWidth, sy = i / mapWidth; if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy; }
+                selX = minX; selY = minY; selW = maxX - minX + 1; selH = maxY - minY + 1;
+                // Populate sel tiles/sprites arrays so move/replace operations work
+                PopulateSelectionArraysFromSet();
+                UpdateSelectionVisuals(selX, selY, selW, selH, previewMode: false);
+
+                // Render selection mask
+                try { var dpi = VisualTreeHelper.GetDpi(this); double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0; _ = RenderMaskToCanvasAsync(SelectionOverlay!, info.Indices, scale, dpi); } catch { }
+            }
+            catch { }
+        }
+
+        // Replace all currently selected tiles/sprites with the active tile/sprite depending on layers
+        private void PerformReplaceSelected()
+        {
+            try
+            {
+                if (selectionSet == null || selectionSet.Count == 0) return;
+                var tileChange = new TileChangeAction();
+                var spriteChange = new SpriteChangeAction();
+                foreach (var idx in selectionSet)
+                {
+                    if (tilesLayerActive && selectedTile >= 0)
+                    {
+                        int old = tiles[idx]; if (old != selectedTile) { tileChange.Add(idx, old, selectedTile); tiles[idx] = selectedTile; }
+                    }
+                    if (spritesLayerActive && selectedSprite >= 0)
+                    {
+                        int oldS = sprites[idx]; if (oldS != selectedSprite) { spriteChange.Add(idx, oldS, selectedSprite); sprites[idx] = selectedSprite; }
+                    }
+                }
+                if (!tileChange.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileChange); redoStack.Clear(); SetHasUnsavedChanges(true); }
+                bool didTileChange = false, didSpriteChange = false;
+                if (!spriteChange.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteChange); redoStack.Clear(); SetHasUnsavedChanges(true); didSpriteChange = true; }
+                if (!tileChange.IsEmpty()) didTileChange = true;
+                try { if (didTileChange) RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                try { if (didSpriteChange) RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
             }
             catch { }
         }
@@ -168,7 +399,7 @@ namespace FamidashEditor
         // we prefer that mapping over any in-process remapping at play-time.
         private bool mappingLoadedFromFile = false;
         private string? albumTxtPath = null;
-        private enum DrawMode { Tile, Line, Square, Circle, Triangle, Polygon, None }
+        private enum DrawMode { Tile, Line, Square, Circle, Ellipse, Triangle, Polygon, None }
         private DrawMode currentDrawMode = DrawMode.Tile;
         private bool hollowShape = false;
         private int brushThickness = 1;
@@ -194,6 +425,9 @@ namespace FamidashEditor
         // When a selection is created on MouseDown and we should only begin dragging
         // after the user moves beyond the drag threshold, mark this as pending.
         private bool pendingDrag = false;
+        // When Select tool is clicked without movement, start with a single-click selection
+        // but defer rectangle-selection until the user actually drags the mouse.
+        private bool pendingSelection = false;
     // Timer used to perform continuous 1-px fine scrolling while Shift+Left/Right are held
     private System.Windows.Threading.DispatcherTimer? shiftArrowScrollTimer = null;
     private int shiftArrowScrollDir = 0; // -1 = left, +1 = right
@@ -226,6 +460,12 @@ namespace FamidashEditor
     private bool pinchDirectionDetected = false;
     // Global simulator option: hide trigger sprites (default true)
     private bool hideTriggerSprites = true;
+
+        private enum SelectMode { Normal, AllSame, Lasso }
+        private SelectMode currentSelectMode = SelectMode.Normal;
+
+        private enum FillMode { Normal, ReplaceSelected }
+        private FillMode currentFillMode = FillMode.Normal;
 
     // Allow toggling simulator sprite hitbox overlays from the main editor via F2
     protected override void OnKeyDown(System.Windows.Input.KeyEventArgs e)
@@ -287,9 +527,87 @@ namespace FamidashEditor
                 }
                 catch { }
             }
+
+            // Ctrl+A: select all tiles/sprites depending on active layer toggles
+            try
+            {
+                bool isCtrl = (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl));
+                if (isCtrl && (e.Key == Key.A))
+                {
+                    e.Handled = true;
+                    // Determine effective layers: if neither is active, treat both as active
+                    bool effectiveTiles = tilesLayerActive || (!tilesLayerActive && !spritesLayerActive);
+                    bool effectiveSprites = spritesLayerActive || (!tilesLayerActive && !spritesLayerActive);
+
+                    var indicesList = new System.Collections.Generic.List<int>();
+                    int total = mapWidth * mapHeight;
+                    if (effectiveTiles)
+                    {
+                        for (int i = 0; i < total; i++) if (tiles[i] != -1) indicesList.Add(i);
+                    }
+                    if (effectiveSprites)
+                    {
+                        for (int i = 0; i < total; i++) if (sprites[i] != -1) indicesList.Add(i);
+                    }
+                    // Deduplicate
+                    var indices = indicesList.Distinct().ToArray();
+                    if (indices.Length == 0) { ClearSelection(); return; }
+
+                    // Update selectionSet
+                    selectionSet = new System.Collections.Generic.HashSet<int>(indices);
+                    selectionIsLarge = selectionSet.Count > LargeSelectionThreshold;
+
+                    // Compute bounding box
+                    int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+                    foreach (var idx in selectionSet) { int sx = idx % mapWidth, sy = idx / mapWidth; if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy; }
+                    selX = minX; selY = minY; selW = maxX - minX + 1; selH = maxY - minY + 1;
+                    // Populate selTiles/selSprites for Move/Erase/etc. compatibility
+                    try { PopulateSelectionArraysFromSet(); } catch { }
+                    UpdateSelectionVisuals(selX, selY, selW, selH, previewMode: false);
+
+                    // Render selection mask into SelectionOverlay
+                    try
+                    {
+                        var dpi = VisualTreeHelper.GetDpi(this);
+                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        // Use mask renderer directly for immediate visual
+                        _ = RenderMaskToCanvasAsync(SelectionOverlay!, indices, scale, dpi);
+                    }
+                    catch { }
+                    // Ensure selTiles/selSprites arrays are populated for MoveTool compatibility
+                    try { PopulateSelectionArraysFromSet(); } catch { }
+                    return;
+                }
+            }
+            catch { }
         }
         catch { }
         base.OnKeyDown(e);
+
+        // Shortcut: L => activate Lasso tool (standalone) and switch to Lasso mode
+        try
+        {
+            if (e.Key == Key.L && !e.IsRepeat)
+            {
+                e.Handled = true;
+                currentSelectMode = SelectMode.Lasso;
+                var lassoBtn = FindName("LassoTool") as ToggleButton;
+                if (lassoBtn != null)
+                {
+                    lassoBtn.IsChecked = true;
+                    try { Tool_Checked(lassoBtn, new RoutedEventArgs()); } catch { }
+                }
+                else if (SelectTool != null)
+                {
+                    SelectTool.IsChecked = true;
+                    try { Tool_Checked(SelectTool, new RoutedEventArgs()); } catch { }
+                }
+                try { if (MenuToolLasso != null) MenuToolLasso.IsChecked = true; } catch { }
+            }
+        }
+        catch { }
+                        // Ensure sel arrays filled so Move tool can act on this selection
+                        try { PopulateSelectionArraysFromSet(); } catch { }
     }
 
     // Suppress saving editor settings while the main window is initializing
@@ -1777,6 +2095,27 @@ namespace FamidashEditor
     // Cached brushes for performance
     private static readonly SolidColorBrush SelectionFillBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
     private static readonly Brush SelectionStrokeBrush = Brushes.Cyan;
+    // Caches mapping tile/sprite id -> list of map indices (for fast "select same")
+    private class IndexInfo { public int[] Indices = Array.Empty<int>(); public int MinX = int.MaxValue; public int MinY = int.MaxValue; public int MaxX = int.MinValue; public int MaxY = int.MinValue; public int Count => Indices?.Length ?? 0; }
+    private readonly System.Collections.Generic.Dictionary<int, IndexInfo> tileIndexMap = new System.Collections.Generic.Dictionary<int, IndexInfo>();
+    private readonly System.Collections.Generic.Dictionary<int, IndexInfo> spriteIndexMap = new System.Collections.Generic.Dictionary<int, IndexInfo>();
+    // Last hovered ids (to avoid rebuilding overlay every mouse move)
+    private int lastHoveredSelectSameTileId = int.MinValue;
+    private int lastHoveredSelectSameSpriteId = int.MinValue;
+    // Brushes for Select Same highlight
+    // Slightly bluer/lighter selection mask for better visibility
+    private static readonly SolidColorBrush SelectSameFillBrush = new SolidColorBrush(Color.FromArgb(0x40, 0x96, 0xC8, 0xFF));
+    private static readonly Brush SelectSameStrokeBrush = Brushes.LightSkyBlue;
+    // Selection performance helpers
+    private bool selectionIsLarge = false;
+    private const int LargeSelectionThreshold = 5000; // tuneable
+    private const int MaskRenderMaxPixels = 2000000; // max mapWidth*mapHeight to allow mask rendering (avoid huge memory)
+    private const int MaskRenderIndexThreshold = 2000; // minimum matched indices to use mask rendering
+    // Hover debounce timer to avoid heavy work on every MouseMove
+    private System.Windows.Threading.DispatcherTimer? selectSameHoverTimer = null;
+    private int pendingHoverTileId = int.MinValue;
+    private bool pendingHoverUseTiles = true;
+    private int[]? pendingHoverIndicesRef = null;
     // Cache hover position to avoid redundant updates
     private int lastHoverX = -1;
     private int lastHoverY = -1;
@@ -2768,12 +3107,14 @@ namespace FamidashEditor
             if (DrawLineButton != null) DrawLineButton.Checked += DrawModeButton_Checked;
             if (DrawSquareButton != null) DrawSquareButton.Checked += DrawModeButton_Checked;
             if (DrawCircleButton != null) DrawCircleButton.Checked += DrawModeButton_Checked;
+            if (DrawEllipseButton != null) DrawEllipseButton.Checked += DrawModeButton_Checked;
             if (DrawTriangleButton != null) DrawTriangleButton.Checked += DrawModeButton_Checked;
             if (DrawPolygonButton != null) DrawPolygonButton.Checked += DrawModeButton_Checked;
             if (DrawTileButton != null) DrawTileButton.Unchecked += DrawModeButton_Unchecked;
             if (DrawLineButton != null) DrawLineButton.Unchecked += DrawModeButton_Unchecked;
             if (DrawSquareButton != null) DrawSquareButton.Unchecked += DrawModeButton_Unchecked;
             if (DrawCircleButton != null) DrawCircleButton.Unchecked += DrawModeButton_Unchecked;
+            if (DrawEllipseButton != null) DrawEllipseButton.Unchecked += DrawModeButton_Unchecked;
             if (DrawTriangleButton != null) DrawTriangleButton.Unchecked += DrawModeButton_Unchecked;
             if (DrawPolygonButton != null) DrawPolygonButton.Unchecked += DrawModeButton_Unchecked;
             if (HollowCheckBox != null) HollowCheckBox.Checked += (s,e)=>{ hollowShape = true; if (isDeferredDrawing||isConstructingPolygon) UpdateDeferredPreview(); };
@@ -2881,7 +3222,113 @@ namespace FamidashEditor
             if (MenuToolErase != null) MenuToolErase.Click += (s, e) => { if (EraseTool != null) EraseTool.IsChecked = true; };
             if (MenuToolFill != null) MenuToolFill.Click += (s, e) => { if (FillTool != null) FillTool.IsChecked = true; };
             if (MenuToolSelect != null) MenuToolSelect.Click += (s, e) => { if (SelectTool != null) SelectTool.IsChecked = true; };
+            if (MenuToolLasso != null) MenuToolLasso.Click += (s, e) => {
+                try
+                {
+                    currentSelectMode = SelectMode.Lasso;
+                    var lassoBtn = FindName("LassoTool") as ToggleButton;
+                    if (lassoBtn != null) { lassoBtn.IsChecked = true; try { Tool_Checked(lassoBtn, new RoutedEventArgs()); } catch { } }
+                    else if (SelectTool != null) { SelectTool.IsChecked = true; try { Tool_Checked(SelectTool, new RoutedEventArgs()); } catch { } }
+                }
+                catch { }
+            };
             if (MenuToolWand != null) MenuToolWand.Click += (s, e) => { if (MagicWandTool != null) MagicWandTool.IsChecked = true; };
+            if (MenuToolSelectAllSame != null) MenuToolSelectAllSame.Click += (s, e) => {
+                try
+                {
+                    // Activate Select tool and set mode to AllSame so UI reflects intent
+                    currentSelectMode = SelectMode.AllSame;
+                    if (SelectTool != null) { SelectTool.IsChecked = true; try { Tool_Checked(SelectTool, new RoutedEventArgs()); } catch { } }
+                    PerformSelectAllSameAtCursor();
+                }
+                catch { }
+            };
+            if (MenuToolStructure != null) MenuToolStructure.Click += (s, e) => {
+                try
+                {
+                    var structBtn = FindName("StructureTool") as ToggleButton;
+                    if (structBtn != null)
+                    {
+                        structBtn.IsChecked = true;
+                        try { Tool_Checked(structBtn, new RoutedEventArgs()); } catch { }
+                    }
+                }
+                catch { }
+            };
+            if (MenuToolReplaceSelected != null) MenuToolReplaceSelected.Click += (s, e) => {
+                try
+                {
+                    // Activate Fill tool and set to ReplaceSelected for clarity
+                    currentFillMode = FillMode.ReplaceSelected;
+                    if (FillTool != null) { FillTool.IsChecked = true; try { Tool_Checked(FillTool, new RoutedEventArgs()); } catch { } }
+                    if (StatusText != null) StatusText.Text = "Replace Selected: pick a tile then click a selected cell to apply";
+                }
+                catch { }
+            };
+            if (MenuToolOffsetMap != null) MenuToolOffsetMap.Click += (s, e) => {
+                try
+                {
+                    var dlg = new OffsetMapWindow { Owner = this };
+                    dlg.ShowDialog();
+                }
+                catch { }
+            };
+            // Toolbar dropdown menu handlers
+            try
+            {
+                if (Menu_Select_Normal != null) Menu_Select_Normal.Click += (s, e) => {
+                    currentSelectMode = SelectMode.Normal;
+                    if (SelectTool != null)
+                    {
+                        SelectTool.IsChecked = true;
+                        try { Tool_Checked(SelectTool, new RoutedEventArgs()); } catch { }
+                    }
+                };
+                if (Menu_Select_AllSame != null) Menu_Select_AllSame.Click += (s, e) => {
+                    currentSelectMode = SelectMode.AllSame;
+                    if (SelectTool != null)
+                    {
+                        SelectTool.IsChecked = true;
+                        try { Tool_Checked(SelectTool, new RoutedEventArgs()); } catch { }
+                    }
+                };
+                    if (Menu_Select_Lasso != null) Menu_Select_Lasso.Click += (s, e) => {
+                        currentSelectMode = SelectMode.Lasso;
+                        var lassoBtn = FindName("LassoTool") as ToggleButton;
+                        if (lassoBtn != null)
+                        {
+                            lassoBtn.IsChecked = true;
+                            try { Tool_Checked(lassoBtn, new RoutedEventArgs()); } catch { }
+                        }
+                        else if (SelectTool != null)
+                        {
+                            SelectTool.IsChecked = true;
+                            try { Tool_Checked(SelectTool, new RoutedEventArgs()); } catch { }
+                        }
+                    };
+                if (Menu_Fill_Normal != null) Menu_Fill_Normal.Click += (s, e) => {
+                    currentFillMode = FillMode.Normal;
+                    if (FillTool != null)
+                    {
+                        FillTool.IsChecked = true;
+                        try { Tool_Checked(FillTool, new RoutedEventArgs()); } catch { }
+                    }
+                };
+                if (Menu_Fill_ReplaceSelected != null) Menu_Fill_ReplaceSelected.Click += (s, e) => {
+                    try
+                    {
+                        if (FillTool != null)
+                        {
+                            FillTool.IsChecked = true;
+                            try { Tool_Checked(FillTool, new RoutedEventArgs()); } catch { }
+                        }
+                        currentFillMode = FillMode.ReplaceSelected;
+                        if (StatusText != null) StatusText.Text = "Replace Selected: pick a tile then click a selected cell to apply";
+                    }
+                    catch { }
+                };
+            }
+            catch { }
             if (MenuEditCopy != null) MenuEditCopy.Click += (s, e) => CopySelection();
             if (MenuEditCut != null) MenuEditCut.Click += (s, e) => CutSelection();
             if (MenuEditPaste != null) MenuEditPaste.Click += (s, e) => {
@@ -3252,7 +3699,9 @@ namespace FamidashEditor
                 if (EraseTool != null) EraseTool.Checked += Tool_Checked;
                 if (FillTool != null) FillTool.Checked += Tool_Checked;
                 if (SelectTool != null) SelectTool.Checked += Tool_Checked;
-        if (MagicWandTool != null) MagicWandTool.Checked += Tool_Checked;
+            var lassoInit = FindName("LassoTool") as ToggleButton;
+            if (lassoInit != null) lassoInit.Checked += Tool_Checked;
+            if (MagicWandTool != null) MagicWandTool.Checked += Tool_Checked;
             // Ensure StructureTool participates in exclusive tool logic
             try { var structBtn = FindName("StructureTool") as ToggleButton; if (structBtn != null) structBtn.Checked += Tool_Checked; } catch { }
             // keyboard shortcuts for undo/redo
@@ -3266,6 +3715,14 @@ namespace FamidashEditor
                 MapScrollViewer.ManipulationStarting += MapScrollViewer_ManipulationStarting;
                 MapScrollViewer.ManipulationCompleted += MapScrollViewer_ManipulationCompleted;
                 MapScrollViewer.ManipulationDelta += MapScrollViewer_ManipulationDelta;
+                // Attach mouse handlers for lasso selection on the Canvas
+                var canvas = FindName("CanvasHost") as Canvas;
+                if (canvas != null)
+                {
+                    canvas.MouseLeftButtonDown += Canvas_MouseLeftButtonDown_Lasso;
+                    canvas.MouseMove += Canvas_MouseMove_Lasso;
+                    canvas.MouseLeftButtonUp += Canvas_MouseLeftButtonUp_Lasso;
+                }
             }
         }
 
@@ -3273,6 +3730,126 @@ namespace FamidashEditor
     {
         try { OpenSimulatorWindow(); } catch { }
     }
+
+        // Canvas mouse handlers for lasso
+        private void Canvas_MouseLeftButtonDown_Lasso(object? sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                var lassoBtn = FindName("LassoTool") as ToggleButton;
+                bool lassoActive = (lassoBtn != null && lassoBtn.IsChecked == true) || (SelectTool != null && SelectTool.IsChecked == true && currentSelectMode == SelectMode.Lasso);
+                if (!lassoActive) return;
+                var canvas = sender as Canvas;
+                if (canvas == null) return;
+                // start lasso
+                isLassoActive = true;
+                lassoPoints.Clear();
+                var p = e.GetPosition(canvas);
+                lassoPoints.Add(p);
+                canvas.CaptureMouse();
+                RenderLassoPath();
+                e.Handled = true;
+            }
+            catch { }
+        }
+
+        private void Canvas_MouseMove_Lasso(object? sender, MouseEventArgs e)
+        {
+            try
+            {
+                if (!isLassoActive) return;
+                var canvas = sender as Canvas;
+                if (canvas == null) return;
+                var p = e.GetPosition(canvas);
+                // add point if moved significantly
+                if (lassoPoints.Count == 0 || Distance(lassoPoints[lassoPoints.Count - 1], p) > 2.0)
+                {
+                    lassoPoints.Add(p);
+                    RenderLassoPath();
+                }
+                e.Handled = true;
+            }
+            catch { }
+        }
+
+        private void Canvas_MouseLeftButtonUp_Lasso(object? sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                if (!isLassoActive) return;
+                var canvas = sender as Canvas;
+                if (canvas == null) return;
+                var p = e.GetPosition(canvas);
+                lassoPoints.Add(p);
+                isLassoActive = false;
+                try { canvas.ReleaseMouseCapture(); } catch { }
+                RenderLassoPath();
+                // Perform selection: compute polygon and test tile centers
+                ApplyLassoSelection();
+                e.Handled = true;
+            }
+            catch { }
+        }
+
+        private double Distance(Point a, Point b)
+        {
+            double dx = a.X - b.X; double dy = a.Y - b.Y; return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        private void ApplyLassoSelection()
+        {
+            try
+            {
+                if (lassoPoints == null || lassoPoints.Count < 3) return;
+                // Build polygon in device coordinates; map tile centers to same coord space
+                var poly = new System.Windows.Media.PathGeometry();
+                var fig = new System.Windows.Media.PathFigure();
+                fig.StartPoint = lassoPoints[0];
+                fig.IsClosed = true; fig.IsFilled = true;
+                var seg = new System.Windows.Media.PolyLineSegment(lassoPoints.ToArray(), true);
+                fig.Segments.Add(seg); poly.Figures.Add(fig);
+
+                // Determine which tiles' centers are inside polygon and respect active layer toggles
+                var selected = new System.Collections.Generic.HashSet<int>();
+                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                // Effective layers: if neither is active treat both as active
+                bool effectiveTiles = tilesLayerActive || (!tilesLayerActive && !spritesLayerActive);
+                bool effectiveSprites = spritesLayerActive || (!tilesLayerActive && !spritesLayerActive);
+
+                for (int y = 0; y < mapHeight; y++)
+                {
+                    for (int x = 0; x < mapWidth; x++)
+                    {
+                        double cx = (x * TileSize) + TileSize / 2.0 + mapViewportPadding;
+                        double cy = (y * TileSize) + TileSize / 2.0 + mapViewportPadding;
+                        // Test point containment using canvas coords
+                        if (!poly.FillContains(new System.Windows.Point(cx, cy))) continue;
+
+                        int idx = y * mapWidth + x;
+                        bool hasTile = effectiveTiles && tiles[idx] != -1;
+                        bool hasSprite = effectiveSprites && sprites[idx] != -1;
+                        if (hasTile || hasSprite)
+                        {
+                            selected.Add(idx);
+                        }
+                    }
+                }
+
+                if (selected.Count == 0) { ClearSelection(); return; }
+                selectionSet = selected;
+                selectionIsLarge = selectionSet.Count > LargeSelectionThreshold;
+
+                // compute bbox
+                int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+                foreach (var i in selectionSet) { int sx = i % mapWidth, sy = i / mapWidth; if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy; }
+                selX = minX; selY = minY; selW = maxX - minX + 1; selH = maxY - minY + 1;
+                // Populate arrays for move/tool compatibility
+                PopulateSelectionArraysFromSet();
+                UpdateSelectionVisuals(selX, selY, selW, selH);
+                try { _ = RenderMaskToCanvasAsync(SelectionOverlay!, selectionSet.ToArray(), (ZoomSlider!=null?ZoomSlider.Value:1.0), VisualTreeHelper.GetDpi(this)); } catch { }
+            }
+            catch { }
+        }
 
         private void MenuOpenFmsPlayer_Click(object sender, RoutedEventArgs e)
         {
@@ -10448,6 +11025,9 @@ namespace FamidashEditor
                 // Mouse down starts selection
                 img.MouseLeftButtonDown += (s, e) => { 
                     int clickedTile = (int)((Image)s).Tag;
+                    // Preserve any existing map selection (don't deselect when picking a new active tile)
+                    System.Collections.Generic.HashSet<int>? savedSelection = null;
+                    try { if (selectionSet != null && selectionSet.Count > 0) savedSelection = new System.Collections.Generic.HashSet<int>(selectionSet); } catch { savedSelection = null; }
                     
                     // Check if Ctrl is held for multi-layer selection
                     bool isCtrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
@@ -10498,6 +11078,18 @@ namespace FamidashEditor
                         try { if (CanvasHost != null) CanvasHost.Focus(); } catch { }
                         e.Handled = true;
                     };
+
+                    // Restore any preserved map selection so picking a tile doesn't clear it
+                    try
+                    {
+                        if (savedSelection != null)
+                        {
+                            selectionSet = savedSelection;
+                            // Ensure selection visuals are up-to-date
+                            try { UpdateSelectionVisuals(selX, selY, selW, selH); } catch { }
+                        }
+                    }
+                    catch { }
                 };
                 
                 // Mouse move updates selection
@@ -11919,6 +12511,7 @@ namespace FamidashEditor
             {
                 tilesWb.Unlock();
             }
+            try { BuildSelectSameIndexMaps(); } catch { }
         }
         
         // Async version that renders tiles in small batches to avoid blocking UI
@@ -12004,6 +12597,7 @@ namespace FamidashEditor
             }
             
             System.Diagnostics.Debug.WriteLine($"RebuildAllTilesBitmapAsync: Complete");
+            try { BuildSelectSameIndexMaps(); } catch { }
         }
 
         // Build or ensure a scaled tile pixel cache for the given zoom and dpi.
@@ -14021,26 +14615,103 @@ namespace FamidashEditor
                 return;
             }
             // Branch behavior based on active tool
-            // Select tool: support Ctrl+click to toggle single-tile selection, or drag to rectangle-select
-            if (SelectTool != null && SelectTool.IsChecked == true)
+            // If Select tool is active and in AllSame mode, clicking selects all same id
+            if (SelectTool != null && SelectTool.IsChecked == true && currentSelectMode == SelectMode.AllSame)
             {
-                // If a non-Tile draw mode is active allow deferred draw-based selection (circle/line/polygon/etc.)
-                if (currentDrawMode != DrawMode.Tile)
+                var tt = ViewportPointToTile(pos);
+                int x = tt.x; int y = tt.y;
+                if (x < 0 || y < 0) return;
+                int idx = y * mapWidth + x;
+                bool useTiles = tilesLayerActive && tiles[idx] != -1;
+                int id = useTiles ? tiles[idx] : ((spritesLayerActive && sprites[idx] != -1) ? sprites[idx] : -1);
+                if (id == -1) return;
+                IndexInfo? info = null;
+                if (useTiles) tileIndexMap.TryGetValue(id, out info); else spriteIndexMap.TryGetValue(id, out info);
+                if (info == null || info.Count == 0) return;
+                bool isCtrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+                if (!isCtrl) selectionSet.Clear();
+
+                if (info.Count > LargeSelectionThreshold && !isCtrl)
                 {
-                    // fall through to deferred-draw handling below
+                    selectionSet.Clear();
+                    selX = info.MinX; selY = info.MinY; selW = info.MaxX - info.MinX + 1; selH = info.MaxY - info.MinY + 1;
+                    selectionIsLarge = true;
+                    pendingHoverIndicesRef = info.Indices;
+                    UpdateSelectionVisuals(selX, selY, selW, selH, previewMode: true);
+                    try { _ = RenderMaskToCanvasAsync(SelectionOverlay!, pendingHoverIndicesRef, (ZoomSlider!=null?ZoomSlider.Value:1.0), VisualTreeHelper.GetDpi(this)); } catch { }
                 }
                 else
                 {
-                    // Ctrl+click toggles the tile under cursor
-                    if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
+                    if (!isCtrl && selectionSet.Count == 0)
                     {
-                        ToggleSelectionAt(pos);
-                        return;
+                        selectionSet = new System.Collections.Generic.HashSet<int>(info.Indices);
                     }
-                    // otherwise start rectangle selection
-                    StartSelectionAt(pos);
+                    else
+                    {
+                        foreach (var i in info.Indices) selectionSet.Add(i);
+                    }
+                    selectionIsLarge = selectionSet.Count > LargeSelectionThreshold;
+                }
+
+                if (selectionSet.Count == 0) { ClearSelection(); return; }
+                int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+                foreach (var i in selectionSet) { int sx = i % mapWidth, sy = i / mapWidth; if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy; }
+                selX = minX; selY = minY; selW = maxX - minX + 1; selH = maxY - minY + 1;
+
+                // For very large selections avoid building selTiles/selSprites arrays immediately — defer and render raster overlay instead
+                if (selectionSet.Count > LargeSelectionThreshold)
+                {
+                    selTiles = null; selSprites = null; selectionIsLarge = true;
+                }
+                else
+                {
+                    selectionIsLarge = false;
+                    selTiles = new int[selW * selH]; selSprites = new int[selW * selH];
+                    for (int yy = 0; yy < selH; yy++) for (int xx = 0; xx < selW; xx++)
+                    {
+                        int gidx = (selY + yy) * mapWidth + (selX + xx);
+                        if (selectionSet.Contains(gidx)) { selTiles[yy * selW + xx] = tilesLayerActive ? tiles[gidx] : -1; selSprites[yy * selW + xx] = spritesLayerActive ? sprites[gidx] : -1; }
+                        else { selTiles[yy * selW + xx] = -1; selSprites[yy * selW + xx] = -1; }
+                    }
+                }
+                UpdateSelectionVisuals(selX, selY, selW, selH);
+                if (StatusText != null) StatusText.Text = $"Selected items: {selectionSet.Count} (bbox {selW}x{selH} at {selX},{selY})";
+                return;
+            }
+            // Select tool: support Ctrl+click to toggle single-tile selection, or drag to rectangle-select
+            if (SelectTool != null && SelectTool.IsChecked == true && currentSelectMode == SelectMode.Normal)
+            {
+                // Regardless of currentDrawMode, single-click should select a single tile.
+                // Ctrl+click toggles the tile under cursor
+                if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
+                {
+                    ToggleSelectionAt(pos);
                     return;
                 }
+
+                // Single-click: select the tile/sprite under cursor (replace selection).
+                // Do not start rectangle selection immediately; defer rectangle start until mouse moves.
+                var tt = ViewportPointToTile(pos);
+                int x = tt.x; int y = tt.y;
+                if (x < 0 || y < 0) { ClearSelection(); return; }
+                int idx = y * mapWidth + x;
+                bool hasTile = tilesLayerActive && tiles[idx] != -1;
+                bool hasSprite = spritesLayerActive && sprites[idx] != -1;
+                if (!hasTile && !hasSprite)
+                {
+                    ClearSelection();
+                }
+                else
+                {
+                    selectionSet.Clear(); selectionSet.Add(idx);
+                    selX = x; selY = y; selW = 1; selH = 1;
+                    selTiles = new int[1] { tilesLayerActive ? tiles[idx] : -1 };
+                    selSprites = new int[1] { spritesLayerActive ? sprites[idx] : -1 };
+                    UpdateSelectionVisuals(selX, selY, selW, selH);
+                    // mark pendingSelection so dragging will start a rectangle-select if the user moves
+                    pendingSelection = true;
+                }
+                return;
             }
             // Move tool: begin dragging if we have an existing selection, otherwise pick tile/sprite under cursor
             if (MoveTool != null && MoveTool.IsChecked == true)
@@ -14378,6 +15049,8 @@ namespace FamidashEditor
             }
             // Clear any pending drag started on MouseDown but never triggered
             pendingDrag = false;
+            // Clear any pending selection state
+            pendingSelection = false;
         }
 
         private void CanvasHost_MouseMove(object sender, MouseEventArgs e)
@@ -14414,6 +15087,16 @@ namespace FamidashEditor
                 if (Math.Sqrt(dx * dx + dy * dy) > dragThreshold)
                 {
                     hasMouseMoved = true;
+                    // If a selection was pending (single-click), begin rectangle selection now
+                    try
+                    {
+                        if (pendingSelection)
+                        {
+                            pendingSelection = false;
+                            try { StartSelectionAt(mouseDownPosition); } catch { }
+                        }
+                    }
+                    catch { pendingSelection = false; }
                     // If a drag was pending from MouseDown for MoveTool, start actual drag now
                     try
                     {
@@ -14764,26 +15447,44 @@ namespace FamidashEditor
             var tb = sender as ToggleButton;
             if (tb == null) return;
 
+            var lassoBtn = FindName("LassoTool") as ToggleButton;
             var all = new System.Collections.Generic.List<ToggleButton?> { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool };
+            if (lassoBtn != null) all.Add(lassoBtn);
             var structBtn = FindName("StructureTool") as ToggleButton;
             bool isStruct = (structBtn != null && tb == structBtn);
             if (structBtn != null) all.Add(structBtn);
 
             foreach (var t in all)
             {
-                if (t != null && t != tb) t.IsChecked = false;
+                if (t == null || t == tb) continue;
+                // If we're activating the standalone Lasso tool, keep SelectTool depressed as requested
+                if (tb != null && tb == lassoBtn && t == SelectTool) continue;
+                t.IsChecked = false;
             }
+
+            // If the standalone Lasso tool was activated, ensure the Select button appears depressed as well
+            try { if (tb != null && tb == lassoBtn && SelectTool != null) SelectTool.IsChecked = true; } catch { }
             
             // Sync menu checkmarks with toolbar
             if (MenuToolPlace != null) MenuToolPlace.IsChecked = (tb == PlaceTool);
             if (MenuToolMove != null) MenuToolMove.IsChecked = (tb == MoveTool);
             if (MenuToolErase != null) MenuToolErase.IsChecked = (tb == EraseTool);
             if (MenuToolFill != null) MenuToolFill.IsChecked = (tb == FillTool);
-            if (MenuToolSelect != null) MenuToolSelect.IsChecked = (tb == SelectTool);
+            if (MenuToolSelect != null) MenuToolSelect.IsChecked = (tb == SelectTool || tb == lassoBtn);
             if (MenuToolWand != null) MenuToolWand.IsChecked = (tb == MagicWandTool);
+
+            if (MenuToolLasso != null) MenuToolLasso.IsChecked = ((tb == lassoBtn) || (tb == SelectTool && currentSelectMode == SelectMode.Lasso));
 
             var menuStructure = FindName("MenuToolStructure") as MenuItem;
             if (menuStructure != null) menuStructure.IsChecked = isStruct;
+
+            // Sync the toolbar dropdown select-mode menu items (small '+' menu beside Select)
+            var menuSelectNormal = FindName("Menu_Select_Normal") as MenuItem;
+            var menuSelectAllSame = FindName("Menu_Select_AllSame") as MenuItem;
+            var menuSelectLasso = FindName("Menu_Select_Lasso") as MenuItem;
+            if (menuSelectNormal != null) menuSelectNormal.IsChecked = (tb == SelectTool && currentSelectMode == SelectMode.Normal);
+            if (menuSelectAllSame != null) menuSelectAllSame.IsChecked = (tb == SelectTool && currentSelectMode == SelectMode.AllSame);
+            if (menuSelectLasso != null) menuSelectLasso.IsChecked = ( (tb == SelectTool && currentSelectMode == SelectMode.Lasso) || tb == lassoBtn );
 
             // When switching to any main tool, revert draw mode back to Tile
             if (tb == PlaceTool || tb == MoveTool || tb == EraseTool || tb == FillTool || tb == SelectTool || tb == MagicWandTool || isStruct)
@@ -14798,10 +15499,20 @@ namespace FamidashEditor
             if (DrawLineButton != null) DrawLineButton.IsEnabled = !disableShapes;
             if (DrawSquareButton != null) DrawSquareButton.IsEnabled = !disableShapes;
             if (DrawCircleButton != null) DrawCircleButton.IsEnabled = !disableShapes;
+            if (DrawEllipseButton != null) DrawEllipseButton.IsEnabled = !disableShapes;
             if (DrawTriangleButton != null) DrawTriangleButton.IsEnabled = !disableShapes;
             if (DrawPolygonButton != null) DrawPolygonButton.IsEnabled = !disableShapes;
             if (HollowCheckBox != null) HollowCheckBox.IsEnabled = !disableShapes;
             if (BrushThicknessSlider != null) BrushThicknessSlider.IsEnabled = !disableShapes;
+            // Clear SelectSame overlay if the select-same tool is not active
+            try { ClearSelectSameOverlay(); } catch { }
+            // Clear lasso path/overlay if not in Lasso mode (neither SelectTool in Lasso mode nor standalone LassoTool checked)
+            try
+            {
+                bool inLassoState = ((lassoBtn != null && lassoBtn.IsChecked == true) || (tb == SelectTool && currentSelectMode == SelectMode.Lasso));
+                if (!inLassoState) ClearLassoOverlay();
+            }
+            catch { }
         }
 
         private void DrawModeButton_Checked(object? sender, RoutedEventArgs e)
@@ -14811,7 +15522,7 @@ namespace FamidashEditor
             if (tb == null) return;
 
             // Uncheck other draw-mode buttons
-            var drawButtons = new System.Collections.Generic.List<ToggleButton?> { DrawTileButton, DrawLineButton, DrawSquareButton, DrawCircleButton, DrawTriangleButton, DrawPolygonButton };
+            var drawButtons = new System.Collections.Generic.List<ToggleButton?> { DrawTileButton, DrawLineButton, DrawSquareButton, DrawCircleButton, DrawEllipseButton, DrawTriangleButton, DrawPolygonButton };
             foreach (var b in drawButtons)
             {
                 if (b != null && b != tb) b.IsChecked = false;
@@ -14822,6 +15533,7 @@ namespace FamidashEditor
             else if (tb == DrawLineButton) currentDrawMode = DrawMode.Line;
             else if (tb == DrawSquareButton) currentDrawMode = DrawMode.Square;
             else if (tb == DrawCircleButton) currentDrawMode = DrawMode.Circle;
+            else if (tb == DrawEllipseButton) currentDrawMode = DrawMode.Ellipse;
             else if (tb == DrawTriangleButton) currentDrawMode = DrawMode.Triangle;
             else if (tb == DrawPolygonButton) currentDrawMode = DrawMode.Polygon;
         }
@@ -14867,6 +15579,58 @@ namespace FamidashEditor
             // structureSetOffset in tiles (0x20 increments)
             structureSetOffset = (baseTile - 0x20) / 0x20; // 0 => A, 1 => B, 2 => C
             UpdateStructureToolIcon();
+        }
+
+        // Lasso state
+        private bool isLassoActive = false;
+        private System.Collections.Generic.List<Point> lassoPoints = new System.Collections.Generic.List<Point>();
+
+        // Clear any lasso visuals
+        private void ClearLassoOverlay()
+        {
+            try
+            {
+                isLassoActive = false;
+                lassoPoints.Clear();
+                var overlay = FindName("SelectionOverlay") as Canvas;
+                if (overlay != null)
+                {
+                    // remove any lasso path visual by name
+                    for (int i = overlay.Children.Count - 1; i >= 0; i--)
+                    {
+                        var child = overlay.Children[i] as FrameworkElement;
+                        if (child != null && child.Name == "LassoPath") overlay.Children.RemoveAt(i);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // Add lasso visual path
+        private void RenderLassoPath()
+        {
+            try
+            {
+                var overlay = FindName("SelectionOverlay") as Canvas;
+                if (overlay == null) return;
+                // remove old path
+                for (int i = overlay.Children.Count - 1; i >= 0; i--)
+                {
+                    var child = overlay.Children[i] as FrameworkElement;
+                    if (child != null && child.Name == "LassoPath") overlay.Children.RemoveAt(i);
+                }
+                if (lassoPoints.Count < 2) return;
+                var path = new System.Windows.Shapes.Path() { Name = "LassoPath", Stroke = System.Windows.Media.Brushes.Lime, StrokeThickness = 1.5, Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 0, 255, 0)), IsHitTestVisible = false };
+                var geom = new System.Windows.Media.StreamGeometry();
+                using (var ctx = geom.Open())
+                {
+                    ctx.BeginFigure(lassoPoints[0], true, true);
+                    ctx.PolyLineTo(lassoPoints.ToArray(), true, true);
+                }
+                path.Data = geom;
+                overlay.Children.Add(path);
+            }
+            catch { }
         }
 
         private void StructureTool_Click(object? sender, RoutedEventArgs e)
@@ -14918,7 +15682,7 @@ namespace FamidashEditor
         {
             // If the unchecked button was the currently selected, revert to Tile
             var btn = sender as ToggleButton; if (btn == null) return;
-            if (!(DrawTileButton.IsChecked == true || DrawLineButton.IsChecked == true || DrawSquareButton.IsChecked == true || DrawCircleButton.IsChecked == true || DrawTriangleButton.IsChecked == true || DrawPolygonButton.IsChecked == true))
+            if (!(DrawTileButton.IsChecked == true || DrawLineButton.IsChecked == true || DrawSquareButton.IsChecked == true || DrawCircleButton.IsChecked == true || DrawEllipseButton.IsChecked == true || DrawTriangleButton.IsChecked == true || DrawPolygonButton.IsChecked == true))
             {
                 if (DrawTileButton != null) DrawTileButton.IsChecked = true;
             }
@@ -15124,35 +15888,56 @@ namespace FamidashEditor
             var tt = ViewportPointToTile(pos);
             int x = tt.x; int y = tt.y;
 
-            // For Fill tool, perform flood-fill on click and do not start drag-painting
+            // For Fill tool: either do a flood-fill or ReplaceSelected depending on mode
             if (FillTool != null && FillTool.IsChecked == true)
             {
-                bool didFill = false;
-                // Fill tiles layer if active
-                if (tilesLayerActive && selectedTile >= 0)
+                try
                 {
-                    int target = tiles[y * mapWidth + x];
-                    if (target != selectedTile)
+                    if (currentFillMode == FillMode.ReplaceSelected)
                     {
-                        FloodFill(x, y, target, selectedTile);
-                        didFill = true;
+                        int clickIdx = y * mapWidth + x;
+                        // Only apply ReplaceSelected if the clicked cell is part of the current selection
+                        if (selectionSet != null && selectionSet.Contains(clickIdx))
+                        {
+                            PerformReplaceSelected();
+                        }
+                        else
+                        {
+                            // If click is outside selection, ignore to let user pick a selected cell
+                            if (StatusText != null) StatusText.Text = "Replace Selected: click inside current selection to apply";
+                        }
+                        return;
+                    }
+
+                    // Normal fill behavior
+                    bool didFill = false;
+                    // Fill tiles layer if active
+                    if (tilesLayerActive && selectedTile >= 0)
+                    {
+                        int target = tiles[y * mapWidth + x];
+                        if (target != selectedTile)
+                        {
+                            FloodFill(x, y, target, selectedTile);
+                            didFill = true;
+                        }
+                    }
+                    // Fill sprites layer if active
+                    if (spritesLayerActive && selectedSprite >= 0)
+                    {
+                        int target = sprites[y * mapWidth + x];
+                        if (target != selectedSprite)
+                        {
+                            SpriteFloodFill(x, y, target, selectedSprite);
+                            didFill = true;
+                        }
+                    }
+                    if (!didFill && !tilesLayerActive && !spritesLayerActive)
+                    {
+                        // Fallback: if no layers active, just redraw
+                        Redraw();
                     }
                 }
-                // Fill sprites layer if active
-                if (spritesLayerActive && selectedSprite >= 0)
-                {
-                    int target = sprites[y * mapWidth + x];
-                    if (target != selectedSprite)
-                    {
-                        SpriteFloodFill(x, y, target, selectedSprite);
-                        didFill = true;
-                    }
-                }
-                if (!didFill && !tilesLayerActive && !spritesLayerActive)
-                {
-                    // Fallback: if no layers active, just redraw
-                    Redraw();
-                }
+                catch { }
                 return;
             }
 
@@ -15930,41 +16715,114 @@ namespace FamidashEditor
             }
             else
             {
-                // Show individual rectangles for each selected tile
-                foreach (var idx in selectionSet)
+                // Always use the fast mask renderer for selection visuals to avoid per-rect UI elements
+                try
                 {
-                    int tx = idx % mapWidth;
-                    int ty = idx / mapWidth;
-                    
-                    // Check if this tile has a sprite with pixel offset
-                    int offsetX = 0, offsetY = 0;
-                    if (sprites[idx] != -1 && spritePixelOffsets.TryGetValue(idx, out var pixelOffset))
+                    if (selectionSet != null && selectionSet.Count > 0)
                     {
-                        offsetX = pixelOffset.offsetX;
-                        offsetY = pixelOffset.offsetY;
+                        var dpiLocal = dpi;
+                        double scaleLocal = scale;
+                        _ = RenderMaskToCanvasAsync(SelectionOverlay, selectionSet.ToArray(), scaleLocal, dpiLocal);
                     }
-                    
-                    var rect = new Shapes.Rectangle
+                }
+                catch { }
+            }
+        }
+
+        // Build fast lookup maps from tile/sprite id -> indices. Called after tile/sprite layers are rebuilt.
+        private void BuildSelectSameIndexMaps()
+        {
+            try
+            {
+                tileIndexMap.Clear(); spriteIndexMap.Clear();
+                if (tiles != null && tiles.Length > 0)
+                {
+                    var tmp = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<int>>();
+                    for (int i = 0; i < tiles.Length; i++)
                     {
-                        Fill = SelectionFillBrush,
-                        Stroke = SelectionStrokeBrush,
-                        StrokeThickness = 1,
-                        Width = (double)tilePixelW / dpi.DpiScaleX,
-                        Height = (double)tilePixelH / dpi.DpiScaleY,
-                        IsHitTestVisible = false
-                    };
-                    
-                    // Position includes sprite pixel offset (scaled)
-                    int scaledOffsetX = (int)Math.Round(offsetX * scale * dpi.DpiScaleX);
-                    int scaledOffsetY = (int)Math.Round(offsetY * scale * dpi.DpiScaleY);
-                    double left = (padPxX + tx * tilePixelW + scaledOffsetX) / dpi.DpiScaleX;
-                    double top = (padPxY + ty * tilePixelH + scaledOffsetY) / dpi.DpiScaleY + gridRenderShiftY;
-                    try { rect.StrokeThickness = 1.0 / dpi.DpiScaleX; rect.SnapsToDevicePixels = true; } catch { }
-                    Canvas.SetLeft(rect, left);
-                    Canvas.SetTop(rect, top);
-                    SelectionOverlay.Children.Add(rect);
+                        int v = tiles[i];
+                        // include -1 (empty) as a valid id so "select same" can target blanks instantly
+                        if (!tmp.TryGetValue(v, out var l)) { l = new System.Collections.Generic.List<int>(); tmp[v] = l; }
+                        l.Add(i);
+                    }
+                    foreach (var kv in tmp)
+                    {
+                        var list = kv.Value;
+                        list.Sort();
+                        var info = new IndexInfo { Indices = list.ToArray() };
+                        // compute bounding box
+                        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+                        foreach (var idx in info.Indices)
+                        {
+                            int sx = idx % mapWidth; int sy = idx / mapWidth;
+                            if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy;
+                        }
+                        if (minX == int.MaxValue) { minX = 0; minY = 0; maxX = 0; maxY = 0; }
+                        info.MinX = minX; info.MinY = minY; info.MaxX = maxX; info.MaxY = maxY;
+                        tileIndexMap[kv.Key] = info;
+                    }
+                }
+                if (sprites != null && sprites.Length > 0)
+                {
+                    var tmp2 = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<int>>();
+                    for (int i = 0; i < sprites.Length; i++)
+                    {
+                        int v = sprites[i];
+                        if (!tmp2.TryGetValue(v, out var l)) { l = new System.Collections.Generic.List<int>(); tmp2[v] = l; }
+                        l.Add(i);
+                    }
+                    foreach (var kv in tmp2)
+                    {
+                        var list = kv.Value;
+                        list.Sort();
+                        var info = new IndexInfo { Indices = list.ToArray() };
+                        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+                        foreach (var idx in info.Indices)
+                        {
+                            int sx = idx % mapWidth; int sy = idx / mapWidth;
+                            if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy;
+                        }
+                        if (minX == int.MaxValue) { minX = 0; minY = 0; maxX = 0; maxY = 0; }
+                        info.MinX = minX; info.MinY = minY; info.MaxX = maxX; info.MaxY = maxY;
+                        spriteIndexMap[kv.Key] = info;
+                    }
                 }
             }
+            catch { tileIndexMap.Clear(); spriteIndexMap.Clear(); }
+            finally { lastHoveredSelectSameTileId = int.MinValue; lastHoveredSelectSameSpriteId = int.MinValue; }
+        }
+
+        private void ClearSelectSameOverlay()
+        {
+            try { if (SelectSameOverlay != null) SelectSameOverlay.Children.Clear(); } catch { }
+            lastHoveredSelectSameTileId = int.MinValue; lastHoveredSelectSameSpriteId = int.MinValue;
+        }
+
+        private async void UpdateSelectSameOverlay(bool useTilesLayer, int id)
+        {
+            if (SelectSameOverlay == null) return;
+            try
+            {
+                // Debounced rendering path: for small sets create Rectangle children, for large sets rasterize once
+                SelectSameOverlay.Children.Clear();
+                if (id == -1) return;
+                IndexInfo? info = null;
+                if (useTilesLayer) tileIndexMap.TryGetValue(id, out info); else spriteIndexMap.TryGetValue(id, out info);
+                if (info == null || info.Count == 0) return;
+                int[] indices = info.Indices;
+
+                var dpi = VisualTreeHelper.GetDpi(this);
+                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
+                int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
+                int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
+                int padPxY = (int)Math.Round(mapViewportPadding * dpi.DpiScaleY);
+
+                const int RasterizeThreshold = 2000;
+                // Always use mask renderer for hover highlight (fast and consistent)
+                try { await RenderMaskToCanvasAsync(SelectSameOverlay, indices, scale, dpi); } catch { }
+            }
+            catch { }
         }
 
         // Polygon helper: fill polygon tiles
@@ -16307,6 +17165,38 @@ namespace FamidashEditor
                     }
                     return;
                 }
+                if (currentDrawMode == DrawMode.Ellipse)
+                {
+                    var tilesToPreview = ComputeDrawTileList(drawStartX, drawStartY, drawCurrentX, drawCurrentY, DrawMode.Ellipse, brushThickness);
+                    if (tilesToPreview.Count == 0) return;
+                    int minx = int.MaxValue, miny = int.MaxValue, maxx = int.MinValue, maxy = int.MinValue;
+                    foreach (var (tx, ty) in tilesToPreview) { if (tx < minx) minx = tx; if (tx > maxx) maxx = tx; if (ty < miny) miny = ty; if (ty > maxy) maxy = ty; }
+                    double left = (padPxX + minx * tilePixelW) / dpi.DpiScaleX;
+                    double top = (padPxY + miny * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY;
+                    double wpx = (maxx - minx + 1) * tilePixelW / dpi.DpiScaleX;
+                    double hpx = (maxy - miny + 1) * tilePixelH / dpi.DpiScaleY;
+                    var el2 = new Shapes.Ellipse { Width = wpx, Height = hpx, Stroke = Brushes.Yellow, StrokeThickness = 1, Fill = Brushes.Transparent, IsHitTestVisible = false };
+                    try { el2.StrokeThickness = 1.0 / dpi.DpiScaleX; el2.SnapsToDevicePixels = true; } catch { }
+                    Canvas.SetLeft(el2, left); Canvas.SetTop(el2, top);
+                    SelectionOverlay.Children.Add(el2);
+                    ImageSource? ghostSrc2 = null;
+                    if (tilesLayerActive && selectedTile >= 0 && tileImages != null)
+                    {
+                        try { ghostSrc2 = (tileTonedImages != null && tileTonedImages.Length == tileImages.Length) ? tileTonedImages[selectedTile] : tileImages[selectedTile]; } catch { ghostSrc2 = null; }
+                    }
+                    if (spritesLayerActive && selectedSprite >= 0 && spriteImages != null) ghostSrc2 = spriteImages[selectedSprite];
+                    if (ghostSrc2 != null)
+                    {
+                        foreach (var (tx, ty) in tilesToPreview)
+                        {
+                            var img = new Image { Source = ghostSrc2, Width = (double)tilePixelW / dpi.DpiScaleX, Height = (double)tilePixelH / dpi.DpiScaleY, Opacity = 0.5, IsHitTestVisible = false };
+                            Canvas.SetLeft(img, (padPxX + tx * tilePixelW) / dpi.DpiScaleX);
+                            Canvas.SetTop(img, (padPxY + ty * tilePixelH) / dpi.DpiScaleY + gridRenderShiftY);
+                            SelectionOverlay.Children.Add(img);
+                        }
+                    }
+                    return;
+                }
             }
             catch { }
         }
@@ -16449,6 +17339,38 @@ namespace FamidashEditor
                 }
                 return list;
             }
+            if (mode == DrawMode.Ellipse)
+            {
+                minx = Math.Min(sx, ex); maxx = Math.Max(sx, ex);
+                miny = Math.Min(sy, ey); maxy = Math.Max(sy, ey);
+                double rx = Math.Max(1.0, (maxx - minx + 1) / 2.0);
+                double ry = Math.Max(1.0, (maxy - miny + 1) / 2.0);
+                double cx = (minx + maxx) / 2.0;
+                double cy = (miny + maxy) / 2.0;
+                if (hollowShape)
+                {
+                    int t = Math.Max(1, thickness);
+                    double innerRx = Math.Max(0.0001, rx - t + 1);
+                    double innerRy = Math.Max(0.0001, ry - t + 1);
+                    for (int y = (int)Math.Floor(cy - ry); y <= (int)Math.Ceiling(cy + ry); y++) for (int x = (int)Math.Floor(cx - rx); x <= (int)Math.Ceiling(cx + rx); x++)
+                    {
+                        double dx = (x - cx) / rx; double dy = (y - cy) / ry;
+                        double norm = dx * dx + dy * dy;
+                        double dxi = (x - cx) / innerRx; double dyi = (y - cy) / innerRy;
+                        double innerNorm = dxi * dxi + dyi * dyi;
+                        if (norm <= 1.0 && innerNorm >= 1.0) if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) list.Add((x, y));
+                    }
+                }
+                else
+                {
+                    for (int y = (int)Math.Floor(cy - ry); y <= (int)Math.Ceiling(cy + ry); y++) for (int x = (int)Math.Floor(cx - rx); x <= (int)Math.Ceiling(cx + rx); x++)
+                    {
+                        double dx = (x - cx) / rx; double dy = (y - cy) / ry;
+                        if (dx * dx + dy * dy <= 1.0) if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) list.Add((x, y));
+                    }
+                }
+                return list;
+            }
             return list;
         }
 
@@ -16539,10 +17461,11 @@ namespace FamidashEditor
                         int oldS = sprites[idx]; int neuS = selectedSprite; if (oldS != neuS) { spriteAction.Add(idx, oldS, neuS); sprites[idx] = neuS; }
                     }
                 }
-                if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
-                if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
-                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                bool didTileChange = false; bool didSpriteChange = false;
+                if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); SetHasUnsavedChanges(true); didTileChange = true; }
+                if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); didSpriteChange = true; }
+                try { if (didTileChange) RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                try { if (didSpriteChange) RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); else if (didTileChange) Redraw(); } catch { Redraw(); }
             }
             catch { }
             finally
@@ -16696,6 +17619,27 @@ namespace FamidashEditor
             spriteAnchors.Clear(); // Clear anchors when selection is cleared
             if (SelectionOverlay != null) SelectionOverlay.Children.Clear();
             if (StatusText != null) StatusText.Text = string.Empty;
+        }
+
+        // Populate selTiles/selSprites arrays for the current selX/selY/selW/selH based on active layers
+        private void PopulateSelectionArraysFromSet()
+        {
+            try
+            {
+                if (selW <= 0 || selH <= 0 || selX < 0 || selY < 0) return;
+                selTiles = new int[selW * selH];
+                selSprites = new int[selW * selH];
+                for (int yy = 0; yy < selH; yy++)
+                {
+                    for (int xx = 0; xx < selW; xx++)
+                    {
+                        int gidx = (selY + yy) * mapWidth + (selX + xx);
+                        selTiles[yy * selW + xx] = tilesLayerActive ? tiles[gidx] : -1;
+                        selSprites[yy * selW + xx] = spritesLayerActive ? sprites[gidx] : -1;
+                    }
+                }
+            }
+            catch { }
         }
 
         private void MoveSelectionTo(int destX, int destY, int pixelOffsetX = 0, int pixelOffsetY = 0, bool preserveOffsets = false)
@@ -17075,8 +18019,8 @@ namespace FamidashEditor
                 if (!tileAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
                 if (!spriteAction.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
 
-                try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-                try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                try { if (!tileAction.IsEmpty()) RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                try { if (!spriteAction.IsEmpty()) RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
             }
             else
             {
@@ -17111,6 +18055,73 @@ namespace FamidashEditor
 
             ClearSelection();
             if (StatusText != null) StatusText.Text = "Erased selection on active layers";
+        }
+
+        // Apply a global tile/sprite shift (dx, dy) in tile units. Tiles/sprites shifted outside map are deleted.
+        public void ApplyMapOffset(int dx, int dy)
+        {
+            try
+            {
+                int w = mapWidth, h = mapHeight;
+                var finalTiles = Enumerable.Repeat(-1, w * h).ToArray();
+                var finalSprites = Enumerable.Repeat(-1, w * h).ToArray();
+                var finalOffsets = new System.Collections.Generic.Dictionary<int, (int offsetX, int offsetY)>();
+                var finalAnchors = new System.Collections.Generic.Dictionary<int, (int anchorTileX, int anchorTileY)>();
+
+                for (int y = 0; y < h; y++)
+                {
+                    for (int x = 0; x < w; x++)
+                    {
+                        int srcIdx = y * w + x;
+                        int dstX = x + dx; int dstY = y + dy;
+                        if (dstX < 0 || dstX >= w || dstY < 0 || dstY >= h) continue; // deleted
+                        int dstIdx = dstY * w + dstX;
+                        finalTiles[dstIdx] = tiles[srcIdx];
+                        finalSprites[dstIdx] = sprites[srcIdx];
+                        if (spritePixelOffsets.TryGetValue(srcIdx, out var off)) finalOffsets[dstIdx] = off;
+                        if (spriteAnchors.TryGetValue(srcIdx, out var anc)) finalAnchors[dstIdx] = anc;
+                    }
+                }
+
+                // Build change actions by diffing final vs current
+                var tileAction = new TileChangeAction();
+                var spriteAction = new SpriteChangeAction();
+                for (int i = 0; i < w * h; i++)
+                {
+                    if (finalTiles[i] != tiles[i]) tileAction.Add(i, tiles[i], finalTiles[i]);
+                    if (finalSprites[i] != sprites[i]) spriteAction.Add(i, sprites[i], finalSprites[i]);
+                }
+
+                if (!tileAction.IsEmpty() || !spriteAction.IsEmpty())
+                {
+                    // Apply final arrays atomically and record a composite undo action
+                    var oldSuppress = suppressUndoRecording;
+                    try
+                    {
+                        // Apply final state
+                        tiles = finalTiles;
+                        sprites = finalSprites;
+                        spritePixelOffsets = finalOffsets;
+                        spriteAnchors = finalAnchors;
+
+                        // Record actions on the undo stack (respect existing suppress flag by restoring it afterwards)
+                        if (!tileAction.IsEmpty()) { undoStack.Push(tileAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
+                        if (!spriteAction.IsEmpty()) { undoStack.Push(spriteAction); redoStack.Clear(); SetHasUnsavedChanges(true); }
+
+                        try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
+                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
+                    }
+                    finally
+                    {
+                        suppressUndoRecording = oldSuppress;
+                    }
+                }
+
+                // Clear selection after offset
+                try { ClearSelection(); } catch { }
+                if (StatusText != null) StatusText.Text = $"Offset map by ({dx},{dy})";
+            }
+            catch { }
         }
 
         // Copy current selection into the internal clipboard
@@ -17536,6 +18547,71 @@ namespace FamidashEditor
                                 HoverBorder.Visibility = Visibility.Visible;
                             }
                             catch { }
+                            // If SelectSameTool is active, update highlight overlay for all matching tiles/sprites
+                            try
+                            {
+                                if (SelectTool != null && SelectTool.IsChecked == true && currentSelectMode == SelectMode.AllSame)
+                                {
+                                    var tt = ViewportPointToTile(p);
+                                    int idx = tt.y * mapWidth + tt.x;
+                                    bool useTiles = tilesLayerActive && tiles[idx] != -1;
+                                    int id = useTiles ? tiles[idx] : ((spritesLayerActive && sprites[idx] != -1) ? sprites[idx] : -1);
+                                                        // Debounce updates: schedule a short timer to avoid doing heavy work on every mouse move
+                                                        try
+                                                        {
+                                                            if (selectSameHoverTimer == null)
+                                                            {
+                                                                selectSameHoverTimer = new System.Windows.Threading.DispatcherTimer();
+                                                                selectSameHoverTimer.Interval = System.TimeSpan.FromMilliseconds(60);
+                                                                selectSameHoverTimer.Tick += (ss, ee) =>
+                                                                {
+                                                                    selectSameHoverTimer?.Stop();
+                                                                    selectSameHoverTimer = null;
+                                                                    try
+                                                                    {
+                                                                        if (pendingHoverTileId != int.MinValue)
+                                                                        {
+                                                                            // Only refresh if the hovered id changed
+                                                                            if (pendingHoverUseTiles)
+                                                                            {
+                                                                                if (pendingHoverTileId != lastHoveredSelectSameTileId)
+                                                                                {
+                                                                                    lastHoveredSelectSameTileId = pendingHoverTileId; lastHoveredSelectSameSpriteId = int.MinValue;
+                                                                                    UpdateSelectSameOverlay(true, pendingHoverTileId);
+                                                                                }
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                if (pendingHoverTileId != lastHoveredSelectSameSpriteId)
+                                                                                {
+                                                                                    lastHoveredSelectSameSpriteId = pendingHoverTileId; lastHoveredSelectSameTileId = int.MinValue;
+                                                                                    UpdateSelectSameOverlay(false, pendingHoverTileId);
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    catch { }
+                                                                    finally { pendingHoverTileId = int.MinValue; }
+                                                                };
+                                                            }
+                                                            // set pending and restart timer only if id changed
+                                                            bool changed = useTiles ? (id != lastHoveredSelectSameTileId) : (id != lastHoveredSelectSameSpriteId);
+                                                            if (changed)
+                                                            {
+                                                                pendingHoverTileId = id;
+                                                                pendingHoverUseTiles = useTiles;
+                                                                selectSameHoverTimer.Stop();
+                                                                selectSameHoverTimer.Start();
+                                                            }
+                                                        }
+                                                        catch { }
+                                }
+                                else
+                                {
+                                    ClearSelectSameOverlay();
+                                }
+                            }
+                            catch { }
                         }
                     }
                     else
@@ -17620,6 +18696,8 @@ namespace FamidashEditor
             try { if (OffsetGhostContainer != null) OffsetGhostContainer.Visibility = Visibility.Collapsed; } catch { }
             try { if (OffsetTooltipContainer != null) OffsetTooltipContainer.Visibility = Visibility.Collapsed; } catch { }
             try { if (OffsetGhostTile != null) OffsetGhostTile.Visibility = Visibility.Collapsed; } catch { }
+            try { ClearSelectSameOverlay(); } catch { }
+            try { if (selectSameHoverTimer != null) { selectSameHoverTimer.Stop(); selectSameHoverTimer = null; pendingHoverTileId = int.MinValue; } } catch { }
         }
 
         private void GridDarknessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -18463,6 +19541,8 @@ namespace FamidashEditor
                 RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
             } 
             catch { Redraw(); }
+            // Deselect on undo so selection state matches the reverted map
+            try { ClearSelection(); } catch { }
             // Update dirty flag: if no remaining undo actions, consider the tab clean
             try { SetHasUnsavedChanges(undoStack.Count > 0); } catch { }
             if (StatusText != null) StatusText.Text = "Undid action";
@@ -18489,6 +19569,8 @@ namespace FamidashEditor
                 RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
             } 
             catch { Redraw(); }
+            // Deselect on redo so selection state matches the applied change
+            try { ClearSelection(); } catch { }
             // After redo we have at least one undo entry -> mark dirty
             try { SetHasUnsavedChanges(true); } catch { }
             if (StatusText != null) StatusText.Text = "Redid action";

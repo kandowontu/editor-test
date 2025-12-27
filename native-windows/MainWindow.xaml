@@ -125,8 +125,14 @@
                     <MenuItem x:Name="MenuToolErase" Header="_Erase" IsCheckable="True" InputGestureText="E" />
                     <MenuItem x:Name="MenuToolFill" Header="_Fill" IsCheckable="True" InputGestureText="F" />
                     <MenuItem x:Name="MenuToolSelect" Header="_Select" IsCheckable="True" InputGestureText="S" />
+                    <MenuItem x:Name="MenuToolLasso" Header="_Lasso Select" IsCheckable="True" InputGestureText="L" />
+                    <Separator />
+                    <MenuItem x:Name="MenuToolSelectAllSame" Header="Select All Same" />
+                    <MenuItem x:Name="MenuToolReplaceSelected" Header="Replace Selected" />
                     <MenuItem x:Name="MenuToolWand" Header="_Magic Wand" IsCheckable="True" InputGestureText="W" />
                     <MenuItem x:Name="MenuToolStructure" Header="_Structure" IsCheckable="True" InputGestureText="T" />
+                    <Separator />
+                    <MenuItem x:Name="MenuToolOffsetMap" Header="Offset Map..." />
                     <Separator />
                     <MenuItem x:Name="MenuEditCut" Header="Cu_t" InputGestureText="Ctrl+X" />
                     <MenuItem x:Name="MenuEditCopy" Header="_Copy" InputGestureText="Ctrl+C" />
@@ -218,18 +224,39 @@
                             <TextBlock Text="Erase" Margin="4,0" />
                         </StackPanel>
                     </ToggleButton>
-                    <ToggleButton x:Name="FillTool" Margin="2">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="🪣" FontSize="12" Margin="2,0" />
-                            <TextBlock Text="Fill" Margin="4,0" />
-                        </StackPanel>
-                    </ToggleButton>
-                    <ToggleButton x:Name="SelectTool" Margin="2">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="▤" FontSize="12" Margin="2,0" />
-                            <TextBlock Text="Select" Margin="4,0" />
-                        </StackPanel>
-                    </ToggleButton>
+                    <DockPanel Margin="0,2,2,2" VerticalAlignment="Center">
+                        <ToggleButton x:Name="FillTool" DockPanel.Dock="Left" Style="{StaticResource {x:Static ToolBar.ToggleButtonStyleKey}}" Margin="0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="🪣" FontSize="12" Margin="2,0" />
+                                <TextBlock Text="Fill" Margin="4,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <Button x:Name="FillToolMore" Content="+" Width="18" Height="20" DockPanel.Dock="Right" Margin="0,0,0,0" Click="FillToolMore_Click" Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}">
+                            <Button.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Fill" x:Name="Menu_Fill_Normal" />
+                                    <MenuItem Header="Replace Selected" x:Name="Menu_Fill_ReplaceSelected" />
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+                    </DockPanel>
+                    <DockPanel Margin="0,2,2,2" VerticalAlignment="Center">
+                        <ToggleButton x:Name="SelectTool" DockPanel.Dock="Left" Style="{StaticResource {x:Static ToolBar.ToggleButtonStyleKey}}" Margin="0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="▤" FontSize="12" Margin="2,0" />
+                                <TextBlock Text="Select" Margin="4,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <Button x:Name="SelectToolMore" Content="+" Width="18" Height="20" DockPanel.Dock="Right" Margin="0,0,0,0" Click="SelectToolMore_Click" Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}">
+                            <Button.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Select" x:Name="Menu_Select_Normal" />
+                                        <MenuItem Header="Select All Same" x:Name="Menu_Select_AllSame" />
+                                        <MenuItem Header="Lasso Select" x:Name="Menu_Select_Lasso" />
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+                    </DockPanel>
                     <ToggleButton x:Name="MagicWandTool" Margin="2">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="✦" FontSize="12" Margin="2,0" />
@@ -271,7 +298,7 @@
                     <!-- Undo/Redo moved next to brush controls -->
                     <Separator Margin="8,0" />
                     <CheckBox x:Name="PreviewModeCheckbox" Content="Preview Mode" VerticalAlignment="Center" Margin="4,0" ToolTip="Enable animated previews (saws, etc.)" />
-                    <ComboBox x:Name="FamiTrackCombo" Width="220" Margin="8,0" VerticalAlignment="Center" IsEditable="False"/>
+                    <ComboBox x:Name="FamiTrackCombo" Width="176" Margin="8,0" VerticalAlignment="Center" IsEditable="False"/>
                     <Button x:Name="PlayFamiButton" Content="▶" Margin="4,0" Width="36" ToolTip="Play" FontSize="14" />
                     <Button x:Name="StopFamiButton" Content="⏹" Margin="2,0" Width="36" ToolTip="Stop" FontSize="14" />
                 </ToolBar>
@@ -284,6 +311,7 @@
                     <ToggleButton x:Name="DrawLineButton" Margin="2">Line</ToggleButton>
                     <ToggleButton x:Name="DrawSquareButton" Margin="2">Square</ToggleButton>
                     <ToggleButton x:Name="DrawCircleButton" Margin="2">Circle</ToggleButton>
+                    <ToggleButton x:Name="DrawEllipseButton" Margin="2">Ellipse</ToggleButton>
                     <ToggleButton x:Name="DrawTriangleButton" Margin="2">Triangle</ToggleButton>
                     <ToggleButton x:Name="DrawPolygonButton" Margin="2">Polygon</ToggleButton>
                     <CheckBox x:Name="HollowCheckBox" Content="Hollow" VerticalAlignment="Center" Margin="12,0" />
@@ -343,6 +371,8 @@
                         <!-- Selection overlay canvas: contains individual rectangle overlays for each selected tile -->
                         <Canvas x:Name="SelectionOverlay" IsHitTestVisible="False" />
                             <Canvas x:Name="IncompatibleOverlay" IsHitTestVisible="False" />
+                        <!-- Overlay for "Select Same" highlight (non-interactive) -->
+                        <Canvas x:Name="SelectSameOverlay" IsHitTestVisible="False" />
                         <!-- Ghost image shown while dragging a selection -->
                         <Image x:Name="GhostImage" Visibility="Collapsed" IsHitTestVisible="False" Opacity="0.75" />
                         <!-- Offset sprite tooltip overlay -->

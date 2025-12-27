@@ -1303,19 +1303,19 @@ namespace FamidashEditor
                 try
                 {
                     camModeActive = (this.Owner is MainWindow mw2) ? MainWindow.Option_CamMode : false;
-                    if (camModeActive)
-                    {
+                    //if (camModeActive)
+                    //{
                         physicsEnabled = false;
                         // Keep jumpedOnce false so Up/Down act purely as camera pans
                         jumpedOnce = false;
-                    }
-                    else
-                    {
+                    //}
+                    //else
+                    //{
                         // Start physics immediately when Cam Mode is OFF
-                        physicsEnabled = true;
+                    //    physicsEnabled = true;
                         // Prevent Up/Down from being camera-only
-                        jumpedOnce = true;
-                    }
+                    //    jumpedOnce = true;
+                    //}
                 }
                 catch { }
                 // Initialize per-simulator overlay flags from global editor options

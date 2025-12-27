@@ -243,6 +243,64 @@ namespace FamidashEditor
                 }
             };
 
+            // Arrange tab order: top-left column top-to-bottom, then right column top-to-bottom, placing OK/Cancel at the end
+            try
+            {
+                var tabList = new System.Collections.Generic.List<System.Windows.IInputElement>();
+                // Left column (top to bottom)
+                tabList.Add(DecoCombo);
+                tabList.Add(LockSpritesCheckBox);
+                tabList.Add(BlockCombo);
+                tabList.Add(SpikeCombo);
+                tabList.Add(ShowAccurateTilesetCheckBox);
+                tabList.Add(StarsCombo);
+
+                // Right column (top to bottom)
+                tabList.Add(StartingBackgroundColorCombo);
+                tabList.Add(StartingGroundColorCombo);
+                tabList.Add(StartingGameModeCombo);
+                tabList.Add(StartingSpeedCombo);
+                tabList.Add(DifficultyCombo);
+                tabList.Add(UpperTextBox);
+                tabList.Add(LowerTextBox);
+
+                // Quick tint + other right-side buttons
+                tabList.Add(BgTintButton);
+                tabList.Add(GroundTintButton);
+                tabList.Add(TileTintButton);
+                tabList.Add(NoParallaxCheckBox);
+                tabList.Add(MaxFallSpeedCombo);
+                tabList.Add(AttemptJsonLoadButton);
+                tabList.Add(RemoveSpriteShiftsButton);
+                tabList.Add(ExportShiftJsonButton);
+
+                // Assign TabIndex sequentially, skipping nulls
+                int idx = 0;
+                foreach (var el in tabList)
+                {
+                    if (el == null) continue;
+                    try
+                    {
+                        if (el is System.Windows.Controls.Control c)
+                        {
+                            c.TabIndex = idx;
+                            c.IsTabStop = true;
+                        }
+                        else if (el is System.Windows.UIElement ue)
+                        {
+                            ue.Focusable = true;
+                            System.Windows.Input.KeyboardNavigation.SetTabIndex(ue, idx);
+                        }
+                        idx++;
+                    }
+                    catch { }
+                }
+                // Put OK and Cancel at the end
+                try { OkButton.TabIndex = idx++; OkButton.IsTabStop = true; } catch { }
+                try { CancelButton.TabIndex = idx++; CancelButton.IsTabStop = true; } catch { }
+            }
+            catch { }
+
             // Wire up Remove Sprite Shifts button
             RemoveSpriteShiftsButton.Click += (s, e) =>
             {
@@ -277,6 +335,31 @@ namespace FamidashEditor
 
             // Owner is set by caller via object-initializer after constructor completes.
             // Wire up the NoParallax checkbox in Loaded so Owner is available.
+            // Keyboard shortcuts: Ctrl+Enter => OK, Esc => Cancel
+            try
+            {
+                this.PreviewKeyDown += (ss, ee) =>
+                {
+                    try
+                    {
+                        if (ee.Key == System.Windows.Input.Key.Escape)
+                        {
+                            // Trigger cancel
+                            try { CancelButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); } catch { }
+                            ee.Handled = true;
+                            return;
+                        }
+                        if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0 && (ee.Key == System.Windows.Input.Key.Enter || ee.Key == System.Windows.Input.Key.Return))
+                        {
+                            try { OkButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); } catch { }
+                            ee.Handled = true;
+                            return;
+                        }
+                    }
+                    catch { }
+                };
+            }
+            catch { }
             this.Loaded += (s, e) =>
             {
                 try

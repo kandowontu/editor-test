@@ -1,0 +1,76 @@
+2025-12-26T11:21:53.9174914-05:00 NavKey=Down
+2025-12-26T11:21:53.9185613-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T11:21:54.3070125-05:00 NavKey=Up
+2025-12-26T11:21:54.3074964-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Close _Tab Items.Count:0
+2025-12-26T11:21:54.5060208-05:00 NavKey=Right
+2025-12-26T11:21:54.5071654-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Open _Recent Items.Count:10
+2025-12-26T11:21:54.7763993-05:00 NavKey=Down
+2025-12-26T11:21:54.7768522-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T11:24:44.8194435-05:00 NavKey=Down
+2025-12-26T11:24:44.8202887-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T11:24:45.2864970-05:00 NavKey=Up
+2025-12-26T11:24:45.2868688-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Close _Tab Items.Count:0
+2025-12-26T11:24:45.5151223-05:00 NavKey=Right
+2025-12-26T11:24:45.5162505-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Open _Recent Items.Count:10
+2025-12-26T11:24:45.7730653-05:00 NavKey=Down
+2025-12-26T11:24:45.7734161-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T12:03:24.0647615-05:00 NavKey=Down
+2025-12-26T12:03:24.0658818-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T12:03:24.0662903-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T12:03:24.0665615-05:00 UpDown focusedChild=_1  clutterfunk.tmx HasItems=False IsSubmenuOpen=False
+2025-12-26T12:03:24.4215922-05:00 NavKey=Up
+2025-12-26T12:03:24.4221256-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Close _Tab Items.Count:0
+2025-12-26T12:03:24.4224152-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T12:03:24.4225893-05:00 UpDown focusedChild=Close _Tab HasItems=False IsSubmenuOpen=False
+2025-12-26T12:03:24.6181129-05:00 NavKey=Right
+2025-12-26T12:03:24.6187663-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Open _Recent Items.Count:10
+2025-12-26T12:03:24.6191977-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T12:03:24.9102145-05:00 NavKey=Down
+2025-12-26T12:03:24.9107303-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T12:03:24.9110848-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T12:03:24.9113942-05:00 UpDown focusedChild=_1  clutterfunk.tmx HasItems=False IsSubmenuOpen=False
+2025-12-26T14:37:37.5734281-05:00 NavKey=Down
+2025-12-26T14:37:37.5743436-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T14:37:37.5746688-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T14:37:37.5748526-05:00 UpDown focusedChild=_1  clutterfunk.tmx HasItems=False IsSubmenuOpen=False
+2025-12-26T14:37:38.0245729-05:00 NavKey=Up
+2025-12-26T14:37:38.0297045-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Close _Tab Items.Count:0
+2025-12-26T14:37:38.0299529-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T14:37:38.0302614-05:00 UpDown focusedChild=Close _Tab HasItems=False IsSubmenuOpen=False
+2025-12-26T14:37:38.2271307-05:00 NavKey=Right
+2025-12-26T14:37:38.2283033-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Open _Recent Items.Count:10
+2025-12-26T14:37:38.2291754-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T14:37:38.4493470-05:00 NavKey=Down
+2025-12-26T14:37:38.4496876-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T14:37:38.4499036-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T14:37:38.4502035-05:00 UpDown focusedChild=_1  clutterfunk.tmx HasItems=False IsSubmenuOpen=False
+2025-12-26T14:37:38.8724736-05:00 NavKey=Up
+2025-12-26T14:37:38.8728213-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Close _Tab Items.Count:0
+2025-12-26T14:37:38.8729811-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T14:37:38.8730865-05:00 UpDown focusedChild=Close _Tab HasItems=False IsSubmenuOpen=False
+2025-12-26T14:37:39.0233168-05:00 NavKey=Right
+2025-12-26T14:37:39.0243805-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Open _Recent Items.Count:10
+2025-12-26T14:37:39.0253326-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T14:37:39.1712593-05:00 NavKey=Down
+2025-12-26T14:37:39.1715949-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T14:37:39.1719490-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T14:37:39.1721027-05:00 UpDown focusedChild=_1  clutterfunk.tmx HasItems=False IsSubmenuOpen=False
+2025-12-26T16:33:20.3486218-05:00 NavKey=Down
+2025-12-26T16:33:20.3496881-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T16:33:20.3502737-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T16:33:20.3506053-05:00 UpDown focusedChild=_1  clutterfunk.tmx HasItems=False IsSubmenuOpen=False
+2025-12-26T16:33:20.7961646-05:00 NavKey=Up
+2025-12-26T16:33:20.7965235-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Close _Tab Items.Count:0
+2025-12-26T16:33:20.7967002-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T16:33:20.7968183-05:00 UpDown focusedChild=Close _Tab HasItems=False IsSubmenuOpen=False
+2025-12-26T16:33:20.9687336-05:00 NavKey=Right
+2025-12-26T16:33:20.9690870-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Open _Recent Items.Count:10
+2025-12-26T16:33:20.9692608-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T16:33:21.1747823-05:00 NavKey=Down
+2025-12-26T16:33:21.1761249-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:_1  clutterfunk.tmx Items.Count:0
+2025-12-26T16:33:21.1771719-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T16:33:21.1780946-05:00 UpDown focusedChild=_1  clutterfunk.tmx HasItems=False IsSubmenuOpen=False
+2025-12-26T16:33:21.3981719-05:00 NavKey=Down
+2025-12-26T16:33:21.3993578-05:00 Focused=System.Windows.Controls.MenuItem System.Windows.Controls.MenuItem Header:Close _Tab Items.Count:0
+2025-12-26T16:33:21.4005994-05:00 curTop=_File IsSubmenuOpen=True
+2025-12-26T16:33:21.4016057-05:00 UpDown focusedChild=Close _Tab HasItems=False IsSubmenuOpen=False

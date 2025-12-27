@@ -1,0 +1,27 @@
+<Window x:Class="FamidashEditor.OffsetMapWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Offset Map" Height="160" Width="300" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,4" Text="Shift X (tiles):" />
+        <TextBox x:Name="ShiftXBox" Grid.Row="0" Grid.Column="1" Margin="6,4" Text="0" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,4" Text="Shift Y (tiles):" />
+        <TextBox x:Name="ShiftYBox" Grid.Row="1" Grid.Column="1" Margin="6,4" Text="0" />
+
+        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button x:Name="CancelButton" Width="80" Margin="4,0" Click="CancelButton_Click">Cancel</Button>
+            <Button x:Name="ApplyButton" Width="80" Margin="4,0" Click="ApplyButton_Click">Apply</Button>
+        </StackPanel>
+    </Grid>
+</Window>
