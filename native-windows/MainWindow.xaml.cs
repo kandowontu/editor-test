@@ -16476,15 +16476,27 @@ namespace FamidashEditor
             }
             else if (isShiftHeld && isSpritesOnly)
             {
-                // Half-grid snapping: use half of the logical tile size
-                double halfTileW = logicalTileW / 2.0;
-                double halfTileH = logicalTileH / 2.0;
-                
-                int halfTileX = (int)Math.Round((left - logicalPad) / halfTileW);
-                int halfTileY = (int)Math.Round((top - logicalPad) / halfTileH);
-                
-                snappedLeft = logicalPad + halfTileX * halfTileW;
-                snappedTop = logicalPad + halfTileY * halfTileH;
+                // Half-grid snapping computed from native coordinates (tile + half-tile offsets)
+                // This avoids quantization issues when converting between logical/display units
+                // and lets the ghost be positioned between surrounding sprites reliably.
+                double finalNativeLeftTmp = (left - logicalPad) / scale;
+                double finalNativeTopTmp = (top - logicalPad) / scale;
+
+                int tileX = (int)Math.Floor(finalNativeLeftTmp / TileSize);
+                int tileY = (int)Math.Floor(finalNativeTopTmp / TileSize);
+                double withinTileX = finalNativeLeftTmp - tileX * TileSize;
+                double withinTileY = finalNativeTopTmp - tileY * TileSize;
+
+                int offX = (int)Math.Round(withinTileX / (TileSize / 2.0)) * (TileSize / 2);
+                int offY = (int)Math.Round(withinTileY / (TileSize / 2.0)) * (TileSize / 2);
+
+                dragFinalTileX = tileX;
+                dragFinalTileY = tileY;
+                dragFinalOffsetX = offX;
+                dragFinalOffsetY = offY;
+
+                snappedLeft = logicalPad + (tileX * TileSize + offX) * scale;
+                snappedTop = logicalPad + (tileY * TileSize + offY) * scale;
             }
             else
             {
@@ -16561,29 +16573,10 @@ namespace FamidashEditor
             // trace so we can observe any overlapping situation during testing.
             try
             {
-                if (isShiftHeld && isSpritesOnly && GhostImage != null)
-                {
-                    bool anyOverlap = false;
-                    try
-                    {
-                        for (int yy = 0; yy < selH; yy++)
-                        {
-                            for (int xx = 0; xx < selW; xx++)
-                            {
-                                int dstIdx = (dragFinalTileY + yy) * mapWidth + (dragFinalTileX + xx);
-                                if (dstIdx >= 0 && dstIdx < sprites.Length && sprites[dstIdx] != -1)
-                                {
-                                    // If the destination sprite is not part of the current selection, mark overlap
-                                    if (selectionSet == null || !selectionSet.Contains(dstIdx)) anyOverlap = true;
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                    System.Diagnostics.Debug.WriteLine($"DragMove: shift-snap dest={dragFinalTileX},{dragFinalTileY} offset={dragFinalOffsetX},{dragFinalOffsetY} overlap={anyOverlap}");
-                    // Force ghost visible regardless of overlap
-                    GhostImage.Visibility = Visibility.Visible;
-                }
+                // For Shift+sprite-only dragging we allow the ghost to be positioned freely
+                // even if destination tiles contain other sprites. Do not block or constrain
+                // ghost placement based on existing sprite occupancy.
+                try { if (isShiftHeld && isSpritesOnly && GhostImage != null) GhostImage.Visibility = Visibility.Visible; } catch { }
             }
             catch { }
             
@@ -17697,12 +17690,12 @@ namespace FamidashEditor
                             int sDstIdx = (destY + yy) * mapWidth + (destX + xx);
                             if (sDstIdx >= 0 && sDstIdx < finalSprites.Length)
                             {
-                                bool dstOccupied = (sprites[sDstIdx] != -1);
-                                bool dstIsInSelection = (selectionSet != null && selectionSet.Contains(sDstIdx));
-                                if (preserveOffsets && dstOccupied && !dstIsInSelection)
+                                // When preserving offsets (Shift-drag), always keep the sprite in its
+                                // original storage index and record a pixel offset so it visually
+                                // moves. This makes placement permissive (allow overlaps) because
+                                // we're not moving anchors/storage slots — only adding shift data.
+                                if (preserveOffsets)
                                 {
-                                    // Collision: plan an offset for the source sprite so it visually moves
-                                    // into the destination area while preserving the existing dst sprite.
                                     int srcTileX = selX + xx; int srcTileY = selY + yy;
                                     int targetTileX = destX + xx; int targetTileY = destY + yy;
 
@@ -17732,7 +17725,7 @@ namespace FamidashEditor
                                     collisionPlannedOffsets[srcIdx] = (offsetX, offsetY);
                                     collisionSources.Add(srcIdx);
 
-                                    // Record a sprite change entry so undo/redo captures the offset-only change
+                                    // Keep sprite in source storage index; offsets will be applied later.
                                     spriteMappings.Add((srcIdx, srcIdx, sval));
                                     spriteChanges.Add(srcIdx, sprites[srcIdx], sprites[srcIdx]);
                                 }
