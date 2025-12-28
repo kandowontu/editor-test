@@ -936,6 +936,8 @@ namespace FamidashEditor
         // Track gravity portals we've already activated this pass so each
         // portal activates only once per crossing.
         private System.Collections.Generic.HashSet<int> processedGravityPortals = new System.Collections.Generic.HashSet<int>();
+        // Speed portals processed set: avoid re-applying speed change while portal remains near interaction line
+        private System.Collections.Generic.HashSet<int> processedSpeedPortals = new System.Collections.Generic.HashSet<int>();
         // Track orbs that have been activated so they only fire once
         private System.Collections.Generic.HashSet<int> processedOrbs = new System.Collections.Generic.HashSet<int>();
         // Orb buffer: true when the player has pressed/held X in-air and is eligible
@@ -1303,19 +1305,19 @@ namespace FamidashEditor
                 try
                 {
                     camModeActive = (this.Owner is MainWindow mw2) ? MainWindow.Option_CamMode : false;
-                    //if (camModeActive)
-                    //{
+                    if (camModeActive)
+                    {
                         physicsEnabled = false;
                         // Keep jumpedOnce false so Up/Down act purely as camera pans
                         jumpedOnce = false;
-                    //}
-                    //else
-                    //{
+                    }
+                    else
+                    {
                         // Start physics immediately when Cam Mode is OFF
-                    //    physicsEnabled = true;
+                        physicsEnabled = true;
                         // Prevent Up/Down from being camera-only
-                    //    jumpedOnce = true;
-                    //}
+                        jumpedOnce = true;
+                    }
                 }
                 catch { }
                 // Initialize per-simulator overlay flags from global editor options
@@ -3376,20 +3378,44 @@ namespace FamidashEditor
                         int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                         int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
 
-                        // Require actual sprite hitbox overlap with player before changing speed
-                        const int PORTAL_HIT_W = 14; const int PORTAL_HIT_H = 14;
-                        int playerCenter_px_check = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                        int playerLeft_px_check = playerCenter_px_check - (PORTAL_HIT_W / 2);
-                        int playerRight_px_check = playerLeft_px_check + (PORTAL_HIT_W - 1);
-                        int playerTop_px_check = (playerY_fixed >> 8);
-                        int playerBottom_px_check = playerTop_px_check + (PORTAL_HIT_H - 1);
-
-                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_check, playerRight_px_check, playerTop_px_check, playerBottom_px_check))
+                        // Use the same interaction-line crossing logic as color triggers so
+                        // speed portals activate when their anchor crosses the player's interaction line.
+                        if (crossedInteraction)
                         {
-                            if (anchorX_center_fixed < bestAnchor_fixed)
+                            if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
                             {
-                                bestAnchor_fixed = anchorX_center_fixed;
-                                newSpeed_fixed = speedPortalMap[sid];
+                                if (!processedSpeedPortals.Contains(idx))
+                                {
+                                    if (anchorX_center_fixed < bestAnchor_fixed)
+                                    {
+                                        bestAnchor_fixed = anchorX_center_fixed;
+                                        newSpeed_fixed = speedPortalMap[sid];
+                                        processedSpeedPortals.Add(idx);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
+                            }
+                        }
+                        else
+                        {
+                            if (anchorX_center_fixed <= center_fixed)
+                            {
+                                if (!processedSpeedPortals.Contains(idx))
+                                {
+                                    if (anchorX_center_fixed < bestAnchor_fixed)
+                                    {
+                                        bestAnchor_fixed = anchorX_center_fixed;
+                                        newSpeed_fixed = speedPortalMap[sid];
+                                        processedSpeedPortals.Add(idx);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                if (processedSpeedPortals.Contains(idx)) processedSpeedPortals.Remove(idx);
                             }
                         }
                     }
@@ -3473,6 +3499,8 @@ namespace FamidashEditor
                             if (processedColorTriggers.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedColorTriggers.Remove(idx);
                             if (processedGravityPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityPortals.Remove(idx);
                             if (processedOrbs.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedOrbs.Remove(idx);
+                            if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
+                            if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
                         }
                     }
                     else
@@ -5866,18 +5894,40 @@ namespace FamidashEditor
                     if (!speedPortalMap.ContainsKey(sid)) continue;
                     int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                     int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
-                    // Require 2D overlap (player hitbox) before applying speed portal
-                    const int PORTAL_HIT_W = 14; const int PORTAL_HIT_H = 14;
-                    int playerCenter_px_check = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                    int playerLeft_px_check = playerCenter_px_check - (PORTAL_HIT_W / 2);
-                    int playerRight_px_check = playerLeft_px_check + (PORTAL_HIT_W - 1);
-                    int playerTop_px_check = (playerY_fixed >> 8);
-                    int playerBottom_px_check = playerTop_px_check + (PORTAL_HIT_H - 1);
 
-                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_check, playerRight_px_check, playerTop_px_check, playerBottom_px_check))
+                    // Use interaction-line crossing logic so speed portals activate when anchors cross
+                    // the player's interaction line (consistent with color triggers behavior).
+                    if (crossedInteraction)
                     {
-                        newSpeed_fixed = speedPortalMap[sid];
-                        break;
+                        if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
+                        {
+                            if (!processedSpeedPortals.Contains(idx))
+                            {
+                                newSpeed_fixed = speedPortalMap[sid];
+                                processedSpeedPortals.Add(idx);
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
+                        }
+                    }
+                    else
+                    {
+                        if (anchorX_center_fixed <= center_fixed)
+                        {
+                            if (!processedSpeedPortals.Contains(idx))
+                            {
+                                newSpeed_fixed = speedPortalMap[sid];
+                                processedSpeedPortals.Add(idx);
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            if (processedSpeedPortals.Contains(idx)) processedSpeedPortals.Remove(idx);
+                        }
                     }
                 }
                 if (newSpeed_fixed.HasValue) currentSpeed_fixed = newSpeed_fixed.Value;

@@ -110,7 +110,7 @@
                 <MenuItem Header="_File">
                     <MenuItem x:Name="MenuFileNew" Header="_New TMX" InputGestureText="Ctrl+N" />
                     <MenuItem x:Name="MenuFileSave" Header="_Save TMX" InputGestureText="Ctrl+S" />
-                    <MenuItem x:Name="MenuFileSaveAs" Header="Save TMX _As..." InputGestureText="Ctrl+Alt+S" />
+                    <MenuItem x:Name="MenuFileSaveAs" Header="Save TMX _As..." InputGestureText="Ctrl+Shift+S" />
                     <MenuItem x:Name="MenuFileLoad" Header="_Open TMX" InputGestureText="Ctrl+O" />
                     <MenuItem x:Name="MenuFileRecent" Header="Open _Recent">
                         <!-- Recent files will be populated dynamically -->
@@ -126,6 +126,7 @@
                     <MenuItem x:Name="MenuToolFill" Header="_Fill" IsCheckable="True" InputGestureText="F" />
                     <MenuItem x:Name="MenuToolSelect" Header="_Select" IsCheckable="True" InputGestureText="S" />
                     <MenuItem x:Name="MenuToolLasso" Header="_Lasso Select" IsCheckable="True" InputGestureText="L" />
+                    <MenuItem x:Name="MenuToolEllipse" Header="_Ellipse Select" IsCheckable="True" />
                     <Separator />
                     <MenuItem x:Name="MenuToolSelectAllSame" Header="Select All Same" />
                     <MenuItem x:Name="MenuToolReplaceSelected" Header="Replace Selected" />
@@ -253,6 +254,7 @@
                                     <MenuItem Header="Select" x:Name="Menu_Select_Normal" />
                                         <MenuItem Header="Select All Same" x:Name="Menu_Select_AllSame" />
                                         <MenuItem Header="Lasso Select" x:Name="Menu_Select_Lasso" />
+                                        <MenuItem Header="Ellipse Select" x:Name="Menu_Select_Ellipse" />
                                 </ContextMenu>
                             </Button.ContextMenu>
                         </Button>
@@ -317,6 +319,17 @@
                     <CheckBox x:Name="HollowCheckBox" Content="Hollow" VerticalAlignment="Center" Margin="12,0" />
                     <TextBlock Text="Brush:" VerticalAlignment="Center" Margin="8,0,2,0" />
                     <Slider x:Name="BrushThicknessSlider" Minimum="1" Maximum="7" Value="1" Width="120" VerticalAlignment="Center" IsSnapToTickEnabled="True" TickFrequency="1" SmallChange="1" LargeChange="1"/>
+                    <Button x:Name="ManipulateButton" Margin="4,0,0,0" ToolTip="Manipulate selection (rotate/resize/flip)" Click="ManipulateButton_Click">Manipulate ▾
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Rotate 90° CW" x:Name="Menu_Manipulate_Rotate" Click="Menu_Manipulate_Rotate_Click" />
+                                <MenuItem Header="Rotate 90° CCW" x:Name="Menu_Manipulate_RotateCCW" Click="Menu_Manipulate_RotateCCW_Click" />
+                                <MenuItem Header="Resize..." x:Name="Menu_Manipulate_Resize" Click="Menu_Manipulate_Resize_Click" />
+                                <MenuItem Header="Flip Horizontal" x:Name="Menu_Manipulate_FlipH" Click="Menu_Manipulate_FlipH_Click" />
+                                <MenuItem Header="Flip Vertical" x:Name="Menu_Manipulate_FlipV" Click="Menu_Manipulate_FlipV_Click" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
                     <Button x:Name="UndoButton" Margin="8,0,0,0" ToolTip="Undo (Ctrl+Z)">Undo</Button>
                     <Button x:Name="RedoButton" Margin="4,0,0,0" ToolTip="Redo (Ctrl+Y)">Redo</Button>
                     <Separator Margin="8,0" />
