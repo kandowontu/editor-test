@@ -207,6 +207,9 @@
                     <ComboBoxItem Content="15*" Tag="15" />
             </ComboBox>
 
+            <!-- Force Platformer checkbox under Stars -->
+            <CheckBox Grid.Row="10" Grid.Column="0" x:Name="ForcePlatformerCheckBox" Content="Force Platformer" Margin="0,8,0,0" Width="160" HorizontalAlignment="Left" />
+
             <!-- Upper / Lower Text (per-level) -->
             <StackPanel Grid.Row="10" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="8,8,0,0">
                 <TextBlock Text="Upper Text:" VerticalAlignment="Center" Margin="0,0,8,0" />

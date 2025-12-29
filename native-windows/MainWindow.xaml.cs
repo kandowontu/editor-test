@@ -857,6 +857,7 @@ namespace FamidashEditor
         public int? LoadedSpawnYPositionLow { get; set; }
         public int? LoadedScrollYPositionHi { get; set; }
         public int? LoadedScrollYPositionLow { get; set; }
+        public bool? LoadedForcePlatformer { get; set; }
         public int LoadedMaxFallSpeed { get; set; } = 0x06; // Default max fall speed
         public bool NoParallaxBg { get; set; }
         public Color BackgroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
@@ -896,6 +897,8 @@ namespace FamidashEditor
     public int? LoadedScrollYPositionHi { get => loadedScrollYPositionHi; set => loadedScrollYPositionHi = value; }
     private int? loadedScrollYPositionLow = null;
     public int? LoadedScrollYPositionLow { get => loadedScrollYPositionLow; set => loadedScrollYPositionLow = value; }
+    private bool? loadedForcePlatformer = null;
+    public bool? LoadedForcePlatformer { get => loadedForcePlatformer; set => loadedForcePlatformer = value; }
 
     private void SetSimulatorSizeFromMenu(int size)
     {
@@ -1077,6 +1080,8 @@ namespace FamidashEditor
         public int? SpawnYPositionLow { get; set; } = null;
         public int? ScrollYPositionHi { get; set; } = null;
         public int? ScrollYPositionLow { get; set; } = null;
+        // Optional force platformer flag
+        public bool? ForcePlatformer { get; set; } = null;
     }
 
     // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
@@ -8378,6 +8383,7 @@ namespace FamidashEditor
             try { tabData.LoadedSpawnYPositionLow = loadedSpawnYPositionLow; } catch { tabData.LoadedSpawnYPositionLow = null; }
             try { tabData.LoadedScrollYPositionHi = loadedScrollYPositionHi; } catch { tabData.LoadedScrollYPositionHi = null; }
             try { tabData.LoadedScrollYPositionLow = loadedScrollYPositionLow; } catch { tabData.LoadedScrollYPositionLow = null; }
+            try { tabData.LoadedForcePlatformer = loadedForcePlatformer; } catch { tabData.LoadedForcePlatformer = null; }
             tabData.LoadedStartingSpeedUiIndex = loadedStartingSpeedUiIndex;
             tabData.LoadedStartingGameMode = loadedStartingGameMode;
             tabData.LoadedStartingBackgroundColor = loadedStartingBackgroundColor;

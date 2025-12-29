@@ -182,6 +182,20 @@ namespace FamidashEditor
                     // Persist into current tab snapshot so changes stick for untitled/new tabs
                     try { mw.PersistLoadedValuesToCurrentTab(); } catch { }
 
+                    // Force Platformer checkbox
+                    try
+                    {
+                        if (ForcePlatformerCheckBox != null)
+                        {
+                            mw.LoadedForcePlatformer = (ForcePlatformerCheckBox.IsChecked == true) ? true : (bool?)false;
+                        }
+                        else
+                        {
+                            mw.LoadedForcePlatformer = null;
+                        }
+                    }
+                    catch { }
+
                         
                     // Save config (writes out to disk only when the TMX has a file path)
                     mw.SaveCurrentTmxConfig();
@@ -796,6 +810,9 @@ namespace FamidashEditor
                             }
                             catch { }
 
+                                // Initialize ForcePlatformer checkbox from main window loaded value
+                                try { if (ForcePlatformerCheckBox != null) ForcePlatformerCheckBox.IsChecked = mwOwner.LoadedForcePlatformer == true; } catch { }
+
                                             // Simulator size moved to main Options menu (handled there)
                         }
                     }
@@ -1264,6 +1281,19 @@ namespace FamidashEditor
                     catch { }
                 }
 
+                // Optional forcePlatformer flag (process regardless of upperText presence)
+                if (levelData.forcePlatformer.HasValue)
+                {
+                    try
+                    {
+                        bool v = levelData.forcePlatformer.Value;
+                        mainWindow.LoadedForcePlatformer = v;
+                        try { if (ForcePlatformerCheckBox != null) ForcePlatformerCheckBox.IsChecked = v; } catch { }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+
                 if (dataChanged)
                 {
                     // Persist loaded values into the current tab snapshot so untitled/new tabs
@@ -1501,23 +1531,52 @@ namespace FamidashEditor
                 if (bgColor.HasValue) sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x{bgColor.Value:X2},"); else sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x12,");
                 if (groundColor.HasValue) sb.AppendLine($"\t\t\tstartingGroundColor: 0x{groundColor.Value:X2},"); else sb.AppendLine($"\t\t\tstartingGroundColor: 0x02,");
 
-                // Optional spawn/scroll Y positions (one-byte values). Prefer live MainWindow props, then per-tab snapshot.
-                int? spawnHi = GetNullableInt("LoadedSpawnYPositionHi");
+                // Optional spawn/scroll Y positions (one-byte values).
+                // Prefer values currently shown in the dialog textboxes (to avoid stale in-memory state),
+                // then prefer live MainWindow props, then per-tab snapshot.
+                int? spawnHi = null, spawnLow = null, scrollHi = null, scrollLow = null;
+
+                // Helper to parse textbox hex/decimal to nullable int
+                int? ParseBox(System.Windows.Controls.TextBox? tb)
+                {
+                    try
+                    {
+                        if (tb == null) return null;
+                        var t = (tb.Text ?? "").Trim();
+                        if (string.IsNullOrEmpty(t)) return null;
+                        if (t.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) t = t.Substring(2);
+                        if (int.TryParse(t, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out int hv)) return hv & 0xFF;
+                        if (int.TryParse(t, out int dv)) return dv & 0xFF;
+                    }
+                    catch { }
+                    return null;
+                }
+
+                // Read directly from textboxes first
+                try { spawnHi = ParseBox(this.SpawnYPositionHiTextBox); } catch { }
+                try { spawnLow = ParseBox(this.SpawnYPositionLowTextBox); } catch { }
+                try { scrollHi = ParseBox(this.ScrollYPositionHiTextBox); } catch { }
+                try { scrollLow = ParseBox(this.ScrollYPositionLowTextBox); } catch { }
+
+                // Fallback to MainWindow properties if boxes empty
+                if (!spawnHi.HasValue) spawnHi = GetNullableInt("LoadedSpawnYPositionHi");
+                if (!spawnLow.HasValue) spawnLow = GetNullableInt("LoadedSpawnYPositionLow");
+                if (!scrollHi.HasValue) scrollHi = GetNullableInt("LoadedScrollYPositionHi");
+                if (!scrollLow.HasValue) scrollLow = GetNullableInt("LoadedScrollYPositionLow");
+
+                // Finally fallback to per-tab snapshot
                 if (!spawnHi.HasValue)
                 {
                     var tv = TryGetCurrentTabValue("LoadedSpawnYPositionHi"); if (tv is int vi1) spawnHi = vi1;
                 }
-                int? spawnLow = GetNullableInt("LoadedSpawnYPositionLow");
                 if (!spawnLow.HasValue)
                 {
                     var tv = TryGetCurrentTabValue("LoadedSpawnYPositionLow"); if (tv is int vi2) spawnLow = vi2;
                 }
-                int? scrollHi = GetNullableInt("LoadedScrollYPositionHi");
                 if (!scrollHi.HasValue)
                 {
                     var tv = TryGetCurrentTabValue("LoadedScrollYPositionHi"); if (tv is int vi3) scrollHi = vi3;
                 }
-                int? scrollLow = GetNullableInt("LoadedScrollYPositionLow");
                 if (!scrollLow.HasValue)
                 {
                     var tv = TryGetCurrentTabValue("LoadedScrollYPositionLow"); if (tv is int vi4) scrollLow = vi4;
@@ -1527,6 +1586,20 @@ namespace FamidashEditor
                 if (spawnLow.HasValue) sb.AppendLine($"\t\t\tspawnYPositionLow: 0x{spawnLow.Value:X2},");
                 if (scrollHi.HasValue) sb.AppendLine($"\t\t\tscrollYPositionHi: 0x{scrollHi.Value:X2},");
                 if (scrollLow.HasValue) sb.AppendLine($"\t\t\tscrollYPositionLow: 0x{scrollLow.Value:X2},");
+
+                // Optional forcePlatformer flag - prefer the dialog checkbox to avoid stale in-memory state
+                bool? forcePlatformer = null;
+                try { if (this.ForcePlatformerCheckBox != null && this.ForcePlatformerCheckBox.IsChecked.HasValue) forcePlatformer = this.ForcePlatformerCheckBox.IsChecked.Value; } catch { }
+                if (!forcePlatformer.HasValue) {
+                    try { var v = TryGetCurrentTabValue("LoadedForcePlatformer"); if (v is bool b) forcePlatformer = b; } catch { }
+                }
+                if (!forcePlatformer.HasValue) {
+                    try { forcePlatformer = GetBool("LoadedForcePlatformer"); } catch { }
+                }
+                if (forcePlatformer.HasValue && forcePlatformer.Value)
+                {
+                    sb.AppendLine("\t\t\tforcePlatformer: true,");
+                }
 
                 // Optionally include parallaxDisable. Try per-tab value then fields/properties and finally menu option state.
                 bool noParallax = false;
@@ -1748,6 +1821,8 @@ namespace FamidashEditor
             public int? spawnYPositionLow { get; set; }
             public int? scrollYPositionHi { get; set; }
             public int? scrollYPositionLow { get; set; }
+            // Optional force platformer flag
+            public bool? forcePlatformer { get; set; }
         }
     }
 }
