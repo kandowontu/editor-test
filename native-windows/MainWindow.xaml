@@ -127,6 +127,13 @@
                     <MenuItem x:Name="MenuToolSelect" Header="_Select" IsCheckable="True" InputGestureText="S" />
                     <MenuItem x:Name="MenuToolLasso" Header="_Lasso Select" IsCheckable="True" InputGestureText="L" />
                     <MenuItem x:Name="MenuToolEllipse" Header="_Ellipse Select" IsCheckable="True" />
+                    <MenuItem Header="_Manipulate">
+                        <MenuItem x:Name="Menu_Manipulate_Rotate_Tools" Header="Rotate 90° CW" Click="Menu_Manipulate_Rotate_Click" />
+                        <MenuItem x:Name="Menu_Manipulate_RotateCCW_Tools" Header="Rotate 90° CCW" Click="Menu_Manipulate_RotateCCW_Click" />
+                        <MenuItem x:Name="Menu_Manipulate_Resize_Tools" Header="Resize..." Click="Menu_Manipulate_Resize_Click" />
+                        <MenuItem x:Name="Menu_Manipulate_FlipH_Tools" Header="Flip Horizontal" Click="Menu_Manipulate_FlipH_Click" />
+                        <MenuItem x:Name="Menu_Manipulate_FlipV_Tools" Header="Flip Vertical" Click="Menu_Manipulate_FlipV_Click" />
+                    </MenuItem>
                     <Separator />
                     <MenuItem x:Name="MenuToolSelectAllSame" Header="Select All Same" />
                     <MenuItem x:Name="MenuToolReplaceSelected" Header="Replace Selected" />

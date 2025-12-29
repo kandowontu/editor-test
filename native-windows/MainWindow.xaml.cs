@@ -32,6 +32,9 @@ namespace FamidashEditor
         private int resizeOrigW = 0, resizeOrigH = 0;
         private int[,] resizeOrigTiles = null!;
         private int[,] resizeOrigSprites = null!;
+        // Which corner the resize is anchored to (determined when user clicks to start resizing)
+        private enum ResizeAnchor { TopLeft, TopRight, BottomLeft, BottomRight }
+        private ResizeAnchor resizeAnchor = ResizeAnchor.TopLeft;
         // Resize mode: when true, hovering selection shows resize cursor and click+drag begins resize
         private bool isResizeModeActive = false;
         // Option: when true, simulator runs in camera-only mode (Up/Down control camera pan only).
@@ -850,6 +853,10 @@ namespace FamidashEditor
         public string LoadedDecoSet { get; set; } = "DECO1";
         public string LoadedBlockSet { get; set; } = "BLOCKSA";
         public string LoadedSpikeSet { get; set; } = "SPIKESA";
+        public int? LoadedSpawnYPositionHi { get; set; }
+        public int? LoadedSpawnYPositionLow { get; set; }
+        public int? LoadedScrollYPositionHi { get; set; }
+        public int? LoadedScrollYPositionLow { get; set; }
         public int LoadedMaxFallSpeed { get; set; } = 0x06; // Default max fall speed
         public bool NoParallaxBg { get; set; }
         public Color BackgroundTint { get; set; } = Color.FromArgb(0, 0, 0, 0);
@@ -881,6 +888,14 @@ namespace FamidashEditor
 
     private int? loadedStartingGameMode = null;
     public int? LoadedStartingGameMode { get => loadedStartingGameMode; set => loadedStartingGameMode = value; }
+    private int? loadedSpawnYPositionHi = null;
+    public int? LoadedSpawnYPositionHi { get => loadedSpawnYPositionHi; set => loadedSpawnYPositionHi = value; }
+    private int? loadedSpawnYPositionLow = null;
+    public int? LoadedSpawnYPositionLow { get => loadedSpawnYPositionLow; set => loadedSpawnYPositionLow = value; }
+    private int? loadedScrollYPositionHi = null;
+    public int? LoadedScrollYPositionHi { get => loadedScrollYPositionHi; set => loadedScrollYPositionHi = value; }
+    private int? loadedScrollYPositionLow = null;
+    public int? LoadedScrollYPositionLow { get => loadedScrollYPositionLow; set => loadedScrollYPositionLow = value; }
 
     private void SetSimulatorSizeFromMenu(int size)
     {
@@ -1057,6 +1072,11 @@ namespace FamidashEditor
         public string? LowerText { get; set; } = null;
         // Simulator scale multiplier (1..4)
         public int? SimulatorScale { get; set; } = null;
+        // Optional spawn/scroll Y position metadata (one-byte hex values when written)
+        public int? SpawnYPositionHi { get; set; } = null;
+        public int? SpawnYPositionLow { get; set; } = null;
+        public int? ScrollYPositionHi { get; set; } = null;
+        public int? ScrollYPositionLow { get; set; } = null;
     }
 
     // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
@@ -1644,6 +1664,11 @@ namespace FamidashEditor
             try { var v = fd != null ? fd.LoadedStartingBackgroundColor : loadedStartingBackgroundColor; if (v.HasValue) config.StartingBackgroundColor = v.Value; } catch { }
             try { var v2 = fd != null ? fd.LoadedStartingGameMode : loadedStartingGameMode; if (v2.HasValue) config.StartingGameMode = v2.Value; } catch { }
             try { var v3 = fd != null ? fd.LoadedStartingGroundColor : loadedStartingGroundColor; if (v3.HasValue) config.StartingGroundColor = v3.Value; } catch { }
+            // Save optional spawn/scroll Y positions if set (one-byte values)
+            try { var sv1 = fd != null ? fd.LoadedSpawnYPositionHi : loadedSpawnYPositionHi; if (sv1.HasValue) config.SpawnYPositionHi = sv1.Value; } catch { }
+            try { var sv2 = fd != null ? fd.LoadedSpawnYPositionLow : loadedSpawnYPositionLow; if (sv2.HasValue) config.SpawnYPositionLow = sv2.Value; } catch { }
+            try { var sv3 = fd != null ? fd.LoadedScrollYPositionHi : loadedScrollYPositionHi; if (sv3.HasValue) config.ScrollYPositionHi = sv3.Value; } catch { }
+            try { var sv4 = fd != null ? fd.LoadedScrollYPositionLow : loadedScrollYPositionLow; if (sv4.HasValue) config.ScrollYPositionLow = sv4.Value; } catch { }
             // Save optional difficulty and stars if set
             try { var v4 = fd != null ? fd.LoadedStartingDifficulty : loadedStartingDifficulty; if (v4.HasValue) config.Difficulty = v4.Value; } catch { }
             try { var v5 = fd != null ? fd.LoadedStartingStars : loadedStartingStars; if (v5.HasValue) config.Stars = v5.Value; } catch { }
@@ -1727,6 +1752,11 @@ namespace FamidashEditor
                 try { if (config.StartingBackgroundColor.HasValue) merged.StartingBackgroundColor = config.StartingBackgroundColor; } catch { }
                 try { if (config.StartingGameMode.HasValue) merged.StartingGameMode = config.StartingGameMode; } catch { }
                 try { if (config.StartingGroundColor.HasValue) merged.StartingGroundColor = config.StartingGroundColor; } catch { }
+                // Spawn/Scroll Y positions: overwrite if present
+                try { if (config.SpawnYPositionHi.HasValue) merged.SpawnYPositionHi = config.SpawnYPositionHi; } catch { }
+                try { if (config.SpawnYPositionLow.HasValue) merged.SpawnYPositionLow = config.SpawnYPositionLow; } catch { }
+                try { if (config.ScrollYPositionHi.HasValue) merged.ScrollYPositionHi = config.ScrollYPositionHi; } catch { }
+                try { if (config.ScrollYPositionLow.HasValue) merged.ScrollYPositionLow = config.ScrollYPositionLow; } catch { }
                 try { if (config.Difficulty.HasValue) merged.Difficulty = config.Difficulty; } catch { }
                 try { if (config.Stars.HasValue) merged.Stars = config.Stars; } catch { }
                 try { if (!string.IsNullOrEmpty(config.LowerText)) merged.LowerText = config.LowerText; } catch { }
@@ -1897,6 +1927,11 @@ namespace FamidashEditor
                     try { loadedStartingStars = config.Stars.HasValue ? config.Stars.Value : (int?)null; } catch { loadedStartingStars = null; }
                     try { loadedStartingLowerText = !string.IsNullOrEmpty(config.LowerText) ? config.LowerText : null; } catch { loadedStartingLowerText = null; }
                     try { loadedStartingUpperText = !string.IsNullOrEmpty(config.UpperText) ? config.UpperText : null; } catch { loadedStartingUpperText = null; }
+                    // Load optional spawn/scroll Y positions
+                    try { loadedSpawnYPositionHi = config.SpawnYPositionHi.HasValue ? config.SpawnYPositionHi.Value : (int?)null; } catch { loadedSpawnYPositionHi = null; }
+                    try { loadedSpawnYPositionLow = config.SpawnYPositionLow.HasValue ? config.SpawnYPositionLow.Value : (int?)null; } catch { loadedSpawnYPositionLow = null; }
+                    try { loadedScrollYPositionHi = config.ScrollYPositionHi.HasValue ? config.ScrollYPositionHi.Value : (int?)null; } catch { loadedScrollYPositionHi = null; }
+                    try { loadedScrollYPositionLow = config.ScrollYPositionLow.HasValue ? config.ScrollYPositionLow.Value : (int?)null; } catch { loadedScrollYPositionLow = null; }
 
                     // Load max fall speed from config (default 0x06 when absent)
                     try { loadedMaxFallSpeed = config.MaxFallSpeed.HasValue ? config.MaxFallSpeed.Value : 0x06; } catch { loadedMaxFallSpeed = 0x06; }
@@ -2824,6 +2859,21 @@ namespace FamidashEditor
 
             // Manipulate menu handlers are wired in XAML to avoid double-registration
             try { if (FindName("ManipulateButton") is Button mb2) mb2.IsEnabled = false; } catch { }
+            // Ensure Manipulate menu items start disabled until a valid multi-tile selection exists
+            try
+            {
+                var m1 = FindName("Menu_Manipulate_Rotate") as MenuItem; if (m1 != null) m1.IsEnabled = false;
+                var m2 = FindName("Menu_Manipulate_RotateCCW") as MenuItem; if (m2 != null) m2.IsEnabled = false;
+                var m3 = FindName("Menu_Manipulate_Resize") as MenuItem; if (m3 != null) m3.IsEnabled = false;
+                var m4 = FindName("Menu_Manipulate_FlipH") as MenuItem; if (m4 != null) m4.IsEnabled = false;
+                var m5 = FindName("Menu_Manipulate_FlipV") as MenuItem; if (m5 != null) m5.IsEnabled = false;
+                var mt1 = FindName("Menu_Manipulate_Rotate_Tools") as MenuItem; if (mt1 != null) mt1.IsEnabled = false;
+                var mt2 = FindName("Menu_Manipulate_RotateCCW_Tools") as MenuItem; if (mt2 != null) mt2.IsEnabled = false;
+                var mt3 = FindName("Menu_Manipulate_Resize_Tools") as MenuItem; if (mt3 != null) mt3.IsEnabled = false;
+                var mt4 = FindName("Menu_Manipulate_FlipH_Tools") as MenuItem; if (mt4 != null) mt4.IsEnabled = false;
+                var mt5 = FindName("Menu_Manipulate_FlipV_Tools") as MenuItem; if (mt5 != null) mt5.IsEnabled = false;
+            }
+            catch { }
 
             // Zoom slider handling: preview via quick transform, commit full render on release or after 1s idle
             if (ZoomSlider != null)
@@ -8323,6 +8373,11 @@ namespace FamidashEditor
             tabData.LoadedDecoSet = loadedDecoSet;
             tabData.LoadedBlockSet = loadedBlockSet;
             tabData.LoadedSpikeSet = loadedSpikeSet;
+            // Persist spawn/scroll Y position metadata into the tab snapshot
+            try { tabData.LoadedSpawnYPositionHi = loadedSpawnYPositionHi; } catch { tabData.LoadedSpawnYPositionHi = null; }
+            try { tabData.LoadedSpawnYPositionLow = loadedSpawnYPositionLow; } catch { tabData.LoadedSpawnYPositionLow = null; }
+            try { tabData.LoadedScrollYPositionHi = loadedScrollYPositionHi; } catch { tabData.LoadedScrollYPositionHi = null; }
+            try { tabData.LoadedScrollYPositionLow = loadedScrollYPositionLow; } catch { tabData.LoadedScrollYPositionLow = null; }
             tabData.LoadedStartingSpeedUiIndex = loadedStartingSpeedUiIndex;
             tabData.LoadedStartingGameMode = loadedStartingGameMode;
             tabData.LoadedStartingBackgroundColor = loadedStartingBackgroundColor;
@@ -15984,9 +16039,36 @@ namespace FamidashEditor
                             resizeOrigSprites[xx, yy] = sprites[idx];
                         }
                         isResizingSelection = true;
-                        resizeStartMouse = pos;
+                        // Determine anchor by tile coordinates (use tile-relative quadrant)
+                        int relX = tx - selX; int relY = ty - selY;
+                        bool anchorLeft = (relX * 2) < resizeOrigW; // left half if true
+                        bool anchorTop = (relY * 2) < resizeOrigH; // top half if true
+                        if (anchorLeft) { if (anchorTop) resizeAnchor = ResizeAnchor.TopLeft; else resizeAnchor = ResizeAnchor.BottomLeft; }
+                        else { if (anchorTop) resizeAnchor = ResizeAnchor.TopRight; else resizeAnchor = ResizeAnchor.BottomRight; }
+
+                        // Compute display corners for placing the resize anchor point
+                        var dpiLocal = VisualTreeHelper.GetDpi(this);
+                        double scaleLocal = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scaleLocal * dpiLocal.DpiScaleX));
+                        int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scaleLocal * dpiLocal.DpiScaleY));
+                        int padPxX = (int)Math.Round(mapViewportPadding * dpiLocal.DpiScaleX);
+                        int padPxY = (int)Math.Round(mapViewportPadding * dpiLocal.DpiScaleY);
+                        double selLeftDisplay = (double)(padPxX + selX * tilePixelW) / dpiLocal.DpiScaleX;
+                        double selTopDisplay = (double)(padPxY + selY * tilePixelH) / dpiLocal.DpiScaleY;
+                        double origDisplayW = resizeOrigW * TileSize * scaleLocal;
+                        double origDisplayH = resizeOrigH * TileSize * scaleLocal;
+                        double tlx = selLeftDisplay; double tly = selTopDisplay;
+                        double trx = selLeftDisplay + origDisplayW; double try_ = selTopDisplay;
+                        double blx = selLeftDisplay; double bly = selTopDisplay + origDisplayH;
+                        double brx = selLeftDisplay + origDisplayW; double bry = selTopDisplay + origDisplayH;
+                        switch (resizeAnchor)
+                        {
+                            case ResizeAnchor.TopLeft: resizeStartMouse = new System.Windows.Point(tlx, tly); Mouse.OverrideCursor = Cursors.SizeNWSE; break;
+                            case ResizeAnchor.TopRight: resizeStartMouse = new System.Windows.Point(trx, try_); Mouse.OverrideCursor = Cursors.SizeNESW; break;
+                            case ResizeAnchor.BottomLeft: resizeStartMouse = new System.Windows.Point(blx, bly); Mouse.OverrideCursor = Cursors.SizeNESW; break;
+                            case ResizeAnchor.BottomRight: resizeStartMouse = new System.Windows.Point(brx, bry); Mouse.OverrideCursor = Cursors.SizeNWSE; break;
+                        }
                         try { CanvasHost.CaptureMouse(); } catch { }
-                        Mouse.OverrideCursor = Cursors.SizeNWSE;
                         e.Handled = true;
                         return;
                     }
@@ -17041,6 +17123,24 @@ namespace FamidashEditor
                 }
                 var mb = FindName("ManipulateButton") as Button;
                 if (mb != null) mb.IsEnabled = (nonEmpty >= 2);
+                try
+                {
+                    var m1 = FindName("Menu_Manipulate_Rotate") as MenuItem;
+                    var m2 = FindName("Menu_Manipulate_RotateCCW") as MenuItem;
+                    var m3 = FindName("Menu_Manipulate_Resize") as MenuItem;
+                    var m4 = FindName("Menu_Manipulate_FlipH") as MenuItem;
+                    var m5 = FindName("Menu_Manipulate_FlipV") as MenuItem;
+                    // Also handle the Tools->Manipulate copies we added (named _Tools)
+                    var mt1 = FindName("Menu_Manipulate_Rotate_Tools") as MenuItem;
+                    var mt2 = FindName("Menu_Manipulate_RotateCCW_Tools") as MenuItem;
+                    var mt3 = FindName("Menu_Manipulate_Resize_Tools") as MenuItem;
+                    var mt4 = FindName("Menu_Manipulate_FlipH_Tools") as MenuItem;
+                    var mt5 = FindName("Menu_Manipulate_FlipV_Tools") as MenuItem;
+                    bool en = (nonEmpty >= 2);
+                    if (m1 != null) m1.IsEnabled = en; if (m2 != null) m2.IsEnabled = en; if (m3 != null) m3.IsEnabled = en; if (m4 != null) m4.IsEnabled = en; if (m5 != null) m5.IsEnabled = en;
+                    if (mt1 != null) mt1.IsEnabled = en; if (mt2 != null) mt2.IsEnabled = en; if (mt3 != null) mt3.IsEnabled = en; if (mt4 != null) mt4.IsEnabled = en; if (mt5 != null) mt5.IsEnabled = en;
+                }
+                catch { }
             }
             catch { }
         }
@@ -17061,8 +17161,11 @@ namespace FamidashEditor
             double origDisplayW = resizeOrigW * TileSize * scale;
             double origDisplayH = resizeOrigH * TileSize * scale;
 
-            double dx = pos.X - resizeStartMouse.X;
-            double dy = pos.Y - resizeStartMouse.Y;
+            // Compute dx/dy relative to the anchor corner so expansion direction matches the clicked quadrant
+            double dx;
+            double dy;
+            if (resizeAnchor == ResizeAnchor.TopLeft || resizeAnchor == ResizeAnchor.BottomLeft) dx = pos.X - resizeStartMouse.X; else dx = resizeStartMouse.X - pos.X;
+            if (resizeAnchor == ResizeAnchor.TopLeft || resizeAnchor == ResizeAnchor.TopRight) dy = pos.Y - resizeStartMouse.Y; else dy = resizeStartMouse.Y - pos.Y;
 
             // Compute scale factors relative to original selection size using display units
             double sx = Math.Max(0.1, (origDisplayW + dx) / origDisplayW);
@@ -17101,20 +17204,26 @@ namespace FamidashEditor
             rtb.Render(dv);
             rtb.Freeze();
 
-            // Show preview in GhostImage positioned at selection top-left
+            // Show preview in GhostImage positioned according to anchor corner
             if (GhostImage != null && CanvasHost != null)
             {
                 GhostImage.Source = rtb;
-                GhostImage.Width = (previewPxW * scale * dpi.DpiScaleX) / dpi.DpiScaleX;
-                GhostImage.Height = (previewPxH * scale * dpi.DpiScaleY) / dpi.DpiScaleY;
-                Canvas.SetLeft(GhostImage, selLeftDisplay);
-                Canvas.SetTop(GhostImage, selTopDisplay);
+                double ghostW = (previewPxW * scale * dpi.DpiScaleX) / dpi.DpiScaleX;
+                double ghostH = (previewPxH * scale * dpi.DpiScaleY) / dpi.DpiScaleY;
+                GhostImage.Width = ghostW;
+                GhostImage.Height = ghostH;
+                double ghostLeft = selLeftDisplay + ((resizeAnchor == ResizeAnchor.TopRight || resizeAnchor == ResizeAnchor.BottomRight) ? (origDisplayW - ghostW) : 0);
+                double ghostTop = selTopDisplay + ((resizeAnchor == ResizeAnchor.BottomLeft || resizeAnchor == ResizeAnchor.BottomRight) ? (origDisplayH - ghostH) : 0);
+                Canvas.SetLeft(GhostImage, ghostLeft);
+                Canvas.SetTop(GhostImage, ghostTop);
                 GhostImage.Visibility = Visibility.Visible;
                 GhostImage.Opacity = 0.6;
             }
 
-            // Update selection overlay to new size for visual feedback
-            UpdateSelectionVisuals(selX, selY, newW, newH, previewMode: true);
+            // Update selection overlay to new size for visual feedback. Compute destination tile coords based on anchor.
+            int destTileX = selX + ((resizeAnchor == ResizeAnchor.TopRight || resizeAnchor == ResizeAnchor.BottomRight) ? (resizeOrigW - newW) : 0);
+            int destTileY = selY + ((resizeAnchor == ResizeAnchor.BottomLeft || resizeAnchor == ResizeAnchor.BottomRight) ? (resizeOrigH - newH) : 0);
+            UpdateSelectionVisuals(destTileX, destTileY, newW, newH, previewMode: true);
         }
 
         private void CommitResize(System.Windows.Point pos)
@@ -17127,8 +17236,11 @@ namespace FamidashEditor
             double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
             double origDisplayW = resizeOrigW * TileSize * scale;
             double origDisplayH = resizeOrigH * TileSize * scale;
-            double dx = pos.X - resizeStartMouse.X;
-            double dy = pos.Y - resizeStartMouse.Y;
+            // Compute dx/dy relative to the anchor corner (matches preview behavior)
+            double dx;
+            double dy;
+            if (resizeAnchor == ResizeAnchor.TopLeft || resizeAnchor == ResizeAnchor.BottomLeft) dx = pos.X - resizeStartMouse.X; else dx = resizeStartMouse.X - pos.X;
+            if (resizeAnchor == ResizeAnchor.TopLeft || resizeAnchor == ResizeAnchor.TopRight) dy = pos.Y - resizeStartMouse.Y; else dy = resizeStartMouse.Y - pos.Y;
 
             double sxNum = (origDisplayW + dx);
             double syNum = (origDisplayH + dy);
@@ -17143,9 +17255,9 @@ namespace FamidashEditor
             // Build mapping and apply similar to previous resize logic
             var affected = new System.Collections.Generic.HashSet<int>();
             int startX = selX, startY = selY;
-            int destX = startX, destY = startY;
-            if (flipX) destX = startX - (newW - resizeOrigW);
-            if (flipY) destY = startY - (newH - resizeOrigH);
+            // Destination origin depends on which corner is anchored: if anchored on right, new rect's left shifts left by (newW - origW)
+            int destX = startX + ((resizeAnchor == ResizeAnchor.TopRight || resizeAnchor == ResizeAnchor.BottomRight) ? (resizeOrigW - newW) : 0);
+            int destY = startY + ((resizeAnchor == ResizeAnchor.BottomLeft || resizeAnchor == ResizeAnchor.BottomRight) ? (resizeOrigH - newH) : 0);
             for (int yy = 0; yy < resizeOrigH; yy++) for (int xx = 0; xx < resizeOrigW; xx++) affected.Add((startX + xx) + (startY + yy) * mapWidth);
             for (int yy = 0; yy < newH; yy++) for (int xx = 0; xx < newW; xx++) affected.Add((destX + xx) + (destY + yy) * mapWidth);
 

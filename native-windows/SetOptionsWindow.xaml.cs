@@ -142,6 +142,43 @@ namespace FamidashEditor
                     }
                     catch { }
 
+                    // Read optional hex fields and store into main window loaded values
+                    try
+                    {
+                        if (SpawnYPositionHiTextBox != null && !string.IsNullOrWhiteSpace(SpawnYPositionHiTextBox.Text))
+                        {
+                            string t = SpawnYPositionHiTextBox.Text.Trim(); t = t.Replace("0x", "").Replace("0X", "");
+                            if (byte.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte bv)) mw.LoadedSpawnYPositionHi = bv;
+                            else mw.LoadedSpawnYPositionHi = null;
+                        }
+                        else mw.LoadedSpawnYPositionHi = null;
+
+                        if (SpawnYPositionLowTextBox != null && !string.IsNullOrWhiteSpace(SpawnYPositionLowTextBox.Text))
+                        {
+                            string t = SpawnYPositionLowTextBox.Text.Trim(); t = t.Replace("0x", "").Replace("0X", "");
+                            if (byte.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte bv2)) mw.LoadedSpawnYPositionLow = bv2;
+                            else mw.LoadedSpawnYPositionLow = null;
+                        }
+                        else mw.LoadedSpawnYPositionLow = null;
+
+                        if (ScrollYPositionHiTextBox != null && !string.IsNullOrWhiteSpace(ScrollYPositionHiTextBox.Text))
+                        {
+                            string t = ScrollYPositionHiTextBox.Text.Trim(); t = t.Replace("0x", "").Replace("0X", "");
+                            if (byte.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte bv3)) mw.LoadedScrollYPositionHi = bv3;
+                            else mw.LoadedScrollYPositionHi = null;
+                        }
+                        else mw.LoadedScrollYPositionHi = null;
+
+                        if (ScrollYPositionLowTextBox != null && !string.IsNullOrWhiteSpace(ScrollYPositionLowTextBox.Text))
+                        {
+                            string t = ScrollYPositionLowTextBox.Text.Trim(); t = t.Replace("0x", "").Replace("0X", "");
+                            if (byte.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte bv4)) mw.LoadedScrollYPositionLow = bv4;
+                            else mw.LoadedScrollYPositionLow = null;
+                        }
+                        else mw.LoadedScrollYPositionLow = null;
+                    }
+                    catch { }
+
                     // Persist into current tab snapshot so changes stick for untitled/new tabs
                     try { mw.PersistLoadedValuesToCurrentTab(); } catch { }
 
@@ -724,6 +761,41 @@ namespace FamidashEditor
                             }
                             catch { }
 
+                            // Initialize new Y-position fields from main window loaded values
+                            try
+                            {
+                                if (SpawnYPositionHiTextBox != null) SpawnYPositionHiTextBox.Text = mwOwner.LoadedSpawnYPositionHi.HasValue ? $"0x{mwOwner.LoadedSpawnYPositionHi.Value:X2}" : "";
+                                if (SpawnYPositionLowTextBox != null) SpawnYPositionLowTextBox.Text = mwOwner.LoadedSpawnYPositionLow.HasValue ? $"0x{mwOwner.LoadedSpawnYPositionLow.Value:X2}" : "";
+                                if (ScrollYPositionHiTextBox != null) ScrollYPositionHiTextBox.Text = mwOwner.LoadedScrollYPositionHi.HasValue ? $"0x{mwOwner.LoadedScrollYPositionHi.Value:X2}" : "";
+                                if (ScrollYPositionLowTextBox != null) ScrollYPositionLowTextBox.Text = mwOwner.LoadedScrollYPositionLow.HasValue ? $"0x{mwOwner.LoadedScrollYPositionLow.Value:X2}" : "";
+
+                                // Format entered values to 0xHEX on lost focus
+                                void FormatHexOnLost(object? s, RoutedEventArgs ea)
+                                {
+                                    try
+                                    {
+                                        if (s is System.Windows.Controls.TextBox tb)
+                                        {
+                                            string t = tb.Text ?? "";
+                                            t = t.Trim();
+                                            if (t.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) t = t.Substring(2);
+                                            // Allow decimal or hex input; try hex first
+                                            if (byte.TryParse(t, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte val)) tb.Text = $"0x{val:X2}";
+                                            else if (int.TryParse(t, out int dv) && dv >= 0 && dv <= 255) tb.Text = $"0x{dv:X2}";
+                                            else if (string.IsNullOrWhiteSpace(t)) tb.Text = "";
+                                            else tb.Text = t.ToUpperInvariant();
+                                        }
+                                    }
+                                    catch { }
+                                }
+
+                                if (SpawnYPositionHiTextBox != null) SpawnYPositionHiTextBox.LostFocus += FormatHexOnLost;
+                                if (SpawnYPositionLowTextBox != null) SpawnYPositionLowTextBox.LostFocus += FormatHexOnLost;
+                                if (ScrollYPositionHiTextBox != null) ScrollYPositionHiTextBox.LostFocus += FormatHexOnLost;
+                                if (ScrollYPositionLowTextBox != null) ScrollYPositionLowTextBox.LostFocus += FormatHexOnLost;
+                            }
+                            catch { }
+
                                             // Simulator size moved to main Options menu (handled there)
                         }
                     }
@@ -1146,6 +1218,52 @@ namespace FamidashEditor
                     catch { }
                 }
 
+                // Optional custom Y position metadata (process regardless of upperText presence)
+                if (levelData.spawnYPositionHi.HasValue)
+                {
+                    try
+                    {
+                        int v = levelData.spawnYPositionHi.Value;
+                        mainWindow.LoadedSpawnYPositionHi = v;
+                        try { if (SpawnYPositionHiTextBox != null) SpawnYPositionHiTextBox.Text = $"0x{v:X2}"; } catch { }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+                if (levelData.spawnYPositionLow.HasValue)
+                {
+                    try
+                    {
+                        int v = levelData.spawnYPositionLow.Value;
+                        mainWindow.LoadedSpawnYPositionLow = v;
+                        try { if (SpawnYPositionLowTextBox != null) SpawnYPositionLowTextBox.Text = $"0x{v:X2}"; } catch { }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+                if (levelData.scrollYPositionHi.HasValue)
+                {
+                    try
+                    {
+                        int v = levelData.scrollYPositionHi.Value;
+                        mainWindow.LoadedScrollYPositionHi = v;
+                        try { if (ScrollYPositionHiTextBox != null) ScrollYPositionHiTextBox.Text = $"0x{v:X2}"; } catch { }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+                if (levelData.scrollYPositionLow.HasValue)
+                {
+                    try
+                    {
+                        int v = levelData.scrollYPositionLow.Value;
+                        mainWindow.LoadedScrollYPositionLow = v;
+                        try { if (ScrollYPositionLowTextBox != null) ScrollYPositionLowTextBox.Text = $"0x{v:X2}"; } catch { }
+                        dataChanged = true;
+                    }
+                    catch { }
+                }
+
                 if (dataChanged)
                 {
                     // Persist loaded values into the current tab snapshot so untitled/new tabs
@@ -1383,6 +1501,33 @@ namespace FamidashEditor
                 if (bgColor.HasValue) sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x{bgColor.Value:X2},"); else sb.AppendLine($"\t\t\tstartingBackgroundColor: 0x12,");
                 if (groundColor.HasValue) sb.AppendLine($"\t\t\tstartingGroundColor: 0x{groundColor.Value:X2},"); else sb.AppendLine($"\t\t\tstartingGroundColor: 0x02,");
 
+                // Optional spawn/scroll Y positions (one-byte values). Prefer live MainWindow props, then per-tab snapshot.
+                int? spawnHi = GetNullableInt("LoadedSpawnYPositionHi");
+                if (!spawnHi.HasValue)
+                {
+                    var tv = TryGetCurrentTabValue("LoadedSpawnYPositionHi"); if (tv is int vi1) spawnHi = vi1;
+                }
+                int? spawnLow = GetNullableInt("LoadedSpawnYPositionLow");
+                if (!spawnLow.HasValue)
+                {
+                    var tv = TryGetCurrentTabValue("LoadedSpawnYPositionLow"); if (tv is int vi2) spawnLow = vi2;
+                }
+                int? scrollHi = GetNullableInt("LoadedScrollYPositionHi");
+                if (!scrollHi.HasValue)
+                {
+                    var tv = TryGetCurrentTabValue("LoadedScrollYPositionHi"); if (tv is int vi3) scrollHi = vi3;
+                }
+                int? scrollLow = GetNullableInt("LoadedScrollYPositionLow");
+                if (!scrollLow.HasValue)
+                {
+                    var tv = TryGetCurrentTabValue("LoadedScrollYPositionLow"); if (tv is int vi4) scrollLow = vi4;
+                }
+
+                if (spawnHi.HasValue) sb.AppendLine($"\t\t\tspawnYPositionHi: 0x{spawnHi.Value:X2},");
+                if (spawnLow.HasValue) sb.AppendLine($"\t\t\tspawnYPositionLow: 0x{spawnLow.Value:X2},");
+                if (scrollHi.HasValue) sb.AppendLine($"\t\t\tscrollYPositionHi: 0x{scrollHi.Value:X2},");
+                if (scrollLow.HasValue) sb.AppendLine($"\t\t\tscrollYPositionLow: 0x{scrollLow.Value:X2},");
+
                 // Optionally include parallaxDisable. Try per-tab value then fields/properties and finally menu option state.
                 bool noParallax = false;
                 try { var v = TryGetCurrentTabValue("NoParallaxBg"); if (v is bool vb) noParallax = vb; }
@@ -1598,6 +1743,11 @@ namespace FamidashEditor
             public int? startingGameMode { get; set; }
             // Optional max fall speed (numeric); metadata may provide 6 or 7. If absent, default to 6.
             public int? maxFallSpeed { get; set; }
+            // Optional custom Y position metadata (hex in JSON5 converted to decimal)
+            public int? spawnYPositionHi { get; set; }
+            public int? spawnYPositionLow { get; set; }
+            public int? scrollYPositionHi { get; set; }
+            public int? scrollYPositionLow { get; set; }
         }
     }
 }
