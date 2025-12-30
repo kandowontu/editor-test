@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
@@ -23,12 +23,6 @@ namespace FamidashEditor
 
         // Public toggle used by the main window: show tile/hitbox overlays in the simulator.
         public bool ShowTileHitboxes { get; set; } = false;
-
-        // When true, completely disable all numeric physics, collision, jumping,
-        // death, snapping and ejection behavior in this simulator. This is a
-        // temporary global switch to allow ripping out physics without removing
-        // large amounts of code; set to true to opt-out of simulator physics.
-        private readonly bool removePhysics = true;
 
         // Starting speed UI index (0=0.5x,1=1x,2=2x,3=3x,4=4x)
         private int startingSpeedUiIndex = 1;
@@ -1311,7 +1305,7 @@ namespace FamidashEditor
                 try
                 {
                     camModeActive = (this.Owner is MainWindow mw2) ? MainWindow.Option_CamMode : false;
-                    if (camModeActive || removePhysics)
+                    if (camModeActive)
                     {
                         physicsEnabled = false;
                         // Keep jumpedOnce false so Up/Down act purely as camera pans
@@ -1319,7 +1313,7 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        // Start physics immediately when Cam Mode is OFF (and physics not removed)
+                        // Start physics immediately when Cam Mode is OFF
                         physicsEnabled = true;
                         // Prevent Up/Down from being camera-only
                         jumpedOnce = true;
@@ -1430,7 +1424,7 @@ namespace FamidashEditor
         // Pause state controlled by ESC. Start paused so simulator opens paused.
         private bool paused = true;
         // If a death has been triggered by collision, suppress further triggers until reset
-        // deathTriggered removed — death handling fully removed per request
+        private bool deathTriggered = false;
         // When true, the simulator is in camera-only mode: Up/Down pan camera only and physics is disabled
         private bool camModeActive = false;
         // Multiplier applied while Tab (or Shift+Tab / Ctrl+Shift+Tab) is held.
@@ -5166,7 +5160,7 @@ namespace FamidashEditor
                 if (paused)
                 {
                     RenderFrame();
-                    try { PauseOverlay.Visibility = System.Windows.Visibility.Visible; } catch { }
+                    try { if (!deathTriggered) PauseOverlay.Visibility = System.Windows.Visibility.Visible; else PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
                     return;
                 }
 
@@ -5186,8 +5180,6 @@ namespace FamidashEditor
         // Perform numeric-only simulation step on a background thread at ~60Hz.
         private void SimulateNumericStep()
         {
-            // If physics has been globally removed, make this a no-op.
-            if (removePhysics) return;
             // Keep previous camera center for later anchor detection
             int prevCameraCenter_fixed;
             int prevPlayerCenter_fixed;
@@ -5726,7 +5718,7 @@ namespace FamidashEditor
                 // a death (same pause/marker flow used by top/bottom death checks).
                 try
                 {
-                    if (!MainWindow.Option_NoDeath)
+                    if (!MainWindow.Option_NoDeath && !deathTriggered)
                     {
                         int playerRightEdge_px = (playerX_fixed >> 8) + playerVisualWidth - 1; // rightmost pixel of visual
                         int playerCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
@@ -5776,7 +5768,26 @@ namespace FamidashEditor
 
                             if (blocked_center)
                             {
-                                // Right-edge death handling removed per request.
+                                try
+                                {
+                                    AppendSimDebug($"RightEdgeDeath: sample=({sampledX},{sampledY}) Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
+                                    deathTriggered = true;
+                                    paused = true;
+                                    try
+                                    {
+                                        Dispatcher.BeginInvoke(new Action(() =>
+                                        {
+                                            try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                            if (this.Owner is MainWindow mw)
+                                            {
+                                                try { mw.PauseSimulatorPlayback(); } catch { }
+                                                try { mw.AddDeathMarker(sampledX, sampledY); } catch { }
+                                            }
+                                        }));
+                                    }
+                                    catch { }
+                                }
+                                catch { }
                             }
                         }
                     }

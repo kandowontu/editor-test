@@ -46,7 +46,6 @@
 			startingSpeed: 0,
 			startingBackgroundColor: 0x12,
 			startingGroundColor: 0x02,
-			forcePlatformer: true,
 			//spawnYPositionHi: 0x30,		;default #$B000
 			//spawnYPositionLow: 0x00,
 			//scrollYPositionHi: 0x02,		;default $02EF, less to go up

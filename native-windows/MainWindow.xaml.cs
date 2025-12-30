@@ -425,17 +425,6 @@ namespace FamidashEditor
             try { SetShowAccurateTileset(false); } catch { }
         }
 
-        private void MenuToolVisualizer_Click(object? sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var vw = new VisualizerWindow(this);
-                vw.Owner = this;
-                vw.Show();
-            }
-            catch { }
-        }
-
         // Structure tool set state
         private int structureSetOffset = 0; // in tiles (0, 0x20, 0x40)
         private int structureSetBaseTile = 0x20; // 0x20 for A, 0x40 for B, 0x60 for C
@@ -447,23 +436,6 @@ namespace FamidashEditor
         private string? albumTxtPath = null;
         private enum DrawMode { Tile, Line, Square, Circle, Ellipse, Triangle, Polygon, None }
         private DrawMode currentDrawMode = DrawMode.Tile;
-
-            // Expose a simple helper for the visualizer to know whether music is playing
-            public bool IsMusicPlaying()
-            {
-                try { return famiIntegration != null && famiIntegration.IsPlaying; } catch { return false; }
-            }
-
-            // Approximate audio level (0.0..1.0). Currently a heuristic fallback; returns NaN if unavailable.
-            public double GetApproxAudioLevel()
-            {
-                try
-                {
-                    // Ask famiIntegration for the last RMS level if available.
-                    try { return famiIntegration?.GetLastAudioLevel() ?? double.NaN; } catch { return double.NaN; }
-                }
-                catch { return double.NaN; }
-            }
         private bool hollowShape = false;
         private int brushThickness = 1;
 
@@ -6876,7 +6848,7 @@ namespace FamidashEditor
                 // If no settings file exists, create default one
                 if (!System.IO.File.Exists(path))
                 {
-                    var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"lockSpritesToSet\":true,\"showAccurateTileset\":true,\"noDeath\":true,\"camMode\":true,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                    var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
                     System.IO.File.WriteAllText(path, defaultSettings);
                 }
                 
@@ -6896,7 +6868,7 @@ namespace FamidashEditor
                     {
                         // Old version - delete and recreate
                         try { System.IO.File.Delete(path); } catch { }
-                        var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"lockSpritesToSet\":true,\"showAccurateTileset\":true,\"noDeath\":true,\"camMode\":true,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                        var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
                         System.IO.File.WriteAllText(path, defaultSettings);
                         txt = defaultSettings;
                         doc = System.Text.Json.JsonDocument.Parse(txt);

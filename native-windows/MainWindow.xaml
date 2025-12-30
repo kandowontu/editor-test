@@ -150,7 +150,6 @@
                     <MenuItem x:Name="MenuToolRedo" Header="_Redo" InputGestureText="Ctrl+Y" />
                     <Separator />
                     <MenuItem x:Name="MenuOpenSimulator" Header="Open _Simulator" InputGestureText="F5" />
-                    <MenuItem x:Name="MenuToolVisualizer" Header="Visualizer" Click="MenuToolVisualizer_Click" />
                 </MenuItem>
                 <MenuItem Header="_Options">
                     <MenuItem Header="Editor Options">

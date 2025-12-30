@@ -17,46 +17,6 @@ namespace FamidashEditor
 {
     public class FamiStudioIntegration
     {
-        // A lightweight sample provider wrapper that computes recent RMS level on samples read.
-        private class MeteringSampleProvider : ISampleProvider
-        {
-            private readonly ISampleProvider source;
-            private readonly object lockObj = new object();
-            private float lastRms = 0f;
-
-            public MeteringSampleProvider(ISampleProvider src)
-            {
-                source = src ?? throw new ArgumentNullException(nameof(src));
-            }
-
-            public WaveFormat WaveFormat => source.WaveFormat;
-
-            // Last RMS value (0.0 .. 1.0). Thread-safe read.
-            public double LastRms
-            {
-                get { lock (lockObj) { return lastRms; } }
-            }
-
-            public int Read(float[] buffer, int offset, int count)
-            {
-                int read = source.Read(buffer, offset, count);
-                if (read > 0)
-                {
-                    double sum = 0.0;
-                    for (int i = offset; i < offset + read; i++)
-                    {
-                        var s = buffer[i];
-                        sum += s * s;
-                    }
-                    double rms = Math.Sqrt(sum / read);
-                    lock (lockObj)
-                    {
-                        lastRms = (float)rms;
-                    }
-                }
-                return read;
-            }
-        }
         // Logging removed per user request.
 
         private readonly object playLock = new object();
@@ -73,8 +33,6 @@ namespace FamidashEditor
         private int lastTrackIndex = -1;
         // Playback rate multiplier (1.0 == normal). When possible, audio output will be resampled to match.
         private double playbackRate = 1.0;
-        // Simple metering wrapper to expose recent RMS level for visualization.
-        private MeteringSampleProvider? meteringProvider = null;
         public string? StatusMessage { get; private set; }
         public bool IsLoaded => alc != null;
         public bool IsPlaying => output != null && output.PlaybackState == PlaybackState.Playing;
@@ -91,17 +49,6 @@ namespace FamidashEditor
                 }
             }
             catch { }
-        }
-
-        // Return last observed RMS level (0.0..1.0) or NaN if unavailable.
-        public double GetLastAudioLevel()
-        {
-            try
-            {
-                if (meteringProvider == null) return double.NaN;
-                return meteringProvider.LastRms;
-            }
-            catch { return double.NaN; }
         }
 
         // Pause playback if currently playing. No-op otherwise.
@@ -570,33 +517,30 @@ namespace FamidashEditor
             output = new WaveOutEvent();
             try
             {
-                // Always use a sample-provider chain so we can insert a metering provider.
-                ISampleProvider baseSp = reader.ToSampleProvider();
-                ISampleProvider usedSp = baseSp;
                 if (Math.Abs(playbackRate - 1.0) > 0.0001 && reader != null)
                 {
                     try
                     {
-                        usedSp = new VarispeedSampleProvider(baseSp, playbackRate);
+                        // Use managed varispeed provider to change playback speed (affects pitch).
+                        var sp = reader.ToSampleProvider();
+                        var varispeed = new VarispeedSampleProvider(sp, playbackRate);
+                        var waveProvider = new SampleToWaveProvider16(varispeed);
+                        output.Init(waveProvider);
                     }
                     catch
                     {
-                        usedSp = baseSp;
+                        output.Init(reader);
                     }
                 }
-
-                meteringProvider = new MeteringSampleProvider(usedSp);
-                var waveProvider = new SampleToWaveProvider16(meteringProvider);
-                output.Init(waveProvider);
+                else
+                {
+                    
+                    output.Init(reader);
+                }
             }
             catch
             {
-                try
-                {
-                    // Fallback to direct init if something goes wrong.
-                    output.Init(reader);
-                }
-                catch { }
+                try { output.Init(reader); } catch { }
             }
             output.PlaybackStopped += (s, e) =>
             {
@@ -629,56 +573,27 @@ namespace FamidashEditor
             output = new WaveOutEvent();
             try
             {
-                ISampleProvider baseSp = reader.ToSampleProvider();
-                ISampleProvider usedSp = baseSp;
                 if (Math.Abs(playbackRate - 1.0) > 0.0001 && reader != null)
                 {
                     try
                     {
                         var newFormat = new WaveFormat((int)(reader.WaveFormat.SampleRate * playbackRate), reader.WaveFormat.BitsPerSample, reader.WaveFormat.Channels);
                         var resampler = new MediaFoundationResampler(reader, newFormat) { ResamplerQuality = 60 };
-                        usedSp = resampler.ToSampleProvider();
+                        output.Init(resampler);
                     }
                     catch
                     {
-                        usedSp = baseSp;
+                        output.Init(reader);
                     }
                 }
-
-                meteringProvider = new MeteringSampleProvider(usedSp);
-                var waveProvider = new SampleToWaveProvider16(meteringProvider);
-                output.Init(waveProvider);
+                else
+                {
+                    output.Init(reader);
+                }
             }
             catch
             {
-                try
-                {
-                    // As a last resort, try to wrap the reader in a metering provider so visuals still get levels.
-                    try
-                    {
-                        meteringProvider = new MeteringSampleProvider(reader.ToSampleProvider());
-                        var waveProvider = new SampleToWaveProvider16(meteringProvider);
-                        output.Init(waveProvider);
-                    }
-                    catch
-                    {
-                        try
-                        {
-                            try
-                            {
-                                meteringProvider = new MeteringSampleProvider(reader.ToSampleProvider());
-                                var waveProvider = new SampleToWaveProvider16(meteringProvider);
-                                output.Init(waveProvider);
-                            }
-                            catch
-                            {
-                                try { output.Init(reader); } catch { }
-                            }
-                        }
-                        catch { }
-                    }
-                }
-                catch { }
+                try { output.Init(reader); } catch { }
             }
             output.PlaybackStopped += (s, e) =>
             {
