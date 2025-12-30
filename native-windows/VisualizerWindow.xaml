@@ -1,0 +1,81 @@
+<Window x:Class="FamidashEditor.VisualizerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Visualizer" Height="400" Width="700">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal" Margin="6">
+            <TextBlock VerticalAlignment="Center" Margin="6,0">Effect:</TextBlock>
+            <ComboBox x:Name="EffectCombo" Width="260" Margin="6,0">
+                <ComboBoxItem Content="Bars" IsSelected="True" />
+                <ComboBoxItem Content="Waveform" />
+                <ComboBoxItem Content="Particles" />
+                <ComboBoxItem Content="Radial" />
+                <ComboBoxItem Content="Spectrum" />
+                <ComboBoxItem Content="Neon Pulse" />
+                 <ComboBoxItem Content="Radial Bars" />
+                 <ComboBoxItem Content="Circular Spectrum" />
+                 <ComboBoxItem Content="Starfield" />
+                 <ComboBoxItem Content="Glitch" />
+                 <ComboBoxItem Content="Echo Ribbons" />
+                 <ComboBoxItem Content="Fireflies" />
+                 <ComboBoxItem Content="Plasma" />
+                 <ComboBoxItem Content="Kaleidoscope" />
+                 <ComboBoxItem Content="Pulse Grid" />
+                 <ComboBoxItem Content="Rain" />
+                 <ComboBoxItem Content="Voronoi" />
+                 <ComboBoxItem Content="Oscilloscope" />
+                <ComboBoxItem Content="Glowing Rings" />
+                <ComboBoxItem Content="Sine Field" />
+                <ComboBoxItem Content="Lattice" />
+                <ComboBoxItem Content="Moving Tiles" />
+                <ComboBoxItem Content="Bokeh" />
+                <ComboBoxItem Content="Ripple" />
+                <ComboBoxItem Content="Grid Warp" />
+                <ComboBoxItem Content="Lava" />
+                <ComboBoxItem Content="Aurora" />
+                <ComboBoxItem Content="Heartbeat" />
+                <ComboBoxItem Content="Falling Notes" />
+                <ComboBoxItem Content="Star Trails" />
+                <ComboBoxItem Content="Mirror Waves" />
+                <ComboBoxItem Content="Color Blocks" />
+                <ComboBoxItem Content="Binary Bars" />
+                <ComboBoxItem Content="Chromatic Blur" />
+                <ComboBoxItem Content="Wavescape" />
+                <ComboBoxItem Content="Spiral" />
+                <ComboBoxItem Content="Brush Strokes" />
+                <ComboBoxItem Content="Particle Bloom" />
+                <ComboBoxItem Content="Spiral Lines" />
+                <ComboBoxItem Content="Radial Pulse" />
+                <ComboBoxItem Content="Blob" />
+                <ComboBoxItem Content="Grid Pulse" />
+                <ComboBoxItem Content="Circular Rings" />
+                <ComboBoxItem Content="Noise Field" />
+                <ComboBoxItem Content="Bars 2" />
+                <ComboBoxItem Content="Spectrum Radial" />
+                <ComboBoxItem Content="Strobe" />
+                <ComboBoxItem Content="Flicker" />
+                <ComboBoxItem Content="Ribbon Flow" />
+                <ComboBoxItem Content="Zen Garden" />
+                <ComboBoxItem Content="Energy Orbs" />
+                <ComboBoxItem Content="Pulsing Hex" />
+                <ComboBoxItem Content="Wave Warp" />
+                <ComboBoxItem Content="Star Burst" />
+                <ComboBoxItem Content="Concentric Squares" />
+                <ComboBoxItem Content="Neon Grid" />
+                <ComboBoxItem Content="Moving Dots" />
+                <ComboBoxItem Content="Flame" />
+            </ComboBox>
+            <CheckBox x:Name="ReactiveCheck" Content="Reactive (when music plays)" Margin="12,0" VerticalAlignment="Center" IsChecked="True" />
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0">
+                <TextBlock VerticalAlignment="Center" Margin="0,0,6,0">Sensitivity</TextBlock>
+                <Slider x:Name="SensitivitySlider" Minimum="0.1" Maximum="4.0" Value="1.0" Width="140" SmallChange="0.1" LargeChange="0.5" />
+            </StackPanel>
+            <Button x:Name="CloseBtn" Content="Close" Margin="12,0" Click="CloseBtn_Click" />
+        </StackPanel>
+        <Canvas x:Name="VizCanvas" Grid.Row="1" Background="#1E1E1E" />
+    </Grid>
+</Window>

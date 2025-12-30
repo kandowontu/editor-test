@@ -374,7 +374,7 @@ COL_DOWN_LEFT
 
         public static MetatileCollision GetCollision(byte index)
         {
-            return table[index];
+            return MetatileCollision.COL_NONE;
         }
     }
 }

@@ -133,7 +133,7 @@ namespace FamidashEditor
                         // Top-death check (cube mode, normal gravity only, center 2x2 pixels)
                         try
                         {
-                            if (!MainWindow.Option_NoDeath && !deathTriggered && currentGameMode == 0 && !gravityReversed)
+                            if (!MainWindow.Option_NoDeath && currentGameMode == 0 && !gravityReversed)
                             {
                                 int playerCenterX = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                                 int playerCenterY = (playerY_fixed >> 8) + (playerVisualHeight / 2);
@@ -190,26 +190,7 @@ namespace FamidashEditor
 
                                     if (blocked_center)
                                     {
-                                        try
-                                        {
-                                            AppendSimDebug($"TopDeath: center=({playerCenterX},{playerCenterY}) gravityReversed={gravityReversed} Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
-                                            deathTriggered = true;
-                                            paused = true;
-                                            try
-                                            {
-                                                Dispatcher.BeginInvoke(new Action(() =>
-                                                {
-                                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                                    if (this.Owner is MainWindow mw)
-                                                    {
-                                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                                        try { mw.AddDeathMarker(playerCenterX, playerCenterY); } catch { }
-                                                    }
-                                                }));
-                                            }
-                                            catch { }
-                                        }
-                                        catch { }
+                                        // Top-death handling removed per request.
                                     }
                                 }
                             }
@@ -733,7 +714,7 @@ namespace FamidashEditor
                 {
                     try
                     {
-                        if (!MainWindow.Option_NoDeath && !deathTriggered)
+                        if (!MainWindow.Option_NoDeath)
                         {
                             int playerRightEdge_px_chk = (playerX_fixed >> 8) + playerVisualWidth - 1;
                             int playerCenterY_px_chk = (playerY_fixed >> 8) + (playerVisualHeight / 2);
@@ -776,33 +757,14 @@ namespace FamidashEditor
                                 bool blocked_center_chk = TileOccupiesPixel(col_center_chk, localX_chk, localY_chk);
                                 if (blocked_center_chk)
                                 {
-                                    try
-                                    {
-                                        AppendSimDebug($"PreSnapRightEdgeDeath: sample=({sampledX_chk},{sampledY_chk}) Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed}");
-                                        deathTriggered = true;
-                                        paused = true;
-                                        try
-                                        {
-                                            Dispatcher.BeginInvoke(new Action(() =>
-                                            {
-                                                try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                                if (this.Owner is MainWindow mw)
-                                                {
-                                                    try { mw.PauseSimulatorPlayback(); } catch { }
-                                                    try { mw.AddDeathMarker(sampledX_chk, sampledY_chk); } catch { }
-                                                }
-                                            }));
-                                        }
-                                        catch { }
-                                    }
-                                    catch { }
+                                    // Right-edge death handling removed per request.
                                 }
                             }
                         }
                     }
                     catch { }
 
-                    if (!deathTriggered && playerY_fixed >= floorTop_fixed_local - LAND_EPS_FIXED && playerVelY_fixed >= 0)
+                    if (playerY_fixed >= floorTop_fixed_local - LAND_EPS_FIXED && playerVelY_fixed >= 0)
                     {
                         int nudged = floorTop_fixed_local - (1 << 8);
                         if (nudged < 0) nudged = 0;
@@ -840,7 +802,7 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    if (currentGameMode == 0 && gravityReversed && !MainWindow.Option_NoDeath && !deathTriggered)
+                    if (currentGameMode == 0 && gravityReversed && !MainWindow.Option_NoDeath)
                     {
                         try
                         {
@@ -1089,23 +1051,7 @@ namespace FamidashEditor
                                             }
                                             else
                                             {
-                                                int playerCenterY = (playerY_fixed >> 8) + (playerVisualHeight / 2);
-                                                AppendSimDebug($"BottomDeath: center=({playerCenter_px_local},{playerCenterY}) gravityReversed={gravityReversed} Option_NoDeath={MainWindow.Option_NoDeath} playerY={playerY_fixed} vel={playerVelY_fixed} tid={foundTid_local} col={foundCol_local}");
-                                                deathTriggered = true;
-                                                paused = true;
-                                                try
-                                                {
-                                                    Dispatcher.BeginInvoke(new Action(() =>
-                                                    {
-                                                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                                        if (this.Owner is MainWindow mw)
-                                                        {
-                                                            try { mw.PauseSimulatorPlayback(); } catch { }
-                                                            try { mw.AddDeathMarker(playerCenter_px_local, playerCenterY); } catch { }
-                                                        }
-                                                    }));
-                                                }
-                                                catch { }
+                                                // Bottom-death handling removed per request.
                                             }
                                         }
                                     }
