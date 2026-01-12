@@ -1,52 +1,60 @@
 
-CODE_BANK_PUSH("XCD_BANK_01")
+CODE_BANK_PUSH(MOVEMENT_BANK)
 
 void bigboi_stuff();
 void ufo_ship_eject();
-void ship_movement(){
 
-	fallspeed_big = SHIP_MAX_FALLSPEED;
-	fallspeed_mini = MINI_SHIP_MAX_FALLSPEED;
-	if (controllingplayer->a || controllingplayer->up) {
-		gravity_big = (SHIP_GRAVITY * 6) / 5;
-		gravity_mini = (MINI_SHIP_GRAVITY * 6) / 5;
+void is_player_falling() {
+	tmp1 = (currplayer_gravity ? (currplayer_vel_y < 0) : (currplayer_vel_y > 0));
+}
+
+void ship_movement(){
+	is_player_falling();
+
+	tmp2 = (controllingplayer->hold & (PAD_A | PAD_UP)) != 0; // input
+
+	if (tmp2) { // holding
+		tmpgravity = SHIP_GRAVITY_BASE(currplayer_table_idx);
+	} else if (
+		!tmp2 && // not holding
+		!tmp1 // not falling
+	){
+		tmpgravity = SHIP_GRAVITY_AFTER_HOLD(currplayer_table_idx);
 	} else {
-		gravity_big = SHIP_GRAVITY;
-		gravity_mini = MINI_SHIP_GRAVITY;
+		tmpgravity = SHIP_GRAVITY(currplayer_table_idx);
 	}
+
+	if (tmp2 && // holding
+		tmp1 // falling
+	){
+		tmpgravity = SHIP_GRAVITY_HOLD_FALL(currplayer_table_idx);
+	}
+
+	if (tmp2 ^ (currplayer_gravity ? 1 : 0)) {
+		tmpgravity = -tmpgravity;
+	}
+
+	// This because it is bigger and its needed
+	tmpfallspeed = 0x4443;
+
 	common_gravity_routine();
 
-	if(currplayer_vel_y > (!currplayer_mini ? fallspeed_big : fallspeed_mini)) currplayer_vel_y -= (!currplayer_mini ? gravity_big : gravity_mini);
-	if(currplayer_vel_y < (!currplayer_mini ? -fallspeed_big : -fallspeed_mini)) currplayer_vel_y += (!currplayer_mini ? gravity_big : gravity_mini);
-
+	// Sorry alex but cc65 didn't want to cooperate and i almost go crazy
+	if (currplayer_gravity) {
+		if(currplayer_vel_y < -0x0369) currplayer_vel_y = -0x0369;
+		if(currplayer_vel_y > 0x0443) currplayer_vel_y = 0x0443;
+	} else {
+		if(currplayer_vel_y < -0x0443) currplayer_vel_y = -0x0443;
+		if(currplayer_vel_y > 0x0369) currplayer_vel_y = 0x0369;
+	}
 
 	Generic.x = high_byte(currplayer_x);
 	Generic.y = high_byte(currplayer_y);
+
 	
 	ufo_ship_eject();
 
 	bigboi_stuff();
-
-	// check collision down a little lower than CUBE
-	Generic.y = high_byte(currplayer_y); // the rest should be the same
-	Generic.x = high_byte(currplayer_x); // the rest should be the same
-	
-	if(controllingplayer->a || controllingplayer->up) {
-		if (!currplayer_mini) {
-			if (!currplayer_gravity){
-			    currplayer_vel_y -= gravity_big<<1;
-				} else {
-			    currplayer_vel_y += gravity_big<<1;
-			}
-		}
-		else {
-			if (!currplayer_gravity){
-			    currplayer_vel_y -= gravity_mini<<1;
-				} else {
-			    currplayer_vel_y += gravity_mini<<1;
-			}
-		}
-	}	
 }
 
 void ufo_ship_eject() {

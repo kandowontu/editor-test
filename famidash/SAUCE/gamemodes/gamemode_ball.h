@@ -1,5 +1,5 @@
 
-CODE_BANK_PUSH("XCD_BANK_01")
+CODE_BANK_PUSH(MOVEMENT_BANK)
 
 void ball_eject();
 void common_gravity_routine();
@@ -12,28 +12,13 @@ void ball_movement(){
 //	if ((controllingplayer->press_a) && currplayer_vel_y != 0) idx8_store(cube_data, currplayer, cube_data[currplayer] | 0x02);
 
 	if (gamemode == GAMEMODE_SWING) {
-
-		fallspeed_big = SWING_MAX_FALLSPEED;
-		fallspeed_mini = MINI_SWING_MAX_FALLSPEED;
-		gravity_big = SWING_GRAVITY;
-		gravity_mini = MINI_SWING_GRAVITY;
+		tmpfallspeed = SWING_MAX_FALLSPEED(currplayer_table_idx);
+		tmpgravity = SWING_GRAVITY(currplayer_table_idx);
 		common_gravity_routine();
-
-		
-
-
-	}
-	else {		
-		fallspeed_big = BALL_MAX_FALLSPEED;
-		fallspeed_mini = MINI_BALL_MAX_FALLSPEED;
-		gravity_big = BALL_GRAVITY;
-		gravity_mini = MINI_BALL_GRAVITY;
+	} else {		
+		tmpfallspeed = BALL_MAX_FALLSPEED(currplayer_table_idx);
+		tmpgravity = BALL_GRAVITY(currplayer_table_idx);
 		common_gravity_routine();
-
-		
-
-
-
 	}
 	
 	Generic.x = high_byte(currplayer_x);
@@ -45,7 +30,7 @@ void ball_movement(){
 		Generic.y = high_byte(currplayer_y) + 1;
 	}
 
-	//if (controllingplayer->press_a || controllingplayer->press_up) idx8_store(cube_data, currplayer, cube_data[currplayer] | 2);	
+	//if (controllingplayer->press & (PAD_A | PAD_UP)) idx8_store(cube_data, currplayer, cube_data[currplayer] | 2);	
 
 	ball_eject();
 
@@ -90,17 +75,14 @@ void ball_movement(){
 	} else {
 		Generic.y = high_byte(currplayer_y) + 1;
 	}
-	#define BALL_SWITCH_VEL 0x200
-	#define MINI_BALL_SWITCH_VEL 0x120
+
 	if (gamemode == GAMEMODE_BALL) {
-		if (((controllingplayer->a || controllingplayer->up)) && (ball_switched[currplayer] == 0) && currplayer_vel_y == 0){
+		if (((controllingplayer->hold & (PAD_A | PAD_UP))) && (ball_switched[currplayer] == 0) && currplayer_vel_y == 0){
 			jumps++;
 			invert_gravity(currplayer_gravity);
+			update_currplayer_table_idx();
 			ball_switched[currplayer] = 1;
-			switch (currplayer_gravity){
-				case GRAVITY_DOWN: currplayer_vel_y = currplayer_mini ? MINI_BALL_SWITCH_VEL : BALL_SWITCH_VEL; break;
-				case GRAVITY_UP: currplayer_vel_y = currplayer_mini ? -MINI_BALL_SWITCH_VEL : -BALL_SWITCH_VEL; break;
-			}
+			currplayer_vel_y = BALL_SWITCH_VEL(currplayer_table_idx);
 			bg_coll_floor_spikes();
 		}
 		if(ball_switched[currplayer]){
@@ -111,12 +93,13 @@ void ball_movement(){
 		}
 	}
 	else {
-		if ((controllingplayer->press_a || controllingplayer->press_up) && !ufo_orbed){
+		if ((controllingplayer->press & (PAD_A | PAD_UP)) && !ufo_orbed[currplayer]){
 			invert_gravity(currplayer_gravity);
+			update_currplayer_table_idx();
 			bg_coll_floor_spikes();
 		}
 	}		
-	ufo_orbed = 0;
+	ufo_orbed[currplayer] = 0;
 }
 
 void ball_eject() {

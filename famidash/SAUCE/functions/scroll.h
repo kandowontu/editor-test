@@ -1,5 +1,5 @@
 
-CODE_BANK_PUSH("XCD_BANK_04")
+CODE_BANK_PUSH(SCROLL_BANK)
 
 
 #define player0_x currplayer_x
@@ -7,8 +7,8 @@ CODE_BANK_PUSH("XCD_BANK_04")
 
 #define player0_y currplayer_y
 #define player1_y player_y[1]
-void do_the_scroll_thing(){
 
+void process_x_scroll() {
 	switch (cam_seesaw) {
 		case 1:
 			if (curr_x_scroll_stop < 0xD000) target_x_scroll_stop = 0xD000;
@@ -24,8 +24,7 @@ void do_the_scroll_thing(){
 	if (!kandodebugmode) {
 		if (curr_x_scroll_stop < target_x_scroll_stop) curr_x_scroll_stop += 0x200;
 		else if (curr_x_scroll_stop > target_x_scroll_stop) curr_x_scroll_stop -= 0x200;		
-	}
-	else {
+	} else {
 		if (curr_x_scroll_stop < target_x_scroll_stop) curr_x_scroll_stop += 0x180;
 		else if (curr_x_scroll_stop > target_x_scroll_stop) curr_x_scroll_stop -= 0x180;		
 	}		
@@ -39,8 +38,7 @@ void do_the_scroll_thing(){
 		}
 		high_byte(player0_x) = high_byte(player0_x) - tmp1;
 		high_byte(player1_x) = high_byte(player1_x) - tmp1;
-	}
-	else if (player0_x < 0x0200){ // change x scroll
+	} else if (player0_x < 0x0200){ // change x scroll
 		tmp1 = MSB(player0_x + 0x0200);
 		scroll_x = scroll_x - tmp1;
 		if (tmp1) {
@@ -53,61 +51,81 @@ void do_the_scroll_thing(){
 		high_byte(player0_x) = high_byte(player0_x) + tmp1;
 		high_byte(player1_x) = high_byte(player1_x) + tmp1;
 	}
+}
 
 
-	
-	
-	
-	
+void process_y_scroll() {
 	if ((!dual || twoplayer) && (gamemode == GAMEMODE_CUBE || gamemode == GAMEMODE_ROBOT || gamemode == GAMEMODE_NINJA || nocamlock || nocamlockforced)) {
 			if (exitPortalTimer) exitPortalTimer--;
-			if (player0_y < 0x4000 && (scroll_y > min_scroll_y)){ // change y scroll (upward)
-				tmp1 = MSB(0x4000 - player0_y);
-				if (exitPortalTimer && tmp1 >= (11 - exitPortalTimer)) tmp1 = 11 - exitPortalTimer;
-				scroll_y = sub_scroll_y(tmp1, scroll_y);
+			if (player0_y < 0x4000 && 
+				(scroll_y >= min_scroll_y && (scroll_y_subpx || scroll_y != min_scroll_y))
+				){
+				// change y scroll (upward)
+				cc65_ptr1 = 0x4000 - player0_y;
+				if (exitPortalTimer) {
+					cc65_tmp1 = (11 - exitPortalTimer);
+					if (MSB(cc65_ptr1) >= cc65_tmp1) cc65_ptr1 = (cc65_tmp1) << 8;
+				}
+				player0_y += cc65_ptr1;
+				player1_y += cc65_ptr1;
 
-				high_byte(player0_y) = high_byte(player0_y) + tmp1;
-				high_byte(player1_y) = high_byte(player1_y) + tmp1;
+				scroll_y_subpx -= LSB(cc65_ptr1);
+				do_if_borrow({++high_byte(cc65_ptr1);});
+				scroll_y = sub_scroll_y(MSB(cc65_ptr1), scroll_y);
 			}
 			cap_scroll_y_at_top();
 
-			
-			if (high_byte(player0_y) >= MSB(0xA000)){ // change y scroll (upward)
-				tmp1 = MSB(player0_y - 0xA000);
-				if (exitPortalTimer && tmp1 >= (11 - exitPortalTimer)) tmp1 = 11 - exitPortalTimer;
-				scroll_y = add_scroll_y(tmp1, scroll_y);
-				if (high_byte(scroll_y) < MSB(0x300)) {
-					high_byte(player0_y) = high_byte(player0_y) - tmp1;
-					high_byte(player1_y) = high_byte(player1_y) - tmp1;
+			if (scroll_y < 0x2EF && high_byte(player0_y) >= MSB(0xA000)){
+				// change y scroll (downward)
+				cc65_ptr1 = player0_y - 0xA000;
+				if (exitPortalTimer) {
+					cc65_tmp1 = (11 - exitPortalTimer);
+					if (MSB(cc65_ptr1) >= cc65_tmp1) cc65_ptr1 = (cc65_tmp1) << 8;
 				}
+				player0_y = player0_y - cc65_ptr1;
+				player1_y = player1_y - cc65_ptr1;
+
+				scroll_y_subpx += LSB(cc65_ptr1);
+				do_if_carry({++high_byte(cc65_ptr1);});
+				scroll_y = add_scroll_y(MSB(cc65_ptr1), scroll_y);
 			}
-			if (high_byte(scroll_y) >= MSB(0x300)) scroll_y = 0x2EF; // 2F0 overflows into 300 (add_scroll_y)
-	}
-	else {			//ship stuff
-		if (high_byte(target_scroll_y) >= 0xf0) {
+			cap_scroll_y_at_bottom();
+	} else {			//ship stuff
+		if (low_byte(target_scroll_y) >= 0xf0) {
 			target_scroll_y += 0x10;
 		}
 		if (target_scroll_y > scroll_y) {
-			scroll_y = add_scroll_y(2, scroll_y);
-			high_byte(player0_y) -= 2;
-			high_byte(player1_y) -= 2;
+			cc65_ptr1 = SHIP_SCROLL_SPEED(framerate);
+			
+			player0_y = player0_y - cc65_ptr1;
+			player1_y = player1_y - cc65_ptr1;
+
+			scroll_y_subpx += LSB(cc65_ptr1);
+			do_if_carry({++high_byte(cc65_ptr1);});
+			scroll_y = add_scroll_y(MSB(cc65_ptr1), scroll_y);
 		}
 		if (target_scroll_y < scroll_y) {
-			scroll_y = sub_scroll_y(2, scroll_y);
+			cc65_ptr1 = SHIP_SCROLL_SPEED(framerate);
 			
-			high_byte(player0_y) += 2;
-			high_byte(player1_y) += 2;
+			player0_y = player0_y + cc65_ptr1;
+			player1_y = player1_y + cc65_ptr1;
+
+			scroll_y_subpx -= LSB(cc65_ptr1);
+			do_if_carry({++high_byte(cc65_ptr1);});
+			scroll_y = sub_scroll_y(MSB(cc65_ptr1), scroll_y);
 		}
 		cap_scroll_y_at_top();
-		while (scroll_y > 0x2EF) {		//down
-			scroll_y = sub_scroll_y(1, scroll_y);
-			high_byte(player0_y) += 1;
-			high_byte(player1_y) += 1;
-		}
+		cap_scroll_y_at_bottom();
 	}
+}
+
+void do_the_scroll_thing(){
+	process_x_scroll();
+	process_y_scroll();
 
     set_scroll_x(scroll_x);
     set_scroll_y(scroll_y);
 }
+
 
 CODE_BANK_POP()

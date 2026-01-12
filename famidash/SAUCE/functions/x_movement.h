@@ -1,10 +1,6 @@
 
 CODE_BANK_PUSH("CODE")
 
-const unsigned short speed_table[] = {
-	CUBE_SPEED_X1, CUBE_SPEED_X05, CUBE_SPEED_X2, CUBE_SPEED_X3, CUBE_SPEED_X4, CUBE_SPEED_SLOW
-};
-
 void slope_vel() {
 	switch (tmp8 & SLOPE_DEGREES_MASK) {
 		case SLOPE_22DEG:
@@ -60,14 +56,13 @@ void x_movement_coll() {
   
 }
 
-
 void x_movement(){
   mmc3_set_prg_bank_1(GET_BANK(bg_coll_R));
     // handle x
 
 	old_x = currplayer_x;
 	
-	currplayer_vel_x = speed_table[speed & 0x7F];
+	currplayer_vel_x = ind16BE_load_NOC(CUBE_SPEED(framerate), speed);
 	
 //	if (controllingplayer->hold & PAD_LEFT) currplayer_vel_x = 0;
 	
@@ -79,29 +74,20 @@ void x_movement(){
 	}
 
 	if (gamemode == GAMEMODE_WAVE) { // wave
-		if (currplayer_mini) {
-			Generic.width = MINI_WAVE_WIDTH;
-			Generic.height = MINI_WAVE_HEIGHT;
-		} else {
-			Generic.width = WAVE_WIDTH;
-			Generic.height = WAVE_HEIGHT;
-		}
+		Generic.width = WAVE_WIDTH;
+		Generic.height = WAVE_HEIGHT;
 	} else {
-		if (!currplayer_mini) {
-			Generic.width = CUBE_WIDTH;
-			Generic.height = CUBE_HEIGHT;
-		} else {
-			Generic.width = MINI_CUBE_WIDTH;
-			Generic.height = MINI_CUBE_HEIGHT;
-		}   
+		Generic.width = CUBE_WIDTH[currplayer_mini];
+		Generic.height = CUBE_HEIGHT[currplayer_mini];
 	}
 
 	Generic.x = high_byte(currplayer_x); // this is much faster than passing a pointer to player
 	Generic.y = high_byte(currplayer_y);
 
 	if (!(options & platformer) && !force_platformer) {
-		if ((controllingplayer->left) && !twoplayer && DEBUG_MODE) currplayer_x -= currplayer_vel_x;
-		else currplayer_x += currplayer_vel_x;
+		//if ((controllingplayer->left) && !twoplayer && DEBUG_MODE) currplayer_x -= currplayer_vel_x;
+		//else 
+		currplayer_x += currplayer_vel_x;
 	} else {
 		// leave the col calls first so it executes and checks against spike collision
 		tmp7 = bg_coll_R();
@@ -132,12 +118,23 @@ void x_movement(){
 	} 
 
 
-	if (currplayer_y < 0x0600 && !dual && !twoplayer){
-		idx8_store(cube_data, currplayer, cube_data[currplayer] | 0x01);	//DIE if player goes too high
-	}
-	
+	if (!wrap_mode) {
+		if (currplayer_y < 0x0600 && !dual && !twoplayer){
+			idx8_store(cube_data, currplayer, cube_data[currplayer] | 0x01);	//DIE if player goes too high
+		}
+		
 
-	else if (!(controllingplayer->hold & (PAD_A | PAD_UP))) idx8_store(cube_data, currplayer, cube_data[currplayer] & 1);
+		else if (!(controllingplayer->hold & (PAD_A | PAD_UP))) idx8_store(cube_data, currplayer, cube_data[currplayer] & 1);
+	}
+	else {
+		if (currplayer_y < 0x0600 && !dual && !twoplayer){
+			currplayer_y = 0xF900;
+		}		
+		else if (currplayer_y > 0xF900 && !dual && !twoplayer){
+			currplayer_y = 0x0600;
+		}		
+		else if (!(controllingplayer->hold & (PAD_A | PAD_UP))) idx8_store(cube_data, currplayer, cube_data[currplayer] & 1);
+	}
 }
 
 

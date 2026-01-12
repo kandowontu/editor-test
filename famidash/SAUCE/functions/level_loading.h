@@ -1,13 +1,11 @@
 // prototype
+#ifdef level_luckydraw
+void Lucky_Draw_Text_Stuff();
+#endif
 void init_sprites();
 #if !__VS_SYSTEM
 	#include "defines/charmap/bg_charmap.h"
 	const unsigned char attempttext[]="PQQRSTQ"; //ATTEMPT
-#endif
-#ifdef level_luckydraw
-	#include "defines/charmap/luckydraw_charmap.h"
-	const unsigned char triggerstext[]="TRIGGERS SURVIVED"; //ATTEMPT
-	const unsigned char toptriggerstext[]="TOP TRIGGERS SURVIVED"; //ATTEMPT
 #endif
 
 
@@ -73,10 +71,34 @@ void unrle_first_screen(){ // run-length decode the first screen of a level
 			increment_attempt_count();
 		}
 	#endif
-	coins = 0;
-	outline_color = 0x30;	
 	cube_data[0] = 0;
 	cube_data[1] = 0;
+	coins = 0;
+	scroll_x = 0;
+	drawing_frame = 0;
+	gravity_mod = 0;
+	disco_sprites = 0;
+
+	outline_color = 0x30;	
+	dual = twoplayer ? 1 : 0;
+	player_gravity[0] = GRAVITY_DOWN;
+
+
+	player_y[0] = spawn_y_pos;
+	player_y[1] = spawn_y_pos;
+	currplayer_y = spawn_y_pos;
+
+	memfill(jimsheatballalive, 0, MAX_FIREBALLS);
+
+	player_gravity[1] = twoplayer ? GRAVITY_DOWN : GRAVITY_UP;
+
+	currplayer_gravity = GRAVITY_DOWN;
+
+	tmp1 = 0;
+	do {
+		activesprites_active[tmp1] = 0;
+		activesprites_anim_frame[tmp1] = 0;
+	} while (++tmp1 < max_loaded_sprites);
 
 	mmc3_set_prg_bank_1(level_data_bank);
 
@@ -105,8 +127,6 @@ void unrle_first_screen(){ // run-length decode the first screen of a level
 			__asm__("bmi %g", unrle_first_screen_addition_loop);
 		parallax_scroll_column <<= 1;
 
-		//mmc3_set_prg_bank_1(GET_BANK(load_practice_state));
-		
 		crossPRGBankJump0(load_practice_state);	
 
 		mmc3_set_prg_bank_1(GET_BANK(draw_screen));
@@ -117,9 +137,6 @@ void unrle_first_screen(){ // run-length decode the first screen of a level
 			i++;
 			uint32_inc(scroll_x);
 		} while (i != 0);
-		
-	//	memcpy(famistudio_state, practice_famistudio_state, sizeof(practice_famistudio_state));
-	
 	} 
 	else {
 		// To get the draw screen R to start in the left nametable, scroll must be negative.
@@ -139,6 +156,9 @@ void unrle_first_screen(){ // run-length decode the first screen of a level
 		uint32_inc(scroll_x);
 	} while (i != 0);
 
+	level_resetting_flag = 2;
+	if (!level_resetting_flag) timewarp_done = 0;
+
 	init_sprites();
 	
 	set_scroll_x(scroll_x);
@@ -148,46 +168,9 @@ void unrle_first_screen(){ // run-length decode the first screen of a level
 			multi_vram_buffer_horz((const char*)attempttext,sizeof(attempttext)-1,NTADR_C(6, 15));
 		#endif
 	
-//		if (TOTALATTEMPTSTHOUSANDS >= 10)
-//			multi_vram_buffer_horz((const char*)whartxt,sizeof(whartxt)-1,NTADR_C(15, 15));
-//
-//		else {
 			#ifdef level_luckydraw
-			if (level == level_luckydraw && (triggers_hit[0] || triggers_hit[1] || triggers_hit[2])) {
-				multi_vram_buffer_horz((const char*)triggerstext,sizeof(triggerstext)-1,NTADR_C(1, 17));
-				one_vram_buffer(0xF5+triggers_hit[2], NTADR_C(20,17));
-				one_vram_buffer(0xF5+triggers_hit[1], NTADR_C(21,17));
-				one_vram_buffer(0xF5+triggers_hit[0], NTADR_C(22,17));
-				one_vram_buffer(0xD0, NTADR_C(23,17));
-				one_vram_buffer(0xF5+8, NTADR_C(24,17));
-				one_vram_buffer(0xF5+0, NTADR_C(25,17));
-				one_vram_buffer(0xF5+0, NTADR_C(26,17));
-				
-				if (triggers > top_triggers) top_triggers = triggers;
-
-				multi_vram_buffer_horz((const char*)toptriggerstext,sizeof(toptriggerstext)-1,NTADR_C(1, 19));
-
-				
-				hexToDec(top_triggers);
-
-				if (hexToDecOutputBuffer[2])
-					one_vram_buffer(0xf5+hexToDecOutputBuffer[2], NTADR_C(23,19));
-
-				if (hexToDecOutputBuffer[2] | hexToDecOutputBuffer[1])
-					one_vram_buffer(0xf5+hexToDecOutputBuffer[1], NTADR_C(24,19));
-
-				one_vram_buffer(0xf5+hexToDecOutputBuffer[0], NTADR_C(25,19));	
-		
-				one_vram_buffer(0xD0, NTADR_C(26,19));
-				one_vram_buffer(0xF5+8, NTADR_C(27,19));
-				one_vram_buffer(0xF5+0, NTADR_C(28,19));
-				one_vram_buffer(0xF5+0, NTADR_C(29,19));			
 			
-				triggers = 0;
-				triggers_hit[0] = 0;
-				triggers_hit[1] = 0;
-				triggers_hit[2] = 0;
-			}
+			crossPRGBankJump0(Lucky_Draw_Text_Stuff);
 
 			#endif
 			

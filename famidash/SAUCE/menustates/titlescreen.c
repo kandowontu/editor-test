@@ -83,9 +83,12 @@ const char palsystem[] = "FOR PAL SYSTEMS";
 #define coinCondition true
 #endif
 
-#define NTSC_SYS PEEK(0x00)
-
 // Routines start
+#if __HUGE_ROM
+void check_if_music_stopped2() {
+	if (famistudio_song_speed == 0x80) { if (!songplaying) music_play(xbgmlookuptable[menutheme]); else music_play(xbgmlookuptable[song]);}
+}
+#endif
 
 void state_menu() {
 	oam_clear();
@@ -123,7 +126,7 @@ void state_menu() {
 	vram_unrle(game_start_screen);
 
 	// Tilemap 2
-	if (!NTSC_SYS) multi_vram_buffer_horz(palsystem, sizeof(palsystem)-1, NTADR_A(9,7));
+	if (fullRegion == 1) multi_vram_buffer_horz(palsystem, sizeof(palsystem)-1, NTADR_A(9,7));
 
 	// Tilemap 3
 	#if __VS_SYSTEM
@@ -186,7 +189,13 @@ void state_menu() {
 	#if __VS_SYSTEM
 	if (menuMusicCurrentlyPlaying == 0 && !nestopia) music_play(idx8_load(xbgmlookuptable, newrand() & 31));
 	#else
+
+	#if !__HUGE_ROM
 	if (menuMusicCurrentlyPlaying == 0 && !nestopia) music_play(xbgmlookuptable[menu_music]);
+	#else
+	if (menuMusicCurrentlyPlaying == 0 && !nestopia) music_play(xbgmlookuptable[menutheme]);
+	#endif
+
 	#endif
 	menuMusicCurrentlyPlaying = 1;
 
@@ -220,6 +229,10 @@ void state_menu() {
 
 	while (1){
 
+		#if __HUGE_ROM
+			check_if_music_stopped2();
+		#endif
+
 		#if __VS_SYSTEM
 
 		if (showarrownow) {
@@ -230,7 +243,6 @@ void state_menu() {
 			showarrownow = 0;
 		}
 		
-/*    DEBUG STUFF
 		if (joypad1.press & PAD_SELECT && coins_inserted != 255) { 
 			for (tmp2 = 0; tmp2 < 255; tmp2++) {
 		
@@ -239,7 +251,7 @@ void state_menu() {
 		
 			}
 		}
-*/
+
 		multi_vram_buffer_horz(vstext, sizeof(vstext)-1, NTADR_A(25,5));
 		if (!coins_inserted) multi_vram_buffer_horz(nocoinstext, sizeof(nocoinstext)-1, NTADR_A(11,9));
 		else {
@@ -320,11 +332,11 @@ void state_menu() {
 					break;
 				case TITLEMODE_MINICUBE:
 					title_cube_shit();
-					mini[0] = 1;
+					player_mini[0] = 1;
 					high_byte(player_x[0]) = currplayer_x_small;
 					high_byte(player_y[0]) = currplayer_y_small;
 					crossPRGBankJump0(drawplayerone);
-					mini[0] = 0;
+					player_mini[0] = 0;
 					break;
 				case TITLEMODE_SHIP:
 					title_ship_shit();
@@ -585,7 +597,7 @@ void state_menu() {
 				return;
 			}
 		#endif
-		low_byte(tmp8) += CUBE_SPEED_X05>>8;
+		low_byte(tmp8) += MSB(ind16BE_load_NOC(CUBE_SPEED(framerate), 1));
 		edit_irq_table(low_byte(tmp8), 2); 
 
 /*
@@ -629,9 +641,10 @@ void state_menu() {
 				if (mouse.x >= 0xD6 && mouse.x <= 0xE4) {
 					if (all_levels_complete != 0xFC)
 						sfx_play(sfx_invalid, 0);
-					else
+					else {
 						menuselection = TITLE_BTN_FUNSETTINGS;
-					break;
+						break;
+					}
 				}
 			}
 		}	
@@ -665,7 +678,7 @@ void state_menu() {
 	normalorcommlevels = 1;
 	switch (menuselection) {
 		case TITLE_BTN_LEVELMAIN:
-			#if LEVELSET != 'A'
+			#if OFFICIAL_LEVEL_COUNT == 0
 				tmp2 = 0;
 				gameState = STATE_PLAYMAIN;
 				break;
@@ -734,7 +747,8 @@ void set_title_icon() {
 void roll_new_mode() {
 	speed = (newrand() & 3); 
 	if (speed == 0) speed = 1; 
-	currplayer_gravity = GRAVITY_DOWN; 
+	currplayer_gravity = GRAVITY_DOWN;
+	update_currplayer_table_idx();
 	currplayer_x_small = 0x08; 
 	currplayer_y_small = 0xA0;
 	player_vel_y[0] = 0;
@@ -787,7 +801,7 @@ void bounds_check() {
 }
 
 void title_ship_shit() {
-	if (kandoframecnt & 1) { if (!(newrand() & 7)) invert_gravity(currplayer_gravity); }
+	if (kandoframecnt & 1) { if (!(newrand() & 7)) invert_gravity(currplayer_gravity); update_currplayer_table_idx(); }
 
 	currplayer_y_small -= tmpi8;
 
@@ -796,6 +810,7 @@ void title_ship_shit() {
 	} else if (currplayer_y_small < 0x08) { 
 		currplayer_y_small = 0x08; 
 		currplayer_gravity = GRAVITY_DOWN;
+		update_currplayer_table_idx();
 		tmpi8 = 0;
 	}					
 
@@ -810,7 +825,8 @@ void title_ship_shit() {
 void title_swing_shit() {
 	if (kandoframecnt & 1) { 
 		if (!(newrand() & 15)) {
-			invert_gravity(currplayer_gravity); 
+			invert_gravity(currplayer_gravity);
+			update_currplayer_table_idx();
 		}
 	}
 
@@ -881,7 +897,7 @@ void title_cube_shit() {
 
 void title_wave_shit() {
 	tmp2 = newrand() & 63;
-	if (kandoframecnt & 1) { if (tmp2 >= 60) invert_gravity(currplayer_gravity); }
+	if (kandoframecnt & 1) { if (tmp2 >= 60) invert_gravity(currplayer_gravity); update_currplayer_table_idx(); }
 		
 	if (currplayer_gravity) currplayer_y_small -= speed;
 
@@ -890,7 +906,7 @@ void title_wave_shit() {
 }
 void title_mini_wave_shit() {
 	tmp2 = newrand() & 63;
-	if (kandoframecnt & 1) { if (tmp2 >= 60) invert_gravity(currplayer_gravity); }
+	if (kandoframecnt & 1) { if (tmp2 >= 60) invert_gravity(currplayer_gravity); update_currplayer_table_idx(); }
 		
 	if (currplayer_gravity) currplayer_y_small -= (speed << 1);
 
@@ -900,14 +916,14 @@ void title_mini_wave_shit() {
 
 void title_robot_shit() {
 	if (kandoframecnt & 1 && !currplayer_gravity) {
-		if (!(newrand() & 15)) { tmpi8 = newrand() & 15; currplayer_gravity = GRAVITY_UP; teleport_output = 0; }
+		if (!(newrand() & 15)) { tmpi8 = newrand() & 15; currplayer_gravity = GRAVITY_UP; update_currplayer_table_idx(); teleport_output = 0; }
 	}
 
 	if (currplayer_gravity) {
 		if (teleport_output < 0x0C) { currplayer_y_small -= UFO_Title_Jump_Table[teleport_output]; teleport_output++; }
 		if (teleport_output == 0x0C && tmpi8 > 0) { currplayer_y_small -= UFO_Title_Jump_Table[teleport_output]; tmpi8--; }
 		else { currplayer_y_small -= UFO_Title_Jump_Table[teleport_output]; teleport_output++; if (teleport_output > 0x1A) teleport_output = 0x1A; }
-		if (currplayer_y_small >= 160) { currplayer_gravity = GRAVITY_DOWN; tmpi8 = 0; teleport_output = 0; currplayer_y_small = 160; }
+		if (currplayer_y_small >= 160) { currplayer_gravity = GRAVITY_DOWN; tmpi8 = 0; teleport_output = 0; currplayer_y_small = 160; update_currplayer_table_idx(); }
 	}
 					
 }
@@ -1010,3 +1026,122 @@ const uint8_t miniShipFrameTable[] = {0x01, 0x01, 0x03, 0x05, 0x07, 0x09, 0x09};
 const uint8_t miniSwingFrameTable[] = {0x3F, 0x1B, 0x3F, 0x3D};
 
 const uint8_t mysteryFrameTable[] = {0x1D, 0x7D, 0x1F, 0x7F, 0xFF};
+
+#ifdef level_luckydraw
+	#include "defines/charmap/luckydraw_charmap.h"
+	const unsigned char triggerstext[]="TRIGGERS SURVIVED"; //ATTEMPT
+	const unsigned char toptriggerstext[]="TOP TRIGGERS SURVIVED"; //ATTEMPT
+
+void Lucky_Draw_Text_Stuff() {
+			if (level == level_luckydraw && (triggers_hit[0] || triggers_hit[1] || triggers_hit[2])) {
+				multi_vram_buffer_horz((const char*)triggerstext,sizeof(triggerstext)-1,NTADR_C(1, 6));
+				one_vram_buffer(0xF5+triggers_hit[2], NTADR_C(20,6));
+				one_vram_buffer(0xF5+triggers_hit[1], NTADR_C(21,6));
+				one_vram_buffer(0xF5+triggers_hit[0], NTADR_C(22,6));
+				one_vram_buffer(0xD0, NTADR_C(23,6));
+				one_vram_buffer(0xF5+8, NTADR_C(24,6));
+				one_vram_buffer(0xF5+0, NTADR_C(25,6));
+				one_vram_buffer(0xF5+0, NTADR_C(26,6));
+				
+				if (triggers > top_triggers) top_triggers = triggers;
+
+				multi_vram_buffer_horz((const char*)toptriggerstext,sizeof(toptriggerstext)-1,NTADR_C(1, 8));
+
+				
+				hexToDec(top_triggers);
+
+				if (hexToDecOutputBuffer[2])
+					one_vram_buffer(0xf5+hexToDecOutputBuffer[2], NTADR_C(23,8));
+
+				if (hexToDecOutputBuffer[2] | hexToDecOutputBuffer[1])
+					one_vram_buffer(0xf5+hexToDecOutputBuffer[1], NTADR_C(24,8));
+
+				one_vram_buffer(0xf5+hexToDecOutputBuffer[0], NTADR_C(25,8));	
+		
+				one_vram_buffer(0xD0, NTADR_C(26,8));
+				one_vram_buffer(0xF5+8, NTADR_C(27,8));
+				one_vram_buffer(0xF5+0, NTADR_C(28,8));
+				one_vram_buffer(0xF5+0, NTADR_C(29,8));			
+			
+				triggers = 0;
+				triggers_hit[0] = 0;
+				triggers_hit[1] = 0;
+				triggers_hit[2] = 0;
+			}
+}
+#endif
+
+
+
+#if __HUGE_ROM
+void choose_menu_theme() {
+	tmp1 = newrand();
+	if (!tmp1) menutheme = 4;
+	else if (tmp1 < 63) menutheme = 0;
+	else if (tmp1 < 126) menutheme = 3;
+	else if (tmp1 < 189) menutheme = 1;
+	else menutheme = 2;
+	menuthemechosen = 1;
+}
+#endif
+
+
+void check_practice_point_deletion() {
+	if (practicebuffer || (practice_point_count > 1 && (joypad1.press_select || (mouse.left && mouse.right_press)) && !(joypad1.hold & (PAD_UP | PAD_DOWN)))) {
+				curr_practice_point--;
+				practicebuffer = 0;
+				if (latest_practice_point) latest_practice_point--;
+				if (curr_practice_point >= practice_point_count)
+					curr_practice_point = practice_point_count - 1;
+	}
+}
+
+void end_level_debug() {
+				END_LEVEL_TIMER = 0;
+				kandokidshack4 = 0;
+				oam_clear();
+				gameState = STATE_LVLDONE;
+				//DEBUG_MODE = 0;
+				famistudio_music_stop();
+}				
+
+void decrement_was_on_slope() {
+	if (currplayer_was_on_slope_counter) {
+		currplayer_was_on_slope_counter--;
+		
+		if (!currplayer_was_on_slope_counter) {
+			if (gamemode == GAMEMODE_CUBE || gamemode == GAMEMODE_BALL) {
+				// Set carry to 1 if slope is upside down
+				__A__ = (currplayer_slope_type & SLOPE_UPSIDEDOWN) + (256 - SLOPE_UPSIDEDOWN);
+				__A__ = currplayer_table_idx & ~TBLIDX_GRAV;
+				__asm__ ("adc #0 \n tay");
+				// Thus, gravity in the table index is replaced with SLOPE_UPSIDEDOWN
+				switch (gamemode) {
+					case GAMEMODE_BALL:
+						switch (currplayer_slope_type) {
+							case SLOPE_22DEG_UP:
+							case SLOPE_22DEG_UP_UD:
+								currplayer_vel_y += EXIT_SLOPE_BALL_22(get_Y);
+								break;
+							case SLOPE_66DEG_UP:
+							case SLOPE_66DEG_UP_UD:
+								currplayer_vel_y += EXIT_SLOPE_BALL_66(get_Y);
+						}
+						break;
+					case GAMEMODE_CUBE:
+						switch (currplayer_slope_type) {
+							case SLOPE_22DEG_UP:
+							case SLOPE_22DEG_UP_UD:
+								currplayer_vel_y += EXIT_SLOPE_CUBE_22(get_Y);
+								break;
+						}
+						break;
+				}
+			}
+			currplayer_slope_type = 0;
+		}
+	} else {
+		currplayer_last_slope_type = 0;
+		currplayer_slope_type = 0;
+	}	
+}

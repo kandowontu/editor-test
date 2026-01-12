@@ -1,6 +1,7 @@
 extern unsigned char drawing_frame;
 extern unsigned char* PARALLAX_CHR;
 
+void check_practice_point_deletion();
 void music_restore();
 
 void death_animation() {
@@ -19,11 +20,18 @@ void death_animation() {
 		sfx_play(sfx_death, 0);
 		while (tmp1 != 0){
 			ppu_wait_nmi();
+
+			crossPRGBankJump0(check_practice_point_deletion);
+	
 			dual == 1 ? oam_clear_two_players() : oam_clear_player();
 			
 			if (robotjumpframe[0] < 20) {
-				if (!retro_mode) oam_meta_spr(high_byte(player_x[tmp2])-2, high_byte(player_y[tmp2])-2, Explode_Sprites[robotjumpframe[0] & 0x7F]);
-				else oam_meta_spr(high_byte(player_x[tmp2])-2, high_byte(player_y[tmp2])-2, ExplodeR_Sprites[robotjumpframe[0] & 0x7F]);
+				if (retro_mode && !(gamemode == GAMEMODE_ROBOT || gamemode == GAMEMODE_NINJA || gamemode == GAMEMODE_UFO || gamemode == GAMEMODE_SHIP)) mmc3_set_2kb_chr_bank_0(20);	//default set for explosion
+				oam_meta_spr(
+					idx16_load_hi_NOC(player_x, tmp2)-2,
+					idx16_load_hi_NOC(player_y, tmp2)-2,
+					(retro_mode && (gamemode == GAMEMODE_ROBOT || gamemode == GAMEMODE_NINJA || gamemode == GAMEMODE_UFO || gamemode == GAMEMODE_SHIP)) ? ExplodeR_Sprites[robotjumpframe[0] & 0x7F] :
+					Explode_Sprites[robotjumpframe[0] & 0x7F]);
 				++robotjumpframe[0];
 			}
 //			pad_poll(0);
@@ -43,6 +51,7 @@ void death_animation() {
 	nmi_fs_updates_off();
 }
 
+CODE_BANK_PUSH(RESETLEVEL_BANK)
 void reset_level() {
 	nmi_fs_updates_on();
 
@@ -54,10 +63,39 @@ void reset_level() {
 	was_on_slope_counter[0] = 0;
 	was_on_slope_counter[1] = 0;
 	jumps = 0;
-	ufo_orbed = 0;
+	ufo_orbed[0] = 0;
+	ufo_orbed[1] = 0;
+	black_orbed[0] = 0;
+	black_orbed[1] = 0;
 	slowmode = 0;
+	wrap_mode = 0;
+	nullscapes_active = 0;
+	nullscapes_orb_type = 0;
 	force_platformer = 0;
 	player_invis = 0;
+	robotjumpframe[0] = 0;
+	slope_frames[0] = 0;
+	slope_frames[1] = 0;
+	nocamlockforced = 0;
+	minicoins = 0;
+	kandoframecnt = 0;
+	currplayer_slope_frames = 0;
+	make_cube_jump_higher = 0;
+
+	player_mini[0] = player_mini[1] = currplayer_mini = 0;
+	player_vel_x[0] = player_vel_x[1] = currplayer_vel_x = 0;
+	player_vel_y[0] = player_vel_y[1] = currplayer_vel_y = 0;
+	forced_trails = 0;
+	cube_rotate[0] = 0;
+	cube_rotate[1] = 0;
+	coins = 0;
+	orbactive = 0;
+	coin1_timer = coin2_timer = coin3_timer = 0;	
+#ifdef FLAG_KANDO_FUN_STUFF
+	tallmode = 0;
+	longmode = 0;
+	bigboi = 0;
+#endif	
 	slope_type[0] = SLOPE_NONE;
 	slope_type[1] = SLOPE_NONE;
 	currplayer_slope_type = SLOPE_NONE;
@@ -65,23 +103,17 @@ void reset_level() {
 	last_slope_type[1] = SLOPE_NONE;
 	currplayer_last_slope_type = SLOPE_NONE;
 	curr_practice_point = latest_practice_point;
-	robotjumpframe[0] = 0;
-	slope_frames[0] = 0;
-	slope_frames[1] = 0;
-	nocamlockforced = 0;
-	minicoins = 0;
-	currplayer_slope_frames = 0;
-	make_cube_jump_higher = 0;
 
 	#if __VS_SYSTEM
 	if (!coins_inserted) return;
 	#endif
-
-	scroll_y = 0x2EF;
 	seam_scroll_y = (0x2EF - 0x78); // [temp]
 	set_scroll_x(scroll_x);
 	set_scroll_y(scroll_y);
 	init_rld(level);
+
+	scroll_y_subpx = 0;
+	scroll_y = spawn_scroll_y_pos;
 
 	if (!(options & platformer) && !force_platformer) {
 	player_x[0] = 0x0000;
@@ -93,55 +125,6 @@ void reset_level() {
 	currplayer_x = 0x1110;
 	}
 
-	player_y[0] = 0xb000;
-	player_y[1] = 0xb000;
-	currplayer_y = 0xb000;
-
-	memfill(jimsheatballalive, 0, MAX_FIREBALLS);
-
-	for (tmp1 = 0; tmp1 < max_loaded_sprites; tmp1++) {
-		activesprites_anim_frame[tmp1] = 0;
-	}
-
-	player_gravity[1] = twoplayer ? GRAVITY_DOWN : GRAVITY_UP;
-
-	currplayer_gravity = GRAVITY_DOWN;
-
-	tmp1 = 0;
-	do {
-		activesprites_active[tmp1] = 0;
-	} while (++tmp1 < max_loaded_sprites);
-
-	dual = twoplayer ? 1 : 0;
-	player_gravity[0] = GRAVITY_DOWN;
-	scroll_x = 0;
-	drawing_frame = 0;
-	gravity_mod = 0;
-	disco_sprites = 0;
-	currplayer_mini = 0x00;
-	mini[0] = 0;
-	mini[1] = 0;
-	currplayer_vel_x = 0;
-	currplayer_vel_y = 0;
-	forced_trails = 0;
-	player_vel_x[0] = 0;
-	player_vel_y[0] = 0;
-	player_vel_x[1] = 0;
-	player_vel_y[1] = 0;
-	cube_rotate[0] = 0;
-	cube_rotate[1] = 0;
-	coins = 0;
-	orbactive = 0;
-	coin1_timer = 0;
-	coin2_timer = 0;
-	coin3_timer = 0;	
-//	cube_data[0] = 0;
-//	cube_data[1] = 0;   this resets in level_loading/unrle_first_screen
-#ifdef FLAG_KANDO_FUN_STUFF
-	tallmode = 0;
-	longmode = 0;
-	bigboi = 0;
-#endif
 	target_scroll_y = 0x0180;
 	curr_x_scroll_stop = 0x5000;
 	target_x_scroll_stop = 0x5000;
@@ -151,8 +134,9 @@ void reset_level() {
 		memfill(trail_sprites_visible, 0, sizeof(trail_sprites_visible));
 		invincible_counter = 8;
 	}
+	update_currplayer_table_idx();
 
-	unrle_first_screen();
+	crossPRGBankJump0(unrle_first_screen);	// For bank saving
 
 	if (!no_parallax) mmc3_set_1kb_chr_bank_2(parallax_scroll_x + GET_BANK(PARALLAX_CHR));
 	ppu_on_all();
@@ -164,3 +148,5 @@ void reset_level() {
 	}		
 	nmi_fs_updates_off();
 }
+
+CODE_BANK_POP()

@@ -8,9 +8,10 @@ void mouse_and_cursor();
 	#else
 		const unsigned char ver[] = " VER";
 	#endif
+	const unsigned char verNum[] = {FLAG_MAJ_VER, 0x18, FLAG_MIN_VER, 0x18, FLAG_PATCH_VER};
 #endif
 
-#if __THE_ALBUM
+#if __THE_ALBUM || __HUGE_ROM
 void check_if_music_stopped_3() {
 	if (famistudio_song_speed == 0x80) music_play(song_scheming_weasel);
 }
@@ -25,15 +26,23 @@ void credits_loop() {
     kandoframecnt++;
 	#if __VS_SYSTEM
 		crossPRGBankJump0(check_if_music_stopped);
-	#elif __THE_ALBUM
+	#elif __THE_ALBUM || __HUGE_ROM
 		check_if_music_stopped_3();
 	#endif
+
+	#if !__THE_ALBUM
 	if (!forced_credits &&
 		(joypad1.press || ((mouse.connected)
 			? mouse.left_press || mouse.right_press
 			: joypad2.press))) {
 			gameState = STATE_MENU; return;
 	}
+	#else
+	if (!forced_credits &&
+		(joypad1.press || joypad2.press)) {
+			gameState = STATE_MENU; return;
+	}		
+	#endif
 	ppu_wait_nmi();
 	tmp1++;
 	if (kandoframecnt & 1 && mouse_timer) mouse_timer--;
@@ -58,13 +67,7 @@ void state_credits(){
 	#endif
 
 	multi_vram_buffer_horz(ver, sizeof(ver)-1, NTADR_A(1,24));
-	one_vram_buffer(FLAG_MAJ_VER, NTADR_A(6,24));
-	#ifdef FLAG_BETA_BUILD
-		one_vram_buffer(0x18, NTADR_A(7,24)); // dot
-		one_vram_buffer(FLAG_MIN_VER, NTADR_A(8,24));
-		// one_vram_buffer(0x18, NTADR_A(9,24)); // dot
-		// one_vram_buffer(FLAG_MAJ_VER, NTADR_A(10,24));
-	#endif
+	multi_vram_buffer_horz(verNum, sizeof(verNum), NTADR_A(6,24));
 
 	ppu_on_all();
 	ppu_wait_nmi();

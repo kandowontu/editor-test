@@ -157,6 +157,9 @@
                         <MenuItem x:Name="MenuOptionSuppressCollisionMessages" Header="Suppress Collision Messages" IsCheckable="True" IsChecked="True" />
                         <MenuItem x:Name="MenuOptionSwapMouseWheel" Header="Swap Mouse Wheel Scroll" IsCheckable="True" IsChecked="False" />
                         <MenuItem x:Name="MenuOptionSwapPinch" Header="Swap Wheel/Pinch Zoom" IsCheckable="True" IsChecked="True" />
+                        <MenuItem x:Name="MenuOptionHideBackground" Header="Hide Background" IsCheckable="True" IsChecked="False" />
+                        <MenuItem x:Name="MenuOptionHideGround" Header="Hide Ground" IsCheckable="True" IsChecked="False" />
+                        <MenuItem x:Name="MenuOptionFastZoom" Header="Fast Zoom (Transform Only)" IsCheckable="True" IsChecked="False" />
                         <MenuItem x:Name="MenuColorEditorBackground" Header="Editor Background Color..." />
                         <Separator />
                         <MenuItem Header="Tileboard Position">

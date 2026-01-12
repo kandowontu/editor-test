@@ -17,12 +17,11 @@ const uint8_t G_Table2[];
 
 const uint8_t menu_irq_table[];
 
+const uint8_t xbgmlookuptable[];
+
 // Declarations of strings
 #include "defines/charmap/mainmenu_charmap.h"	// Set it for the further routine
 const char palsystem[] = "FOR PAL SYSTEMS";
-
-// TO BE REPLACE in physics update
-#define NTSC_SYS PEEK(0x00)
 
 void state_menu() {
 	oam_clear();
@@ -41,7 +40,7 @@ void state_menu() {
     vram_unrle(game_start_screen);
 
     // Tilemap 2
-	if (!NTSC_SYS) multi_vram_buffer_horz(palsystem, sizeof(palsystem)-1, NTADR_A(9,7));
+	if (fullRegion == 1) multi_vram_buffer_horz(palsystem, sizeof(palsystem)-1, NTADR_A(9,7));
 
 	// Tilemap 3
 	tmp4 = menuselection; ++tmp4;
@@ -129,11 +128,12 @@ void state_menu() {
 		kandoframecnt++;
 		tmp3 = 0;	
 		
-		low_byte(tmp8) += CUBE_SPEED_X05>>8;
-		edit_irq_table(low_byte(tmp8), 2); 
+	//	low_byte(tmp8) += MSB(ind16BE_load_NOC(CUBE_SPEED(framerate), 1));
+	//	edit_irq_table(low_byte(tmp8), 2); 
 	}	
 
 	if (joypad1.select) cursedmusic = 0x40;
+	else cursedmusic = 0x00;
 	oam_clear();
 	ppu_wait_nmi();
 	tmp7 = newrand() & 255;
@@ -159,7 +159,7 @@ void unrle_bgm2() {
 }
 
 void check_if_music_stopped2() {
-	if (famistudio_song_speed == 0x80) { music_play(song_menu_theme); }
+	if (famistudio_song_speed == 0x80) { if (!song) music_play(song_menu_theme); else music_play(xbgmlookuptable[song]);}
 }
 
 

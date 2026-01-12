@@ -1,4 +1,4 @@
-CODE_BANK_PUSH("XCD_BANK_04")
+CODE_BANK_PUSH(SPRITE_RENDER_BANK)
 
 void reset_level();
 void minus15y();
@@ -88,6 +88,43 @@ void draw_sprites(){
 		#define animation_ptr tmpptr1
 		#define animation_data_ptr tmpptr2
 		
+
+		if (nullscapes_active) {
+			if (activesprites_type[index] == YELLOW_ORB ||
+			activesprites_type[index] == RED_ORB ||
+			activesprites_type[index] == BLACK_ORB ||
+			activesprites_type[index] == BLUE_ORB_MULTI ||
+			activesprites_type[index] == PINK_ORB ||
+			activesprites_type[index] == GREEN_ORB ||
+			activesprites_type[index] == GREEN_ORB_MULTI ||
+			activesprites_type[index] == BLUE_ORB) {
+
+				switch (nullscapes_orb_type) {
+					case 0:	
+							activesprites_type[index] = RED_ORB;
+							break;
+					case 1:	
+							activesprites_type[index] = BLUE_ORB_MULTI;
+							break;
+					case 2:	
+							activesprites_type[index] = YELLOW_ORB;
+							break;
+					case 3:	
+							activesprites_type[index] = BLACK_ORB;
+							break;
+					case 4:	
+							activesprites_type[index] = GREEN_ORB_MULTI;
+							break;
+					case 5:	
+							activesprites_type[index] = PINK_ORB;
+							break;
+				};
+				activesprites_activated[index] = 0;
+			}
+		}						
+		
+
+
 		needs_reload = 0;
 		spr_type = activesprites_type[index];
 		animation_ptr = (unsigned char *)animation_frame_list[spr_type & 0x7F];
@@ -108,11 +145,14 @@ void draw_sprites(){
 
 				// if the animation frame is past the length, wrap it around back to zero
 				if (animation_frame >= animation_frame_length[spr_type]) {
+				
 					if (activesprites_type[index] != SKULL_ORB) {
 						activesprites_anim_frame[index] = 0;
 						animation_frame = 0;
+					} else {
+						idx8_dec(activesprites_anim_frame, index);
+						animation_frame--;
 					}
-					else { activesprites_anim_frame[index]--; animation_frame--; }
 				}
 				// and then set the animation_frame_count to be reloaded
 				needs_reload = 1;
@@ -158,7 +198,7 @@ void draw_sprites(){
 			trail_loop();
 		}
 		else if ((forced_trails == 2 || trails == 2) && !(kandoframecnt & 1)) {
-			temptemp5++;
+			skipProcessingCubeRotationLogic++;
 			tmp6 = currplayer_vel_x << 1;
 			
 			tmpA = player_x[0];
@@ -190,7 +230,7 @@ void draw_sprites(){
 			
 			player_x[0] = tmpA;
 			player_y[0] = tmpB;
-			temptemp5--;		
+			skipProcessingCubeRotationLogic--;		
 		}
 	}
 	}
@@ -256,5 +296,8 @@ void plus15y() {
 void plus15x() {
 	high_byte(player_x[0]) += 15;
 }
+
+
+
 
 CODE_BANK_POP()

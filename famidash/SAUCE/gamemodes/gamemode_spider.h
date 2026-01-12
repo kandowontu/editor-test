@@ -1,15 +1,13 @@
 
-CODE_BANK_PUSH("XCD_BANK_01")
+CODE_BANK_PUSH(MOVEMENT_BANK)
 
 void cube_vel_stuff();
 void spider_eject();
 void common_gravity_routine();
 void spider_movement(){
 
-	fallspeed_big = SPIDER_MAX_FALLSPEED;
-	fallspeed_mini = MINI_SPIDER_MAX_FALLSPEED;
-	gravity_big = SPIDER_GRAVITY;
-	gravity_mini = MINI_SPIDER_GRAVITY;
+	tmpfallspeed = SPIDER_MAX_FALLSPEED(currplayer_table_idx);
+	tmpgravity = SPIDER_GRAVITY(currplayer_table_idx);
 
 	common_gravity_routine();
 
@@ -25,24 +23,34 @@ void spider_movement(){
 	spider_eject();
 	
 	if (!currplayer_gravity) {
-		if(((controllingplayer->press_a || controllingplayer->press_up) || cube_data[currplayer] & 2) && currplayer_vel_y == 0 && !orbed[currplayer]) {
+		if(((controllingplayer->press & (PAD_A | PAD_UP)) ||
+			((controllingplayer->hold & (PAD_A | PAD_UP)) && black_orbed[currplayer]) ||
+			cube_data[currplayer] & 2) && currplayer_vel_y == 0 && !orbed[currplayer] && !dashing[currplayer]) {
 			idx8_store(cube_data, currplayer, cube_data[currplayer] & 0b11111101);	
 			jumps++;
 			currplayer_gravity = GRAVITY_UP;
+			update_currplayer_table_idx();
 			spider_up_wait();
 			high_byte(currplayer_y) -= eject_U;
 			currplayer_vel_y = 0;
+			black_orbed[currplayer] = 0;
 		}
+		else if (!(controllingplayer->hold & (PAD_A | PAD_UP))) black_orbed[currplayer] = 0;
 }	
 	else {
-		if(((controllingplayer->press_a || controllingplayer->press_up) || cube_data[currplayer] & 2) && currplayer_vel_y == 0 && !orbed[currplayer]) {
+		if(((controllingplayer->press & (PAD_A | PAD_UP)) ||
+			((controllingplayer->hold & (PAD_A | PAD_UP)) && black_orbed[currplayer]) ||
+			cube_data[currplayer] & 2) && currplayer_vel_y == 0 && !orbed[currplayer] && !dashing[currplayer]) {
 			idx8_store(cube_data, currplayer, cube_data[currplayer] & 0b11111101);
 			jumps++;
 			currplayer_gravity = GRAVITY_DOWN;
+			update_currplayer_table_idx();
 			spider_down_wait();
 			high_byte(currplayer_y) -= eject_D;
 			currplayer_vel_y = 0;
+			black_orbed[currplayer] = 0;
 		}
+		else if (!(controllingplayer->hold & (PAD_A | PAD_UP))) black_orbed[currplayer] = 0;
 	}		
 	
 
@@ -85,7 +93,7 @@ void spider_up_wait() {
 	RIGHT_POS = Generic.x + low_word(scroll_x) + Generic.width - 3;
 	do {
 		high_byte(currplayer_y) -= 0x08;
-		crossPRGBankJump0(do_the_scroll_thing);
+		crossPRGBankJump0(process_y_scroll);
 		if (high_byte(currplayer_y) <= 0x07){ // && scroll_y <= min_scroll_y
 			idx8_store(cube_data, currplayer, cube_data[currplayer] | 0x01);	//DIE if player goes too high
 			break;
@@ -99,7 +107,11 @@ void spider_down_wait() {
 	RIGHT_POS = Generic.x + low_word(scroll_x) + Generic.width - 3;
 	do {
 		high_byte(currplayer_y) += 0x08;
-		crossPRGBankJump0(do_the_scroll_thing);
+		crossPRGBankJump0(process_y_scroll);
+		if (high_byte(currplayer_y) >= 0xF8) { //&& scroll_y <= min_scroll_y)
+			idx8_store(cube_data, currplayer, cube_data[currplayer] | 0x01);	//DIE if player goes too high
+			break;
+		}
 		Generic.y = high_byte(currplayer_y); // the rest should be the same
 	} while (!bg_coll_D_spider());
 }				

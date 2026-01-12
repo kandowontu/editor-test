@@ -22,14 +22,21 @@
 // various game-essential defines
 #include "level_defines.h"
 #include "defines/space_defines.h"
+#pragma rodata-name (push, "RODATA")
 #include "defines/physics_defines.h"
-
+#if !__THE_ALBUM
+#include "defines/physics_table_defines.cmp.h"
+#pragma rodata-name (pop)
+#endif
 // grounds go here
+#if !__THE_ALBUM
 #pragma rodata-name (push, "XCD_BANK_05")
 #include "mouse.h"
+#endif
 //#include "mouse.c"
 #pragma rodata-name (pop)
-#pragma rodata-name (push, "XCD_BANK_06")
+#if !__THE_ALBUM
+#pragma rodata-name (push, GROUND_BANK)
 #include "grounddata.h"
 #include "groundlist.h"
 #pragma rodata-name (pop)
@@ -45,6 +52,7 @@
 #include "const_levellist.h"    // colors list and icontable for overflow conservation reasons
 
 #include "defines/dialogbox.h"
+#endif
 
 #include "famidash.h"   // where everything is declared. don't move this
 

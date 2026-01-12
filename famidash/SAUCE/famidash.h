@@ -36,6 +36,19 @@
 #define GAMEMODE_SWING  0x07
 #define GAMEMODE_NINJA  0x08
 
+// table_idx masks
+#define TBLIDX_GRAV	0b001
+#define TBLIDX_MINI	0b010
+#define	TBLIDX_NTSC	0b100
+
+// applies to both framerate and CPU region
+#define SPEED_PAL	0
+#define SPEED_NTSC	1
+
+#define REGION_NTSC		0
+#define REGION_PAL		1
+#define REGION_DENDY	2
+
 // Zeropage variables
 #pragma bss-name("ZEROPAGE")
 
@@ -50,11 +63,8 @@ uint8_t tmp8;
 uint8_t tmp9;
 uint16_t tmpA;
 uint16_t tmpB;
-uint8_t temptemp5;
-int16_t fallspeed_big;
-int16_t fallspeed_mini;
-int16_t gravity_big;
-int16_t gravity_mini;
+int16_t tmpfallspeed;
+int16_t tmpgravity;
 uint8_t iconbank1;
 uint8_t iconbank2;
 uint8_t iconbank3;
@@ -67,6 +77,32 @@ int8_t tmpi8;
 
 #pragma zpsym("tmpptr1")
 #pragma zpsym("tmpptr2")
+
+// Direct access to cc65 tmp / ptr variables,
+// The other part of the aliasing is done in zeropage.inc
+extern uint8_t cc65_tmp1;
+extern uint8_t cc65_tmp2;
+extern uint8_t cc65_tmp3;
+extern uint8_t cc65_tmp4;
+extern uint16_t cc65_ptr1;
+extern uint16_t cc65_ptr2;
+extern uint16_t cc65_ptr3;
+extern uint16_t cc65_ptr4;
+
+extern void * cc65_sp;
+extern uint16_t cc65_sreg;
+
+#pragma zpsym("cc65_tmp1")
+#pragma zpsym("cc65_tmp2")
+#pragma zpsym("cc65_tmp3")
+#pragma zpsym("cc65_tmp4")
+#pragma zpsym("cc65_ptr1")
+#pragma zpsym("cc65_ptr2")
+#pragma zpsym("cc65_ptr3")
+#pragma zpsym("cc65_ptr4")
+
+#pragma zpsym("cc65_sp")
+#pragma zpsym("cc65_sreg")
 
 extern volatile unsigned char VRAM_UPDATE;
 #pragma zpsym ("VRAM_UPDATE")
@@ -85,6 +121,7 @@ uint8_t currplayer_was_on_slope_counter;
 uint8_t currplayer_slope_type;
 uint8_t currplayer_last_slope_type;
 uint8_t currplayer_direction;
+uint8_t currplayer_table_idx;	// Bit 0 - gravity, 1 - mini, 2 - framerate
 
 uint8_t gamemode;
 uint8_t cube_data[2];
@@ -99,7 +136,6 @@ uint8_t collision_D;
 uint16_t old_x;
 uint16_t old_y;
 
-uint8_t mini[2];
 uint8_t eject_L; // from the left
 uint8_t eject_R; // remember these from the collision sub routine
 uint8_t eject_D; // from below
@@ -123,6 +159,13 @@ uint8_t * level_data;
 #pragma zpsym("sprite_data")
 #pragma zpsym("level_data")
 
+extern uint8_t framerate;
+extern uint8_t cpuRegion;
+extern uint8_t fullRegion;
+
+#pragma zpsym ("framerate")
+#pragma zpsym ("cpuRegion")
+#pragma zpsym ("fullRegion")
 
 // SRAM
 #pragma bss-name("SRAM")
@@ -151,6 +194,7 @@ uint8_t options;
 #define jumpsound 0x02
 #define platformer 0x04
 #define debugtoggle 0x08
+#define fullpalspeed 0x10
 
 #define sfxoff 0x40
 #define musicoff 0x80
@@ -226,6 +270,7 @@ int8_t practice_player_2_last_slope_type[MAX_PRACTICE_POINTS];
 
 lohi_arr32_decl(practice_scroll_x, MAX_PRACTICE_POINTS);
 lohi_arr16_decl(practice_scroll_y, MAX_PRACTICE_POINTS);
+uint8_t practice_scroll_y_subpx[MAX_PRACTICE_POINTS];
 lohi_arr16_decl(practice_min_scroll_y, MAX_PRACTICE_POINTS);
 lohi_arr16_decl(practice_seam_scroll_y, MAX_PRACTICE_POINTS);
 lohi_arr16_decl(practice_old_draw_scroll_y, MAX_PRACTICE_POINTS);
@@ -246,14 +291,19 @@ uint8_t practice_bg_color_type[MAX_PRACTICE_POINTS];
 //uint8_t practice_trail_sprites_visible[9];
 //uint8_t practice_player_old_posy[9];
 uint8_t practice_orbactive[MAX_PRACTICE_POINTS];
+uint8_t practice_nullscapes_active[MAX_PRACTICE_POINTS];
+uint8_t practice_nullscapes_orb_type[MAX_PRACTICE_POINTS];
+uint8_t practice_kandoframecnt[MAX_PRACTICE_POINTS];
+
 uint8_t practice_song[MAX_PRACTICE_POINTS];
 uint8_t practice_player_invis[MAX_PRACTICE_POINTS];
 
 uint8_t practice_famistudio_state[FAMISTUDIO_STATE_SIZE * MAX_PRACTICE_POINTS];
 uint8_t practice_famistudio_registers[FAMISTUDIO_OUTPUT_BUF_SIZE * MAX_PRACTICE_POINTS];
 
+// practice_table_idx not needed as it is formed from other existing variables
 
-#if __THE_ALBUM
+#if __THE_ALBUM || __HUGE_ROM
 #define MAX_SONG_QUEUE_SIZE 20
 unsigned char music_queue[MAX_SONG_QUEUE_SIZE];
 #endif
@@ -262,15 +312,19 @@ unsigned char music_queue[MAX_SONG_QUEUE_SIZE];
 // Regular NES RAM
 #pragma bss-name("BSS")
 
+extern uint8_t trueFramerate;
+extern uint8_t trueCpuRegion;
+extern uint8_t trueFullRegion;
+
 uint8_t last_gameState;
-
-
 
 uint16_t player_x[2];
 uint16_t player_y[2];
 int16_t player_vel_x[2];
 int16_t player_vel_y[2];
 uint8_t player_gravity[2];
+uint8_t player_mini[2];
+uint8_t jumpedonthisframe[2];
 
 uint8_t practice_sprite_x_pos;
 
@@ -278,6 +332,9 @@ uint8_t kandokidshack;
 uint8_t kandokidshack2;
 uint8_t kandokidshack3;
 uint8_t kandokidshack4;
+uint8_t menuthemechosen;
+uint8_t menutheme;
+
 
 #if __VS_SYSTEM
 
@@ -342,6 +399,8 @@ uint8_t nocamlock;
 uint8_t nocamlockforced;
 uint8_t nestopia;
 
+uint8_t nullscapes_orb_type;
+uint8_t nullscapes_active;
 
 uint8_t last_slope_type[2];
 
@@ -357,17 +416,22 @@ uint8_t prev_mouse_y;
 uint8_t showarrownow;
 #endif
 
+uint8_t level_resetting_flag;
+uint8_t timewarp_done;
+
 extern uint8_t parallax_scroll_column;
 extern uint8_t parallax_scroll_column_start;
 uint8_t parallax_scroll_x;
 uint8_t invincible_counter;
 uint32_t scroll_x; // gotta love massive levels amirite fellas
 uint16_t scroll_y;
+uint8_t scroll_y_subpx;
 uint16_t old_trail_scroll_y;
 uint16_t target_scroll_y;
 //uint16_t reload_target_scroll_y;
 uint8_t song;
 uint8_t songplaying;
+uint8_t tempsong;
 uint8_t temptemp6;
 uint8_t make_cube_jump_higher;
 
@@ -379,6 +443,10 @@ uint16_t coin1_speed;
 uint16_t coin2_speed;
 uint16_t coin3_speed;
 
+uint16_t spawn_y_pos;
+uint16_t spawn_scroll_y_pos;
+uint8_t max_fallspeed;
+
 #if __VS_SYSTEM
 uint16_t menutimer;
 #endif
@@ -387,10 +455,12 @@ uint16_t menutimer;
 uint8_t orbactive;
 uint8_t trail_sprites_visible[9];
 
-uint8_t ufo_orbed;
+uint8_t ufo_orbed[2];
+uint8_t black_orbed[2];
 
 uint8_t dashing[2];
 
+uint8_t wrap_mode;
 uint8_t minicoins;
 
 #if !__VS_SYSTEM
@@ -426,6 +496,7 @@ uint8_t no_parallax;
 uint8_t force_platformer;
 uint8_t outline_color;
 uint8_t forced_trails;
+uint8_t skipProcessingCubeRotationLogic;
 
 uint8_t attemptCounter[7];
 uint8_t triggers_hit[3];
@@ -461,9 +532,12 @@ uint8_t bigboi;
 uint8_t gravity_mod;
 #endif
 
+uint8_t practicebuffer;
 uint8_t tempplat;
 
-#if __THE_ALBUM
+unsigned char END_LEVEL_TIMER;
+
+#if __THE_ALBUM || __HUGE_ROM
 uint8_t queuemode;
 #endif
 

@@ -6,7 +6,9 @@
 //
 // ============================================================
 
-
+#if __HUGE_ROM
+void choose_menu_theme();
+#endif
 
 // THE INCLUDE FILE ===========================================
 //
@@ -48,10 +50,11 @@ void main(){
     mmc3_disable_irq();
 
     // Initialize controllers
+	#if !__THE_ALBUM
 	mouse.x = 0x78;
 	mouse.y = 0x60;
 	mouse_mask = 1;
-
+	#endif
 	// disable debug mode toggle
 	options &= ~debugtoggle;
 
@@ -62,9 +65,7 @@ void main(){
 
 	menuMusicCurrentlyPlaying = 0;
 
-	#if __THE_ALBUM
-		cursedmusic = 0;
-	#endif
+
 
     while (1){
     	forceNoFadeOut = 0;
@@ -84,6 +85,14 @@ void main(){
 			}
 
 			case STATE_MENU: {
+				#if __THE_ALBUM
+					cursedmusic = 0;
+				#endif
+				#if __THE_ALBUM || __HUGE_ROM
+					for (tmp1 = 0; tmp1 < MAX_SONG_QUEUE_SIZE; tmp1++) {
+						music_queue[tmp1] = 0xFF;
+					};
+				#endif
 				mmc3_set_prg_bank_1(GET_BANK(state_menu));
 				state_menu();
 				break;			
@@ -122,7 +131,7 @@ void main(){
 				state_customize();
 				break;
 			}
-			#if LEVELSET != 'A'
+			#if OFFICIAL_LEVEL_COUNT == 0 && TOTAL_LEVEL_COUNT != 0	// A levelset has levels but no official ones
 			case STATE_PLAYMAIN: {
 				mmc3_set_prg_bank_1(GET_BANK(state_playmain));
 				state_playmain();
@@ -151,11 +160,17 @@ void main(){
 			default: {
 				mmc3_set_prg_bank_1(GET_BANK(state_credits));
 				state_credits();
+				#if __HUGE_ROM
+				if (!menuthemechosen) crossPRGBankJump0(choose_menu_theme);
+				#endif
 				break;
 			}
 			
 
 		}
+		framerate = trueFramerate;
+		cpuRegion = trueCpuRegion;
+		fullRegion = trueFullRegion;
 		nmi_fs_updates_on();
 		if (!forceNoFadeOut) pal_fade_out();
 		mmc3_disable_irq();

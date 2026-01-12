@@ -495,6 +495,11 @@ namespace FamidashEditor
     private bool pinchDirectionDetected = false;
     // Global simulator option: hide trigger sprites (default true)
     private bool hideTriggerSprites = true;
+    // Editor options: hide background and ground for performance
+    private bool hideBackground = false;
+    private bool hideGround = false;
+    // Editor option: use fast zoom (transform-only, no re-render)
+    private bool useFastZoom = false;
 
         private enum SelectMode { Normal, AllSame, Lasso, Ellipse }
         private SelectMode currentSelectMode = SelectMode.Normal;
@@ -3547,6 +3552,38 @@ namespace FamidashEditor
             {
                 MenuOptionSwapPinch.Checked += (s, e) => { invertPinchGesture = true; SaveSettingsWithTriggerOption(); };
                 MenuOptionSwapPinch.Unchecked += (s, e) => { invertPinchGesture = false; SaveSettingsWithTriggerOption(); };
+            }
+            // Hide background option (editor only)
+            if (MenuOptionHideBackground != null)
+            {
+                MenuOptionHideBackground.Checked += (s, e) => { hideBackground = true; SaveSettingsWithTriggerOption(); Redraw(); };
+                MenuOptionHideBackground.Unchecked += (s, e) => { hideBackground = false; SaveSettingsWithTriggerOption(); Redraw(); };
+            }
+            // Hide ground option (editor only)
+            if (MenuOptionHideGround != null)
+            {
+                MenuOptionHideGround.Checked += (s, e) => { hideGround = true; SaveSettingsWithTriggerOption(); Redraw(); };
+                MenuOptionHideGround.Unchecked += (s, e) => { hideGround = false; SaveSettingsWithTriggerOption(); Redraw(); };
+            }
+            // Fast zoom option (editor only)
+            if (MenuOptionFastZoom != null)
+            {
+                MenuOptionFastZoom.Checked += (s, e) => 
+                { 
+                    useFastZoom = true; 
+                    SaveSettingsWithTriggerOption(); 
+                    // Hide background and ground when fast zoom is enabled
+                    if (ParallaxImage != null) ParallaxImage.Visibility = Visibility.Collapsed;
+                    if (GroundImage != null) GroundImage.Visibility = Visibility.Collapsed;
+                };
+                MenuOptionFastZoom.Unchecked += (s, e) => 
+                { 
+                    useFastZoom = false; 
+                    SaveSettingsWithTriggerOption(); 
+                    // Restore background and ground visibility based on menu options
+                    if (ParallaxImage != null) ParallaxImage.Visibility = hideBackground ? Visibility.Collapsed : Visibility.Visible;
+                    if (GroundImage != null) GroundImage.Visibility = hideGround ? Visibility.Collapsed : Visibility.Visible;
+                };
             }
             
             // Tileboard position handlers
@@ -6848,7 +6885,7 @@ namespace FamidashEditor
                 // If no settings file exists, create default one
                 if (!System.IO.File.Exists(path))
                 {
-                    var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                    var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"hideBackground\":false,\"hideGround\":false,\"useFastZoom\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
                     System.IO.File.WriteAllText(path, defaultSettings);
                 }
                 
@@ -6868,7 +6905,7 @@ namespace FamidashEditor
                     {
                         // Old version - delete and recreate
                         try { System.IO.File.Delete(path); } catch { }
-                        var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                        var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"hideBackground\":false,\"hideGround\":false,\"useFastZoom\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
                         System.IO.File.WriteAllText(path, defaultSettings);
                         txt = defaultSettings;
                         doc = System.Text.Json.JsonDocument.Parse(txt);
@@ -7021,6 +7058,24 @@ namespace FamidashEditor
                         try { invertPinchGesture = ipg.GetBoolean(); } catch { invertPinchGesture = true; }
                         if (MenuOptionSwapPinch != null) MenuOptionSwapPinch.IsChecked = invertPinchGesture;
                     }
+                    // optional hide background setting
+                    if (doc.RootElement.TryGetProperty("hideBackground", out var hbg))
+                    {
+                        try { hideBackground = hbg.GetBoolean(); } catch { hideBackground = false; }
+                        if (MenuOptionHideBackground != null) MenuOptionHideBackground.IsChecked = hideBackground;
+                    }
+                    // optional hide ground setting
+                    if (doc.RootElement.TryGetProperty("hideGround", out var hg))
+                    {
+                        try { hideGround = hg.GetBoolean(); } catch { hideGround = false; }
+                        if (MenuOptionHideGround != null) MenuOptionHideGround.IsChecked = hideGround;
+                    }
+                    // optional fast zoom setting
+                    if (doc.RootElement.TryGetProperty("useFastZoom", out var ufz))
+                    {
+                        try { useFastZoom = ufz.GetBoolean(); } catch { useFastZoom = false; }
+                        if (MenuOptionFastZoom != null) MenuOptionFastZoom.IsChecked = useFastZoom;
+                    }
 
                     // optional simulator scale (global setting, 1..4)
                     if (doc.RootElement.TryGetProperty("simulatorScale", out var ss))
@@ -7124,6 +7179,9 @@ namespace FamidashEditor
                     invertPinchGesture = invertPinchGesture,
                     hideColorTriggers = hideColorTriggers,
                     hideInvisibleSprites = hideInvisibleSprites,
+                    hideBackground = hideBackground,
+                    hideGround = hideGround,
+                    useFastZoom = useFastZoom,
                     simulatorScale = loadedSimulatorScale,
                     lockSpritesToSet = lockSpritesToSet,
                     showAccurateTileset = showAccurateTileset,
@@ -11758,12 +11816,16 @@ namespace FamidashEditor
                 ParallaxImage.Source = parallaxRtb;
                 ParallaxImage.Width = displayFullW; ParallaxImage.Height = displayFullH;
                 ParallaxImage.RenderTransform = parallaxTransform; // Use only parallax transform
+                // Hide when either hideBackground is enabled OR fast zoom is active
+                ParallaxImage.Visibility = (hideBackground || useFastZoom) ? Visibility.Collapsed : Visibility.Visible;
             }
             if (GroundImage != null && groundRtb != null)
             {
                 GroundImage.Source = groundRtb;
                 GroundImage.Width = displayFullW; GroundImage.Height = displayFullH;
                 GroundImage.LayoutTransform = Transform.Identity; // Clear temporary zoom transform
+                // Hide when either hideGround is enabled OR fast zoom is active
+                GroundImage.Visibility = (hideGround || useFastZoom) ? Visibility.Collapsed : Visibility.Visible;
             }
             if (TilesImage != null && tilesWb != null)
             {
@@ -11944,14 +12006,21 @@ namespace FamidashEditor
         {
             var dpi = VisualTreeHelper.GetDpi(this);
             
+            // Check if this is a zoom-only change (scale changed but size stayed the same)
+            bool isZoomOnly = cachedPixelWidth == pixelPaddedWidth && cachedPixelHeight == pixelPaddedHeight && Math.Abs(cachedScale - scale) > 1e-6;
+            
             // Recreate background if size changed or marked dirty
             if (backgroundRtb == null || cachedPixelWidth != pixelPaddedWidth || cachedPixelHeight != pixelPaddedHeight || Math.Abs(cachedScale - scale) > 1e-6 || backgroundDirty)
             {
                 BuildBackgroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
                 
-                // Build parallax and ground - now optimized with GPU tiling for large maps
-                BuildParallaxBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
-                BuildGroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
+                // Build parallax and ground - skip if fast zoom is enabled and this is just a zoom change
+                // (Fast zoom keeps parallax/ground at old scale with transforms for better performance)
+                if (!(useFastZoom && isZoomOnly))
+                {
+                    BuildParallaxBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
+                    BuildGroundBitmap(scale, pad, fullW, fullH, paddedFullW, paddedFullH, pixelPaddedWidth, pixelPaddedHeight, dpi);
+                }
                 
                 backgroundDirty = false;
             }
@@ -12076,6 +12145,13 @@ namespace FamidashEditor
         // on scroll instead of re-rendering on every scroll event.
         private void BuildParallaxBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
         {
+            // Skip rendering entirely if hideBackground is enabled
+            if (hideBackground)
+            {
+                parallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                return;
+            }
+
             // If we don't have any bitmap at all, create an empty RTB and bail out.
             if (parallaxBitmap == null)
             {
@@ -12212,6 +12288,13 @@ namespace FamidashEditor
 
         private void BuildGroundBitmap(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
         {
+            // Skip rendering entirely if hideGround is enabled
+            if (hideGround)
+            {
+                groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                return;
+            }
+
             if (groundBitmap == null || groundImages == null || groundImages.Length == 0)
             {
                 groundRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
@@ -12275,6 +12358,12 @@ namespace FamidashEditor
         // Renders in horizontal chunks to keep UI responsive
         private async void RebuildParallaxGroundDeferredAsync(double scale, double pad, double fullW, double fullH, double paddedFullW, double paddedFullH, int pixelPaddedWidth, int pixelPaddedHeight, DpiScale dpi)
         {
+            // Skip rendering entirely if both are hidden
+            if (hideBackground && hideGround)
+            {
+                return;
+            }
+
             // Wait a moment to let tiles/sprites render first
             await System.Threading.Tasks.Task.Delay(300);
             
@@ -12315,11 +12404,11 @@ namespace FamidashEditor
                 {
                     try
                     {
-                        // Build parallax
+                        // Build parallax (skip if hideBackground is enabled)
                         var parallaxDv = new DrawingVisual();
                         using (var dc = parallaxDv.RenderOpen())
                         {
-                            if (parallaxData.images != null && parallaxData.bitmap != null && parallaxData.images.Length > 0)
+                            if (!hideBackground && parallaxData.images != null && parallaxData.bitmap != null && parallaxData.images.Length > 0)
                             {
                                 int parallaxCols = Math.Max(1, parallaxData.bitmap.PixelWidth / TileSize);
                                 int groundRowsToDraw = groundData.rows;
@@ -12347,11 +12436,11 @@ namespace FamidashEditor
                         var newParallaxRtb = new RenderTargetBitmap(pixelPaddedWidth, pixelPaddedHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
                         newParallaxRtb.Render(parallaxDv);
                         
-                        // Build ground
+                        // Build ground (skip if hideGround is enabled)
                         var groundDv = new DrawingVisual();
                         using (var dc = groundDv.RenderOpen())
                         {
-                            if (groundData.images != null && groundData.images.Length > 0)
+                            if (!hideGround && groundData.images != null && groundData.images.Length > 0)
                             {
                                 int cols = Math.Max(1, (groundData.bitmap?.PixelWidth ?? TileSize) / TileSize);
                                 int groundRowsToDraw = groundData.rows;
@@ -12455,12 +12544,27 @@ namespace FamidashEditor
                 }
                 if (GroundImage != null) GroundImage.LayoutTransform = scaleTransform;
                 if (TilesImage != null) TilesImage.LayoutTransform = scaleTransform;
+                if (SpritesImage != null) SpritesImage.LayoutTransform = scaleTransform;
+                if (PortalsImage != null) PortalsImage.LayoutTransform = scaleTransform;
                 if (GridImage != null) GridImage.LayoutTransform = scaleTransform;
+                if (CanvasHost != null) CanvasHost.LayoutTransform = scaleTransform;
             }
         }
 
         private void CommitZoom()
         {
+            // Stop any pending commit timer and clear defer flag
+            try { zoomCommitTimer?.Stop(); } catch { }
+            deferZoomRebuild = false;
+
+            // Fast zoom: skip all rendering, keep all transforms, DON'T update cachedScale
+            // (cachedScale must stay at the actual bitmap render scale for hover calculations)
+            if (useFastZoom)
+            {
+                hasZoomAnchor = false;
+                return;
+            }
+
             // Clear any temporary transforms applied during preview
             try
             {
@@ -12476,9 +12580,6 @@ namespace FamidashEditor
                 if (CanvasHost != null) CanvasHost.LayoutTransform = Transform.Identity;
             }
             catch { }
-            // Stop any pending commit timer and clear defer flag
-            try { zoomCommitTimer?.Stop(); } catch { }
-            deferZoomRebuild = false;
 
             // Trigger a full redraw which will ensure layer bitmaps are recreated at the current scale
             try { Redraw(); } catch { }
@@ -12774,7 +12875,13 @@ namespace FamidashEditor
                         int minY = batchStart / mapWidth;
                         int maxY = (batchEnd - 1) / mapWidth;
                         int dirtyHeight = (maxY - minY + 1) * tilePixelH;
-                        tilesWb.AddDirtyRect(new Int32Rect(0, (int)(minY * tilePixelH + pad * dpi.DpiScaleY), cachedPixelWidth, Math.Min(dirtyHeight, cachedPixelHeight)));
+                        int dirtyY = (int)(minY * tilePixelH + pad * dpi.DpiScaleY);
+                        int dirtyW = Math.Max(0, Math.Min(cachedPixelWidth, tilesWb.PixelWidth));
+                        int dirtyH = Math.Max(0, Math.Min(dirtyHeight, Math.Min(cachedPixelHeight, tilesWb.PixelHeight - dirtyY)));
+                        if (dirtyY >= 0 && dirtyY < tilesWb.PixelHeight && dirtyW > 0 && dirtyH > 0)
+                        {
+                            tilesWb.AddDirtyRect(new Int32Rect(0, dirtyY, dirtyW, dirtyH));
+                        }
                     }
                     finally
                     {
@@ -13399,7 +13506,12 @@ namespace FamidashEditor
                             int dirtyBottomTile = Math.Min(mapHeight - 1, maxY + (int)Math.Ceiling((double)maxOffsetDown / spritePixelH));
                             int dirtyHeight = (dirtyBottomTile - dirtyTopTile + 1) * spritePixelH + maxOffsetUp + maxOffsetDown;
                             int dirtyTopPx = Math.Max(0, (int)(dirtyTopTile * spritePixelH + pad * dpi.DpiScaleY - maxOffsetUp));
-                            spritesWb.AddDirtyRect(new Int32Rect(0, dirtyTopPx, cachedPixelWidth, Math.Min(dirtyHeight, cachedPixelHeight - dirtyTopPx)));
+                            // Clamp dirty rect to bitmap bounds to prevent crash
+                            int clampedDirtyHeight = Math.Min(dirtyHeight, cachedPixelHeight - dirtyTopPx);
+                            if (clampedDirtyHeight > 0 && dirtyTopPx < cachedPixelHeight)
+                            {
+                                spritesWb.AddDirtyRect(new Int32Rect(0, dirtyTopPx, cachedPixelWidth, clampedDirtyHeight));
+                            }
                         }
                         finally
                         {
@@ -16463,10 +16575,11 @@ namespace FamidashEditor
             // Update visuals for affected tiles
             try
             {
+                double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
                 foreach (var i in visited)
                 {
                     int tx = i % mapWidth; int ty = i / mapWidth;
-                    UpdateTileBitmapAt(tx, ty, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                    UpdateTileBitmapAt(tx, ty, updateScale, mapViewportPadding);
                 }
             }
             catch { Redraw(); }
@@ -19249,7 +19362,8 @@ namespace FamidashEditor
                         if (spritesLayerActive && selectedSprite >= 0)
                         {
                             // Update the newly placed sprite
-                            UpdateSpriteBitmapAt(x, y, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                            double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                            UpdateSpriteBitmapAt(x, y, updateScale, mapViewportPadding);
                             
                             // If we PLACED a portal in preview mode, rebuild portal pixels for the affected region only
                             if (placedPortal)
@@ -19272,6 +19386,7 @@ namespace FamidashEditor
                         if (tilesLayerActive && selectedTiles.Count > 0)
                         {
                             // Update all affected tiles
+                            double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
                             for (int dy = 0; dy < selectionHeight; dy++)
                             {
                                 for (int dx = 0; dx < selectionWidth; dx++)
@@ -19280,7 +19395,7 @@ namespace FamidashEditor
                                     int targetY = y + dy;
                                     if (targetX >= 0 && targetX < mapWidth && targetY >= 0 && targetY < mapHeight)
                                     {
-                                        UpdateTileBitmapAt(targetX, targetY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                        UpdateTileBitmapAt(targetX, targetY, updateScale, mapViewportPadding);
                                     }
                                 }
                             }
@@ -19350,6 +19465,7 @@ namespace FamidashEditor
                 {
                     lastPaintX = x; lastPaintY = y;
                     try { 
+                        double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
                         if (tilesLayerActive)
                         {
                             // Update all affected tiles
@@ -19361,7 +19477,7 @@ namespace FamidashEditor
                                     int targetY = y + dy;
                                     if (targetX >= 0 && targetX < mapWidth && targetY >= 0 && targetY < mapHeight)
                                     {
-                                        UpdateTileBitmapAt(targetX, targetY, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                                        UpdateTileBitmapAt(targetX, targetY, updateScale, mapViewportPadding);
                                     }
                                 }
                             }
@@ -19369,7 +19485,7 @@ namespace FamidashEditor
                         if (spritesLayerActive)
                         {
                             // Update only the specific sprite that was erased
-                            UpdateSpriteBitmapAt(x, y, (ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                            UpdateSpriteBitmapAt(x, y, updateScale, mapViewportPadding);
                             // If the erased sprite was a portal anchor, rebuild that region
                             if (IsPortalSprite(erasedOldSprite))
                             {
@@ -19383,7 +19499,8 @@ namespace FamidashEditor
 
         private void UpdateCoords(Point p)
         {
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            // For fast zoom: use cachedScale since bitmaps are at that scale (transforms handle visual zoom)
+            double scale = useFastZoom ? cachedScale : ((ZoomSlider != null) ? ZoomSlider.Value : 1.0);
             double pad = mapViewportPadding;
             // Determine whether pointer is inside the map area (accounting for padding)
             bool inBounds = p.X >= pad && p.Y >= pad && p.X < pad + mapWidth * TileSize * scale && p.Y < pad + mapHeight * TileSize * scale;
@@ -19526,7 +19643,8 @@ namespace FamidashEditor
         {
             if (MapScrollViewer == null) return (-1, -1);
             var dpi = VisualTreeHelper.GetDpi(this);
-            double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+            // For fast zoom: use cachedScale since that's the actual bitmap scale (CanvasHost is transformed)
+            double scale = useFastZoom ? cachedScale : ((ZoomSlider != null) ? ZoomSlider.Value : 1.0);
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
             int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
@@ -20239,7 +20357,24 @@ namespace FamidashEditor
                     waited += 10;
                 }
 
-                var dlg = new SetOptionsWindow(loadedDecoSet, loadedBlockSet, loadedSpikeSet) { Owner = this };
+                // Get the current tab's values if available, otherwise use globals
+                string currentDeco = loadedDecoSet;
+                string currentBlock = loadedBlockSet;
+                string currentSpike = loadedSpikeSet;
+                
+                try
+                {
+                    if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                    {
+                        var fd = openFiles[currentFileIndex];
+                        if (!string.IsNullOrEmpty(fd.LoadedDecoSet)) currentDeco = fd.LoadedDecoSet;
+                        if (!string.IsNullOrEmpty(fd.LoadedBlockSet)) currentBlock = fd.LoadedBlockSet;
+                        if (!string.IsNullOrEmpty(fd.LoadedSpikeSet)) currentSpike = fd.LoadedSpikeSet;
+                    }
+                }
+                catch { }
+
+                var dlg = new SetOptionsWindow(currentDeco, currentBlock, currentSpike) { Owner = this };
                 bool? res = dlg.ShowDialog();
                     if (res == true)
                     {
@@ -20433,8 +20568,9 @@ namespace FamidashEditor
             redoStack.Push(action);
             try 
             { 
-                RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
-                RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                RebuildAllTilesBitmap(updateScale, mapViewportPadding);
+                RebuildAllSpritesBitmap(updateScale, mapViewportPadding);
             } 
             catch { Redraw(); }
             // Deselect on undo so selection state matches the reverted map
@@ -20461,8 +20597,9 @@ namespace FamidashEditor
             undoStack.Push(action);
             try 
             { 
-                RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
-                RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding);
+                double updateScale = useFastZoom ? cachedScale : (ZoomSlider!=null?ZoomSlider.Value:1.0);
+                RebuildAllTilesBitmap(updateScale, mapViewportPadding);
+                RebuildAllSpritesBitmap(updateScale, mapViewportPadding);
             } 
             catch { Redraw(); }
             // Deselect on redo so selection state matches the applied change

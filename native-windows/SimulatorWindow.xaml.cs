@@ -903,6 +903,8 @@ namespace FamidashEditor
         private int CUBE_MAX_FALLSPEED = 0x600; // max downward velocity
         private const int CUBE_GRAVITY = 0x6B; // gravity added per frame
         private const int CUBE_JUMP_VEL = -0x590; // jump impulse (negative = upward)
+        // Robot mode constants
+        private const int ROBOT_JUMP_VEL = -0x2B0;
         // UFO mode constants (allow mid-air pulses / different gravity)
         private const int UFO_GRAVITY = 0x0032;
         private const int UFO_MAX_FALLSPEED = 0x0320;
@@ -986,6 +988,8 @@ namespace FamidashEditor
         // in even 10% increments when the user presses +/-.
         private double simTimeScale = 1.0;
         private const int JUMP_BUFFER_FRAMES = 6; // ~100ms @60Hz
+        // Flag to enable refactored collision/physics system
+        private bool useRefactoredPhysics = true;
         // Ball mode buffer: allow buffering an X press for ball gravity switch
         // Ball toggle request + lock: pressing X requests a one-time gravity toggle
         // `ballToggleRequested` is set to 1 by the UI when an edge occurs and cleared
@@ -995,6 +999,13 @@ namespace FamidashEditor
         private int ballToggleLocked = 0;
         private const int BALL_BUFFER_FRAMES = 6;
         private bool ballGoingDown = true; // true = downwards, false = upwards
+        
+        // Additional game mode state variables
+        private bool[] ballSwitched = new bool[2];
+        private bool ufoOrbed = false;
+        private int[] ninjajumps = new int[2] { 3, 3 };
+        private int[] robotJumpTime = new int[2];
+        private int[] robotJumpFrame = new int[2];
 
         // Update the player image based on `currentGameMode`.
         private void UpdatePlayerImageForMode()
@@ -1524,7 +1535,7 @@ namespace FamidashEditor
             // Simulator-specific tweak: shift sprite 0x2B and 0x2C up 8 pixels to match editor preview
             // Initialize starting game mode
             try { currentGameMode = startingGameMode; } catch { currentGameMode = 0; }
-            try { ModeDispatch_ApplyModeState(); } catch { }
+            // try { ModeDispatch_ApplyModeState(); } catch { } // REMOVED - fresh port
             try { UpdatePlayerImageForMode(); } catch { }
             try
             {
@@ -2117,6 +2128,9 @@ namespace FamidashEditor
 
             // (debug overlay removed)
 
+            // Initialize cube physics state
+            try { EnableCubePhysics_Fresh(); } catch { }
+
             // Background simulation timer will be started when the simulator is shown via StartSimulation().
         }
 
@@ -2176,27 +2190,15 @@ namespace FamidashEditor
             if (e.Key == Key.X)
             {
                 // Only trigger on the initial KeyDown (ignore OS key-repeat)
-                // Use the same edge-driven mechanism the UI poll uses so the
-                // numeric sim applies a single consistent jump impulse.
                 try
                 {
                     if (!e.IsRepeat)
                     {
-                        // If global Cam Mode is enabled, do not allow any physics or mode toggles via X
-                        try { if (this.Owner is MainWindow && MainWindow.Option_CamMode) { e.Handled = true; return; } } catch { }
                         lock (simLock)
                         {
-                            // Dispatch X-edge handling to the current mode. Mode handlers
-                            // will decide whether to buffer, toggle, or jump immediately.
-                            ProcessModeXEdge();
-                            // For cube-mode immediate ceiling-jump behavior, keep existing
-                            // immediate UI-side jump path by checking mode-specific condition.
-                            try
-                            {
-                                // Delegate UI-side immediate cube jump behavior to cube-mode handler
-                                Cube_HandleUIImmediateJump();
-                            }
-                            catch { }
+                            // Increment press counter atomically for cube physics
+                            // Physics will be ignored if physicsEnabled is false (cam mode)
+                            try { Interlocked.Increment(ref keyXPressedCount); } catch { }
                         }
                     }
                 }
@@ -2271,6 +2273,8 @@ namespace FamidashEditor
                                 {
                                     gravityReversed = !gravityReversed;
                                     effectiveInvertedByW = gravityReversed;
+                                    // Sync with cube physics gravity state (0x00 = down, 0xFF = up)
+                                    try { currplayer_gravity = (byte)(gravityReversed ? 0xFF : 0x00); } catch { }
                                     // After flipping logical gravity, ensure the player is no longer
                                     // treated as grounded so gravity takes effect immediately.
                                     onGround = false;
@@ -2386,6 +2390,15 @@ namespace FamidashEditor
             if (e.Key == Key.Down) downHeld = false;
             if (e.Key == Key.X)
             {
+                // Clear any buffered X presses when key is released
+                try
+                {
+                    lock (simLock)
+                    {
+                        try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
+                    }
+                }
+                catch { }
                 // If the player released X, cancel any queued ball toggle request.
                 try
                 {
@@ -2495,7 +2508,7 @@ namespace FamidashEditor
                     if (curX && !prevKeyXDown)
                     {
                         // record an edge atomically so numeric sim cannot miss it
-                        ProcessModeXEdge();
+                        // ProcessModeXEdge(); // REMOVED - fresh port
                     }
                     prevKeyXDown = curX;
                     keyXHeld = curX;
@@ -2652,33 +2665,33 @@ namespace FamidashEditor
                 {
                     if (!physicsEnabled)
                     {
-                        // Try move player up
-                        playerY_fixed -= vStep_fixed;
-                        if (playerY_fixed < 0) playerY_fixed = 0;
-
-                        // Recompute center after moving the player
-                        playerCenterScreenY = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
-                        // If player's center is at or above the threshold, scroll camera up to follow
-                        if (playerCenterScreenY <= topThreshold)
+                        // Try move player up (only if cam mode active)
+                        if (camModeActive)
                         {
-                            int need = topThreshold - playerCenterScreenY; // pixels camera should move up
-                            int camMove = Math.Min(need, (cameraY_fixed >> 8));
-                            cameraY_fixed -= (camMove << 8);
-                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            playerY_fixed -= vStep_fixed;
+                            if (playerY_fixed < 0) playerY_fixed = 0;
+
+                            // Recompute center after moving the player
+                            playerCenterScreenY = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                            // If player's center is at or above the threshold, scroll camera up to follow
+                            if (playerCenterScreenY <= topThreshold)
+                            {
+                                int need = topThreshold - playerCenterScreenY; // pixels camera should move up
+                                int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                                cameraY_fixed -= (camMove << 8);
+                                if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            }
                         }
                     }
                     else
                     {
-                        // Physics active: do not move player Y directly, but allow camera to scroll up
-                        if (playerCenterScreenY <= topThreshold)
+                        // Physics active: do not move player Y directly, but allow camera to scroll up (only if cam mode active)
+                        if (camModeActive && playerCenterScreenY <= topThreshold)
                         {
                             int need = topThreshold - playerCenterScreenY;
                             int camMove = Math.Min(need, (cameraY_fixed >> 8));
-                                if (camModeActive)
-                                {
-                                    cameraY_fixed -= (camMove << 8);
-                                    if (cameraY_fixed < 0) cameraY_fixed = 0;
-                                }
+                            cameraY_fixed -= (camMove << 8);
+                            if (cameraY_fixed < 0) cameraY_fixed = 0;
                         }
                         else
                         {
@@ -2713,7 +2726,7 @@ namespace FamidashEditor
                     // If player's center has reached or passed the threshold, scroll the camera instead.
                     if (playerCenterScreenY_down < bottomThreshold)
                     {
-                        if (!physicsEnabled)
+                        if (!physicsEnabled && camModeActive)
                         {
                             // Safe to move player down without scrolling
                             // Advance player, then clamp to ground. Keep ordering consistent
@@ -2800,7 +2813,7 @@ namespace FamidashEditor
                     int pendingPress = Interlocked.Exchange(ref keyXPressedCount, 0);
                     if (pendingPress > 0)
                     {
-                        try { ProcessModeSimPendingPress(pendingPress, effectiveOnGround_local, ref jumpAppliedThisFrame); } catch { }
+                        // try { ProcessModeSimPendingPress(pendingPress, effectiveOnGround_local, ref jumpAppliedThisFrame); } catch { } // REMOVED - fresh port
                     }
 
                     // Do not age the jump-buffer here (would race with numeric sim).
@@ -2979,7 +2992,7 @@ namespace FamidashEditor
 
                                             if (blocked && blockingTileWorldBottom_px < int.MaxValue)
                                             {
-                                                try { Cube_HandleCeilingCollision_NoLocals(); } catch { }
+                                                // try { Cube_HandleCeilingCollision_NoLocals(); } catch { } // REMOVED - fresh port
                                             }
                             }
                         }
@@ -3187,7 +3200,7 @@ namespace FamidashEditor
                                     
                                     groundStabilizeCounter = 2;
 
-                                            try { Cube_HandleUILanding_NoLocals(); } catch { }
+                                            // try { Cube_HandleUILanding_NoLocals(); } catch { } // REMOVED - fresh port
 
                                             // Ball handling (non-cube modes)
                                             if (currentGameMode != 0)
@@ -3222,7 +3235,7 @@ namespace FamidashEditor
                                     playerVelY_fixed = 0;
                                     onGround = true;
 
-                                    try { Cube_HandleUILanding_NoLocals(); } catch { }
+                                    // try { Cube_HandleUILanding_NoLocals(); } catch { } // REMOVED - fresh port
 
                                     if (currentGameMode != 0)
                                     {
@@ -3816,17 +3829,6 @@ namespace FamidashEditor
             // remains consistent with the editor. We'll subtract ground rows when sampling map tiles.
             int startTileY = pixelY / TILE;
             int offsetY = pixelY % TILE;
-
-            // Record the player's world pixel position for editor overlay (experimental)
-            try
-            {
-                // Record player's center point (world pixels) so the overlay aligns with the
-                // visible sprite rather than the player's top-left hitbox.
-                int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
-                recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
-            }
-            catch { }
 
             // Update persistent background: draw parallax tiled image when available
             try
@@ -4528,7 +4530,7 @@ namespace FamidashEditor
                                 int playerTop_px_pad = (playerY_fixed >> 8);
                                 int playerBottom_px_pad = playerTop_px_pad + (PAD_HIT_H_NUM - 1);
 
-                                try { OrbPad_HandleUIPads(); } catch { }
+                                // try { OrbPad_HandleUIPads(); } catch { } // REMOVED - fresh port
                             }
                             catch { }
                             r.Width = dest.Width;
@@ -5032,8 +5034,12 @@ namespace FamidashEditor
             // Position the player visual based on world Y (`playerY_fixed`) and camera Y
             try
             {
-                int playerPixelX = (playerX_fixed >> 8) - (cameraX_fixed >> 8);
-                int playerPixelY = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
+                int playerPixelX, playerPixelY;
+                lock (simLock)
+                {
+                    playerPixelX = (playerX_fixed >> 8) - (cameraX_fixed >> 8);
+                    playerPixelY = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
+                }
 
                 if (playerImage != null && playerImage.Source != null)
                 {
@@ -5201,6 +5207,9 @@ namespace FamidashEditor
 
                 // Move the player forward in world coordinates first
                 playerX_fixed = attemptedPlayerX_fixed;
+                
+                // === COLLISION/GROUNDING DISABLED ===
+                /*
                 // When player moves horizontally while considered grounded in the numeric
                 // simulation, clear the stabilization counter and verify support so
                 // walking off surfaces resumes gravity on the same frame.
@@ -5258,6 +5267,8 @@ namespace FamidashEditor
                     }
                     catch { onGround = false; }
                 }
+                */
+                // === END COLLISION/GROUNDING DISABLED ===
 
                     // Atomically consume any jump-buffer frames at the start of the physics step
                     // so landing code can check a stable value. We clear the buffer here and
@@ -5318,7 +5329,7 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        if (!physicsEnabled)
+                        if (!physicsEnabled && camModeActive)
                         {
                             // Move player up
                             playerY_fixed -= vStep_fixed_local;
@@ -5337,21 +5348,24 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            // Physics active: don't move player Y directly. Allow camera to scroll up if needed.
-                            if (playerCenterScreenY_local <= topThreshold_local)
+                            // Physics active: don't move player Y directly. Allow camera to scroll up if needed (only if cam mode active).
+                            if (camModeActive)
                             {
-                                int need = topThreshold_local - playerCenterScreenY_local;
-                                int camMove = Math.Min(need, (cameraY_fixed >> 8));
-                                cameraY_fixed -= (camMove << 8);
-                                if (cameraY_fixed < 0) cameraY_fixed = 0;
-                            }
-                            else
-                            {
-                                // Manual camera pan while physics is enabled: allow small step when holding Up
-                                if (cameraY_fixed > 0)
+                                if (playerCenterScreenY_local <= topThreshold_local)
                                 {
-                                    cameraY_fixed -= vStep_fixed_local;
+                                    int need = topThreshold_local - playerCenterScreenY_local;
+                                    int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                                    cameraY_fixed -= (camMove << 8);
                                     if (cameraY_fixed < 0) cameraY_fixed = 0;
+                                }
+                                else
+                                {
+                                    // Manual camera pan while physics is enabled: allow small step when holding Up
+                                    if (cameraY_fixed > 0)
+                                    {
+                                        cameraY_fixed -= vStep_fixed_local;
+                                        if (cameraY_fixed < 0) cameraY_fixed = 0;
+                                    }
                                 }
                             }
                         }
@@ -5381,7 +5395,7 @@ namespace FamidashEditor
                         // If player's bottom has reached or passed the threshold, scroll the camera instead.
                         if (playerScreenBottom_local < bottomThresholdBottom_local)
                         {
-                            if (!physicsEnabled)
+                            if (!physicsEnabled && camModeActive)
                             {
                                 // Move player down
                                 playerY_fixed += vStep_fixed_local;
@@ -5394,8 +5408,8 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            // Scroll camera down first until it reaches bottom
-                            if (cameraY_fixed < maxCameraY_fixed_local)
+                            // Scroll camera down first until it reaches bottom (only if cam mode active)
+                            if (camModeActive && cameraY_fixed < maxCameraY_fixed_local)
                             {
                                 // Scroll camera down
                                 cameraY_fixed += vStep_fixed_local;
@@ -5407,7 +5421,7 @@ namespace FamidashEditor
                                     if (playerY_fixed > maxPlayerY_fixed_local) playerY_fixed = maxPlayerY_fixed_local;
                                 }
                             }
-                            else
+                            else if (camModeActive)
                             {
                                 // Manual camera pan while physics is enabled: allow small step when holding Down
                                 if (cameraY_fixed < maxCameraY_fixed_local)
@@ -5428,8 +5442,27 @@ namespace FamidashEditor
                     }
                 }
 
-                // Apply simple physics if enabled in numeric path: gravity -> cap -> integrate -> ground collision
+                // === CUBE PHYSICS - FRESH PORT ===
+                AppendSimDebug($"[MAIN] About to check physics: physicsEnabled={physicsEnabled}");
                 if (physicsEnabled)
+                {
+                    AppendSimDebug($"[MAIN] Calling ProcessCubePhysics_Fresh");
+                    // Call fresh cube physics processing
+                    try
+                    {
+                        ProcessCubePhysics_Fresh();
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendSimDebug($"Cube physics error: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    AppendSimDebug($"[MAIN] Physics DISABLED - skipping");
+                }
+                
+                if (false && physicsEnabled)
                 {
                     try
                         {
@@ -5442,7 +5475,7 @@ namespace FamidashEditor
                             // zero and mark `onGround` so gravity is suppressed this frame.
                             // This is checked every numeric frame (deterministic) rather
                             // than relying on a time window to avoid jitter.
-                            try { Cube_HandleCeilingStabilization(); } catch { }
+                            // try { Cube_HandleCeilingStabilization(); } catch { } // REMOVED - fresh port
                             // Read input flags atomically so numeric sim doesn't race with UI poll.
                             bool keyXHeld_local;
                             int keyXHeldStartedOnGround_local_int = 0;
@@ -5469,7 +5502,7 @@ namespace FamidashEditor
                             int pendingPresses_forLater = 0;
                             if (pendingPresses_num > 0)
                             {
-                                try { Cube_HandlePendingPresses_NoLocals(pendingPresses_num, pendingPressStartedOnGround, ref pendingPresses_forLater, ref jumpAppliedThisStep_local); } catch { }
+                                // try { Cube_HandlePendingPresses_NoLocals(pendingPresses_num, pendingPressStartedOnGround, ref pendingPresses_forLater, ref jumpAppliedThisStep_local); } catch { } // REMOVED - fresh port
                             }
 
                             // Update orb buffer: set/clear according to strict rules
@@ -5527,10 +5560,26 @@ namespace FamidashEditor
                             }
                             catch { }
 
+                            // === REFACTORED PHYSICS INTEGRATION ===
+                            // Use the new refactored physics system for all game modes
+                            if (useRefactoredPhysics)
+                            {
+                                try
+                                {
+                                    // ProcessAllGameModesRefactored(); // REMOVED - fresh port
+                                }
+                                catch (Exception ex)
+                                {
+                                    AppendSimDebug($"Refactored physics error: {ex.Message}");
+                                    // Fall back to old physics on error
+                                    useRefactoredPhysics = false;
+                                }
+                            }
+                            // === END REFACTORED PHYSICS ===
+                            else if (!jumpAppliedThisStep_local && !effectiveOnGround_local && (playerVelY_fixed != 0 || playerY_fixed < maxPlayerY_fixed_local - LAND_EPS_FIXED))
                             // Apply gravity only if we did not just apply a jump, are not grounded,
                             // and if moving vertically or not at the bottom clamp. Prevents gravity
                             // from kicking in while standing on a surface which caused jitter.
-                            if (!jumpAppliedThisStep_local && !effectiveOnGround_local && (playerVelY_fixed != 0 || playerY_fixed < maxPlayerY_fixed_local - LAND_EPS_FIXED))
                             {
                                 if (currentGameMode == 1)
                                 {
@@ -5674,30 +5723,30 @@ namespace FamidashEditor
                             }
                             catch { }
 
-                            try { OrbPad_HandleNumericActivations(pendingPresses_num, pendingPressStartedOnGround, keyXHeld_local, ref jumpAppliedThisStep_local, pendingPresses_forLater); } catch { }
+                            // try { OrbPad_HandleNumericActivations(pendingPresses_num, pendingPressStartedOnGround, keyXHeld_local, ref jumpAppliedThisStep_local, pendingPresses_forLater); } catch { } // REMOVED - fresh port
                             try
                             {
-                                Cube_HandleDeferredJump(pendingPresses_forLater, ref jumpAppliedThisStep_local);
+                                // Cube_HandleDeferredJump(pendingPresses_forLater, ref jumpAppliedThisStep_local); // REMOVED - fresh port
                             }
                             catch { }
 
                             try
                             {
-                                Cube_HandleHeldJump(jumpBuffered_local, pendingPresses_num, keyXHeld_local, ref jumpAppliedThisStep_local);
+                                // Cube_HandleHeldJump(jumpBuffered_local, pendingPresses_num, keyXHeld_local, ref jumpAppliedThisStep_local); // REMOVED - fresh port
                             }
                             catch { }
 
                             // Ceiling collision handled by cube-mode specific handler
                             try
                             {
-                                Cube_HandleCeilingCollision(jumpBuffered_local, pendingKeyX_local, keyXHeld_local, pendingPresses_num, pendingPressStartedOnGround, pendingPresses_forLater, ref jumpAppliedThisStep_local);
+                                // Cube_HandleCeilingCollision(jumpBuffered_local, pendingKeyX_local, keyXHeld_local, pendingPresses_num, pendingPressStartedOnGround, pendingPresses_forLater, ref jumpAppliedThisStep_local); // REMOVED - fresh port
                             }
                             catch { }
 
                         // Landing detection replaced by cube-mode handler
                         try
                         {
-                            Cube_HandleLandingAndReversed(jumpBuffered_local, pendingKeyX_local, keyXHeld_local, pendingPresses_num, pendingPressStartedOnGround, pendingPresses_forLater, ref jumpAppliedThisStep_local);
+                            // Cube_HandleLandingAndReversed(jumpBuffered_local, pendingKeyX_local, keyXHeld_local, pendingPresses_num, pendingPressStartedOnGround, pendingPresses_forLater, ref jumpAppliedThisStep_local); // REMOVED - fresh port
                         }
                         catch { }
                     }
@@ -5711,6 +5760,8 @@ namespace FamidashEditor
                 // Final safety clamp: ensure player remains above ground after camera moves
                 if (playerY_fixed > maxPlayerY_fixed_local) { playerY_fixed = maxPlayerY_fixed_local; playerVelY_fixed = 0; }
 
+                // === DEATH/COLLISION DISABLED - FRESH PORT ===
+                /*
                 // Right-edge pass-through / center-right death check:
                 // When deaths are enabled (`Option_NoDeath == false`), allow the player's
                 // right side to pass through tiles (no horizontal snapping). However,
@@ -5793,6 +5844,9 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
+                */
+                // === END DEATH/COLLISION DISABLED ===
+                
                 // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
                 try
                 {

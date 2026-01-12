@@ -50,8 +50,8 @@ void store_practice_state(){
 	idx8_store(practice_song, get_Y, song);
 	idx8_store(practice_player_1_gravity, get_Y, player_gravity[0]);
 	idx8_store(practice_player_2_gravity, get_Y, player_gravity[1]);
-	idx8_store(practice_player_1_mini, get_Y, mini[0]);
-	idx8_store(practice_player_2_mini, get_Y, mini[1]);
+	idx8_store(practice_player_1_mini, get_Y, player_mini[0]);
+	idx8_store(practice_player_2_mini, get_Y, player_mini[1]);
 	idx8_store(practice_player_1_slope_frames, get_Y, slope_frames[0]);
 	idx8_store(practice_player_2_slope_frames, get_Y, slope_frames[1]);
 	idx8_store(practice_player_1_was_on_slope_counter, get_Y, was_on_slope_counter[0]);
@@ -63,6 +63,7 @@ void store_practice_state(){
 
 	lohi_arr32_store_from(practice_scroll_x, get_Y, scroll_x);
 	lohi_arr16_store(practice_scroll_y, get_Y, scroll_y);
+	idx8_store(practice_scroll_y_subpx, get_Y, scroll_y_subpx);
 	lohi_arr16_store(practice_seam_scroll_y, get_Y, seam_scroll_y);
 	lohi_arr16_store(practice_old_draw_scroll_y, get_Y, old_draw_scroll_y);
 	lohi_arr16_store(practice_target_scroll_y, get_Y, target_scroll_y);
@@ -77,10 +78,13 @@ void store_practice_state(){
 	idx8_store(practice_g_color_type, get_Y, lastgcolortype);
 	idx8_store(practice_outline_color, get_Y, outline_color);
 	idx8_store(practice_orbactive, get_Y, orbactive);
+	idx8_store(practice_nullscapes_active, get_Y, nullscapes_active);
+	idx8_store(practice_nullscapes_orb_type, get_Y, nullscapes_orb_type);
 	idx8_store(practice_disco_sprites, get_Y, disco_sprites);
 	idx8_store(practice_slowmode, get_Y, slowmode);
 	idx8_store(practice_forced_trails, get_Y, forced_trails);
 	idx8_store(practice_gravity_mod, get_Y, gravity_mod);
+	idx8_store(practice_kandoframecnt, get_Y, kandoframecnt);
 
 	if (practice_music_sync) {
 		memcpy(practice_famistudio_state + lohi_arr16_load(multStateLookup, tmp1), famistudio_state, FAMISTUDIO_STATE_SIZE);
@@ -110,8 +114,8 @@ void load_practice_state() {
 		idx8_load(practice_player_1_gravity, get_Y);
 	player_gravity[1] = idx8_load(practice_player_2_gravity, get_Y);
 
-	currplayer_mini = mini[0] = idx8_load(practice_player_1_mini, get_Y);
-	mini[1] = idx8_load(practice_player_2_mini, get_Y);
+	currplayer_mini = player_mini[0] = idx8_load(practice_player_1_mini, get_Y);
+	player_mini[1] = idx8_load(practice_player_2_mini, get_Y);
 
 	currplayer_slope_frames = slope_frames[0] = idx8_load(practice_player_1_slope_frames, get_Y);
 	slope_frames[1] = idx8_load(practice_player_2_slope_frames, get_Y);
@@ -130,6 +134,7 @@ void load_practice_state() {
 	slowmode = idx8_load(practice_slowmode, get_Y);
 	forced_trails = idx8_load(practice_forced_trails, get_Y);
 	gravity_mod = idx8_load(practice_gravity_mod, get_Y);
+	kandoframecnt = idx8_load(practice_kandoframecnt, get_Y);
 	
 	currplayer_last_slope_type = last_slope_type[0] = \
 		idx8_load(practice_player_1_last_slope_type, get_Y);
@@ -137,6 +142,7 @@ void load_practice_state() {
 
 	lohi_arr32_load_to(practice_scroll_x, get_Y, scroll_x);
 	old_trail_scroll_y = scroll_y =	lohi_arr16_load(practice_scroll_y, get_Y);
+	scroll_y_subpx = idx8_load(practice_scroll_y_subpx, get_Y);
 	old_draw_scroll_y = lohi_arr16_load(practice_old_draw_scroll_y, get_Y);
 	seam_scroll_y = lohi_arr16_load(practice_seam_scroll_y, get_Y);
 	target_scroll_y = lohi_arr16_load(practice_target_scroll_y, get_Y);
@@ -152,7 +158,8 @@ void load_practice_state() {
 //		idx8_store(trail_sprites_visible, tmp2, practice_trail_sprites_visible[tmp2]);
 //		idx8_store(player_old_posy, tmp2, practice_player_old_posy[tmp2]);
 //	} while (++tmp2 < 9);
-	orbactive = idx8_load(practice_orbactive, get_Y);
+	nullscapes_active = idx8_load(practice_nullscapes_active, get_Y);
+	nullscapes_orb_type = idx8_load(practice_nullscapes_orb_type, get_Y);
 	practice_sprite_x_pos = idx8_load(practice_player_1_x_hi, get_Y);
 
 	outline_color = idx8_load(practice_outline_color, get_Y);
@@ -164,9 +171,11 @@ void load_practice_state() {
 
 	tmp3 = (lastbgcolortype & 0x3F);
 	pal_col(0, tmp3);
+	pal_col(0x0D, tmp3);
 	tmp3 = oneShadeDarker(tmp3);
 	pal_col(1, tmp3);
 	pal_col(9, tmp3);
+	pal_col(0x13, tmp3);
 
 	tmp3 = (lastgcolortype & 0x3F);
 	pal_col(6, tmp3);
@@ -190,6 +199,7 @@ void load_practice_state() {
 	#undef quick_ld
 	currplayer_gravity = player_gravity[currplayer];
 	auto_practicepoint_timer = 200;
+	update_currplayer_table_idx();
 #endif
 
 }
