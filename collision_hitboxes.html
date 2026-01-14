@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Famidash Collision Hitboxes</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #4ec9b0;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .tile {
+            background: #2d2d2d;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .tile-title {
+            font-size: 12px;
+            margin-bottom: 10px;
+            color: #9cdcfe;
+            font-weight: bold;
+        }
+        .tile-code {
+            font-size: 10px;
+            color: #808080;
+            margin-bottom: 10px;
+        }
+        canvas {
+            border: 1px solid #444;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+<body>
+    <h1>Famidash Collision Hitboxes (16x16 pixels)</h1>
+    <div class="container" id="container"></div>
+
+    <script>
+        const collisionTypes = [
+            // Basic collisions
+            { name: 'COL_ALL', code: '0x07', hitbox: {x: 0, y: 0, w: 16, h: 16} },
+            { name: 'COL_BOTTOM', code: '0x06', hitbox: {x: 0, y: 8, w: 16, h: 8} },
+            { name: 'COL_TOP', code: '0x05', hitbox: {x: 0, y: 0, w: 16, h: 8} },
+            { name: 'COL_LEFT', code: '0x24', hitbox: {x: 0, y: 0, w: 8, h: 16} },
+            { name: 'COL_RIGHT', code: '0x25', hitbox: {x: 8, y: 0, w: 8, h: 16} },
+            
+            // Quarters
+            { name: 'COL_UP_LEFT', code: '0x20', hitbox: {x: 0, y: 0, w: 8, h: 8} },
+            { name: 'COL_UP_RIGHT', code: '0x21', hitbox: {x: 8, y: 0, w: 8, h: 8} },
+            { name: 'COL_DOWN_LEFT', code: '0x22', hitbox: {x: 0, y: 8, w: 8, h: 8} },
+            { name: 'COL_DOWN_RIGHT', code: '0x23', hitbox: {x: 8, y: 8, w: 8, h: 8} },
+            
+            // Diagonals
+            { name: 'COL_TOP_LEFT_BOTTOM_RIGHT', code: '0x26', hitbox: [{x: 0, y: 0, w: 8, h: 8}, {x: 8, y: 8, w: 8, h: 8}] },
+            { name: 'COL_TOP_RIGHT_BOTTOM_LEFT', code: '0x27', hitbox: [{x: 8, y: 0, w: 8, h: 8}, {x: 0, y: 8, w: 8, h: 8}] },
+            
+            // Stairs
+            { name: 'COL_TOP_RIGHT_STAIRS', code: '0x39', hitbox: [{x: 0, y: 0, w: 16, h: 8}, {x: 8, y: 8, w: 8, h: 8}] },
+            { name: 'COL_TOP_LEFT_STAIRS', code: '0x3a', hitbox: [{x: 0, y: 0, w: 16, h: 8}, {x: 0, y: 8, w: 8, h: 8}] },
+            { name: 'COL_BOTTOM_RIGHT_STAIRS', code: '0x37', hitbox: [{x: 0, y: 8, w: 16, h: 8}, {x: 8, y: 0, w: 8, h: 8}] },
+            { name: 'COL_BOTTOM_LEFT_STAIRS', code: '0x38', hitbox: [{x: 0, y: 8, w: 16, h: 8}, {x: 0, y: 0, w: 8, h: 8}] },
+            
+            // Death zones
+            { name: 'COL_DEATH', code: '0x08', hitbox: {x: 4, y: 4, w: 8, h: 8} },
+            { name: 'COL_DEATH_LEFT', code: '0x02', hitbox: {x: 0, y: 6, w: 6, h: 3} },
+            { name: 'COL_DEATH_RIGHT', code: '0x01', hitbox: {x: 10, y: 6, w: 6, h: 3} },
+            { name: 'COL_DEATH_TOP', code: '0x03', hitbox: {x: 5, y: 0, w: 3, h: 6} },
+            { name: 'COL_DEATH_BOTTOM', code: '0x04', hitbox: {x: 5, y: 10, w: 3, h: 6} },
+            
+            // Corner deaths
+            { name: 'COL_DEATH_BOTTOM_LEFT', code: '0x36', hitbox: [{x: 0, y: 6, w: 6, h: 3}, {x: 5, y: 10, w: 3, h: 6}] },
+            { name: 'COL_DEATH_BOTTOM_RIGHT', code: '0x35', hitbox: [{x: 10, y: 6, w: 6, h: 3}, {x: 5, y: 10, w: 3, h: 6}] },
+            { name: 'COL_DEATH_TOP_LEFT', code: '0x34', hitbox: [{x: 0, y: 6, w: 6, h: 3}, {x: 5, y: 0, w: 3, h: 6}] },
+            { name: 'COL_DEATH_TOP_RIGHT', code: '0x33', hitbox: [{x: 10, y: 6, w: 6, h: 3}, {x: 5, y: 0, w: 3, h: 6}] },
+            
+            // Single spikes
+            { name: 'COL_DOWN_LEFT_SPIKE', code: '0x28', hitbox: {x: 2, y: 8, w: 4, h: 8} },
+            { name: 'COL_DOWN_RIGHT_SPIKE', code: '0x29', hitbox: {x: 10, y: 8, w: 3, h: 8} },
+            { name: 'COL_DOWN_BOTH_SPIKES', code: '0x2a', hitbox: [{x: 2, y: 8, w: 4, h: 8}, {x: 10, y: 8, w: 4, h: 8}] },
+            
+            { name: 'COL_UP_LEFT_SPIKE', code: '0x30', hitbox: {x: 2, y: 0, w: 4, h: 8} },
+            { name: 'COL_UP_RIGHT_SPIKE', code: '0x31', hitbox: {x: 10, y: 0, w: 3, h: 8} },
+            { name: 'COL_UP_BOTH_SPIKES', code: '0x32', hitbox: [{x: 2, y: 0, w: 4, h: 8}, {x: 10, y: 0, w: 4, h: 8}] },
+            
+            { name: 'COL_BOTTOM_LEFT_SPIKE', code: '0x2d', hitbox: {x: 2, y: 0, w: 4, h: 8} },
+            { name: 'COL_BOTTOM_RIGHT_SPIKE', code: '0x2e', hitbox: {x: 10, y: 0, w: 3, h: 8} },
+            { name: 'COL_BOTTOM_CENTER_SPIKE', code: '0x??', hitbox: {x: 7, y: 0, w: 4, h: 8} },
+            { name: 'COL_BOTTOM_SPIKES', code: '0x2f', hitbox: [{x: 2, y: 0, w: 4, h: 8}, {x: 10, y: 0, w: 4, h: 8}] },
+            
+            { name: 'COL_TOP_SPIKES', code: '0x3b', hitbox: {x: 5, y: 10, w: 3, h: 6} },
+            { name: 'COL_TOP_CENTER_SPIKE', code: '0x??', hitbox: {x: 5, y: 10, w: 3, h: 6} },
+            
+            // Spike blocks
+            { name: 'COL_LEFT_SPIKE_BLOCK', code: '0x2b', hitbox: [{x: 2, y: 0, w: 4, h: 8}, {x: 0, y: 8, w: 8, h: 8}] },
+            { name: 'COL_RIGHT_SPIKE_BLOCK', code: '0x2c', hitbox: [{x: 10, y: 0, w: 3, h: 8}, {x: 8, y: 8, w: 8, h: 8}] },
+        ];
+
+        const container = document.getElementById('container');
+
+        collisionTypes.forEach(col => {
+            const tile = document.createElement('div');
+            tile.className = 'tile';
+            
+            const title = document.createElement('div');
+            title.className = 'tile-title';
+            title.textContent = col.name;
+            
+            const code = document.createElement('div');
+            code.className = 'tile-code';
+            code.textContent = col.code;
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = 16;
+            canvas.height = 16;
+            canvas.style.width = '160px';
+            canvas.style.height = '160px';
+            
+            const ctx = canvas.getContext('2d');
+            
+            // Draw gray background
+            ctx.fillStyle = '#404040';
+            ctx.fillRect(0, 0, 16, 16);
+            
+            // Draw grid
+            ctx.strokeStyle = '#606060';
+            ctx.lineWidth = 0.1;
+            for (let i = 0; i <= 16; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, 16);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(16, i);
+                ctx.stroke();
+            }
+            
+            // Draw hitbox(es) in red
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+            ctx.strokeStyle = 'rgb(255, 0, 0)';
+            ctx.lineWidth = 0.5;
+            
+            const hitboxes = Array.isArray(col.hitbox) ? col.hitbox : [col.hitbox];
+            hitboxes.forEach(box => {
+                ctx.fillRect(box.x, box.y, box.w, box.h);
+                ctx.strokeRect(box.x, box.y, box.w, box.h);
+            });
+            
+            tile.appendChild(title);
+            tile.appendChild(code);
+            tile.appendChild(canvas);
+            container.appendChild(tile);
+        });
+    </script>
+</body>
+</html>

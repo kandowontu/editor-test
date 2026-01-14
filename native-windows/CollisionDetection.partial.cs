@@ -59,6 +59,7 @@ namespace FamidashEditor
                 // Full tile
                 case MetatileCollision.COL_ALL:
                 case MetatileCollision.COL_FLOOR_CEIL:
+                case MetatileCollision.COL_NO_SIDE:
                     return (0, 0, 16, 16);
                 
                 // Half slabs
@@ -95,6 +96,30 @@ namespace FamidashEditor
                 case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
                 case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
                     return (0, 0, 16, 16); // Use full tile for initial bounds, check regions specially
+                
+                // Slope tiles - return full tile bounds so flat collision fallback can detect them
+                // This matches NES behavior where slope tiles have RISING/FALLING flags in collision_table
+                case MetatileCollision.COL_SLOPE_RD45:
+                case MetatileCollision.COL_SLOPE_RD22_RIGHT:
+                case MetatileCollision.COL_SLOPE_RD22_LEFT:
+                case MetatileCollision.COL_SLOPE_RD66_TOP:
+                case MetatileCollision.COL_SLOPE_RD66_BOT:
+                case MetatileCollision.COL_SLOPE_RU45:
+                case MetatileCollision.COL_SLOPE_RU22_RIGHT:
+                case MetatileCollision.COL_SLOPE_RU22_LEFT:
+                case MetatileCollision.COL_SLOPE_RU66_TOP:
+                case MetatileCollision.COL_SLOPE_RU66_BOT:
+                case MetatileCollision.COL_SLOPE_LD45:
+                case MetatileCollision.COL_SLOPE_LD22_RIGHT:
+                case MetatileCollision.COL_SLOPE_LD22_LEFT:
+                case MetatileCollision.COL_SLOPE_LD66_BOT:
+                case MetatileCollision.COL_SLOPE_LD66_TOP:
+                case MetatileCollision.COL_SLOPE_LU45:
+                case MetatileCollision.COL_SLOPE_LU22_RIGHT:
+                case MetatileCollision.COL_SLOPE_LU22_LEFT:
+                case MetatileCollision.COL_SLOPE_LU66_BOT:
+                case MetatileCollision.COL_SLOPE_LU66_TOP:
+                    return (0, 0, 16, 16); // Full tile bounds for flat collision fallback
                 
                 // No collision
                 case MetatileCollision.COL_NONE:
@@ -163,7 +188,8 @@ namespace FamidashEditor
                         int localX = px - tileWorldX;
                         int localY = playerBottom_px - tileWorldY;
                         
-                        if (localY >= 0 && localY < 16 && CheckComplexCollision(collision, localX, localY))
+                        // Check if player's bottom is at or below the tile top (allow localY >= 0 OR at tile boundary)
+                        if (localY >= -1 && localY < 16 && CheckComplexCollision(collision, localX, Math.Max(0, localY)))
                         {
                             // Find the top of the solid region at this X position
                             int collisionTop = tileWorldY;
@@ -194,8 +220,9 @@ namespace FamidashEditor
                     int collisionRight_px = tileWorldX + colRight;
                     
                     // Check if player bottom overlaps with collision region
-                    // For landing: if ANY pixel of the player bottom row touches the collision top
-                    if (playerBottom_px >= collisionTop_px && playerBottom_px <= collisionBottom_px)
+                    // For landing: detect collision when player is at or 1 pixel above collision top
+                    // This prevents falling through when velocity moves player exactly to boundary
+                    if (playerBottom_px >= collisionTop_px - 1 && playerBottom_px <= collisionBottom_px)
                     {
                         // Check horizontal overlap
                         if (playerRight_px >= collisionLeft_px && playerLeft_px < collisionRight_px)

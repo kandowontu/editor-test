@@ -103,6 +103,9 @@ namespace FamidashEditor
                 
                 AppendSimDebug($"[CUBE] After collision: velY={playerVelY_fixed}, posY={playerY_fixed >> 8}");
                 
+                // STEP 4: Update slope counters (decrement each frame)
+                UpdateSlopeCounters_Fresh();
+                
                 // Record position for trail AFTER physics completes (for smooth visualization)
                 try
                 {
@@ -188,19 +191,65 @@ namespace FamidashEditor
             int playerX_px = playerX_fixed >> 8;
             int playerY_px = playerY_fixed >> 8;
             
+            // Update slope counters
+            UpdateSlopeCounters();
+            
             // Cube collision detection based on gravity direction
             if (currplayer_gravity == 0)
             {
-                // Normal gravity: check collision below
-                var (collided, collisionTopY) = CheckCollisionDown(playerX_px, playerY_px, CUBE_HITBOX_W, CUBE_HITBOX_H);
-                AppendSimDebug($"[CUBE]   Collision check down: {collided}, collisionTop={collisionTopY}");
-                if (collided)
+                // Normal gravity: check slopes first (from collision.h line 920)
+                bool slopeHit = bg_coll_D_slopes();
+                AppendSimDebug($"[CUBE]   Slope check result: slopeHit={slopeHit}, eject_D={eject_D}, counter={currplayer_was_on_slope_counter}");
+                if (slopeHit)
                 {
-                    // Snap player to rest position above the collision surface
-                    int newY = collisionTopY - CUBE_HITBOX_H - 1;
-                    AppendSimDebug($"[CUBE]     Eject down: collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
-                    playerY_fixed = newY << 8;
-                    playerVelY_fixed = 0;
+                    // Slope collision succeeded
+                    if (eject_D > 0)
+                    {
+                        // Apply slope ejection
+                        // From gamemode_cube.h line 236-240:
+                        // high_byte(currplayer_y) -= eject_D;
+                        // low_byte(currplayer_y) = 0;
+                        // This subtracts eject_D from pixel position and clears subpixels
+                        int oldY = playerY_fixed >> 8;
+                        AppendSimDebug($"[CUBE]   BEFORE slope eject: playerY_fixed={playerY_fixed}, oldY={oldY}");
+                        
+                        // Get current pixel position, subtract eject_D, then clear subpixels
+                        int newPixelY = (playerY_fixed >> 8) - eject_D;
+                        playerY_fixed = newPixelY << 8;  // Clear subpixels by shifting back
+                        playerVelY_fixed = 0;
+                        
+                        AppendSimDebug($"[CUBE]   AFTER slope eject: eject_D={eject_D}, oldY={oldY}, newY={newPixelY}, playerY_fixed={playerY_fixed}");
+                        
+                        // CRITICAL FIX: Update playerY_px after slope ejection so subsequent code uses correct position
+                        playerY_px = newPixelY;
+                    }
+                    else
+                    {
+                        // eject_D=0 means player is at correct height, just stop velocity
+                        AppendSimDebug($"[CUBE]   Slope hit with eject_D=0 - player at correct height");
+                        playerVelY_fixed = 0;
+                    }
+                }
+                else
+                {
+                    // Slope check failed - fall back to flat collision
+                    // This matches collision.h lines 946-968
+                    AppendSimDebug($"[CUBE]   Falling back to flat collision (slopeHit={slopeHit}, eject_D={eject_D})");
+                    AppendSimDebug($"[CUBE]   Checking from: playerX={playerX_px}, playerY={playerY_px}, velY={playerVelY_fixed}");
+                    var (collided, collisionTopY) = CheckCollisionDown(playerX_px, playerY_px, CUBE_HITBOX_W, CUBE_HITBOX_H);
+                    AppendSimDebug($"[CUBE]   Collision check down: collided={collided}, collisionTop={collisionTopY}");
+                    if (collided)
+                    {
+                        // Snap player to rest position above the collision surface
+                        int newY = collisionTopY - CUBE_HITBOX_H - 1;
+                        AppendSimDebug($"[CUBE]     Eject down: collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
+                        playerY_fixed = newY << 8;
+                        playerVelY_fixed = 0;
+                    }
+                    else
+                    {
+                        AppendSimDebug($"[CUBE]     NO COLLISION - falling! Y={playerY_px}");
+                    }
                 }
             }
             else
