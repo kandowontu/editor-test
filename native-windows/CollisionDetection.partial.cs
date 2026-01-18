@@ -64,9 +64,14 @@ namespace FamidashEditor
                 
                 // Half slabs
                 case MetatileCollision.COL_TOP:
+                case MetatileCollision.COL_TOP_CENTER_SPIKE:
                     return (0, 0, 16, 8);  // Top half only
                 
                 case MetatileCollision.COL_BOTTOM:
+                case MetatileCollision.COL_BOTTOM_CENTER_SPIKE:
+                case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
+                case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
+                case MetatileCollision.COL_BOTTOM_SPIKES:
                     return (0, 8, 16, 16); // Bottom half only
                 
                 case MetatileCollision.COL_LEFT:
@@ -83,9 +88,11 @@ namespace FamidashEditor
                     return (8, 0, 16, 8);  // Top-right quadrant
                 
                 case MetatileCollision.COL_DOWN_LEFT:
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
                     return (0, 8, 8, 16);  // Bottom-left quadrant
                 
                 case MetatileCollision.COL_DOWN_RIGHT:
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
                     return (8, 8, 16, 16); // Bottom-right quadrant
                 
                 // Complex shapes (L-shaped, diagonals) - return primary bounds, handle specially in Check functions
@@ -227,6 +234,7 @@ namespace FamidashEditor
                         // Check horizontal overlap
                         if (playerRight_px >= collisionLeft_px && playerLeft_px < collisionRight_px)
                         {
+                            AppendSimDebug($"[COLL_DOWN] Hit! tileY={tileBelowY}, collision={collision}, colTop={colTop}, collisionTop_px={collisionTop_px}, playerBottom={playerBottom_px}");
                             return (true, collisionTop_px);
                         }
                     }

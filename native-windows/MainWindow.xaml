@@ -197,8 +197,8 @@
                             <MenuItem x:Name="MenuSimulatorSize3x" Header="3x" IsCheckable="True" />
                             <MenuItem x:Name="MenuSimulatorSize4x" Header="4x" IsCheckable="True" />
                         </MenuItem>
-                        <MenuItem x:Name="MenuOptionShowSpriteHitboxes" Header="Show Sprite Hitboxes" IsCheckable="True" IsChecked="False" InputGestureText="F2" Checked="MenuOptionShowSpriteHitboxes_Checked" Unchecked="MenuOptionShowSpriteHitboxes_Unchecked" />
-                        <MenuItem x:Name="MenuOptionTileHitboxes" Header="Show Tile Hitboxes" IsCheckable="True" IsChecked="False" InputGestureText="F2" />
+                        <MenuItem x:Name="MenuOptionShowSpriteHitboxes" Header="Show Sprite Hitboxes" IsCheckable="True" IsChecked="False" InputGestureText="F3" Checked="MenuOptionShowSpriteHitboxes_Checked" Unchecked="MenuOptionShowSpriteHitboxes_Unchecked" />
+                        <MenuItem x:Name="MenuOptionTileHitboxes" Header="Show Tile Hitboxes" IsCheckable="True" IsChecked="False" InputGestureText="F2" Checked="MenuOptionTileHitboxes_Checked" Unchecked="MenuOptionTileHitboxes_Unchecked" />
                         <MenuItem x:Name="MenuOptionNoDeath" Header="No Death" IsCheckable="True" IsChecked="False" InputGestureText="F11" />
                         <MenuItem x:Name="MenuOptionCamMode" Header="Cam Mode" IsCheckable="True" IsChecked="False" />
                         <MenuItem x:Name="MenuOptionHideTriggerSprites" Header="Hide Trigger Sprites" IsCheckable="True" IsChecked="True" Checked="MenuOptionHideTriggerSprites_Checked" Unchecked="MenuOptionHideTriggerSprites_Unchecked" />

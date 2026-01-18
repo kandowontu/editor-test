@@ -36,6 +36,73 @@ namespace FamidashEditor
         /// <summary>
         /// bg_collision_sub - Get collision type at temp_x, temp_y
         /// </summary>
+        /// <summary>
+        /// Check if a point collides with a tile, respecting partial collision bounds (half-slabs, etc.)
+        /// </summary>
+        private bool CheckCollisionAtPoint(int worldX, int worldY, MetatileCollision collision)
+        {
+            // No collision for empty tiles
+            if (collision == MetatileCollision.COL_NONE) return false;
+            
+            // Slopes are handled separately
+            if (collision >= MetatileCollision.COL_SLOPE_RD45) return false;
+            
+            // Get tile position
+            int tileX = worldX / 16;
+            int tileY = worldY / 16;
+            
+            // Get local position within tile (0-15)
+            int localX = worldX - (tileX * 16);
+            int localY = worldY - (tileY * 16);
+            
+            // Get collision bounds for this tile type
+            var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType(collision);
+            
+            // Check if point is within collision bounds
+            return localX >= colLeft && localX < colRight && localY >= colTop && localY < colBottom;
+        }
+        
+        /// <summary>
+        /// Get collision bounds for a collision type (matches CollisionDetection.partial.cs)
+        /// </summary>
+        private (int left, int top, int right, int bottom) GetCollisionBoundsForType(MetatileCollision collision)
+        {
+            switch (collision)
+            {
+                case MetatileCollision.COL_ALL:
+                case MetatileCollision.COL_FLOOR_CEIL:
+                case MetatileCollision.COL_NO_SIDE:
+                    return (0, 0, 16, 16);
+                
+                case MetatileCollision.COL_TOP:
+                    return (0, 0, 16, 8);  // Top half
+                
+                case MetatileCollision.COL_BOTTOM:
+                    return (0, 8, 16, 16); // Bottom half
+                
+                case MetatileCollision.COL_LEFT:
+                    return (0, 0, 8, 16);  // Left half
+                
+                case MetatileCollision.COL_RIGHT:
+                    return (8, 0, 16, 16); // Right half
+                
+                case MetatileCollision.COL_UP_LEFT:
+                    return (0, 0, 8, 8);   // Top-left quadrant
+                
+                case MetatileCollision.COL_UP_RIGHT:
+                    return (8, 0, 16, 8);  // Top-right quadrant
+                
+                case MetatileCollision.COL_DOWN_LEFT:
+                    return (0, 8, 8, 16);  // Bottom-left quadrant
+                
+                case MetatileCollision.COL_DOWN_RIGHT:
+                    return (8, 8, 16, 16); // Bottom-right quadrant
+                
+                default:
+                    return (16, 16, 0, 0); // Invalid = no collision
+            }
+        }
+        
         private void bg_collision_sub()
         {
             // Convert world position to tile coordinates
@@ -49,15 +116,19 @@ namespace FamidashEditor
                 return;
             }
             
+            // Account for ground row offset (3 rows reserved at bottom for ground layer)
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            int tileIndexY = tileY + groundRowsToReserve;
+            
             // Check if past bottom of map (ground layer)
-            if (tileY >= mapHeight)
+            if (tileIndexY >= mapHeight)
             {
                 collision = (byte)MetatileCollision.COL_ALL;  // Ground is solid
                 return;
             }
             
-            // Get tile directly from map (no offset)
-            int tileIdx = tileY * mapWidth + tileX;
+            // Get tile from map with offset applied
+            int tileIdx = tileIndexY * mapWidth + tileX;
             if (tileIdx < 0 || tileIdx >= tiles.Length)
             {
                 collision = 0;
@@ -340,27 +411,41 @@ namespace FamidashEditor
                 // Check 3 points: left, middle, right
                 // Point 1: left
                 bg_collision_sub();
-                if (collision != 0 && collision < (byte)MetatileCollision.COL_SLOPE_RD45)
+                if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
                 {
-                    eject_D = tmp8;
+                    // Calculate proper eject distance based on collision bounds
+                    var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                    int tileY = temp_y / 16;
+                    int tileWorldTop = tileY * 16;
+                    int collisionTop = tileWorldTop + colTop;
+                    eject_D = temp_y - collisionTop;
+                    AppendSimDebug($"[COLL_D] Pt1: temp_y={temp_y}, tileY={tileY}, tileWorldTop={tileWorldTop}, colTop={colTop}, collisionTop={collisionTop}, eject_D={eject_D}, collision={collision}");
                     return true;
                 }
                 
                 // Point 2: middle
                 temp_x += Generic_width >> 1;
                 bg_collision_sub();
-                if (collision != 0 && collision < (byte)MetatileCollision.COL_SLOPE_RD45)
+                if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
                 {
-                    eject_D = tmp8;
+                    var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                    int tileY = temp_y / 16;
+                    int tileWorldTop = tileY * 16;
+                    int collisionTop = tileWorldTop + colTop;
+                    eject_D = temp_y - collisionTop;
                     return true;
                 }
                 
                 // Point 3: right
                 temp_x = Generic_x + Generic_width;
                 bg_collision_sub();
-                if (collision != 0 && collision < (byte)MetatileCollision.COL_SLOPE_RD45)
+                if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
                 {
-                    eject_D = tmp8;
+                    var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                    int tileY = temp_y / 16;
+                    int tileWorldTop = tileY * 16;
+                    int collisionTop = tileWorldTop + colTop;
+                    eject_D = temp_y - collisionTop;
                     return true;
                 }
             }
@@ -383,25 +468,38 @@ namespace FamidashEditor
                 
                 // Check 3 points: left, middle, right
                 bg_collision_sub();
-                if (collision != 0 && collision < (byte)MetatileCollision.COL_SLOPE_RD45)
+                if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
                 {
-                    eject_U = -tmp8;
+                    // Calculate proper eject distance based on collision bounds
+                    var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                    int tileY = temp_y / 16;
+                    int tileWorldTop = tileY * 16;
+                    int collisionBottom = tileWorldTop + colBottom;
+                    eject_U = -(collisionBottom - temp_y);
                     return true;
                 }
                 
                 temp_x += Generic_width >> 1;
                 bg_collision_sub();
-                if (collision != 0 && collision < (byte)MetatileCollision.COL_SLOPE_RD45)
+                if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
                 {
-                    eject_U = -tmp8;
+                    var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                    int tileY = temp_y / 16;
+                    int tileWorldTop = tileY * 16;
+                    int collisionBottom = tileWorldTop + colBottom;
+                    eject_U = -(collisionBottom - temp_y);
                     return true;
                 }
                 
                 temp_x = Generic_x + Generic_width;
                 bg_collision_sub();
-                if (collision != 0 && collision < (byte)MetatileCollision.COL_SLOPE_RD45)
+                if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
                 {
-                    eject_U = -tmp8;
+                    var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                    int tileY = temp_y / 16;
+                    int tileWorldTop = tileY * 16;
+                    int collisionBottom = tileWorldTop + colBottom;
+                    eject_U = -(collisionBottom - temp_y);
                     return true;
                 }
             }

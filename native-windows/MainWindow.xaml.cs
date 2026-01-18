@@ -568,6 +568,34 @@ namespace FamidashEditor
                 catch { }
             }
 
+            // F11 toggles No Death option
+            if (e.Key == System.Windows.Input.Key.F11 && !e.IsRepeat)
+            {
+                try
+                {
+                    bool newState = !Option_NoDeath;
+                    Option_NoDeath = newState;
+                    try { if (MenuOptionNoDeath != null) MenuOptionNoDeath.IsChecked = newState; } catch { }
+                    try { SaveEditorSettings(); } catch { }
+                    ShowTransientInfo($"No Death: {(newState ? "ON" : "OFF")}", this, 1200);
+                    e.Handled = true;
+                    return;
+                }
+                catch { }
+            }
+
+            // F12 clears player path
+            if (e.Key == System.Windows.Input.Key.F12 && !e.IsRepeat)
+            {
+                try
+                {
+                    MenuOptionClearPlayerPath_Click(this, e);
+                    e.Handled = true;
+                    return;
+                }
+                catch { }
+            }
+
             // Ctrl+A: select all tiles/sprites depending on active layer toggles
             try
             {
@@ -8653,6 +8681,18 @@ namespace FamidashEditor
         private void LoadTMXFile(string filePath)
         {
     #pragma warning disable CS8602
+            // Clear player path and death markers when loading new level
+            try
+            {
+                if (playerPathPolyline != null && CanvasHost != null) CanvasHost.Children.Remove(playerPathPolyline);
+                playerPathPolyline = null;
+                if (playerDeathMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerA);
+                if (playerDeathMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerB);
+                playerDeathMarkerA = null;
+                playerDeathMarkerB = null;
+            }
+            catch { }
+            
             // Prompt to save only when the current tab is an untitled tab with unsaved changes
             bool shouldPromptSave = false;
             try

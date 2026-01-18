@@ -77,6 +77,117 @@ namespace FamidashEditor
         // We'll initialize from the user-provided listing below. Unknown or malformed lines default to COL_NONE.
         private static readonly MetatileCollision[] table = new MetatileCollision[256];
 
+        /// <summary>
+        /// Check if a specific pixel inside a metatile with given collision type causes death.
+        /// localX, localY are 0..15 (pixel coordinates within the 16x16 tile).
+        /// Matches the original collision.h death routines from Famidash.
+        /// </summary>
+        public static bool TileKillsAtPixel(MetatileCollision col, int localX, int localY)
+        {
+            // Helper: check if value is in range [min, max] inclusive
+            bool InRange(int val, int min, int max) => val >= min && val <= max;
+
+            switch (col)
+            {
+                // Pure death tiles
+                case MetatileCollision.COL_DEATH:
+                    // Center 4x4 pixels (matching original col_death routine)
+                    return InRange(localX, 0x06, 0x09) && InRange(localY, 0x06, 0x09);
+
+                case MetatileCollision.COL_DEATH_TOP:
+                    // Top portion: localY < 6, localX in center range
+                    return (localY < 0x06) && InRange(localX, 0x05, 0x0a);
+
+                case MetatileCollision.COL_DEATH_BOTTOM:
+                    // Bottom portion: localY > 10, localX in center range
+                    return (localY > 0x0a) && InRange(localX, 0x05, 0x0a);
+
+                case MetatileCollision.COL_DEATH_LEFT:
+                    // Left portion: localX < 6, localY in center range
+                    return (localX < 0x06) && InRange(localY, 0x06, 0x09);
+
+                case MetatileCollision.COL_DEATH_RIGHT:
+                    // Right portion: localX >= 10, localY in center range
+                    return (localX >= 0x0a) && InRange(localY, 0x06, 0x09);
+
+                // Diagonal death tiles
+                case MetatileCollision.COL_DEATH_BOTTOM_LEFT:
+                    // Bottom-left quadrant
+                    return (localX < 0x08) && (localY >= 0x08);
+
+                case MetatileCollision.COL_DEATH_BOTTOM_RIGHT:
+                    // Bottom-right quadrant
+                    return (localX >= 0x08) && (localY >= 0x08);
+
+                case MetatileCollision.COL_DEATH_TOP_LEFT:
+                    // Top-left quadrant
+                    return (localX < 0x08) && (localY < 0x08);
+
+                case MetatileCollision.COL_DEATH_TOP_RIGHT:
+                    // Top-right quadrant
+                    return (localX >= 0x08) && (localY < 0x08);
+
+                // Pure death spike tiles (no solid collision)
+                // UP spikes = spikes pointing up from bottom, death in TOP half
+                case MetatileCollision.COL_UP_LEFT_SPIKE:
+                    // Top half, left spike
+                    return (localY < 0x08) && InRange(localX, 0x02, 0x05);
+
+                case MetatileCollision.COL_UP_RIGHT_SPIKE:
+                    // Top half, right spike
+                    return (localY < 0x08) && InRange(localX, 0x0a, 0x0c);
+
+                case MetatileCollision.COL_UP_BOTH_SPIKES:
+                    // Top half with repeating spikes
+                    return (localY < 0x08) && InRange(localX & 0x07, 0x02, 0x05);
+
+                // DOWN spikes = spikes pointing down from top, death in BOTTOM half
+                case MetatileCollision.COL_DOWN_LEFT_SPIKE:
+                    // Bottom half, left spike
+                    return (localY >= 0x08) && InRange(localX, 0x02, 0x05);
+
+                case MetatileCollision.COL_DOWN_RIGHT_SPIKE:
+                    // Bottom half, right spike
+                    return (localY >= 0x08) && InRange(localX, 0x0a, 0x0c);
+
+                case MetatileCollision.COL_DOWN_BOTH_SPIKES:
+                    // Bottom half with repeating spikes
+                    return (localY >= 0x08) && InRange(localX & 0x07, 0x02, 0x05);
+
+                // Mixed solid/death tiles (solid collision on one side, death on the other)
+                case MetatileCollision.COL_TOP_CENTER_SPIKE:
+                    // Top half has solid collision, bottom center has death spike (uses col_death_bottom_routine)
+                    return (localY > 0x0a) && InRange(localX, 0x05, 0x0a);
+
+                case MetatileCollision.COL_BOTTOM_CENTER_SPIKE:
+                    // Bottom half has solid collision, top center has death spike
+                    return (localY < 0x08) && InRange(localX, 0x07, 0x0a);
+
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                    // Bottom-left quadrant has solid collision, top-left has death spike
+                    return (localY < 0x08) && InRange(localX, 0x02, 0x05);
+
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                    // Bottom-right quadrant has solid collision, top-right has death spike
+                    return (localY < 0x08) && InRange(localX, 0x0a, 0x0c);
+
+                case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
+                    // Bottom half solid collision, top-left has death spike
+                    return (localY < 0x08) && InRange(localX, 0x02, 0x05);
+
+                case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
+                    // Bottom half solid collision, top-right has death spike
+                    return (localY < 0x08) && InRange(localX, 0x0a, 0x0c);
+
+                case MetatileCollision.COL_BOTTOM_SPIKES:
+                    // Bottom half solid collision, top has repeating death spikes
+                    return (localY < 0x08) && InRange(localX & 0x07, 0x02, 0x05);
+
+                default:
+                    return false;
+            }
+        }
+
         static MetatileCollisionTable()
         {
             for (int i = 0; i < table.Length; i++) table[i] = MetatileCollision.COL_NONE;
@@ -104,7 +215,7 @@ COL_DEATH
 COL_DEATH_BOTTOM
 COL_DEATH_BOTTOM
 COL_DEATH_TOP
-COL_ALL
+COL_TOP_CENTER_SPIKE
 COL_ALL
 COL_DEATH_TOP
 COL_DEATH_BOTTOM

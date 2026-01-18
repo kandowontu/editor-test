@@ -1,14 +1,50 @@
 <Window x:Class="FamidashEditor.SimulatorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Simulator" Height="320" Width="288" ResizeMode="NoResize" WindowStartupLocation="CenterOwner">
+        Title="Simulator" Height="350" Width="288" ResizeMode="NoResize" WindowStartupLocation="CenterOwner">
     <Grid Background="#FF000000">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Debug controls at top -->
+        <StackPanel Grid.Row="0" Orientation="Vertical" Background="#FF222222" Margin="4,4,4,0">
+            <!-- First row: Game Mode -->
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,2">
+                <TextBlock Text="Game Mode:" Foreground="White" VerticalAlignment="Center" Margin="4,0,8,0"/>
+                <ComboBox x:Name="GameModeComboBox" Width="120" SelectionChanged="GameModeComboBox_SelectionChanged" VerticalAlignment="Center" Margin="0,0,4,0">
+                    <ComboBoxItem Content="0 - Cube" IsSelected="True"/>
+                    <ComboBoxItem Content="1 - Ship"/>
+                    <ComboBoxItem Content="2 - Ball"/>
+                    <ComboBoxItem Content="3 - UFO"/>
+                    <ComboBoxItem Content="4 - Robot"/>
+                    <ComboBoxItem Content="5 - Spider"/>
+                    <ComboBoxItem Content="6 - Wave"/>
+                    <ComboBoxItem Content="7 - Swing"/>
+                    <ComboBoxItem Content="8 - Ninja"/>
+                </ComboBox>
+            </StackPanel>
+            <!-- Second row: Mini and Speed -->
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                <CheckBox x:Name="MiniCheckBox" Content="Mini" Foreground="White" VerticalAlignment="Center" Margin="4,0,12,0" Checked="MiniCheckBox_Changed" Unchecked="MiniCheckBox_Changed"/>
+                <TextBlock Text="Speed:" Foreground="White" VerticalAlignment="Center" Margin="4,0,8,0"/>
+                <ComboBox x:Name="SpeedComboBox" Width="80" SelectionChanged="SpeedComboBox_SelectionChanged" VerticalAlignment="Center" Margin="0,0,4,0">
+                    <ComboBoxItem Content="0.5x" Tag="0"/>
+                    <ComboBoxItem Content="1x" IsSelected="True" Tag="1"/>
+                    <ComboBoxItem Content="2x" Tag="2"/>
+                    <ComboBoxItem Content="3x" Tag="3"/>
+                    <ComboBoxItem Content="4x" Tag="4"/>
+                </ComboBox>
+            </StackPanel>
+        </StackPanel>
+        
         <!-- Canvas size corrected to match runtime NES_W * TILE / NES_H * TILE (256x240) -->
         <!-- ClipToBounds prevents the cached tile layer (which is intentionally one tile larger) from rendering outside the visible area -->
-        <Canvas x:Name="RenderCanvas" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True" />
+        <Canvas x:Name="RenderCanvas" Grid.Row="1" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True" />
 
         <!-- Pause overlay shown while simulation is paused -->
-        <Grid x:Name="PauseOverlay" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="True" MouseLeftButtonUp="PauseOverlay_MouseLeftButtonUp" Cursor="Hand">
+        <Grid x:Name="PauseOverlay" Grid.Row="1" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="True" MouseLeftButtonUp="PauseOverlay_MouseLeftButtonUp" Cursor="Hand">
             <Rectangle Fill="#80000000" Width="256" Height="240" />
             <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Ellipse Width="120" Height="120" Fill="#AA000000" />
