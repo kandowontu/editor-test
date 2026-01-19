@@ -9,6 +9,37 @@ namespace FamidashEditor
         /// </summary>
         private void SpiderPhysics_Fresh()
         {
+            // Check for orb activation
+            {
+                bool holdJump_orb = IsXDownAsync() || keyXHeld;
+                int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
+                bool pressJump_orb = pressCount_orb > 0;
+                bool gravityInverted_orb = (currplayer_gravity != 0);
+                int playerX_px_orb = playerX_fixed >> 8;
+                int playerY_px_orb = playerY_fixed >> 8;
+                int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH_orb = (currplayer_mini != 0) ? 8 : 15;
+                int scrollX_px_orb = 0;
+                
+                int tempVelY = playerVelY_fixed;
+                bool orbActivated = UpdateOrbSystem(5, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
+                                                   scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
+                                                   (currplayer_mini != 0), ref tempVelY);
+                if (orbActivated)
+                {
+                    playerVelY_fixed = tempVelY;
+                    AppendSimDebug($"[SPIDER] Orb activated! New velY={playerVelY_fixed}");
+                    
+                    // Consume the X press if it was used for orb
+                    if (pressJump_orb)
+                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                }
+                
+                // Clear orb buffer when X is released
+                if (!holdJump_orb)
+                    ClearOrbBuffer();
+            }
+            
             // Get base physics values (always from down-gravity index)
             int baseTableIdx = (currplayer_mini != 0 ? 4 : 0);
             bool gravityInverted = (currplayer_gravity != 0);
@@ -42,8 +73,24 @@ namespace FamidashEditor
             int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
             bool pressedJump = pressCount > 0;
             
-            // Check if truly grounded (velocity near 0 after collision)
-            bool isGrounded = (playerVelY_fixed >= -8 && playerVelY_fixed <= 8);
+            // Check if truly grounded by checking collision with floor/ceiling
+            int hitboxW = (currplayer_mini != 0) ? 8 : 15;
+            int hitboxH = (currplayer_mini != 0) ? 8 : 15;
+            int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 8 : 0;
+            int collisionX = (playerX_fixed >> 8);
+            
+            bool isGrounded = false;
+            if (currplayer_gravity == 0) {
+                // Check floor collision
+                int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
+                var (collided, _) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
+                isGrounded = collided;
+            } else {
+                // Check ceiling collision
+                int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
+                var (collided, _) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
+                isGrounded = collided;
+            }
             
             AppendSimDebug($"[SPIDER] press={pressedJump}, grounded={isGrounded}, velY={playerVelY_fixed}, grav={currplayer_gravity:X2}");
             
@@ -55,16 +102,13 @@ namespace FamidashEditor
                     // Scan upward for ceiling
                     int scanY = (playerY_fixed >> 8);
                     bool foundCeiling = false;
-                    int hitboxW = (currplayer_mini != 0) ? 8 : 15;
-                    int hitboxH = (currplayer_mini != 0) ? 8 : 15;
-                    int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 8 : 0;
                     
                     while (scanY > 8) {
                         scanY -= 8;
-                        int collisionX = (playerX_fixed >> 8);
+                        int scanCollisionX = (playerX_fixed >> 8);
                         int collisionY = scanY + hitboxOffsetY;
                         
-                        var (collided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
+                        var (collided, collisionBottomY) = CheckCollisionUp(scanCollisionX, collisionY, hitboxW, hitboxH);
                         if (collided) {
                             foundCeiling = true;
                             playerY_fixed = ((collisionBottomY + 1 - hitboxOffsetY) << 8);
@@ -76,7 +120,10 @@ namespace FamidashEditor
                     if (foundCeiling) {
                         playerVelY_fixed = 0;
                         currplayer_gravity = 0xFF; // GRAVITY_UP
+                        gravityReversed = true;
+                        gravityFlipped = true;
                         UpdateCurrplayerTableIdx_Fresh();
+                        UpdatePlayerIconFlip();
                         
                         // Update physics values for new gravity
                         gravityInverted = true;
@@ -98,16 +145,13 @@ namespace FamidashEditor
                     // Scan downward for floor
                     int scanY = (playerY_fixed >> 8);
                     bool foundFloor = false;
-                    int hitboxW = (currplayer_mini != 0) ? 8 : 15;
-                    int hitboxH = (currplayer_mini != 0) ? 8 : 15;
-                    int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 8 : 0;
                     
                     while (scanY < 240) {
                         scanY += 8;
-                        int collisionX = (playerX_fixed >> 8);
+                        int scanCollisionX = (playerX_fixed >> 8);
                         int collisionY = scanY + hitboxOffsetY;
                         
-                        var (collided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
+                        var (collided, collisionTopY) = CheckCollisionDown(scanCollisionX, collisionY, hitboxW, hitboxH);
                         if (collided) {
                             foundFloor = true;
                             playerY_fixed = ((collisionTopY - hitboxH - 1 - hitboxOffsetY) << 8);
@@ -119,7 +163,10 @@ namespace FamidashEditor
                     if (foundFloor) {
                         playerVelY_fixed = 0;
                         currplayer_gravity = 0; // GRAVITY_DOWN
+                        gravityReversed = false;
+                        gravityFlipped = false;
                         UpdateCurrplayerTableIdx_Fresh();
+                        UpdatePlayerIconFlip();
                         
                         // Update physics values for new gravity
                         gravityInverted = false;

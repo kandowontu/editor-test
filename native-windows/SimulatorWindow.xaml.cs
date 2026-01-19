@@ -73,7 +73,7 @@ namespace FamidashEditor
         // By default we write debug output to a timestamped temp file so you can
         // open it after reproducing the issue. Change to false to disable file
         // writes.
-        private readonly bool simDebugWriteToFile = true;
+        private readonly bool simDebugWriteToFile = false;
         private readonly string simDebugLogPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"famidash_sim_debug_{System.DateTime.UtcNow:yyyyMMdd_HHmmss}.txt");
 
         private void AppendSimDebug(string msg)
@@ -226,18 +226,24 @@ namespace FamidashEditor
 
         // Sprite geometry tables (from user-provided data). Non-numeric placeholders use sensible defaults.
         private static readonly int[] sprite_heights = new int[] {
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 00-07
+            0x34,0x34,0x34,0x34,0x34,0x12,0x12,0x10, // 00-07
             0x28,0x28,0x03,0x12,0x03,0x03,0x03,0x10, // 08-0F
             0x0e,0x0e,0x0e,0x0e,0x24,0x24,0x24,0x34, // 10-17
             0x34,0x34,0x10,0x10,0x10,0x10,0x10,0x12, // 18-1F
             0x24,0x24,0x34,0x34,0x34,0x03,0x03,0x12, // 20-27
-            0x12,0x12,0x10,0x10,0x10,0x10,0x10,0x10, // 28-2F (DECO->0x10)
-            0x34,0x34,0x34,0x34,0x34,0x02,0x10,0x10, // 60-67 (SPBH->0x10)
-            0x10,0x10,0x34,0x34,0x34,0x20,0x08,0x10, // 68-6F (SPBH->0x10)
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 70-77 (SPBH->0x10)
-            0x10,0x12,0x12,0x12,0x12,0x10,0x10,0x10, // 78-7F (SPBH->0x10)
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 80-87 (COLR->0x10)
-            0x10,0x10,0x10,0x10,0x10,0x00,0x10,0x10, // 88-8F (SPBH->0x10)
+            0x12,0x12,0x10,0x10,0x10,0x10,0x10,0x10, // 28-2F
+            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 30-37
+            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 38-3F
+            0x10,0x10,0x10,0x10,0x12,0x12,0x12,0x28, // 40-47
+            0x28,0x10,0x10,0x34,0x12,0x12,0x30,0x10, // 48-4F
+            0x12,0x12,0x03,0x03,0x12,0x12,0x03,0x03, // 50-57
+            0x34,0x10,0x10,0x12,0x12,0x12,0x12,0x34, // 58-5F
+            0x34,0x34,0x34,0x34,0x34,0x02,0x10,0x10, // 60-67
+            0x10,0x10,0x34,0x34,0x34,0x20,0x08,0x10, // 68-6F
+            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 70-77
+            0x10,0x12,0x12,0x12,0x12,0x10,0x10,0x10, // 78-7F
+            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 80-87
+            0x10,0x10,0x10,0x10,0x10,0x00,0x10,0x10, // 88-8F
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 90-97
             0x10,0x10,0x10,0x10,0x10,0x00,0x10,0x10, // 98-9F
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // A0-A7
@@ -251,12 +257,15 @@ namespace FamidashEditor
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // E0-E7
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // E8-EF
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // F0-F7
-            0x10,0x08,0x1B,0x10,0x10,0x0E,0x0E,0x10  // F8-FF
+            0x10,0x10,0x1F,0x10,0x10,0x03,0x03,0x00  // F8-FF
         };
 
         private static readonly int[] sprite_widths = new int[] {
-                0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 00-07
-                0x10,0x10,0x10,0x10,0x10,0x0F,0x0F,0x10, // 20-27
+            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 00-07
+            0x0e,0x0e,0x0F,0x10,0x0F,0x0F,0x0F,0x10, // 08-0F
+            0x28,0x28,0x28,0x28,0x10,0x10,0x10,0x10, // 10-17
+            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 18-1F
+            0x10,0x10,0x10,0x10,0x10,0x0F,0x0F,0x10, // 20-27
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 28-2F
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 30-37
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 38-3F
@@ -290,6 +299,7 @@ namespace FamidashEditor
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 00-07
             0x01,0x01,0x00,0x00,0x00,0x00,0x00,0x00, // 08-0F
             0x04,0x04,0x04,0x04,0x00,0x00,0x00,0x00, // 10-17
+            0x08,0x08,0x00,0x00,0x00,0x00,0x00,0x00, // 18-1F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 20-27
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 28-2F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 30-37
@@ -336,7 +346,7 @@ namespace FamidashEditor
             -0x02,-0x02,-0x02,-0x02,-0x02,0x00,0x00,0x00, // 60-67
             0x00,0x00,-0x02,-0x02,-0x02,0x00,0x04,0x00, // 68-6F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 70-77
-            0x00,-0x01,-0x01,-0x01,-0x01,0x00,0x00,0x00, // 78-7F
+            0x00,-0x01,-0x01,0x00,0x00,0x00,0x00,0x00, // 78-7F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 80-87
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 88-8F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 90-97
@@ -671,36 +681,23 @@ namespace FamidashEditor
         // as full 16x16 solids.
         private static bool TileOccupiesPixel(MetatileCollision col, int localX, int localY)
         {
-            // Handle explicit death-category variants by composing underlying shapes
+            // Pure death tiles with no solid collision
             switch (col)
             {
-                case MetatileCollision.COL_DEATH_TOP:
-                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY);
-                case MetatileCollision.COL_DEATH_BOTTOM:
-                    return TileOccupiesPixel(MetatileCollision.COL_BOTTOM, localX, localY);
-                case MetatileCollision.COL_DEATH_LEFT:
-                    return TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY);
-                case MetatileCollision.COL_DEATH_RIGHT:
-                    return TileOccupiesPixel(MetatileCollision.COL_RIGHT, localX, localY);
-                case MetatileCollision.COL_DEATH_TOP_RIGHT:
-                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_RIGHT, localX, localY);
-                case MetatileCollision.COL_DEATH_TOP_LEFT:
-                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY);
-                case MetatileCollision.COL_DEATH_BOTTOM_RIGHT:
-                    return TileOccupiesPixel(MetatileCollision.COL_BOTTOM, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_RIGHT, localX, localY);
-                case MetatileCollision.COL_DEATH_BOTTOM_LEFT:
-                    return TileOccupiesPixel(MetatileCollision.COL_BOTTOM, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY);
-                case MetatileCollision.COL_DEATH_TOP_RIGHT_LEFT:
-                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_RIGHT, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY);
-                case MetatileCollision.COL_DEATH_TOP_BOTTOM:
-                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_BOTTOM, localX, localY);
-                case MetatileCollision.COL_DEATH_LEFT_RIGHT:
-                    return TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_RIGHT, localX, localY);
-                case MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM:
-                    return TileOccupiesPixel(MetatileCollision.COL_TOP, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_LEFT, localX, localY) || TileOccupiesPixel(MetatileCollision.COL_BOTTOM, localX, localY);
                 case MetatileCollision.COL_DEATH:
-                    // Generic death: treat as full solid
-                    return true;
+                case MetatileCollision.COL_DEATH_BOTTOM:
+                case MetatileCollision.COL_DEATH_TOP:
+                case MetatileCollision.COL_DEATH_LEFT:
+                case MetatileCollision.COL_DEATH_RIGHT:
+                case MetatileCollision.COL_DEATH_TOP_RIGHT:
+                case MetatileCollision.COL_DEATH_TOP_LEFT:
+                case MetatileCollision.COL_DEATH_BOTTOM_RIGHT:
+                case MetatileCollision.COL_DEATH_BOTTOM_LEFT:
+                case MetatileCollision.COL_DEATH_TOP_RIGHT_LEFT:
+                case MetatileCollision.COL_DEATH_TOP_BOTTOM:
+                case MetatileCollision.COL_DEATH_LEFT_RIGHT:
+                case MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM:
+                    return false;
                 default:
                     break;
             }
@@ -785,8 +782,12 @@ namespace FamidashEditor
             int sampleTileY = worldY_px / TILE;
             int tileIndexY = sampleTileY + groundRowsToReserve;
 
-            if (tileIndexY < 0 || tileIndexY >= mapHeight || sampleTileX < 0 || sampleTileX >= mapWidth)
+            if (tileIndexY < 0 || sampleTileX < 0 || sampleTileX >= mapWidth)
                 return false;
+                
+            // Ground layer is always solid - if tile index is beyond map height
+            if (tileIndexY >= mapHeight)
+                return true;
 
             int tid = tiles[tileIndexY * mapWidth + sampleTileX];
             int useTidForAnim = MapAnimatedTileIndex(tid);
@@ -907,13 +908,15 @@ namespace FamidashEditor
         /// <summary>
         /// Stop music playback
         /// </summary>
-        private void StopMusic()
+        private async System.Threading.Tasks.Task StopMusicAsync()
         {
             try
             {
-                // Add music stopping logic here if there's a music player
-                // For now, just log it
-                AppendSimDebug("[MUSIC] Stopped");
+                if (this.Owner is MainWindow mw)
+                {
+                    AppendSimDebug("[MUSIC] Stopping music");
+                    await mw.StopSimulatorPlaybackAsync();
+                }
             }
             catch { }
         }
@@ -961,6 +964,7 @@ namespace FamidashEditor
                         {
                             gravityReversed = newGravityReversed;
                             gravityFlipped = newGravityReversed;
+                            UpdatePlayerIconFlip();
                             
                             // Halve Y velocity
                             playerVelY_fixed /= 2;
@@ -1109,14 +1113,13 @@ namespace FamidashEditor
                             
                             // Apply gravity direction
                             bool gravityInverted = (currplayer_gravity != 0);
-                            int gravityMultiplier = gravityInverted ? -1 : 1;
                             
-                            // Down pads launch upward (negative velocity for normal gravity)
-                            // Up pads launch downward (positive velocity for normal gravity)
-                            int newVel = isDownPad ? -baseVel : baseVel;
-                            
-                            // Apply gravity multiplier
-                            newVel *= gravityMultiplier;
+                            // Yellow/pink/red pads: always launch in gravity-opposite direction
+                            // Normal gravity: launch upward (negative velocity)
+                            // Inverted gravity: launch downward (positive velocity)
+                            // The sprite orientation (up/down) doesn't matter for these pads
+                            int gravityMultiplier = gravityInverted ? 1 : -1;
+                            int newVel = baseVel * gravityMultiplier;
                             
                             playerVelY_fixed = newVel;
                             
@@ -1425,6 +1428,7 @@ namespace FamidashEditor
         // Additional game mode state variables
         private bool[] ballSwitched = new bool[2];
         private int ballFlipCooldown = 0;
+        private bool ballWasGroundedBeforeFlip = false;
         private bool ufoOrbed = false;
         private int[] ninjajumps = new int[2] { 3, 3 };
         private int[] robotJumpTime = new int[2];
@@ -1590,6 +1594,26 @@ namespace FamidashEditor
             catch { }
         }
 
+        private void UpdatePlayerIconFlip()
+        {
+            try
+            {
+                if (playerImage != null && playerImage.Source != null)
+                {
+                    if (gravityReversed)
+                    {
+                        playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                        playerImage.RenderTransform = new ScaleTransform(1, -1);
+                    }
+                    else
+                    {
+                        playerImage.RenderTransform = Transform.Identity;
+                    }
+                }
+            }
+            catch { }
+        }
+
         // P/Invoke to check key state asynchronously from background threads
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
@@ -1604,6 +1628,157 @@ namespace FamidashEditor
             { 0x20, CUBE_SPEED_X3  },
             { 0x21, CUBE_SPEED_X4  }
         };
+
+        // Calculate music time (in seconds) to reach a given X position, accounting for speed portals
+        private double CalculateMusicTimeToPosition(int targetX_px)
+        {
+            try
+            {
+                // Use player center position to match interaction line behavior
+                int targetCenter_px = targetX_px + (playerVisualWidth / 2);
+                
+                // Default to 1x speed
+                int currentSpeed_fixed = CUBE_SPEED_X1;
+                int lastX_px = 0;
+                double totalTime = 0.0;
+                
+                // Get all speed portals sorted by X position
+                var speedPortals = new System.Collections.Generic.List<(int x, int speed)>();
+                
+                if (sprites != null && spriteAnchors != null)
+                {
+                    for (int idx = 0; idx < sprites.Length; idx++)
+                    {
+                        int sid = sprites[idx];
+                        if (sid == -1) continue;
+                        if (!speedPortalMap.ContainsKey(sid)) continue;
+                        
+                        // Get anchor position (center of sprite)
+                        int anchorTileX = spriteAnchors.TryGetValue(idx, out var a) ? a.anchorTileX : idx % mapWidth;
+                        int anchorX_px = anchorTileX * TILE + (TILE / 2);
+                        
+                        // Only consider portals before target center
+                        if (anchorX_px <= targetCenter_px)
+                        {
+                            speedPortals.Add((anchorX_px, speedPortalMap[sid]));
+                        }
+                    }
+                }
+                
+                // Sort by X position
+                speedPortals.Sort((a, b) => a.x.CompareTo(b.x));
+                
+                // Calculate time for each segment
+                foreach (var portal in speedPortals)
+                {
+                    int segmentDistance_px = portal.x - lastX_px;
+                    if (segmentDistance_px > 0)
+                    {
+                        // Speed is in fixed-point (pixels per frame * 256)
+                        // Convert to pixels per second: (speed_fixed / 256) * 60 fps
+                        double speed_px_per_second = (currentSpeed_fixed / 256.0) * 60.0;
+                        if (speed_px_per_second > 0)
+                        {
+                            totalTime += segmentDistance_px / speed_px_per_second;
+                        }
+                    }
+                    
+                    // Update speed for next segment
+                    currentSpeed_fixed = portal.speed;
+                    lastX_px = portal.x;
+                }
+                
+                // Add final segment from last portal to target
+                int finalDistance_px = targetCenter_px - lastX_px;
+                if (finalDistance_px > 0)
+                {
+                    double speed_px_per_second = (currentSpeed_fixed / 256.0) * 60.0;
+                    if (speed_px_per_second > 0)
+                    {
+                        totalTime += finalDistance_px / speed_px_per_second;
+                    }
+                }
+                
+                return totalTime;
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+
+        private void ApplyColorTriggersUpToPosition(int targetX_px)
+        {
+            try
+            {
+                if (sprites == null || spriteAnchors == null) return;
+                
+                int? lastBgIdx = null, lastTileIdx = null, lastGroundIdx = null;
+                int? lastBgSid = null, lastTileSid = null, lastGroundSid = null;
+                
+                // Find the last trigger of each type before target position
+                for (int idx = 0; idx < sprites.Length; idx++)
+                {
+                    int sid = sprites[idx];
+                    if (sid == -1) continue;
+                    
+                    // Get anchor position
+                    int anchorTileX = spriteAnchors.TryGetValue(idx, out var a) ? a.anchorTileX : idx % mapWidth;
+                    int anchorX_px = anchorTileX * TILE + (TILE / 2);
+                    
+                    // Only consider triggers before target
+                    if (anchorX_px <= targetX_px)
+                    {
+                        if (IsBackgroundTrigger(sid))
+                        {
+                            lastBgIdx = idx;
+                            lastBgSid = sid;
+                        }
+                        else if (IsTileTrigger(sid))
+                        {
+                            lastTileIdx = idx;
+                            lastTileSid = sid;
+                        }
+                        else if (IsGroundTrigger(sid))
+                        {
+                            lastGroundIdx = idx;
+                            lastGroundSid = sid;
+                        }
+                    }
+                }
+                
+                // Apply the triggers
+                if (lastBgIdx.HasValue && lastBgSid.HasValue)
+                {
+                    var c = ColorFromTrigger(lastBgSid.Value);
+                    backgroundTint = c;
+                    backgroundForceSolidBlack = (lastBgSid.Value == 0x8F);
+                    processedColorTriggers.Add(lastBgIdx.Value);
+                }
+                
+                if (lastTileIdx.HasValue && lastTileSid.HasValue)
+                {
+                    var c = ColorFromTrigger(lastTileSid.Value);
+                    tileTint = c;
+                    processedColorTriggers.Add(lastTileIdx.Value);
+                }
+                
+                if (lastGroundIdx.HasValue && lastGroundSid.HasValue)
+                {
+                    var c = ColorFromTrigger(lastGroundSid.Value);
+                    if (lastGroundSid.Value == 0xCF)
+                    {
+                        groundTint = Color.FromArgb(255, 0, 0, 0);
+                    }
+                    else
+                    {
+                        groundTint = c;
+                    }
+                    processedColorTriggers.Add(lastGroundIdx.Value);
+                }
+            }
+            catch { }
+        }
 
         private readonly System.Windows.Threading.DispatcherTimer timer;
         // Dedicated background simulation timer to keep simulation at a steady 60Hz
@@ -1737,17 +1912,21 @@ namespace FamidashEditor
                 simTimer = new System.Threading.Timer(_ => { try { TimerSimulationLoop(); } catch { } }, null, 0, 10);
 
                 // Initialize player Y so player stands one tile above reserved ground rows
-                try
+                // (unless START POS marker already set it)
+                if (!hasAppliedStartPos)
                 {
-                    int groundRowsToReserve = 0;
-                    try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
-                    int playerRow = Math.Max(0, mapHeight - groundRowsToReserve - 1);
-                    playerY_fixed = (playerRow * TILE) << 8;
-                    // Clamp against map bottom
-                    int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
-                    if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                    try
+                    {
+                        int groundRowsToReserve = 0;
+                        try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
+                        int playerRow = Math.Max(0, mapHeight - groundRowsToReserve - 1);
+                        playerY_fixed = (playerRow * TILE) << 8;
+                        // Clamp against map bottom
+                        int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                        if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                    }
+                    catch { playerY_fixed = 0; }
                 }
-                catch { playerY_fixed = 0; }
 
                 // Ensure the sim debug file exists and print its resolved path only when
                 // `enableSimulatorDebugLogging` is set. Normal runs should not create the file.
@@ -2275,8 +2454,11 @@ namespace FamidashEditor
 
             // Clamp initial cameraY so visible region fits (fixed-point)
             int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-            // Start the simulator from the bottom of the map by default
-            cameraY_fixed = maxY_fixed;
+            // Start the simulator from the bottom of the map by default (unless START POS overrides it)
+            if (!hasAppliedStartPos)
+            {
+                cameraY_fixed = maxY_fixed;
+            }
 
             // Setup a high-precision render loop using CompositionTarget and a stopwatch
             timer = new System.Windows.Threading.DispatcherTimer(DispatcherPriority.Render);
@@ -2434,6 +2616,12 @@ namespace FamidashEditor
                 // Place the player so it starts on the leftmost visible tile (x=0)
                 playerX_fixed = 0;
                 interactionScreenOffset_px = -1;
+                
+                // Reset orb activation state at start
+                try { ResetOrbSystem(); } catch { }
+                
+                // Reset blue pad activation state at start
+                try { ResetBluePadSystem(); } catch { }
             }
             catch { }
             this.Loaded += (s, e) => { try { this.Focus(); Keyboard.Focus(this); } catch { } };
@@ -2650,7 +2838,7 @@ namespace FamidashEditor
             }
             if (e.Key == Key.Up) upHeld = true;
             if (e.Key == Key.Down) downHeld = true;
-            if (e.Key == Key.X)
+            if (e.Key == Key.X || (!MainWindow.Option_CamMode && (e.Key == Key.Up || e.Key == Key.Space)))
             {
                 // Only trigger on the initial KeyDown (ignore OS key-repeat)
                 try
@@ -2741,6 +2929,7 @@ namespace FamidashEditor
                                     try { currplayer_gravity = (byte)(gravityReversed ? 0xFF : 0x00); } catch { }
                                     // Update table index for Fresh physics
                                     try { currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0); } catch { }
+                                    UpdatePlayerIconFlip();
                                     // Update effective gravity for all systems
                                     try { UpdateEffectiveGravity(); } catch { }
                                     // After flipping logical gravity, ensure the player is no longer
@@ -2856,7 +3045,7 @@ namespace FamidashEditor
             }
             if (e.Key == Key.Up) upHeld = false;
             if (e.Key == Key.Down) downHeld = false;
-            if (e.Key == Key.X)
+            if (e.Key == Key.X || (!MainWindow.Option_CamMode && (e.Key == Key.Up || e.Key == Key.Space)))
             {
                 // Clear any buffered X presses when key is released
                 try
@@ -2907,9 +3096,39 @@ namespace FamidashEditor
                     playbackStartPending = true;
                     try
                     {
-                        // Request owner to start playback and wait briefly for audio to begin,
-                        // then advance one numeric step and render so gameplay visibly starts.
-                        try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
+                        // Start/resume music at correct position
+                        if (this.Owner is MainWindow mw)
+                        {
+                            bool isPlaying = mw.IsMusicPlaying();
+                            bool isPaused = mw.IsMusicPaused();
+                            AppendSimDebug($"[UNPAUSE] Music state: playing={isPlaying}, paused={isPaused}, hasAppliedStartPos={hasAppliedStartPos}");
+                            
+                            // If music is not playing (either paused or stopped), start it with proper seeking
+                            if (!isPlaying)
+                            {
+                                double musicTime = 0.0;
+                                if (hasAppliedStartPos)
+                                {
+                                    musicTime = CalculateMusicTimeToPosition(startPosX_forMusicSeek + (playerVisualWidth / 2));
+                                    AppendSimDebug($"[UNPAUSE] Starting music with seek to START POS musicTime={musicTime:F3}s");
+                                }
+                                else
+                                {
+                                    AppendSimDebug($"[UNPAUSE] Starting music with seek to beginning");
+                                }
+                                
+                                // Stop any existing playback first
+                                await mw.StopSimulatorPlaybackAsync();
+                                
+                                // Start fresh with proper seeking
+                                var startTask = mw.ForceStartAndSeekSimulatorPlaybackAsync(musicTime);
+                                if (startTask != null) await startTask;
+                            }
+                            else
+                            {
+                                AppendSimDebug($"[UNPAUSE] Music already playing, no action needed");
+                            }
+                        }
                         try { SimulateNumericStep(); } catch { }
                         try { RenderFrame(); } catch { }
                     }
@@ -2969,6 +3188,186 @@ namespace FamidashEditor
             catch { }
         }
 
+        private async void RestartButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Stop current simulation
+                StopSimulation();
+                
+                // Check for START POS marker
+                int startX_px = 0;
+                int startY_px = 0;
+                bool hasStartPos = false;
+                
+                try
+                {
+                    if (this.Owner is MainWindow mw)
+                    {
+                        if (mw.StartPosMarkerX.HasValue && mw.StartPosMarkerY.HasValue)
+                        {
+                            startX_px = mw.StartPosMarkerX.Value;
+                            startY_px = mw.StartPosMarkerY.Value;
+                            hasStartPos = true; 
+                            startPosX_forMusicSeek = startX_px;
+                            hasAppliedStartPos = true; // Update flag for music seeking
+                        }
+                        else
+                        {
+                            hasAppliedStartPos = false; // No START POS
+                        }
+                    }
+                }
+                catch { }
+                
+                // Reset player position to start or START POS marker
+                playerX_fixed = startX_px << 8;
+                
+                // Calculate interaction screen offset based on START POS
+                if (hasStartPos)
+                {
+                    int playerCenter_fixed = playerX_fixed + ((playerVisualWidth / 2) << 8);
+                    // If player is past interaction line, calculate the proper screen offset
+                    if (playerCenter_fixed >= INTERACTION_LINE_FIXED)
+                    {
+                        // In standard GD, the interaction line appears at screen pixel 80
+                        // when camera is at X=0. The offset is where interaction line appears
+                        // on screen when it's crossed.
+                        interactionScreenOffset_px = 80; // Standard GD interaction line screen position
+                    }
+                    else
+                    {
+                        // Player is before interaction line - camera stays at 0
+                        interactionScreenOffset_px = -1;
+                    }
+                }
+                else
+                {
+                    interactionScreenOffset_px = -1;
+                }
+                
+                // Reset player to starting Y position (one tile above ground rows) or marker Y
+                if (hasStartPos)
+                {
+                    playerY_fixed = startY_px << 8;
+                    // Clamp to map bounds
+                    int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                    if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                }
+                else
+                {
+                    try
+                    {
+                        int groundRowsToReserve = 0;
+                        try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
+                        int playerRow = Math.Max(0, mapHeight - groundRowsToReserve - 1);
+                        playerY_fixed = (playerRow * TILE) << 8;
+                        int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                        if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                    }
+                    catch { playerY_fixed = 0; }
+                }
+                
+                // Reset velocity and physics state
+                playerVelY_fixed = 0;
+                currplayer_gravity = 0;
+                gravityReversed = false;
+                gravityFlipped = false;
+                UpdatePlayerIconFlip();
+                
+                // Reset camera to starting position or START POS marker
+                if (hasStartPos)
+                {
+                    // Position camera based on interaction offset
+                    int playerCenter_fixed_restart = playerX_fixed + ((playerVisualWidth / 2) << 8);
+                    if (playerCenter_fixed_restart >= INTERACTION_LINE_FIXED && interactionScreenOffset_px >= 0)
+                    {
+                        cameraX_fixed = playerX_fixed - (interactionScreenOffset_px << 8);
+                    }
+                    else
+                    {
+                        cameraX_fixed = 0;
+                    }
+                    int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                    cameraY_fixed = Math.Max(0, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
+                }
+                else
+                {
+                    cameraX_fixed = 0;
+                    int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                    cameraY_fixed = maxY_fixed;
+                }
+                
+                // Clear paths and processed portals
+                try { recordedPlayerPath.Clear(); } catch { }
+                try { processedGravityPortals.Clear(); } catch { }
+                // Don't clear processedColorTriggers if using START POS - they were already applied
+                if (!hasStartPos)
+                {
+                    try { processedColorTriggers.Clear(); } catch { }
+                }
+                try { ResetOrbSystem(); } catch { }
+                try { ResetBluePadSystem(); } catch { }
+                
+                // Clear input buffers
+                try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
+                keyXHeld = false;
+                upHeld = false;
+                downHeld = false;
+                
+                // Reset ball/swing state
+                ballSwitched[0] = false;
+                ballFlipCooldown = 0;
+                ufoOrbed = false;
+                
+                // Stop music first (same as death) before restarting simulation
+                try
+                {
+                    AppendSimDebug($"[RESTART] Stopping music (isPlaying={this.Owner is MainWindow mw2 && mw2.IsMusicPlaying()})");
+                    await StopMusicAsync();
+                    AppendSimDebug($"[RESTART] Music stopped (isPlaying={this.Owner is MainWindow mw3 && mw3.IsMusicPlaying()})");
+                }
+                catch { }
+                
+                // Restart simulation timer
+                StopSimulation();
+                await System.Threading.Tasks.Task.Delay(20).ConfigureAwait(false);
+                StartSimulation();
+                
+                // Reset to initial paused state
+                paused = true;
+                try { PauseOverlay.Visibility = System.Windows.Visibility.Visible; } catch { }
+                
+                // Clear death state if any
+                deathTriggered = false;
+            }
+            catch { }
+        }
+
+        public async System.Threading.Tasks.Task StartAndSeekMusicAsync()
+        {
+            try
+            {
+                if (this.Owner is MainWindow mw && hasAppliedStartPos)
+                {
+                    // Start playback
+                    var t = mw.StartSimulatorPlaybackAsync();
+                    if (t != null)
+                    {
+                        await t;
+                        // Wait for audio to be fully initialized
+                        await System.Threading.Tasks.Task.Delay(200).ConfigureAwait(false);
+                        // Seek to calculated position
+                        double musicTimeSeconds = CalculateMusicTimeToPosition(startPosX_forMusicSeek);
+                        mw.SeekSimulatorPlayback(musicTimeSeconds);
+                        // Small delay to ensure seek completes
+                        await System.Threading.Tasks.Task.Delay(100).ConfigureAwait(false);
+                    }
+                }
+            }
+            catch { }
+        }
+
         // Public API: start the simulator running and request playback (used by MainWindow to auto-start)
         public async System.Threading.Tasks.Task StartRunningAsync()
         {
@@ -2983,7 +3382,33 @@ namespace FamidashEditor
                     playbackStartPending = true;
                     try
                     {
-                        try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
+                        if (this.Owner is MainWindow mw)
+                        {
+                            // Calculate seek position
+                            double musicTime = 0.0;
+                            if (hasAppliedStartPos)
+                            {
+                                musicTime = CalculateMusicTimeToPosition(startPosX_forMusicSeek + (playerVisualWidth / 2));
+                                AppendSimDebug($"[START] Starting and seeking to START POS musicTime={musicTime:F3}s");
+                            }
+                            else
+                            {
+                                AppendSimDebug($"[START] Starting and seeking to beginning");
+                            }
+                            
+                            // Force start playback with immediate seek (before music plays)
+                            var startTask = mw.ForceStartAndSeekSimulatorPlaybackAsync(musicTime);
+                            if (startTask != null) await startTask;
+                            
+                            // Now unpause gameplay (music already playing)
+                            paused = false;
+                        }
+                        else
+                        {
+                            paused = false;
+                            try { if (this.Owner is MainWindow mw2) { var t = mw2.ResumeSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
+                        }
+                        
                         try { SimulateNumericStep(); } catch { }
                         try { RenderFrame(); } catch { }
                     }
@@ -2992,9 +3417,71 @@ namespace FamidashEditor
                         playbackStartPending = false;
                     }
                 }
-
-                paused = false;
                 try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+            }
+            catch { }
+        }
+
+        // Apply START POS marker position (called after Owner is set)
+        private bool hasAppliedStartPos = false;
+        private int startPosX_forMusicSeek = 0;
+
+        public bool HasStartPosApplied() => hasAppliedStartPos;
+
+        public void ApplyStartPosMarker()
+        {
+            try
+            {
+                if (this.Owner is MainWindow mw)
+                {
+                    if (mw.StartPosMarkerX.HasValue && mw.StartPosMarkerY.HasValue)
+                    {
+                        int startX_px = mw.StartPosMarkerX.Value;
+                        int startY_px = mw.StartPosMarkerY.Value;
+                        
+                        playerX_fixed = startX_px << 8;
+                        playerY_fixed = startY_px << 8;
+                        
+                        // Clamp to map bounds
+                        int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                        if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                        
+                        // Calculate proper camera and interaction offset for START POS
+                        int playerCenter_fixed = playerX_fixed + ((playerVisualWidth / 2) << 8);
+                        if (playerCenter_fixed >= INTERACTION_LINE_FIXED)
+                        {
+                            // Player is past interaction line - use standard GD offset (80 pixels)
+                            interactionScreenOffset_px = 80;
+                            // Position camera so player appears at screen X = 80
+                            cameraX_fixed = playerX_fixed - (interactionScreenOffset_px << 8);
+                        }
+                        else
+                        {
+                            // Player is before interaction line - camera at 0
+                            cameraX_fixed = 0;
+                            interactionScreenOffset_px = -1;
+                        }
+                        
+                        // Position camera Y centered on player
+                        int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                        cameraY_fixed = Math.Max(0, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
+                        
+                        hasAppliedStartPos = true;
+                        startPosX_forMusicSeek = startX_px;
+                        
+                        // Apply color triggers up to this position
+                        ApplyColorTriggersUpToPosition(startX_px);
+                        
+                        // Cache the music time for when playback starts
+                        // Don't seek here - will seek when playback actually starts
+                        try
+                        {
+                            double musicTime = CalculateMusicTimeToPosition(startX_px + (playerVisualWidth / 2));
+                            AppendSimDebug($"[START POS] Applied: X={startX_px}, musicTime={musicTime:F3}s (will seek on unpause)");
+                        }
+                        catch { }
+                    }
+                }
             }
             catch { }
         }
@@ -3004,7 +3491,9 @@ namespace FamidashEditor
             // Poll input on UI thread to generate stable per-frame pressed/held flags for numeric sim
             try
             {
-                bool curX = System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.X);
+                bool curX = System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.X) || 
+                            (!MainWindow.Option_CamMode && (System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.Up) || 
+                                                             System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.Space)));
                 bool curUp = System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.Up);
                 bool curDown = System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.Down);
                 lock (simLock)
@@ -3781,23 +4270,27 @@ namespace FamidashEditor
             if (playerY_fixed > maxPlayerY_fixed) { playerY_fixed = maxPlayerY_fixed; playerVelY_fixed = 0; }
 
             // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
+            // Skip this enforcement when gravity is inverted (allow jumping into ground rows from ceiling)
             try
             {
-                int playerScreenY_now = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
-                int allowedBottom_px = (NES_H * TILE) - (3 * TILE); // require 3 rows visible
-                int playerScreenBottom = playerScreenY_now + playerVisualHeight;
-                if (playerScreenBottom > allowedBottom_px)
+                if (currplayer_gravity == 0) // Only enforce for normal gravity
                 {
-                    int desiredPlayerScreenY = allowedBottom_px - playerVisualHeight;
-                    int desiredPlayerWorldY = desiredPlayerScreenY + (cameraY_fixed >> 8) - gridRenderShiftYPx;
-                    if (desiredPlayerWorldY < 0) desiredPlayerWorldY = 0;
-                    int desiredPlayerY_fixed = desiredPlayerWorldY << 8;
-                    if (desiredPlayerY_fixed > maxPlayerY_fixed) desiredPlayerY_fixed = maxPlayerY_fixed;
-                    playerY_fixed = desiredPlayerY_fixed;
-                    // When the UI enforces a screen-space clamp we should treat the player as effectively grounded
-                    // (prevent further gravity) and zero vertical velocity so the player doesn't sink while camera constraints apply.
-                    playerVelY_fixed = 0;
-                    onGround = true;
+                    int playerScreenY_now = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
+                    int allowedBottom_px = (NES_H * TILE) - (3 * TILE); // require 3 rows visible
+                    int playerScreenBottom = playerScreenY_now + playerVisualHeight;
+                    if (playerScreenBottom > allowedBottom_px)
+                    {
+                        int desiredPlayerScreenY = allowedBottom_px - playerVisualHeight;
+                        int desiredPlayerWorldY = desiredPlayerScreenY + (cameraY_fixed >> 8) - gridRenderShiftYPx;
+                        if (desiredPlayerWorldY < 0) desiredPlayerWorldY = 0;
+                        int desiredPlayerY_fixed = desiredPlayerWorldY << 8;
+                        if (desiredPlayerY_fixed > maxPlayerY_fixed) desiredPlayerY_fixed = maxPlayerY_fixed;
+                        playerY_fixed = desiredPlayerY_fixed;
+                        // When the UI enforces a screen-space clamp we should treat the player as effectively grounded
+                        // (prevent further gravity) and zero vertical velocity so the player doesn't sink while camera constraints apply.
+                        playerVelY_fixed = 0;
+                        onGround = true;
+                    }
                 }
             }
             catch { }
@@ -5706,6 +6199,12 @@ namespace FamidashEditor
                     // Record center of player for path (use actual physics position, not visual adjustment)
                     worldX = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                     worldY = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+                    
+                    // Adjust path Y position for mini mode with normal gravity
+                    if (miniMode && !gravityFlipped)
+                    {
+                        worldY += 8;
+                    }
                 }
 
                 // For mini mode, adjust visual position based on gravity
@@ -6181,13 +6680,16 @@ namespace FamidashEditor
                         // Check for pad collision
                         CheckPadCollision();
                         
+                        // Check for blue pad collision
+                        CheckBluePadCollision();
+                        
                         // Check for death collision
                         if (CheckDeathCollision(out int deathX_px, out int deathY_px))
                         {
                             AppendSimDebug($"[DEATH] Death tile collision at ({deathX_px},{deathY_px})");
                             deathTriggered = true;
                             paused = true;
-                            StopMusic();
+                            _ = StopMusicAsync();
                             
                             try
                             {
@@ -6540,7 +7042,7 @@ namespace FamidashEditor
                                 AppendSimDebug($"[DEATH] Right middle pixel collision at ({playerRightEdge_px},{playerCenterY_px})");
                                 deathTriggered = true;
                                 paused = true;
-                                StopMusic();
+                                _ = StopMusicAsync();
                                 
                                 try
                                 {
@@ -6612,22 +7114,26 @@ namespace FamidashEditor
                 // === END RIGHT SIDE DEATH/SNAP CHECK ===
                 
                 // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
+                // Skip this enforcement when gravity is inverted (allow jumping into ground rows from ceiling)
                 try
                 {
-                    int playerScreenY_now_local = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
-                    int allowedBottom_px_local = (NES_H * TILE) - (3 * TILE);
-                    int playerScreenBottom_local = playerScreenY_now_local + playerVisualHeight;
-                    if (playerScreenBottom_local > allowedBottom_px_local)
+                    if (currplayer_gravity == 0) // Only enforce for normal gravity
                     {
-                        int desiredPlayerScreenY_local = allowedBottom_px_local - playerVisualHeight;
-                        int desiredPlayerWorldY_local = desiredPlayerScreenY_local + (cameraY_fixed >> 8) - gridRenderShiftYPx;
-                        if (desiredPlayerWorldY_local < 0) desiredPlayerWorldY_local = 0;
-                        int desiredPlayerY_fixed_local = desiredPlayerWorldY_local << 8;
-                        if (desiredPlayerY_fixed_local > maxPlayerY_fixed_local) desiredPlayerY_fixed_local = maxPlayerY_fixed_local;
-                        playerY_fixed = desiredPlayerY_fixed_local;
-                        // When numeric sim enforces a screen-space clamp, treat the player as grounded so gravity stops.
-                        playerVelY_fixed = 0;
-                        onGround = true;
+                        int playerScreenY_now_local = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
+                        int allowedBottom_px_local = (NES_H * TILE) - (3 * TILE);
+                        int playerScreenBottom_local = playerScreenY_now_local + playerVisualHeight;
+                        if (playerScreenBottom_local > allowedBottom_px_local)
+                        {
+                            int desiredPlayerScreenY_local = allowedBottom_px_local - playerVisualHeight;
+                            int desiredPlayerWorldY_local = desiredPlayerScreenY_local + (cameraY_fixed >> 8) - gridRenderShiftYPx;
+                            if (desiredPlayerWorldY_local < 0) desiredPlayerWorldY_local = 0;
+                            int desiredPlayerY_fixed_local = desiredPlayerWorldY_local << 8;
+                            if (desiredPlayerY_fixed_local > maxPlayerY_fixed_local) desiredPlayerY_fixed_local = maxPlayerY_fixed_local;
+                            playerY_fixed = desiredPlayerY_fixed_local;
+                            // When numeric sim enforces a screen-space clamp, treat the player as grounded so gravity stops.
+                            playerVelY_fixed = 0;
+                            onGround = true;
+                        }
                     }
                 }
                 catch { }

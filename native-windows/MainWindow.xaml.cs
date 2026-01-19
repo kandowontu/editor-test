@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
 using System.IO;
 using System.Linq;
@@ -48,7 +48,7 @@ namespace FamidashEditor
             {
                 if (TilesImage != null) TilesImage.Visibility = Visibility.Visible;
                 if (PortalsImage != null) PortalsImage.Visibility = Visibility.Visible;
-                if (TileEyeButton != null) TileEyeButton.Content = "👁";
+                if (TileEyeButton != null) TileEyeButton.Content = "??";
             }
             catch { }
         }
@@ -243,7 +243,7 @@ namespace FamidashEditor
             {
                 if (TilesImage != null) TilesImage.Visibility = Visibility.Collapsed;
                 if (PortalsImage != null) PortalsImage.Visibility = Visibility.Collapsed;
-                if (TileEyeButton != null) TileEyeButton.Content = "🙈";
+                if (TileEyeButton != null) TileEyeButton.Content = "??";
             }
             catch { }
         }
@@ -324,7 +324,7 @@ namespace FamidashEditor
             try
             {
                 if (SpritesImage != null) SpritesImage.Visibility = Visibility.Visible;
-                if (SpriteEyeButton != null) SpriteEyeButton.Content = "👁";
+                if (SpriteEyeButton != null) SpriteEyeButton.Content = "??";
             }
             catch { }
         }
@@ -334,7 +334,7 @@ namespace FamidashEditor
             try
             {
                 if (SpritesImage != null) SpritesImage.Visibility = Visibility.Collapsed;
-                if (SpriteEyeButton != null) SpriteEyeButton.Content = "🙈";
+                if (SpriteEyeButton != null) SpriteEyeButton.Content = "??";
             }
             catch { }
         }
@@ -595,6 +595,38 @@ namespace FamidashEditor
                 }
                 catch { }
             }
+
+            // P: Activate START POS tool (click on map to place marker)
+            try
+            {
+                if (!e.IsRepeat && e.Key == Key.P)
+                {
+                    e.Handled = true;
+                    try
+                    {
+                        var startPosBtn = FindName("StartPosTool") as ToggleButton;
+                        if (startPosBtn != null)
+                        {
+                            startPosBtn.IsChecked = true;
+                            try { Tool_Checked(startPosBtn, new RoutedEventArgs()); } catch { }
+                            ShowTransientInfo("START POS tool active - click on map to place marker", this, 2000);
+                        }
+                    }
+                    catch { }
+                    return;
+                }
+                
+                // Ctrl+P: Clear START POS marker
+                bool isCtrlP = (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl));
+                if (!e.IsRepeat && isCtrlP && e.Key == Key.P)
+                {
+                    e.Handled = true;
+                    SetStartPosMarker(null, null);
+                    ShowTransientInfo("START POS cleared", this, 1500);
+                    return;
+                }
+            }
+            catch { }
 
             // Ctrl+A: select all tiles/sprites depending on active layer toggles
             try
@@ -1306,7 +1338,7 @@ namespace FamidashEditor
                         return;
                     }
 
-                    // Nothing found — keep current tileset
+                    // Nothing found � keep current tileset
                 }
                 else
                 {
@@ -1381,7 +1413,7 @@ namespace FamidashEditor
         // Check EXTRAS first to avoid accidental matches with DECO
         if (decoNorm.Contains("EXTRA"))
         {
-            // EXTRASPRITES1 -> ranges 0x2A–0x35 and 0x37–0x3F and 0x4A
+            // EXTRASPRITES1 -> ranges 0x2A�0x35 and 0x37�0x3F and 0x4A
             for (int i = 0x2A; i <= 0x35; i++) disabledSprites.Add(i);
             for (int i = 0x37; i <= 0x3F; i++) disabledSprites.Add(i);
             disabledSprites.Add(0x4A);
@@ -2127,7 +2159,7 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
-                // Note: automatic flip-fallback for upside-down chain removed — 0x3D will not be specially replaced.
+                // Note: automatic flip-fallback for upside-down chain removed � 0x3D will not be specially replaced.
                 
                 // Apply the reloaded tints
                 UpdateParallaxTint();
@@ -2286,6 +2318,15 @@ namespace FamidashEditor
     // Optional death marker (red X) placed by simulator when a death occurs
     private Shapes.Line? playerDeathMarkerA = null;
     private Shapes.Line? playerDeathMarkerB = null;
+    // START POS marker (green rectangle) - player spawns here when set
+    private System.Windows.UIElement? startPosMarker = null;
+    private int? startPosMarkerX = null; // World pixel X
+    private int? startPosMarkerY = null; // World pixel Y
+    
+    // Public accessors for START POS marker
+    public int? StartPosMarkerX { get { return startPosMarkerX; } }
+    public int? StartPosMarkerY { get { return startPosMarkerY; } }
+    
     // Preview mode for animations (saws, etc.)
     private bool previewMode = false;
     private int animationFrame = 0; // Increments each frame, used to determine animation states
@@ -3424,6 +3465,18 @@ namespace FamidashEditor
                 }
                 catch { }
             };
+            if (MenuToolStartPos != null) MenuToolStartPos.Click += (s, e) => {
+                try
+                {
+                    var startPosBtn = FindName("StartPosTool") as ToggleButton;
+                    if (startPosBtn != null)
+                    {
+                        startPosBtn.IsChecked = true;
+                        try { Tool_Checked(startPosBtn, new RoutedEventArgs()); } catch { }
+                    }
+                }
+                catch { }
+            };
             if (MenuToolReplaceSelected != null) MenuToolReplaceSelected.Click += (s, e) => {
                 try
                 {
@@ -3913,6 +3966,8 @@ namespace FamidashEditor
             if (MagicWandTool != null) MagicWandTool.Checked += Tool_Checked;
             // Ensure StructureTool participates in exclusive tool logic
             try { var structBtn = FindName("StructureTool") as ToggleButton; if (structBtn != null) structBtn.Checked += Tool_Checked; } catch { }
+            // START POS tool
+            try { var startPosBtn = FindName("StartPosTool") as ToggleButton; if (startPosBtn != null) startPosBtn.Checked += Tool_Checked; } catch { }
             // keyboard shortcuts for undo/redo
             this.PreviewKeyDown += MainWindow_PreviewKeyDown;
             // Handle key up for stopping continuous Shift+arrow scrolling
@@ -4458,7 +4513,7 @@ namespace FamidashEditor
 
                 // Only clear tinted sprite caches and rebuild sprites when in preview mode.
                 // When not in preview mode, rebuilding sprites on every hover causes visible
-                // flicker — avoid that and only apply sprite cache changes when the user
+                // flicker � avoid that and only apply sprite cache changes when the user
                 // confirms the color (or when preview mode is active).
                 if (previewMode)
                 {
@@ -5202,12 +5257,12 @@ namespace FamidashEditor
                 }
                 
                 // Determine which orb color and map to custom index range
-                // Yellow: 2000-2011 (3 sprites × 4 frames)
-                // Blue:   2012-2015 (1 sprite × 4 frames)
-                // Pink:   2016-2019 (1 sprite × 4 frames)
-                // Green:  2020-2023 (1 sprite × 4 frames)
-                // Red:    2024-2027 (1 sprite × 4 frames)
-                // Black:  2028-2031 (1 sprite × 4 frames)
+                // Yellow: 2000-2011 (3 sprites � 4 frames)
+                // Blue:   2012-2015 (1 sprite � 4 frames)
+                // Pink:   2016-2019 (1 sprite � 4 frames)
+                // Green:  2020-2023 (1 sprite � 4 frames)
+                // Red:    2024-2027 (1 sprite � 4 frames)
+                // Black:  2028-2031 (1 sprite � 4 frames)
                 
                 // Mini-coin handled here as its own 4-frame animation (custom indices 2400-2403)
                 if (isMiniCoin)
@@ -5241,13 +5296,13 @@ namespace FamidashEditor
                 }
                 else if (isCoin)
                 {
-                    // Coins: 2064-2075 (3 sprites × 4 frames)
+                    // Coins: 2064-2075 (3 sprites � 4 frames)
                     int spriteOffset = (originalIndex == 0x07) ? 0 : (originalIndex == 0x1A) ? 1 : 2;
                     return 2064 + (frame * 3) + spriteOffset;
                 }
                 else if (isWhiteOrb)
                 {
-                    // White orb: 2076-2079 (1 sprite × 4 frames)
+                    // White orb: 2076-2079 (1 sprite � 4 frames)
                     return 2076 + frame;
                 }
                 else if (isPad)
@@ -5386,12 +5441,12 @@ namespace FamidashEditor
             // 3003: UFO portal (0x03)
             // 3004: Robot portal (0x04)
             // 3005: Wave portal (0x24)
-            // Yellow orb sprites: 2000-2011 (3 sprites × 4 frames)
-            // Blue orb: 2012-2015 (1 sprite × 4 frames)
-            // Pink orb: 2016-2019 (1 sprite × 4 frames)
-            // Green orb: 2020-2023 (1 sprite × 4 frames)
-            // Red orb: 2024-2027 (1 sprite × 4 frames)
-            // Black orb: 2028-2031 (1 sprite × 4 frames)
+            // Yellow orb sprites: 2000-2011 (3 sprites � 4 frames)
+            // Blue orb: 2012-2015 (1 sprite � 4 frames)
+            // Pink orb: 2016-2019 (1 sprite � 4 frames)
+            // Green orb: 2020-2023 (1 sprite � 4 frames)
+            // Red orb: 2024-2027 (1 sprite � 4 frames)
+            // Black orb: 2028-2031 (1 sprite � 4 frames)
             
             if (customIndex == 3000) return cubePortalSprite;
             if (customIndex == 3001) return shipPortalSprite;
@@ -5631,7 +5686,7 @@ namespace FamidashEditor
             }
             else if (customIndex >= 2064 && customIndex <= 2075)
             {
-                // Coins: 3 sprites × 4 frames (2064-2075)
+                // Coins: 3 sprites � 4 frames (2064-2075)
                 int frameAndSpriteIndex = customIndex - 2064; // 0-11
                 int frame = frameAndSpriteIndex / 3; // 0-3
                 int spriteOffset = frameAndSpriteIndex % 3; // 0-2 (which coin sprite)
@@ -5677,7 +5732,7 @@ namespace FamidashEditor
                 };
             }
 
-            // Dash orb 2-frame slow animations: 2080-2099 (10 sprites × 2 frames)
+            // Dash orb 2-frame slow animations: 2080-2099 (10 sprites � 2 frames)
             if (customIndex >= 2080 && customIndex <= 2099)
             {
                 switch (customIndex)
@@ -5706,7 +5761,7 @@ namespace FamidashEditor
                 }
             }
 
-            // Teleport orb 2-frame animations: 2100-2103 (2 sprites × 2 frames)
+            // Teleport orb 2-frame animations: 2100-2103 (2 sprites � 2 frames)
             if (customIndex >= 2100 && customIndex <= 2103)
             {
                 switch (customIndex)
@@ -5718,7 +5773,7 @@ namespace FamidashEditor
                     default: return null;
                 }
             }
-            // Spider orb 2-frame animations: 2104-2107 (2 sprites × 2 frames)
+            // Spider orb 2-frame animations: 2104-2107 (2 sprites � 2 frames)
             if (customIndex >= 2104 && customIndex <= 2107)
             {
                 switch (customIndex)
@@ -6008,13 +6063,13 @@ namespace FamidashEditor
                     sawFrame2Tiles[2] = new CroppedBitmap(frame2Full, new Int32Rect(0, 16, 16, 16));
                     sawFrame2Tiles[3] = new CroppedBitmap(frame2Full, new Int32Rect(16, 16, 16, 16));
                     
-                    System.Diagnostics.Debug.WriteLine($"✓ Loaded saw animation frames");
+                    System.Diagnostics.Debug.WriteLine($"? Loaded saw animation frames");
                     System.Diagnostics.Debug.WriteLine($"  Frame 1: {frame1Full.PixelWidth}x{frame1Full.PixelHeight}");
                     System.Diagnostics.Debug.WriteLine($"  Frame 2: {frame2Full.PixelWidth}x{frame2Full.PixelHeight}");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"✗ Saw frame files not found");
+                    System.Diagnostics.Debug.WriteLine($"? Saw frame files not found");
                 }
                 
                 // Load small saw frames
@@ -6063,9 +6118,9 @@ namespace FamidashEditor
                     System.Diagnostics.Debug.WriteLine($"Small saw frames dimensions: Frame1={smallFrame1Full.PixelWidth}x{smallFrame1Full.PixelHeight}, Frame2={smallFrame2Full.PixelWidth}x{smallFrame2Full.PixelHeight}");
                     
                     // Each small saw tile (split HORIZONTALLY - top and bottom halves):
-                    // 0x04: Bottom half of saw (16px wide × 8px tall, from y=8)
-                    // 0x7F: Top half of saw (16px wide × 8px tall, from y=0)
-                    // 0x7D: Full centered small saw (16px wide × 16px tall)
+                    // 0x04: Bottom half of saw (16px wide � 8px tall, from y=8)
+                    // 0x7F: Top half of saw (16px wide � 8px tall, from y=0)
+                    // 0x7D: Full centered small saw (16px wide � 16px tall)
                     smallSawFrame1Tiles[0] = new CroppedBitmap(smallFrame1Full, new Int32Rect(0, 8, 16, 8));    // 0x04 - bottom half
                     smallSawFrame1Tiles[1] = new CroppedBitmap(smallFrame1Full, new Int32Rect(0, 0, 16, 16));   // 0x7D - full saw
                     smallSawFrame1Tiles[2] = new CroppedBitmap(smallFrame1Full, new Int32Rect(0, 0, 16, 8));    // 0x7F - top half
@@ -6074,13 +6129,13 @@ namespace FamidashEditor
                     smallSawFrame2Tiles[1] = new CroppedBitmap(smallFrame2Full, new Int32Rect(0, 0, 16, 16));   // 0x7D - full saw
                     smallSawFrame2Tiles[2] = new CroppedBitmap(smallFrame2Full, new Int32Rect(0, 0, 16, 8));    // 0x7F - top half
                     
-                    System.Diagnostics.Debug.WriteLine($"✓ Loaded small saw animation frames");
+                    System.Diagnostics.Debug.WriteLine($"? Loaded small saw animation frames");
                     System.Diagnostics.Debug.WriteLine($"  Small Frame 1: {smallFrame1Full.PixelWidth}x{smallFrame1Full.PixelHeight}");
                     System.Diagnostics.Debug.WriteLine($"  Small Frame 2: {smallFrame2Full.PixelWidth}x{smallFrame2Full.PixelHeight}");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"✗ Small saw frame files not found");
+                    System.Diagnostics.Debug.WriteLine($"? Small saw frame files not found");
                 }
                 
                 // Load large saw frames (3x3 grid = 9 tiles for 0x74-0x7C)
@@ -6140,13 +6195,13 @@ namespace FamidashEditor
                         }
                     }
                     
-                    System.Diagnostics.Debug.WriteLine($"✓ Loaded large saw animation frames (9 tiles)");
+                    System.Diagnostics.Debug.WriteLine($"? Loaded large saw animation frames (9 tiles)");
                     System.Diagnostics.Debug.WriteLine($"  Large Frame 1: {largeFrame1Full.PixelWidth}x{largeFrame1Full.PixelHeight}");
                     System.Diagnostics.Debug.WriteLine($"  Large Frame 2: {largeFrame2Full.PixelWidth}x{largeFrame2Full.PixelHeight}");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"✗ Large saw frame files not found");
+                    System.Diagnostics.Debug.WriteLine($"? Large saw frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6200,12 +6255,12 @@ namespace FamidashEditor
                     if (portal != null)
                     {
                         var converted = new FormatConvertedBitmap(portal, PixelFormats.Pbgra32, null, 0);
-                        System.Diagnostics.Debug.WriteLine($"✓ Loaded {filename}: {portal.PixelWidth}x{portal.PixelHeight}");
+                        System.Diagnostics.Debug.WriteLine($"? Loaded {filename}: {portal.PixelWidth}x{portal.PixelHeight}");
                         return converted;
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine($"✗ {filename} not found");
+                        System.Diagnostics.Debug.WriteLine($"? {filename} not found");
                         return null;
                     }
                 }
@@ -6402,11 +6457,11 @@ namespace FamidashEditor
                         frame4[i] = converted4;
                     }
                     
-                    System.Diagnostics.Debug.WriteLine($"✓ Loaded {colorName} orb animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine($"? Loaded {colorName} orb animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"✗ {colorName} orb frame files not found");
+                    System.Diagnostics.Debug.WriteLine($"? {colorName} orb frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6446,11 +6501,11 @@ namespace FamidashEditor
                         frame4[i] = converted4;
                     }
 
-                    System.Diagnostics.Debug.WriteLine("✓ Loaded coin animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine("? Loaded coin animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✗ coin frame files not found");
+                    System.Diagnostics.Debug.WriteLine("? coin frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6495,11 +6550,11 @@ namespace FamidashEditor
                     miniCoinFrame3[0] = c3;
                     miniCoinFrame4[0] = c4;
 
-                    System.Diagnostics.Debug.WriteLine("✓ Loaded mini-coin animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine("? Loaded mini-coin animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✗ mini-coin frame files not found");
+                    System.Diagnostics.Debug.WriteLine("? mini-coin frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6554,11 +6609,11 @@ namespace FamidashEditor
                     redPadFrame3[0] = converted3;
                     redPadFrame4[0] = converted4;
 
-                    System.Diagnostics.Debug.WriteLine("✓ Loaded red pad animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine("? Loaded red pad animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✗ red pad frame files not found");
+                    System.Diagnostics.Debug.WriteLine("? red pad frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6593,11 +6648,11 @@ namespace FamidashEditor
                     redPadUpFrame3[0] = converted3;
                     redPadUpFrame4[0] = converted4;
 
-                    System.Diagnostics.Debug.WriteLine("✓ Loaded red pad (up) animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine("? Loaded red pad (up) animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✗ red pad (up) frame files not found");
+                    System.Diagnostics.Debug.WriteLine("? red pad (up) frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6632,11 +6687,11 @@ namespace FamidashEditor
                     yellowPadDownFrame3[0] = converted3;
                     yellowPadDownFrame4[0] = converted4;
 
-                    System.Diagnostics.Debug.WriteLine("✓ Loaded yellow pad (down) animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine("? Loaded yellow pad (down) animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✗ yellow pad (down) frame files not found");
+                    System.Diagnostics.Debug.WriteLine("? yellow pad (down) frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6671,11 +6726,11 @@ namespace FamidashEditor
                     yellowPadUpFrame3[0] = converted3;
                     yellowPadUpFrame4[0] = converted4;
 
-                    System.Diagnostics.Debug.WriteLine("✓ Loaded yellow pad (up) animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine("? Loaded yellow pad (up) animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✗ yellow pad (up) frame files not found");
+                    System.Diagnostics.Debug.WriteLine("? yellow pad (up) frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6710,11 +6765,11 @@ namespace FamidashEditor
                     bluePadDownFrame3[0] = converted3;
                     bluePadDownFrame4[0] = converted4;
 
-                    System.Diagnostics.Debug.WriteLine("✓ Loaded blue pad (down) animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine("? Loaded blue pad (down) animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✗ blue pad (down) frame files not found");
+                    System.Diagnostics.Debug.WriteLine("? blue pad (down) frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6749,11 +6804,11 @@ namespace FamidashEditor
                     bluePadUpFrame3[0] = converted3;
                     bluePadUpFrame4[0] = converted4;
 
-                    System.Diagnostics.Debug.WriteLine("✓ Loaded blue pad (up) animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine("? Loaded blue pad (up) animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✗ blue pad (up) frame files not found");
+                    System.Diagnostics.Debug.WriteLine("? blue pad (up) frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6788,11 +6843,11 @@ namespace FamidashEditor
                     pinkPadDownFrame3[0] = converted3;
                     pinkPadDownFrame4[0] = converted4;
 
-                    System.Diagnostics.Debug.WriteLine("✓ Loaded pink pad (down) animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine("? Loaded pink pad (down) animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✗ pink pad (down) frame files not found");
+                    System.Diagnostics.Debug.WriteLine("? pink pad (down) frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6827,11 +6882,11 @@ namespace FamidashEditor
                     pinkPadUpFrame3[0] = converted3;
                     pinkPadUpFrame4[0] = converted4;
 
-                    System.Diagnostics.Debug.WriteLine("✓ Loaded pink pad (up) animation frames (4 frames)");
+                    System.Diagnostics.Debug.WriteLine("? Loaded pink pad (up) animation frames (4 frames)");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("✗ pink pad (up) frame files not found");
+                    System.Diagnostics.Debug.WriteLine("? pink pad (up) frame files not found");
                 }
             }
             catch (Exception ex)
@@ -6863,7 +6918,7 @@ namespace FamidashEditor
                     frame1[0] = converted1;
                     frame2[0] = converted2;
 
-                    System.Diagnostics.Debug.WriteLine($"✓ Loaded two-frame orb: {baseName} (2 frames)");
+                    System.Diagnostics.Debug.WriteLine($"? Loaded two-frame orb: {baseName} (2 frames)");
                     return;
                 }
 
@@ -6890,11 +6945,11 @@ namespace FamidashEditor
                     frame1[0] = new FormatConvertedBitmap(bi1, PixelFormats.Pbgra32, null, 0);
                     frame2[0] = new FormatConvertedBitmap(bi2, PixelFormats.Pbgra32, null, 0);
 
-                    System.Diagnostics.Debug.WriteLine($"✓ Loaded two-frame orb from files: {baseName}");
+                    System.Diagnostics.Debug.WriteLine($"? Loaded two-frame orb from files: {baseName}");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"✗ Two-frame orb files not found: {baseName}");
+                    System.Diagnostics.Debug.WriteLine($"? Two-frame orb files not found: {baseName}");
                 }
             }
             catch (Exception ex)
@@ -7322,7 +7377,7 @@ namespace FamidashEditor
                 };
                 var newCloseButton = new Button
                 {
-                    Content = "×",
+                    Content = "�",
                     Width = 16,
                     Height = 16,
                     Padding = new Thickness(0),
@@ -7465,7 +7520,7 @@ namespace FamidashEditor
             };
             var closeButton = new Button
             {
-                Content = "×",
+                Content = "�",
                 Width = 16,
                 Height = 16,
                 Padding = new Thickness(0),
@@ -8005,6 +8060,8 @@ namespace FamidashEditor
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
                     sim.Owner = this;
+                    // Apply START POS marker position now that Owner is set
+                    try { sim.ApplyStartPosMarker(); } catch { }
                     // Force an initial render while the simulator is still paused so
                     // starting background/ground tints are applied to the cached tile layer
                     // before the window becomes visible.
@@ -8081,6 +8138,175 @@ namespace FamidashEditor
             catch { }
         }
 
+        // Check if music is currently paused
+        public bool IsMusicPaused()
+        {
+            try
+            {
+                return famiIntegration != null && famiIntegration.IsPaused;
+            }
+            catch { return false; }
+        }
+
+        // Check if music is currently playing
+        public bool IsMusicPlaying()
+        {
+            try
+            {
+                return famiIntegration != null && famiIntegration.IsPlaying;
+            }
+            catch { return false; }
+        }
+
+        // Force start playback even if paused (used for initial start with START POS)
+        public async System.Threading.Tasks.Task ForceStartSimulatorPlaybackAsync()
+        {
+            try
+            {
+                if (famiIntegration == null) return;
+                
+                int playIdx = -1;
+                if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t) playIdx = t;
+                else if (FamiTrackCombo?.SelectedIndex >= 0) playIdx = FamiTrackCombo.SelectedIndex;
+
+                if (string.IsNullOrEmpty(albumTxtPath) || playIdx < 0) return;
+
+                _ = System.Threading.Tasks.Task.Run(() => famiIntegration.PlayTrack(albumTxtPath, playIdx));
+                
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (!famiIntegration.IsPlaying && sw.ElapsedMilliseconds < 1500)
+                {
+                    await System.Threading.Tasks.Task.Delay(8).ConfigureAwait(false);
+                }
+            }
+            catch { }
+        }
+        
+        // Start playback and seek to position immediately (before music actually starts playing)
+        public async System.Threading.Tasks.Task ForceStartAndSeekSimulatorPlaybackAsync(double seekSeconds)
+        {
+            try
+            {
+                if (famiIntegration == null) return;
+                
+                int playIdx = -1;
+                if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Tag is int t) playIdx = t;
+                else if (FamiTrackCombo?.SelectedIndex >= 0) playIdx = FamiTrackCombo.SelectedIndex;
+
+                if (string.IsNullOrEmpty(albumTxtPath) || playIdx < 0) return;
+
+                // Start playback
+                _ = System.Threading.Tasks.Task.Run(() => famiIntegration.PlayTrack(albumTxtPath, playIdx));
+                
+                // Wait minimal time for playback to initialize
+                await System.Threading.Tasks.Task.Delay(8).ConfigureAwait(false);
+                
+                // Pause immediately to prevent audio from playing before seek
+                try { famiIntegration.Pause(); } catch { }
+                
+                // Wait for pause to take effect
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (famiIntegration.IsPlaying && !famiIntegration.IsPaused && sw.ElapsedMilliseconds < 200)
+                {
+                    await System.Threading.Tasks.Task.Delay(8).ConfigureAwait(false);
+                }
+                
+                // Seek to the desired position while paused
+                try { famiIntegration.SeekToPosition(seekSeconds); } catch { }
+                await System.Threading.Tasks.Task.Delay(8).ConfigureAwait(false);
+                
+                // Resume playback from the seeked position
+                try { famiIntegration.Resume(); } catch { }
+                
+                // Wait for it to be playing at the correct position
+                sw.Restart();
+                while (!famiIntegration.IsPlaying && sw.ElapsedMilliseconds < 1500)
+                {
+                    await System.Threading.Tasks.Task.Delay(8).ConfigureAwait(false);
+                }
+            }
+            catch { }
+        }
+        
+        // Stop music playback (used for restart button)
+        public void StopSimulatorPlayback()
+        {
+            try
+            {
+                if (famiIntegration == null) return;
+                try { famiIntegration.Stop(); } catch { }
+            }
+            catch { }
+        }
+        
+        // Stop music playback and wait for it to actually stop
+        public async System.Threading.Tasks.Task StopSimulatorPlaybackAsync()
+        {
+            try
+            {
+                if (famiIntegration == null) return;
+                try { famiIntegration.Stop(); } catch { }
+                
+                // Wait longer to ensure stop command is fully processed
+                await System.Threading.Tasks.Task.Delay(150).ConfigureAwait(false);
+                
+                // Verify it actually stopped (up to 500ms total)
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while ((famiIntegration.IsPlaying || famiIntegration.IsPaused) && sw.ElapsedMilliseconds < 350)
+                {
+                    // Force stop again if still playing
+                    try { famiIntegration.Stop(); } catch { }
+                    await System.Threading.Tasks.Task.Delay(50).ConfigureAwait(false);
+                }
+            }
+            catch { }
+        }
+
+        // Seek to a specific time position (in seconds) in the currently playing track
+        public void SeekSimulatorPlayback(double seconds)
+        {
+            try
+            {
+                if (famiIntegration == null) return;
+                try { _ = System.Threading.Tasks.Task.Run(() => famiIntegration.SeekToPosition(seconds)); } catch { }
+            }
+            catch { }
+        }
+
+        // Synchronous version that waits for seek to complete
+        public void SeekSimulatorPlaybackSync(double seconds)
+        {
+            try
+            {
+                if (famiIntegration == null) return;
+                try { famiIntegration.SeekToPosition(seconds); } catch { }
+                // Delay to ensure seek completes before continuing
+                System.Threading.Thread.Sleep(150);
+            }
+            catch { }
+        }
+
+        // Resume paused playback without seeking
+        public async System.Threading.Tasks.Task ResumeSimulatorPlaybackAsync()
+        {
+            try
+            {
+                if (famiIntegration == null) return;
+                if (famiIntegration.IsPlaying) return;
+                if (famiIntegration.IsPaused)
+                {
+                    try { _ = System.Threading.Tasks.Task.Run(() => famiIntegration.Resume()); } catch { }
+                    // Wait for playback to actually start before returning
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    while (!famiIntegration.IsPlaying && sw.ElapsedMilliseconds < 1500)
+                    {
+                        await System.Threading.Tasks.Task.Delay(8).ConfigureAwait(false);
+                    }
+                }
+            }
+            catch { }
+        }
+
         // Called by simulator to request a playback rate multiplier (e.g. 2.0 for 2x)
         // Previously allowed the simulator to request audio playback-rate changes.
         // Reverted to no-op so simulator key presses do not affect music.
@@ -8101,10 +8327,9 @@ namespace FamidashEditor
             {
                 if (famiIntegration == null) return;
                 if (famiIntegration.IsPlaying) return;
-                // If playback is paused, prefer resuming instead of restarting the song
+                // If playback is paused, do nothing - caller should use ResumeSimulatorPlaybackAsync
                 if (famiIntegration.IsPaused)
                 {
-                    try { _ = System.Threading.Tasks.Task.Run(() => famiIntegration.Resume()); } catch { }
                     return;
                 }
 
@@ -8690,6 +8915,10 @@ namespace FamidashEditor
                 if (playerDeathMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerB);
                 playerDeathMarkerA = null;
                 playerDeathMarkerB = null;
+                if (startPosMarker != null && CanvasHost != null) CanvasHost.Children.Remove(startPosMarker);
+                startPosMarker = null;
+                startPosMarkerX = null;
+                startPosMarkerY = null;
             }
             catch { }
             
@@ -8742,7 +8971,7 @@ namespace FamidashEditor
                                     };
                                     var closeButton = new Button
                                     {
-                                        Content = "×",
+                                        Content = "�",
                                         Width = 16,
                                         Height = 16,
                                         Padding = new Thickness(0),
@@ -8899,7 +9128,7 @@ namespace FamidashEditor
                                 };
                                 var closeButton = new Button
                                 {
-                                    Content = "×",
+                                    Content = "�",
                                     Width = 16,
                                     Height = 16,
                                     Padding = new Thickness(0),
@@ -10044,7 +10273,7 @@ namespace FamidashEditor
                                 famiIntegration.LoadFromFolder(famiStudioPath);
                             }
 
-                            // If we have loaded a precomputed mapping from disk, prefer it — do not override via
+                            // If we have loaded a precomputed mapping from disk, prefer it � do not override via
                             // in-process enumeration at play-time. This avoids mismatches when the runtime FamiStudio
                             // assemblies (on the target machine) differ from the source tool used to build mappings.
                             if (!mappingLoadedFromFile)
@@ -11253,7 +11482,7 @@ namespace FamidashEditor
             int[] displayOrder;
             if (tileboardPosition == "TOP" || tileboardPosition == "BOTTOM")
             {
-                // 16 columns × 16 rows = 256 tiles
+                // 16 columns � 16 rows = 256 tiles
                 // Original: row-major (0x00-0x0F in first row, 0x10-0x1F in second row, etc.)
                 // TOP/BOTTOM: column-major top-down (0x00 at top-left, 0x01 below it, ..., 0x0F at bottom-left, then 0x10 at top of second column)
                 displayOrder = new int[256];
@@ -12020,6 +12249,96 @@ namespace FamidashEditor
                         playerDeathMarkerA = lineA; playerDeathMarkerB = lineB;
                         Canvas.SetZIndex(lineA, 2001); Canvas.SetZIndex(lineB, 2001);
                         CanvasHost.Children.Add(lineA); CanvasHost.Children.Add(lineB);
+                    }
+                    catch { }
+                }));
+            }
+            catch { }
+        }
+
+        // START POS marker - place or clear
+        public void SetStartPosMarker(int? worldX_px, int? worldY_px)
+        {
+            try
+            {
+                Dispatcher?.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (CanvasHost == null) return;
+                        
+                        // Remove previous marker
+                        try { if (startPosMarker != null) CanvasHost.Children.Remove(startPosMarker); } catch { }
+                        startPosMarker = null;
+                        startPosMarkerX = null;
+                        startPosMarkerY = null;
+
+                        // If no position given, just clear
+                        if (!worldX_px.HasValue || !worldY_px.HasValue) return;
+
+                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                        double pad = mapViewportPadding;
+                        
+                        // Store exact top-left position (this is where player spawns)
+                        startPosMarkerX = worldX_px.Value;
+                        startPosMarkerY = worldY_px.Value;
+                        
+                        // Convert world pixel -> canvas coordinates
+                        double canvasX = pad + worldX_px.Value * scale;
+                        double canvasY = pad + (worldY_px.Value + (3 * TileSize)) * scale + gridRenderShiftY;
+
+                        // Square size matches player hitbox (16x16 scaled)
+                        double size = 16.0 * scale;
+                        
+                        // Create container for square + text
+                        var container = new System.Windows.Controls.Canvas();
+                        
+                        // Green square shape matching player dimensions
+                        var square = new Shapes.Rectangle()
+                        {
+                            Width = size,
+                            Height = size,
+                            Stroke = Brushes.LimeGreen,
+                            Fill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(80, 0, 255, 0)),
+                            StrokeThickness = Math.Max(2.0, 2.5 * scale),
+                            IsHitTestVisible = false
+                        };
+                        
+                        // Text label
+                        var textBlock = new System.Windows.Controls.TextBlock()
+                        {
+                            Text = "START POS",
+                            Foreground = Brushes.White,
+                            FontSize = Math.Max(9, 11 * scale),
+                            FontWeight = FontWeights.Bold,
+                            IsHitTestVisible = false
+                        };
+                        
+                        // Add outline effect to text for better visibility
+                        textBlock.Effect = new System.Windows.Media.Effects.DropShadowEffect()
+                        {
+                            Color = Colors.Black,
+                            BlurRadius = 3,
+                            ShadowDepth = 0,
+                            Opacity = 1
+                        };
+                        
+                        // Position text below square
+                        System.Windows.Controls.Canvas.SetLeft(square, 0);
+                        System.Windows.Controls.Canvas.SetTop(square, 0);
+                        System.Windows.Controls.Canvas.SetLeft(textBlock, -5);
+                        System.Windows.Controls.Canvas.SetTop(textBlock, size + 2);
+                        
+                        container.Children.Add(square);
+                        container.Children.Add(textBlock);
+                        
+                        // Position container at center point
+                        Canvas.SetLeft(container, canvasX);
+                        Canvas.SetTop(container, canvasY);
+                        
+                        startPosMarker = container;
+                        Canvas.SetZIndex(container, 2002);
+                        CanvasHost.Children.Add(container);
                     }
                     catch { }
                 }));
@@ -13236,13 +13555,13 @@ namespace FamidashEditor
                             portalDestY += scaledOffsetY;
                         }                                        if (portalIsMulti)
                                         {
-                                            // Standard tall portals (3000-3010) are 1.5 tiles × 3 tiles
+                                            // Standard tall portals (3000-3010) are 1.5 tiles � 3 tiles
                                             if (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3010)
                                             {
                                                 portalRenderWidth = (spritePixelW * 3) / 2;  // 1.5 tiles wide
                                                 portalRenderHeight = spritePixelH * 3;      // 3 tiles tall
                                             }
-                                            // Horizontal gravity portals (3011-3014 and 3019-3023) are 3 tiles × 2 tiles
+                                            // Horizontal gravity portals (3011-3014 and 3019-3023) are 3 tiles � 2 tiles
                                             else if ((portalAnimatedIdx >= 3011 && portalAnimatedIdx <= 3014) || (portalAnimatedIdx >= 3019 && portalAnimatedIdx <= 3023))
                                             {
                                                 portalRenderWidth = spritePixelW * 3;
@@ -13254,7 +13573,7 @@ namespace FamidashEditor
                                                 portalRenderWidth = Math.Min(cachedPixelWidth, (int)Math.Round(spritePixelW * (double)portalSprite.PixelWidth / (double)TileSize));
                                                 portalRenderHeight = spritePixelH * 2;
                                             }
-                                            // 2x preview (3026): 1.5 tiles wide × 2 tiles tall
+                                            // 2x preview (3026): 1.5 tiles wide � 2 tiles tall
                                             else if (portalAnimatedIdx == 3026)
                                             {
                                                 portalRenderWidth = (spritePixelW * 3) / 2;
@@ -13745,9 +14064,9 @@ namespace FamidashEditor
                         if (IsPortalSprite(idx))
                         {
                             // Determine portal bounds in tiles. Different portal types occupy different tile footprints:
-                            // - Standard tall portals: 1.5 tiles wide × 3 tiles tall  (covers ax..ax+1, ay..ay+2)
-                            // - Horizontal gravity portals: 3 tiles wide × 2 tiles tall (covers ax..ax+2, ay..ay+1)
-                            // - New dual/single portals (3015/3016): treat like standard tall portals (1.5×3)
+                            // - Standard tall portals: 1.5 tiles wide � 3 tiles tall  (covers ax..ax+1, ay..ay+2)
+                            // - Horizontal gravity portals: 3 tiles wide � 2 tiles tall (covers ax..ax+2, ay..ay+1)
+                            // - New dual/single portals (3015/3016): treat like standard tall portals (1.5�3)
                             int portalAnimatedIdx = GetAnimatedSpriteIndex(idx);
                             int px1 = ax;
                             int py1 = ay;
@@ -13760,7 +14079,7 @@ namespace FamidashEditor
                                 px2 = ax + 2; // 3 tiles wide
                                 py2 = ay + 1; // 2 tiles tall
                             }
-                            // New dual/single portals (3015/3016) should be treated as tall portals (1.5×3)
+                            // New dual/single portals (3015/3016) should be treated as tall portals (1.5�3)
                             else if (portalAnimatedIdx == 3015 || portalAnimatedIdx == 3016)
                             {
                                 px2 = ax + 1;
@@ -14766,13 +15085,13 @@ namespace FamidashEditor
             bool portalIsSpeed34 = (portalAnimatedIdx == 3027 || portalAnimatedIdx == 3028);
             if (portalIsMulti)
             {
-                // Standard tall portals (3000-3010) are 1.5 tiles × 3 tiles
+                // Standard tall portals (3000-3010) are 1.5 tiles � 3 tiles
                 if (portalAnimatedIdx >= 3000 && portalAnimatedIdx <= 3010)
                 {
                     renderWidth = (spritePixelW * 3) / 2; // 1.5 tiles wide
                     renderHeight = spritePixelH * 3;
                 }
-                // Horizontal gravity portals (3011-3014) are 3 tiles × 2 tiles
+                // Horizontal gravity portals (3011-3014) are 3 tiles � 2 tiles
                 else if (portalAnimatedIdx >= 3011 && portalAnimatedIdx <= 3014)
                 {
                     renderWidth = spritePixelW * 3;
@@ -14784,7 +15103,7 @@ namespace FamidashEditor
                     renderWidth = Math.Min(cachedPixelWidth, (int)Math.Round(spritePixelW * (double)srcWidth / (double)TileSize));
                     renderHeight = spritePixelH * 2;
                 }
-                // Horizontal teleport portals (3030-3033) are 3 tiles wide × 1.5 tiles tall
+                // Horizontal teleport portals (3030-3033) are 3 tiles wide � 1.5 tiles tall
                 else if (portalAnimatedIdx >= 3030 && portalAnimatedIdx <= 3033)
                 {
                     renderWidth = spritePixelW * 3; // 3 tiles wide
@@ -14804,7 +15123,7 @@ namespace FamidashEditor
                     renderWidth = spritePixelW; // single tile wide
                     renderHeight = spritePixelH * 2; // 2 tiles tall
                 }
-                // New dual/single portals (3015,3016): treat like standard tall portals (1.5×3)
+                // New dual/single portals (3015,3016): treat like standard tall portals (1.5�3)
                 else
                 {
                     renderWidth = (spritePixelW * 3) / 2;
@@ -14958,6 +15277,39 @@ namespace FamidashEditor
             catch { lastClickX = -1; lastClickY = -1; }
             hasMouseMoved = false;
             
+            // START POS tool: place marker at click position
+            var startPosTool = FindName("StartPosTool") as ToggleButton;
+            if (startPosTool != null && startPosTool.IsChecked == true)
+            {
+                try
+                {
+                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                    double pad = mapViewportPadding;
+                    
+                    // Convert canvas -> world pixels, centered on click (player is 16x16)
+                    int worldX = (int)((pos.X - pad) / scale) - 8;  // Center horizontally
+                    int worldY = (int)((pos.Y - pad - gridRenderShiftY) / scale) - (3 * TileSize) - 8;  // Center vertically
+                    
+                    // Clamp to map bounds
+                    if (worldX < 0) worldX = 0;
+                    if (worldY < 0) worldY = 0;
+                    int maxX = mapWidth * TileSize;
+                    int maxY = mapHeight * TileSize;
+                    if (worldX >= maxX - 16) worldX = maxX - 16;
+                    // Don't allow placement below the bottom of the grid (clamp to bottom tile row)
+                    if (worldY >= maxY - 16) worldY = maxY - 16;
+                    // Also prevent placing below grid floor
+                    int gridBottom = maxY - 16;
+                    if (worldY > gridBottom) worldY = gridBottom;
+                    
+                    // Allow placement anywhere (including inside blocks) - no validation
+                    
+                    SetStartPosMarker(worldX, worldY);
+                }
+                catch { }
+                return;
+            }
+            
             // Magic Wand tool: select connected region of same tile
             if (MagicWandTool != null && MagicWandTool.IsChecked == true)
             {
@@ -15008,7 +15360,7 @@ namespace FamidashEditor
                 foreach (var i in selectionSet) { int sx = i % mapWidth, sy = i / mapWidth; if (sx < minX) minX = sx; if (sy < minY) minY = sy; if (sx > maxX) maxX = sx; if (sy > maxY) maxY = sy; }
                 selX = minX; selY = minY; selW = maxX - minX + 1; selH = maxY - minY + 1;
 
-                // For very large selections avoid building selTiles/selSprites arrays immediately — defer and render raster overlay instead
+                // For very large selections avoid building selTiles/selSprites arrays immediately � defer and render raster overlay instead
                 if (selectionSet.Count > LargeSelectionThreshold)
                 {
                     selTiles = null; selSprites = null; selectionIsLarge = true;
@@ -15861,11 +16213,13 @@ namespace FamidashEditor
             if (tb == null) return;
 
             var lassoBtn = FindName("LassoTool") as ToggleButton;
+            var startPosBtn = FindName("StartPosTool") as ToggleButton;
             var all = new System.Collections.Generic.List<ToggleButton?> { PlaceTool, MoveTool, EraseTool, FillTool, SelectTool, MagicWandTool };
             if (lassoBtn != null) all.Add(lassoBtn);
             var structBtn = FindName("StructureTool") as ToggleButton;
             bool isStruct = (structBtn != null && tb == structBtn);
             if (structBtn != null) all.Add(structBtn);
+            if (startPosBtn != null) all.Add(startPosBtn);
 
             foreach (var t in all)
             {
@@ -15890,6 +16244,9 @@ namespace FamidashEditor
 
             var menuStructure = FindName("MenuToolStructure") as MenuItem;
             if (menuStructure != null) menuStructure.IsChecked = isStruct;
+            
+            var menuStartPos = FindName("MenuToolStartPos") as MenuItem;
+            if (menuStartPos != null) menuStartPos.IsChecked = (tb == startPosBtn);
 
             // Sync the toolbar dropdown select-mode menu items (small '+' menu beside Select)
             var menuSelectNormal = FindName("Menu_Select_Normal") as MenuItem;
@@ -17778,7 +18135,7 @@ namespace FamidashEditor
                     int srcIdx = (startY + sy) * mapWidth + (startX + sx);
                     bool srcSelected = (selectionSet == null || selectionSet.Count == 0) || selectionSet.Contains(srcIdx);
                     if (!srcSelected) continue;
-                    // Rotate 90° CW: dst_x = (oldH-1) - src_y, dst_y = src_x
+                    // Rotate 90� CW: dst_x = (oldH-1) - src_y, dst_y = src_x
                     int dx = (oldH - 1) - sy; int dy = sx;
                     if (dx >=0 && dx < newW && dy >=0 && dy < newH) { newTiles[dx,dy] = oldTiles[sx,sy]; newSprites[dx,dy] = oldSprites[sx,sy]; }
                 }
@@ -17793,7 +18150,7 @@ namespace FamidashEditor
                     int srcIdx = (startY + sy) * mapWidth + (startX + sx);
                     bool srcSelected = (selectionSet == null || selectionSet.Count == 0) || selectionSet.Contains(srcIdx);
                     if (!srcSelected) continue;
-                    // Rotate 90° CCW: dst_x = src_y, dst_y = (oldW-1) - src_x
+                    // Rotate 90� CCW: dst_x = src_y, dst_y = (oldW-1) - src_x
                     int dx = sy; int dy = (oldW - 1) - sx;
                     if (dx >=0 && dx < newW && dy >=0 && dy < newH) { newTiles[dx,dy] = oldTiles[sx,sy]; newSprites[dx,dy] = oldSprites[sx,sy]; }
                 }
@@ -18749,7 +19106,7 @@ namespace FamidashEditor
                                 // When preserving offsets (Shift-drag), always keep the sprite in its
                                 // original storage index and record a pixel offset so it visually
                                 // moves. This makes placement permissive (allow overlaps) because
-                                // we're not moving anchors/storage slots — only adding shift data.
+                                // we're not moving anchors/storage slots � only adding shift data.
                                 if (preserveOffsets)
                                 {
                                     int srcTileX = selX + xx; int srcTileY = selY + yy;
@@ -19564,8 +19921,11 @@ namespace FamidashEditor
             {
                 if (HoverRect != null)
                 {
-                    // Don't show hover during drag
-                    if (inBounds && !isDraggingSelection)
+                    // Don't show hover during drag or when START POS tool is active
+                    var startPosTool = FindName("StartPosTool") as ToggleButton;
+                    bool startPosActive = startPosTool != null && startPosTool.IsChecked == true;
+                    
+                    if (inBounds && !isDraggingSelection && !startPosActive)
                     {
                         var dpi = VisualTreeHelper.GetDpi(this);
                         // Use same integer-pixel math as grid: compute tile pixel size and pad in pixels

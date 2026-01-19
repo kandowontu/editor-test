@@ -45,6 +45,7 @@ namespace FamidashEditor
             {
                 if (output != null && output.PlaybackState == PlaybackState.Paused)
                 {
+                    output.Volume = 1f;
                     output.Play();
                 }
             }
@@ -555,6 +556,7 @@ namespace FamidashEditor
                 }
             };
 
+            output.Volume = 1f;
             output.Play();
         }
 
@@ -607,6 +609,7 @@ namespace FamidashEditor
                 }
             };
 
+            output.Volume = 1f;
             output.Play();
         }
 
@@ -616,10 +619,33 @@ namespace FamidashEditor
             {
                 try
                 {
-                    output?.Stop();
-                    reader?.Dispose();
-                    output?.Dispose();
-                    reader = null; output = null;
+                    // Mute and stop immediately for instant silence
+                    if (output != null)
+                    {
+                        try 
+                        { 
+                            // Set volume to 0 for immediate silence
+                            output.Volume = 0f;
+                            
+                            // Stop playback
+                            if (output.PlaybackState != PlaybackState.Stopped)
+                            {
+                                output.Stop();
+                            }
+                        } 
+                        catch { }
+                        
+                        // Force dispose
+                        try { output.Dispose(); } catch { }
+                    }
+                    
+                    // Dispose reader
+                    try { reader?.Dispose(); } catch { }
+                    
+                    // Clear references
+                    reader = null; 
+                    output = null;
+                    currentPlayingPath = null;
                 }
                 catch { }
                 try { if (lastTempWav != null && File.Exists(lastTempWav)) File.Delete(lastTempWav); } catch { }
@@ -740,6 +766,37 @@ namespace FamidashEditor
 
         // Request a playback rate multiplier (e.g. 2.0 for 2x).
         // Reverted to a safe no-op that only records the desired rate but does not modify playback.
+        // Seek to a specific time position (in seconds) in the currently playing track
+        public void SeekToPosition(double seconds)
+        {
+            try
+            {
+                lock (playLock)
+                {
+                    if (reader == null) return;
+                    
+                    try
+                    {
+                        if (reader is AudioFileReader afr)
+                        {
+                            afr.CurrentTime = TimeSpan.FromSeconds(seconds);
+                        }
+                        else
+                        {
+                            // Fallback for non-AudioFileReader streams
+                            long bytePosition = (long)(seconds * reader.WaveFormat.AverageBytesPerSecond);
+                            if (reader.CanSeek && bytePosition >= 0 && bytePosition < reader.Length)
+                            {
+                                reader.Position = bytePosition;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
         public void SetPlaybackRate(double rate)
         {
             try
@@ -811,6 +868,7 @@ namespace FamidashEditor
                             try { output.Init(reader); } catch { }
                         }
 
+                        output.Volume = 1f;
                         output.Play();
                     }
                     catch { }

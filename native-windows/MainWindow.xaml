@@ -149,6 +149,8 @@
                     <MenuItem x:Name="MenuToolUndo" Header="_Undo" InputGestureText="Ctrl+Z" />
                     <MenuItem x:Name="MenuToolRedo" Header="_Redo" InputGestureText="Ctrl+Y" />
                     <Separator />
+                    <MenuItem x:Name="MenuToolStartPos" Header="START _POS Marker" IsCheckable="True" InputGestureText="P" />
+                    <Separator />
                     <MenuItem x:Name="MenuOpenSimulator" Header="Open _Simulator" InputGestureText="F5" />
                 </MenuItem>
                 <MenuItem Header="_Options">
@@ -280,6 +282,12 @@
                             <TextBlock Text="⤢" FontSize="12" Margin="2,0" />
                             <Image x:Name="StructureToolIcon" Width="16" Height="16" Margin="2,0" Visibility="Collapsed" />
                             <TextBlock Text="Structure" Margin="4,0" />
+                        </StackPanel>
+                    </ToggleButton>
+                    <ToggleButton x:Name="StartPosTool" Margin="2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="◆" FontSize="12" Margin="2,0" Foreground="LimeGreen" />
+                            <TextBlock Text="START POS" Margin="4,0" />
                         </StackPanel>
                     </ToggleButton>
                     <!-- Popup for selecting Structure sets A/B/C -->

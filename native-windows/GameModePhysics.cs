@@ -51,26 +51,49 @@ namespace FamidashEditor
         #endregion
 
         #region SHIP MODE
-        // SHIP_GRAVITY
+        // SHIP_GRAVITY - 60fps values (indices 4-7)
+        // [0x30, 0xD0, 0x39, 0xC7, 0x22, 0xDE, 0x27, 0xD9] (lo)
+        // [0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF] (hi)
         public static int SHIP_GRAVITY(int table_idx)
         {
-            bool mini = (table_idx & 4) != 0;
-            return mini ? 0x2C : 0x2A;
+            // For 60fps: use indices 4-7
+            // table_idx 0 = 60fps normal, 1 = 60fps inverted, 4 = 60fps mini normal, 5 = 60fps mini inverted
+            // Map to actual array indices 4, 5, 6, 7
+            int actualIdx = 4 + (table_idx & 3);
+            int[] values = { 0x30, unchecked((short)0xFFD0), 0x39, unchecked((short)0xFFC7), 0x22, unchecked((short)0xFFDE), 0x27, unchecked((short)0xFFD9) };
+            return values[actualIdx];
         }
 
-        // SHIP_MAX_FALLSPEED
+        // SHIP_MAX_FALLSPEED - 60fps values
+        // [0x69, 0x97, 0x03, 0xFD, 0xD7, 0x29, 0x57, 0xA9] (lo)
+        // [0x03, 0xFC, 0x04, 0xFB, 0x02, 0xFD, 0x03, 0xFC] (hi)
         public static int SHIP_MAX_FALLSPEED(int table_idx)
         {
-            return 0x380; // Same for normal and mini
+            int actualIdx = 4 + (table_idx & 3);
+            int[] values = { 0x0369, unchecked((short)0xFC97), 0x0403, unchecked((short)0xFBFD), 0x02D7, unchecked((short)0xFD29), 0x0357, unchecked((short)0xFCA9) };
+            return values[actualIdx];
         }
 
-        // Ship gravity variants (not indexed by table)
-        public const int SHIP_GRAVITY_BASE = 0x2A;
-        public const int MINI_SHIP_GRAVITY_BASE = 0x2C;
-        public const int SHIP_GRAVITY_AFTER_HOLD = 0x2A;
-        public const int MINI_SHIP_GRAVITY_AFTER_HOLD = 0x2C;
-        public const int SHIP_GRAVITY_HOLD_FALL = 0x2A;
-        public const int MINI_SHIP_GRAVITY_HOLD_FALL = 0x2C;
+        // SHIP_MAX_FALLSPEED_HOLD - 60fps values
+        // [0x43, 0xBD, 0x03, 0xFD, 0x8D, 0x73, 0x2D, 0xD3] (lo)
+        // [0x04, 0xFB, 0x05, 0xFA, 0x03, 0xFC, 0x04, 0xFB] (hi)
+        public static int SHIP_MAX_FALLSPEED_HOLD(int table_idx)
+        {
+            int actualIdx = 4 + (table_idx & 3);
+            int[] values = { 0x0443, unchecked((short)0xFBBD), 0x0503, unchecked((short)0xFAFD), 0x038D, unchecked((short)0xFC73), 0x042D, unchecked((short)0xFBD3) };
+            return values[actualIdx];
+        }
+
+        // Ship gravity variants - 60fps values (not inverted, use table lookup)
+        // SHIP_GRAVITY_BASE: [0x3C, 0xC4, 0x47, 0xB9, 0x2A, 0xD6, 0x31, 0xCF]
+        public const int SHIP_GRAVITY_BASE = 0x2A;           // Index 4: 60fps normal
+        public const int MINI_SHIP_GRAVITY_BASE = 0x31;      // Index 6: 60fps mini
+        // SHIP_GRAVITY_AFTER_HOLD: [0x49, 0xB7, 0x55, 0xAB, 0x32, 0xCE, 0x3B, 0xC5]
+        public const int SHIP_GRAVITY_AFTER_HOLD = 0x32;     // Index 4: 60fps normal
+        public const int MINI_SHIP_GRAVITY_AFTER_HOLD = 0x3B; // Index 6: 60fps mini
+        // SHIP_GRAVITY_HOLD_FALL: [0x4C, 0xB4, 0x59, 0xA7, 0x34, 0xCC, 0x3E, 0xC2]
+        public const int SHIP_GRAVITY_HOLD_FALL = 0x34;     // Index 4: 60fps normal
+        public const int MINI_SHIP_GRAVITY_HOLD_FALL = 0x3E; // Index 6: 60fps mini
         #endregion
 
         #region BALL MODE

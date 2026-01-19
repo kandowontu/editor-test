@@ -54,9 +54,9 @@ namespace FamidashEditor
                 // Check: gamemode == GAMEMODE_CUBE && currplayer_vel_y == 0 && dashing == 0
                 if (playerVelY_fixed == 0)
                 {
-                    // Read input
+                    // Read input - PEEK first, don't consume yet
                     bool holdJump = IsXDownAsync() || keyXHeld;
-                    int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
+                    int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                     bool pressJump = pressCount > 0;
                     
                     AppendSimDebug($"[CUBE] Input check: hold={holdJump}, press={pressJump}, pressCount={pressCount}");
@@ -73,6 +73,9 @@ namespace FamidashEditor
                     {
                         AppendSimDebug($"[CUBE] JUMP TRIGGERED!");
                         
+                        // Consume the press now that we're using it for jump
+                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                        
                         // Get base physics value (always from down-gravity index)
                         int baseTableIdx = (currplayer_mini != 0 ? 4 : 0);
                         bool gravityInverted = (currplayer_gravity != 0);
@@ -83,11 +86,66 @@ namespace FamidashEditor
                         playerVelY_fixed = jumpVel;
                         
                         AppendSimDebug($"[CUBE] Jump applied: table_idx={currplayer_table_idx}, jumpVel={jumpVel}, velY now = {playerVelY_fixed}");
+                        
+                        // Skip gravity application this frame (jump frame doesn't apply gravity or move position)
+                        // Next frame will apply gravity and update position
+                        UpdateOrbHoldSuppression(holdJump, isGrounded);
+                        
+                        // Record position without moving
+                        try
+                        {
+                            int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+                            bool isMini = (currplayer_mini != 0);
+                            bool gravityInv = (currplayer_gravity != 0);
+                            if (isMini && !gravityInv)
+                            {
+                                playerWorldCenterY_px += 8;
+                            }
+                            recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                        }
+                        catch { }
+                        
+                        return; // Exit early, don't apply gravity this frame
                     }
+                    
+                    // Update orb hold suppression (X hold from ground jump shouldn't activate orbs)
+                    UpdateOrbHoldSuppression(holdJump, isGrounded);
                 }
                 else
                 {
                     AppendSimDebug($"[CUBE] Cannot jump: velY={playerVelY_fixed} (must be 0)");
+                }
+                
+                // Check for orb activation (before gravity but after jump input)
+                {
+                    bool holdJump = IsXDownAsync() || keyXHeld;
+                    int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0); // Peek without consuming
+                    bool pressJump = pressCount > 0;
+                    bool gravityInverted = (currplayer_gravity != 0);
+                    int playerX_px = playerX_fixed >> 8;
+                    int playerY_px = playerY_fixed >> 8;
+                    int hitboxW = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
+                    int hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
+                    int scrollX_px = 0; // Cube mode doesn't scroll in this implementation
+                    
+                    int tempVelY = playerVelY_fixed;
+                    bool orbActivated = UpdateOrbSystem(0, playerX_px, playerY_px, hitboxW, hitboxH, 
+                                                       scrollX_px, pressJump, holdJump, gravityInverted, 
+                                                       (currplayer_mini != 0), ref tempVelY);
+                    if (orbActivated)
+                    {
+                        playerVelY_fixed = tempVelY;
+                        AppendSimDebug($"[CUBE] Orb activated! New velY={playerVelY_fixed}");
+                        
+                        // Consume the X press if it was used for orb
+                        if (pressJump)
+                            Interlocked.Exchange(ref keyXPressedCount, 0);
+                    }
+                    
+                    // Clear orb buffer when X is released
+                    if (!holdJump)
+                        ClearOrbBuffer();
                 }
                 
                 // Set physics values for CommonGravityRoutine
@@ -130,6 +188,15 @@ namespace FamidashEditor
                 {
                     int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                     int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+                    
+                    // Move path down 8 pixels when mini and gravity is normal
+                    bool isMini = (currplayer_mini != 0);
+                    bool gravityInverted = (currplayer_gravity != 0);
+                    if (isMini && !gravityInverted)
+                    {
+                        playerWorldCenterY_px += 8;
+                    }
+                    
                     recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
                 }
                 catch { }
@@ -286,20 +353,22 @@ namespace FamidashEditor
                     var (topCollided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
                     if (topCollided)
                     {
-                        // Check center pixel of player (both X and Y center)
-                        int centerX_px = collisionX + (hitboxW / 2);
-                        int centerY_px = collisionY + (hitboxH / 2);
+                        // Check right-side pixel of player (right edge horizontally, upper portion vertically)
+                        // Use right edge X, and Y + hitboxH/3 to catch COL_TOP (collision in top 8px)
+                        int rightX_px = collisionX + hitboxW - 1;  // Right edge of hitbox
+                        int upperY_px = collisionY + (hitboxH / 3);  // Upper third
                         int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                         
-                        bool centerPixelBlocked = CheckPixelCollision(centerX_px, centerY_px, groundRowsToReserve);
+                        bool rightPixelBlocked = CheckPixelCollision(rightX_px, upperY_px, groundRowsToReserve);
+                        AppendSimDebug($"[CUBE] Top collision check: rightX={rightX_px}, upperY={upperY_px}, blocked={rightPixelBlocked}, collisionY={collisionY}, hitboxH={hitboxH}");
                         
-                        if (centerPixelBlocked)
+                        if (rightPixelBlocked)
                         {
                             // Center pixel hit - DEATH
-                            AppendSimDebug($"[DEATH] Top center pixel collision at ({centerX_px},{centerY_px})");
+                            AppendSimDebug($"[DEATH] Top right pixel collision at ({rightX_px},{upperY_px})");
                             deathTriggered = true;
                             paused = true;
-                            StopMusic();
+                            _ = StopMusicAsync();
                             
                             try
                             {
@@ -309,7 +378,7 @@ namespace FamidashEditor
                                     if (this.Owner is MainWindow mw)
                                     {
                                         try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(centerX_px, centerY_px); } catch { }
+                                        try { mw.AddDeathMarker(rightX_px, upperY_px); } catch { }
                                     }
                                 }));
                             }
@@ -338,15 +407,18 @@ namespace FamidashEditor
             else
             {
                 // Reversed gravity: Top is for landing (always collide), bottom can passthrough
-                // Check upward collision for landing
-                var (collided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-                if (collided)
+                // Check upward collision for landing (only when moving toward ceiling or grounded)
+                if (playerVelY_fixed <= 0) // Moving toward ceiling or stationary
                 {
-                    // Snap player to rest position below the collision surface
-                    int newY = collisionBottomY - hitboxOffsetY;
-                    AppendSimDebug($"[CUBE]     Eject up: collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
-                    playerY_fixed = newY << 8;
-                    playerVelY_fixed = 0;
+                    var (collided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
+                    if (collided)
+                    {
+                        // Snap player to rest position below the collision surface
+                        int newY = collisionBottomY - hitboxOffsetY;
+                        AppendSimDebug($"[CUBE]     Eject up: collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
+                        playerY_fixed = newY << 8;
+                        playerVelY_fixed = 0;
+                    }
                 }
                 
                 // Reversed gravity: Check BOTTOM collision with passthrough/death for Cube/Robot/Ninja
@@ -355,20 +427,22 @@ namespace FamidashEditor
                     var (bottomCollided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
                     if (bottomCollided)
                     {
-                        // Check center pixel of player (both X and Y center)
-                        int centerX_px = collisionX + (hitboxW / 2);
-                        int centerY_px = collisionY + (hitboxH / 2);
+                        // Check right-side pixel of player (right edge horizontally, lower portion vertically)
+                        // Use right edge X, and Y + hitboxH*2/3 to catch COL_BOTTOM (collision in bottom 8px)
+                        int rightX_px = collisionX + hitboxW - 1;  // Right edge of hitbox
+                        int lowerY_px = collisionY + (hitboxH * 2 / 3);  // Lower two-thirds
                         int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                         
-                        bool centerPixelBlocked = CheckPixelCollision(centerX_px, centerY_px, groundRowsToReserve);
+                        bool rightPixelBlocked = CheckPixelCollision(rightX_px, lowerY_px, groundRowsToReserve);
+                        AppendSimDebug($"[CUBE] Bottom collision check: rightX={rightX_px}, lowerY={lowerY_px}, blocked={rightPixelBlocked}, collisionY={collisionY}, hitboxH={hitboxH}");
                         
-                        if (centerPixelBlocked)
+                        if (rightPixelBlocked)
                         {
                             // Center pixel hit - DEATH
-                            AppendSimDebug($"[DEATH] Bottom center pixel collision at ({centerX_px},{centerY_px})");
+                            AppendSimDebug($"[DEATH] Bottom right pixel collision at ({rightX_px},{lowerY_px})");
                             deathTriggered = true;
                             paused = true;
-                            StopMusic();
+                            _ = StopMusicAsync();
                             
                             try
                             {
@@ -378,7 +452,7 @@ namespace FamidashEditor
                                     if (this.Owner is MainWindow mw)
                                     {
                                         try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(centerX_px, centerY_px); } catch { }
+                                        try { mw.AddDeathMarker(rightX_px, lowerY_px); } catch { }
                                     }
                                 }));
                             }

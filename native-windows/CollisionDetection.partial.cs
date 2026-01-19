@@ -88,12 +88,44 @@ namespace FamidashEditor
                     return (8, 0, 16, 8);  // Top-right quadrant
                 
                 case MetatileCollision.COL_DOWN_LEFT:
+                case MetatileCollision.COL_DOWN_LEFT_SPIKE:
                 case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
                     return (0, 8, 8, 16);  // Bottom-left quadrant
                 
                 case MetatileCollision.COL_DOWN_RIGHT:
+                case MetatileCollision.COL_DOWN_RIGHT_SPIKE:
                 case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
                     return (8, 8, 16, 16); // Bottom-right quadrant
+                
+                // Top quadrant spikes (top half solid)
+                case MetatileCollision.COL_UP_LEFT_SPIKE:
+                    return (0, 0, 8, 8);   // Top-left quadrant
+                
+                case MetatileCollision.COL_UP_RIGHT_SPIKE:
+                    return (8, 0, 16, 8);  // Top-right quadrant
+                
+                // Both spikes (full width, half height)
+                case MetatileCollision.COL_UP_BOTH_SPIKES:
+                    return (0, 0, 16, 8);  // Top half (both top spikes)
+                
+                case MetatileCollision.COL_DOWN_BOTH_SPIKES:
+                    return (0, 8, 16, 16); // Bottom half (both bottom spikes)
+                
+                // Pure death tiles (NO solid collision, only death detection)
+                case MetatileCollision.COL_DEATH:
+                case MetatileCollision.COL_DEATH_TOP:
+                case MetatileCollision.COL_DEATH_BOTTOM:
+                case MetatileCollision.COL_DEATH_LEFT:
+                case MetatileCollision.COL_DEATH_RIGHT:
+                case MetatileCollision.COL_DEATH_TOP_RIGHT:
+                case MetatileCollision.COL_DEATH_TOP_LEFT:
+                case MetatileCollision.COL_DEATH_BOTTOM_RIGHT:
+                case MetatileCollision.COL_DEATH_BOTTOM_LEFT:
+                case MetatileCollision.COL_DEATH_TOP_RIGHT_LEFT:
+                case MetatileCollision.COL_DEATH_TOP_BOTTOM:
+                case MetatileCollision.COL_DEATH_LEFT_RIGHT:
+                case MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM:
+                    return (16, 16, 0, 0); // Invalid bounds = no solid collision, death handled separately
                 
                 // Complex shapes (L-shaped, diagonals) - return primary bounds, handle specially in Check functions
                 case MetatileCollision.COL_TOP_LEFT_STAIRS:
