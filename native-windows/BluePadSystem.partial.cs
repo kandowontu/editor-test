@@ -99,7 +99,7 @@ namespace FamidashEditor
                     }
                 }
             }
-            catch (Exception ex)
+            catch
             {
             }
         }

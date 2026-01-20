@@ -10,7 +10,7 @@ namespace FamidashEditor
             
             // Apply gravity
             int gravity = GameModePhysics.CUBE_GRAVITY(tableIdx);
-            int maxFallSpeed = GameModePhysics.CUBE_MAX_FALLSPEED(tableIdx);
+            int maxFallSpeed = GameModePhysics.CUBE_MAX_FALLSPEED(tableIdx, CUBE_MAX_FALLSPEED);
             
             ApplyGravity(gravity, maxFallSpeed);
             

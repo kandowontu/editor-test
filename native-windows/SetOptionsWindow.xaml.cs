@@ -417,8 +417,8 @@ namespace FamidashEditor
                 {
                     if (this.Owner is MainWindow mw && NoParallaxCheckBox != null)
                     {
-                        var opt = mw.MenuOptionNoParallax;
-                        originalNoParallax = (opt != null && opt.IsChecked == true);
+                        // Use public NoParallaxBg property instead of MenuOptionNoParallax
+                        originalNoParallax = mw.NoParallaxBg;
                         NoParallaxCheckBox.IsChecked = originalNoParallax;
                         // Note: No immediate handlers - changes applied only on OK
                     }
@@ -1611,20 +1611,10 @@ namespace FamidashEditor
                 }
                 if (!noParallax)
                 {
-                    // Try menu option control if available (MenuOptionNoParallax.IsChecked)
+                    // Use public NoParallaxBg property instead of MenuOptionNoParallax
                     try
                     {
-                        var menuObj = mainWindow.GetType().GetField("MenuOptionNoParallax", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(mainWindow)
-                                      ?? mainWindow.GetType().GetProperty("MenuOptionNoParallax", BindingFlags.Public | BindingFlags.Instance)?.GetValue(mainWindow);
-                        if (menuObj != null)
-                        {
-                            var isCheckedProp = menuObj.GetType().GetProperty("IsChecked");
-                            if (isCheckedProp != null)
-                            {
-                                var chk = isCheckedProp.GetValue(menuObj);
-                                if (chk is bool cb) noParallax = cb;
-                            }
-                        }
+                        noParallax = mainWindow.NoParallaxBg;
                     }
                     catch { }
                 }

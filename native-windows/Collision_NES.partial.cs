@@ -20,7 +20,9 @@ namespace FamidashEditor
         private byte collision = 0;  // Current tile collision type
         private int temp_x = 0;
         private int temp_y = 0;
+#pragma warning disable CS0414
         private int temp_room = 0;
+#pragma warning restore CS0414
         
         // Temp variables used in collision math
         private int tmp1 = 0;

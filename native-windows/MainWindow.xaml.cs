@@ -489,7 +489,9 @@ namespace FamidashEditor
     private bool suppressCollisionMessages = true;
     // Per-level option: replace parallax background with noparallax.bmp when true
     private bool noParallaxBg = false;
+#pragma warning disable CS0414
     private bool suppressNoParallaxHandler = false;
+#pragma warning restore CS0414
     private bool swapMouseWheelScroll = false; // when true, swap shift/no-modifier wheel scroll behavior
     private bool invertPinchGesture = true; // if true, invert pinch scale (device-dependent)
     private bool pinchDirectionDetected = false;
@@ -950,6 +952,10 @@ namespace FamidashEditor
         // writes of per-level upper/lower text into such tabs unless they are
         // explicitly converted to a file-backed tab.
         public bool CreatedAsUntitled { get; set; } = false;
+        
+        // START POS marker for this tab
+        public int? StartPosX { get; set; } = null;
+        public int? StartPosY { get; set; } = null;
     }
 
     private int? loadedStartingGameMode = null;
@@ -1156,6 +1162,8 @@ namespace FamidashEditor
     // When true, prefer external per-set tileset PNGs (if available) and swap famidash.bmp at runtime
     private bool showAccurateTileset = false;
     public bool ShowAccurateTileset => showAccurateTileset;
+    // Public accessor for no-parallax background option
+    public bool NoParallaxBg => noParallaxBg;
     // Public accessors for map dimensions
     public int MapWidth => mapWidth;
     public int MapHeight => mapHeight;
@@ -1652,15 +1660,22 @@ namespace FamidashEditor
         {
             var config = new TmxConfig();
 
-            // Prefer per-tab stored values for this file if available to avoid
-            // accidentally writing global editor state into another level's config.
+            // Find the FileTabData for this specific file
             FileTabData? fd = null;
             try { fd = openFiles?.Find(f => !string.IsNullOrEmpty(f.FilePath) && Path.GetFullPath(f.FilePath).Equals(Path.GetFullPath(tmxFilePath), StringComparison.OrdinalIgnoreCase)); } catch { fd = null; }
 
-            // Decide source values (per-tab if present, otherwise globals)
-            Color srcBackgroundTint = fd != null ? fd.BackgroundTint : backgroundTint;
-            Color srcGroundTint = fd != null ? fd.GroundTint : groundTint;
-            Color srcTileTint = fd != null ? fd.TileTint : tileTint;
+            // CRITICAL: If this file is not in openFiles, do NOT save anything.
+            // This prevents accidentally writing data from other tabs into this file's config.
+            if (fd == null)
+            {
+                System.Diagnostics.Debug.WriteLine($"SaveTmxConfig: File not found in openFiles, skipping save: {tmxFilePath}");
+                return;
+            }
+
+            // Use ONLY per-tab stored values (never fall back to globals)
+            Color srcBackgroundTint = fd.BackgroundTint;
+            Color srcGroundTint = fd.GroundTint;
+            Color srcTileTint = fd.TileTint;
 
             // Only write tint components when a tint is actively set (alpha != 0)
             try
@@ -1698,18 +1713,18 @@ namespace FamidashEditor
             }
             catch { }
 
-            // Always persist these explicit options (prefer per-tab values when available)
-            config.NoParallaxBg = fd != null ? fd.NoParallaxBg : noParallaxBg;
-            config.DecoSet = fd != null ? (fd.LoadedDecoSet ?? loadedDecoSet) : loadedDecoSet;
-            config.BlockSet = fd != null ? (fd.LoadedBlockSet ?? loadedBlockSet) : loadedBlockSet;
-            config.SpikeSet = fd != null ? (fd.LoadedSpikeSet ?? loadedSpikeSet) : loadedSpikeSet;
+            // Always persist these explicit options (use per-tab values ONLY)
+            config.NoParallaxBg = fd.NoParallaxBg;
+            config.DecoSet = fd.LoadedDecoSet ?? "";
+            config.BlockSet = fd.LoadedBlockSet ?? "";
+            config.SpikeSet = fd.LoadedSpikeSet ?? "";
             
-            // Save currently selected song
+            // Save per-tab selected song (NOT the current UI combo selection!)
             try
             {
-                if (FamiTrackCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Content != null)
+                if (!string.IsNullOrEmpty(fd.SelectedSong))
                 {
-                    config.SelectedSong = cbi.Content.ToString();
+                    config.SelectedSong = fd.SelectedSong;
                 }
             }
             catch { }
@@ -1717,7 +1732,7 @@ namespace FamidashEditor
             // Save starting speed (convert UI index -> metadata numeric code)
             try
             {
-                int ui = fd != null ? fd.LoadedStartingSpeedUiIndex : loadedStartingSpeedUiIndex;
+                int ui = fd.LoadedStartingSpeedUiIndex;
                 int mapped = (ui == 0) ? 1 : (ui == 1) ? 0 : ui; // 0->1, 1->0, else identity
                 config.StartingSpeed = mapped;
             }
@@ -1726,32 +1741,32 @@ namespace FamidashEditor
             // Save max fall speed (numeric code). Default is 0x06 (6).
             try
             {
-                config.MaxFallSpeed = fd != null ? fd.LoadedMaxFallSpeed : loadedMaxFallSpeed;
+                config.MaxFallSpeed = fd.LoadedMaxFallSpeed;
             }
             catch { }
 
             // Save starting background/ground color codes if set
-            try { var v = fd != null ? fd.LoadedStartingBackgroundColor : loadedStartingBackgroundColor; if (v.HasValue) config.StartingBackgroundColor = v.Value; } catch { }
-            try { var v2 = fd != null ? fd.LoadedStartingGameMode : loadedStartingGameMode; if (v2.HasValue) config.StartingGameMode = v2.Value; } catch { }
-            try { var v3 = fd != null ? fd.LoadedStartingGroundColor : loadedStartingGroundColor; if (v3.HasValue) config.StartingGroundColor = v3.Value; } catch { }
+            try { var v = fd.LoadedStartingBackgroundColor; if (v.HasValue) config.StartingBackgroundColor = v.Value; } catch { }
+            try { var v2 = fd.LoadedStartingGameMode; if (v2.HasValue) config.StartingGameMode = v2.Value; } catch { }
+            try { var v3 = fd.LoadedStartingGroundColor; if (v3.HasValue) config.StartingGroundColor = v3.Value; } catch { }
             // Save optional spawn/scroll Y positions if set (one-byte values)
-            try { var sv1 = fd != null ? fd.LoadedSpawnYPositionHi : loadedSpawnYPositionHi; if (sv1.HasValue) config.SpawnYPositionHi = sv1.Value; } catch { }
-            try { var sv2 = fd != null ? fd.LoadedSpawnYPositionLow : loadedSpawnYPositionLow; if (sv2.HasValue) config.SpawnYPositionLow = sv2.Value; } catch { }
-            try { var sv3 = fd != null ? fd.LoadedScrollYPositionHi : loadedScrollYPositionHi; if (sv3.HasValue) config.ScrollYPositionHi = sv3.Value; } catch { }
-            try { var sv4 = fd != null ? fd.LoadedScrollYPositionLow : loadedScrollYPositionLow; if (sv4.HasValue) config.ScrollYPositionLow = sv4.Value; } catch { }
+            try { var sv1 = fd.LoadedSpawnYPositionHi; if (sv1.HasValue) config.SpawnYPositionHi = sv1.Value; } catch { }
+            try { var sv2 = fd.LoadedSpawnYPositionLow; if (sv2.HasValue) config.SpawnYPositionLow = sv2.Value; } catch { }
+            try { var sv3 = fd.LoadedScrollYPositionHi; if (sv3.HasValue) config.ScrollYPositionHi = sv3.Value; } catch { }
+            try { var sv4 = fd.LoadedScrollYPositionLow; if (sv4.HasValue) config.ScrollYPositionLow = sv4.Value; } catch { }
             // Save optional difficulty and stars if set
-            try { var v4 = fd != null ? fd.LoadedStartingDifficulty : loadedStartingDifficulty; if (v4.HasValue) config.Difficulty = v4.Value; } catch { }
-            try { var v5 = fd != null ? fd.LoadedStartingStars : loadedStartingStars; if (v5.HasValue) config.Stars = v5.Value; } catch { }
+            try { var v4 = fd.LoadedStartingDifficulty; if (v4.HasValue) config.Difficulty = v4.Value; } catch { }
+            try { var v5 = fd.LoadedStartingStars; if (v5.HasValue) config.Stars = v5.Value; } catch { }
             // Save optional upper/lower text if set
-            try { var vl = fd != null ? fd.LoadedStartingLowerText : loadedStartingLowerText; if (!string.IsNullOrEmpty(vl)) config.LowerText = vl; } catch { }
-            try { var vu = fd != null ? fd.LoadedStartingUpperText : loadedStartingUpperText; if (!string.IsNullOrEmpty(vu)) config.UpperText = vu; } catch { }
+            try { var vl = fd.LoadedStartingLowerText; if (!string.IsNullOrEmpty(vl)) config.LowerText = vl; } catch { }
+            try { var vu = fd.LoadedStartingUpperText; if (!string.IsNullOrEmpty(vu)) config.UpperText = vu; } catch { }
 
             // Simulator scale is now a global setting; per-TMX configs must not store it.
 
-            // Save sprite offsets
+            // Save sprite offsets (use per-tab data)
             try
             {
-                var offsetsSource = fd != null ? fd.SpritePixelOffsets : spritePixelOffsets;
+                var offsetsSource = fd.SpritePixelOffsets;
                 if (offsetsSource != null && offsetsSource.Count > 0)
                 {
                     config.SpriteOffsets = new Dictionary<string, int[]>();
@@ -1766,13 +1781,17 @@ namespace FamidashEditor
             }
             catch { }
 
-            // Save sprite anchors (stored only in-memory globally)
+            // Save sprite anchors (use CURRENT tab's data, not global)
+            // Note: spriteAnchors is shared globally but should be per-tab
             try
             {
-                if (spriteAnchors != null && spriteAnchors.Count > 0)
+                // Only save anchors if this is the currently active tab
+                bool isCurrentTab = (openFiles != null && currentFileIndex >= 0 && currentFileIndex < openFiles.Count && 
+                                     openFiles[currentFileIndex] == fd);
+                if (isCurrentTab && spriteAnchors?.Count > 0)
                 {
                     config.SpriteAnchors = new Dictionary<string, int[]>();
-                    foreach (var kvp in spriteAnchors)
+                    foreach (var kvp in spriteAnchors!)
                     {
                         int x = kvp.Key % mapWidth;
                         int y = kvp.Key / mapWidth;
@@ -1945,7 +1964,7 @@ namespace FamidashEditor
 
                     // Apply loaded no-parallax setting (default false when absent in file)
                     try { noParallaxBg = config.NoParallaxBg; } catch { noParallaxBg = false; }
-                    if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
+                    // MenuOptionNoParallax removed from UI
 
                     // Apply deco set if present
                     try { loadedDecoSet = string.IsNullOrEmpty(config.DecoSet) ? "DECO1" : config.DecoSet; } catch { loadedDecoSet = "DECO1"; }
@@ -2168,7 +2187,7 @@ namespace FamidashEditor
                 
                 // Default: noParallax option absent -> unchecked and render parallax
                 noParallaxBg = false;
-                if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
+                // MenuOptionNoParallax removed from UI
 
                 try { ApplyParallaxChoice(); } catch { }
                 
@@ -3830,30 +3849,7 @@ namespace FamidashEditor
                     SaveSettingsWithTriggerOption();
                 };
             }
-            // No Parallax BG (per-level) option
-            if (MenuOptionNoParallax != null)
-            {
-                MenuOptionNoParallax.Checked += (s, e) =>
-                {
-                    if (suppressNoParallaxHandler) return;
-                    noParallaxBg = true;
-                    // save to per-level config immediately if a file is loaded
-                    try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
-                    // Apply choice and rebuild background to apply change immediately
-                    ApplyParallaxChoice();
-                    // Update sprite locking since 0x17, 0x4B, 0x58 depend on parallax state
-                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
-                };
-                MenuOptionNoParallax.Unchecked += (s, e) =>
-                {
-                    if (suppressNoParallaxHandler) return;
-                    noParallaxBg = false;
-                    try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
-                    ApplyParallaxChoice();
-                    // Update sprite locking since 0x17, 0x4B, 0x58, 0x64 depend on parallax state
-                    try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); ApplyLockSpritesToSet(); } catch { }
-                };
-            }
+            // MenuOptionNoParallax removed from UI
             
             if (UndoButton != null) UndoButton.Click += (s, e) => Undo();
             if (RedoButton != null) RedoButton.Click += (s, e) => Redo();
@@ -4390,12 +4386,6 @@ namespace FamidashEditor
                 UpdateParallaxTint();
                 Redraw();
 
-                // Auto-save config when tint is changed (TMX-specific)
-                if (!string.IsNullOrEmpty(currentFilePath))
-                {
-                    SaveTmxConfig(currentFilePath);
-                }
-
                 // Persist as editor default if user checked 'Set as default'
                 if (dlg.SetAsDefault)
                 {
@@ -4431,12 +4421,6 @@ namespace FamidashEditor
                 UpdateGroundTint();
                 Redraw();
 
-                // Auto-save config when tint is changed (TMX-specific)
-                if (!string.IsNullOrEmpty(currentFilePath))
-                {
-                    SaveTmxConfig(currentFilePath);
-                }
-
                 // Persist as editor default if user checked 'Set as default'
                 if (dlg.SetAsDefault)
                 {
@@ -4469,12 +4453,6 @@ namespace FamidashEditor
                 tileTint = dlg.SelectedColor;
                 UpdateTileTint();
                 Redraw();
-
-                // Auto-save config when tint is changed (TMX-specific)
-                if (!string.IsNullOrEmpty(currentFilePath))
-                {
-                    SaveTmxConfig(currentFilePath);
-                }
 
                 // Persist as editor default if user checked 'Set as default'
                 if (dlg.SetAsDefault)
@@ -7034,7 +7012,7 @@ namespace FamidashEditor
                     if (doc.RootElement.TryGetProperty("noParallaxBg", out var npb))
                     {
                         try { noParallaxBg = npb.GetBoolean(); } catch { noParallaxBg = false; }
-                        if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
+                        // MenuOptionNoParallax removed from UI
                     }
                     // optional ground tint (RGBA)
                     if (doc.RootElement.TryGetProperty("groundTint", out var gt) && gt.GetArrayLength() >= 4)
@@ -8503,17 +8481,10 @@ namespace FamidashEditor
             
             try
             {
-                // Save current tab state and TMX config
+                // Save current tab state
                 if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
                 {
                     SaveCurrentTabState();
-                    
-                    // Auto-save TMX config to persist sprite offsets, tints, etc.
-                    var currentTab = openFiles[currentFileIndex];
-                    if (!string.IsNullOrEmpty(currentTab.FilePath) && Path.GetExtension(currentTab.FilePath).ToLower() == ".tmx")
-                    {
-                        try { SaveTmxConfig(currentTab.FilePath); } catch { }
-                    }
                 }
                 
                 // Load new tab state
@@ -8601,8 +8572,7 @@ namespace FamidashEditor
                     }
                     catch { }
                     
-                    // Update NoParallax menu checkbox
-                    if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = noParallaxBg;
+                    // MenuOptionNoParallax removed from UI
                     
                     // Rebuild tinted images
                     UpdateParallaxTint();
@@ -8622,6 +8592,9 @@ namespace FamidashEditor
                 try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
                 
                 Redraw();
+                
+                // Restore START POS marker from tab data
+                SetStartPosMarker(tabData.StartPosX, tabData.StartPosY);
             }
             finally
             {
@@ -8720,6 +8693,10 @@ namespace FamidashEditor
             tabData.BackgroundTint = backgroundTint;
             tabData.GroundTint = groundTint;
             tabData.TileTint = tileTint;
+            
+            // Save START POS
+            tabData.StartPosX = startPosMarkerX;
+            tabData.StartPosY = startPosMarkerY;
             
             // Save selected song
             try
@@ -10039,19 +10016,6 @@ namespace FamidashEditor
         private void TryLoadFamiAlbumParsedJson()
         {
             if (FamiTrackCombo == null) return;
-            
-            // Hook up selection changed event to auto-save song choice
-            FamiTrackCombo.SelectionChanged += (s, e) =>
-            {
-                try
-                {
-                    if (!string.IsNullOrEmpty(currentFilePath))
-                    {
-                        SaveTmxConfig(currentFilePath);
-                    }
-                }
-                catch { }
-            };
 
             var jsonCandidates = new System.Collections.Generic.List<string>
             {
@@ -12272,6 +12236,13 @@ namespace FamidashEditor
                         startPosMarker = null;
                         startPosMarkerX = null;
                         startPosMarkerY = null;
+                        
+                        // Clear from current tab
+                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                        {
+                            openFiles[currentFileIndex].StartPosX = null;
+                            openFiles[currentFileIndex].StartPosY = null;
+                        }
 
                         // If no position given, just clear
                         if (!worldX_px.HasValue || !worldY_px.HasValue) return;
@@ -12283,7 +12254,15 @@ namespace FamidashEditor
                         startPosMarkerX = worldX_px.Value;
                         startPosMarkerY = worldY_px.Value;
                         
-                        // Convert world pixel -> canvas coordinates
+                        // Save to current tab
+                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                        {
+                            openFiles[currentFileIndex].StartPosX = worldX_px.Value;
+                            openFiles[currentFileIndex].StartPosY = worldY_px.Value;
+                        }
+                        
+                        // Convert world pixel -> canvas coordinates (respect zoom and grid shift)
+                        // Add ground layer offset for visual display (ground rows are rendered at bottom)
                         double canvasX = pad + worldX_px.Value * scale;
                         double canvasY = pad + (worldY_px.Value + (3 * TileSize)) * scale + gridRenderShiftY;
 
@@ -19347,12 +19326,6 @@ namespace FamidashEditor
             if (!tileChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(tileChanges); redoStack.Clear(); SetHasUnsavedChanges(true); }
             if (!spriteChanges.IsEmpty() && !suppressUndoRecording) { undoStack.Push(spriteChanges); redoStack.Clear(); SetHasUnsavedChanges(true); }
 
-            // Auto-save TMX config if sprite offsets were modified
-            if (!spriteChanges.IsEmpty() && !string.IsNullOrEmpty(currentFilePath))
-            {
-                try { SaveTmxConfig(currentFilePath); } catch { }
-            }
-
             // Final rebuild
             try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
             try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { Redraw(); }
@@ -20825,8 +20798,7 @@ namespace FamidashEditor
             {
                 suppressNoParallaxHandler = true;
                 noParallaxBg = enabled;
-                if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = enabled;
-                try { if (!string.IsNullOrEmpty(currentFilePath)) SaveTmxConfig(currentFilePath); } catch { }
+                // MenuOptionNoParallax removed from UI
                 ApplyParallaxChoice();
                 // If accurate tileset swapping is enabled, reapply so the correct tileset (Slopesa vs SlopesNone) is selected
                 try { if (showAccurateTileset) SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
@@ -21061,7 +21033,7 @@ namespace FamidashEditor
                         try { spriteFrameOffsets.Clear(); } catch { }
                         try { scaledTileCaches.Clear(); } catch { }
                         noParallaxBg = false;
-                        if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
+                        // MenuOptionNoParallax removed from UI
                         UpdateParallaxTint(); UpdateGroundTint(); UpdateTileTint();
                         undoStack.Clear(); redoStack.Clear();
                         SetHasUnsavedChanges(false);
@@ -21141,7 +21113,7 @@ namespace FamidashEditor
                 UpdateTileTint();
                 
                 noParallaxBg = false;
-                if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
+                // MenuOptionNoParallax removed from UI
                 
                 backgroundDirty = true;
                 try { scaledTileCaches.Clear(); } catch { }
@@ -21219,7 +21191,7 @@ namespace FamidashEditor
             
             // Reset noParallaxBg to false (use parallax by default)
             noParallaxBg = false;
-            if (MenuOptionNoParallax != null) MenuOptionNoParallax.IsChecked = false;
+            // MenuOptionNoParallax removed from UI
             
             // Mark background dirty and clear tile caches to force rebuild with default tints
             backgroundDirty = true;
@@ -21280,12 +21252,6 @@ namespace FamidashEditor
 
         private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
-            // Auto-save TMX config to preserve sprite offsets, tints, etc.
-            if (!string.IsNullOrEmpty(currentFilePath))
-            {
-                try { SaveTmxConfig(currentFilePath); } catch { }
-            }
-            
             // Prompt to save if there are unsaved changes
             if (hasUnsavedChanges)
             {

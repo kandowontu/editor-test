@@ -24,7 +24,7 @@ namespace FamidashEditor
                 int scrollX_px_orb = 0;
                 
                 int tempVelY = playerVelY_fixed;
-                bool orbActivated = UpdateOrbSystem(8, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
+                var (orbActivated, _) = UpdateOrbSystem(8, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
                                                    scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
                                                    (currplayer_mini != 0), ref tempVelY);
                 if (orbActivated)
@@ -48,7 +48,7 @@ namespace FamidashEditor
             int gravityMultiplier = gravityInverted ? -1 : 1;
             
             // Ninja uses cube gravity and fallspeed
-            tmpfallspeed = GameModePhysics.CUBE_MAX_FALLSPEED(baseTableIdx) * gravityMultiplier;
+            tmpfallspeed = GameModePhysics.CUBE_MAX_FALLSPEED(baseTableIdx, CUBE_MAX_FALLSPEED) * gravityMultiplier;
             tmpgravity = GameModePhysics.CUBE_GRAVITY(baseTableIdx) * gravityMultiplier;
             
             // Reset jumped flag at start of frame

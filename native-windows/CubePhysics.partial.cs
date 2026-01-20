@@ -12,7 +12,9 @@ namespace FamidashEditor
         // Player state variables (matching famidash.h declarations)
         private byte[] mini = new byte[2];                    // 0 or 1 for each player
         private byte[] gravity = new byte[2];                 // 0 = normal, 1 = reversed (0xFF in C)
+#pragma warning disable CS0414
         private byte dual = 0;                                // 0 = single player, 1 = dual mode
+#pragma warning restore CS0414
         private byte currplayer = 0;                          // Current player index (0 or 1)
         
         /// <summary>

@@ -24,9 +24,11 @@ namespace FamidashEditor
         }
 
         // CUBE_MAX_FALLSPEED
-        public static int CUBE_MAX_FALLSPEED(int table_idx)
+        // NOTE: The actual max fall speed is level-configurable (0x06 or 0x07)
+        // Callers should pass the configured CUBE_MAX_FALLSPEED value
+        public static int CUBE_MAX_FALLSPEED(int table_idx, int configuredMaxFallSpeed)
         {
-            return 0x600; // Same for normal and mini
+            return configuredMaxFallSpeed; // Use level-configured value (0x600 or 0x700)
         }
 
         // CUBE_GRAVITY

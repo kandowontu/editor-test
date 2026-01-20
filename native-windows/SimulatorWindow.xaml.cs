@@ -78,6 +78,12 @@ namespace FamidashEditor
 
         private void AppendSimDebug(string msg)
         {
+            // Early return if debug is completely disabled
+            if (!simDebugWriteToFile && simDebugBuffer.Count == 0)
+            {
+                return;
+            }
+            
             try
             {
                 string t = DateTime.UtcNow.ToString("o") + " " + msg;
@@ -697,6 +703,13 @@ namespace FamidashEditor
                 case MetatileCollision.COL_DEATH_TOP_BOTTOM:
                 case MetatileCollision.COL_DEATH_LEFT_RIGHT:
                 case MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM:
+                // Pure spike tiles (death only, no solid)
+                case MetatileCollision.COL_UP_LEFT_SPIKE:
+                case MetatileCollision.COL_UP_RIGHT_SPIKE:
+                case MetatileCollision.COL_UP_BOTH_SPIKES:
+                case MetatileCollision.COL_DOWN_LEFT_SPIKE:
+                case MetatileCollision.COL_DOWN_RIGHT_SPIKE:
+                case MetatileCollision.COL_DOWN_BOTH_SPIKES:
                     return false;
                 default:
                     break;
@@ -767,6 +780,10 @@ namespace FamidashEditor
                 return false;
             }
 
+            // Pure death tiles have no solid collision - player passes through
+            if (col == MetatileCollision.COL_DEATH)
+                return false;
+
             // Fallback: for ceiling-like categories that don't provide floor offsets
             // treat non-none as fully blocking at this stage.
             if (col != MetatileCollision.COL_NONE) return true;
@@ -782,8 +799,13 @@ namespace FamidashEditor
             int sampleTileY = worldY_px / TILE;
             int tileIndexY = sampleTileY + groundRowsToReserve;
 
-            if (tileIndexY < 0 || sampleTileX < 0 || sampleTileX >= mapWidth)
+            // Out of bounds horizontally = no collision
+            if (sampleTileX < 0 || sampleTileX >= mapWidth)
                 return false;
+            
+            // Above the map = solid ceiling (for spider scans)
+            if (tileIndexY < 0)
+                return true;
                 
             // Ground layer is always solid - if tile index is beyond map height
             if (tileIndexY >= mapHeight)
@@ -1343,11 +1365,15 @@ namespace FamidashEditor
         
         // Unified physics state variables (shared across all modes)
         private int velocityY = 0;         // Vertical velocity (8.8 fixed point)
+#pragma warning disable CS0414
         private int velocityX = 0x0300;    // Horizontal velocity (for wave mode)
+#pragma warning restore CS0414
         private bool gravityFlipped = false; // True = up, False = down
         private bool miniMode = false;     // Mini mode flag
         private int speed = 1;             // Speed mode: 0=0.5x, 1=1x, 2=2x, 3=3x, 4=4x
+#pragma warning disable CS0414
         private bool previousJumpState = false; // Track jump button for press detection
+#pragma warning restore CS0414
         
         // Runtime-effective physics values (adjusted when gravity is reversed)
         private int effectiveGravity_fixed;
@@ -1374,10 +1400,14 @@ namespace FamidashEditor
         // Prevent multiple orb activations from a single UI press: set when an orb
         // was activated in response to the current pressed state and cleared when
         // X is released or player lands.
+#pragma warning disable CS0414
         private bool orbActivationConsumedThisPress = false;
+#pragma warning restore CS0414
         // When a hold-based activation consumes the held X, set this so further
         // hold-based activations are suppressed until X is released and pressed again.
+#pragma warning disable CS0414
         private bool orbHoldConsumed = false;
+#pragma warning restore CS0414
         // True when a hold-based activation consumed the currently-held X and
         // the key is still down; used to prevent re-priming from sustained
         // hardware-held state until an explicit release occurs.
@@ -1432,11 +1462,15 @@ namespace FamidashEditor
         private bool ufoOrbed = false;
         private int[] ninjajumps = new int[2] { 3, 3 };
         private int[] robotJumpTime = new int[2];
+#pragma warning disable CS0414
         private int[] robotJumpFrame = new int[2];
+#pragma warning restore CS0414
         private bool robotJumpPressed = false;
         private int ninjaJumps = 3;
         private bool ninjaJumpedThisFrame = false;
+#pragma warning disable CS0414
         private bool swingSwitched = false;
+#pragma warning restore CS0414
 
         // Update the player image based on `currentGameMode`.
         private void UpdatePlayerImageForMode()
@@ -1617,7 +1651,12 @@ namespace FamidashEditor
         // P/Invoke to check key state asynchronously from background threads
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
-        private static bool IsXDownAsync() { return (GetAsyncKeyState(0x58) & 0x8000) != 0; } // 'X' = 0x58
+        private static bool IsXDownAsync() { 
+            // Check X (0x58), UP (0x26), or SPACE (0x20)
+            return (GetAsyncKeyState(0x58) & 0x8000) != 0 || 
+                   (GetAsyncKeyState(0x26) & 0x8000) != 0 || 
+                   (GetAsyncKeyState(0x20) & 0x8000) != 0; 
+        }
 
         // Mapping from speed-portal sprite id -> speed value
         private readonly System.Collections.Generic.Dictionary<int, int> speedPortalMap = new System.Collections.Generic.Dictionary<int, int>
@@ -1775,6 +1814,127 @@ namespace FamidashEditor
                         groundTint = c;
                     }
                     processedColorTriggers.Add(lastGroundIdx.Value);
+                }
+            }
+            catch { }
+        }
+
+        // Scan for last gamemode/mini/gravity/speed portals before target position and apply them
+        private void ApplyPortalStatesUpToPosition(int targetX_px)
+        {
+            try
+            {
+                if (sprites == null || spriteAnchors == null) return;
+                
+                int? lastGamemodeIdx = null, lastGamemodeSid = null;
+                int? lastMiniIdx = null, lastMiniSid = null;
+                int? lastGravityIdx = null, lastGravitySid = null;
+                int? lastSpeedIdx = null, lastSpeedSid = null;
+                
+                // Find the last portal of each type before target position
+                for (int idx = 0; idx < sprites.Length; idx++)
+                {
+                    int sid = sprites[idx];
+                    if (sid == -1) continue;
+                    
+                    // Get anchor position
+                    int anchorTileX = spriteAnchors.TryGetValue(idx, out var a) ? a.anchorTileX : idx % mapWidth;
+                    int anchorX_px = anchorTileX * TILE + (TILE / 2);
+                    
+                    // Only consider portals before target
+                    if (anchorX_px <= targetX_px)
+                    {
+                        // Gamemode portals: 0x00=Cube, 0x01=Ship, 0x02=Ball, 0x03=UFO, 0x04=Robot, 0x17=Spider, 0x24=Wave, 0x4B=Swing, 0x58=Ninja
+                        if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58)
+                        {
+                            lastGamemodeIdx = idx;
+                            lastGamemodeSid = sid;
+                        }
+                        // Mini/Growth portals: 0x18=Mini, 0x19=Growth
+                        else if (sid == 0x18 || sid == 0x19)
+                        {
+                            lastMiniIdx = idx;
+                            lastMiniSid = sid;
+                        }
+                        // Gravity portals: 0x08=Down, 0x09=Up, 0x10-0x13=Directional, 0xFB=Down, 0xFC=Up
+                        else if (sid == 0x08 || sid == 0x09 || sid == 0x10 || sid == 0x11 || sid == 0x12 || sid == 0x13 || sid == 0xFB || sid == 0xFC)
+                        {
+                            lastGravityIdx = idx;
+                            lastGravitySid = sid;
+                        }
+                        // Speed portals: 0x14=0.5x, 0x15=1x, 0x16=2x, 0x20=3x, 0x21=4x
+                        else if (speedPortalMap.ContainsKey(sid))
+                        {
+                            lastSpeedIdx = idx;
+                            lastSpeedSid = sid;
+                        }
+                    }
+                }
+                
+                // Apply gamemode portal
+                if (lastGamemodeIdx.HasValue && lastGamemodeSid.HasValue)
+                {
+                    int newMode = lastGamemodeSid.Value switch {
+                        0x00 => 0, // Cube
+                        0x01 => 1, // Ship
+                        0x02 => 2, // Ball
+                        0x03 => 3, // UFO
+                        0x04 => 4, // Robot
+                        0x17 => 5, // Spider
+                        0x24 => 6, // Wave
+                        0x4B => 7, // Swing
+                        0x58 => 8, // Ninja
+                        _ => 0
+                    };
+                    currentGameMode = newMode;
+                    try { UpdatePlayerImageForMode(); } catch { }
+                    try { UpdatePlayerVisualSizeForMode(); } catch { }
+                    try { UpdateGameModeDisplay(); } catch { }
+                    processedGravityPortals.Add(lastGamemodeIdx.Value);
+                }
+                
+                // Apply mini/growth portal
+                if (lastMiniIdx.HasValue && lastMiniSid.HasValue)
+                {
+                    bool newMini = (lastMiniSid.Value == 0x18);
+                    miniMode = newMini;
+                    currplayer_mini = (byte)(newMini ? 1 : 0);
+                    try { Dispatcher.BeginInvoke(new Action(() => { if (MiniCheckBox != null) MiniCheckBox.IsChecked = miniMode; })); } catch { }
+                    try { UpdatePlayerImageForMode(); } catch { }
+                    try { UpdatePlayerVisualSizeForMode(); } catch { }
+                    processedGravityPortals.Add(lastMiniIdx.Value);
+                }
+                
+                // Apply gravity portal
+                if (lastGravityIdx.HasValue && lastGravitySid.HasValue)
+                {
+                    int sid = lastGravitySid.Value;
+                    bool newGravity = (sid == 0x09 || sid == 0x12 || sid == 0x13 || sid == 0xFC);
+                    gravityReversed = newGravity;
+                    currplayer_gravity = (byte)(newGravity ? 1 : 0);
+                    try { UpdatePlayerIconFlip(); } catch { }
+                    processedGravityPortals.Add(lastGravityIdx.Value);
+                }
+                
+                // Apply speed portal
+                if (lastSpeedIdx.HasValue && lastSpeedSid.HasValue)
+                {
+                    if (speedPortalMap.TryGetValue(lastSpeedSid.Value, out int speedFixed))
+                    {
+                        playerVelX_fixed = speedFixed;
+                        // Update speed UI index to match
+                        int speedIndex = lastSpeedSid.Value switch {
+                            0x14 => 0, // 0.5x
+                            0x15 => 1, // 1x
+                            0x16 => 2, // 2x
+                            0x20 => 3, // 3x
+                            0x21 => 4, // 4x
+                            _ => 1
+                        };
+                        speed = speedIndex;
+                        try { UpdateSpeedDisplay(); } catch { }
+                    }
+                    processedSpeedPortals.Add(lastSpeedIdx.Value);
                 }
             }
             catch { }
@@ -2624,7 +2784,12 @@ namespace FamidashEditor
                 try { ResetBluePadSystem(); } catch { }
             }
             catch { }
-            this.Loaded += (s, e) => { try { this.Focus(); Keyboard.Focus(this); } catch { } };
+            this.Loaded += (s, e) => { 
+                try { this.Focus(); Keyboard.Focus(this); } catch { }
+                // Update UI to reflect starting game mode
+                try { UpdateGameModeDisplay(); } catch { }
+                try { UpdateSpeedDisplay(); } catch { }
+            };
             // Create persistent background / tile-layer / ground children to avoid re-allocating each frame
             try
             {
@@ -3182,7 +3347,46 @@ namespace FamidashEditor
                 {
                     // Speed indices: 0=0.5x, 1=1x, 2=2x, 3=3x, 4=4x
                     speed = speedIndex;
-                    try { UpdatePlayerSpeed(); } catch { }
+                    // Update horizontal movement speed to match speed portal values
+                    int[] speedValues = { CUBE_SPEED_X05, CUBE_SPEED_X1, CUBE_SPEED_X2, CUBE_SPEED_X3, CUBE_SPEED_X4 };
+                    if (speedIndex >= 0 && speedIndex < speedValues.Length)
+                    {
+                        currentSpeed_fixed = speedValues[speedIndex];
+                        playerVelX_fixed = speedValues[speedIndex];
+                    }
+                    // Update visual display immediately
+                    UpdateSpeedDisplay();
+                }
+            }
+            catch { }
+        }
+        
+        private void UpdateSpeedDisplay()
+        {
+            try
+            {
+                int speedIndex = speed;
+                if (SpeedComboBox != null && speedIndex >= 0 && speedIndex < SpeedComboBox.Items.Count)
+                {
+                    if (SpeedComboBox.SelectedIndex != speedIndex)
+                    {
+                        SpeedComboBox.SelectedIndex = speedIndex;
+                    }
+                }
+            }
+            catch { }
+        }
+        
+        private void UpdateGameModeDisplay()
+        {
+            try
+            {
+                if (GameModeComboBox != null && currentGameMode >= 0 && currentGameMode < GameModeComboBox.Items.Count)
+                {
+                    if (GameModeComboBox.SelectedIndex != currentGameMode)
+                    {
+                        GameModeComboBox.SelectedIndex = currentGameMode;
+                    }
                 }
             }
             catch { }
@@ -3270,10 +3474,26 @@ namespace FamidashEditor
                 
                 // Reset velocity and physics state
                 playerVelY_fixed = 0;
+                
+                // Reset gamemode/mini/gravity/speed to defaults
+                currentGameMode = 0; // Cube
+                miniMode = false;
+                currplayer_mini = 0;
                 currplayer_gravity = 0;
                 gravityReversed = false;
                 gravityFlipped = false;
-                UpdatePlayerIconFlip();
+                speed = 1; // 1x speed
+                playerVelX_fixed = CUBE_SPEED_X1;
+                
+                // Update UI to match defaults
+                try { UpdateGameModeDisplay(); } catch { }
+                try { UpdateSpeedDisplay(); } catch { }
+#pragma warning disable CS4014
+                try { Dispatcher.BeginInvoke(new Action(() => { if (MiniCheckBox != null) MiniCheckBox.IsChecked = false; })); } catch { }
+#pragma warning restore CS4014
+                try { UpdatePlayerImageForMode(); } catch { }
+                try { UpdatePlayerVisualSizeForMode(); } catch { }
+                try { UpdatePlayerIconFlip(); } catch { }
                 
                 // Reset camera to starting position or START POS marker
                 if (hasStartPos)
@@ -3301,11 +3521,23 @@ namespace FamidashEditor
                 // Clear paths and processed portals
                 try { recordedPlayerPath.Clear(); } catch { }
                 try { processedGravityPortals.Clear(); } catch { }
-                // Don't clear processedColorTriggers if using START POS - they were already applied
-                if (!hasStartPos)
+                try { processedSpeedPortals.Clear(); } catch { }
+                
+                // Apply portal states and color triggers if using START POS
+                if (hasStartPos)
                 {
+                    // Scan for last gamemode/mini/gravity/speed portals before START POS
+                    try { ApplyPortalStatesUpToPosition(startX_px); } catch { }
+                    // Apply color triggers (already done earlier, but clear processed list first)
+                    try { processedColorTriggers.Clear(); } catch { }
+                    try { ApplyColorTriggersUpToPosition(startX_px); } catch { }
+                }
+                else
+                {
+                    // No START POS - clear color triggers to use defaults
                     try { processedColorTriggers.Clear(); } catch { }
                 }
+                
                 try { ResetOrbSystem(); } catch { }
                 try { ResetBluePadSystem(); } catch { }
                 
@@ -7030,81 +7262,45 @@ namespace FamidashEditor
 
                         int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
 
-                        // Check middle pixel on right edge
+                        // Check middle pixel on right edge - only death, not solid collision
                         bool middlePixelBlocked = CheckPixelCollision(playerRightEdge_px, playerCenterY_px, groundRowsToReserve_local);
                         
-                        if (middlePixelBlocked)
+                        // Debug: Log tile info at collision point
+                        int checkTileX = playerRightEdge_px / TILE;
+                        int checkTileY = playerCenterY_px / TILE;
+                        int checkTileIndexY = checkTileY + groundRowsToReserve_local;
+                        int checkTid = (checkTileIndexY >= 0 && checkTileIndexY < mapHeight && checkTileX >= 0 && checkTileX < mapWidth) 
+                            ? tiles[checkTileIndexY * mapWidth + checkTileX] : -1;
+                        var checkCol = checkTid >= 0 ? MetatileCollisionTable.GetCollision((byte)checkTid) : MetatileCollision.COL_NONE;
+                        AppendSimDebug($"[RIGHT-CHECK] Pos=({playerX_fixed >> 8},{playerY_fixed >> 8}) CheckPx=({playerRightEdge_px},{playerCenterY_px}) Tile=({checkTileX},{checkTileY}) TID={checkTid} Col={checkCol} Result={middlePixelBlocked}");
+                        
+                        if (middlePixelBlocked && !MainWindow.Option_NoDeath)
                         {
-                            AppendSimDebug($"[RIGHT] Middle pixel blocked. NoDeath={MainWindow.Option_NoDeath}");
-                            if (!MainWindow.Option_NoDeath)
-                            {
-                                // DEATH - middle pixel hit
-                                AppendSimDebug($"[DEATH] Right middle pixel collision at ({playerRightEdge_px},{playerCenterY_px})");
-                                deathTriggered = true;
-                                paused = true;
-                                _ = StopMusicAsync();
-                                
-                                try
-                                {
-                                    Dispatcher.BeginInvoke(new Action(() =>
-                                    {
-                                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                        if (this.Owner is MainWindow mw)
-                                        {
-                                            try { mw.PauseSimulatorPlayback(); } catch { }
-                                            try { mw.AddDeathMarker(playerRightEdge_px, playerCenterY_px); } catch { }
-                                        }
-                                    }));
-                                }
-                                catch { }
-                            }
-                            else
-                            {
-                                // NO DEATH mode - snap up from middle collision
-                                int snapAmount = 8; // Snap up by half tile
-                                playerY_fixed -= (snapAmount << 8);
-                                AppendSimDebug($"[SNAP] Right middle collision - snap up {snapAmount}px");
-                            }
-                        }
-                        else
-                        {
-                            // Check the gravity-side half (bottom half for normal gravity, top half for inverted)
-                            // This half should snap up to allow climbing, regardless of NO DEATH setting
-                            bool gravitySideBlocked = false;
+                            // DEATH - middle pixel hit (matches bg_coll_R in auto-scroll mode)
+                            // In famidash: x_movement_coll() calls bg_coll_R() which checks ONLY middle pixel
+                            // If blocked in auto-scroll: cube_data[currplayer] | 0x01 (death flag)
+                            AppendSimDebug($"[DEATH] Right middle pixel collision at ({playerRightEdge_px},{playerCenterY_px})");
+                            deathTriggered = true;
+                            paused = true;
+                            _ = StopMusicAsync();
                             
-                            if (currplayer_gravity == 0)
+                            try
                             {
-                                // Normal gravity - check bottom half
-                                for (int py = playerBottomHalfStart_px + 1; py <= playerBottom_px; py++)
+                                Dispatcher.BeginInvoke(new Action(() =>
                                 {
-                                    if (CheckPixelCollision(playerRightEdge_px, py, groundRowsToReserve_local))
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    if (this.Owner is MainWindow mw)
                                     {
-                                        gravitySideBlocked = true;
-                                        break;
+                                        try { mw.PauseSimulatorPlayback(); } catch { }
+                                        try { mw.AddDeathMarker(playerRightEdge_px, playerCenterY_px); } catch { }
                                     }
-                                }
+                                }));
                             }
-                            else
-                            {
-                                // Inverted gravity - check top half
-                                for (int py = playerTop_px; py < playerCenterY_px; py++)
-                                {
-                                    if (CheckPixelCollision(playerRightEdge_px, py, groundRowsToReserve_local))
-                                    {
-                                        gravitySideBlocked = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            if (gravitySideBlocked)
-                            {
-                                // Snap up to allow climbing when gravity-side half collides
-                                int snapAmount = 8;
-                                playerY_fixed -= (snapAmount << 8);
-                                AppendSimDebug($"[SNAP] Right gravity-side half collision - snap up {snapAmount}px");
-                            }
+                            catch { }
                         }
+                        // NOTE: Bottom-half collision and snapping happens separately in cube_eject() phase
+                        // (the general downward collision check that runs after x_movement_coll)
+                        // NOT part of right-side collision logic in famidash source
                     }
                 }
                 catch (Exception ex)
@@ -7217,7 +7413,7 @@ namespace FamidashEditor
                                 if (newMode != oldMode)
                                 {
                                     currentGameMode = newMode;
-                                    try { Dispatcher.BeginInvoke(new Action(() => { try { GameModeComboBox.SelectedIndex = newMode; } catch { } })); } catch { }
+                                    try { UpdateGameModeDisplay(); } catch { }
                                     try { UpdateEffectiveGravity(); } catch { }
                                     try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
                                 }

@@ -129,14 +129,15 @@ namespace FamidashEditor
 
         /// <summary>
         /// Check for orb collisions and activate orbs based on input
-        /// Returns true if an orb was activated this frame
+        /// Returns (orbActivated, orbType) - orbType is the sprite type that was activated, or -1 if none
         /// </summary>
-        private bool UpdateOrbSystem(int gamemode, int playerX_px, int playerY_px, int playerW, int playerH,
+        private (bool activated, int orbType) UpdateOrbSystem(int gamemode, int playerX_px, int playerY_px, int playerW, int playerH,
                                       int scrollX_px, bool xPressed, bool xHeld, bool gravityInverted, bool mini,
                                       ref int velocityY)
         {
             bool canBuffer = CanBufferOrb(gamemode);
             bool orbActivatedThisFrame = false;
+            int activatedOrbType = -1;
             
             // Player bounding box
             int playerLeft_px = playerX_px;
@@ -210,12 +211,13 @@ namespace FamidashEditor
                     }
                     
                     orbActivatedThisFrame = true;
+                    activatedOrbType = spriteType;
                     orbHoldConsumedKeyStillDown = true;
                     // Don't clear orbBufferActive here - keep it active while X is held
                     // The physics mode will clear it on release or activation
                     
                     // Only one orb per frame
-                    return true;
+                    return (true, activatedOrbType);
                 }
                 else
                 {
@@ -223,7 +225,7 @@ namespace FamidashEditor
                 }
             }
             
-            return orbActivatedThisFrame;
+            return (orbActivatedThisFrame, activatedOrbType);
         }
         
         /// <summary>
@@ -312,7 +314,8 @@ namespace FamidashEditor
                         // Regular orbs: launch against gravity (upward for normal, downward for inverted)
                         // Black orb: launch with gravity (downward for normal, upward for inverted)
                         int gravityMult = gravityInverted ? 1 : -1;
-                        if (isBlackOrb) gravityMult = -gravityMult;
+                        // Note: Black orb does NOT negate - it uses the same multiplier as regular orbs
+                        // but the velocity direction is already opposite in the table
                         
                         velocityY = baseVel * gravityMult;
                     }

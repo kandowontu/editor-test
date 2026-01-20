@@ -130,12 +130,12 @@ namespace FamidashEditor
                 // Pure death spike tiles (no solid collision)
                 // UP spikes = spikes pointing up from bottom, death in TOP half
                 case MetatileCollision.COL_UP_LEFT_SPIKE:
-                    // Top half, left spike
-                    return (localY < 0x08) && InRange(localX, 0x02, 0x05);
+                    // Top-left quadrant has death
+                    return (localY < 0x08) && (localX < 0x08);
 
                 case MetatileCollision.COL_UP_RIGHT_SPIKE:
-                    // Top half, right spike
-                    return (localY < 0x08) && InRange(localX, 0x0a, 0x0c);
+                    // Top-right quadrant has death
+                    return (localY < 0x08) && (localX >= 0x08);
 
                 case MetatileCollision.COL_UP_BOTH_SPIKES:
                     // Top half with repeating spikes
@@ -143,12 +143,12 @@ namespace FamidashEditor
 
                 // DOWN spikes = spikes pointing down from top, death in BOTTOM half
                 case MetatileCollision.COL_DOWN_LEFT_SPIKE:
-                    // Bottom half, left spike
-                    return (localY >= 0x08) && InRange(localX, 0x02, 0x05);
+                    // Bottom-left quadrant has death
+                    return (localY >= 0x08) && (localX < 0x08);
 
                 case MetatileCollision.COL_DOWN_RIGHT_SPIKE:
-                    // Bottom half, right spike
-                    return (localY >= 0x08) && InRange(localX, 0x0a, 0x0c);
+                    // Bottom-right quadrant has death
+                    return (localY >= 0x08) && (localX >= 0x08);
 
                 case MetatileCollision.COL_DOWN_BOTH_SPIKES:
                     // Bottom half with repeating spikes
@@ -164,20 +164,20 @@ namespace FamidashEditor
                     return (localY < 0x08) && InRange(localX, 0x07, 0x0a);
 
                 case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
-                    // Bottom-left quadrant has solid collision, top-left has death spike
-                    return (localY < 0x08) && InRange(localX, 0x02, 0x05);
+                    // Bottom-left quadrant has solid collision, top-left quadrant has death
+                    return (localY < 0x08) && (localX < 0x08);
 
                 case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
-                    // Bottom-right quadrant has solid collision, top-right has death spike
-                    return (localY < 0x08) && InRange(localX, 0x0a, 0x0c);
+                    // Bottom-right quadrant has solid collision, top-right quadrant has death
+                    return (localY < 0x08) && (localX >= 0x08);
 
                 case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
-                    // Bottom half solid collision, top-left has death spike
-                    return (localY < 0x08) && InRange(localX, 0x02, 0x05);
+                    // Bottom half solid collision, top-left quadrant has death
+                    return (localY < 0x08) && (localX < 0x08);
 
                 case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
-                    // Bottom half solid collision, top-right has death spike
-                    return (localY < 0x08) && InRange(localX, 0x0a, 0x0c);
+                    // Bottom half solid collision, top-right quadrant has death
+                    return (localY < 0x08) && (localX >= 0x08);
 
                 case MetatileCollision.COL_BOTTOM_SPIKES:
                     // Bottom half solid collision, top has repeating death spikes

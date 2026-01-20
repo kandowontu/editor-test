@@ -185,7 +185,6 @@
                         <Separator />
                         <MenuItem x:Name="MenuOptionShowAccurateTileset" Header="Show accurate tileset" IsCheckable="True" IsChecked="False" Checked="MenuOptionShowAccurateTileset_Checked" Unchecked="MenuOptionShowAccurateTileset_Unchecked" />
                         <Separator />
-                        <MenuItem x:Name="MenuOptionNoParallax" Header="No Parallax BG" IsCheckable="True" IsChecked="False" />
                         <MenuItem x:Name="MenuOptionLockSprites" Header="Lock sprites to usable set" IsCheckable="True" IsChecked="False" />
                     </MenuItem>
                     <MenuItem Header="Preview Mode Options">

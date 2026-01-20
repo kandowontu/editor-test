@@ -38,7 +38,7 @@ namespace FamidashEditor
                     int scrollX_px_orb = 0;
                     
                     int tempVelY = playerVelY_fixed;
-                    bool orbActivated = UpdateOrbSystem(2, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
+                    var (orbActivated, _) = UpdateOrbSystem(2, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
                                                        scrollX_px_orb, pressJump_peek, holdJump_orb, gravityInverted_orb, 
                                                        (currplayer_mini != 0), ref tempVelY);
                     if (orbActivated)
