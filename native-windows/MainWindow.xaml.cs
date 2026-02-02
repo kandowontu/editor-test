@@ -8107,6 +8107,8 @@ namespace FamidashEditor
                     ,
                     (loadedStartingGameMode.HasValue ? loadedStartingGameMode.Value : 0)
                     );
+                    // Reset music playback rate to 100% (don't carry over from previous session)
+                    try { if (famiIntegration != null) famiIntegration.SetPlaybackRate(1.0); } catch { }
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
                     sim.Owner = this;
@@ -8140,7 +8142,7 @@ namespace FamidashEditor
                     }
                     catch { }
                     // Warm audio and preload the selected track to reduce first-play latency.
-                    try { if (!string.IsNullOrEmpty(albumTxtPath)) famiIntegration.WarmAndPrime(albumTxtPath); } catch { }
+                    try { if (!string.IsNullOrEmpty(albumTxtPath) && famiIntegration != null) famiIntegration.WarmAndPrime(albumTxtPath); } catch { }
 
                     sim.Show();
                     // Start simulation only after the window is shown so player doesn't move beforehand
@@ -15411,11 +15413,15 @@ namespace FamidashEditor
                     int maxX = mapWidth * TileSize;
                     int maxY = mapHeight * TileSize;
                     if (worldX >= maxX - 16) worldX = maxX - 16;
-                    // Don't allow placement below the bottom of the grid (clamp to bottom tile row)
-                    if (worldY >= maxY - 16) worldY = maxY - 16;
-                    // Also prevent placing below grid floor
-                    int gridBottom = maxY - 16;
-                    if (worldY > gridBottom) worldY = gridBottom;
+                    
+                    // Calculate the actual visible floor position (top of the ground rows)
+                    int groundRowsToReserve = (groundBitmap != null && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                    int floorY_px = (mapHeight - groundRowsToReserve) * TileSize;
+                    // Allow placement up to 8 tiles above the floor
+                    int allowedMinY = Math.Max(0, floorY_px - (8 * TileSize));
+                    if (worldY < allowedMinY) worldY = allowedMinY;
+                    // Don't allow placement below the floor
+                    if (worldY >= floorY_px) worldY = floorY_px - TileSize;
                     
                     // Allow placement anywhere (including inside blocks) - no validation
                     

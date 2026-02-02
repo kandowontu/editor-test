@@ -2820,7 +2820,6 @@ namespace FamidashEditor
         // Stop the background simulation gracefully.
         public void StopSimulation()
         {
-            windowClosed = true;
             try { simTimer?.Dispose(); } catch { }
             simTimer = null; // Clear the timer reference
             try { simStopwatch.Stop(); } catch { }
@@ -3009,6 +3008,9 @@ namespace FamidashEditor
             )
         {
             InitializeComponent();
+            
+            // Reset simulator speed to 100% on window open (don't carry over from previous session)
+            simTimeScale = 1.0;
             
             // Clear ball toggle request on window creation
             Interlocked.Exchange(ref ballToggleRequested, 0);
@@ -4272,20 +4274,16 @@ namespace FamidashEditor
 
         private async void RestartButton_Click(object sender, RoutedEventArgs e)
         {
-            // Prevent multiple simultaneous restarts
-            if (restartInProgress) return;
-            restartInProgress = true;
-            
             try
             {
                 // Stop current simulation
                 StopSimulation();
-                
+
                 // Check for START POS marker
                 int startX_px = 0;
                 int startY_px = 0;
                 bool hasStartPos = false;
-                
+
                 try
                 {
                     if (this.Owner is MainWindow mw)
@@ -4294,150 +4292,118 @@ namespace FamidashEditor
                         {
                             startX_px = mw.StartPosMarkerX.Value;
                             startY_px = mw.StartPosMarkerY.Value;
-                            hasStartPos = true; 
+                            hasStartPos = true;
                             startPosX_forMusicSeek = startX_px;
                             hasAppliedStartPos = true; // Update flag for music seeking
                         }
                         else
                         {
-                            // No START POS, but set hasAppliedStartPos = true anyway
-                            // so StartSimulation() doesn't reset the position we're about to set
-                            hasAppliedStartPos = true;
+                            hasAppliedStartPos = false; // No START POS
                         }
                     }
                 }
                 catch { }
-                
-                // Reset player position and state inside simLock to prevent race conditions
-                lock (simLock)
+
+                // Reset player position to start or START POS marker
+                playerX_fixed = startX_px << 8;
+
+                // Calculate interaction screen offset based on START POS
+                if (hasStartPos)
                 {
-                    // Reset player to starting position (START POS marker or default spawn)
-                    if (hasStartPos)
+                    int playerCenter_fixed = playerX_fixed + ((playerVisualWidth / 2) << 8);
+                    // If player is past interaction line, calculate the proper screen offset
+                    if (playerCenter_fixed >= INTERACTION_LINE_FIXED)
                     {
-                        // Apply START POS marker position
-                        playerX_fixed = startX_px << 8;
-                        playerY_fixed = startY_px << 8;
-                        
-                        AppendSimDebug($"[RESTART] Setting START POS: X={playerX_fixed >> 8}, Y={playerY_fixed >> 8}");
-                        
-                        // Clamp to map bounds
-                        int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
-                        if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
-                        
-                        // Calculate interaction offset for START POS
-                        int playerCenter_fixed_restart = playerX_fixed + ((playerVisualWidth / 2) << 8);
-                        if (playerCenter_fixed_restart >= INTERACTION_LINE_FIXED)
-                        {
-                            interactionScreenOffset_px = 80; // Standard GD interaction line screen position
-                        }
-                        else
-                        {
-                            interactionScreenOffset_px = -1;
-                        }
+                        // In standard GD, the interaction line appears at screen pixel 80
+                        // when camera is at X=0. The offset is where interaction line appears
+                        // on screen when it's crossed.
+                        interactionScreenOffset_px = 80; // Standard GD interaction line screen position
                     }
                     else
                     {
-                        // No START POS marker - spawn at default position
-                        playerX_fixed = 0;
+                        // Player is before interaction line - camera stays at 0
                         interactionScreenOffset_px = -1;
-                        
-                        try
-                        {
-                            int groundRowsToReserve = 0;
-                            try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
-                            int playerRow = Math.Max(0, mapHeight - groundRowsToReserve - 1);
-                            playerY_fixed = (playerRow * TILE) << 8;
-                            int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
-                            if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
-                            
-                            AppendSimDebug($"[RESTART] No START POS, setting default: X={playerX_fixed >> 8}, Y={playerY_fixed >> 8}");
-                        }
-                        catch { playerY_fixed = 0; }
                     }
-                
-                    // Reset velocity and physics state
-                    playerVelY_fixed = 0;
+                }
+                else
+                {
+                    interactionScreenOffset_px = -1;
+                }
+
+                // Reset player to starting Y position (one tile above ground rows) or marker Y
+                if (hasStartPos)
+                {
+                    playerY_fixed = startY_px << 8;
                     
-                    // Reset ball toggle request
-                    Interlocked.Exchange(ref ballToggleRequested, 0);
-                    
-                    // Reset gamemode/mini/gravity/speed to defaults
-                    currentGameMode = 0; // Cube
-                    miniMode = false;
-                    currplayer_mini = 0;
-                    currplayer_gravity = 0;
-                    gravityReversed = false;
-                    gravityFlipped = false;
-                    
-                    // Apply starting speed from level config
+                    // Clamp to map bounds
+                    int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                    if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                }
+                else
+                {
                     try
                     {
-                        int speedFixed = startingSpeedUiIndex switch
-                        {
-                            0 => CUBE_SPEED_X05, // 0.5x
-                            1 => CUBE_SPEED_X1,   // 1x
-                            2 => CUBE_SPEED_X2,   // 2x
-                            3 => CUBE_SPEED_X3,   // 3x
-                            4 => CUBE_SPEED_X4,   // 4x
-                            _ => CUBE_SPEED_X1
-                        };
-                        playerVelX_fixed = speedFixed;
-                        speed = startingSpeedUiIndex;
+                        int groundRowsToReserve = 0;
+                        try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
+                        int playerRow = Math.Max(0, mapHeight - groundRowsToReserve - 1);
+                        playerY_fixed = (playerRow * TILE) << 8;
+                        int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                        if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
                     }
-                    catch 
-                    { 
-                        speed = 1; // 1x speed fallback
-                        playerVelX_fixed = CUBE_SPEED_X1;
-                    }
-                    
-                    // Reset camera to starting position or START POS marker
-                    if (hasStartPos)
-                    {
-                        // Position camera based on interaction offset
-                        int playerCenter_fixed_restart = playerX_fixed + ((playerVisualWidth / 2) << 8);
-                        if (playerCenter_fixed_restart >= INTERACTION_LINE_FIXED && interactionScreenOffset_px >= 0)
-                        {
-                            cameraX_fixed = playerX_fixed - (interactionScreenOffset_px << 8);
-                        }
-                        else
-                        {
-                            cameraX_fixed = 0;
-                        }
-                        int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                        cameraY_fixed = Math.Max(0, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
-                    }
-                    else
-                    {
-                        cameraX_fixed = 0;
-                        int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                        cameraY_fixed = maxY_fixed;
-                    }
-                } // End simLock
-                
-                // Update UI to match defaults (outside lock to avoid UI thread deadlock)
+                    catch { playerY_fixed = 0; }
+                }
+
+                // Reset velocity and physics state
+                playerVelY_fixed = 0;
+
+                // Reset gamemode/mini/gravity/speed to defaults
+                currentGameMode = 0; // Cube
+                miniMode = false;
+                currplayer_mini = 0;
+                currplayer_gravity = 0;
+                gravityReversed = false;
+                gravityFlipped = false;
+                speed = 1; // 1x speed
+                playerVelX_fixed = CUBE_SPEED_X1;
+
+                // Update UI to match defaults
                 try { UpdateGameModeDisplay(); } catch { }
                 try { UpdateSpeedDisplay(); } catch { }
 #pragma warning disable CS4014
                 try { Dispatcher.BeginInvoke(new Action(() => { if (MiniCheckBox != null) MiniCheckBox.IsChecked = false; })); } catch { }
-                try { Dispatcher.BeginInvoke(new Action(() => { if (InvertedCheckBox != null) InvertedCheckBox.IsChecked = false; })); } catch { }
 #pragma warning restore CS4014
                 try { UpdatePlayerImageForMode(); } catch { }
                 try { UpdatePlayerVisualSizeForMode(); } catch { }
                 try { UpdatePlayerIconFlip(); } catch { }
-                
-                // Reset death markers
-                deathTriggered = false;
-                deathTileX = -1;
-                deathTileY = -1;
-                if (deathPlayerDot != null) deathPlayerDot.Visibility = Visibility.Collapsed;
-                if (deathTileDot != null) deathTileDot.Visibility = Visibility.Collapsed;
-                
+
+                // Reset camera to starting position or START POS marker
+                if (hasStartPos)
+                {
+                    // Position camera based on interaction offset
+                    int playerCenter_fixed_restart = playerX_fixed + ((playerVisualWidth / 2) << 8);
+                    if (playerCenter_fixed_restart >= INTERACTION_LINE_FIXED && interactionScreenOffset_px >= 0)
+                    {
+                        cameraX_fixed = playerX_fixed - (interactionScreenOffset_px << 8);
+                    }
+                    else
+                    {
+                        cameraX_fixed = 0;
+                    }
+                    int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                    cameraY_fixed = Math.Max(0, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
+                }
+                else
+                {
+                    cameraX_fixed = 0;
+                    int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                    cameraY_fixed = maxY_fixed;
+                }
+
                 // Clear paths and processed portals
                 try { recordedPlayerPath.Clear(); } catch { }
                 try { processedGravityPortals.Clear(); } catch { }
-                try { processedMiniPortals.Clear(); } catch { }
                 try { processedSpeedPortals.Clear(); } catch { }
-                
+
                 // Apply portal states and color triggers if using START POS
                 if (hasStartPos)
                 {
@@ -4449,61 +4415,24 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    // No START POS - scan portals at position 0 to catch starting speed/mode/gravity
-                    try { ApplyPortalStatesUpToPosition(0); } catch { }
-                    // Clear color triggers to use defaults
+                    // No START POS - clear color triggers to use defaults
                     try { processedColorTriggers.Clear(); } catch { }
                 }
-                
+
                 try { ResetOrbSystem(); } catch { }
                 try { ResetBluePadSystem(); } catch { }
-                
-                // Clear ALL input state to ensure deterministic behavior
+
+                // Clear input buffers
                 try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
-                try { Interlocked.Exchange(ref keyXPressStartedOnGroundInt, 0); } catch { }
-                try { Interlocked.Exchange(ref keyXHeldStartedOnGroundInt, 0); } catch { }
                 keyXHeld = false;
-                prevKeyXDown = false;
                 upHeld = false;
                 downHeld = false;
-                
-                // Reset ALL orb/buffer state
-                orbBufferActive = false;
-                orbActivationConsumedThisPress = false;
-                orbHoldConsumed = false;
-                orbHoldConsumedKeyStillDown = false;
-                orbHoldSuppressing = false;
-                
+
                 // Reset ball/swing state
                 ballSwitched[0] = false;
-                ballSwitched[1] = false;
                 ballFlipCooldown = 0;
-                ballWasGroundedBeforeFlip = false;
-                ballGoingDown = true;
-                try { Interlocked.Exchange(ref ballToggleRequested, 0); } catch { }
-                swingSwitched = false;
-                
-                // Reset mode-specific state
                 ufoOrbed = false;
-                orbed = false;
-                blackOrbed = false;
-                dashing = 0;
-                
-                // Reset alphabet blocks
-                hblocked = false;
-                jblocked = false;
-                dblocked = false;
-                fblocked = false;
-                
-                // Reset ninja/robot state
-                ninjaJumps = 3;
-                ninjaJumpedThisFrame = false;
-                robotJumpPressed = false;
-                robotJumpTime[0] = 0;
-                robotJumpTime[1] = 0;
-                robotJumpFrame[0] = 0;
-                robotJumpFrame[1] = 0;
-                
+
                 // Stop music first (same as death) before restarting simulation
                 try
                 {
@@ -4512,35 +4441,20 @@ namespace FamidashEditor
                     AppendSimDebug($"[RESTART] Music stopped (isPlaying={this.Owner is MainWindow mw3 && mw3.IsMusicPlaying()})");
                 }
                 catch { }
-                
-                // Restart simulation timer with proper synchronization to prevent lockup
+
+                // Restart simulation timer
                 StopSimulation();
-                // Wait longer to ensure timer fully stops and any pending renders complete
-                await System.Threading.Tasks.Task.Delay(50).ConfigureAwait(false);
-                // Ensure all pending dispatcher operations complete before restarting
-                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
-                await System.Threading.Tasks.Task.Delay(10).ConfigureAwait(false);
-                
-                // Set paused state BEFORE starting simulation to prevent player from moving
+                await System.Threading.Tasks.Task.Delay(20).ConfigureAwait(false);
+                StartSimulation();
+
+                // Reset to initial paused state
                 paused = true;
                 try { PauseOverlay.Visibility = System.Windows.Visibility.Visible; } catch { }
-                
-                StartSimulation();
-                
-                // Verify position after StartSimulation()
-                lock (simLock)
-                {
-                    AppendSimDebug($"[RESTART] After StartSimulation: playerX_fixed={playerX_fixed >> 8}, playerY_fixed={playerY_fixed >> 8}");
-                }
-                
+
                 // Clear death state if any
                 deathTriggered = false;
             }
             catch { }
-            finally
-            {
-                restartInProgress = false;
-            }
         }
 
         public async System.Threading.Tasks.Task StartAndSeekMusicAsync()
@@ -7713,6 +7627,10 @@ namespace FamidashEditor
 
             lock (simLock)
             {
+                // CRITICAL: Check if restart is in progress or window closed
+                // If so, exit immediately to allow restart to acquire the lock and avoid deadlock
+                if (restartInProgress || windowClosed) return;
+                
                 // Respect pause: do not advance numeric simulation when paused.
                 if (paused) return;
                 AppendSimDebug($"[STEP_START] playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
