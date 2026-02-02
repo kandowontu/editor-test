@@ -9,16 +9,15 @@
 .ifndef __THE_ALBUM
 	__THE_ALBUM = 0
 .endif
+.ifndef __HUGE_ROM
+	__HUGE_ROM = 0
+.endif
 .define VS_SYSTEM ::__VS_SYSTEM
 .define ___VS_SYSTEM ::__VS_SYSTEM
 .define THE_ALBUM ::__THE_ALBUM
 .define ___THE_ALBUM ::__THE_ALBUM
-; The latter is to keep the C compilers happy
-.ifndef __MAIN
-	__MAIN = 0
-.endif
-.define MAIN ::__MAIN
-.define ___MAIN ::__MAIN
+.define HUGE_ROM ::__HUGE_ROM
+.define ___HUGE_ROM ::__HUGE_ROM
 ; The latter is to keep the C compilers happy
 
 ;REMOVED initlib
@@ -30,6 +29,10 @@
     .export _exit,__STARTUP__:absolute=1
 	.export _PAL_BUF := PAL_BUF, _PAL_UPDATE := PAL_UPDATE, _xargs := xargs
 	.export _PAL_BUF_RAW := PAL_BUF_RAW, _PAL_PTR := PAL_PTR
+	.export _trueFramerate := trueFramerate, _trueCpuRegion := trueCpuRegion, _trueFullRegion := trueFullRegion
+	.exportzp _framerate := framerate, _cpuRegion := cpuRegion, _fullRegion := fullRegion
+	.exportzp _mouse := mouse, _joypad1 := joypad1, _joypad2 := joypad2
+	.exportzp _controllingplayer := controllingplayer, _mouse_mask := mouse_mask
 	.import push0,popa,popax,_main
 
 ; Linker generated symbols
@@ -78,9 +81,7 @@ CTRL_PORT2	=$4017
 
 .segment "ZEROPAGE"
 
-NTSC_MODE: 			.res 1
-FRAME_CNT1: 		.res 1
-FRAME_CNT2: 		.res 1
+FRAME_CNT: 			.res 1
 VRAM_UPDATE: 		.res 1
 ; NAME_UPD_ADR: 		.res 2
 NAME_UPD_ENABLE: 	.res 1
@@ -91,18 +92,11 @@ PAL_PTR:            .res 2
 SCROLL_X: 			.res 1
 SCROLL_Y: 			.res 1
 SCROLL_X1: 			.res 1
-SCROLL_Y1: 			.res 1
-PAD_STATE: 			.res 2		;one byte per controller
-PAD_STATE2: 		.res 2		;one byte per controller
-PAD_STATEP: 		.res 2
-PAD_STATEP2: 		.res 2
-PAD_STATET: 		.res 2
-PAD_STATET2: 		.res 2
+; SCROLL_Y1: 			.res 1
 PPU_CTRL_VAR: 		.res 1
 PPU_CTRL_VAR1: 		.res 1
 PPU_MASK_VAR: 		.res 1
 RAND_SEED: 			.res 5
-
 TEMP: 				.res 11
 SPRID:				.res 1
 
@@ -131,10 +125,31 @@ VRAM_INDEX:			.res 1
 ; DATA_PTR:			.res 2
 ; META_VAR:			.res 1
 
+; NOTE: These must be zero page and adjacent; the code relies on joypad1_down following mouse.
+mouse:				.res 4
+joypad1:			.res 3
+joypad2 			:= mouse + 1
+controllingplayer:	.res 2
+mouse_mask:			.res 1
+	kMouseZero = 0
+	kMouseButtons = 1
+	kMouseY = 2
+	kMouseX = 3
+
 xargs:				.res 4
 noMouse:			.res 1
 
- 
+framerate:			.res 1	;	1 = ~60Hz (NTSC), 0 = ~50Hz (PAL, Dendy)
+cpuRegion:			.res 1	;	1 = NTSC speed (also on Dendy), 0 = PAL speed
+fullRegion:			.res 1	;	0 = NTSC, 1 = PAL, 2 = Dendy, 3 = WTF
+
+.segment "BSS"
+trueFramerate:		.res 1
+trueCpuRegion:		.res 1
+trueFullRegion:		.res 1
+; NOTE: This variable is not page-sensitive and can be absolute.
+; advance_sensitivity: .res 1  ; Bool.
+
 ;
 ; NES 2.0 header
 ;
@@ -176,39 +191,18 @@ _exit:
     stx DMC_FREQ
     stx PPU_CTRL		;no NMI
 
-initPPU:
-    bit PPU_STATUS
-@1:
-    bit PPU_STATUS
-    bpl @1
-@2:
-    bit PPU_STATUS
-    bpl @2
+initPPU_first:		;
+    bit PPU_STATUS	;
+@1:					;	Wait out the first frame
+    bit PPU_STATUS	;
+    bpl @1			;__
 
-clearPalette:
-	lda #$3f
-	sta PPU_ADDR
-	stx PPU_ADDR
-	lda #$0f
-	ldx #$20
-@1:
-	sta PPU_DATA
-	dex
-	bne @1
+; We now have about 30,000 cycles to burn before the PPU stabilizes.
+; One thing we can do with this time is put RAM in a known state.
+; Here we fill it with $00, which matches what (say) a C compiler
+; expects for BSS.  Conveniently, X is still 0.
 
-clearVRAM:
-	txa
-	ldy #$20
-	sty PPU_ADDR
-	sta PPU_ADDR
-	ldy #$10
-@1:
-	sta PPU_DATA
-	inx
-	bne @1
-	dey
-	bne @1
-
+initRNG:
 	lda _donotresetrng
 	cmp #1
 	bne @setseed
@@ -223,7 +217,6 @@ clearVRAM:
 	lda RAND_SEED+4
 	sta aart_lz_buffer+4
 	jmp clearRAM
-	
 	
 @setseed:
 	lda $FC
@@ -275,6 +268,8 @@ clearRAM:
     inx
     bne @1
 
+    sta	framerate
+    sta	cpuRegion
 
 	lda aart_lz_buffer
 	sta RAND_SEED
@@ -290,15 +285,10 @@ clearRAM:
 	lda #1
 	sta _donotresetrng
 
-	lda #4
-	jsr _pal_bright
-	jsr _pal_clear
-	jsr _oam_clear
-
 	jsr initialize_mapper
 
-    ; jsr	zerobss	; Unnecessary, we already zeroed out the entire memory
-	jsr	copydata	; Sets all the initial values of variables
+	; jsr	zerobss	; Unnecessary, we already zeroed out the entire memory
+	; jsr	copydata	; Sets all the initial values of variables
 
     lda #<(__C_STACK_START__+__C_STACK_SIZE__) ;changed
     sta	sp
@@ -307,37 +297,63 @@ clearRAM:
 
 	; jsr	initlib	; removed. this called the CONDES function
 
+
+initPPU_second:
+@1:
+    bit PPU_STATUS
+    bpl @1
+
+clearPalette:
+	lda #$3f
+	sta PPU_ADDR
+	stx PPU_ADDR
+	lda #$0f
+	ldx #$20
+@1:
+	sta PPU_DATA
+	dex
+	bne @1
+
+clearVRAM:
+	txa
+	ldy #$20
+	sty PPU_ADDR
+	sta PPU_ADDR
+	ldy #$10
+@1:
+	sta PPU_DATA
+	inx
+	bne @1
+	dey
+	bne @1
+
+	lda #4
+	jsr _pal_bright
+	jsr _pal_clear
+	jsr _oam_clear
+
 	lda #%10100000
 	sta <PPU_CTRL_VAR
 	sta PPU_CTRL		;enable NMI
 	lda #%00000110
 	sta <PPU_MASK_VAR
 
-waitSync3:
-	lda <FRAME_CNT1
-@1:
-	cmp <FRAME_CNT1
-	beq @1
-
-detectNTSC:
-	ldx #52				;blargg's code
-	ldy #24
-@1:
-	dex
-	bne @1
-	dey
-	bne @1
-
-	lda PPU_STATUS
-	and #$80
-	sta <NTSC_MODE
+	jsr	getTVSystem		;	0 = NTSC, 1 = PAL, 2 = Dendy, 3 = unknown
+	sta	fullRegion		;
+	sta	trueFullRegion	;__
+	eor	#3				;__ 0 = unknown, 1 = Dendy, 2 = PAL, 3 = NTSC
+	cmp	#3				;
+	rol	trueFramerate	;	Set framerate to 1 if value <= NTSC
+	cmp	#3				;	(so 50Hz systems - PAL, Dendy and unknown get 0)
+	rol	framerate		;__
+	and	#1				;	Set framerate to the last bit of the value
+	sta	cpuRegion		;	(so 1 = NTSC / Dendy, 0 = PAL / unknown)
+	sta	trueCpuRegion	;__
+	;__	As a result of the code above, an unknown region will behave like PAL
 
 	jsr _ppu_off
 
-	; lda #0
-	; ldx #0
-	; jsr _set_vram_update
-
+init_famistudio:
 	LDA #<-1			;   Do famistudio_init
     JSR _music_play		;__
     JSR	famistudio_music_stop
@@ -349,6 +365,7 @@ detectNTSC:
 	ldy #>sounds
 	jsr famistudio_sfx_init
 
+finish:
 	lda #0
 	sta PPU_SCROLL
 	sta PPU_SCROLL
@@ -356,12 +373,15 @@ detectNTSC:
     cli
 
 	jmp _main			;no parameters
-
+ 
+	.include "get_tv_system.s"
+.if !__THE_ALBUM
 	.include "METATILES/metatiles.s"
+.endif
+	.include "music_data_header.s"
 
 	.include "all_level_data.s"
 	.include "all_sprite_data.s"
-;	.include "level_header.s"
 	.include "all_level_table.s"
 	
 	.include "mapper.s"
@@ -373,12 +393,11 @@ detectNTSC:
 CURSED_MUSIC_ENABLE = 1
 .include "famistudio_ca65.s"
 
-
-; Store music in switchable PRG banks
-; .s files, as generated by export.py
-.include "music_data_header.s"
-
+.if !__THE_ALBUM
 .segment "SFX_BANK"
+.else
+.segment "XCD_BANK_06"
+.endif
 	.include "sfx.s"
 
 .segment "COLLMAP0"
@@ -443,7 +462,7 @@ _GAME_CHR:
     .incbin "GRAPHICS/Level Sprites/bankmain.chr" ; 1kb (34) 
     .incbin "GRAPHICS/Level Sprites/bankblankcloud2.chr" ; 1kb
 
-    .if __MAIN
+    .if (_LEVELSET = 'A') || (_LEVELSET = $B16) || (_LEVELSET = $141006E)	; A or BIG or HUGE
 		.incbin "GRAPHICS/Level Sprites/bankmain.chr" ; 1kb (36) 
 		.incbin "GRAPHICS/Level Sprites/bankblankfingerdash.chr" ; 1kb
 		.incbin "GRAPHICS/Level Sprites/bankmain.chr" ; 1kb (38) 
@@ -460,20 +479,34 @@ _GAME_CHR:
         .incbin "GRAPHICS/Level Sprites/bankportals.chr" ; 1kb
     .endrepeat
 
-    .repeat 11, I   ; banks 70 - 91
+    .repeat 10, I   ; banks 70 - 89
         .incbin .sprintf("fan icon collection/CONTEST WINNERS/contest%1X.chr", I+1) ; 1kb
         .incbin "GRAPHICS/Level Sprites/bankportals.chr" ; 1kb
     .endrepeat
 
-        .incbin "fan icon collection/starfox.chr" ; 1kb (92)
-        .incbin "GRAPHICS/Level Sprites/bankportals.chr" ; 1kb
 
-    .incbin "GRAPHICS/Gamemode/banktriangle.chr" ; 1kb (94)
+
+	.if (_LEVELSET = $141006E)
+;        .incbin "fan icon collection/starfox.chr" ; 1kb (90)
+;        .incbin "GRAPHICS/Level Sprites/bankportals.chr" ; 1kb
+
+        .incbin "GRAPHICS/Menus/HUGE-demon.chr" ; 1kb (90)
+        .incbin "GRAPHICS/Level Sprites/bankportals.chr" ; 1kb	(93 - unused, filler)
+	.else
+        .incbin "fan icon collection/starfox.chr" ; 1kb (90)
+        .incbin "GRAPHICS/Level Sprites/bankportals.chr" ; 1kb
+	.endif
+
+
+    .incbin "GRAPHICS/Gamemode/banktriangle.chr" ; 1kb (92)
+    .incbin "GRAPHICS/Level Sprites/bankportals.chr" ; 1kb
+    
+    .incbin "GRAPHICS/Gamemode/bankfootball.chr" ; 1kb (94)
     .incbin "GRAPHICS/Level Sprites/bankportals.chr" ; 1kb
     
     .incbin "GRAPHICS/Menus/cursors.chr" ; 2kb (96)
 
-    .if _LEVELSET = 'C'
+    .if (_LEVELSET = 'C') || (_LEVELSET = 'D')
 		.incbin "GRAPHICS/Menus/C-menus.chr"    ; 4kb (98)
 	.else
 		.incbin "GRAPHICS/Menus/menus.chr"    ; 4kb (98)
@@ -483,8 +516,7 @@ _GAME_CHR:
     .incbin "GRAPHICS/Menus/practicecomplete.chr"    ; 1kb (110)
    .incbin "GRAPHICS/Level Tiles/SawbladesNone.chr" ; 1kb (111)
 
- ;   .incbin "GRAPHICS/Menus/practicecomplete.chr"    ; 1kb (112)
-
+ 
 .segment "PARALLAXCHR"  ; banks 112 - 255
 .export _PARALLAX_CHR
 _PARALLAX_CHR:

@@ -234,7 +234,7 @@
 			originalArtistText: "WATERFLAME",
 		},
 		{
-			fmsSongName: "Blast processing",
+			fmsSongName: "Blast Processing",
 			upperText: "BLAST",
 			lowerText: "PROCESSING",
 			originalArtistText: "WATERFLAME",
@@ -267,19 +267,15 @@
 			originalArtistText: "MDK",
 		},
 		{
-			fmsSongName: "endgame",
-			lowerText: "DECODE",
-			originalArtistText: "WATERFLAME",
-			vsSystemEnabled: true,
-			nsfData: {
-				trackLabel: "Decode ~ Endgame",
-				trackAuthor: {
-					original: "Waterflame",
-					cover: "Vikrinox"
-				},
-				durationNTSC: 79283,
-				durationPAL: 95280
-			}
+			fmsSongName: "Desert City",
+			lowerText: "DESERT CITY",
+			originalArtistText: "KEVIN MACLEOD",
+		},
+		{
+			fmsSongName: "The Challenge",
+			upperText: "THE",
+			lowerText: "CHALLENGE",
+			originalArtistText: "ROBTOP",
 		},
 		{
 			fmsSongName: "Practice",
@@ -305,30 +301,9 @@
 			vsSystemEnabled: false
 		},
 		{
-			fmsSongName: "retray",
-			lowerText: "GOLDEN HAZE",
-			originalArtistText: "DETIOUSMUSIC",
-		},
-		{
-			fmsSongName: "infernoplex",
-			lowerText: "INFERNOPLEX",
-			originalArtistText: "DIMRAIN47",
-		},
-		{
-			fmsSongName: "Problematic",
-			lowerText: "PROBLEMATIC",
-			originalArtistText: "NIGHTKILLA",
-		},
-		{
-			fmsSongName: "The Challenge",
-			upperText: "THE",
-			lowerText: "CHALLENGE",
-			originalArtistText: "ROBTOP",
-		},
-		{
 			fmsSongName: "atthespeedoflight",
 			upperText: "AT THE SPEED",
-			lowerText: "OF LIGHT",
+			lowerText: "OF LIGHT PT 1",
 			originalArtistText: "DIMRAIN47",
 		},
 		{
@@ -338,14 +313,32 @@
 			originalArtistText: "DIMRAIN47",
 		},
 		{
-			fmsSongName: "midnight",
-			lowerText: "MIDNIGHT",
-			originalArtistText: "CORNANDBEANS",
+			fmsSongName: "Extraordinary Excitement",
+			upperText: "EXTRAORDINARY",
+			lowerText: "EXCITEMENT",
+			originalArtistText: "SEAGLOWINGPRO",
+		},
+		{
+			fmsSongName: "retray",
+			upperText: "GOLDEN HAZE",
+			lowerText: "CUT",
+			originalArtistText: "DETIOUSMUSIC",
+		},
+		{
+			fmsSongName: "Ground to Space",
+			upperText: "GROUND TO",
+			lowerText: "SPACE",
+			originalArtistText: "SEAGLOWINGPRO",
 		},
 		{
 			fmsSongName: "haunted woods",
 			lowerText: "HAUNTED WOODS",
 			originalArtistText: "WATERFLAME",
+		},
+		{
+			fmsSongName: "infernoplex",
+			lowerText: "INFERNOPLEX",
+			originalArtistText: "DIMRAIN47",
 		},
 		{
 			fmsSongName: "just right",
@@ -354,16 +347,9 @@
 			vsSystemEnabled: false
 		},
 		{
-			fmsSongName: "against the odds redux",
-			upperText: "8 BIT AGAINST",
-			lowerText: "THE ODDS REDUX",
-			originalArtistText: "ELITEFERREX",
-		},
-		{
-			fmsSongName: "Ground to Space",
-			upperText: "GROUND TO",
-			lowerText: "SPACE",
-			originalArtistText: "SEAGLOWINGPRO",
+			fmsSongName: "midnight",
+			lowerText: "MIDNIGHT",
+			originalArtistText: "CORNANDBEANS",
 		},
 		{
 			fmsSongName: "rainbow tylenol",
@@ -376,7 +362,7 @@
 			upperText: "STALEMATE",
 			lowerText: "GREIF CUT",
 			originalArtistText: "KAYOSZX",
-		},			
+		},
 	],
 	SFX: [
 		{

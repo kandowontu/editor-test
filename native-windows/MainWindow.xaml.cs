@@ -2081,6 +2081,39 @@ namespace FamidashEditor
                         System.Diagnostics.Debug.WriteLine($"Error loading sprite anchors: {ex.Message}");
                     }
                     
+                    // Update current FileTabData with loaded values so they persist on save
+                    try
+                    {
+                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                        {
+                            var tabData = openFiles[currentFileIndex];
+                            tabData.LoadedDecoSet = loadedDecoSet;
+                            tabData.LoadedBlockSet = loadedBlockSet;
+                            tabData.LoadedSpikeSet = loadedSpikeSet;
+                            tabData.LoadedStartingSpeedUiIndex = loadedStartingSpeedUiIndex;
+                            tabData.LoadedMaxFallSpeed = loadedMaxFallSpeed;
+                            tabData.LoadedStartingBackgroundColor = loadedStartingBackgroundColor;
+                            tabData.LoadedStartingGameMode = loadedStartingGameMode;
+                            tabData.LoadedStartingGroundColor = loadedStartingGroundColor;
+                            tabData.LoadedStartingDifficulty = loadedStartingDifficulty;
+                            tabData.LoadedStartingStars = loadedStartingStars;
+                            tabData.LoadedStartingLowerText = loadedStartingLowerText;
+                            tabData.LoadedStartingUpperText = loadedStartingUpperText;
+                            tabData.LoadedSpawnYPositionHi = loadedSpawnYPositionHi;
+                            tabData.LoadedSpawnYPositionLow = loadedSpawnYPositionLow;
+                            tabData.LoadedScrollYPositionHi = loadedScrollYPositionHi;
+                            tabData.LoadedScrollYPositionLow = loadedScrollYPositionLow;
+                            tabData.NoParallaxBg = noParallaxBg;
+                            // Sync sprite offsets to tab data after loading from config
+                            tabData.SpritePixelOffsets = new Dictionary<int, (int, int)>(spritePixelOffsets);
+                            if (!string.IsNullOrEmpty(config.SelectedSong))
+                            {
+                                tabData.SelectedSong = config.SelectedSong;
+                            }
+                        }
+                    }
+                    catch { }
+                    
                     if (StatusText != null) StatusText.Text = $"Loaded deco set: {loadedDecoSet} block:{loadedBlockSet} spike:{loadedSpikeSet}";
 
                     // Update tinted images for all tints (whether from config or reloaded from global)
@@ -2385,6 +2418,9 @@ namespace FamidashEditor
     private BitmapSource? spiderPadUpsideDownSprite; // for sprite 0x57 (spider-pad-upsidedown.png)
     private BitmapSource? swingcopterPortalSprite; // for sprite 0x4B (swingcopter-portal.png)
     private BitmapSource? ninjaPortalSprite; // for sprite 0x58 (ninja-portal.png)
+    private BitmapSource? pogoPortalSprite; // for sprite 0x6A (pogo-portal.png)
+    private BitmapSource? snakePortalSprite; // for sprite 0x6B (snake-portal.png)
+    private BitmapSource? footballPortalSprite; // for sprite 0x6C (football-portal.png)
     private BitmapSource? teleportPortalEnterSprite; // for sprite 0x4E (teleport-portal-enter.png)
     private BitmapSource? teleportPortalExitSprite;  // for sprite 0x4F (teleport-portal-exit.png)
     // Horizontal teleport portal preview replacements (3x1.5 tiles)
@@ -3434,6 +3470,7 @@ namespace FamidashEditor
             if (MenuOpenSimulator != null) MenuOpenSimulator.Click += MenuOpenSimulator_Click;
             if (MenuFileLoad != null) MenuFileLoad.Click += LoadButton_Click;
             if (MenuFileClose != null) MenuFileClose.Click += MenuFileClose_Click;
+            if (MenuFileExit != null) MenuFileExit.Click += (s, e) => { this.Close(); };
             
             // Add keyboard shortcut handler
             this.PreviewKeyDown += MainWindow_KeyDown;
@@ -4955,6 +4992,7 @@ namespace FamidashEditor
                  return spriteIdx == 0x00 || spriteIdx == 0x01 || spriteIdx == 0x02 ||
                      spriteIdx == 0x03 || spriteIdx == 0x04 || spriteIdx == 0x24 ||
                      spriteIdx == 0x17 || spriteIdx == 0x18 || spriteIdx == 0x19 || spriteIdx == 0x4B || spriteIdx == 0x58 ||
+                     spriteIdx == 0x6A || spriteIdx == 0x6B || spriteIdx == 0x6C ||
                      spriteIdx == 0x08 || spriteIdx == 0x09 ||
                      // Rainbow portal (new): treat 0x64 as a portal for preview rendering
                      spriteIdx == 0x64 ||
@@ -5038,6 +5076,9 @@ namespace FamidashEditor
                 0x08 => gravityDownPortalSprite,
                 0x09 => gravityUpPortalSprite,
                 0x58 => ninjaPortalSprite,
+                0x6A => pogoPortalSprite,
+                0x6B => snakePortalSprite,
+                0x6C => footballPortalSprite,
                 0x4E => teleportPortalEnterSprite,
                 0x4F => teleportPortalExitSprite,
                 0x14 => speed05xPortalSprite,
@@ -5083,6 +5124,9 @@ namespace FamidashEditor
             {
                 return 3006; // Spider portal
             }
+            if (originalIndex == 0x6A) return 3019; // Pogo portal
+            if (originalIndex == 0x6B) return 3020; // Snake portal
+            if (originalIndex == 0x6C) return 3021; // Football portal
             if (originalIndex == 0x18)
             {
                 return 3017; // Mini portal (new)
@@ -6273,6 +6317,10 @@ namespace FamidashEditor
                 speed3xPortalSprite = LoadPortalSprite("speed-3x.png");
                 speed4xPortalSprite = LoadPortalSprite("speed-4x.png");
                 speedSpecialPortalSprite = LoadPortalSprite("speed-special.png");
+                // New game mode portals
+                    pogoPortalSprite = LoadPortalSprite("pogo-portal.png");
+                    snakePortalSprite = LoadPortalSprite("snake-portal.png");
+                    footballPortalSprite = LoadPortalSprite("football-portal.png");
                 // Additional gravity-strength X-axis portals
                     gravity1ThirdXPortalSprite = LoadPortalSprite("gravity-1-3rd-x-portal.png");
                     gravity1HalfXPortalSprite = LoadPortalSprite("gravity-1-half-x-portal.png");
@@ -7287,6 +7335,8 @@ namespace FamidashEditor
 
         private void CreateNewTab(string? filePath = null)
         {
+            // Note: Caller is responsible for saving current tab state before calling this
+            
             // If this is a brand-new (untitled) tab, enforce explicit defaults so
             // no transient values from the previous tab are inherited.
             if (filePath == null)
@@ -7339,11 +7389,19 @@ namespace FamidashEditor
                     NoParallaxBg = false,
                     BackgroundTint = backgroundTint,
                     GroundTint = groundTint,
-                    TileTint = tileTint
+                    TileTint = tileTint,
+                    StartPosX = null,  // New tabs should not inherit START POS from previous tab
+                    StartPosY = null
                 };
 
                 openFiles.Add(newTabData);
                 currentFileIndex = openFiles.Count - 1;
+                
+                // Clear the global START POS marker immediately for new tabs
+                startPosMarkerX = null;
+                startPosMarkerY = null;
+                try { if (startPosMarker != null) CanvasHost?.Children.Remove(startPosMarker); } catch { }
+                startPosMarker = null;
 
                 // Create tab with close button (rest of function will use this newTabData variable)
                 var newHeaderPanel = new StackPanel { Orientation = Orientation.Horizontal };
@@ -7392,40 +7450,11 @@ namespace FamidashEditor
                     FileTabControl.Items.Insert(insertIndexNew, newTab);
                     lastProgrammaticSelectedTab = newTab;
                     FileTabControl.SelectedItem = newTab;
-                    // Apply the default tab data into the live in-memory state so UI/dialogs
-                    // reflect the new-tab defaults (avoid inheriting previous values).
-                    try
-                    {
-                        tiles = defaultTiles.ToArray();
-                        sprites = defaultSprites.ToArray();
-                        mapWidth = defaultW;
-                        mapHeight = defaultH;
-                        currentFilePath = null;
-                        SetHasUnsavedChanges(false);
-
-                        loadedDecoSet = newTabData.LoadedDecoSet;
-                        loadedBlockSet = newTabData.LoadedBlockSet;
-                        loadedSpikeSet = newTabData.LoadedSpikeSet;
-                        loadedStartingSpeedUiIndex = newTabData.LoadedStartingSpeedUiIndex;
-                        loadedStartingBackgroundColor = newTabData.LoadedStartingBackgroundColor;
-                        loadedStartingGameMode = newTabData.LoadedStartingGameMode;
-                        loadedStartingGroundColor = newTabData.LoadedStartingGroundColor;
-                        loadedStartingLowerText = newTabData.LoadedStartingLowerText;
-                        loadedStartingUpperText = newTabData.LoadedStartingUpperText;
-                        loadedStartingDifficulty = newTabData.LoadedStartingDifficulty;
-                        loadedStartingStars = newTabData.LoadedStartingStars;
-                        loadedMaxFallSpeed = newTabData.LoadedMaxFallSpeed;
-                        noParallaxBg = newTabData.NoParallaxBg;
-
-                        if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
-                        if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
-
-                        UpdateParallaxTint(); UpdateGroundTint(); UpdateTileTint();
-                        try { RebuildAllTilesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-                        try { RebuildAllSpritesBitmap((ZoomSlider!=null?ZoomSlider.Value:1.0), mapViewportPadding); } catch { }
-                        Redraw();
-                    }
-                    catch { }
+                    
+                    // DON'T apply state here - let SwitchToTab handle it to avoid clearing previous tab
+                    // Just update the current index
+                    currentFileIndex = openFiles.Count - 1;
+                    
                     try { Dispatcher.BeginInvoke(new Action(() => { try { this.Activate(); this.Focus(); } catch { } }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                     try { Dispatcher.BeginInvoke(new Action(() => { lastProgrammaticSelectedTab = null; }), System.Windows.Threading.DispatcherPriority.Background); } catch { }
                 }
@@ -7433,17 +7462,25 @@ namespace FamidashEditor
                 {
                     isHandlingNewTab = false;
                 }
+                
+                // Now call SwitchToTab to properly load the new tab state
+                try { _ = SwitchToTab(openFiles.Count - 1); } catch { }
 
                 EnsureNewTabButton();
                 return;
             }
 
             // File-backed tab: snapshot current in-memory map state
+            // NOTE: DO NOT call SaveCurrentTabState here! 
+            // The caller (LoadTMXFile) already saved the current tab BEFORE overwriting tiles/sprites.
+            // Calling it here would save the NEW file's data into the OLD tab, corrupting it.
+            
             var tabData = new FileTabData
             {
                 FilePath = filePath,
-                Tiles = tiles.ToArray(),
-                Sprites = sprites.ToArray(),
+                // CRITICAL: Create completely independent deep copies
+                Tiles = (tiles != null && tiles.Length > 0) ? (int[])tiles.Clone() : Array.Empty<int>(),
+                Sprites = (sprites != null && sprites.Length > 0) ? (int[])sprites.Clone() : Array.Empty<int>(),
                 SpritePixelOffsets = new Dictionary<int, (int, int)>(spritePixelOffsets),
                 MapWidth = mapWidth,
                 MapHeight = mapHeight,
@@ -7482,11 +7519,19 @@ namespace FamidashEditor
                 NoParallaxBg = noParallaxBg,
                 BackgroundTint = backgroundTint,
                 GroundTint = groundTint,
-                TileTint = tileTint
+                TileTint = tileTint,
+                StartPosX = null,  // New file tabs should not inherit START POS from previous tab
+                StartPosY = null
             };
             
             openFiles.Add(tabData);
             currentFileIndex = openFiles.Count - 1;
+            
+            // Clear the global START POS marker immediately for new file tabs
+            startPosMarkerX = null;
+            startPosMarkerY = null;
+            try { if (startPosMarker != null) CanvasHost?.Children.Remove(startPosMarker); } catch { }
+            startPosMarker = null;
 
             // Create tab with close button
             var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
@@ -7548,8 +7593,6 @@ namespace FamidashEditor
 
             // Ensure + tab exists
             EnsureNewTabButton();
-                // Load the newly created tab's content immediately so the UI shows it
-                try { _ = SwitchToTab(currentFileIndex); } catch { }
         }
 
         // Open the simulator window showing the current map state. This is lightweight
@@ -7573,6 +7616,9 @@ namespace FamidashEditor
                     if (spiderPadUpsideDownSprite != null) previewMap[0x57] = spiderPadUpsideDownSprite;
                     if (swingcopterPortalSprite != null) previewMap[0x4B] = swingcopterPortalSprite;
                     if (ninjaPortalSprite != null) previewMap[0x58] = ninjaPortalSprite;
+                    if (pogoPortalSprite != null) previewMap[0x6A] = pogoPortalSprite;
+                    if (snakePortalSprite != null) previewMap[0x6B] = snakePortalSprite;
+                    if (footballPortalSprite != null) previewMap[0x6C] = footballPortalSprite;
                     if (teleportPortalEnterSprite != null) previewMap[0x4E] = teleportPortalEnterSprite;
                     if (teleportPortalExitSprite != null) previewMap[0x4F] = teleportPortalExitSprite;
                     if (teleportPortalHorizontalEnterDownSprite != null) previewMap[0x66] = teleportPortalHorizontalEnterDownSprite;
@@ -7605,6 +7651,7 @@ namespace FamidashEditor
                     if (coinFrame1 != null && coinFrame1.Length > 0) { previewMap[0x07] = coinFrame1[0]; previewMap[0x1A] = coinFrame1[0]; previewMap[0x1B] = coinFrame1[0]; }
                     if (miniCoinFrame1 != null && miniCoinFrame1.Length > 0) previewMap[0x6E] = miniCoinFrame1[0];
                     if (redPadFrame1 != null && redPadFrame1.Length > 0) previewMap[0x52] = redPadFrame1[0];
+                    if (redPadUpFrame1 != null && redPadUpFrame1.Length > 0) previewMap[0x53] = redPadUpFrame1[0];
                     if (starFrame1 != null && starFrame1.Length > 0) previewMap[0x36] = starFrame1[0];
                     if (pulsingBallFrame1 != null && pulsingBallFrame1.Length > 0) previewMap[0x49] = pulsingBallFrame1[0];
                     if (musicNoteFrame1 != null && musicNoteFrame1.Length > 0) previewMap[0x4A] = musicNoteFrame1[0];
@@ -7645,6 +7692,30 @@ namespace FamidashEditor
                     {
                         if (yellowPadDownFrame1 != null && yellowPadDownFrame1.Length > 0) previewMap[0x0A] = yellowPadDownFrame1[0];
                         if (yellowPadUpFrame1 != null && yellowPadUpFrame1.Length > 0) previewMap[0x0C] = yellowPadUpFrame1[0];
+                    }
+                    catch { }
+
+                    // Alphabet blocks (S, D, H, J, F) should be invisible - create empty/transparent sprite
+                    try
+                    {
+                        var emptySprite = new WriteableBitmap(1, 1, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null);
+                        emptySprite.Lock();
+                        unsafe
+                        {
+                            // Fill with transparent pixels (ARGB = 0x00000000)
+                            byte* pBackBuffer = (byte*)emptySprite.BackBuffer;
+                            for (int i = 0; i < 4; i++)
+                                pBackBuffer[i] = 0;
+                        }
+                        emptySprite.AddDirtyRect(new Int32Rect(0, 0, 1, 1));
+                        emptySprite.Unlock();
+                        emptySprite.Freeze();
+                        
+                        previewMap[0xF6] = emptySprite; // F block
+                        previewMap[0xF7] = emptySprite; // J block
+                        previewMap[0xF8] = emptySprite; // H block
+                        previewMap[0xF9] = emptySprite; // S block
+                        previewMap[0xFA] = emptySprite; // D block
                     }
                     catch { }
 
@@ -7743,6 +7814,7 @@ namespace FamidashEditor
                     }
                     // Pads and two-frame decorations
                     if (redPadFrame1 != null && redPadFrame2 != null && redPadFrame3 != null && redPadFrame4 != null) animationFrames[0x52] = new ImageSource?[] { redPadFrame1[0], redPadFrame2[0], redPadFrame3[0], redPadFrame4[0] };
+                    if (redPadUpFrame1 != null && redPadUpFrame2 != null && redPadUpFrame3 != null && redPadUpFrame4 != null) animationFrames[0x53] = new ImageSource?[] { redPadUpFrame1[0], redPadUpFrame2[0], redPadUpFrame3[0], redPadUpFrame4[0] };
                     if (yellowPadDownFrame1 != null && yellowPadDownFrame2 != null && yellowPadDownFrame3 != null && yellowPadDownFrame4 != null) animationFrames[0x0A] = new ImageSource?[] { yellowPadDownFrame1[0], yellowPadDownFrame2[0], yellowPadDownFrame3[0], yellowPadDownFrame4[0] };
                     if (yellowPadUpFrame1 != null && yellowPadUpFrame2 != null && yellowPadUpFrame3 != null && yellowPadUpFrame4 != null) animationFrames[0x0C] = new ImageSource?[] { yellowPadUpFrame1[0], yellowPadUpFrame2[0], yellowPadUpFrame3[0], yellowPadUpFrame4[0] };
                     if (bluePadDownFrame1 != null && bluePadDownFrame2 != null && bluePadDownFrame3 != null && bluePadDownFrame4 != null) animationFrames[0x0D] = new ImageSource?[] { bluePadDownFrame1[0], bluePadDownFrame2[0], bluePadDownFrame3[0], bluePadDownFrame4[0] };
@@ -8038,6 +8110,8 @@ namespace FamidashEditor
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
                     sim.Owner = this;
+                    // Set starting speed before ApplyStartPosMarker so it's available during initialization
+                    try { sim.SetStartingSpeedUiIndex(loadedStartingSpeedUiIndex); } catch { }
                     // Apply START POS marker position now that Owner is set
                     try { sim.ApplyStartPosMarker(); } catch { }
                     // Force an initial render while the simulator is still paused so
@@ -8065,7 +8139,6 @@ namespace FamidashEditor
                         };
                     }
                     catch { }
-                    try { sim.SetStartingSpeedUiIndex(loadedStartingSpeedUiIndex); } catch { }
                     // Warm audio and preload the selected track to reduce first-play latency.
                     try { if (!string.IsNullOrEmpty(albumTxtPath)) famiIntegration.WarmAndPrime(albumTxtPath); } catch { }
 
@@ -8491,8 +8564,26 @@ namespace FamidashEditor
                 currentFileIndex = index;
                 var tabData = openFiles[index];
                 
-                tiles = tabData.Tiles.ToArray();
-                sprites = tabData.Sprites.ToArray();
+                // CRITICAL: Create completely independent deep copies
+                if (tabData.Tiles != null && tabData.Tiles.Length > 0)
+                {
+                    tiles = new int[tabData.Tiles.Length];
+                    Array.Copy(tabData.Tiles, tiles, tabData.Tiles.Length);
+                }
+                else
+                {
+                    tiles = Array.Empty<int>();
+                }
+                
+                if (tabData.Sprites != null && tabData.Sprites.Length > 0)
+                {
+                    sprites = new int[tabData.Sprites.Length];
+                    Array.Copy(tabData.Sprites, sprites, tabData.Sprites.Length);
+                }
+                else
+                {
+                    sprites = Array.Empty<int>();
+                }
                 spritePixelOffsets = new Dictionary<int, (int, int)>(tabData.SpritePixelOffsets);
                 mapWidth = tabData.MapWidth;
                 mapHeight = tabData.MapHeight;
@@ -8515,9 +8606,6 @@ namespace FamidashEditor
                         {
                             try { SetShowAccurateTileset(true); } catch { }
                         }
-                        
-                        // Save the loaded config values back to tab data so they persist
-                        SaveCurrentTabState();
                     } 
                     catch { }
                 }
@@ -8544,6 +8632,7 @@ namespace FamidashEditor
                     loadedDecoSet = tabData.LoadedDecoSet;
                     loadedBlockSet = tabData.LoadedBlockSet;
                     loadedSpikeSet = tabData.LoadedSpikeSet;
+                    try { loadedMaxFallSpeed = tabData.LoadedMaxFallSpeed; } catch { loadedMaxFallSpeed = 0x06; }
                     try { loadedStartingSpeedUiIndex = tabData.LoadedStartingSpeedUiIndex; } catch { loadedStartingSpeedUiIndex = 1; }
                     try { loadedStartingBackgroundColor = tabData.LoadedStartingBackgroundColor; } catch { loadedStartingBackgroundColor = null; }
                     try { loadedStartingGameMode = tabData.LoadedStartingGameMode; } catch { loadedStartingGameMode = null; }
@@ -8635,13 +8724,33 @@ namespace FamidashEditor
             if (currentFileIndex < 0 || currentFileIndex >= openFiles.Count) return;
             
             var tabData = openFiles[currentFileIndex];
-            tabData.Tiles = tiles.ToArray();
-            tabData.Sprites = sprites.ToArray();
+            // CRITICAL: Create completely independent deep copies
+            if (tiles != null)
+            {
+                tabData.Tiles = new int[tiles.Length];
+                Array.Copy(tiles, tabData.Tiles, tiles.Length);
+            }
+            else
+            {
+                tabData.Tiles = Array.Empty<int>();
+            }
+            
+            if (sprites != null)
+            {
+                tabData.Sprites = new int[sprites.Length];
+                Array.Copy(sprites, tabData.Sprites, sprites.Length);
+            }
+            else
+            {
+                tabData.Sprites = Array.Empty<int>();
+            }
             tabData.SpritePixelOffsets = new Dictionary<int, (int, int)>(spritePixelOffsets);
             tabData.MapWidth = mapWidth;
             tabData.MapHeight = mapHeight;
             tabData.HasUnsavedChanges = hasUnsavedChanges;
-            tabData.FilePath = currentFilePath;
+            // DO NOT update FilePath here - it should remain constant for each tab
+            // Updating it would cause tab corruption when loading a new file
+            // tabData.FilePath = currentFilePath;
             tabData.LoadedTilesetSource = loadedTilesetSource;
             tabData.LoadedSpritesetSource = loadedSpritesetSource;
             tabData.LoadedHasEditorSettings = loadedHasEditorSettings;
@@ -8668,6 +8777,7 @@ namespace FamidashEditor
             try { tabData.LoadedScrollYPositionHi = loadedScrollYPositionHi; } catch { tabData.LoadedScrollYPositionHi = null; }
             try { tabData.LoadedScrollYPositionLow = loadedScrollYPositionLow; } catch { tabData.LoadedScrollYPositionLow = null; }
             try { tabData.LoadedForcePlatformer = loadedForcePlatformer; } catch { tabData.LoadedForcePlatformer = null; }
+            tabData.LoadedMaxFallSpeed = loadedMaxFallSpeed;
             tabData.LoadedStartingSpeedUiIndex = loadedStartingSpeedUiIndex;
             tabData.LoadedStartingGameMode = loadedStartingGameMode;
             tabData.LoadedStartingBackgroundColor = loadedStartingBackgroundColor;
@@ -9003,8 +9113,9 @@ namespace FamidashEditor
                     var tmxLevel = TmxHandler.LoadTmx(filePath, useLegacyTriggerOffset);
                     loadedWidth = tmxLevel.Width;
                     loadedHeight = tmxLevel.Height;
-                    loadedTiles = tmxLevel.Tiles;
-                    loadedSprites = tmxLevel.Sprites;
+                    // CRITICAL: Create copies immediately to prevent any reference sharing
+                    loadedTiles = tmxLevel.Tiles?.ToArray();
+                    loadedSprites = tmxLevel.Sprites?.ToArray();
                     
                     // Show collision messages if any (unless suppressed)
                     if (!suppressCollisionMessages && !string.IsNullOrEmpty(tmxLevel.LoadCollisionMessages))
@@ -9044,12 +9155,36 @@ namespace FamidashEditor
                 
                 if (loadedWidth > 0 && loadedHeight > 0 && loadedTiles != null)
                 {
+                    // CRITICAL: Save current tab state BEFORE overwriting tiles/sprites
+                    // Always save to preserve any existing tab's data
+                    if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                    {
+                        SaveCurrentTabState();
+                    }
+                    
                     // Directly set the data without going through ResizeMap to avoid undo recording
                     suppressUndoRecording = true;
                     mapWidth = loadedWidth;
                     mapHeight = loadedHeight;
-                    tiles = loadedTiles;
-                    sprites = loadedSprites ?? Enumerable.Repeat(-1, loadedWidth * loadedHeight).ToArray();
+                    // CRITICAL: Create fresh copies for global arrays to ensure no sharing
+                    if (loadedTiles != null && loadedTiles.Length > 0)
+                    {
+                        tiles = new int[loadedTiles.Length];
+                        Array.Copy(loadedTiles, tiles, loadedTiles.Length);
+                    }
+                    else
+                    {
+                        tiles = Array.Empty<int>();
+                    }
+                    if (loadedSprites != null && loadedSprites.Length > 0)
+                    {
+                        sprites = new int[loadedSprites.Length];
+                        Array.Copy(loadedSprites, sprites, loadedSprites.Length);
+                    }
+                    else
+                    {
+                        sprites = Enumerable.Repeat(-1, loadedWidth * loadedHeight).ToArray();
+                    }
                     
                     if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
                     if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
@@ -9086,8 +9221,7 @@ namespace FamidashEditor
                     
                     if (replaceCurrentTab)
                     {
-                        // Update current tab
-                        SaveCurrentTabState();
+                        // Update current tab (data already saved above before loading new file)
                         openFiles[currentFileIndex].FilePath = filePath;
                         
                         // Update tab header
@@ -9131,6 +9265,15 @@ namespace FamidashEditor
                     {
                         // Create new tab
                         CreateNewTab(filePath);
+                        
+                        // Force proper tab switch to ensure UI and data are in sync
+                        // CreateNewTab sets the UI selection but SelectionChanged is suppressed,
+                        // so we need to manually trigger the full tab switch logic
+                        try 
+                        { 
+                            _ = SwitchToTab(currentFileIndex); 
+                        } 
+                        catch { }
                     }
                     
                     // Full redraw with all bitmaps
@@ -12236,13 +12379,6 @@ namespace FamidashEditor
                         startPosMarker = null;
                         startPosMarkerX = null;
                         startPosMarkerY = null;
-                        
-                        // Clear from current tab
-                        if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
-                        {
-                            openFiles[currentFileIndex].StartPosX = null;
-                            openFiles[currentFileIndex].StartPosY = null;
-                        }
 
                         // If no position given, just clear
                         if (!worldX_px.HasValue || !worldY_px.HasValue) return;
@@ -20018,6 +20154,20 @@ namespace FamidashEditor
             var dpi = VisualTreeHelper.GetDpi(this);
             // For fast zoom: use cachedScale since that's the actual bitmap scale (CanvasHost is transformed)
             double scale = useFastZoom ? cachedScale : ((ZoomSlider != null) ? ZoomSlider.Value : 1.0);
+            
+            // When fast zoom is active, CanvasHost has a LayoutTransform of (ZoomSlider.Value / cachedScale).
+            // e.GetPosition(CanvasHost) returns post-transform coordinates, so we need to reverse the transform
+            // to get back to bitmap coordinates.
+            if (useFastZoom && ZoomSlider != null && cachedScale > 0)
+            {
+                double transformScale = ZoomSlider.Value / cachedScale;
+                if (Math.Abs(transformScale - 1.0) > 1e-6)
+                {
+                    vp.X /= transformScale;
+                    vp.Y /= transformScale;
+                }
+            }
+            
             int tilePixelW = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleX));
             int tilePixelH = Math.Max(1, (int)Math.Ceiling(TileSize * scale * dpi.DpiScaleY));
             int padPxX = (int)Math.Round(mapViewportPadding * dpi.DpiScaleX);
@@ -21121,7 +21271,13 @@ namespace FamidashEditor
                 undoStack.Clear();
                 redoStack.Clear();
                 
-                // Create the new tab - this will save current state to the tab before switching
+                // Save current tab state before creating new tab
+                if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                {
+                    SaveCurrentTabState();
+                }
+                
+                // Create the new tab
                 CreateNewTab(null);
                 
                 if (StatusText != null) StatusText.Text = "New map created (200x27)";
@@ -21226,6 +21382,12 @@ namespace FamidashEditor
             
             // File path already cleared at the start
             SetHasUnsavedChanges(false);
+            
+            // Save current tab state before creating new tab
+            if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+            {
+                SaveCurrentTabState();
+            }
             
             // Create a new tab
             CreateNewTab(null);
@@ -21547,6 +21709,13 @@ namespace FamidashEditor
                             try { loadedStartingStars = null; } catch { }
                             try { loadedStartingLowerText = null; } catch { }
                             try { loadedStartingUpperText = null; } catch { }
+                            
+                            // Save current tab state before creating new tab
+                            if (currentFileIndex >= 0 && currentFileIndex < openFiles.Count)
+                            {
+                                SaveCurrentTabState();
+                            }
+                            
                             // Always create a new tab for loaded files
                             CreateNewTab(dlg.FileName);
                         }
@@ -21754,6 +21923,18 @@ namespace FamidashEditor
             if (!string.IsNullOrEmpty(currentFilePath))
             {
                 SaveTmxConfig(currentFilePath);
+            }
+        }
+        catch { }
+    }
+    
+    public void ReloadCurrentTmxConfig()
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                LoadTmxConfig(currentFilePath);
             }
         }
         catch { }

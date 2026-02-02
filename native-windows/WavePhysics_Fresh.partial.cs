@@ -20,7 +20,14 @@ namespace FamidashEditor
                 int playerX_px_orb = playerX_fixed >> 8;
                 int playerY_px_orb = playerY_fixed >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_orb = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
+                
+                // Adjust Y position for mini mode collision box (bottom-left alignment)
+                if (currplayer_mini != 0 && !gravityInverted_orb)
+                {
+                    playerY_px_orb += 9;
+                }
+                
                 int scrollX_px_orb = 0;
                 
                 int tempVelY = playerVelY_fixed;
@@ -95,7 +102,15 @@ namespace FamidashEditor
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+                int playerY_px_trail = playerY_fixed >> 8;
+                // Apply mini mode offset for trail to match visual position
+                bool isMini_trail = (currplayer_mini != 0);
+                bool gravityInverted_trail = (currplayer_gravity != 0);
+                if (isMini_trail && !gravityInverted_trail)
+                {
+                    playerY_px_trail += 8;
+                }
+                int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
                 recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
             }
             catch { }
@@ -106,16 +121,17 @@ namespace FamidashEditor
         /// </summary>
         private void WaveEject_Fresh(int offsetY)
         {
-            int hitboxW = (currplayer_mini != 0) ? 8 : 15;
-            int hitboxH = (currplayer_mini != 0) ? 8 : 15;
-            int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 8 : 0;
+            bool isMini = (currplayer_mini != 0);
+            int hitboxW = isMini ? 8 : 15;
+            int hitboxH = isMini ? 7 : 15;
+            int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
             int collisionX = (playerX_fixed >> 8);
             int collisionY = offsetY + hitboxOffsetY;
             
             if (playerVelY_fixed < 0) { // Moving up
                 var (collided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
                 if (collided) {
-                    if (dblocked[0]) { // dblocked check
+                    if (dblocked) { // D block: allows wave to walk on surfaces
                         playerY_fixed = ((collisionBottomY - hitboxOffsetY) << 8);
                         playerVelY_fixed = 0;
                     }
@@ -123,14 +139,12 @@ namespace FamidashEditor
             } else { // Moving down
                 var (collided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
                 if (collided) {
-                    if (dblocked[0]) { // dblocked check
-                        playerY_fixed = ((collisionTopY - hitboxH - 1 - hitboxOffsetY) << 8);
+                    if (dblocked) { // D block: allows wave to walk on surfaces
+                        playerY_fixed = ((collisionTopY - hitboxH - hitboxOffsetY - 1) << 8);
                         playerVelY_fixed = 0;
                     }
                 }
             }
         }
-        
-        private bool[] dblocked = new bool[2];
     }
 }

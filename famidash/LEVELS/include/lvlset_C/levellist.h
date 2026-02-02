@@ -2,8 +2,16 @@
 // Exported by export_levels.py
 
 const uint8_t difficulty_list[] = {
+	EASYDEMON,	// supercycles
+	EASYDEMON,	// xx
+	EASYDEMON,	// problematic
+	EASYDEMON,	// sonicblaster
+	EASYDEMON,	// deathmoon
+	EASYDEMON,	// motion
+	EASYDEMON,	// endorphinrush
 	EASYDEMON,	// everymadness
-	EASYDEMON,	// dearnostalgists
+	MEDIUMDEMON,	// trythisgd
+	MEDIUMDEMON,	// hell
 	MEDIUMDEMON,	// invisiblelight
 	HARDDEMON,	// pgclubstep
 	HARDDEMON,	// deadlyclubstep
@@ -15,20 +23,24 @@ const uint8_t difficulty_list[] = {
 	INSANEDEMON,	// hi
 	INSANEDEMON,	// eon
 	EXTREMEDEMON,	// sonicwave
-	EXTREMEDEMON,	// windylandscape
 	EXTREMEDEMON,	// bloodbath
 	IMPOSSIBLEDEMON,	// cataclysm
 	IMPOSSIBLEDEMON,	// aftermath
-	IMPOSSIBLEDEMON,	// silentclubstep
-	IMPOSSIBLEDEMON,	// kratos
-	GRANDPADEMON,	// aftercatabath
-	GRANDPADEMON,	// slaughterhouse
 	GRANDPADEMON,	// everyend
+	GRANDPADEMON,	// luckydraw
 };
 
 const uint8_t stars_list[] = {
+	10,	// supercycles
+	10,	// xx
+	10,	// problematic
+	10,	// sonicblaster
+	10,	// deathmoon
+	10,	// motion
+	10,	// endorphinrush
 	10,	// everymadness
-	10,	// dearnostalgists
+	10,	// trythisgd
+	10,	// hell
 	10,	// invisiblelight
 	10,	// pgclubstep
 	10,	// deadlyclubstep
@@ -40,13 +52,9 @@ const uint8_t stars_list[] = {
 	10,	// hi
 	10,	// eon
 	10,	// sonicwave
-	10,	// windylandscape
 	10,	// bloodbath
 	10,	// cataclysm
 	10,	// aftermath
-	10,	// silentclubstep
-	10,	// kratos
-	10,	// aftercatabath
-	10,	// slaughterhouse
 	10,	// everyend
+	10,	// luckydraw
 };

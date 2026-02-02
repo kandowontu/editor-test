@@ -107,7 +107,7 @@ _clear_vram_buffer:
 	
 ;uint8_t __fastcall__ get_frame_count();	
 _get_frame_count:
-	lda <FRAME_CNT1
+	lda <FRAME_CNT
 	ldx #0
 	rts
 	
@@ -149,16 +149,20 @@ _check_collision:
 	lda _Generic+0	; X 1
 	clc
 	adc _Generic+2 ;width 1
-	cmp _Generic2+0 ;X 2
-	bcc @no
+	bcs :+
+		cmp _Generic2+0 ;X 2
+		bcc @no
+ 	:
 	
 ;now check if obj1 L > obj2 R (obj2 x + width)
 
 	lda _Generic2+0 ;X 2
 	clc
 	adc _Generic2+2 ;width 2
-	cmp _Generic+0 ;X 1
-	bcc @no
+	bcs :+
+		cmp _Generic+0 ;X 1
+		bcc @no
+	:
 
 
 ;repeat process with y
@@ -181,16 +185,19 @@ _check_collision:
 	lda _Generic+1 ;Y 1
 	clc
 	adc _Generic+3 ;height 1
-	cmp _Generic2+1 ;Y 2
-	bcc @no
+	bcs :+
+		cmp _Generic2+1 ;Y 2
+		bcc @no
+	:
 	
 ;now check if obj1 Top > obj2 Bottom (obj2 y + height)
 
 	lda _Generic2+1 ;Y 2
 	clc
 	adc _Generic2+3 ;height 2
-	cmp _Generic+1 ;Y 1
-	bcc @no
+	bcs @yes
+		cmp _Generic+1 ;Y 1
+		bcc @no
 
 
 @yes:
@@ -832,7 +839,7 @@ _gray_line:
 	
 ;void seed_rng();
 _seed_rng:
-	lda <FRAME_CNT1
+	lda <FRAME_CNT
 	sta <RAND_SEED
 	rts
 	

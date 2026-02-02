@@ -1,53 +1,62 @@
 
 // Exported by export_levels.py
 
-const char levelText00[ 5] = "EVERY";
-const char levelText01[ 9] = "INVISIBLE";
-const char levelText02[ 6] = "DEADLY";
-const char levelText03[ 5] = "WINDY";
-const char levelText04[ 6] = "SILENT";
-const char levelText05[ 7] = "MADNESS";
-const char levelText06[17] = " DEAR NOSTALGISTS";
-const char levelText07[ 5] = "LIGHT";
-const char levelText08[11] = "PG CLUBSTEP";
-const char levelText09[ 8] = "CLUBSTEP";
-const char levelText0A[13] = "THERMODYNAMIX";
-const char levelText0B[12] = "NINE CIRCLES";
-const char levelText0C[ 9] = "FAIRYDUST";
-const char levelText0D[ 9] = "STALEMATE";
-const char levelText0E[ 2] = "8O";
-const char levelText0F[ 2] = "HI";
-const char levelText10[ 3] = "EON";
-const char levelText11[10] = "SONIC WAVE";
-const char levelText12[ 9] = "LANDSCAPE";
-const char levelText13[ 9] = "BLOODBATH";
-const char levelText14[ 9] = "CATACLYSM";
-const char levelText15[ 9] = "AFTERMATH";
-const char levelText16[ 6] = "KRATOS";
-const char levelText17[13] = "AFTERCATABATH";
-const char levelText18[14] = "SLAUGHTERHOUSE";
-const char levelText19[ 9] = "EVERY END";
+const char levelText00[ 5] = "SONIC";
+const char levelText01[ 9] = "ENDORPHIN";
+const char levelText02[ 5] = "EVERY";
+const char levelText03[ 9] = "INVISIBLE";
+const char levelText04[ 6] = "DEADLY";
+const char levelText05[12] = "SUPER CYCLES";
+const char levelText06[ 1] = "X";
+const char levelText07[11] = "PROBLEMATIC";
+const char levelText08[ 7] = "BLASTER";
+const char levelText09[10] = "DEATH MOON";
+const char levelText0A[ 6] = "MOTION";
+const char levelText0B[ 4] = "RUSH";
+const char levelText0C[ 7] = "MADNESS";
+const char levelText0D[11] = "TRY THIS GD";
+const char levelText0E[ 4] = "HELL";
+const char levelText0F[ 5] = "LIGHT";
+const char levelText10[11] = "PG CLUBSTEP";
+const char levelText11[ 8] = "CLUBSTEP";
+const char levelText12[13] = "THERMODYNAMIX";
+const char levelText13[12] = "NINE CIRCLES";
+const char levelText14[ 9] = "FAIRYDUST";
+const char levelText15[ 9] = "STALEMATE";
+const char levelText16[ 2] = "8O";
+const char levelText17[ 2] = "HI";
+const char levelText18[ 3] = "EON";
+const char levelText19[10] = "SONIC WAVE";
+const char levelText1A[ 9] = "BLOODBATH";
+const char levelText1B[ 9] = "CATACLYSM";
+const char levelText1C[ 9] = "AFTERMATH";
+const char levelText1D[ 9] = "EVERY END";
+const char levelText1E[10] = "LUCKY DRAW";
 
 
 const char* const levelTextsUpper[] = {
+	NULL,
+	NULL,
+	NULL,
 	levelText00,
 	NULL,
+	NULL,
 	levelText01,
-	NULL,
 	levelText02,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
 	NULL,
 	NULL,
 	levelText03,
 	NULL,
-	NULL,
-	NULL,
 	levelText04,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
 	NULL,
 	NULL,
 	NULL,
@@ -55,24 +64,28 @@ const char* const levelTextsUpper[] = {
 };
 
 const uint8_t levelTextsUpperSize[] = {
+	0,
+	0,
+	0,
 	sizeof(levelText00),
 	0,
+	0,
 	sizeof(levelText01),
-	0,
 	sizeof(levelText02),
-	0,
-	0,
-	0,
-	0,
-	0,
-	0,
 	0,
 	0,
 	sizeof(levelText03),
 	0,
-	0,
-	0,
 	sizeof(levelText04),
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
 	0,
 	0,
 	0,
@@ -98,11 +111,15 @@ const char* const levelTextsLower[] = {
 	levelText13,
 	levelText14,
 	levelText15,
-	levelText09,
 	levelText16,
 	levelText17,
 	levelText18,
 	levelText19,
+	levelText1A,
+	levelText1B,
+	levelText1C,
+	levelText1D,
+	levelText1E,
 };
 
 const uint8_t levelTextsLowerSize[] = {
@@ -123,9 +140,13 @@ const uint8_t levelTextsLowerSize[] = {
 	sizeof(levelText13),
 	sizeof(levelText14),
 	sizeof(levelText15),
-	sizeof(levelText09),
 	sizeof(levelText16),
 	sizeof(levelText17),
 	sizeof(levelText18),
 	sizeof(levelText19),
+	sizeof(levelText1A),
+	sizeof(levelText1B),
+	sizeof(levelText1C),
+	sizeof(levelText1D),
+	sizeof(levelText1E),
 };

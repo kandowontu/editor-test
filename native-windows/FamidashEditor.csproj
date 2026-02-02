@@ -11,13 +11,18 @@
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- Disable ReadyToRun for faster publish times - single-file exe is already optimized -->
+    <PublishReadyToRun>false</PublishReadyToRun>
     <!-- Exclude unnecessary satellite assemblies to reduce size -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <!-- WPF doesn't work well with single-file, keep multi-file -->
+    <!-- Enable single-file publishing for Release builds (reduces file count) -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <!-- WPF doesn't work well with trimming - keep disabled -->
     <PublishTrimmed>false</PublishTrimmed>
     <!-- Add application manifest for DPI awareness -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Set application icon from cube.png -->
+    <ApplicationIcon>cube.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
@@ -26,18 +31,7 @@
   <!-- Removed .fms from project: we now work exclusively with the FamiStudio text export (the album.txt) -->
   
 
-  <!-- Include player icons so they are copied to output and available at runtime -->
-  <ItemGroup>
-    <Content Include="..\ship.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\ball.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\ufo.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
+  <!-- Note: ship.png, ball.png, and ufo.png are now embedded as resources (see EmbeddedResource section) -->
   <ItemGroup>
     <!-- Include app config for DLL probing -->
     <None Include="FamidashEditor.exe.config">
@@ -65,6 +59,12 @@
     <EmbeddedResource Include="..\ninja-mini.png" />
     <EmbeddedResource Include="..\swingcopter.png" />
     <EmbeddedResource Include="..\swingcopter-mini.png" />
+    <EmbeddedResource Include="..\pogo.png" />
+    <EmbeddedResource Include="..\pogo-mini.png" />
+    <EmbeddedResource Include="..\snake.png" />
+    <EmbeddedResource Include="..\snake-mini.png" />
+    <EmbeddedResource Include="..\football.png" />
+    <EmbeddedResource Include="..\football-mini.png" />
     <EmbeddedResource Include="..\ship-mini.png" />
     <EmbeddedResource Include="..\ball-mini.png" />
     <EmbeddedResource Include="..\ufo-mini.png" />
@@ -79,6 +79,9 @@
     <EmbeddedResource Include="..\growth-portal.png" />
     <EmbeddedResource Include="..\swingcopter-portal.png" />
     <EmbeddedResource Include="..\ninja-portal.png" />
+    <EmbeddedResource Include="..\pogo-portal.png" />
+    <EmbeddedResource Include="..\snake-portal.png" />
+    <EmbeddedResource Include="..\football-portal.png" />
     <EmbeddedResource Include="..\gravity-down-portal.png" />
     <EmbeddedResource Include="..\gravity-up-portal.png" />
     <EmbeddedResource Include="..\yellow-orb-frame1.png" />
@@ -269,33 +272,38 @@
     <EmbeddedResource Include="..\teleport-portal-horizontal-exit-downwards.png" />
     <EmbeddedResource Include="..\teleport-portal-enter.png" />
     <EmbeddedResource Include="..\teleport-portal-exit.png" />
-    <!-- Tileset variations -->
-    <EmbeddedResource Include="..\tilesets\BlocksaSpikesaSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksaSpikesaSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksaSpikesbSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksaSpikesbSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksaSpikescSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksaSpikescSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksbSpikesaSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksbSpikesaSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksbSpikesbSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksbSpikesbSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksbSpikescSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksbSpikescSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlockscSpikesaSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlockscSpikesaSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlockscSpikesbSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlockscSpikesbSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlockscSpikescSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlockscSpikescSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksdSpikesaSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksdSpikesaSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksdSpikesbSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksdSpikesbSawsaSlopesnone.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksdSpikescSawsaSlopesa.png" />
-    <EmbeddedResource Include="..\tilesets\BlocksdSpikescSawsaSlopesnone.png" />
+    <!-- Tileset variations - now embedded from src/renderer -->
     <EmbeddedResource Include="..\that_one_render_1.png" />
+    <!-- Player icons and other assets remain from parent folder -->
     <EmbeddedResource Include="..\cube.png" />
+    <EmbeddedResource Include="..\ship.png" />
+    <EmbeddedResource Include="..\ball.png" />
+    <EmbeddedResource Include="..\ufo.png" />
+    <!-- Tileset block variations - moved to src/renderer for embedding -->
+    <EmbeddedResource Include="..\src\renderer\BlocksaSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksaSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksaSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksaSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksaSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksaSpikescSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksbSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksbSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksbSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksbSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksbSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksbSpikescSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlockscSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlockscSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlockscSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlockscSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlockscSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlockscSpikescSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksdSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksdSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksdSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksdSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksdSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="..\src\renderer\BlocksdSpikescSawsaSlopesnone.png" />
   </ItemGroup>
   <!-- If present, copy pre-parsed FamiStudio album JSON and probe results into the build output
        so the runtime (launched from bin) can find them without additional configuration. -->
@@ -322,13 +330,5 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.1.0" />
-  </ItemGroup>
-  <!-- Ensure the top-level `tilesets` folder is copied to build and publish outputs so
-       runtime and published packages can find external tileset image files. -->
-  <ItemGroup>
-    <Content Include="..\tilesets\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
   </ItemGroup>
 </Project>

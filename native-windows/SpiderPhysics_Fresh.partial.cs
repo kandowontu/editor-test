@@ -20,7 +20,14 @@ namespace FamidashEditor
                 int playerX_px_orb = playerX_fixed >> 8;
                 int playerY_px_orb = playerY_fixed >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_orb = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
+                
+                // Adjust Y position for mini mode collision box (bottom-left alignment)
+                if (currplayer_mini != 0 && !gravityInverted_orb)
+                {
+                    playerY_px_orb += 9;
+                }
+                
                 int scrollX_px_orb = 0;
                 
                 int tempVelY = playerVelY_fixed;
@@ -68,8 +75,8 @@ namespace FamidashEditor
             int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
             bool pressedJump = pressCount > 0;
             
-            // Spider can only teleport when velocity is 0 (grounded)
-            bool canTeleport = (playerVelY_fixed == 0) && !ufoOrbed;
+            // Spider can only teleport when velocity is 0 (grounded) and not orbed
+            bool canTeleport = (playerVelY_fixed == 0) && !orbed;
             
             if (currplayer_gravity == 0)
             {
@@ -108,6 +115,7 @@ namespace FamidashEditor
                 else if (!holdingJump) 
                 {
                     blackOrbed = false;
+                    orbed = false;
                 }
             }
             else
@@ -128,9 +136,10 @@ namespace FamidashEditor
                     
                     // Apply eject to position correctly (matching famidash: scan then eject)
                     int groundRowsToReserve_down = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                    int hitboxH_down = (currplayer_mini != 0) ? 8 : 15;
-                    int hitboxW_down = (currplayer_mini != 0) ? 8 : 15;
-                    int hitboxOffsetY_down = (currplayer_mini != 0 && currplayer_gravity == 0) ? 8 : 0;
+                    bool isMini_down = (currplayer_mini != 0);
+                    int hitboxW_down = isMini_down ? 8 : 15;
+                    int hitboxH_down = isMini_down ? 7 : 15;
+                    int hitboxOffsetY_down = isMini_down ? ((0x10 - hitboxH_down) >> 1) : 0;
                     int playerX_down = playerX_fixed >> 8;
                     int playerY_down = playerY_fixed >> 8;
                     var (collided_down, ejectAmount_down) = BgCollD_Spider(playerX_down, playerY_down + hitboxOffsetY_down, hitboxW_down, hitboxH_down, groundRowsToReserve_down);
@@ -147,6 +156,7 @@ namespace FamidashEditor
                 else if (!holdingJump)
                 {
                     blackOrbed = false;
+                    orbed = false;
                 }
             }
         }
@@ -158,9 +168,10 @@ namespace FamidashEditor
         /// </summary>
         private void SpiderEject_Fresh(int offsetY)
         {
-            int hitboxW = (currplayer_mini != 0) ? 8 : 15;
-            int hitboxH = (currplayer_mini != 0) ? 8 : 15;
-            int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 8 : 0;
+            bool isMini = (currplayer_mini != 0);
+            int hitboxW = isMini ? 8 : 15;
+            int hitboxH = isMini ? 7 : 15;
+            int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
             int collisionX = (playerX_fixed >> 8);
             int collisionY = offsetY + hitboxOffsetY;
             
@@ -256,9 +267,10 @@ namespace FamidashEditor
         /// </summary>
         private void SpiderDownWait_Fresh()
         {
-            int hitboxW = (currplayer_mini != 0) ? 8 : 15;
-            int hitboxH = (currplayer_mini != 0) ? 8 : 15;
-            int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 8 : 0;
+            bool isMini = (currplayer_mini != 0);
+            int hitboxW = isMini ? 8 : 15;
+            int hitboxH = isMini ? 7 : 15;
+            int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
             int playerX_px = playerX_fixed >> 8;
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             
@@ -518,8 +530,5 @@ namespace FamidashEditor
             }
             catch { }
         }
-        
-        // blackOrbed flag for spider black orb hold mechanic
-        private bool blackOrbed = false;
     }
 }

@@ -5,15 +5,30 @@ A demake of Geometry Dash for the NES using the MMC3 mapper.
 
 ## Nightly Builds
 
-You can find the main nightly build [here](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.main.nes.zip).
+### WARNING! These are constantly changing and *might* be broken.
 
-You can find the B-Sides nightly [here](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.b-sides.nes.zip).
+If you're just looking to play Geometry Dash on your NES and that's it,\
+we recommend starting with [The Original Game](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.main.nes.zip).
 
-You can find the C-Sides nightly [here](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.c-sides.nes.zip).
+Want more levels? Check out
+[B-Sides](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.b-sides.nes.zip)
+, 
+[C-Sides](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.c-sides.nes.zip)
+, and
+[D-Sides](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.d-sides.nes.zip)
 
-You can find the VS branch nightly [here](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.vs-sys.nes.zip).
+Want EVERYTHING? Download
+[The Obese](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.huge.nes.zip).\
+<sub>Note: Will not work on most emulators. Try an accurate emulator like [Mesen](https://www.mesen.ca/) for this huge ROM.</sub>
 
-You can find Famidash - The Album nightly [here](https://nightly.link/tfdsoft/famidash/workflows/main/famidash-the-album/famidash.nes.zip).
+Do you have WAY too many quarters? Play the [Arcade Version](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.vs-sys.nes.zip).
+
+Want EVERYTHING, but you still have too many quarters? Play the [Obese Arcade Version](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.vs-huge.nes.zip)
+
+Want just the music? Download [The Album](https://nightly.link/tfdsoft/famidash/workflows/main/main/famidash.album.nes.zip)!
+
+A rework is also in progress, titled Famidash 2.0. \
+You can find it [here](https://nightly.link/tfdsoft/famidash/workflows/main/llvm-mos-compiler/famidash.main-llvm.nes.zip), with [its branch](https://github.com/tfdsoft/famidash/tree/llvm-mos-compiler)
 
 ## contributing
 
@@ -25,6 +40,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). You'll find guides for adding music and 
 - https://twitter.com/TFDSoft
 - https://discord.gg/PCbwQaZs8K
 
+## wiki
+
+You can look at the [TFDSoft wiki](https://tfdsoft.miraheze.org) for more information about specific content.
+
 ## credits
 ### core team
 
@@ -34,9 +53,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). You'll find guides for adding music and 
 |[kandowontu](https://github.com/kandowontu)|director, current lead developer, maintainer|
 |[Ficus mcHousePlant](https://github.com/FicusmcHousePlant)|levels, guidance, testing, bugfixes, graphics|
 |[alexmush](https://github.com/ADM228)|code, asm, code optimisation, music, codebase unification|
-|[jroweboy](https://github.com/jroweboy)|graphics, code optimisation, parallax, menu, etc|
-|[Zenith](https://github.com/ZenithNeko)|music, graphics|
-|[jaezu](https://github.com/jaezudev)|i'm solely here because of kando's orders|
 |[ElAngel378](https://github.com/ElAngel378)|music|
 |[SeaGlowingPro](https://github.com/SeaGlowingPro)|levels, music|
 |[KawaiiDawn](https://github.com/Astroclimber26)|levels|
@@ -58,6 +74,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). You'll find guides for adding music and 
 |[banana6000](https://github.com/xXFamidashFan69Xx)|icons, levels|
 |[bigfloppa385](https://github.com/Nintendo-Bro385)|icons, levels|
 |[AleFunky](https://github.com/AleFunky)|code, levels, testing, bugfixes|
+|[jroweboy](https://github.com/jroweboy)|graphics, code optimisation, parallax, menu, etc|
+|[Zenith](https://github.com/ZenithNeko)|music, graphics|
+|[jaezu](https://github.com/jaezudev)|i'm solely here because of kando's orders|
 |NerdBoy628|levels, music|
 |blacecaptainn|icon contest winner|
 |dtpls|icon contest winner|

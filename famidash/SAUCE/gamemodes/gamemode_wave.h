@@ -4,6 +4,8 @@ CODE_BANK_PUSH(MOVEMENT_BANK)
 void wave_eject();
 void wave_movement(){
 
+#define collided tmp4
+
 	tmp1 = dashing[currplayer];
 
 	switch (tmp1) {
@@ -13,7 +15,12 @@ void wave_movement(){
 				(currplayer_gravity ? -currplayer_vel_x : currplayer_vel_x) :
 				(currplayer_gravity ? -(currplayer_vel_x << 1) : (currplayer_vel_x << 1));
 			
-			if (controllingplayer->hold & (PAD_A | PAD_UP)) currplayer_vel_y = -currplayer_vel_y;
+			if (controllingplayer->hold & (PAD_A | PAD_UP) && gamemode != GAMEMODE_SNAKE) currplayer_vel_y = -currplayer_vel_y;
+			
+			else if (controllingplayer->hold & (PAD_A | PAD_UP)) {
+				collided = DASH_GRAVITY_ORB;
+				crossPRGBankJump0(sprite_gamemode_controller_check);
+			}
 
 			if (!currplayer_slope_frames && !currplayer_was_on_slope_counter) {
 				currplayer_y += currplayer_vel_y;
@@ -37,26 +44,7 @@ void wave_movement(){
 
 	wave_eject();
 	
-	if (bigboi) {
-		Generic.y -= 15;
-		wave_eject();		
-		Generic.x += 15;
-		wave_eject();		
-		Generic.y += 15;
-		wave_eject();		
-	}
-	
-	else {
-		if (longmode) {
-			Generic.x += 15;
-			wave_eject();				
-		}
-		if (tallmode) {
-			Generic.x = high_byte(currplayer_x);
-			Generic.y -= 15;
-			wave_eject();				
-		}
-	}
+
 
 	Generic.x = high_byte(currplayer_x);
 	Generic.y = high_byte(currplayer_y);

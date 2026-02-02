@@ -9,7 +9,7 @@
         </Grid.RowDefinitions>
         
         <!-- Debug controls at top -->
-        <StackPanel Grid.Row="0" Orientation="Vertical" Background="#FF222222" Margin="4,4,4,0">
+        <StackPanel x:Name="SettingsPanel" Grid.Row="0" Orientation="Vertical" Background="#FF222222" Margin="4,4,4,0">
             <!-- First row: Game Mode and Restart Button -->
             <Grid Margin="0,4,0,2">
                 <Grid.ColumnDefinitions>
@@ -28,6 +28,9 @@
                         <ComboBoxItem Content="6 - Wave"/>
                         <ComboBoxItem Content="7 - Swing"/>
                         <ComboBoxItem Content="8 - Ninja"/>
+                        <ComboBoxItem Content="9 - Pogo"/>
+                        <ComboBoxItem Content="10 - Snake"/>
+                        <ComboBoxItem Content="11 - Football"/>
                     </ComboBox>
                 </StackPanel>
                 <Button Grid.Column="1" x:Name="RestartButton" Content="↻ Restart" Width="70" Height="24" 
@@ -35,9 +38,10 @@
                         Click="RestartButton_Click" VerticalAlignment="Center" Margin="0,0,4,0"
                         ToolTip="Reset simulator to initial state"/>
             </Grid>
-            <!-- Second row: Mini and Speed -->
+            <!-- Second row: Mini, Inverted, and Speed -->
             <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
                 <CheckBox x:Name="MiniCheckBox" Content="Mini" Foreground="White" VerticalAlignment="Center" Margin="4,0,12,0" Checked="MiniCheckBox_Changed" Unchecked="MiniCheckBox_Changed"/>
+                <CheckBox x:Name="InvertedCheckBox" Content="Inverted" Foreground="White" VerticalAlignment="Center" Margin="0,0,12,0" Checked="InvertedCheckBox_Changed" Unchecked="InvertedCheckBox_Changed"/>
                 <TextBlock Text="Speed:" Foreground="White" VerticalAlignment="Center" Margin="4,0,8,0"/>
                 <ComboBox x:Name="SpeedComboBox" Width="80" SelectionChanged="SpeedComboBox_SelectionChanged" VerticalAlignment="Center" Margin="0,0,4,0">
                     <ComboBoxItem Content="0.5x" Tag="0"/>
@@ -45,6 +49,7 @@
                     <ComboBoxItem Content="2x" Tag="2"/>
                     <ComboBoxItem Content="3x" Tag="3"/>
                     <ComboBoxItem Content="4x" Tag="4"/>
+                    <ComboBoxItem Content="0.1x" Tag="5"/>
                 </ComboBox>
             </StackPanel>
         </StackPanel>

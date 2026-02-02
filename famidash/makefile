@@ -70,6 +70,10 @@ TMPDIR_PREFIX = TMP
 OUTDIR ?= $(OUTDIR_PREFIX)
 TMPDIR ?= $(TMPDIR_PREFIX)
 CFG ?= CONFIG/mmc3.cfg
+CFG2 ?= CONFIG/mmc3-album.cfg
+# CFG3 ?= CONFIG/mmc3-big.cfg
+CFG4 ?= CONFIG/mmc3-huge.cfg
+CFG5 ?= CONFIG/mmc3-huge-vs.cfg
 
 ifneq ($(findstring build,$(MAKECMDGOALS)),)
 ifeq ($(LEVELSET),)
@@ -80,12 +84,10 @@ endif
 .PHONY: default clean distclean build nsf vs-sys main b-sides
 
 build: $(OUTDIR) $(OUTDIR)/$(NAME).nes
-all: main vs-sys b-sides c-sides album
+all: main vs-sys b-sides c-sides d-sides album huge vs-huge
 nsf-main: $(TMPDIR_PREFIX)/main/$(NAME)_prg.bin $(TMPDIR_PREFIX)/main/$(NAME)_nsfprg.bin $(TMPDIR_PREFIX)/main/$(NAME)_meta.bin $(TMPDIR_PREFIX)/main/$(NAME)_hdr.bin
 
 main: LEVELSET = A
-main: CC65_DEFINES += -D__MAIN=1
-main: CA65_DEFINES += -D__MAIN=1
 main: OUTDIR = $(OUTDIR_PREFIX)/$@
 main: TMPDIR = $(TMPDIR_PREFIX)/$@
 main:
@@ -106,7 +108,7 @@ album:
 	@$(MAKE) build LEVELSET=$(LEVELSET) \
 	CC65_DEFINES=$(CC65_DEFINES) \
 	CA65_DEFINES=$(CA65_DEFINES) \
-	OUTDIR=$(OUTDIR) TMPDIR=$(TMPDIR) CFG=$(CFG) \
+	OUTDIR=$(OUTDIR) TMPDIR=$(TMPDIR) CFG=$(CFG2) \
 	--no-print-directory
 
 vs-sys: LEVELSET = A
@@ -123,6 +125,25 @@ vs-sys:
 	OUTDIR=$(OUTDIR) TMPDIR=$(TMPDIR) CFG=$(CFG) \
 	--no-print-directory
 
+DEFINES_HUGE = \
+	-D__HUGE_ROM=1 \
+	-D__VS_SYSTEM=1 \
+	-DDEBUG
+
+vs-huge: LEVELSET = HUGE
+vs-huge: CC65_DEFINES += $(DEFINES_HUGE)
+vs-huge: CA65_DEFINES += $(DEFINES_HUGE)
+vs-huge: OUTDIR = $(OUTDIR_PREFIX)/$@
+vs-huge: TMPDIR = $(TMPDIR_PREFIX)/$@
+
+vs-huge:
+	@echo Building HUGE-VS...
+	@$(MAKE) build LEVELSET=$(LEVELSET) \
+	CC65_DEFINES="$(CC65_DEFINES)" \
+	CA65_DEFINES="$(CA65_DEFINES)" \
+	OUTDIR=$(OUTDIR) TMPDIR=$(TMPDIR) CFG=$(CFG5) \
+	--no-print-directory
+	
 b-sides: LEVELSET = B
 b-sides: OUTDIR = $(OUTDIR_PREFIX)/$@
 b-sides: TMPDIR = $(TMPDIR_PREFIX)/$@
@@ -145,6 +166,31 @@ c-sides:
 	OUTDIR=$(OUTDIR) TMPDIR=$(TMPDIR) CFG=$(CFG) \
 	--no-print-directory
 
+d-sides: LEVELSET = D
+d-sides: OUTDIR = $(OUTDIR_PREFIX)/$@
+d-sides: TMPDIR = $(TMPDIR_PREFIX)/$@
+d-sides:
+	@echo Building D-Sides...
+	@$(MAKE) build LEVELSET=$(LEVELSET) \
+	CC65_DEFINES=$(CC65_DEFINES) \
+	CA65_DEFINES=$(CA65_DEFINES) \
+	OUTDIR=$(OUTDIR) TMPDIR=$(TMPDIR) CFG=$(CFG) \
+	--no-print-directory
+
+
+huge: LEVELSET = HUGE
+huge: CC65_DEFINES += -D__HUGE_ROM=1
+huge: CA65_DEFINES += -D__HUGE_ROM=1
+huge: OUTDIR = $(OUTDIR_PREFIX)/$@
+huge: TMPDIR = $(TMPDIR_PREFIX)/$@
+huge:
+	@echo Building HUGE...
+	@$(MAKE) build LEVELSET=$(LEVELSET) \
+	CC65_DEFINES=$(CC65_DEFINES) \
+	CA65_DEFINES=$(CA65_DEFINES) \
+	OUTDIR=$(OUTDIR) TMPDIR=$(TMPDIR) CFG=$(CFG4) \
+	--no-print-directory
+
 #target: dependencies
 
 $(OUTDIR):
@@ -157,24 +203,27 @@ $(OUTDIR)/$(NAME).nes: $(OUTDIR) $(TMPDIR)/$(NAME).o $(TMPDIR)/crt0.o $(CFG)
 	$(LD65) -C $(CFG) -o $(OUTDIR)/$(NAME).nes $(call ld65IncDir,$(TMPDIR)) $(call ld65IncDir,LIB) crt0.o $(NAME).o nes.lib --dbgfile $(OUTDIR)/famidash.dbg
 	@echo $(NAME).nes created
 
-$(TMPDIR)/crt0.o: GRAPHICS/*.chr LIB/asm/*.s LEVELS/include/lvlset_$(LEVELSET)/*.s METATILES/*.s METATILES/*.inc MUSIC/EXPORTS/lvlset_$(LEVELSET)/*.s MUSIC/EXPORTS/lvlset_$(LEVELSET)/music_bank*.dmc $(TMPDIR)/BUILD_FLAGS.s
+$(TMPDIR)/crt0.o: GRAPHICS/*.chr LIB/asm/*.* LEVELS/include/lvlset_$(LEVELSET)/*.s METATILES/*.s METATILES/*.inc MUSIC/EXPORTS/lvlset_$(LEVELSET)/*.s MUSIC/EXPORTS/lvlset_$(LEVELSET)/music_bank*.dmc $(TMPDIR)/BUILD_FLAGS.s
 	$(CA65) $(CA65_DEFINES) LIB/asm/crt0.s -l $(OUTDIR)/crt0.lst --cpu 6502X -g $(call ca65IncDir,.) $(call ca65IncDir,MUSIC/EXPORTS/lvlset_$(LEVELSET)) $(call ca65IncDir,LEVELS/include/lvlset_$(LEVELSET)) $(call ca65IncDir,$(TMPDIR)) -o $(TMPDIR)/crt0.o
 
 $(TMPDIR)/$(NAME).o: $(TMPDIR)/$(NAME).s
 	$(CA65) $(CA65_DEFINES) -l $(OUTDIR)/$(NAME).lst --cpu 6502X $(call ca65IncDir,LIB/asm) $(TMPDIR)/$(NAME).s -g 
 
-$(TMPDIR)/BUILD_FLAGS.s: BUILD_FLAGS.h defines_to_asm.py LEVELS/include/lvlset_$(LEVELSET)/level_defines.h SAUCE/defines/space_defines.h SAUCE/defines/physics_defines.h
-	$(PYTHON) defines_to_asm.py $(TMPDIR)/BUILD_FLAGS.s BUILD_FLAGS.h LEVELS/include/lvlset_$(LEVELSET)/level_defines.h SAUCE/defines/space_defines.h SAUCE/defines/physics_defines.h
+$(TMPDIR)/BUILD_FLAGS.s: BUILD_FLAGS.h UTILS/defines_to_asm.py LEVELS/include/lvlset_$(LEVELSET)/level_defines.h SAUCE/defines/space_defines.h SAUCE/defines/physics_defines.h
+	$(PYTHON) UTILS/defines_to_asm.py $(TMPDIR)/BUILD_FLAGS.s BUILD_FLAGS.h LEVELS/include/lvlset_$(LEVELSET)/level_defines.h SAUCE/defines/space_defines.h SAUCE/defines/physics_defines.h
 
 $(TMPDIR)/$(NAME).s: $(TMPDIR) SAUCE/$(NAME).c SAUCE/*.h SAUCE/*/*.h SAUCE/*/*.c SAUCE/*/*/*.h SAUCE/*/*/*.c METATILES/metatiles.h LEVELS/include/lvlset_$(LEVELSET)/*.h LIB/headers/*.h MUSIC/EXPORTS/lvlset_$(LEVELSET)/*.h 
 	$(CC65) $(CC65_DEFINES) -Osir -g --eagerly-inline-funcs SAUCE/$(NAME).c $(call cc65IncDir,LIB/headers) $(call cc65IncDir,.) $(call cc65IncDir,MUSIC/EXPORTS/lvlset_$(LEVELSET)) $(call cc65IncDir,LEVELS/include/lvlset_$(LEVELSET)) -E --add-source -o $(TMPDIR)/$(NAME).pp.c
 	$(CC65) $(CC65_DEFINES) -Osir -g --eagerly-inline-funcs SAUCE/$(NAME).c $(call cc65IncDir,LIB/headers) $(call cc65IncDir,.) $(call cc65IncDir,MUSIC/EXPORTS/lvlset_$(LEVELSET)) $(call cc65IncDir,LEVELS/include/lvlset_$(LEVELSET)) --add-source -o $(TMPDIR)/$(NAME).s
 
+SAUCE/defines/physics_table_defines.cmp.h: SAUCE/defines/physics_table_defines.txt UTILS/compileVarTables.py
+	$(PYTHON) UTILS/compileVarTables.py SAUCE/defines/physics_table_defines.txt
+
 $(TMPDIR)/$(NAME)_prg.bin $(TMPDIR)/$(NAME)_nsfprg.bin $(TMPDIR)/$(NAME)_meta.bin $(TMPDIR)/$(NAME)_hdr.bin: $(OUTDIR) $(TMPDIR)/$(NAME).o $(TMPDIR)/crt0_nsf.o $(NSF_CFG)
 	$(LD65) -C $(NSF_CFG) -o $(TMPDIR)/$(NAME) $(call ld65IncDir,$(TMPDIR)) $(call ld65IncDir,LIB) crt0_nsf.o $(NAME).o nes.lib --dbgfile $(OUTDIR)/famidash_nsf.dbg
 	@echo $(NAME).nsf created
 
-$(TMPDIR)/crt0_nsf.o: NSF/*.* LIB/asm/*.inc MUSIC/EXPORTS/lvlset_$(LEVELSET)/*.s
+$(TMPDIR)/crt0_nsf.o: NSF/*.* LIB/asm/*.* MUSIC/EXPORTS/lvlset_$(LEVELSET)/*.s
 	$(CA65) $(CA65_DEFINES) NSF/crt0.s -l $(OUTDIR)/crt0_nsf.lst --cpu 6502X -g $(call ca65IncDir,.) $(call ca65IncDir,MUSIC/EXPORTS/lvlset_$(LEVELSET)) $(call ca65IncDir,LEVELS/include/lvlset_$(LEVELSET)) $(call ca65IncDir,$(TMPDIR)) $(call ca65IncDir,LIB/asm) -o $(TMPDIR)/crt0_nsf.o
 
 clean:

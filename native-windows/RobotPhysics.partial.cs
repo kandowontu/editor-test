@@ -17,11 +17,17 @@ namespace FamidashEditor
             // Apply velocity
             playerY_fixed += velocityY;
             
-            // Simple collision (robot doesn't use slopes)
-            int collisionTop = (int)(playerY_fixed / 256.0);
-            int collisionBottom = collisionTop + 15;
+            // Collision hitbox - matches collision.h
+            // Mini mode: 8x7 hitbox, offset 4 pixels down (0x10-0x07)>>1 = 4
+            // Normal mode: 15x15 hitbox
+            int hitboxW = miniMode ? 8 : 15;
+            int hitboxH = miniMode ? 7 : 15;
+            int yOffset = miniMode ? ((0x10 - hitboxH) >> 1) : 0;  // 4 for mini, 0 for normal
+            
+            int collisionTop = (int)(playerY_fixed / 256.0) + yOffset;
+            int collisionBottom = collisionTop + hitboxH;
             int collisionLeft = (int)(playerX_fixed / 256.0);
-            int collisionRight = collisionLeft + 15;
+            int collisionRight = collisionLeft + hitboxW;
             
             CheckCollisionAndAdjust(ref playerY_fixed, ref velocityY, collisionLeft, collisionRight, collisionTop, collisionBottom);
             
@@ -32,7 +38,7 @@ namespace FamidashEditor
             }
             
             // Check if on ground and can jump
-            bool onGround = velocityY == 0 && CheckGrounded(collisionLeft, collisionRight, collisionBottom);
+            bool onGround = velocityY == 0 && CheckGroundedRobot(collisionLeft, collisionRight, collisionBottom);
             
             if (onGround && robotJumpPressed)
             {
@@ -67,9 +73,9 @@ namespace FamidashEditor
             }
         }
         
-        private bool CheckGrounded(int left, int right, int bottom)
+        private bool CheckGroundedRobot(int left, int right, int bottom)
         {
-            // Check 1 pixel below
+            // Check 1 pixel below the bottom of hitbox
             for (int x = left; x <= right; x++)
             {
                 byte tile = GetTileAt(x, bottom + 1);

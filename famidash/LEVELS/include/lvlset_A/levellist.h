@@ -14,7 +14,7 @@ const uint8_t difficulty_list[] = {
 	INSANE,	// xstep
 	INSANE,	// clutterfunk
 	INSANE,	// theoryofeverything
-	INSANE,	// electroman
+	INSANE,	// electromanadventures
 	DEMON,	// clubstep
 	INSANE,	// electrodynamix
 	INSANE,	// hexagonforce
@@ -24,28 +24,27 @@ const uint8_t difficulty_list[] = {
 	DEMON,	// deadlocked
 	INSANE,	// fingerdash
 	INSANE,	// dash
+	NORMAL,	// thetower
 	EASY,	// retray
+	NORMAL,	// leveleasy
 	NORMAL,	// thechallenge
 	NORMAL,	// dorabaebasic4
 	NORMAL,	// dorabaebasic6
 	HARD,	// dreamer
 	HARD,	// groundtospace
+	HARD,	// subzero
 	HARDER,	// kappaclysm
 	HARDER,	// sunshine
 	HARDER,	// revolution
+	HARDER,	// funnygameholiday
 	INSANE,	// lostinthewoods
 	INSANE,	// bloodbathbutno
 	INSANE,	// rainbowtylenol
 	INSANE,	// greif
-	INSANE,	// aprettyeasylevel
+	INSANE,	// extraordinaryexcitement
 	DEMON,	// thelightningroad
 	DEMON,	// nightmare
-	DEMON,	// demonpark
-	DEMON,	// decode
-	DEMON,	// problematic
 	DEMON,	// firetemple
-	DEMON,	// foresttemple
-	DEMON,	// luckydraw
 };
 
 const uint8_t stars_list[] = {
@@ -61,7 +60,7 @@ const uint8_t stars_list[] = {
 	10,	// xstep
 	11,	// clutterfunk
 	12,	// theoryofeverything
-	10,	// electroman
+	10,	// electromanadventures
 	14,	// clubstep
 	12,	// electrodynamix
 	12,	// hexagonforce
@@ -71,26 +70,25 @@ const uint8_t stars_list[] = {
 	15,	// deadlocked
 	12,	// fingerdash
 	12,	// dash
+	5,	// thetower
 	2,	// retray
+	3,	// leveleasy
 	3,	// thechallenge
 	3,	// dorabaebasic4
 	3,	// dorabaebasic6
 	4,	// dreamer
 	5,	// groundtospace
+	5,	// subzero
 	6,	// kappaclysm
 	7,	// sunshine
 	7,	// revolution
+	7,	// funnygameholiday
 	8,	// lostinthewoods
 	8,	// bloodbathbutno
 	8,	// rainbowtylenol
 	8,	// greif
-	9,	// aprettyeasylevel
+	9,	// extraordinaryexcitement
 	10,	// thelightningroad
 	10,	// nightmare
-	10,	// demonpark
-	10,	// decode
-	10,	// problematic
 	10,	// firetemple
-	10,	// foresttemple
-	10,	// luckydraw
 };

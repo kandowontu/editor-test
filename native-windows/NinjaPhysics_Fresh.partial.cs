@@ -20,7 +20,14 @@ namespace FamidashEditor
                 int playerX_px_orb = playerX_fixed >> 8;
                 int playerY_px_orb = playerY_fixed >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_orb = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
+                
+                // Adjust Y position for mini mode collision box (bottom-left alignment)
+                if (currplayer_mini != 0 && !gravityInverted_orb)
+                {
+                    playerY_px_orb += 9;
+                }
+                
                 int scrollX_px_orb = 0;
                 
                 int tempVelY = playerVelY_fixed;
@@ -70,7 +77,7 @@ namespace FamidashEditor
             // Ninja can jump if:
             // 1. Grounded (vel_y == 0), OR
             // 2. In air with jumps remaining and not already jumped this frame
-            if (pressJump && ninjaJumps > 0 && !ninjaJumpedThisFrame) {
+            if (pressJump && ninjaJumps > 0 && !ninjaJumpedThisFrame && !orbed && dashing == 0) {
                 int baseJumpIdx = (currplayer_mini != 0 ? 4 : 0);
                 bool jumpGravityInverted = (currplayer_gravity != 0);
                 int jumpGravityMultiplier = jumpGravityInverted ? -1 : 1;
@@ -90,9 +97,10 @@ namespace FamidashEditor
             
             // If grounded with inverted gravity, prevent velocity from pulling into ceiling
             if (currplayer_gravity != 0) {
-                int hitboxW_check = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_check = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxOffsetY_check = (currplayer_mini != 0 && currplayer_gravity == 0) ? 8 : 0;
+                bool isMini_check = (currplayer_mini != 0);
+                int hitboxW_check = isMini_check ? 8 : 15;
+                int hitboxH_check = isMini_check ? 7 : 15;
+                int hitboxOffsetY_check = isMini_check ? ((0x10 - hitboxH_check) >> 1) : 0;
                 int collisionX_check = (playerX_fixed >> 8);
                 int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
                 var (collided_check, _) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
@@ -110,7 +118,15 @@ namespace FamidashEditor
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+                int playerY_px_trail = playerY_fixed >> 8;
+                // Apply mini mode offset for trail to match visual position
+                bool isMini_trail = (currplayer_mini != 0);
+                bool gravityInverted_trail = (currplayer_gravity != 0);
+                if (isMini_trail && !gravityInverted_trail)
+                {
+                    playerY_px_trail += 8;
+                }
+                int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
                 recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
             }
             catch { }

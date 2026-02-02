@@ -88,12 +88,10 @@ namespace FamidashEditor
                     return (8, 0, 16, 8);  // Top-right quadrant
                 
                 case MetatileCollision.COL_DOWN_LEFT:
-                case MetatileCollision.COL_DOWN_LEFT_SPIKE:
                 case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
                     return (0, 8, 8, 16);  // Bottom-left quadrant
                 
                 case MetatileCollision.COL_DOWN_RIGHT:
-                case MetatileCollision.COL_DOWN_RIGHT_SPIKE:
                 case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
                     return (8, 8, 16, 16); // Bottom-right quadrant
                 
@@ -104,12 +102,12 @@ namespace FamidashEditor
                 case MetatileCollision.COL_UP_RIGHT_SPIKE:
                     return (8, 0, 16, 8);  // Top-right quadrant
                 
-                // Both spikes (full width, half height)
-                case MetatileCollision.COL_UP_BOTH_SPIKES:
-                    return (0, 0, 16, 8);  // Top half (both top spikes)
-                
+                // Pure death spike tiles (NO solid collision, only death)
+                case MetatileCollision.COL_DOWN_LEFT_SPIKE:
+                case MetatileCollision.COL_DOWN_RIGHT_SPIKE:
                 case MetatileCollision.COL_DOWN_BOTH_SPIKES:
-                    return (0, 8, 16, 16); // Bottom half (both bottom spikes)
+                case MetatileCollision.COL_UP_BOTH_SPIKES:
+                    return (0, 0, 0, 0);   // No solid collision
                 
                 // Pure death tiles (NO solid collision, only death detection)
                 case MetatileCollision.COL_DEATH:
@@ -179,6 +177,77 @@ namespace FamidashEditor
             // Calculate ground layer offset
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             
+            int playerLeft_px = playerX_px;
+            int playerRight_px = playerX_px + width - 1;
+            
+            // CRITICAL FIX: Check for spike death BEFORE processing any collision
+            // This matches famidash bg_coll_floor_spikes() behavior
+            if (!MainWindow.Option_NoDeath)
+            {
+                // For tiles with spikes in upper region (like COL_BOTTOM_SPIKES), we need to check
+                // multiple Y levels, not just the bottom edge. Check bottom edge and 7 pixels up.
+                for (int yOffset = 0; yOffset <= Math.Min(7, height - 1); yOffset++)
+                {
+                    int checkY = playerBottom_px - yOffset;
+                    
+                    // Check at left, center, and right X positions
+                    int[] checkPointsX = new int[]
+                    {
+                        playerLeft_px + 3,           // Left (inset 3px)
+                        playerLeft_px + width / 2,   // Center
+                        playerRight_px - 3,          // Right (inset 3px)
+                    };
+                    
+                    foreach (int px in checkPointsX)
+                    {
+                        int tileX = px / TILE;
+                        int tileY = checkY / TILE;
+                        
+                        if (tileX < 0 || tileX >= mapWidth || tileY < 0 || tileY >= mapHeight) continue;
+                        
+                        int checkTileArrayY = tileY + groundRowsToReserve;
+                        if (checkTileArrayY >= mapHeight) continue;
+                        
+                        int checkTileIdx = checkTileArrayY * mapWidth + tileX;
+                        if (checkTileIdx < 0 || checkTileIdx >= tiles.Length) continue;
+                        
+                        int checkTileId = tiles[checkTileIdx];
+                        var checkCollision = MetatileCollisionTable.GetCollision((byte)checkTileId);
+                        
+                        int localX = px % TILE;
+                        int localY = checkY % TILE;
+                        
+                        if (MetatileCollisionTable.TileKillsAtPixel(checkCollision, localX, localY))
+                        {
+                            // SPIKE DEATH DETECTED - trigger death immediately and return
+                            AppendSimDebug($"[DEATH] Floor spike detected at ({px},{checkY}) tile={checkTileId:X2} yOffset={yOffset}");
+                            deathTriggered = true;
+                            deathTileX = px;
+                            deathTileY = checkY;
+                            paused = true;
+                            _ = StopMusicAsync();
+                            
+                            try
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    if (this.Owner is MainWindow mw)
+                                    {
+                                        try { mw.PauseSimulatorPlayback(); } catch { }
+                                        try { mw.AddDeathMarker(px, checkY); } catch { }
+                                    }
+                                }));
+                            }
+                            catch { }
+                            
+                            // Return no collision so position doesn't snap
+                            return (false, 0);
+                        }
+                    }
+                }
+            }
+            
             if (tileBelowY < 0 || tileBelowY >= mapHeight) return (false, 0);
             
             // Adjust for ground layer rendering offset
@@ -191,8 +260,6 @@ namespace FamidashEditor
                 return (true, groundTop);
             }
             
-            int playerLeft_px = playerX_px;
-            int playerRight_px = playerX_px + width - 1;
             int tileLeftX = playerLeft_px / TILE;
             int tileRightX = playerRight_px / TILE;
             
@@ -285,14 +352,87 @@ namespace FamidashEditor
             int playerTop_px = playerY_px;
             int tileAboveY = (playerTop_px - 1) / TILE;
             
-            if (tileAboveY < 0 || tileAboveY >= mapHeight) return (false, 0);
-            
-            // Adjust for ground layer rendering offset
+            // Calculate ground layer offset
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-            int tileArrayY = tileAboveY + groundRowsToReserve;
             
             int playerLeft_px = playerX_px;
             int playerRight_px = playerX_px + width - 1;
+            
+            // CRITICAL FIX: Check for spike death BEFORE processing any collision (reversed gravity)
+            if (!MainWindow.Option_NoDeath)
+            {
+                // Check 4 corner points + right-center point (5-point check) for ceiling spikes
+                int[] checkPointsX = new int[]
+                {
+                    playerLeft_px + 3,           // Top-left (inset 3px)
+                    playerRight_px - 3,          // Top-right (inset 3px)
+                    playerLeft_px + width / 2,   // Top-center
+                    playerRight_px - 3,          // Right-center (for side spikes)
+                };
+                int[] checkPointsY = new int[]
+                {
+                    playerTop_px,                // Top-left Y
+                    playerTop_px,                // Top-right Y
+                    playerTop_px,                // Top-center Y
+                    playerY_px + height / 2,     // Right-center Y (middle of hitbox)
+                };
+                
+                for (int i = 0; i < checkPointsX.Length; i++)
+                {
+                    int px = checkPointsX[i];
+                    int py = checkPointsY[i];
+                    int tileX = px / TILE;
+                    int tileY = py / TILE;
+                    
+                    if (tileX < 0 || tileX >= mapWidth || tileY < 0 || tileY >= mapHeight) continue;
+                    
+                    int checkTileArrayY = tileY + groundRowsToReserve;
+                    if (checkTileArrayY >= mapHeight) continue;
+                    
+                    int checkTileIdx = checkTileArrayY * mapWidth + tileX;
+                    if (checkTileIdx < 0 || checkTileIdx >= tiles.Length) continue;
+                    
+                    int checkTileId = tiles[checkTileIdx];
+                    var checkCollision = MetatileCollisionTable.GetCollision((byte)checkTileId);
+                    
+                    int localX = px % TILE;
+                    int localY = py % TILE;
+                    
+                    if (MetatileCollisionTable.TileKillsAtPixel(checkCollision, localX, localY))
+                    {
+                        // SPIKE DEATH DETECTED - trigger death immediately and return
+                        AppendSimDebug($"[DEATH] Ceiling spike detected at ({px},{py}) tile={checkTileId:X2} BEFORE collision check");
+                        deathTriggered = true;
+                        deathTileX = px;
+                        deathTileY = py;
+                        paused = true;
+                        _ = StopMusicAsync();
+                        
+                        try
+                        {
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                if (this.Owner is MainWindow mw)
+                                {
+                                    try { mw.PauseSimulatorPlayback(); } catch { }
+                                    try { mw.AddDeathMarker(px, py); } catch { }
+                                }
+                            }));
+                        }
+                        catch { }
+                        
+                        // Return no collision so position doesn't snap
+                        return (false, 0);
+                    }
+                }
+            }
+            
+            if (tileAboveY < 0 || tileAboveY >= mapHeight) return (false, 0);
+            
+            // Adjust for ground layer rendering offset
+            int tileArrayY = tileAboveY + groundRowsToReserve;
+            
             int tileLeftX = playerLeft_px / TILE;
             int tileRightX = playerRight_px / TILE;
             

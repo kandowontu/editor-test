@@ -27,6 +27,7 @@ import pyjson5
 import aart_lz
 import json
 import hashlib
+import xml.etree.ElementTree as eltree
 from collections.abc import Iterable
 
 own_path = pathlib.Path(sys.path[0]).resolve()
@@ -110,7 +111,44 @@ def split_rle_data_into_compressed_banks(data : Iterable[int], first_meta_ptr : 
 		data = data[og_size:]
 		meta_ptr += 1
 	return out_data
-	
+
+
+def getCsvDataFromTmx(fileHandle, layerNames) -> list:
+	tree = eltree.parse(fileHandle)
+	root = tree.getroot()
+
+	# get tileset data
+	tilesetFirstGIDs = [int(child.attrib.get('firstgid')) for child in root if child.tag == 'tileset']
+
+	# get layer data
+	layers = [child for child in root if child.tag == 'layer']
+	layers = [elem for elem in layers if elem.attrib.get('name', '') in layerNames]
+	layers.sort(key=lambda x : int(x.attrib.get('id')))
+	# assume the first layer
+	csvData = [data for data in layers[0] if data.attrib.get('encoding') == 'csv']
+	# assume the first data structure
+	lines = list(csv.reader(csvData[0].text.strip().splitlines()))
+
+	# get local tileset IDs
+	if 'SP' in layerNames:
+		lookup = {0: -1}
+	else:
+		lookup = {0: 0}
+	for line in lines:
+		idx = 0
+		while idx < len(line):
+			if not line[idx]:
+				line.pop(idx)
+				continue
+			tile = int(line[idx])
+			if lookup.get(tile, None) == None:
+				i = 0
+				while i+1 < len(tilesetFirstGIDs) and tilesetFirstGIDs[i+1] <= tile:
+					i += 1
+				lookup[tile] = tile - tilesetFirstGIDs[i]
+			line[idx] = lookup[tile]
+			idx += 1
+	return lines
 
 def export_bg(folder: pathlib.PurePath, levels: Iterable[dict], include_path : pathlib.Path) -> tuple:
 	# data for all levels, each gets a tuple, they are then binpacked
@@ -134,11 +172,19 @@ def export_bg(folder: pathlib.PurePath, levels: Iterable[dict], include_path : p
 	if not cached_data_subfolder.is_dir():
 		cached_data_subfolder.mkdir(parents=True)
 
+	all_level_files = list(folder.glob("*"))
+
 	for metadata in levels:
 		level = metadata['level']
 		lines = []
-		with open(folder / f"{level}_.csv") as f:
-			lines = list(csv.reader(f))
+		try:
+			with open(*filter(lambda x : x.name.lower() == f"{level}.tmx".lower(), all_level_files)) as f:
+				lines = getCsvDataFromTmx(f, ['', 'BG'])
+			inputFileType = "TMX"
+		except:
+			with open(*filter(lambda x : x.name.lower() == f"{level}_.csv".lower(), all_level_files)) as f:
+				lines = list(csv.reader(f))
+			inputFileType = "CSV"
 		level_widths.append(math.ceil(len(lines[0]) * 16 / 100))	# the width of the level in tiles
 		rle_data = vertical_rle_with_single_tile(lines)
 		cached_data_path = (include_path / "EXPORTS" / f"{level}.lz.bin")
@@ -162,36 +208,61 @@ def export_bg(folder: pathlib.PurePath, levels: Iterable[dict], include_path : p
 		):
 			lz_data = cached_data_path.read_bytes()
 			if (level_cache.get("lz_hash") == sha256(lz_data)):
-				print(f'Loading cached level: {level}; ', end = "", flush = True)
+				print(f'Loading cached {inputFileType} level: {level}; ', end = "", flush = True)
 			else:
-				print(f'Loading level: {level}; ', end = "", flush = True)
+				print(f'Loading {inputFileType} level: {level}; ', end = "", flush = True)
 				lz_data = aart_lz.compress(rle_data)
 				cached_data_path.write_bytes(lz_data)
 				level_cache = {}
 		else:
-			print(f'Loading level: {level}; ', end = "", flush = True)
+			print(f'Loading {inputFileType} level: {level}; ', end = "", flush = True)
 			lz_data = aart_lz.compress(rle_data)
 			cached_data_path.write_bytes(lz_data)
 			level_cache = {}
 		header = [
-			metadata['songID'],
-			f"{metadata['startingGameMode']}",
-			f"{metadata['startingSpeed']}",
-			f"{int(bool(metadata.get('parallaxDisable')))}",
-			f"{int(bool(metadata.get('forcePlatformer')))}",
-			f"_{metadata['decoType']}",
+			f"<sprite_data_{level}",
+			f">sprite_data_{level}",
+			f"<(.bank(sprite_data_{level}))",
+			metadata.get('songID', 0),
+			f"({metadata.get('startingSpeed', 0)} << 4) | {metadata.get('startingGameMode', 0)}",
+			f"(${metadata.get('spawnYPositionHi', 0xB0):02X})",  # <- spawn position here
+			f"(${metadata.get('spawnYPositionLow', 0x00):02X})",  # <- spawn position here
+			f"(${metadata.get('scrollYPositionHi', 0x02):02X})",  # <- scroll position here
+			f"(${metadata.get('scrollYPositionLow', 0xEF):02X})",  # <- scroll position here
+			f"(${metadata.get('maxFallSpeed', 0x06):02X})",  # <- max fall speed here
+			" | ".join([
+				f"({int(bool(metadata.get(name)))} << {idx})"
+				for idx, name in enumerate(['forcePlatformer', 'parallaxDisable'])
+			]),  # <- bitfield separate line
+			f"_{metadata.get('decoType', 'NONE')}",
 			getPropFormatted(metadata, 'spikeSet', 'SPIKES', ('A', 'B', 'C'), "_"),
 			getPropFormatted(metadata, 'blockSet', 'BLOCKS', ('A', 'B', 'C', 'D'), "_"),
 			getPropFormatted(metadata, 'sawSet', 'SAWBLADES', ('A',), "_"),
-			f"${metadata['startingBackgroundColor']:02X}",
-			f"${metadata['startingGroundColor']:02X}",
+			f"${metadata.get('startingBackgroundColor', 0):02X}",
+			f"${metadata.get('startingGroundColor', 0):02X}",
 			str(len(lines)),
 		]
 		maxHeaderStrLen = max(map(len, header))
 		headerDataDesc = [
-			"Song ID", "Starting game mode", "Starting speed", "Disable parallax", "Force platformer",
-			"Deco type", "Spike set", "Block set", "Sawblade set",
-			"Starting background color", "Starting ground color", "Level height"]
+			"Sprite data ptr, low byte",
+			"Sprite data ptr, high byte",
+			"Sprite data bank",
+			"Song ID",
+			"Starting game mode and speed",
+			"Spawn Y Position (high byte)",
+			"Spawn Y Position (low byte)",
+			"Y Scroll Position (high byte)",
+			"Y Scroll Position (low byte)",
+			"Max Fall Speed (high byte)",
+			", ".join(["Disable parallax", "Force platformer"][::-1]),
+			"Deco type",
+			"Spike set",
+			"Block set",
+			"Sawblade set",
+			"Starting background color",
+			"Starting ground color",
+			"Level height"
+        ]
 		header = [f"{i} ;{'_'*(maxHeaderStrLen-len(i)+3)} {headerDataDesc[idx]}" for idx, i in enumerate(header)]
 		total_rle_size += len(header) + len(rle_data)
 		if (len(lz_data) >= 8192 - len(header)):
@@ -267,7 +338,7 @@ def export_bg(folder: pathlib.PurePath, levels: Iterable[dict], include_path : p
 	print("============ TOTAL LEVEL COMPRESSION STATS ============")
 	print(f"Total RLE (+ header) size:    {total_rle_size}")
 	print(f"Total RLE+LZ (+ header) size: {total_final_size}")
-	print(f"Bytes shaved off:             {total_rle_size - total_final_size}")
+	print(f"Bytes shaved off:			 {total_rle_size - total_final_size}")
 	print(f"Effective compression rate:  {100-(total_final_size / total_rle_size * 100) : .6}%")
 	print("============ TOTAL LEVEL COMPRESSION STATS ============")
 	print("")
@@ -284,7 +355,7 @@ def export_bg(folder: pathlib.PurePath, levels: Iterable[dict], include_path : p
 			out_str.append("\t; Header")
 			out_str += [f"\t\t.byte {i}" for i in hdr]
 		out_str.append("\t; Level data")
-		out_str.append(f'\t\t.incbin "{cached_data_path.relative_to(include_path).as_posix()}" ; Size: {length}')
+		out_str.append(f'\t\t.incbin "{cached_data_path.relative_to(include_path).as_posix()}" ; Size: {length - (0 if (hdr == None) else len(hdr))}')
 		out_str.append("")
 		
 		banked_level_data.append((length, "\n".join(out_str), f"level_data_{id}", "level", []))
@@ -347,12 +418,19 @@ def export_spr(folder: pathlib.PurePath, levels: Iterable[dict], globalOffsetSet
 
 	globalOffsetSettingDict = getDictFromOffsetSettings(globalOffsetSettings)
 
+	all_level_files = list(folder.glob("*"))
+
 	for num, metadata in enumerate(levels):
 		level = metadata['level']
 		localOffsetSettings = getDictFromOffsetSettings(metadata.get('objectOffsets', []), globalOffsetSettingDict)
-		lines = []
-		with open(folder / f"{level}_SP.csv") as f:
-			lines = list(csv.reader(f))
+		try:
+			with open(*filter(lambda x : x.name.lower() == f"{level}.tmx".lower(), all_level_files)) as f:
+				lines = getCsvDataFromTmx(f, ['SP'])
+			inputFileType = "TMX"
+		except:
+			with open(*filter(lambda x : x.name.lower() == f"{level}_SP.csv".lower(), all_level_files)) as f:
+				lines = list(csv.reader(f))
+			inputFileType = "CSV"
 		level_data = []
 		rows = len(lines)
 		columns = len(lines[0])
@@ -392,10 +470,10 @@ def export_spr(folder: pathlib.PurePath, levels: Iterable[dict], globalOffsetSet
 			
 		if overflowStart > 0:
 			overflows.append([level, overflowStart, -1])
-
+            
 		level_data.append([0xff]) # add terminator byte
 		all_data.append((level, len(level_data) * 5 - 4, level_data, num))
-		print(f"Sprite data for {level} is {len(level_data) * 5 - 4} bytes long")
+		print(f"Sprite data for {level} from {inputFileType} is {len(level_data) * 5 - 4} bytes long")
 
 	banked_data = []
 	for (id, length, data, num) in all_data:
@@ -521,19 +599,11 @@ def generate_level_table(levels, bg_exp_data, include_path):
 	
 	level_list_lo = '\n'.join(
 		[f"\t.byte .lobyte(level_data_{x})" for x in levels])
-	sprite_list_lo = '\n'.join(
-		[f"\t.byte .lobyte(sprite_data_{x})" for x in levels])
-	
 	level_list_hi = '\n'.join(
 		[f"\t.byte .hibyte(level_data_{x})" for x in levels])
-	sprite_list_hi = '\n'.join(
-		[f"\t.byte .hibyte(sprite_data_{x})" for x in levels])
-	
 	level_list_bank = '\n'.join(
 		[f"\t.byte .lobyte(.bank(level_data_{x}))" for x in levels])
-	sprite_list_bank = '\n'.join(
-		[f"\t.byte .lobyte(.bank(sprite_data_{x}))" for x in levels])
-	
+
 	level_chunk_list_lo = '\n'.join(
 		[f"\t.byte .lobyte(level_data_{x})" for x in bg_exp_data[2]])
 	level_chunk_list_hi = '\n'.join(
@@ -565,10 +635,6 @@ def generate_level_table(levels, bg_exp_data, include_path):
 		'_level_chunk_list_lo:',	level_chunk_list_lo,	'',	
 		'_level_chunk_list_hi:',	level_chunk_list_hi,	'',	
 		'_level_chunk_list_bank:',	level_chunk_list_bank,	'',	
-
-		'_sprite_list_lo:',		sprite_list_lo,		'',	
-		'_sprite_list_hi:',		sprite_list_hi,		'',	
-		'_sprite_list_bank:',	sprite_list_bank,	'',	
 
 		f'.define MID_LEVEL_LENGTHS_ENABLED {"1" if mid_widths_enabled else "0"}',
 		f'.define HIGH_LEVEL_LENGTHS_ENABLED {"1" if hi_widths_enabled else "0"}',

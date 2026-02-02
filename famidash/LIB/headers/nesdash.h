@@ -99,6 +99,12 @@ uint16_t calculate_linear_scroll_y(uint16_t nonlinearScroll);
 void cap_scroll_y_at_top();
 
 /**
+ * @brief Caps the Y scroll at 0x2EF
+ */
+void cap_scroll_y_at_bottom();
+
+
+/**
  * @brief Play a raw PCM sample. Hangs the game until done.
  *
  * @note Sample parameters (offset, bank, sample rate) are specified in tables inside the routine and found by the @c sample parameter. 
@@ -159,6 +165,11 @@ void _display_attempt_counter (uint32_t args);
  */
 void __fastcall__ _famistudio_sfx_clear_channel(unsigned int args);
 #define famistudio_sfx_clear_channel(channel) (__A__ = channel, __AX__ <<= 8, _famistudio_sfx_clear_channel(__AX__))
+
+/**
+ * @brief Updates currplayer_table_idx from other currplayer variables
+ */
+void update_currplayer_table_idx();
 
 #define low_word(a) *((uint16_t*)&a)
 #define high_word(a) *((uint16_t*)&a+1)
@@ -294,3 +305,8 @@ extern uint8_t PAL_BUF[32];
 extern uint8_t shiftBy4table[16];
 #define shlNibble4(nibble) (idx8_load(shiftBy4table, nibble))
 #define shlNibble12(nibble) (idx8_load(shiftBy4table, nibble), __AX__ <<= 8)
+
+// Result in __AX__
+#define signExtend8to16(value) {__AX__ = 0; __A__ = value; do_if_negative({__asm__("dex");});}
+// The one above compiles optimally, the one below doesn't
+#define signExtend8to16inline(value) (__AX__ = 0, __A__ = value, (__A__ < 0) ? (__AX__ - 0x100) : (__AX__))

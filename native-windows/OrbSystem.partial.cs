@@ -19,6 +19,20 @@ namespace FamidashEditor
         private const byte RED_ORB = 0x28;
         private const byte YELLOW_ORB_SMALLER = 0x29;
         private const byte BLACK_ORB = 0x44;
+        private const byte DASH_ORB = 0x45;
+        private const byte DASH_GRAVITY_ORB = 0x46;
+        private const byte DASH_ORB_45DEG_UP = 0x4C;
+        private const byte DASH_GRAVITY_ORB_45DEG_UP = 0x4D;
+        private const byte DASH_ORB_45DEG_DOWN = 0x50;
+        private const byte DASH_GRAVITY_ORB_45DEG_DOWN = 0x51;
+        private const byte SPIDER_ORB_UP = 0x54;
+        private const byte SPIDER_ORB_DOWN = 0x55;
+        private const byte SPIDER_PAD_UP = 0x56;
+        private const byte SPIDER_PAD_DOWN = 0x57;
+        private const byte DASH_ORB_UPWARDS = 0x5B;
+        private const byte DASH_GRAVITY_ORB_UPWARDS = 0x5C;
+        private const byte DASH_ORB_DOWNWARDS = 0x5D;
+        private const byte DASH_GRAVITY_ORB_DOWNWARDS = 0x5E;
         private const byte BLUE_ORB_MULTI = 0x7B;
         private const byte GREEN_ORB_MULTI = 0x7C;
 
@@ -154,6 +168,10 @@ namespace FamidashEditor
                 // Check if this is an orb sprite type
                 if (!IsOrbSprite(spriteType)) continue;
                 
+                // CRITICAL: Do not activate orbs while dashing (from dash orb)
+                // Dash state prevents all orb activations until dash ends
+                if (dashing != 0) continue;
+                
                 // Check collision with player using same method as pads/portals
                 if (!CheckOrbCollision(idx, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     continue;
@@ -243,6 +261,7 @@ namespace FamidashEditor
                    spriteType == GREEN_ORB ||
                    spriteType == BLUE_ORB_MULTI ||
                    spriteType == GREEN_ORB_MULTI;
+                   // Spider orbs/pads (0x54-0x57) are handled separately
         }
         
         /// <summary>
@@ -390,6 +409,154 @@ namespace FamidashEditor
             catch (Exception ex)
             {
                 AppendSimDebug($"[ORB_INIT] Error scanning for orbs: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Check for dash orb collisions and activate them
+        /// Dash orbs set player velocity based on their type and optionally flip gravity
+        /// </summary>
+        private void CheckDashOrbCollision()
+        {
+            if (sprites == null || mapWidth <= 0 || mapHeight <= 0) return;
+
+            int playerX_px = playerX_fixed >> 8;
+            int playerY_px = playerY_fixed >> 8;
+            
+            // Use actual collision hitbox size, not visual size
+            int hitboxW = miniMode ? 8 : 15;
+            int hitboxH = miniMode ? 7 : 15;
+            
+            // Apply mini mode offset: bottom-left for normal, top-left for inverted
+            if (miniMode && !gravityFlipped)
+            {
+                playerY_px += 9;
+            }
+
+            int playerLeft_px = playerX_px;
+            int playerRight_px = playerX_px + hitboxW - 1;
+            int playerTop_px = playerY_px;
+            int playerBottom_px = playerY_px + hitboxH - 1;
+
+            for (int idx = 0; idx < sprites.Length; idx++)
+            {
+                int spriteType = sprites[idx];
+                if (spriteType == -1) continue;
+
+                // Check if this is a dash orb
+                bool isDashOrb = spriteType == DASH_ORB || spriteType == DASH_GRAVITY_ORB ||
+                                spriteType == DASH_ORB_45DEG_UP || spriteType == DASH_GRAVITY_ORB_45DEG_UP ||
+                                spriteType == DASH_ORB_45DEG_DOWN || spriteType == DASH_GRAVITY_ORB_45DEG_DOWN ||
+                                spriteType == DASH_ORB_UPWARDS || spriteType == DASH_GRAVITY_ORB_UPWARDS ||
+                                spriteType == DASH_ORB_DOWNWARDS || spriteType == DASH_GRAVITY_ORB_DOWNWARDS;
+
+                if (!isDashOrb) continue;
+
+                // Check for collision
+                if (!CheckOrbCollision(idx, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                    continue;
+
+                // Check if already activated (prevent reactivation)
+                if (orbActivated.ContainsKey(idx) && orbActivated[idx])
+                    continue;
+
+                // Check for press/hold/buffer like regular orbs
+                bool xPressed = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0) > 0;
+                bool xHeld = IsXDownAsync() || keyXHeld;
+                bool canBuffer = CanBufferOrb(currentGameMode);
+                
+                bool shouldActivate = false;
+                
+                if (canBuffer)
+                {
+                    // Bufferable modes: can hold X before hitting orb
+                    if (xPressed && !orbHoldConsumedKeyStillDown && !orbHoldSuppressing)
+                    {
+                        shouldActivate = true;
+                        orbBufferActive = true;
+                    }
+                    else if (xHeld && orbBufferActive && !orbHoldSuppressing)
+                    {
+                        shouldActivate = true;
+                    }
+                    else if (xHeld && !orbBufferActive && !orbHoldSuppressing && !orbHoldConsumedKeyStillDown)
+                    {
+                        orbBufferActive = true;
+                        shouldActivate = true;
+                    }
+                }
+                else
+                {
+                    // Non-bufferable modes: require fresh X press
+                    if (xPressed)
+                    {
+                        shouldActivate = true;
+                    }
+                }
+                
+                if (!shouldActivate) continue;
+                
+                // Mark as activated
+                orbActivated[idx] = true;
+                orbHoldConsumedKeyStillDown = true;
+                
+                // Consume the X press if it was used
+                if (xPressed)
+                    Interlocked.Exchange(ref keyXPressedCount, 0);
+
+                // Handle gravity dash orbs (flip gravity first)
+                bool isGravityDash = spriteType == DASH_GRAVITY_ORB ||
+                                    spriteType == DASH_GRAVITY_ORB_45DEG_UP ||
+                                    spriteType == DASH_GRAVITY_ORB_45DEG_DOWN ||
+                                    spriteType == DASH_GRAVITY_ORB_UPWARDS ||
+                                    spriteType == DASH_GRAVITY_ORB_DOWNWARDS;
+
+                if (isGravityDash && dashing == 0)
+                {
+                    // Flip gravity (common_dash_orb_routine)
+                    gravityFlipped = !gravityFlipped;
+                    AppendSimDebug($"[DASH_ORB] Gravity flipped to {(gravityFlipped ? "UP" : "DOWN")} by orb 0x{spriteType:X2}");
+                }
+
+                // Set dash state and velocity based on orb type
+                if (spriteType == DASH_ORB || spriteType == DASH_GRAVITY_ORB)
+                {
+                    // Horizontal dash (right)
+                    velocityY = 0;
+                    dashing = 1;
+                    AppendSimDebug($"[DASH_ORB] Horizontal dash activated (0x{spriteType:X2})");
+                }
+                else if (spriteType == DASH_ORB_45DEG_UP || spriteType == DASH_GRAVITY_ORB_45DEG_UP)
+                {
+                    // 45 degree upward dash
+                    velocityY = -velocityX;  // currplayer_vel_y = -currplayer_vel_x
+                    dashing = 2;
+                    AppendSimDebug($"[DASH_ORB] 45deg upward dash activated (0x{spriteType:X2}), vely={velocityY}");
+                }
+                else if (spriteType == DASH_ORB_45DEG_DOWN || spriteType == DASH_GRAVITY_ORB_45DEG_DOWN)
+                {
+                    // 45 degree downward dash
+                    velocityY = velocityX;  // currplayer_vel_y = currplayer_vel_x
+                    dashing = 3;
+                    AppendSimDebug($"[DASH_ORB] 45deg downward dash activated (0x{spriteType:X2}), vely={velocityY}");
+                }
+                else if (spriteType == DASH_ORB_UPWARDS || spriteType == DASH_GRAVITY_ORB_UPWARDS)
+                {
+                    // Upward dash (vertical)
+                    velocityY = velocityX * 4;  // currplayer_vel_y = currplayer_vel_x * 4
+                    dashing = 4;
+                    AppendSimDebug($"[DASH_ORB] Upward dash activated (0x{spriteType:X2}), vely={velocityY}");
+                }
+                else if (spriteType == DASH_ORB_DOWNWARDS || spriteType == DASH_GRAVITY_ORB_DOWNWARDS)
+                {
+                    // Downward dash (vertical)
+                    velocityY = -velocityX * 4;  // currplayer_vel_y = -currplayer_vel_x * 4
+                    dashing = 5;
+                    AppendSimDebug($"[DASH_ORB] Downward dash activated (0x{spriteType:X2}), vely={velocityY}");
+                }
+
+                // Only activate one dash orb per frame
+                break;
             }
         }
     }

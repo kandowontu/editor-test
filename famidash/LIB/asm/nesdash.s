@@ -1,6 +1,6 @@
 ; Custom routines implemented specifically for famidash (some are totally not stolen from famitower)
 .importzp _gamemode
-.importzp _tmp1, _tmp2, _tmp3, _tmp4, _tmp5, _tmp6, _tmp7, _tmp8, _tmp9, _temptemp5  ; C-safe temp storage
+.importzp _tmp1, _tmp2, _tmp3, _tmp4, _tmp5, _tmp6, _tmp7, _tmp8, _tmp9  ; C-safe temp storage
 .import pusha, pushax, callptr4
 .import _scroll_x, _cursedmusic
 
@@ -13,7 +13,7 @@
 .importzp _sprite_data
 sprite_data = _sprite_data
 
-.define gamemode_count 9
+.define gamemode_count 12
 
 .macro INCW addr
 	INC addr
@@ -97,9 +97,6 @@ sprite_data = _sprite_data
 .export _auto_fs_updates := auto_fs_updates
 .export _hexToDecOutputBuffer := hexToDecOutputBuffer
 
-; .export _pad = PAD_STATEP
-; .export _pad_new = PAD_STATET
-
 ; Standard for function declaration here:
 ; C function name
 ; .segment declaration
@@ -108,9 +105,9 @@ sprite_data = _sprite_data
 ; <empty line>
 ; .export declaration
 ; the function itself
-
+.if !__THE_ALBUM
 ; void __fastcall__ oam_meta_spr_flipped(uint8_t x,uint8_t y,const void *data);
-.segment "XCD_BANK_05"
+.segment _PLAYER_RENDER_BANK
 
 .export __oam_meta_spr_flipped
 .proc __oam_meta_spr_flipped
@@ -173,7 +170,7 @@ end:
 	stx SPRID
 	rts
 .endproc
-
+.endif
 .segment "RODATA"
 
 .export _shiftBy4table := shiftBy4table
@@ -214,7 +211,7 @@ shiftBy4table:
 
 .global _level_list_lo, _level_list_hi, _level_list_bank, _sprite_list_lo, _sprite_list_hi, _sprite_list_bank
 .import _current_deco_type, _current_spike_set, _current_block_set, _current_saw_set
-.import _song, _speed, _lastgcolortype, _lastbgcolortype
+.import _song, _speed, _lastgcolortype, _lastbgcolortype, _spawn_y_pos, _spawn_scroll_y_pos, _max_fallspeed
 .import _level_data_bank, _sprite_data_bank, _force_platformer
 .import _discomode
 
@@ -224,12 +221,10 @@ _init_rld:
 
 	; Get pointers:
 	TAY						;__ Load pointer to tables
-	LDA _sprite_list_lo,y	;
-	STA _sprite_data+0		;__	Get low pointer to sprite data 
-	LDA _sprite_list_hi,y	;
-	STA _sprite_data+1		;__	Get high pointer to sprite data 
-	LDA _sprite_list_bank,y	;
-	STA _sprite_data_bank	;__	Get sprite data bank
+
+	LDA	mmc3PRG1Bank		;	Save PRG1 bank
+	PHA						;__
+
 	LDA _level_list_lo,y	;
 	STA	ptr1+0				;__	Get low pointer to level data
 	LDA _level_list_hi,y	;
@@ -240,44 +235,86 @@ _init_rld:
 	JSR mmc3_set_prg_bank_1
 
 	LDY #$00			;-  For both (zp),y addressing and rld_column
+	STY	_no_parallax	;__	Reset bit-value variables
 	STY rld_column		;__ Reset scrolling
 
 	; Read header
+
+
+	LDA (ptr1),y			;
+	STA _sprite_data+0		;	Get low pointer to sprite data
+	INY						;__
+	LDA (ptr1),y			;
+	STA _sprite_data+1		;	Get high pointer to sprite data 
+	INY						;__
+	LDA (ptr1),y			;
+	STA _sprite_data_bank	;	Get sprite data bank
+	INY						;__
+
 	LDA (ptr1),y		;
 	STA _song			;   Song ID
-	INCW ptr1			;__
+	INY					;__
 
-	LDA (ptr1),y		;
-	STA _gamemode		;   Starting game mode
-	INCW ptr1			;__
+	LDA (ptr1),y		;	Starting gamemode and speed
+	TAX					;__
+	LSR					;
+	LSR					;
+	LSR					;	Get speed
+	LSR					;
+	STA	_speed			;__
+	TXA					;
+	AND	#$0F			;
+	STA	_gamemode		;	Get just the gamemode
+	INY					;__
 
-	LDA (ptr1),y		;
-	STA _speed			;   Starting speed
-	INCW ptr1			;__
+	LDA (ptr1),y		;spawn y position high byte
+	sta _spawn_y_pos+1
+	iny	
+	LDA (ptr1),y		;spawn y position low byte
+	sta _spawn_y_pos
+	iny
+	
+	LDA (ptr1),y		;spawn scroll y position high byte
+	sta _spawn_scroll_y_pos+1
+	iny	
+	LDA (ptr1),y		;spawn scroll y position low byte
+	sta _spawn_scroll_y_pos
+	iny
+	
+	LDA (ptr1),y		;max fall speed high byte
+	sta _max_fallspeed
+	iny
 
-	LDA (ptr1),y		;
-	STA _no_parallax	;	Parallax disable
-	INCW ptr1			;__
-
-	LDA (ptr1),y		;
-	STA _force_platformer	;	force platformer
-	INCW ptr1			;__
+	LDA (ptr1),y		;__	Force platformer, Parallax disable
+	LSR					;__	Parallax disable in carry
+	ROL _force_platformer	;__	Store where it needs to go
+	STA _no_parallax	;	The rest is force platformer, store it
+	INY					;__
 
 	LDA (ptr1),y			;
 	STA _current_deco_type	;	Deco type
-	INCW ptr1				;__
+	INY						;__
 	
 	LDA (ptr1),y			;
 	STA _current_spike_set	;	Spike set
-	INCW ptr1				;__
+	INY						;__
 
 	LDA (ptr1),y			;
 	STA _current_block_set	;	Block set
-	INCW ptr1				;__
+	INY						;__
 
 	LDA (ptr1),y			;
-	STA _current_saw_set	;	Saw set
-	INCW ptr1				;__
+	STA _current_saw_set	;__	Saw set
+
+	TYA						;
+	SEC						;
+	ADC	ptr1				;
+	STA	ptr1				;	Add Y to the ptr since we're gonna use Y
+	BCC	:+					;	SEC for additional increment
+		INC	ptr1+1			;
+	:						;__
+	LDY	#$00				;__
+	
 
 	;	Deal with the starting BG color
 	LDA (ptr1),y			;	Starting BG color
@@ -295,10 +332,12 @@ _init_rld:
 	LDA palBrightTable3, Y	;
 	STA PAL_BUF_RAW+1		;	Store faded color to slots 1 and 9
 	STA PAL_BUF_RAW+9		;__
+	STA PAL_BUF_RAW+13		;__
 	TAY						;
 	LDA (PAL_PTR),y			;	Store it into the buffer
 	STA PAL_BUF+1			;
 	STA PAL_BUF+9			;__
+	STA PAL_BUF+13			;__
 	incw ptr1				;	Move on
 	LDY #0					;__
 
@@ -326,12 +365,8 @@ _init_rld:
 	ldy #0
 	incw ptr1
 
-	.if USE_ILLEGAL_OPCODES
-		lax (ptr1),y
-	.else
-		LDA	(ptr1),y
-		TAX
-	.endif
+	LDA	(ptr1),y
+	TAX
 	EOR #$FF			;
 	CLC					;	Level height
 	ADC #$01			;
@@ -352,10 +387,10 @@ _init_rld:
 		ADC #<(1+57-1)			;__
 		SEC
 	@min_scroll_y_loop:
+		TAX
 		SBC	#15				;__
 		BCC	@min_scroll_y_fin
 		INC	min_scroll_y+1
-		TAX
 		BCS	@min_scroll_y_loop	; = BRA
 	@min_scroll_y_fin:
 		LDA	shiftBy4table, X
@@ -377,16 +412,20 @@ SetupNextRLEByte:
 
     jsr	LZ_get_byte		;
     STA rld_value		;__	Load rld_value
-	RTS
+	
+	pla						;	Restore PRG1 bank
+	jmp	mmc3_set_prg_bank_1	;__
 single_rle_byte:
 	and #$7f
 	sta rld_value
 	lda #0
 	sta rld_run
-	rts
+
+	pla						;	Restore PRG1 bank
+	jmp	mmc3_set_prg_bank_1	;__
 
 ; void unrle_next_column();
-.segment "CODE_2"
+.segment "CODE"
 
 .export _unrle_next_column
 .proc _unrle_next_column
@@ -458,7 +497,7 @@ single_rle_byte:
 .endproc
 
 ; Function not available in C
-.segment "CODE_2"
+.segment "CODE"
 
 .proc loadLevelContinuation
 	; Meta sequence: load new level chunk
@@ -477,7 +516,7 @@ single_rle_byte:
 .endproc
 
 ; void __fastcall__ dummy_unrle_columns(uint16_t columns);
-.segment "CODE_2"
+.segment "CODE"
 
 .import umul8x16r24m
 
@@ -578,8 +617,8 @@ single_rle_byte:
 
 
 
-
-.segment "XCD_BANK_02"	; dep of: _draw_screen
+.if !__THE_ALBUM
+.segment _BACKGROUND_RENDER_BANK
 
 .proc writeToCollisionMap
 	; We have 27 writes to make to the collision map, thats 27 * 6 bytes for an unrolled loop.
@@ -631,7 +670,7 @@ single_rle_byte:
 
 
 ; [Not used in C]
-.segment "XCD_BANK_02"	; dep of: _draw_screen
+.segment _BACKGROUND_RENDER_BANK
 
 .import _scroll_y
 
@@ -682,10 +721,8 @@ noSeam:
 	;	No seam can be distinguished by high byte >= 02 or bit 1
 .endproc
 
-.if !__THE_ALBUM
-
 ; char draw_screen();
-.segment "XCD_BANK_02"
+.segment _BACKGROUND_RENDER_BANK
 
 .global dsrt_fr1O : zp
 
@@ -1313,7 +1350,7 @@ ntAddrHiTbl:
 			TXA						;	If the difference is less than
 			LDX	#2					;	($78 - $40), we went too far
 			SBC	#$00				;	Also load the scrolling direction offset
-			BCS	@fin				;__
+			BPL	@fin				;__
 		
 		@ret0:		;
 			LDA	#0	;	Return 0
@@ -1338,7 +1375,7 @@ ntAddrHiTbl:
 			TXA						;	If the difference is more than
 			LDX	#0					;	($78 + $40), we went too far
 			SBC	#$00				;	Also load scrolling direction offset
-			BCS	@ret0				;__
+			BPL	@ret0				;__
 		
 		@fin:
 			STX	scroll_direction
@@ -1599,7 +1636,7 @@ ntAddrHiTbl:
 
 
 ; void __fastcall__ load_ground(uint8_t id);
-.segment "XCD_BANK_06"
+.segment _GROUND_BANK
 
 .import _ground
 
@@ -1656,7 +1693,7 @@ ntAddrHiTbl:
 .endif
 
 ; void __fastcall__ draw_padded_text(const void * data, uint8_t len, uint8_t total_len, uintptr_t ppu_address)
-.segment "CODE_2"
+.segment "CODE"
 
 .export __draw_padded_text
 .proc __draw_padded_text
@@ -1733,10 +1770,10 @@ ntAddrHiTbl:
 
 .endproc
 
-; void movement();
-.segment "XCD_BANK_01"
-
 .if !__THE_ALBUM
+; void movement();
+.segment _MOVEMENT_BANK
+
 .import _cube_movement, _ship_movement, _ball_movement, _ufo_movement, _robot_movement, _spider_movement, _wave_movement
 .import _retro_mode
 
@@ -1767,14 +1804,14 @@ ntAddrHiTbl:
 		RTS     ; break or use the RTS trick
 
 	jump_table_lo:
-		.byte <(_cube_movement-1), <(_ship_movement-1), <(_ball_movement-1), <(_ufo_movement-1), <(_cube_movement-1), <(_spider_movement-1), <(_wave_movement-1), <(_ball_movement-1), <(_cube_movement-1)
+		.byte <(_cube_movement-1), <(_ship_movement-1), <(_ball_movement-1), <(_ufo_movement-1), <(_cube_movement-1), <(_spider_movement-1), <(_wave_movement-1), <(_ball_movement-1), <(_cube_movement-1), <(_ball_movement-1), <(_wave_movement-1), <(_cube_movement-1)
 	jump_table_hi:
-		.byte >(_cube_movement-1), >(_ship_movement-1), >(_ball_movement-1), >(_ufo_movement-1), >(_cube_movement-1), >(_spider_movement-1), >(_wave_movement-1), >(_ball_movement-1), >(_cube_movement-1)
+		.byte >(_cube_movement-1), >(_ship_movement-1), >(_ball_movement-1), >(_ufo_movement-1), >(_cube_movement-1), >(_spider_movement-1), >(_wave_movement-1), >(_ball_movement-1), >(_cube_movement-1), >(_ball_movement-1), >(_wave_movement-1), >(_cube_movement-1)
 
 .endproc
 .endif
 ; void __fastcall__ music_play(uint8_t song);
-.segment "CODE_2"
+.segment "CODE"
 
 .import _options
 
@@ -1829,8 +1866,8 @@ found_bank:
 			LDA	music_data_locations_hi-FIRST_MUSIC_BANK, Y
 			TAY
 		.endif
-		LDA NTSC_MODE
-		JSR famistudio_init
+        LDA cpuRegion
+        JSR famistudio_init
 	:
 
 	PLA
@@ -1845,7 +1882,7 @@ found_bank:
 .include "musicPlayRoutines.s"
 .endproc
 
-.segment "CODE_2"
+.segment "CODE"
 
 .proc famistudio_dpcm_bank_callback
 	clc
@@ -1855,7 +1892,7 @@ found_bank:
 
 
 ; void __fastcall__ sfx_play(uint8_t sfx_index, uint8_t channel);
-.segment "CODE_2"
+.segment "CODE"
 
 .import _options
 
@@ -1891,7 +1928,7 @@ play:
 .endproc
 
 ; void music_update();
-.segment "CODE_2"
+.segment "CODE"
 
 .export _music_update
 .proc _music_update
@@ -1972,7 +2009,7 @@ early_exit:
 .endproc
 
 ; uint16_t calculate_linear_scroll_y(uint16_t nonlinearScroll);
-.segment "CODE_2"
+.segment "CODE"
 
 .export _calculate_linear_scroll_y
 .proc _calculate_linear_scroll_y
@@ -1995,11 +2032,12 @@ early_exit:
 	RTS
 .endproc
 
+.if !__THE_ALBUM
 ; void cap_scroll_y_at_top();
-.segment "CODE_2"
+.segment _SCROLL_BANK
 
 .importzp _currplayer_y
-.import _scroll_y
+.import _scroll_y, _player_y, _scroll_y_subpx
 
 .export _cap_scroll_y_at_top
 .proc _cap_scroll_y_at_top
@@ -2012,7 +2050,7 @@ check:
 	rts
 
 doit:
-	; compensate currplayer_y
+	; compensate currplayer_y and player_y
 	lda     _scroll_y
 	ldx     _scroll_y+1
 	sta     sreg
@@ -2023,15 +2061,96 @@ doit:
 	sta     _scroll_y+1		;__
 	jsr     __sub_scroll_y_ext
 	jsr     _calculate_linear_scroll_y
-	eor     #$FF
-	sec
-	adc     _currplayer_y+1
-	sta     _currplayer_y+1
+	eor     #$FF			;__	Make the ADCs into SBCs
+	tay
+
+	lda     _currplayer_y	;
+	sec						;
+	sbc     _scroll_y_subpx	;
+	sta     _currplayer_y	;	Compensate currplayer_y
+	sta		_player_y+1		;	(Apparently guaranteed to be 0)
+	tya						;
+	adc     _currplayer_y+1	;
+	sta     _currplayer_y+1	;
+	sta     _player_y+1		;__
+
+	lda     _player_y+2		;
+	sec						;
+	sbc     _scroll_y_subpx	;
+	sta     _player_y+2		;	Compensate player_y[1]
+	tya						;
+	adc     _player_y+2+1	;
+	sta     _player_y+2+1	;__
+
+	lda     #0
+	sta     _scroll_y_subpx
+
 	; we can't do anything with the high byte of the diff anyway
 
 	rts
 .endproc
 
+
+; void cap_scroll_y_at_bottom();
+.segment _SCROLL_BANK
+
+.importzp _currplayer_y
+.import _scroll_y, _player_y, _scroll_y_subpx
+
+.export _cap_scroll_y_at_bottom
+.proc _cap_scroll_y_at_bottom
+check:
+	lda     _scroll_y_subpx	;
+	cmp     #0              ;
+	lda     _scroll_y		;
+	sbc     #<$02F0			;	if (scroll_y > 0x2EF)
+	lda     _scroll_y+1		;
+	sbc     #>$02F0			;__
+	bcs     doit
+	rts
+
+doit:
+	; compensate currplayer_y
+	ldx     _scroll_y
+	ldy     _scroll_y+1
+
+	lda     #<$02EF			;
+	sta     sreg			;
+	sta     _scroll_y		;	scroll_y = 0x2EF
+	lda     #>$02EF			;
+	sta     sreg+1			;
+	sta     _scroll_y+1		;__
+
+	tya									;
+	jsr     __sub_scroll_y_ext			;	Get difference
+	jsr     _calculate_linear_scroll_y	;__
+	tay
+
+	lda     _currplayer_y	;
+	clc						;
+	adc     _scroll_y_subpx	;
+	sta     _currplayer_y	;	Compensate currplayer_y
+	sta		_player_y+1		;	(Apparently guaranteed to be 0)
+	tya						;
+	adc     _currplayer_y+1	;
+	sta     _currplayer_y+1	;
+	sta     _player_y+1		;__
+
+	lda     _player_y+2		;
+	clc						;
+	adc     _scroll_y_subpx	;
+	sta     _player_y+2		;	Compensate player_y[1]
+	tya						;
+	adc     _player_y+2+1	;
+	sta     _player_y+2+1	;__
+
+	lda     #0
+	sta     _scroll_y_subpx
+	; we can't do anything with the high byte of the diff anyway
+
+	rts
+.endproc
+.endif
 
 ; void check_spr_objects();
 .segment "CODE_2"
@@ -2131,16 +2250,15 @@ end:
 
 .if !__THE_ALBUM
 
-.segment "XCD_BANK_05"
+.segment _PLAYER_RENDER_BANK
 
-.define CUBE_GRAVITY ::_CUBE_GRAVITY
-.define MINI_CUBE_GRAVITY ::_MINI_CUBE_GRAVITY
-
-.import _player_x, _player_y, _player_gravity, _player_vel_x, _player_vel_y
-.import _ballframe, _robotframe, _robotjumpframe, _spiderframe, _retro_mode, _icon, _gameState, _titleicon
-.importzp _cube_rotate, _mini, _was_on_slope_counter
-.import _CUBE, _SHIP, _BALL, _ROBOT, _ROBOT_ALT, _UFO, _SPIDER, _WAVE, _SWING, _ROBOT_ALT2, _SPIDER_ALT, _SPIDER_ALT2
-.import _MINI_CUBE, _MINI_SHIP, _MINI_BALL, _MINI_BALL_ALT, _MINI_ROBOT, _MINI_ROBOT_ALT, _MINI_UFO, _MINI_SPIDER, _MINI_SPIDER_ALT, _MINI_WAVE, _MINI_SWING, _MINI_SWING_ALT
+.import _player_x, _player_y, _player_gravity, _player_vel_x, _player_vel_y, _player_mini
+.import _ballframe, _robotframe, _robotjumpframe, _spiderframe, _orbed
+.import _retro_mode, _icon, _gameState, _titleicon, _skipProcessingCubeRotationLogic
+.import _CUBE_GRAVITY_lo, _chargepower
+.importzp _cube_rotate, _was_on_slope_counter
+.import _CUBE, _SHIP, _BALL, _ROBOT, _ROBOT_ALT, _UFO, _SPIDER, _WAVE, _SWING, _ROBOT_ALT2, _SPIDER_ALT, _SPIDER_ALT2, _POGO, _SNAKE
+.import _MINI_CUBE, _MINI_SHIP, _MINI_BALL, _MINI_BALL_ALT, _MINI_ROBOT, _MINI_ROBOT_ALT, _MINI_UFO, _MINI_SPIDER, _MINI_SPIDER_ALT, _MINI_WAVE, _MINI_SWING, _MINI_SWING_ALT, _MINI_POGO, _MINI_SNAKE
 .importzp _cube_data, _slope_frames, _slope_type
 drawcube_rounding_table:
 	.byte 0, <-1, <-2, 3, 2, 1
@@ -2197,12 +2315,13 @@ drawcube_sprite_none:
 
 
 drawplayer_center_offsets:
-	;		Cub	Shp Bal	UFO	RBT	SPI	Wav
-	.byte	8,	8,	8,	8,	4,	4,	8,	8,	8; normal size
-	.byte	4,	4,	4,	4,	4,	4,	4,	4,	4; mini 
+	;		Cub	Shp Bal	UFO	RBT	SPI	Wav Sng Nja Pgo Snk Ftb
+	.byte	8,	8,	8,	8,	4,	4,	8,	8,	8,	8,	8,	8; normal size
+	.byte	4,	4,	4,	4,	4,	4,	4,	4,	4,	4,	4,	4; mini 
 
 ; void drawplayerone();
-.segment "XCD_BANK_05"
+.segment _PLAYER_RENDER_BANK
+
 
 .export _drawplayerone
 .proc _drawplayerone
@@ -2230,7 +2349,7 @@ drawplayer_center_offsets:
 	STX sreg+1			;__
 
 	; Set up base pointer for jump tables
-	LDA _mini       ;
+	LDA _player_mini;
 	BEQ :+          ;   Add 8 if mini mode 
 		LDA #gamemode_count
 	:               ;__
@@ -2263,6 +2382,13 @@ drawplayer_center_offsets:
 	STA sreg+0			;__ The X of oam_meta_spr is temp_x
 
 	; The switch 
+	LDX _retro_mode
+	beq @normal
+	LDX _gamemode
+	cpx #$08
+	jeq	robot
+	
+@normal:
 	LDX _gamemode
 	DEX			;	case 0x01: ship shit
 	jeq ship	;__
@@ -2280,6 +2406,10 @@ drawplayer_center_offsets:
 	jeq	ship	;__
 	dex			;	case 0x08: NINJA
 	jeq	cube	;__
+	dex			;	case 0x09: POGO
+	jeq	pogo	;__
+	dex			;	case 0x0A: SNAKE
+	jeq	wave	;__
 	
 	; default: cube
     cube:
@@ -2291,8 +2421,24 @@ drawplayer_center_offsets:
 
         BIT _cube_data
         BMI @round
-		ldx _temptemp5			;player trails?
-		bne	@fin			;if so, get out of here
+		ldx _skipProcessingCubeRotationLogic			;player trails?
+		beq @nofin
+		jmp @fin			;if so, get out of here
+	@nofin:
+
+		LDA _gamemode
+		cmp #$0B
+		bne @normalagain
+		lda _player_vel_y+1
+		ORA _player_vel_y+0
+		bne @normalagain
+		
+		lda #0
+		sta _cube_rotate+1
+		beq @round
+		
+		
+		@normalagain:
 		LDA _player_vel_y+1		;	if player_vel_y == 0
 		ORA _player_vel_y+0		;
 		BNE @no_round		    ;__
@@ -2320,17 +2466,88 @@ drawplayer_center_offsets:
                 ADC rounding_slope_table-1, y
             : 
             TAX
+			lda _gamemode
+			cmp #$0B
+			bne @doit
+			jmp @no_round
+			@doit:
             JMP @fin_nold
 
 		@no_round:
-		LDA _cube_rotate
-		CLC
+		LDA	_framerate	;
+		ASL				;	Physics table index
+		ASL				;	(just the framerate)
+		TAY				;__
 
+
+		LDX _gamemode
+		cpx #$0B
+		bne @normalstuff
+
+		lda _orbed
+		beq @disregard1
+		lda _player_vel_y+0
+		ora _player_vel_y+1
+		beq @hi
+		
+
+
+	@disregard1:
+		lda _player_vel_y+0
+		ora _player_vel_y+1
+		bne @normalstuff
+
+		lda _chargepower
+		beq @normalstuff
+
+		cmp #5
+		BCS :+
+		ldx #23
+		stx _cube_rotate+1
+		jmp @fin
+
+	: 	cmp #15
+		BCS :+
+		ldx #22
+		stx _cube_rotate+1
+		jmp @fin
+
+
+	: 	cmp #25
+		BCS :+
+		ldx #21
+		stx _cube_rotate+1
+		jmp @fin
+
+
+	: 	cmp #30
+		BCS :+
+		ldx #20
+		stx _cube_rotate+1
+		jmp @fin
+
+
+	: 	cmp #46
+		BCS @hi
+		ldx #20
+		stx _cube_rotate+1
+		jmp @fin
+
+	@hi:
+
+		ldx #6
+		stx _cube_rotate+1
+		jmp @fin	
+	  
+	
+	@normalstuff:
+		LDA _cube_rotate
 		LDX _player_gravity+0
 		BNE @subtract
-
-			ADC #<CUBE_GRAVITY      ;
-			STA _cube_rotate        ;
+		@add:
+			CLC						;
+			ADC _CUBE_GRAVITY_lo,Y	;
+			STA _cube_rotate		;
 			BCC @fin				;   cube_rotate[0] += CUBE_GRAVITY;
 				LDX _cube_rotate+1	;
 				INX					;__
@@ -2341,7 +2558,8 @@ drawplayer_center_offsets:
 				JMP @fin_nold
 
 		@subtract:
-			SBC #<CUBE_GRAVITY-1	; 	
+			SEC						;
+			SBC _CUBE_GRAVITY_lo,Y	; 	
 			STA _cube_rotate		;
 			BCS @fin				;	cube_rotate[0] -= CUBE_GRAVITY;
 				DEC _cube_rotate+1	;
@@ -2419,7 +2637,7 @@ drawplayer_center_offsets:
 		CMP	#$08				;	if (high_byte(cube_rotate) >= 0x08) {
 		BCC :++					;__
 			CMP #$80			;	if (high_byte(cube_rotate) < 0x80)
-			BCC	:+				;__
+			BCS	:+				;__
 				LDY #$07		;	cube_rotate[0] = 0x07FF
 				DEX				;__
 			:					;__	else 0x0000 (Y and X still remain at 0)
@@ -2470,6 +2688,16 @@ drawplayer_center_offsets:
 		STA _ballframe	;__
 	@donball:
 		JMP fin
+
+	pogo:
+		ldy #$00
+		lda _robotjumpframe
+		beq @noanim
+		ldy #$01
+		dec _robotjumpframe
+
+	@noanim:
+		jmp fin
 
 	ufo:
 		; Real C code:
@@ -2632,7 +2860,7 @@ drawplayer_center_offsets:
             ; 7 - A = -A + 7
 			; -A = (A ^ 0xFF) + 1
 			; 7 - A = (A ^ 0xFF) + 8
-            LDY _mini
+            LDY _player_mini
             BNE :+
 			EOR #$FF
 			CLC
@@ -2662,7 +2890,7 @@ drawplayer_center_offsets:
 		TAY					;__
 
 		; ; CENTERING DEBUGGING ONLY
-		; lda <FRAME_CNT1
+		; lda <FRAME_CNT
 		; and #$01
 		; beq :+
 		; 	lda #$40
@@ -2679,17 +2907,17 @@ drawplayer_center_offsets:
 		JMP __oam_meta_spr_flipped ;__	oam_meta_spr(temp_x, high_byte(player_y[0])-1, [whatever the fuck we set here]);
 
     sprite_table_table_lo:
-        .byte <_CUBE, <_SHIP, <_BALL, <_UFO, <_ROBOT, <_SPIDER, <_WAVE, <_SWING, <_CUBE
-        .byte <_MINI_CUBE, <_MINI_SHIP, <_MINI_BALL, <_MINI_UFO, <_MINI_ROBOT, <_MINI_SPIDER, <_MINI_WAVE, <_MINI_SWING, <_MINI_CUBE
+        .byte <_CUBE, <_SHIP, <_BALL, <_UFO, <_ROBOT, <_SPIDER, <_WAVE, <_SWING, <_CUBE, <_POGO, <_SNAKE, <_CUBE
+        .byte <_MINI_CUBE, <_MINI_SHIP, <_MINI_BALL, <_MINI_UFO, <_MINI_ROBOT, <_MINI_SPIDER, <_MINI_WAVE, <_MINI_SWING, <_MINI_CUBE, <_MINI_POGO, <_MINI_SNAKE, <_MINI_CUBE
     sprite_table_table_lo2:
-        .byte <_CUBE, <_SHIP, <_BALL, <_UFO, <_ROBOT_ALT, <_SPIDER_ALT, <_WAVE, <_SWING, <_CUBE
-        .byte <_MINI_CUBE, <_MINI_SHIP, <_MINI_BALL_ALT, <_MINI_UFO, <_MINI_ROBOT_ALT, <_MINI_SPIDER_ALT, <_MINI_WAVE, <_MINI_SWING_ALT, <_MINI_CUBE
+        .byte <_CUBE, <_SHIP, <_BALL, <_UFO, <_ROBOT_ALT, <_SPIDER_ALT, <_WAVE, <_SWING, <_ROBOT_ALT, <_POGO, <_SNAKE, <_CUBE
+        .byte <_MINI_CUBE, <_MINI_SHIP, <_MINI_BALL_ALT, <_MINI_UFO, <_MINI_ROBOT_ALT, <_MINI_SPIDER_ALT, <_MINI_WAVE, <_MINI_SWING_ALT, <_MINI_ROBOT_ALT, <_MINI_POGO, <_MINI_SNAKE, <_MINI_CUBE
     sprite_table_table_hi:
-        .byte >_CUBE, >_SHIP, >_BALL, >_UFO, >_ROBOT, >_SPIDER, >_WAVE, >_SWING, >_CUBE
-        .byte >_MINI_CUBE, >_MINI_SHIP, >_MINI_BALL, >_MINI_UFO, >_MINI_ROBOT, >_MINI_SPIDER, >_MINI_WAVE, >_MINI_SWING, >_MINI_CUBE
+        .byte >_CUBE, >_SHIP, >_BALL, >_UFO, >_ROBOT, >_SPIDER, >_WAVE, >_SWING, >_CUBE, >_POGO, >_SNAKE, >_CUBE
+        .byte >_MINI_CUBE, >_MINI_SHIP, >_MINI_BALL, >_MINI_UFO, >_MINI_ROBOT, >_MINI_SPIDER, >_MINI_WAVE, >_MINI_SWING, >_MINI_CUBE, >_MINI_POGO, >_MINI_SNAKE, >_MINI_CUBE
     sprite_table_table_hi2:
-        .byte >_CUBE, >_SHIP, >_BALL, >_UFO, >_ROBOT_ALT, >_SPIDER_ALT, >_WAVE, >_SWING, >_CUBE
-        .byte >_MINI_CUBE, >_MINI_SHIP, >_MINI_BALL_ALT, >_MINI_UFO, >_MINI_ROBOT_ALT, >_MINI_SPIDER_ALT, >_MINI_WAVE, >_MINI_SWING_ALT, >_MINI_CUBE
+        .byte >_CUBE, >_SHIP, >_BALL, >_UFO, >_ROBOT_ALT, >_SPIDER_ALT, >_WAVE, >_SWING, >_ROBOT_ALT, >_POGO, >_SNAKE, >_CUBE
+        .byte >_MINI_CUBE, >_MINI_SHIP, >_MINI_BALL_ALT, >_MINI_UFO, >_MINI_ROBOT_ALT, >_MINI_SPIDER_ALT, >_MINI_WAVE, >_MINI_SWING_ALT, >_MINI_ROBOT_ALT, >_MINI_POGO, >_MINI_SNAKE, >_MINI_CUBE
 
     rounding_slope_table:
 		;     45v  22v  66v  45^  22^  66^  nothing
@@ -2699,10 +2927,10 @@ drawplayer_center_offsets:
 drawplayer_common := _drawplayerone::common
 
 ; void drawplayertwo();
-.segment "XCD_BANK_05"
+.segment _PLAYER_RENDER_BANK
 
-.import _CUBE2, _SHIP2, _BALL2, _ROBOT2, _UFO2, _SPIDER2, _WAVE2, _SWING2
-.import _MINI_CUBE2, _MINI_SHIP2, _MINI_BALL2, _MINI_ROBOT2, _MINI_UFO2, _MINI_SPIDER2, _MINI_WAVE2, _MINI_SWING2
+.import _CUBE2, _SHIP2, _BALL2, _ROBOT2, _UFO2, _SPIDER2, _WAVE2, _SWING2, _POGO2, _SNAKE2
+.import _MINI_CUBE2, _MINI_SHIP2, _MINI_BALL2, _MINI_ROBOT2, _MINI_UFO2, _MINI_SPIDER2, _MINI_WAVE2, _MINI_SWING2, _MINI_POGO2, _MINI_SNAKE2
 
 .export _drawplayertwo
 .proc _drawplayertwo
@@ -2731,7 +2959,7 @@ drawplayer_common := _drawplayerone::common
 	STX sreg+1			;__
 
 	; Set up base pointer for jump tables
-	LDA _mini+1       ;
+	LDA _player_mini+1;
 	BEQ :+          ;   Add 8 if mini mode 
 		LDA #gamemode_count
 	:               ;__
@@ -2781,6 +3009,10 @@ drawplayer_common := _drawplayerone::common
 	jeq	ship	;__
 	dex			;	case 0x08: NINJA
 	jeq	cube	;__
+	dex			;	case 0x09: POGO
+	jeq	pogo	;__
+	dex			;	case 0x0A: SNAKE
+	jeq	pogo	;__
 
     ; default: cube
     cube:
@@ -2792,8 +3024,23 @@ drawplayer_common := _drawplayerone::common
 
         BIT _cube_data+1
         BMI @round
-	;	ldx _temptemp5		;PLAYER TRAILS are disabled for 2 player mode anyway
+	;	ldx _skipProcessingCubeRotationLogic		;PLAYER TRAILS are disabled for 2 player mode anyway
 	;	bne	@fin		
+
+
+		LDA _gamemode
+		cmp #$0B
+		bne @normalagain
+		lda _player_vel_y+3
+		ORA _player_vel_y+2
+		bne @normalagain
+		
+		lda #0
+		sta _cube_rotate+3
+		beq @round
+		
+		
+		@normalagain:
 
 		LDA _player_vel_y+3		;	if player_vel_y == 0
 		ORA _player_vel_y+2		;
@@ -2822,18 +3069,90 @@ drawplayer_common := _drawplayerone::common
 				ADC rounding_slope_table-1, y
 			: 
 			TAX					;__
+			lda _gamemode
+			cmp #$0B
+			bne @doit
+			jmp @no_round
+			@doit:
 			JMP @fin_nold
 
 		@no_round:
+		LDA	_framerate	;
+		ASL				;	Physics table index
+		ASL				;	(just the framerate)
+		TAY				;__
+
+		LDX _gamemode
+		cpx #$0B
+		bne @normalstuff
+
+		lda _orbed+1
+		beq @disregard1
+		lda _player_vel_y+2
+		ora _player_vel_y+3
+		beq @hi
+		
+
+
+	@disregard1:
+		lda _player_vel_y+2
+		ora _player_vel_y+3
+		bne @normalstuff
+
+		lda _chargepower+1
+		beq @normalstuff
+
+		cmp #5
+		BCS :+
+		ldx #23
+		stx _cube_rotate+3
+		jmp @fin
+
+	: 	cmp #15
+		BCS :+
+		ldx #22
+		stx _cube_rotate+3
+		jmp @fin
+
+
+	: 	cmp #25
+		BCS :+
+		ldx #21
+		stx _cube_rotate+3
+		jmp @fin
+
+
+	: 	cmp #30
+		BCS :+
+		ldx #20
+		stx _cube_rotate+3
+		jmp @fin
+
+
+	: 	cmp #46
+		BCS @hi
+		ldx #20
+		stx _cube_rotate+3
+		jmp @fin
+
+	@hi:
+
+		ldx #6
+		stx _cube_rotate+3
+		jmp @fin	
+	  
+	
+	@normalstuff:
+
 		LDA _cube_rotate+2
-		CLC
 
 		LDX _player_gravity+1
 		BNE @subtract
 
-			ADC #<CUBE_GRAVITY      ;
-			STA _cube_rotate+2		;
-			BCC @fin				;   cube_rotate[0] += CUBE_GRAVITY;
+			CLC						;
+			ADC _CUBE_GRAVITY_lo,Y	;
+			STA _cube_rotate+2		;	cube_rotate[0] += CUBE_GRAVITY;
+			BCC @fin				;
 				LDX _cube_rotate+3	;
 				INX					;__
 				CPX #24				;
@@ -2843,9 +3162,10 @@ drawplayer_common := _drawplayerone::common
 				JMP @fin_nold
 
 		@subtract:
-			SBC #<CUBE_GRAVITY-1	; 	
-			STA _cube_rotate+2		;
-			BCS @fin				;	cube_rotate[0] -= CUBE_GRAVITY;
+			SEC						;
+			SBC _CUBE_GRAVITY_lo,Y	; 	
+			STA _cube_rotate+2		;	cube_rotate[0] -= CUBE_GRAVITY;
+			BCS @fin				;
 				DEC _cube_rotate+3	;
 				BPL @fin			;__
 				LDA #23				;	Cap at 0
@@ -2901,7 +3221,7 @@ drawplayer_common := _drawplayerone::common
 		CMP	#$08				;	if (high_byte(cube_rotate) >= 0x08) {
 		BCC :++					;__
 			CMP #$80			;	if (high_byte(cube_rotate) < 0x80)
-			BCC	:+				;__
+			BCS	:+				;__
 				LDY #$07		;	cube_rotate[1] = 0x07FF
 				DEX				;__
 			:					;__	else 0x0000 (Y and X still remain at 0)
@@ -2947,6 +3267,21 @@ drawplayer_common := _drawplayerone::common
 	@continue:
 		LDY _ballframe
 		JMP drawplayer_common
+		
+		
+		
+	pogo:
+		ldy #$00
+		lda _robotjumpframe+1
+		beq @noanim
+		ldy #$01
+		dec _robotjumpframe+1
+
+	@noanim:
+		jmp drawplayer_common
+
+		
+		
 	ufo:
 		; Real C code:
 			; 		if (!player_gravity[1]) {
@@ -3094,7 +3429,7 @@ drawplayer_common := _drawplayerone::common
             ; 7 - A = -A + 7
 			; -A = (A ^ 0xFF) + 1
 			; 7 - A = (A ^ 0xFF) + 8
-            LDY _mini+1
+            LDY _player_mini+1
             BNE :+
 			EOR #$FF
 			CLC
@@ -3114,17 +3449,17 @@ drawplayer_common := _drawplayerone::common
 		TAY
 		JMP drawplayer_common
 	sprite_table_table_lo:
-		.byte <_CUBE2, <_SHIP2, <_BALL2, <_UFO2, <_ROBOT2, <_SPIDER2, <_WAVE2, <_SWING2, <_CUBE2
-		.byte <_MINI_CUBE2, <_MINI_SHIP2, <_MINI_BALL2, <_MINI_UFO2, <_MINI_ROBOT2, <_MINI_SPIDER2, <_MINI_WAVE2, <_MINI_SWING2, <_MINI_CUBE2
+		.byte <_CUBE2, <_SHIP2, <_BALL2, <_UFO2, <_ROBOT2, <_SPIDER2, <_WAVE2, <_SWING2, <_CUBE2, <_POGO2, <_SNAKE2, <_CUBE2
+		.byte <_MINI_CUBE2, <_MINI_SHIP2, <_MINI_BALL2, <_MINI_UFO2, <_MINI_ROBOT2, <_MINI_SPIDER2, <_MINI_WAVE2, <_MINI_SWING2, <_MINI_CUBE2, <_MINI_POGO2, <_MINI_SNAKE2, <_MINI_CUBE2
     sprite_table_table_lo2:
-        .byte <_CUBE2, <_SHIP2, <_BALL2, <_UFO2, <_ROBOT_ALT2, <_SPIDER_ALT2, <_WAVE2, <_SWING2, <_CUBE2
-        .byte <_MINI_CUBE2, <_MINI_SHIP2, <_MINI_BALL_ALT, <_MINI_UFO2, <_MINI_ROBOT_ALT, <_MINI_SPIDER_ALT, <_MINI_WAVE2, <_MINI_SWING_ALT, <_MINI_CUBE2
+        .byte <_CUBE2, <_SHIP2, <_BALL2, <_UFO2, <_ROBOT_ALT2, <_SPIDER_ALT2, <_WAVE2, <_SWING2, <_CUBE2, <_POGO2, <_SNAKE2, <_CUBE2
+        .byte <_MINI_CUBE2, <_MINI_SHIP2, <_MINI_BALL_ALT, <_MINI_UFO2, <_MINI_ROBOT_ALT, <_MINI_SPIDER_ALT, <_MINI_WAVE2, <_MINI_SWING_ALT, <_MINI_CUBE2, <_MINI_POGO2, <_MINI_SNAKE2, <_MINI_CUBE2
 	sprite_table_table_hi:
-		.byte >_CUBE2, >_SHIP2, >_BALL2, >_UFO2, >_ROBOT2, >_SPIDER2, >_WAVE2, >_SWING2, <_CUBE2
-		.byte >_MINI_CUBE2, >_MINI_SHIP2, >_MINI_BALL2, >_MINI_UFO2, >_MINI_ROBOT2, >_MINI_SPIDER2, >_MINI_WAVE2, >_MINI_SWING2, <_MINI_CUBE2
+		.byte >_CUBE2, >_SHIP2, >_BALL2, >_UFO2, >_ROBOT2, >_SPIDER2, >_WAVE2, >_SWING2, >_CUBE2, >_POGO2, >_SNAKE2, >_CUBE2
+		.byte >_MINI_CUBE2, >_MINI_SHIP2, >_MINI_BALL2, >_MINI_UFO2, >_MINI_ROBOT2, >_MINI_SPIDER2, >_MINI_WAVE2, >_MINI_SWING2, >_MINI_CUBE2, >_MINI_POGO2, >_MINI_SNAKE2, >_MINI_CUBE2
     sprite_table_table_hi2:
-        .byte >_CUBE2, >_SHIP2, >_BALL2, >_UFO2, >_ROBOT_ALT2, >_SPIDER_ALT2, >_WAVE2, >_SWING2, <_CUBE2
-        .byte >_MINI_CUBE2, >_MINI_SHIP2, >_MINI_BALL_ALT, >_MINI_UFO2, >_MINI_ROBOT_ALT, >_MINI_SPIDER_ALT, >_MINI_WAVE2, >_MINI_SWING_ALT, <_MINI_CUBE2
+        .byte >_CUBE2, >_SHIP2, >_BALL2, >_UFO2, >_ROBOT_ALT2, >_SPIDER_ALT2, >_WAVE2, >_SWING2, >_CUBE2, >_POGO2, >_SNAKE2, >_CUBE2
+        .byte >_MINI_CUBE2, >_MINI_SHIP2, >_MINI_BALL_ALT, >_MINI_UFO2, >_MINI_ROBOT_ALT, >_MINI_SPIDER_ALT, >_MINI_WAVE2, >_MINI_SWING_ALT, >_MINI_CUBE2, >_MINI_POGO2, >_MINI_SNAKE2, >_MINI_CUBE2
     rounding_slope_table:
 		;     45v  22v  66v  45^  22^  66^  nothing
         .byte $09, $08, $09, $00, $03, $04, $08, $00
@@ -3247,7 +3582,7 @@ SSDPCM_amphi:
 .proc _playPCM
     ; A = Sample
 	tay
-	ldx	NTSC_MODE
+	ldx	cpuRegion
 	bne :+
 		clc
 		adc #(SampleRate_PAL-SampleRate_NTSC)
@@ -3659,78 +3994,82 @@ SSDPCM_getbyte:
 .endproc
 
 ; [Not used in C]
-.segment "CODE"
+;	.segment "CODE"
+;	
+;	.import	__DATA_LOAD__,	__DATA_RUN__,	__DATA_SIZE__,	__DATA_LOAD_BANK__
+;	
+;	.global copydata
+;	.proc copydata
+;	
+;		seg_count = 1
+;		
+;		current_area = tmp1
+;		current_bank = tmp2
+;		
+;		src = sreg
+;		dest = xargs+0
+;		
+;		start:
+;			lda	#0
+;			sta	current_bank
+;			ldy	#<seg_count
+;			
+;		loop:
+;			lda	load_lo-1,	y
+;			sta	src+0
+;			lda	load_hi-1,	y
+;			sta	src+1
+;			
+;			lda	run_lo-1,	y
+;			sta	dest+0
+;			lda	run_hi-1,	y
+;			sta	dest+1
+;			
+;			lda	bank-1,	y
+;			beq	@no_bankswitch
+;				cmp	current_bank
+;				beq	@no_bankswitch
+;					jsr	mmc3_tmp_prg_bank_1	; only allowed because this is run on init
+;					sta	current_bank
+;			@no_bankswitch:
+;			
+;			lda	size_lo-1,	y
+;			ldx	size_hi-1,	y
+;			sty	current_area
+;			jsr	__memcpy
+;			
+;			ldy	current_area
+;			dey
+;			bne	loop
+;			
+;		rts
 
-.import	__DATA_LOAD__,	__DATA_RUN__,	__DATA_SIZE__,	__DATA_LOAD_BANK__
+;	load_lo:
+;		.byte	<__DATA_LOAD__
 
-.global copydata
-.proc copydata
+;	load_hi:
+;		.byte	>__DATA_LOAD__
 
-	seg_count = 1
+;	run_lo:
+;		.byte	<__DATA_RUN__
 
-	current_area = tmp1
-	current_bank = tmp2
+;	run_hi:
+;		.byte	>__DATA_RUN__
 
-	src = sreg
-	dest = xargs+0
+;	size_lo:
+;		.byte	<__DATA_SIZE__
 
-	start:
-		lda	#0
-		sta	current_bank
-		ldy	#<seg_count
+;	size_hi:
+;		.byte	>__DATA_SIZE__
 
-	loop:
-		lda	load_lo-1,	y
-		sta	src+0
-		lda	load_hi-1,	y
-		sta	src+1
-		
-		lda	run_lo-1,	y
-		sta	dest+0
-		lda	run_hi-1,	y
-		sta	dest+1
+;	bank:
+;		.byte	<__DATA_LOAD_BANK__
 
-		lda	bank-1,	y
-		beq	@no_bankswitch
-			cmp	current_bank
-			beq	@no_bankswitch
-				jsr	mmc3_tmp_prg_bank_1	; only allowed because this is run on init
-				sta	current_bank
-		@no_bankswitch:
-
-		lda	size_lo-1,	y
-		ldx	size_hi-1,	y
-		sty	current_area
-		jsr	__memcpy
-
-		ldy	current_area
-		dey
-		bne	loop
-
-	rts
-
-load_lo:
-	.byte	<__DATA_LOAD__
-load_hi:
-	.byte	>__DATA_LOAD__
-
-run_lo:
-	.byte	<__DATA_RUN__
-run_hi:
-	.byte	>__DATA_RUN__
-
-size_lo:
-	.byte	<__DATA_SIZE__
-size_hi:
-	.byte	>__DATA_SIZE__
-
-bank:
-	.byte	<__DATA_LOAD_BANK__
-
-.endproc
+;	.endproc
 
 
 ; void increment_attempt_count();
+.if !__THE_ALBUM
 .segment "XCD_BANK_00"
 
 .import _attemptCounter
@@ -3777,9 +4116,8 @@ bank:
 	rts
 .endproc
 
-
 ; void display_attempt_counter (uint8_t zeroChr, uintptr_t ppu_address);
-.segment "XCD_BANK_06"	; Same as state_lvldone	
+.segment _LVLDONE_BANK
 
 .import _attemptCounter
 
@@ -3847,12 +4185,13 @@ bank:
 
 		jmp	__one_vram_buffer
 .endproc
+.endif
 
 
 .if !__THE_ALBUM
 
 ; void draw_dialog_box(const char * data);
-.segment "XCD_BANK_02"
+.segment _DIALOG_BOX_BANK
 
 .import popax	; Unfortunately
 .import _paletteSettings
@@ -4033,9 +4372,11 @@ vert_skip:
 .endproc
 
 .endif
-; Standard for function declaration here:
+
+
+
 ; void init_sprites();
-.segment "CODE"
+.segment "CODE_2"
 
 .importzp _sprite_data	
 .import _sprite_data_bank
@@ -4187,6 +4528,23 @@ vert_skip:
 		
 .endproc
 
+
+; void update_currplayer_table_idx();
+.segment "CODE_2"
+
+.importzp _currplayer_mini, _currplayer_gravity, _currplayer_table_idx
+
+.export _update_currplayer_table_idx
+.proc _update_currplayer_table_idx
+	LDA	_currplayer_gravity		;__	A = gggggggg;	C = ?
+	AND	#$80					;__	A = g-------;	C = ?
+	ORA	framerate				;__	A = g------f;	C = ?
+	ASL							;__	A = ------f-;	C = g
+	ORA	_currplayer_mini		;__	A = ------fm;	C = g
+	ROL							;__	A = -----fmg;	C = 0
+	STA	_currplayer_table_idx	;__	Store the result
+	RTS
+.endproc
 
 ; void set_tile_banks();
 ; 

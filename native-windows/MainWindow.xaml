@@ -117,6 +117,7 @@
                     </MenuItem>
                     <Separator />
                     <MenuItem x:Name="MenuFileClose" Header="Close _Tab" InputGestureText="Ctrl+W" />
+                    <MenuItem x:Name="MenuFileExit" Header="E_xit Editor" InputGestureText="Alt+F4" />
                     <Separator />
                 </MenuItem>
                 <MenuItem Header="_Tools">

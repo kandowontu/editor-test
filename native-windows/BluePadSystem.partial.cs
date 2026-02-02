@@ -30,13 +30,26 @@ namespace FamidashEditor
                 int playerX_px = playerX_fixed >> 8;
                 int playerY_px = playerY_fixed >> 8;
                 
+                // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
+                bool isMini = (currplayer_mini != 0);
+                bool gravityInverted = (currplayer_gravity != 0);
+                int hitboxW = isMini ? 8 : 15;
+                int hitboxH = isMini ? 7 : 15;
+                
+                // playerY_fixed is the visual sprite top-left position
+                // Need to calculate actual hitbox position based on mode and gravity
+                // From rendering code: normal hitbox is at Y+0, mini at Y+9 (normal gravity) or Y+0 (inverted)
+                if (isMini && !gravityInverted)
+                {
+                    playerY_px += 9;  // Mini normal gravity: hitbox at bottom of 16x16 visual
+                }
+                // For all other cases (normal cube, or mini inverted), hitbox starts at visual Y
+                
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;
-                int playerRight_px = playerX_px + playerVisualWidth - 1;
+                int playerRight_px = playerX_px + hitboxW - 1;
                 int playerTop_px = playerY_px;
-                int playerBottom_px = playerY_px + playerVisualHeight - 1;
-                
-                bool gravityInverted = (currplayer_gravity != 0);
+                int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 // Iterate through ALL sprites and check for blue pads
                 for (int idx = 0; idx < sprites.Length; idx++)
@@ -82,12 +95,13 @@ namespace FamidashEditor
                         currplayer_gravity = (byte)(gravityInverted ? 1 : 0);
                         gravityReversed = gravityInverted;
                         gravityFlipped = gravityInverted;
-                        UpdatePlayerIconFlip();
+                        
+                        // Update player icon flip on UI thread (this is called from simulation thread)
+                        try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
                         
                         // Apply velocity AFTER gravity change
                         // Negative if gravity is now reversed (upward)
                         // Positive if gravity is now normal (downward)
-                        bool isMini = (currplayer_mini != 0);
                         int baseVel = isMini ? PAD_HEIGHT_BLUE_mini : PAD_HEIGHT_BLUE_normal;
                         
                         // baseVel is negative (-0x3A0 or -0x160)

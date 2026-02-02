@@ -26,6 +26,9 @@ namespace FamidashEditor
         public int? SelectedStartingBackgroundColor { get; private set; } = null;
         public int? SelectedStartingGroundColor { get; private set; } = null;
         
+        // Flag to prevent saves during initialization
+        private bool _isInitializing = true;
+        
         // Store original values for cancel functionality
         private string originalDeco = "DECO1";
         private string originalBlockSet = "BLOCKSA";
@@ -198,7 +201,10 @@ namespace FamidashEditor
 
                         
                     // Save config (writes out to disk only when the TMX has a file path)
-                    mw.SaveCurrentTmxConfig();
+                    if (!_isInitializing)
+                    {
+                        mw.SaveCurrentTmxConfig();
+                    }
                 }
                 
                 this.DialogResult = true;
@@ -519,7 +525,10 @@ namespace FamidashEditor
                                                 if (int.TryParse(cbi.Tag.ToString(), out int tagVal))
                                                 {
                                                     mwOwner.LoadedMaxFallSpeed = tagVal;
-                                                    try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                                    if (!_isInitializing)
+                                                    {
+                                                        try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                                    }
                                                 }
                                             }
                                         }
@@ -554,7 +563,10 @@ namespace FamidashEditor
                                         if (StartingSpeedCombo.SelectedIndex >= 0)
                                         {
                                             mwOwner.LoadedStartingSpeedUiIndex = StartingSpeedCombo.SelectedIndex;
-                                            try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            if (!_isInitializing)
+                                            {
+                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            }
                                         }
                                     }
                                     catch { }
@@ -585,7 +597,10 @@ namespace FamidashEditor
                                             if (int.TryParse(cbi.Tag.ToString(), out int tagVal))
                                             {
                                                 mwOwner.LoadedStartingGameMode = tagVal;
-                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                                if (!_isInitializing)
+                                                {
+                                                    try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                                }
                                             }
                                         }
                                     }
@@ -615,7 +630,10 @@ namespace FamidashEditor
                                         if (StartingBackgroundColorCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Content is string s)
                                         {
                                             try { mwOwner.LoadedStartingBackgroundColor = int.Parse(s.Replace("0x", ""), NumberStyles.HexNumber); } catch { mwOwner.LoadedStartingBackgroundColor = null; }
-                                            try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            if (!_isInitializing)
+                                            {
+                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            }
                                         }
                                     }
                                     catch { }
@@ -644,7 +662,10 @@ namespace FamidashEditor
                                         if (StartingGroundColorCombo.SelectedItem is System.Windows.Controls.ComboBoxItem cbi && cbi.Content is string s)
                                         {
                                             try { mwOwner.LoadedStartingGroundColor = int.Parse(s.Replace("0x", ""), NumberStyles.HexNumber); } catch { mwOwner.LoadedStartingGroundColor = null; }
-                                            try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            if (!_isInitializing)
+                                            {
+                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            }
                                         }
                                     }
                                     catch { }
@@ -676,7 +697,10 @@ namespace FamidashEditor
                                             if (int.TryParse(cbi.Tag.ToString(), out int tagVal))
                                             {
                                                 mwOwner.LoadedStartingDifficulty = tagVal;
-                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                                if (!_isInitializing)
+                                                {
+                                                    try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                                }
                                             }
                                         }
                                     }
@@ -709,7 +733,10 @@ namespace FamidashEditor
                                             if (int.TryParse(cbi.Tag.ToString(), out int tagVal))
                                             {
                                                 mwOwner.LoadedStartingStars = tagVal;
-                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                                if (!_isInitializing)
+                                                {
+                                                    try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                                }
                                             }
                                         }
                                     }
@@ -751,7 +778,10 @@ namespace FamidashEditor
                                                 }
                                             }
                                             catch { }
-                                            try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            if (!_isInitializing)
+                                            {
+                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            }
                                         }
                                         catch { }
                                     };
@@ -767,7 +797,10 @@ namespace FamidashEditor
                                             txt = txt.ToUpperInvariant();
                                             if (UpperTextBox.Text != txt) { UpperTextBox.Text = txt; UpperTextBox.CaretIndex = txt.Length; }
                                             mwOwner.LoadedStartingUpperText = string.IsNullOrEmpty(txt) ? null : txt;
-                                            try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            if (!_isInitializing)
+                                            {
+                                                try { mwOwner.SaveCurrentTmxConfig(); } catch { }
+                                            }
                                         }
                                         catch { }
                                     };
@@ -814,6 +847,9 @@ namespace FamidashEditor
                                 try { if (ForcePlatformerCheckBox != null) ForcePlatformerCheckBox.IsChecked = mwOwner.LoadedForcePlatformer == true; } catch { }
 
                                             // Simulator size moved to main Options menu (handled there)
+                            
+                            // Initialization complete - allow saves now
+                            _isInitializing = false;
                         }
                     }
                     catch { }
@@ -827,9 +863,9 @@ namespace FamidashEditor
             try
             {
                 // Read the JSON5 file from the application directory
-                var assembly = Assembly.GetExecutingAssembly();
-                var appDirectory = Path.GetDirectoryName(assembly.Location);
-                var jsonFilePath = Path.Combine(appDirectory!, "lvlset_HUGE_metadata.json5");
+                // Use AppContext.BaseDirectory instead of Assembly.Location for single-file app compatibility
+                var appDirectory = AppContext.BaseDirectory;
+                var jsonFilePath = Path.Combine(appDirectory, "lvlset_HUGE_metadata.json5");
                 
                 string json5Content;
                 
@@ -1301,6 +1337,7 @@ namespace FamidashEditor
                     try { mainWindow.PersistLoadedValuesToCurrentTab(); } catch { }
 
                     // Save to level-specific config file (writes only when TMX has a file path)
+                    // Note: This call is from AttemptJsonLoad, not from initialization, so we don't guard it
                     mainWindow.SaveCurrentTmxConfig();
                     MessageBox.Show("Settings loaded successfully from JSON and saved to config.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
                 }

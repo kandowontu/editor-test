@@ -36,9 +36,16 @@ namespace FamidashEditor
             // Apply velocity
             playerY_fixed += velocityY;
             
-            // Wave collision (offset 2 pixels based on velocity direction)
-            int collisionTop = (int)(playerY_fixed / 256.0);
-            int collisionBottom = collisionTop + 15;
+            // Collision hitbox - matches collision.h
+            // Mini mode: 8x7 hitbox, offset 4 pixels down (0x10-0x07)>>1 = 4
+            // Normal mode: 15x15 hitbox
+            // Wave has narrower X hitbox (offset +4 pixels, width reduced)
+            int hitboxW = miniMode ? 8 : 15;
+            int hitboxH = miniMode ? 7 : 15;
+            int yOffset = miniMode ? ((0x10 - hitboxH) >> 1) : 0;  // 4 for mini, 0 for normal
+            
+            int collisionTop = (int)(playerY_fixed / 256.0) + yOffset;
+            int collisionBottom = collisionTop + hitboxH;
             int collisionLeft = (int)(playerX_fixed / 256.0) + 4; // Wave is narrower
             int collisionRight = collisionLeft + 7;
             

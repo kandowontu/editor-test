@@ -27,6 +27,15 @@
 // set to 1 to display metatile data when compiling via the
 // command line.
 #define PRINT_METATILES 0
+//
+// Enable Debug Mode
+// Activated by pressing SELECT during gameplay
+// Recommended to be disabled for release builds
+#define DEBUG_MODE_ENABLED 1
+//
+// Enable kandokidshackX Variables
+// Activated in convoluted methods
+#define KANDOKIDSHACKX_ENABLED 1
 // ============================================================
 
 
@@ -49,8 +58,11 @@
 //
 // Minor Version Number
 // increment by 1 for officially released patches.
-// does nothing if FLAG_BETA_BUILD is uncommented.
-#define FLAG_MIN_VER '3'
+#define FLAG_MIN_VER '2'
+//
+// Patch Version Number
+// increment by 1 for patches
+#define FLAG_PATCH_VER '8'
 // ============================================================
 
 
@@ -75,5 +87,5 @@
 //
 // Save File Version
 // increase by 1 if SRAM values are added, changed or deleted.
-#define FLAG_SAVE_VER 0x23
+#define FLAG_SAVE_VER 0x24
 // ============================================================

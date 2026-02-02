@@ -20,7 +20,14 @@ namespace FamidashEditor
                 int playerX_px_orb = playerX_fixed >> 8;
                 int playerY_px_orb = playerY_fixed >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_orb = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
+                
+                // Adjust Y position for mini mode collision box (bottom-left alignment)
+                if (currplayer_mini != 0 && !gravityInverted_orb)
+                {
+                    playerY_px_orb += 9;
+                }
+                
                 int scrollX_px_orb = 0;
                 
                 int tempVelY = playerVelY_fixed;
@@ -31,6 +38,9 @@ namespace FamidashEditor
                 {
                     playerVelY_fixed = tempVelY;
                     AppendSimDebug($"[ROBOT] Orb activated! New velY={playerVelY_fixed}");
+                    
+                    // Set orbed flag for robot mode (matches famidash line 432)
+                    orbed = true;
                     
                     // Consume the X press if it was used for orb
                     if (pressJump_orb)
@@ -64,9 +74,10 @@ namespace FamidashEditor
             
             // Check if grounded with collision check (test 1 pixel in gravity direction)
             bool isGrounded = false;
-            int hitboxW = (currplayer_mini != 0) ? 8 : 15;
-            int hitboxH = (currplayer_mini != 0) ? 8 : 15;
-            int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 8 : 0;
+            bool isMini = (currplayer_mini != 0);
+            int hitboxW = isMini ? 8 : 15;
+            int hitboxH = isMini ? 7 : 15;
+            int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
             int collisionX = (playerX_fixed >> 8);
             
             if (currplayer_gravity == 0) {
@@ -81,9 +92,9 @@ namespace FamidashEditor
                 isGrounded = collided;
             }
             
-            AppendSimDebug($"[ROBOT] grounded={isGrounded}, jumpPressed={robotJumpPressed}, holdJump={holdJump}");
+            AppendSimDebug($"[ROBOT] grounded={isGrounded}, jumpPressed={robotJumpPressed}, holdJump={holdJump}, orbed={orbed}, dashing={dashing}");
             
-            if (isGrounded && robotJumpPressed) {
+            if (isGrounded && robotJumpPressed && !orbed && dashing == 0) {
                 robotJumpPressed = false; // Clear flag
                 if (holdJump) {
                     if (pressJump) {
@@ -95,7 +106,7 @@ namespace FamidashEditor
                 }
             }
             // Continue jump if timer active and holding
-            else if (robotJumpTime[0] > 0) {
+            else if (robotJumpTime[0] > 0 && !orbed && dashing == 0) {
                 robotJumpTime[0]--;
                 if (holdJump) {
                     playerVelY_fixed = GameModePhysics.ROBOT_JUMP_VEL(baseTableIdx) * gravityMultiplier;
@@ -111,9 +122,10 @@ namespace FamidashEditor
             
             // If grounded with inverted gravity, prevent velocity from pulling into ceiling
             if (currplayer_gravity != 0) {
-                int hitboxW_check = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_check = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxOffsetY_check = (currplayer_mini != 0 && currplayer_gravity == 0) ? 8 : 0;
+                bool isMini_check = (currplayer_mini != 0);
+                int hitboxW_check = isMini_check ? 8 : 15;
+                int hitboxH_check = isMini_check ? 7 : 15;
+                int hitboxOffsetY_check = isMini_check ? ((0x10 - hitboxH_check) >> 1) : 0;
                 int collisionX_check = (playerX_fixed >> 8);
                 int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
                 var (collided_check, _) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
@@ -131,7 +143,15 @@ namespace FamidashEditor
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+                int playerY_px_trail = playerY_fixed >> 8;
+                // Apply mini mode offset for trail to match visual position
+                bool isMini_trail = (currplayer_mini != 0);
+                bool gravityInverted_trail = (currplayer_gravity != 0);
+                if (isMini_trail && !gravityInverted_trail)
+                {
+                    playerY_px_trail += 8;
+                }
+                int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
                 recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
             }
             catch { }

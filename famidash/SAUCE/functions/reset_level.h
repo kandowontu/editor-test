@@ -74,6 +74,7 @@ void reset_level() {
 	force_platformer = 0;
 	player_invis = 0;
 	robotjumpframe[0] = 0;
+	robotjumpframe[1] = 0;
 	slope_frames[0] = 0;
 	slope_frames[1] = 0;
 	nocamlockforced = 0;
@@ -91,11 +92,6 @@ void reset_level() {
 	coins = 0;
 	orbactive = 0;
 	coin1_timer = coin2_timer = coin3_timer = 0;	
-#ifdef FLAG_KANDO_FUN_STUFF
-	tallmode = 0;
-	longmode = 0;
-	bigboi = 0;
-#endif	
 	slope_type[0] = SLOPE_NONE;
 	slope_type[1] = SLOPE_NONE;
 	currplayer_slope_type = SLOPE_NONE;

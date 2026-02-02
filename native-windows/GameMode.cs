@@ -15,6 +15,9 @@ namespace FamidashEditor
         Spider = 0x05,
         Wave = 0x06,
         Swing = 0x07,      // Swingcopter
-        Ninja = 0x08
+        Ninja = 0x08,
+        Pogo = 0x09,
+        Snake = 0x0A,
+        Football = 0x0B
     }
 }
