@@ -218,6 +218,171 @@ namespace FamidashEditor
             catch { }
         }
 
+        /// <summary>
+        /// Update cube rotation state based on velocity and gravity.
+        /// Implements the cube animation logic from nesdash.s drawplayerone/cube routine.
+        /// 
+        /// When velocity == 0: snap to nearest 90° (0, 6, 12, 18)
+        /// When velocity != 0: rotate based on gravity direction
+        /// </summary>
+        private void UpdateCubeRotation()
+        {
+            try
+            {
+                int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;  // Extract high byte (current frame 0-6)
+                int subFrame = cubeRotate_fixed & 0xFF;            // Extract low byte (accumulator)
+                
+                // If velocity is zero, snap to frame 0 (upright)
+                if (playerVelY_fixed == 0)
+                {
+                    cubeRotate_fixed = 0;
+                }
+                else
+                {
+                    // Velocity is non-zero: accumulate gravity increment
+                    int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
+                    subFrame += gravityIncrement;
+                    
+                    AppendSimDebug($"[CUBE_ROT] gravityFlipped={gravityFlipped} increment={gravityIncrement:X2} subFrame={subFrame} frameIndex={frameIndex}");
+                    
+                    // Handle overflow/underflow in low byte
+                    if (subFrame >= 256)
+                    {
+                        frameIndex++;
+                        subFrame -= 256;
+                        
+                        // Wrap at 7 frames (0-6)
+                        if (frameIndex >= 7)
+                        {
+                            frameIndex = 0;
+                        }
+                    }
+                    else if (subFrame < 0)
+                    {
+                        frameIndex--;
+                        subFrame += 256;
+                        
+                        // Wrap backward: 0 -> 6
+                        if (frameIndex < 0)
+                        {
+                            frameIndex = 6;
+                        }
+                    }
+                    
+                    // Recombine into 16-bit value
+                    cubeRotate_fixed = (frameIndex << 8) | subFrame;
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Get the sprite frame and flip flags for the current cube rotation.
+        /// Returns the frame index (0-6) in the low 3 bits and flip flags in bits 6-7.
+        /// </summary>
+        private int GetCubeSpriteFrame()
+        {
+            try
+            {
+                int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;  // Extract frame 0-6
+                
+                // When gravity is inverted, mirror the frame around the centerline
+                // to show rotation in opposite visual direction
+                if (gravityFlipped)
+                {
+                    frameIndex = 6 - frameIndex;  // 0↔6, 1↔5, 2↔4, 3 stays 3
+                }
+                
+                if (frameIndex >= 0 && frameIndex < 7)
+                {
+                    return frameIndex;
+                }
+                return 0;
+            }
+            catch { return 0; }
+        }
+
+        /// <summary>
+        /// Update mini cube rotation based on velocity and gravity (same logic as full cube).
+        /// Uses 16-bit fixed-point: high byte = frame index (0-23), low byte = accumulator (0-255).
+        /// </summary>
+        private void UpdateCubeRotationMini()
+        {
+            try
+            {
+                int frameIndex = (cubeRotateMini_fixed >> 8) & 0xFF;  // Extract high byte (current frame 0-6)
+                int subFrame = cubeRotateMini_fixed & 0xFF;            // Extract low byte (accumulator)
+                
+                // If velocity is zero, snap to frame 0 (upright)
+                if (playerVelY_fixed == 0)
+                {
+                    cubeRotateMini_fixed = 0;
+                }
+                else
+                {
+                    // Velocity is non-zero: accumulate gravity increment
+                    int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
+                    subFrame += gravityIncrement;
+                    
+                    // Handle overflow/underflow in low byte
+                    if (subFrame >= 256)
+                    {
+                        frameIndex++;
+                        subFrame -= 256;
+                        
+                        // Wrap at 7 frames (0-6)
+                        if (frameIndex >= 7)
+                        {
+                            frameIndex = 0;
+                        }
+                    }
+                    else if (subFrame < 0)
+                    {
+                        frameIndex--;
+                        subFrame += 256;
+                        
+                        // Wrap backward: 0 -> 6
+                        if (frameIndex < 0)
+                        {
+                            frameIndex = 6;
+                        }
+                    }
+                    
+                    // Recombine into 16-bit value
+                    cubeRotateMini_fixed = (frameIndex << 8) | subFrame;
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Get the sprite frame index for the current mini cube rotation.
+        /// Maps the 24-frame rotation indices to the 5 available mini frames.
+        /// </summary>
+        private int GetCubeSpriteMiniFrame()
+        {
+            try
+            {
+                int frameIndex = (cubeRotateMini_fixed >> 8) & 0xFF;
+                
+                // When gravity is inverted, mirror the frame to show opposite visual rotation
+                if (gravityFlipped)
+                {
+                    frameIndex = 6 - frameIndex;
+                }
+                
+                if (frameIndex < 0 || frameIndex >= 7)
+                    return 0;
+                // Map 7 frames to 5 mini frames: 0->0, 1->1, 2->1, 3->2, 4->2, 5->3, 6->3
+                if (frameIndex == 0) return 0;
+                if (frameIndex == 1 || frameIndex == 2) return 1;
+                if (frameIndex == 3 || frameIndex == 4) return 2;
+                if (frameIndex == 5 || frameIndex == 6) return 3;
+                return 0;
+            }
+            catch { return 0; }
+        }
+
         // Map certain simulator tile indices to alternative indices for display.
         // This allows specific tile codes to render exactly like other tiles
         // (or be rendered as fully transparent by mapping to 0x00).
@@ -632,6 +797,58 @@ namespace FamidashEditor
         // can use the exact same geometry as the overlay (key = sprite storage idx).
         private System.Collections.Generic.Dictionary<int, (int left, int top, int right, int bottom, int frame)> hitboxWorldCache = new System.Collections.Generic.Dictionary<int, (int, int, int, int, int)>();
         private int renderFrameCounter = 0;
+        
+        // =====================================================================
+        // CUBE ANIMATION SYSTEM - From nesdash.s drawcube_* tables
+        // =====================================================================
+        
+        // Cube rotation state (16-bit: low byte = sub-frame accumulator, high byte = frame 0-23)
+        private int cubeRotate_fixed = 0;  // 16-bit fixed point for sub-frame position
+        
+        // Rounding table for snapping cube to nearest 90° when velocity = 0
+        // Maps rotation values to rounding adjustments
+        private static readonly int[] DrawcubeRoundingTable = new int[]
+        {
+            0, -1, -2, 3, 2, 1,  // First half of table
+            0, -1, -2, 3, 2, 1,  // Doubled to simplify routine
+            -24                    // Extra entry for edge case
+        };
+        
+        // Sprite frame table: maps cube_rotate index (0-23) to frame index (0-6) with flip flags
+        // Bits 6-7 = flip flags (00=no, 01=H, 10=V, 11=HV)
+        // Bits 0-2 = frame index (0-6)
+        private static readonly int[] DrawcubeSpriteTable = new int[]
+        {
+            // Values 0-6: Frames 0-6 (NOFLIP = 0x00)
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+            // Values 7-11: Frames 5-1 (V_FLIP = 0x80)
+            0x85, 0x84, 0x83, 0x82, 0x81,
+            // Values 12-18: Frames 0-6 (HVFLIP = 0xC0)
+            0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6,
+            // Values 19-23: Frames 5-1 (H_FLIP = 0x40)
+            0x45, 0x44, 0x43, 0x42, 0x41
+        };
+        
+        // Mini cube rotation state (same structure as full cube)
+        private int cubeRotateMini_fixed = 0;
+        
+        // Mini cube frame lookup table: maps 24-frame rotation indices to 5 PNG frames
+        // Frame mapping as specified: 0->0, 1->1, 2->1, 3->2, 4->2, 5->3, 6->3, 7->4, etc.
+        private static readonly int[] DrawcubeMiniSpriteTable = new int[]
+        {
+            // Indices 0-6: rotations 0-6 (0->0, 1->1, 2->1, 3->2, 4->2, 5->3, 6->3)
+            0, 1, 1, 2, 2, 3, 3,
+            // Indices 7-11: rotations 7-11 (7->4, 8->4, 9->0, 10->1, 11->1)
+            4, 4, 0, 1, 1,
+            // Indices 12-18: rotations 12-18 (12->2, 13->2, 14->3, 15->3, 16->4, 17->4, 18->0)
+            2, 2, 3, 3, 4, 4, 0,
+            // Indices 19-23: rotations 19-23 (19->1, 20->1, 21->2, 22->2, 23->3)
+            1, 1, 2, 2, 3
+        };
+        
+        // Gravity constants from physics_table_defines.cmp.h
+        // (actual values now come from GameModePhysics.CUBE_GRAVITY() function)
+        
         // Experimental: record player world positions each rendered frame for editor overlay
         private System.Collections.Generic.List<(int x, int y)> recordedPlayerPath = new System.Collections.Generic.List<(int x, int y)>();
         // Interaction line: player's center (fixed-point) where scrolling begins
@@ -1226,6 +1443,7 @@ namespace FamidashEditor
                             gravityReversed = true;
                             gravityFlipped = true;
                             currplayer_gravity = 0xFF;
+                            wasZeroedByCollisionLastFrame = false;  // Reset flag on gravity flip
                             activated = true;
                             
                             AppendSimDebug($"[GRAV_PORTAL] REVERSE ACTIVATED: mini={miniMode}/{currplayer_mini} grav={gravityFlipped}/{currplayer_gravity:X2} reversed={gravityReversed}");
@@ -1236,6 +1454,7 @@ namespace FamidashEditor
                             gravityReversed = false;
                             gravityFlipped = false;
                             currplayer_gravity = 0x00;
+                            wasZeroedByCollisionLastFrame = false;  // Reset flag on gravity flip
                             activated = true;
                             
                             AppendSimDebug($"[GRAV_PORTAL] NORMAL ACTIVATED: mini={miniMode}/{currplayer_mini} grav={gravityFlipped}/{currplayer_gravity:X2} reversed={gravityReversed}");
@@ -1667,6 +1886,7 @@ namespace FamidashEditor
                                 currplayer_gravity = 0xFF; // GRAVITY_UP
                                 gravityReversed = true;
                                 gravityFlipped = true;
+                                wasZeroedByCollisionLastFrame = false;  // Reset flag on gravity flip
                                 UpdateCurrplayerTableIdx_Fresh();
                                 
                                 // Scan upward for ceiling
@@ -1706,6 +1926,7 @@ namespace FamidashEditor
                                 currplayer_gravity = 0x00; // GRAVITY_DOWN
                                 gravityReversed = false;
                                 gravityFlipped = false;
+                                wasZeroedByCollisionLastFrame = false;  // Reset flag on gravity flip
                                 UpdateCurrplayerTableIdx_Fresh();
                                 
                                 // Scan downward for floor
@@ -1994,6 +2215,10 @@ namespace FamidashEditor
         // jump, max-fall) without changing collision semantics. Numeric inversion
         // is computed as `gravityReversed || effectiveInvertedByW`.
         private bool effectiveInvertedByW = false;
+        
+        // Track if gravity was flipped THIS frame by W key (for unsticking Robot/Ninja from ground)
+        private bool gravityFlippedThisFrame = false;
+        
         // Track gravity portals we've already activated this pass so each
         // portal activates only once per crossing.
         private System.Collections.Generic.HashSet<int> processedGravityPortals = new System.Collections.Generic.HashSet<int>();
@@ -2270,8 +2495,8 @@ namespace FamidashEditor
                     
                     try
                     {
-                        // Flip all game mode icons vertically when gravity is reversed
-                        if (gravityReversed)
+                        // Flip game mode icons vertically when gravity is reversed (except cube and ninja modes)
+                        if (gravityReversed && currentGameMode != 0 && currentGameMode != 8)
                         {
                             playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
                             playerImage.RenderTransform = new ScaleTransform(1, -1);
@@ -2305,8 +2530,14 @@ namespace FamidashEditor
         {
             try
             {
-                // Update visual size based on current player image/rect
-                if (playerImage != null && playerImage.Source != null && playerImage.Visibility == Visibility.Visible)
+                // For mini mode, use the actual hitbox size (8x8) not the sprite image size
+                // Mini sprite images may be 16x16 with the icon in one quadrant
+                if (miniMode)
+                {
+                    playerVisualWidth = 8;
+                    playerVisualHeight = 8;
+                }
+                else if (playerImage != null && playerImage.Source != null && playerImage.Visibility == Visibility.Visible)
                 {
                     playerVisualWidth = (int)Math.Ceiling(playerImage.Width);
                     playerVisualHeight = (int)Math.Ceiling(playerImage.Height);
@@ -3887,6 +4118,13 @@ namespace FamidashEditor
                             gravityReversed = !gravityReversed;
                             gravityFlipped = gravityReversed;
                             effectiveInvertedByW = gravityReversed;
+                            gravityFlippedThisFrame = true;  // Mark that gravity flipped this frame
+                            
+                            // CRITICAL: Reset collision zeroing flag when gravity flips
+                            // This allows gravity to apply on the next frame even if velocity was zeroed
+                            wasZeroedByCollisionLastFrame = false;
+                            
+                            AppendSimDebug($"[GRAVITY_FLIP_FLAG] Set gravityFlippedThisFrame=true for modes that need unsticking");
                             currplayer_gravity = (byte)(gravityReversed ? 0xFF : 0x00);
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
                             UpdatePlayerIconFlip();
@@ -4322,6 +4560,7 @@ namespace FamidashEditor
                 gravityReversed = InvertedCheckBox.IsChecked == true;
                 gravityFlipped = gravityReversed;
                 currplayer_gravity = (byte)(gravityReversed ? 0xFF : 0x00);
+                wasZeroedByCollisionLastFrame = false;  // Reset flag on gravity flip
                 
                 if (wasInverted != gravityReversed)
                 {
@@ -4471,6 +4710,8 @@ namespace FamidashEditor
 
                 // Reset velocity and physics state
                 playerVelY_fixed = 0;
+                cubeRotate_fixed = 0;  // Reset cube rotation to frame 0 (upright)
+                cubeRotateMini_fixed = 0;  // Reset mini cube rotation to frame 0 (upright)
 
                 // Save current game settings from options BEFORE resetting
                 int savedGameMode = currentGameMode;
@@ -6116,12 +6357,12 @@ namespace FamidashEditor
             {
                 try
                 {
-                    string waveChoice = "wave.png";
+                    string waveChoice = miniMode ? "wave-mini.png" : "wave.png";
                     // Choose icon based on velocity magnitude
                     // wave2.png when nearly stationary, wave.png for movement
                     if (playerVelY_fixed == 0)
                     {
-                        waveChoice = "wave2.png";  // Straight/stationary
+                        waveChoice = miniMode ? "wave-mini2.png" : "wave2.png";  // Straight/stationary
                     }
                     
                     // Check current image
@@ -6158,6 +6399,204 @@ namespace FamidashEditor
                     
                     // Update flip every frame for wave
                     UpdatePlayerIconFlip();
+                }
+                catch { }
+            }
+            
+            // Update snake icon flip (every frame for gravity changes)
+            if (currentGameMode == 10)
+            {
+                try
+                {
+                    UpdatePlayerIconFlip();
+                }
+                catch { }
+            }
+            
+            // Update cube icon based on rotation animation (every frame for modes 0, 4, 8)
+            if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8)
+            {
+                try
+                {
+                    if (!miniMode)  // Only animate non-mini
+                    {
+                        // Extract actual frame index (high byte of cubeRotate_fixed)
+                        int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;
+                        frameIndex = frameIndex % 7;  // Map to 0-6 (we have 7 base frames)
+                        
+                        // Choose frame names based on mode
+                        string[] frameNames = (currentGameMode == 8) ? new string[]
+                        {
+                            "ninja_00_frame_0.png",
+                            "ninja_01_frame_1.png",
+                            "ninja_02_frame_2.png",
+                            "ninja_03_frame_3.png",
+                            "ninja_04_frame_4.png",
+                            "ninja_05_frame_5.png",
+                            "ninja_06_frame_6.png"
+                        }
+                        : new string[]
+                        {
+                            "cube_00_frame_0_upright.png",
+                            "cube_01_frame_1_45cw.png",
+                            "cube_02_frame_2_90cw_side.png",
+                            "cube_03_frame_3_135cw.png",
+                            "cube_04_frame_4_180_upside.png",
+                            "cube_05_frame_5_225cw.png",
+                            "cube_06_frame_6_270cw_opposite.png"
+                        };
+                        string chosenFrame = frameNames[frameIndex];
+                        
+                        // Track current image name via a tag property
+                        string currentImageName = playerImage?.Tag as string ?? "";
+                        
+                        // Only reload if different
+                        if (!currentImageName.Equals(chosenFrame, StringComparison.OrdinalIgnoreCase) && playerImage != null)
+                        {
+                            // Try embedded resource first
+                            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                            var names = asm.GetManifestResourceNames();
+                            var found = names.FirstOrDefault(n => n.EndsWith(chosenFrame, StringComparison.OrdinalIgnoreCase));
+                            
+                            if (!string.IsNullOrEmpty(found))
+                            {
+                                using (var s = asm.GetManifestResourceStream(found))
+                                {
+                                    if (s != null)
+                                    {
+                                        var newImg = new BitmapImage();
+                                        newImg.BeginInit();
+                                        newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                        newImg.StreamSource = s;
+                                        newImg.EndInit();
+                                        newImg.Freeze();
+                                        if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                        if (playerImage != null) playerImage.Tag = chosenFrame;  // Track which image is loaded
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // Fallback to file system
+                                string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
+                                string candidateOut = System.IO.Path.Combine(exeDir, chosenFrame);
+                                if (System.IO.File.Exists(candidateOut))
+                                {
+                                    var newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.UriSource = new Uri(candidateOut);
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                    if (playerImage != null) playerImage.Tag = chosenFrame;
+                                }
+                                else
+                                {
+                                    // Try relative path
+                                    string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\" + chosenFrame));
+                                    if (System.IO.File.Exists(candidate))
+                                    {
+                                        var newImg = new BitmapImage();
+                                        newImg.BeginInit();
+                                        newImg.UriSource = new Uri(candidate);
+                                        newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                        newImg.EndInit();
+                                        newImg.Freeze();
+                                        if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                        if (playerImage != null) playerImage.Tag = chosenFrame;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else  // Mini mode animation
+                    {
+                        // Extract actual frame index (high byte of cubeRotateMini_fixed)
+                        int miniFrameIndex = GetCubeSpriteMiniFrame();  // Returns 0-4
+                        
+                        // Choose frame names based on mode
+                        string[] miniFrameNames = (currentGameMode == 8) ? new string[]
+                        {
+                            "ninja_mini_00_frame_0.png",
+                            "ninja_mini_01_frame_1.png",
+                            "ninja_mini_02_frame_2.png",
+                            "ninja_mini_03_frame_3.png",
+                            "ninja_mini_04_frame_4.png"
+                        }
+                        : new string[]
+                        {
+                            "cube_mini_00_frame_0.png",
+                            "cube_mini_01_frame_1.png",
+                            "cube_mini_02_frame_2.png",
+                            "cube_mini_03_frame_3.png",
+                            "cube_mini_04_frame_4.png"
+                        };
+                        string chosenFrame = miniFrameNames[miniFrameIndex];
+                        
+                        // Track current image name via a tag property
+                        string currentImageName = playerImage?.Tag as string ?? "";
+                        
+                        // Only reload if different
+                        if (!currentImageName.Equals(chosenFrame, StringComparison.OrdinalIgnoreCase) && playerImage != null)
+                        {
+                            // Try embedded resource first
+                            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                            var names = asm.GetManifestResourceNames();
+                            var found = names.FirstOrDefault(n => n.EndsWith(chosenFrame, StringComparison.OrdinalIgnoreCase));
+                            
+                            if (!string.IsNullOrEmpty(found))
+                            {
+                                using (var s = asm.GetManifestResourceStream(found))
+                                {
+                                    if (s != null)
+                                    {
+                                        var newImg = new BitmapImage();
+                                        newImg.BeginInit();
+                                        newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                        newImg.StreamSource = s;
+                                        newImg.EndInit();
+                                        newImg.Freeze();
+                                        if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                        if (playerImage != null) playerImage.Tag = chosenFrame;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // Fallback to file system
+                                string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
+                                string candidateOut = System.IO.Path.Combine(exeDir, chosenFrame);
+                                if (System.IO.File.Exists(candidateOut))
+                                {
+                                    var newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.UriSource = new Uri(candidateOut);
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                    if (playerImage != null) playerImage.Tag = chosenFrame;
+                                }
+                                else
+                                {
+                                    // Try relative path
+                                    string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\" + chosenFrame));
+                                    if (System.IO.File.Exists(candidate))
+                                    {
+                                        var newImg = new BitmapImage();
+                                        newImg.BeginInit();
+                                        newImg.UriSource = new Uri(candidate);
+                                        newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                        newImg.EndInit();
+                                        newImg.Freeze();
+                                        if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                        if (playerImage != null) playerImage.Tag = chosenFrame;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 catch { }
             }
@@ -6398,16 +6837,16 @@ namespace FamidashEditor
                         int frameIndex = robotAnimationFrameCounter / 5;
                         robotChoice = frameIndex switch
                         {
-                            0 => "robot.png",
-                            1 => "robot2.png",
-                            2 => "robot3.png",
-                            3 => "robot4.png",
-                            _ => "robot.png"
+                            0 => miniMode ? "robot-mini.png" : "robot.png",
+                            1 => miniMode ? "robot-mini2.png" : "robot2.png",
+                            2 => miniMode ? "robot-mini3.png" : "robot3.png",
+                            3 => miniMode ? "robot-mini4.png" : "robot4.png",
+                            _ => miniMode ? "robot-mini.png" : "robot.png"
                         };
                     }
                     else
                     {
-                        robotChoice = "robotjump.png";
+                        robotChoice = miniMode ? "robot-mini-jump.png" : "robotjump.png";
                     }
                     
                     // Track current image name via a tag property
@@ -6556,16 +6995,16 @@ namespace FamidashEditor
                         int frameIndex = spiderAnimationFrameCounter / 5;
                         spiderChoice = frameIndex switch
                         {
-                            0 => "spider.png",
-                            1 => "spider2.png",
-                            2 => "spider3.png",
-                            3 => "spider4.png",
-                            _ => "spider.png"
+                            0 => miniMode ? "spider-mini.png" : "spider.png",
+                            1 => miniMode ? "spider-mini2.png" : "spider2.png",
+                            2 => miniMode ? "spider-mini3.png" : "spider3.png",
+                            3 => miniMode ? "spider-mini4.png" : "spider4.png",
+                            _ => miniMode ? "spider-mini.png" : "spider.png"
                         };
                     }
                     else
                     {
-                        spiderChoice = "spiderjump.png";
+                        spiderChoice = miniMode ? "spider-mini-jump.png" : "spiderjump.png";
                     }
                     
                     // Load the spider image from embedded resources
@@ -8305,6 +8744,7 @@ namespace FamidashEditor
                 
                 // Respect pause: do not advance numeric simulation when paused.
                 if (paused) return;
+                
                 AppendSimDebug($"[STEP_START] playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
                 prevCameraCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
                 prevPlayerCenter_fixed = playerX_fixed + centerOffset_fixed;
@@ -8591,11 +9031,18 @@ namespace FamidashEditor
                         if (gravityFlipped) AppendSimDebug($"[PHYSICS] FLIPPED! Mode={currentGameMode}, gravity={currplayer_gravity:X2}, mini={currplayer_mini}, table_idx={currplayer_table_idx}, gravityFlipped={gravityFlipped}, gravityReversed={gravityReversed}");
                         else AppendSimDebug($"[PHYSICS] Mode={currentGameMode}, gravity={currplayer_gravity:X2}, mini={currplayer_mini}, table_idx={currplayer_table_idx}");
                         
+                        // Sync gravity state BEFORE animation updates (animation methods use gravityFlipped)
+                        gravityFlipped = (currplayer_gravity != 0);
+                        
                         // All modes handle their own input internally now
                         switch (currentGameMode)
                         {
                             case 0: // Cube
                                 ProcessCubePhysics_Fresh();
+                                if (miniMode)
+                                    UpdateCubeRotationMini();
+                                else
+                                    UpdateCubeRotation();
                                 break;
                             case 1: // Ship
                                 ShipPhysics_Fresh();
@@ -8608,6 +9055,10 @@ namespace FamidashEditor
                                 break;
                             case 4: // Robot (uses cube physics with hold-to-jump)
                                 RobotPhysics_Fresh();
+                                if (miniMode)
+                                    UpdateCubeRotationMini();
+                                else
+                                    UpdateCubeRotation();
                                 break;
                             case 5: // Spider
                                 SpiderPhysics_Fresh();
@@ -8620,6 +9071,10 @@ namespace FamidashEditor
                                 break;
                             case 8: // Ninja (uses cube physics with triple jump)
                                 NinjaPhysics_Fresh();
+                                if (miniMode)
+                                    UpdateCubeRotationMini();
+                                else
+                                    UpdateCubeRotation();
                                 break;
                             case 9: // Pogo (uses ball physics with bounce mechanic)
                                 BallPhysics_Fresh();
@@ -8635,6 +9090,9 @@ namespace FamidashEditor
                         // Sync state back (gravity might have flipped)
                         gravityFlipped = (currplayer_gravity != 0);
                         AppendSimDebug($"[GRAV_POST_PHYSICS] currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed} mini={miniMode}");
+                        
+                        // Reset gravity flip flag now that physics has processed it
+                        gravityFlippedThisFrame = false;
                         
                         // Clear dblocked every frame (matches state_game.h line 636)
                         dblocked = false;
@@ -8936,7 +9394,7 @@ namespace FamidashEditor
                                         {
                                             AppendSimDebug($"[GRAV_7895] ACTIVATED mini={miniMode}/{currplayer_mini} grav before={gravityReversed}");
                                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
-                                            try { gravityReversed = true; gravityFlipped = true; currplayer_gravity = 0xFF; effectiveInvertedByW = gravityReversed; } catch { }
+                                            try { gravityReversed = true; gravityFlipped = true; currplayer_gravity = 0xFF; effectiveInvertedByW = gravityReversed; gravityFlippedThisFrame = true; wasZeroedByCollisionLastFrame = false; } catch { }
                                             try { UpdateEffectiveGravity(); } catch { }
                                             try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
                                             try { UpdatePlayerImageForMode(); } catch { }
@@ -8947,7 +9405,7 @@ namespace FamidashEditor
                                         else if (!isReverse && gravityReversed)
                                         {
                                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
-                                            try { gravityReversed = false; gravityFlipped = false; currplayer_gravity = 0x00; effectiveInvertedByW = gravityReversed; } catch { }
+                                            try { gravityReversed = false; gravityFlipped = false; currplayer_gravity = 0x00; effectiveInvertedByW = gravityReversed; gravityFlippedThisFrame = true; wasZeroedByCollisionLastFrame = false; } catch { }
                                             try { UpdateEffectiveGravity(); } catch { }
                                             try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
                                             try { UpdatePlayerImageForMode(); } catch { }

@@ -510,6 +510,111 @@ namespace FamidashEditor
         }
         
         /// <summary>
+        /// wave_coll_D - Downward collision check for wave (no velocity check)
+        /// </summary>
+        private bool wave_coll_D()
+        {
+            // Regular collision check
+            temp_x = Generic_x;
+            temp_y = Generic_y + Generic_height;
+            
+            tmp8 = temp_y & 0x0f;
+            
+            // Check 3 points: left, middle, right
+            // Point 1: left
+            bg_collision_sub();
+            if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
+            {
+                // Calculate proper eject distance based on collision bounds
+                var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                int tileY = temp_y / 16;
+                int tileWorldTop = tileY * 16;
+                int collisionTop = tileWorldTop + colTop;
+                eject_D = temp_y - collisionTop;
+                return true;
+            }
+            
+            // Point 2: middle
+            temp_x += Generic_width >> 1;
+            bg_collision_sub();
+            if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
+            {
+                var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                int tileY = temp_y / 16;
+                int tileWorldTop = tileY * 16;
+                int collisionTop = tileWorldTop + colTop;
+                eject_D = temp_y - collisionTop;
+                return true;
+            }
+            
+            // Point 3: right
+            temp_x = Generic_x + Generic_width;
+            bg_collision_sub();
+            if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
+            {
+                var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                int tileY = temp_y / 16;
+                int tileWorldTop = tileY * 16;
+                int collisionTop = tileWorldTop + colTop;
+                eject_D = temp_y - collisionTop;
+                return true;
+            }
+            
+            return false;
+        }
+        
+        /// <summary>
+        /// wave_coll_U - Upward collision check for wave (no velocity check)
+        /// </summary>
+        private bool wave_coll_U()
+        {
+            // Check top edge
+            temp_x = Generic_x;
+            temp_y = Generic_y - 1;
+            
+            tmp8 = 16 - (temp_y & 0x0f);
+            
+            // Check 3 points: left, middle, right
+            bg_collision_sub();
+            if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
+            {
+                // Calculate proper eject distance based on collision bounds
+                var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                int tileY = temp_y / 16;
+                int tileWorldTop = tileY * 16;
+                int collisionBottom = tileWorldTop + colBottom;
+                eject_U = -(collisionBottom - temp_y);
+                return true;
+            }
+            
+            temp_x += Generic_width >> 1;
+            bg_collision_sub();
+            if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
+            {
+                var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                int tileY = temp_y / 16;
+                int tileWorldTop = tileY * 16;
+                int collisionBottom = tileWorldTop + colBottom;
+                eject_U = -(collisionBottom - temp_y);
+                return true;
+            }
+            
+            temp_x = Generic_x + Generic_width;
+            bg_collision_sub();
+            if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
+            {
+                var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType((MetatileCollision)collision);
+                int tileY = temp_y / 16;
+                int tileWorldTop = tileY * 16;
+                int collisionBottom = tileWorldTop + colBottom;
+                eject_U = -(collisionBottom - temp_y);
+                return true;
+            }
+            
+            return false;
+        }
+        
+        /// <summary>
         /// cube_eject - Cube collision and ejection (exact port from gamemode_cube.h)
         /// </summary>
         private void cube_eject_NES()

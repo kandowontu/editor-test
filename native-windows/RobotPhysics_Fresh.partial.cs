@@ -31,27 +31,9 @@ namespace FamidashEditor
                 AppendSimDebug($"[ROBOT] Press detected - flag set");
             }
             
-            // Check if grounded with collision check (test 1 pixel in gravity direction)
-            bool isGrounded = false;
-            bool isMini = (currplayer_mini != 0);
-            int hitboxW = isMini ? 8 : 15;
-            int hitboxH = isMini ? 7 : 15;
-            int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-            int collisionX = (playerX_fixed >> 8);
-            
-            if (currplayer_gravity == 0) {
-                // Normal gravity - check 1 pixel down
-                int testY = (playerY_fixed >> 8) + 1 + hitboxOffsetY;
-                var (collided, _) = CheckCollisionDown(collisionX, testY, hitboxW, hitboxH);
-                isGrounded = collided;
-            } else {
-                // Inverted gravity - check 1 pixel up
-                int testY = (playerY_fixed >> 8) - 1 + hitboxOffsetY;
-                var (collided, _) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
-                isGrounded = collided;
-            }
-            
-            // Update the global onGround flag so the main loop grounding check can work
+            // Grounding check - velocity-based only (matches Cube and Football)
+            // Only use velocity to determine if grounded. Collision detection will handle actual grounding
+            bool isGrounded = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
             onGround = isGrounded;
             
             AppendSimDebug($"[ROBOT] grounded={isGrounded}, jumpPressed={robotJumpPressed}, holdJump={holdJump}, orbed={orbed}, dashing={dashing}");
@@ -94,22 +76,6 @@ namespace FamidashEditor
                 AppendSimDebug($"[ROBOT] Pad/orb hit this frame - skipping gravity acceleration but integrating velocity. velY=0x{playerVelY_fixed:X4}");
                 playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                 AppendSimDebug($"[ROBOT] Position integrated: posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px)");
-            }
-            
-            // If grounded with inverted gravity, prevent velocity from pulling into ceiling
-            if (currplayer_gravity != 0) {
-                bool isMini_check = (currplayer_mini != 0);
-                int hitboxW_check = isMini_check ? 8 : 15;
-                int hitboxH_check = isMini_check ? 7 : 15;
-                int hitboxOffsetY_check = isMini_check ? ((0x10 - hitboxH_check) >> 1) : 0;
-                int collisionX_check = (playerX_fixed >> 8);
-                int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
-                var (collided_check, _) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
-                
-                if (collided_check && playerVelY_fixed < 0) {
-                    playerVelY_fixed = 0;
-                    AppendSimDebug($"[ROBOT] Ceiling grounded - zeroed velocity");
-                }
             }
             
             // Collision

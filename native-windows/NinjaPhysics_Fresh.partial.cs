@@ -61,24 +61,16 @@ namespace FamidashEditor
             // Reset jumped flag at start of frame
             ninjaJumpedThisFrame = false;
             
-            // Reset triple jump when grounded - be more strict to avoid resetting mid-jump
-            // Only reset if velocity is near zero (not actively jumping)
-            bool isGrounded = (playerVelY_fixed > -8 && playerVelY_fixed < 8);
-            
-            // Update the global onGround flag so the main loop grounding check can work
+            // Grounding check - velocity-based only (matches Cube and Football)
+            // Only use velocity to determine if grounded. Collision detection will handle actual grounding
+            bool isGrounded = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
             onGround = isGrounded;
             
-            // When grounded, zero out Y velocity to keep player on ground
-            if (isGrounded) {
-                playerVelY_fixed = 0;
-                wasZeroedByCollisionLastFrame = true;  // Signal gravity not to re-apply next frame
+            // Reset triple jump when grounded
+            if (isGrounded)
+            {
                 ninjaJumps = 3;
-                AppendSimDebug($"[NINJA] Grounded - zeroed Y velocity, set collision flag, and reset jumps to 3");
-            }
-            else {
-                // When NOT grounded, reset the collision flag so gravity can apply
-                wasZeroedByCollisionLastFrame = false;
-                AppendSimDebug($"[NINJA] NOT grounded - reset collision flag to allow gravity");
+                AppendSimDebug($"[NINJA] Grounded - reset jumps to 3");
             }
             
             // Read input
@@ -106,22 +98,6 @@ namespace FamidashEditor
             
             // Apply gravity (applies simTimeScale internally)
             CommonGravityRoutine_Fresh();
-            
-            // If grounded with inverted gravity, prevent velocity from pulling into ceiling
-            if (currplayer_gravity != 0) {
-                bool isMini_check = (currplayer_mini != 0);
-                int hitboxW_check = isMini_check ? 8 : 15;
-                int hitboxH_check = isMini_check ? 7 : 15;
-                int hitboxOffsetY_check = isMini_check ? ((0x10 - hitboxH_check) >> 1) : 0;
-                int collisionX_check = (playerX_fixed >> 8);
-                int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
-                var (collided_check, _) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
-                
-                if (collided_check && playerVelY_fixed < 0) {
-                    playerVelY_fixed = 0;
-                    AppendSimDebug($"[NINJA] Ceiling grounded - zeroed velocity");
-                }
-            }
             
             // Collision
             byte gravityAtFrameStart = currplayer_gravity;

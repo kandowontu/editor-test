@@ -14,6 +14,9 @@ namespace FamidashEditor
             // Skip all physics if death already triggered
             if (deathTriggered || paused) return;
             
+            // Reset the "just landed" flag at the START of the frame so velocity can be recalculated
+            wasZeroedByCollisionLastFrame = false;
+            
             // Check for orb activation
             {
                 bool holdJump_orb = IsXDownAsync() || keyXHeld;
@@ -104,9 +107,6 @@ namespace FamidashEditor
             // Inverted gravity: moving up (negative vel) = -2, moving down (positive vel) = +2
             int offsetY = (playerY_fixed >> 8) + ((playerVelY_fixed > 0) ? -2 : 2);
             
-            // Reset the "just landed" flag for next frame
-            wasZeroedByCollisionLastFrame = false;
-            
             // Only run collision if death hasn't been triggered yet
             if (!deathTriggered)
             {
@@ -139,227 +139,64 @@ namespace FamidashEditor
         }
         
         /// <summary>
-        /// wave_eject() - land ONLY on safe tiles or D-blocks
-        /// Wave dies on any non-safe tile
+        /// wave_eject() - Use collision detection without velocity restrictions
+        /// Check collision based on VELOCITY direction, not gravity
+        /// For mini wave: use top 8x8 quadrant when moving UP, bottom 8x8 when moving DOWN
+        /// (Direction is relative to current gravity state)
         /// </summary>
         private void WaveEject_Fresh(int offsetY)
         {
             bool isMini = (currplayer_mini != 0);
-            int playerX_px = (playerX_fixed >> 8);
-            int playerY_px = (playerY_fixed >> 8);
             bool gravityInverted = (currplayer_gravity != 0);
             
-            // Wave hitbox: 8 pixels wide, 8 pixels tall (or 8x7 for mini)
-            int hitboxW = 8;
-            int hitboxH = isMini ? 7 : 8;
+            // Set up Generic struct for collision detection
+            // Wave has special X offsets: +10 when moving UP, +4 when moving DOWN
+            // X offset is based on raw velocity sign
+            int xOffset = (playerVelY_fixed < 0) ? 10 : 4;
+            Generic_x = (playerX_fixed >> 8) + xOffset;
             
-            // Wave uses different X offsets for collision based on velocity direction
-            // When moving UP (velY < 0): offset +10, When moving DOWN (velY > 0): offset +4
-            int collisionXOffset = (playerVelY_fixed < 0) ? 10 : 4;
-            int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-            
-            int playerLeft_px = playerX_px + collisionXOffset;
-            int playerRight_px = playerX_px + collisionXOffset + hitboxW - 1;
-            
-            // Determine collision direction: when gravity is inverted, "down" means toward the top of the map
-            // so we need to check the OPPOSITE direction
-            bool isMovingDown = gravityInverted ? (playerVelY_fixed < 0) : (playerVelY_fixed > 0);
-            
-            if (isMovingDown)
+            // For mini wave: adjust hitbox based on DIRECTION (relative to gravity)
+            // Not gravity state itself, but direction the wave is actually moving
+            // With normal gravity: up = negative vel, down = positive vel
+            // With inverted gravity: up = positive vel, down = negative vel
+            int miniOffset = 0;
+            if (isMini)
             {
-                // Moving DOWN: check below at offsetY
-                int checkY_px = offsetY + hitboxH;
-                int checkTileY = checkY_px / TILE;
-                
-                // Calculate ground layer offset
-                // When gravity is inverted, ground is at TOP, so offset differently
-                int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                
-                // Scan for tiles - check if SAFE
-                bool foundAnyTile = false;
-                bool isSafeTile = false;
-                
-                if (checkTileY >= 0 && checkTileY < mapHeight)
+                bool isMovingUp = gravityInverted ? (playerVelY_fixed > 0) : (playerVelY_fixed < 0);
+                miniOffset = isMovingUp ? 0 : 8;  // 0 for up direction, 8 for down direction
+            }
+            
+            Generic_y = (playerY_fixed >> 8) + miniOffset;
+            Generic_width = 8;
+            Generic_height = isMini ? 8 : 16;
+            
+            // Check collision based on VELOCITY direction
+            if ((playerVelY_fixed & 0x8000) != 0)  // Velocity is negative (moving UP)
+            {
+                // Check upward collision (using wave_coll_U which has no velocity check)
+                if (wave_coll_U())
                 {
-                    for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
-                    {
-                        if (tx >= 0 && tx < mapWidth)
-                        {
-                            // Ground offset: normal gravity adds offset (ground at bottom), inverted gravity subtracts (ground at top)
-                            int checkTileArrayY = gravityInverted ? (checkTileY - groundRowsToReserve) : (checkTileY + groundRowsToReserve);
-                            if (checkTileArrayY < 0 || checkTileArrayY >= mapHeight) continue;
-                            
-                            int tileIdx = checkTileArrayY * mapWidth + tx;
-                            if (tileIdx >= 0 && tileIdx < tiles.Length)
-                            {
-                                int tileId = tiles[tileIdx];
-                                // Check if non-empty tile
-                                if (tileId != 0 && tileId != 0xFF)
-                                {
-                                    foundAnyTile = true;
-                                    // Check if it's a safe tile or if we're D-blocked
-                                    if (IsWaveSafeTile(tileId) || dblocked)
-                                    {
-                                        isSafeTile = true;
-                                        AppendSimDebug($"[WAVE] Found safe tile 0x{tileId:X2} below, dblocked={dblocked}");
-                                    }
-                                    else
-                                    {
-                                        AppendSimDebug($"[WAVE] Found UNSAFE tile 0x{tileId:X2} below, dblocked={dblocked}");
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                if (foundAnyTile)
-                {
-                    if (isSafeTile)
-                    {
-                        // Land on safe tile
-                        int landY = (checkTileY * TILE) - hitboxH - hitboxOffsetY;
-                        playerY_fixed = landY << 8;
-                        playerVelY_fixed = 0;
-                        wasZeroedByCollisionLastFrame = true;
-                        AppendSimDebug($"[WAVE] LANDED on safe tile at Y={landY}");
-                    }
-                    else
-                    {
-                        // Death on unsafe tile - reposition to tile first, then die
-                        int landY = (checkTileY * TILE) - hitboxH - hitboxOffsetY;
-                        playerY_fixed = landY << 8;
-                        playerVelY_fixed = 0;
-                        
-                        if (!MainWindow.Option_NoDeath)
-                        {
-                            AppendSimDebug($"[WAVE_DEATH] Unsafe tile collision, repositioned to Y={landY}");
-                            deathTriggered = true;
-                            deathTileX = playerX_px;
-                            deathTileY = playerY_px;
-                            paused = true;
-                            _ = StopMusicAsync();
-                            
-                            try
-                            {
-                                Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                    if (this.Owner is MainWindow mw)
-                                    {
-                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(playerX_px, playerY_px); } catch { }
-                                    }
-                                }));
-                            }
-                            catch { }
-                        }
-                    }
+                    int currentY = playerY_fixed >> 8;
+                    currentY -= eject_U;
+                    playerY_fixed = currentY << 8;
+                    playerVelY_fixed = 0;
+                    wasZeroedByCollisionLastFrame = true;
+                    return;
                 }
             }
-            else
+            else  // Velocity is non-negative (moving DOWN)
             {
-                // Moving UP: check above at offsetY
-                int checkY_px = offsetY - hitboxH;
-                int checkTileY = checkY_px / TILE;
-                
-                // Calculate ground layer offset
-                // When gravity is inverted, ground is at TOP, so offset differently
-                int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                
-                // Scan for tiles - check if SAFE
-                bool foundAnyTile = false;
-                bool isSafeTile = false;
-                
-                if (checkTileY >= 0 && checkTileY < mapHeight)
+                // Check downward collision (using wave_coll_D which has no velocity check)
+                if (wave_coll_D())
                 {
-                    for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
-                    {
-                        if (tx >= 0 && tx < mapWidth)
-                        {
-                            // Ground offset: normal gravity adds offset (ground at bottom), inverted gravity subtracts (ground at top)
-                            int checkTileArrayY = gravityInverted ? (checkTileY - groundRowsToReserve) : (checkTileY + groundRowsToReserve);
-                            if (checkTileArrayY < 0 || checkTileArrayY >= mapHeight) continue;
-                            
-                            int tileIdx = checkTileArrayY * mapWidth + tx;
-                            if (tileIdx >= 0 && tileIdx < tiles.Length)
-                            {
-                                int tileId = tiles[tileIdx];
-                                // Check if non-empty tile
-                                if (tileId != 0 && tileId != 0xFF)
-                                {
-                                    foundAnyTile = true;
-                                    // Check if it's a safe tile or if we're D-blocked
-                                    if (IsWaveSafeTile(tileId) || dblocked)
-                                    {
-                                        isSafeTile = true;
-                                        AppendSimDebug($"[WAVE] Found safe tile 0x{tileId:X2} above, dblocked={dblocked}");
-                                    }
-                                    else
-                                    {
-                                        AppendSimDebug($"[WAVE] Found UNSAFE tile 0x{tileId:X2} above, dblocked={dblocked}");
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                if (foundAnyTile)
-                {
-                    if (isSafeTile)
-                    {
-                        // Land on safe tile
-                        int landY = ((checkTileY + 1) * TILE);
-                        playerY_fixed = landY << 8;
-                        playerVelY_fixed = 0;
-                        wasZeroedByCollisionLastFrame = true;
-                        AppendSimDebug($"[WAVE] LANDED on safe tile at Y={landY} (inverted)");
-                    }
-                    else
-                    {
-                        // Death on unsafe tile - reposition to tile first, then die
-                        int landY = ((checkTileY + 1) * TILE);
-                        playerY_fixed = landY << 8;
-                        playerVelY_fixed = 0;
-                        
-                        if (!MainWindow.Option_NoDeath)
-                        {
-                            AppendSimDebug($"[WAVE_DEATH] Unsafe tile collision (inverted), repositioned to Y={landY}");
-                            deathTriggered = true;
-                            deathTileX = playerX_px;
-                            deathTileY = playerY_px;
-                            paused = true;
-                            _ = StopMusicAsync();
-                            
-                            try
-                            {
-                                Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                    if (this.Owner is MainWindow mw)
-                                    {
-                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(playerX_px, playerY_px); } catch { }
-                                    }
-                                }));
-                            }
-                            catch { }
-                        }
-                    }
+                    int currentY = playerY_fixed >> 8;
+                    currentY -= eject_D;
+                    playerY_fixed = currentY << 8;
+                    playerVelY_fixed = 0;
+                    wasZeroedByCollisionLastFrame = true;
+                    return;
                 }
             }
-        }
-
-        /// <summary>
-        /// Check if a tile ID is safe for wave to land on
-        /// Safe tiles: 0x01, 0x05, 0x88, 0x89, or ground layer
-        /// </summary>
-        private bool IsWaveSafeTile(int tileId)
-        {
-            return tileId == 0x01 || tileId == 0x05 || tileId == 0x88 || tileId == 0x89;
         }
     }
 }
