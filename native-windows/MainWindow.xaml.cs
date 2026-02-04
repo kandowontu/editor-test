@@ -1403,14 +1403,18 @@ namespace FamidashEditor
             return;
         }
 
-        // Sprites 0x17, 0x4B, 0x58, 0x64 are only disabled if parallax is ENABLED (noParallaxBg is false)
+        // Sprites 0x17, 0x4B, 0x58, 0x64, 0x6A, 0x6B, 0x6C, 0x7E are only disabled if parallax is ENABLED (noParallaxBg is false)
         // These are disabled regardless of deco set when parallax is on
         if (!noParallaxBg)
         {
-            disabledSprites.Add(0x17);
+            disabledSprites.Add(0x17);  // spider
             disabledSprites.Add(0x4B);
-            disabledSprites.Add(0x58);
-            disabledSprites.Add(0x64);
+            disabledSprites.Add(0x58);  // ninja
+            disabledSprites.Add(0x64);  // rainbow
+            disabledSprites.Add(0x6A);  // pogo
+            disabledSprites.Add(0x6B);  // snake
+            disabledSprites.Add(0x6C);  // football
+            disabledSprites.Add(0x7E);  // super rainbow
         }
 
         // Determine which deco set to use for computing disabled sprites (normalize and accept minor variants)

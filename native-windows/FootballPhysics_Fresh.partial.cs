@@ -12,12 +12,46 @@ namespace FamidashEditor
         /// <summary>
         /// Football mode - Cube physics with charge on release mechanic
         /// Applies Cube gravity via CommonGravityRoutine_Fresh, then handles charge/jump logic
-        /// Hold X to charge (max 45 frames), release to jump with charged velocity
-        /// Velocity = chargeFrames * 0x004C (if gravity inverted) or chargeFrames * -0x004C (if gravity normal)
-        /// At 45 frames, charge resets and player is "orbed" (can't charge again until released)
+        /// Hold X to charge (max 50 frames before overcharge), max chargepower at 45 frames
+        /// Frames 1-45: charging increases power, frames 46-50: power caps at frame 45 level
+        /// Velocity = min(chargeFrames, 45) * 0x004C (if gravity inverted) or min(chargeFrames, 45) * -0x004C (if gravity normal)
+        /// Has permanent headbonking like H block (ejects from ceiling with velocity instead of zero)
         /// </summary>
         private void FootballPhysics_Fresh()
         {
+            // Football: Check for orb/pad activations (uses Cube interactions)
+            {
+                bool holdJump_orb = IsXDownAsync() || keyXHeld;
+                int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
+                bool pressJump_orb = pressCount_orb > 0;
+                bool gravityInverted_orb = (currplayer_gravity != 0);
+                int playerX_px_orb = playerX_fixed >> 8;
+                int playerY_px_orb = playerY_fixed >> 8;
+                int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
+                
+                int scrollX_px_orb = 0;
+                
+                int tempVelY = playerVelY_fixed;
+                // Football uses Cube (0) interactions
+                var (orbActivated, _) = UpdateOrbSystem(0, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
+                                                   scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
+                                                   (currplayer_mini != 0), ref tempVelY);
+                if (orbActivated)
+                {
+                    playerVelY_fixed = tempVelY;
+                    AppendSimDebug($"[FOOTBALL] Orb/Pad activated! New velY={playerVelY_fixed}");
+                    
+                    // Consume the X press if it was used for orb
+                    if (pressJump_orb)
+                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                }
+                
+                // Clear orb buffer when X is released
+                if (!holdJump_orb)
+                    ClearOrbBuffer();
+            }
+            
             int baseTableIdx = (currplayer_mini != 0 ? 4 : 0);
             bool gravityInverted = (currplayer_gravity != 0);
             int gravityMultiplier = gravityInverted ? -1 : 1;
@@ -29,8 +63,15 @@ namespace FamidashEditor
             // Apply gravity using common routine
             CommonGravityRoutine_Fresh();
             
+            // Football always has headbonking enabled (like H block)
+            // This will be handled in CubeEject_Fresh by temporarily setting hblocked
+            hblocked = true;
+            
             // Handle collision detection like Cube does
             CubeEject_Fresh();
+            
+            // Clear hblocked flag at end of frame
+            hblocked = false;
             
             // Charge mechanic (matching gamemode_cube.h logic)
             bool xHeld = IsXDownAsync() || keyXHeld;
@@ -41,12 +82,12 @@ namespace FamidashEditor
             if (xHeld && !footballOrbed)
             {
                 footballChargeFrames++;
-                AppendSimDebug($"[FOOTBALL] Charging: {footballChargeFrames}/45");
+                AppendSimDebug($"[FOOTBALL] Charging: {footballChargeFrames}/50 (power maxes at 45)");
                 
-                if (footballChargeFrames >= 45)
+                if (footballChargeFrames >= 50)
                 {
-                    footballOrbed = true;  // Hit overcharge limit - can't charge anymore
-                    AppendSimDebug($"[FOOTBALL] OVERCHARGED - orbed=true, but charge={footballChargeFrames} saved for jump");
+                    footballOrbed = true;  // Hit max charge frames - can't charge anymore
+                    AppendSimDebug($"[FOOTBALL] MAX CHARGE - orbed=true, charge capped at frame 45 power");
                 }
                 footballWasHeld = true;
             }
@@ -72,10 +113,11 @@ namespace FamidashEditor
                 // Apply jump velocity if charged and on ground
                 if (footballChargeFrames > 0 && onGround)
                 {
-                    // tmpA = chargeFrames * (gravity ? 0x004C : -0x004C)
-                    int chargeVelocity = footballChargeFrames * 0x004C;
+                    // Clamp charge power to 45 frames max (frames 46-50 don't add more power)
+                    int effectiveCharge = Math.Min(footballChargeFrames, 45);
+                    int chargeVelocity = effectiveCharge * 0x004C;
                     playerVelY_fixed = gravityInverted ? chargeVelocity : -chargeVelocity;
-                    AppendSimDebug($"[FOOTBALL] JUMP! chargeFrames={footballChargeFrames}, velocity_set=0x{playerVelY_fixed:X4}");
+                    AppendSimDebug($"[FOOTBALL] JUMP! chargeFrames={footballChargeFrames}, effectiveCharge={effectiveCharge}, velocity_set=0x{playerVelY_fixed:X4}");
                 }
                 
                 footballChargeFrames = 0;  // Reset charge on release

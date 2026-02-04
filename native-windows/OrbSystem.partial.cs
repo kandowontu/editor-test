@@ -231,8 +231,8 @@ namespace FamidashEditor
                     orbActivatedThisFrame = true;
                     activatedOrbType = spriteType;
                     orbHoldConsumedKeyStillDown = true;
-                    // Don't clear orbBufferActive here - keep it active while X is held
-                    // The physics mode will clear it on release or activation
+                    // Clear buffer on orb activation - require fresh press/hold for next orb
+                    orbBufferActive = false;
                     
                     // Only one orb per frame
                     return (true, activatedOrbType);
@@ -269,9 +269,11 @@ namespace FamidashEditor
         /// </summary>
         private void ActivateOrb(int orbType, int gamemode, bool gravityInverted, bool mini, ref int velocityY)
         {
-            // Clamp gamemode (ninja uses cube values)
+            // Map gamemodes to their orb/pad interaction base modes
             int modeCol = gamemode;
             if (modeCol == 8) modeCol = 0; // Ninja uses cube values
+            if (modeCol == 9) modeCol = 7; // Pogo uses swing values
+            if (modeCol == 10) modeCol = 0; // Football uses cube values
             if (modeCol < 0 || modeCol >= 8) return;
             
             switch (orbType)

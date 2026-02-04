@@ -3346,7 +3346,7 @@ namespace FamidashEditor
             uiAnimLastMs = renderStopwatch.Elapsed.TotalMilliseconds;
             System.Windows.Media.CompositionTarget.Rendering += CompositionTarget_Rendering;
 
-            this.KeyDown += SimulatorWindow_KeyDown;
+            this.PreviewKeyDown += SimulatorWindow_KeyDown;
             this.KeyUp += SimulatorWindow_KeyUp;
             this.MouseMove += SimulatorWindow_MouseMove;
             this.Closing += SimulatorWindow_Closing;
@@ -3763,6 +3763,65 @@ namespace FamidashEditor
                 }
                 catch { }
             }
+            
+            // Q key: toggle mini/normal
+            if (e.Key == Key.Q)
+            {
+                AppendSimDebug("[Q_HANDLER] Q key detected");
+                try
+                {
+                    if (!e.IsRepeat)
+                    {
+                        AppendSimDebug("[Q_HANDLER] Not a repeat");
+                        lock (simLock)
+                        {
+                            AppendSimDebug("[Q_HANDLER] In lock");
+                            // Toggle miniMode and sync with currplayer_mini
+                            miniMode = !miniMode;
+                            currplayer_mini = (byte)(miniMode ? 1 : 0);
+                            AppendSimDebug($"[Q_HANDLER] Set miniMode to {miniMode}, currplayer_mini to {currplayer_mini}");
+                            currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            try { UpdatePlayerIconFlip(); } catch { AppendSimDebug("[Q_HANDLER] UpdatePlayerIconFlip exception"); }
+                            try { UpdatePlayerImageForMode(); } catch { AppendSimDebug("[Q_HANDLER] UpdatePlayerImageForMode exception"); }
+                            try { UpdatePlayerVisualSizeForMode(); } catch { AppendSimDebug("[Q_HANDLER] UpdatePlayerVisualSizeForMode exception"); }
+                            // Sync checkbox state
+                            try { MiniCheckBox.IsChecked = miniMode; } catch { AppendSimDebug("[Q_HANDLER] MiniCheckBox update exception"); }
+                            AppendSimDebug($"[MINI] Mode now: {(miniMode ? "MINI" : "NORMAL")}");
+                            e.Handled = true;
+                        }
+                    }
+                }
+                catch (Exception ex) { AppendSimDebug($"[Q_HANDLER] Exception: {ex.Message}"); }
+            }
+            
+            // W key: toggle gravity
+            if (e.Key == Key.W)
+            {
+                try
+                {
+                    if (!e.IsRepeat)
+                    {
+                        lock (simLock)
+                        {
+                            AppendSimDebug("[INPUT] W key pressed - toggling gravity!");
+                            // Always toggle gravity regardless of No-Death mode
+                            gravityReversed = !gravityReversed;
+                            gravityFlipped = gravityReversed;
+                            effectiveInvertedByW = gravityReversed;
+                            currplayer_gravity = (byte)(gravityReversed ? 0xFF : 0x00);
+                            currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            UpdatePlayerIconFlip();
+                            try { UpdateEffectiveGravity(); } catch { }
+                            onGround = false;
+                            groundStabilizeCounter = 0;
+                            try { if (currentGameMode == 2) ballGoingDown = !gravityReversed; } catch { }
+                            AppendSimDebug($"[GRAVITY] Gravity now: {(gravityReversed ? "INVERTED" : "NORMAL")}");
+                        }
+                    }
+                }
+                catch { }
+            }
+            
             // Shift+F12: toggle Y-velocity overlay for debugging
             if (e.Key == Key.F12 && (Keyboard.Modifiers & ModifierKeys.Shift) != 0)
             {
@@ -3848,44 +3907,11 @@ namespace FamidashEditor
             {
                 try
                 {
-                                if (!e.IsRepeat)
-                            {
-                                lock (simLock)
-                                {
-                                // When the editor's No-Death option is OFF, W should flip the
-                                // canonical gravity direction (which affects collision logic).
-                                // When No-Death is ON, only invert numeric physics values so
-                                // collision/pass-through semantics remain unchanged.
-                                if (!MainWindow.Option_NoDeath)
-                                {
-                                    gravityReversed = !gravityReversed;
-                                    gravityFlipped = gravityReversed; // Sync for physics loop
-                                    effectiveInvertedByW = gravityReversed;
-                                    // Sync with cube physics gravity state (0x00 = down, 0xFF = up)
-                                    try { currplayer_gravity = (byte)(gravityReversed ? 0xFF : 0x00); } catch { }
-                                    // Update table index for Fresh physics
-                                    try { currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0); } catch { }
-                                    UpdatePlayerIconFlip();
-                                    // Update effective gravity for all systems
-                                    try { UpdateEffectiveGravity(); } catch { }
-                                    // After flipping logical gravity, ensure the player is no longer
-                                    // treated as grounded so gravity takes effect immediately.
-                                    onGround = false;
-                                    groundStabilizeCounter = 0;
-                                    // Keep ball-mode direction consistent with canonical gravity
-                                    try { if (currentGameMode == 2) ballGoingDown = !gravityReversed; } catch { }
-                                }
-                                else
-                                {
-                                    effectiveInvertedByW = !effectiveInvertedByW;
-                                }
-
-                                UpdateEffectiveGravity();
-                                // Ensure toggling gravity does not introduce an instantaneous
-                                // vertical impulse. Do NOT modify `playerVelY_fixed` here;
-                                // gravity inversion should only affect the numeric physics
-                                // parameters (gravity/jump/maxfall), not the current Y velocity.
-                                try { UpdatePlayerImageForMode(); } catch { }
+                    if (!e.IsRepeat)
+                    {
+                        lock (simLock)
+                        {
+                            // Already handled above in main key input section
                         }
                     }
                 }
@@ -4163,11 +4189,22 @@ namespace FamidashEditor
 
                 paused = false;
                 try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                
+                // Grab focus to enable keyboard input (W, up/down) after unpausing
+                try { this.Focus(); } catch { }
 
                 // Mark event handled so underlying canvas doesn't also receive it.
                 e.Handled = true;
             }
             catch { }
+        }
+
+        private void RenderCanvas_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            // Grab focus on the window to enable keyboard input (W, up/down)
+            // Focus the window itself, not the canvas, so keyboard events reach the window handlers
+            this.Focus();
+            e.Handled = true;
         }
 
         private void GameModeComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)

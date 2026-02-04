@@ -193,9 +193,14 @@ namespace FamidashEditor
                         
                         int tmpA = tmp3 * (0x004C * gravityMultiplier_fb);
                         
-                        // Apply velocity if chargepower > 0 and player velocity is exactly 0
+                        // Apply velocity if chargepower > 0 and player velocity is zero or small (grounded state)
                         // From gamemode_cube.h: if (chargepower[currplayer] && currplayer_vel_y == 0)
-                        if (tmp3 > 0 && playerVelY_fixed == 0)
+                        // But we also allow release when velocity is small (just started falling) to handle walk-off-edge case
+                        bool isGroundedOrNearGround = (playerVelY_fixed == 0) || 
+                                                      (!gravityInverted_fb && playerVelY_fixed > 0 && playerVelY_fixed < 0x100) ||
+                                                      (gravityInverted_fb && playerVelY_fixed < 0 && playerVelY_fixed > -0x100);
+                        
+                        if (tmp3 > 0 && isGroundedOrNearGround)
                         {
                             playerVelY_fixed = tmpA;
                             AppendSimDebug($"[FOOTBALL] Released! chargepower={tmp3}, tmpA=0x{tmpA:X4}, velY now = {playerVelY_fixed}");
@@ -264,6 +269,52 @@ namespace FamidashEditor
                     recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
                 }
                 catch { }
+                
+                // CRITICAL: After all physics updates, verify that cube still has ground support
+                // This ensures that walking off a platform immediately triggers falling
+                // rather than waiting for the next frame's main loop check
+                if (onGround && playerVelY_fixed == 0)
+                {
+                    try
+                    {
+                        bool stillSupported = false;
+                        if (currplayer_gravity == 0)  // Normal gravity
+                        {
+                            const int HITBOX_W_LOCAL = 15;
+                            int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
+                            int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
+                            int footWorldY_px = (playerY_fixed >> 8) + playerVisualHeight - 1;
+                            int tileBelowY_world = footWorldY_px / TILE;
+                            int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
+                            if (tileIndexY >= 0 && tileIndexY < mapHeight)
+                            {
+                                for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
+                                {
+                                    if (tx < 0 || tx >= mapWidth) continue;
+                                    int tid = tiles[tileIndexY * mapWidth + tx];
+                                    var col = MetatileCollisionTable.GetCollision((byte)tid);
+                                    int tileStartX = tx * TILE;
+                                    int localX = Math.Max(0, Math.Min(TILE - 1, playerCenter_px - tileStartX));
+                                    if (ProvidesFloorAtColumnStatic(col, localX, out int _)) { stillSupported = true; break; }
+                                }
+                            }
+                        }
+                        else  // Inverted gravity
+                        {
+                            stillSupported = IsTouchingCeiling();
+                        }
+
+                        if (!stillSupported)
+                        {
+                            onGround = false;
+                            wasZeroedByCollisionLastFrame = false;  // Allow gravity to apply next frame
+                            AppendSimDebug($"[CUBE] Ground support lost - clearing onGround flag and collision flag");
+                        }
+                    }
+                    catch { onGround = false; }
+                }
             }
             catch (Exception ex)
             {
@@ -467,6 +518,7 @@ namespace FamidashEditor
                             playerY_fixed = newY << 8;
                             playerVelY_fixed = 0;
                             wasZeroedByCollisionLastFrame = true;  // Signal that gravity should not re-apply next frame
+                            onGround = true;  // Mark as grounded so main loop can check if still supported
                             
                             // CRITICAL: Update playerY_px and collisionY after floor snap
                             // so ceiling death check uses the NEW position
@@ -581,7 +633,10 @@ namespace FamidashEditor
                         
                         // H block: headbonk - set velocity to 1 instead of 0 for instant ejection (gamemode_cube.h line 309)
                         if (!hblocked)
+                        {
                             playerVelY_fixed = 0;
+                            onGround = true;  // Mark as grounded so main loop can check if still supported
+                        }
                         else
                             playerVelY_fixed = 1;
                         
