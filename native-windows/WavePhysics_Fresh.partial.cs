@@ -11,6 +11,9 @@ namespace FamidashEditor
         /// </summary>
         private void WavePhysics_Fresh()
         {
+            // Skip all physics if death already triggered
+            if (deathTriggered || paused) return;
+            
             // Check for orb activation
             {
                 bool holdJump_orb = IsXDownAsync() || keyXHeld;
@@ -96,9 +99,13 @@ namespace FamidashEditor
             // Offset collision 2 pixels based on vel_y direction
             int offsetY = (playerY_fixed >> 8) + ((playerVelY_fixed < 0) ? 2 : -2);
             
-            WaveEject_Fresh(offsetY);
+            // Only run collision if death hasn't been triggered yet
+            if (!deathTriggered)
+            {
+                WaveEject_Fresh(offsetY);
+            }
             
-            // Record position for trail - only record every 2 pixels to prevent jitter
+            // Record position for trail - only record when moving horizontally to create clean line
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
@@ -112,10 +119,10 @@ namespace FamidashEditor
                     playerWorldCenterY_px += 8;
                 }
                 
-                // Only record if we've moved at least 2 pixels from last point
+                // Only record when X moves significantly (4+ pixels) to avoid capturing Y jags
+                // This creates a smooth horizontal line when wave walks on floor
                 if (recordedPlayerPath.Count == 0 || 
-                    Math.Abs(playerWorldCenterX_px - recordedPlayerPath.Last().Item1) >= 2 ||
-                    Math.Abs(playerWorldCenterY_px - recordedPlayerPath.Last().Item2) >= 2)
+                    Math.Abs(playerWorldCenterX_px - recordedPlayerPath.Last().Item1) >= 4)
                 {
                     recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
                 }
@@ -134,18 +141,29 @@ namespace FamidashEditor
             int playerY_px = (playerY_fixed >> 8);
             bool gravityInverted = (currplayer_gravity != 0);
             
-            int hitboxW = isMini ? 8 : 15;
-            int hitboxH = isMini ? 7 : 15;
+            // Wave hitbox: 8 pixels wide, 8 pixels tall (or 8x7 for mini)
+            int hitboxW = 8;
+            int hitboxH = isMini ? 7 : 8;
+            
+            // Wave uses different X offsets for collision based on velocity direction
+            // When moving UP (velY < 0): offset +10, When moving DOWN (velY > 0): offset +4
+            int collisionXOffset = (playerVelY_fixed < 0) ? 10 : 4;
             int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
             
-            int playerLeft_px = playerX_px;
-            int playerRight_px = playerX_px + hitboxW - 1;
+            int playerLeft_px = playerX_px + collisionXOffset;
+            int playerRight_px = playerX_px + collisionXOffset + hitboxW - 1;
             
-            if (!gravityInverted)
+            // Check collision based on VELOCITY DIRECTION, not gravity
+            bool isMovingDown = (playerVelY_fixed > 0);
+            
+            if (isMovingDown)
             {
-                // Normal gravity: check below at offsetY
+                // Moving DOWN: check below at offsetY
                 int checkY_px = offsetY + hitboxH;
                 int checkTileY = checkY_px / TILE;
+                
+                // Calculate ground layer offset
+                int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 
                 // Scan for tiles - check if SAFE
                 bool foundAnyTile = false;
@@ -157,7 +175,10 @@ namespace FamidashEditor
                     {
                         if (tx >= 0 && tx < mapWidth)
                         {
-                            int tileIdx = checkTileY * mapWidth + tx;
+                            int checkTileArrayY = checkTileY + groundRowsToReserve;
+                            if (checkTileArrayY >= mapHeight) continue;
+                            
+                            int tileIdx = checkTileArrayY * mapWidth + tx;
                             if (tileIdx >= 0 && tileIdx < tiles.Length)
                             {
                                 int tileId = tiles[tileIdx];
@@ -195,10 +216,14 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        // Death on unsafe tile
+                        // Death on unsafe tile - reposition to tile first, then die
+                        int landY = (checkTileY * TILE) - hitboxH - hitboxOffsetY;
+                        playerY_fixed = landY << 8;
+                        playerVelY_fixed = 0;
+                        
                         if (!MainWindow.Option_NoDeath)
                         {
-                            AppendSimDebug($"[WAVE_DEATH] Unsafe tile collision");
+                            AppendSimDebug($"[WAVE_DEATH] Unsafe tile collision, repositioned to Y={landY}");
                             deathTriggered = true;
                             deathTileX = playerX_px;
                             deathTileY = playerY_px;
@@ -224,9 +249,12 @@ namespace FamidashEditor
             }
             else
             {
-                // Reversed gravity: check above at offsetY
+                // Moving UP: check above at offsetY
                 int checkY_px = offsetY - 1;
                 int checkTileY = checkY_px / TILE;
+                
+                // Calculate ground layer offset
+                int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 
                 // Scan for tiles - check if SAFE
                 bool foundAnyTile = false;
@@ -238,7 +266,10 @@ namespace FamidashEditor
                     {
                         if (tx >= 0 && tx < mapWidth)
                         {
-                            int tileIdx = checkTileY * mapWidth + tx;
+                            int checkTileArrayY = checkTileY + groundRowsToReserve;
+                            if (checkTileArrayY >= mapHeight) continue;
+                            
+                            int tileIdx = checkTileArrayY * mapWidth + tx;
                             if (tileIdx >= 0 && tileIdx < tiles.Length)
                             {
                                 int tileId = tiles[tileIdx];
@@ -276,10 +307,14 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        // Death on unsafe tile
+                        // Death on unsafe tile - reposition to tile first, then die
+                        int landY = ((checkTileY + 1) * TILE);
+                        playerY_fixed = landY << 8;
+                        playerVelY_fixed = 0;
+                        
                         if (!MainWindow.Option_NoDeath)
                         {
-                            AppendSimDebug($"[WAVE_DEATH] Unsafe tile collision (inverted)");
+                            AppendSimDebug($"[WAVE_DEATH] Unsafe tile collision (inverted), repositioned to Y={landY}");
                             deathTriggered = true;
                             deathTileX = playerX_px;
                             deathTileY = playerY_px;

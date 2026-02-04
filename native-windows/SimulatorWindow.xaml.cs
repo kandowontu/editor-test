@@ -4393,25 +4393,51 @@ namespace FamidashEditor
                 // Reset velocity and physics state
                 playerVelY_fixed = 0;
 
-                // Reset gamemode/mini/gravity/speed to defaults
-                currentGameMode = 0; // Cube
-                miniMode = false;
-                currplayer_mini = 0;
-                currplayer_gravity = 0;
-                gravityReversed = false;
-                gravityFlipped = false;
-                speed = 1; // 1x speed
-                playerVelX_fixed = CUBE_SPEED_X1;
+                // Save current gamemode/mini/gravity/speed settings BEFORE resetting
+                int savedGameMode = currentGameMode;
+                bool savedMiniMode = miniMode;
+                byte savedGravity = currplayer_gravity;
+                bool savedGravityReversed = gravityReversed;
+                int savedSpeed = speed;
+                int savedPlayerVelX = playerVelX_fixed;
 
-                // Update UI to match defaults
-                try { UpdateGameModeDisplay(); } catch { }
-                try { UpdateSpeedDisplay(); } catch { }
+                // Reset gamemode/mini/gravity/speed to defaults ONLY if we have a START POS
+                // If no START POS, preserve the current settings from the options
+                if (hasStartPos)
+                {
+                    currentGameMode = 0; // Cube
+                    miniMode = false;
+                    currplayer_mini = 0;
+                    currplayer_gravity = 0;
+                    gravityReversed = false;
+                    gravityFlipped = false;
+                    speed = 1; // 1x speed
+                    playerVelX_fixed = CUBE_SPEED_X1;
+
+                    // Update UI to match defaults
+                    try { UpdateGameModeDisplay(); } catch { }
+                    try { UpdateSpeedDisplay(); } catch { }
 #pragma warning disable CS4014
-                try { Dispatcher.BeginInvoke(new Action(() => { if (MiniCheckBox != null) MiniCheckBox.IsChecked = false; })); } catch { }
+                    try { Dispatcher.BeginInvoke(new Action(() => { if (MiniCheckBox != null) MiniCheckBox.IsChecked = false; })); } catch { }
 #pragma warning restore CS4014
-                try { UpdatePlayerImageForMode(); } catch { }
-                try { UpdatePlayerVisualSizeForMode(); } catch { }
-                try { UpdatePlayerIconFlip(); } catch { }
+                    try { UpdatePlayerImageForMode(); } catch { }
+                    try { UpdatePlayerVisualSizeForMode(); } catch { }
+                    try { UpdatePlayerIconFlip(); } catch { }
+                }
+                else
+                {
+                    // No START POS: restore the saved settings
+                    currentGameMode = savedGameMode;
+                    miniMode = savedMiniMode;
+                    currplayer_mini = savedMiniMode ? (byte)1 : (byte)0;
+                    currplayer_gravity = savedGravity;
+                    gravityReversed = savedGravityReversed;
+                    gravityFlipped = savedGravityReversed;
+                    speed = savedSpeed;
+                    playerVelX_fixed = savedPlayerVelX;
+
+                    // UI already matches current settings, no need to update
+                }
 
                 // Reset camera to starting position or START POS marker
                 if (hasStartPos)
