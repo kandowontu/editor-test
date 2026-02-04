@@ -78,6 +78,7 @@ namespace FamidashEditor
 
         private void AppendSimDebug(string msg)
         {
+#if !DISABLE_DEBUG_LOGGING
             // Early return if debug is completely disabled
             if (!simDebugWriteToFile && simDebugBuffer.Count == 0)
             {
@@ -98,6 +99,8 @@ namespace FamidashEditor
                     }
                 }
                 try { System.Diagnostics.Debug.WriteLine(t); } catch { }
+#endif
+#if !DISABLE_DEBUG_LOGGING
                 if (simDebugWriteToFile)
                 {
                     try
@@ -108,6 +111,7 @@ namespace FamidashEditor
                 }
             }
             catch { }
+#endif
         }
 
         // Return a snapshot of the current in-memory debug buffer (most-recent last).
@@ -1239,8 +1243,8 @@ namespace FamidashEditor
                         
                         if (activated)
                         {
-                            // Update player icon flip on UI thread
-                            try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
+                            // Update player icon flip and checkbox on UI thread
+                            try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
                             
                             // Halve Y velocity
                             playerVelY_fixed /= 2;
@@ -1443,6 +1447,7 @@ namespace FamidashEditor
                 // In famidash sprite_collide(), Generic.x = high_byte(currplayer_x) + 1
                 // This means player X is offset +1 pixel to the RIGHT for sprite collision!
                 int playerX_px = (playerX_fixed >> 8) + 1;
+                if (currentGameMode == 4) AppendSimDebug($"[ROBOT_PAD_CHECK] Frame: playerX_px={playerX_px}, playerY_px={playerY_fixed >> 8}");
                 int playerY_px = playerY_fixed >> 8;
                 
                 // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
@@ -1502,6 +1507,7 @@ namespace FamidashEditor
                     // Use standard AABB collision for pads
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     {
+                        if (currentGameMode == 4) AppendSimDebug($"[ROBOT_PAD_HIT] sid=0x{sid:X2}, idx={idx}, padRow={padRow}");
                         // In famidash, pad activation tracking (idx8_inc(activesprites_activated, index)) is commented out
                         // This means pads activate EVERY frame while the player is touching them
                         // This is the correct behavior - don't add activation tracking for pads
@@ -1518,7 +1524,9 @@ namespace FamidashEditor
                         // Get velocity from table based on game mode and mini state
                         int modeCol = currentGameMode;
                         if (modeCol == 8) modeCol = 0; // Ninja uses cube values
-                        if (modeCol >= 0 && modeCol < 8 && padRow >= 0 && padRow < 9)
+                        if (modeCol == 9) modeCol = 7; // Pogo uses Swingcopter values
+                        if (modeCol == 11) modeCol = 0; // Football uses cube values
+                        if (modeCol >= 0 && modeCol <= 11 && padRow >= 0 && padRow < 9)
                         {
                             bool isMini = (currplayer_mini != 0);
                             int baseVel = isMini 
@@ -1990,6 +1998,8 @@ namespace FamidashEditor
         // portal activates only once per crossing.
         private System.Collections.Generic.HashSet<int> processedGravityPortals = new System.Collections.Generic.HashSet<int>();
         private System.Collections.Generic.HashSet<int> processedMiniPortals = new System.Collections.Generic.HashSet<int>();
+        // Track random portals (0x64 and 0x7E) we've already activated so each only activates once
+        private System.Collections.Generic.HashSet<int> processedRandomPortals = new System.Collections.Generic.HashSet<int>();
         // Speed portals processed set: avoid re-applying speed change while portal remains near interaction line
         private System.Collections.Generic.HashSet<int> processedSpeedPortals = new System.Collections.Generic.HashSet<int>();
         // Track orbs that have been activated so they only fire once
@@ -2040,6 +2050,19 @@ namespace FamidashEditor
         // Jump-buffer: when the player presses jump slightly before landing, store a small
         // frame window so the jump fires on landing. Timer_Tick sets this under `simLock`.
         private int jumpBufferCounter = 0;
+        // Pogo bounce animation frame counter (shows pogo2.png for 8 frames after bounce)
+        private int pogoBounceAnimationCounter = 0;
+        private double pogoBounceAnimationFrameAccum = 0.0;
+        // Ball icon animation frame counter (alternates between ball.png and ball2.png every 3 frames)
+        private int ballAnimationFrameCounter = 0;
+        private double ballAnimationFrameAccum = 0.0;
+        // Robot icon animation frame counter (cycles through 4 frames, 5 frames each when grounded)
+        private int robotAnimationFrameCounter = 0;
+        private double robotAnimationFrameAccum = 0.0;
+        // Spider icon animation frame counter (cycles through 4 frames, 5 frames each when grounded)
+        private int spiderAnimationFrameCounter = 0;
+        private double spiderAnimationFrameAccum = 0.0;
+
         // Toggle to show player's Y velocity in top-left when Shift+F12 is pressed
         private bool showYVelocityOverlay = false;
         private System.Windows.Controls.TextBlock? yVelTextBlock = null;
@@ -2101,20 +2124,55 @@ namespace FamidashEditor
                 else if (miniMode && currentGameMode == 6) choice = "wave-mini.png";
                 else if (miniMode && currentGameMode == 7) choice = "swingcopter-mini.png";
                 else if (miniMode && currentGameMode == 8) choice = "ninja-mini.png";
-                else if (miniMode && currentGameMode == 9) choice = "pogo-mini.png";
+                else if (miniMode && currentGameMode == 9) {
+                    // Mini pogo bounce animation - show pogo-mini2.png for 8 frames after bounce
+                    if (pogoBounceAnimationCounter > 0) {
+                        choice = "pogo-mini2.png";
+                    } else {
+                        choice = "pogo-mini.png";
+                    }
+                }
                 else if (miniMode && currentGameMode == 10) choice = "snake-mini.png";
                 else if (miniMode && currentGameMode == 11) choice = "football-mini.png";
                 else if (currentGameMode == 1) choice = "ship.png";
-                else if (currentGameMode == 2) choice = "ball.png";
+                else if (currentGameMode == 2) {
+                    // Ball animation alternates every 3 frames
+                    if (ballAnimationFrameCounter < 3) {
+                        choice = "ball.png";
+                    } else {
+                        choice = "ball2.png";
+                    }
+                }
                 else if (currentGameMode == 3) choice = "ufo.png";
-                else if (currentGameMode == 4) choice = "robot.png";
-                else if (currentGameMode == 5) choice = "spider.png";
-                else if (currentGameMode == 6) choice = "wave.png";
+                else if (currentGameMode == 4) choice = "";  // Robot animation is handled in RenderFrame
+                else if (currentGameMode == 5) choice = "";  // Spider animation is handled in RenderFrame
+                else if (currentGameMode == 6) {
+                    // Wave animation based on velocity
+                    if (Math.Abs(playerVelY_fixed) <= 0x0300) {
+                        choice = "wave2.png";  // Straight (with ±0x0300 tolerance to reduce flickering)
+                    } else if (playerVelY_fixed < 0) {
+                        choice = "wave.png";   // Going up (normal, will be flipped)
+                    } else {
+                        choice = "wave.png";   // Going down (normal, no flip)
+                    }
+                }
                 else if (currentGameMode == 7) choice = "swingcopter.png";
                 else if (currentGameMode == 8) choice = "ninja.png";
-                else if (currentGameMode == 9) choice = "pogo.png";
+                else if (currentGameMode == 9) {
+                    // Show pogo2.png for 8 frames after bounce
+                    if (pogoBounceAnimationCounter > 0) {
+                        choice = "pogo2.png";
+                    } else {
+                        choice = "pogo.png";
+                    }
+                }
                 else if (currentGameMode == 10) choice = "snake.png";
                 else if (currentGameMode == 11) choice = "football.png";
+
+                if (currentGameMode == 2)
+                {
+                    AppendSimDebug($"[BALL_MODE] gameMode=2, counter={ballAnimationFrameCounter}, choice={choice}");
+                }
 
                 BitmapSource? bi = null;
 
@@ -2162,7 +2220,12 @@ namespace FamidashEditor
                     {
                         var asm = System.Reflection.Assembly.GetExecutingAssembly();
                         var names = asm.GetManifestResourceNames();
-                        var found = names.FirstOrDefault(n => n.EndsWith(choice, StringComparison.OrdinalIgnoreCase));
+                        // Look for exact filename match (not just EndsWith, which would match "football.png" when looking for "ball.png")
+                        var found = names.FirstOrDefault(n => n.EndsWith("." + choice, StringComparison.OrdinalIgnoreCase) || n.Equals(choice, StringComparison.OrdinalIgnoreCase));
+                        if (currentGameMode == 2)
+                        {
+                            AppendSimDebug($"[BALL_RES] Looking for '{choice}', found resource: '{found}'");
+                        }
                         if (!string.IsNullOrEmpty(found))
                         {
                             using (var s = asm.GetManifestResourceStream(found))
@@ -2186,6 +2249,7 @@ namespace FamidashEditor
                 if (bi != null)
                 {
                     playerImage.Source = App.EnsureUnfrozenForRender(bi) ?? bi;
+                    playerImage.Tag = choice;  // Track which image is loaded
                     playerImage.Width = bi.PixelWidth;
                     playerImage.Height = bi.PixelHeight;
                     playerImage.Visibility = Visibility.Visible;
@@ -2268,8 +2332,23 @@ namespace FamidashEditor
                 
                 if (playerImage != null && playerImage.Source != null)
                 {
-                    if (gravityReversed)
+                    // Wave special handling: flip based on velocity direction (moving UP = flip)
+                    if (currentGameMode == 6)
                     {
+                        // Wave flips when moving upward (negative velocity)
+                        if (playerVelY_fixed < 0)
+                        {
+                            playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                            playerImage.RenderTransform = new ScaleTransform(1, -1);
+                        }
+                        else
+                        {
+                            playerImage.RenderTransform = Transform.Identity;
+                        }
+                    }
+                    else if (gravityReversed)
+                    {
+                        // Other modes flip based on gravity
                         playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
                         playerImage.RenderTransform = new ScaleTransform(1, -1);
                     }
@@ -4393,7 +4472,7 @@ namespace FamidashEditor
                 // Reset velocity and physics state
                 playerVelY_fixed = 0;
 
-                // Save current gamemode/mini/gravity/speed settings BEFORE resetting
+                // Save current game settings from options BEFORE resetting
                 int savedGameMode = currentGameMode;
                 bool savedMiniMode = miniMode;
                 byte savedGravity = currplayer_gravity;
@@ -4401,10 +4480,10 @@ namespace FamidashEditor
                 int savedSpeed = speed;
                 int savedPlayerVelX = playerVelX_fixed;
 
-                // Reset gamemode/mini/gravity/speed to defaults ONLY if we have a START POS
-                // If no START POS, preserve the current settings from the options
+                // Reset gamemode/mini/gravity/speed based on whether we have a START POS
                 if (hasStartPos)
                 {
+                    // With START POS: reset to defaults (Cube, normal gravity, 1x speed)
                     currentGameMode = 0; // Cube
                     miniMode = false;
                     currplayer_mini = 0;
@@ -4426,7 +4505,7 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    // No START POS: restore the saved settings
+                    // Without START POS: restore the saved Set Options settings
                     currentGameMode = savedGameMode;
                     miniMode = savedMiniMode;
                     currplayer_mini = savedMiniMode ? (byte)1 : (byte)0;
@@ -4466,6 +4545,7 @@ namespace FamidashEditor
                 try { recordedPlayerPath.Clear(); } catch { }
                 try { processedGravityPortals.Clear(); } catch { }
                 try { processedSpeedPortals.Clear(); } catch { }
+                try { processedRandomPortals.Clear(); } catch { }
 
                 // Apply portal states and color triggers if using START POS
                 if (hasStartPos)
@@ -6031,6 +6111,526 @@ namespace FamidashEditor
             // Prevent rendering if window is closed
             if (windowClosed) return;
             
+            // Update wave icon based on velocity (every frame)
+            if (currentGameMode == 6)
+            {
+                try
+                {
+                    string waveChoice = "wave.png";
+                    // Choose icon based on velocity magnitude
+                    // wave2.png when nearly stationary, wave.png for movement
+                    if (playerVelY_fixed == 0)
+                    {
+                        waveChoice = "wave2.png";  // Straight/stationary
+                    }
+                    
+                    // Check current image
+                    BitmapImage? currentBitmap = playerImage?.Source as BitmapImage;
+                    string currentImageName = "";
+                    if (currentBitmap?.UriSource != null)
+                    {
+                        currentImageName = System.IO.Path.GetFileName(currentBitmap.UriSource.OriginalString);
+                    }
+                    
+                    // Only reload if different
+                    if (!currentImageName.Equals(waveChoice, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                        var names = asm.GetManifestResourceNames();
+                        var found = names.FirstOrDefault(n => n.EndsWith(waveChoice, StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrEmpty(found))
+                        {
+                            using (var s = asm.GetManifestResourceStream(found))
+                            {
+                                if (s != null)
+                                {
+                                    var newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.StreamSource = s;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Update flip every frame for wave
+                    UpdatePlayerIconFlip();
+                }
+                catch { }
+            }
+            
+            // Update pogo icon based on bounce animation counter (every frame)
+            if (currentGameMode == 9)
+            {
+                try
+                {
+                    // Determine which images to use based on mini mode
+                    string bounceImg = miniMode ? "pogo-mini2.png" : "pogo2.png";
+                    string normalImg = miniMode ? "pogo-mini.png" : "pogo.png";
+                    string pogoChoice = (pogoBounceAnimationCounter > 0) ? bounceImg : normalImg;
+                    AppendSimDebug($"[POGO_ICON] bounceCounter={pogoBounceAnimationCounter}, choice={pogoChoice}");
+                    
+                    // Decrement counter in RenderFrame, accounting for simulation timescale
+                    // Only decrement if not paused
+                    if (!paused && pogoBounceAnimationCounter > 0)
+                    {
+                        // Use a sub-frame accumulator to handle fractional decrements based on timescale
+                        pogoBounceAnimationFrameAccum += simTimeScale;
+                        if (pogoBounceAnimationFrameAccum >= 1.0)
+                        {
+                            pogoBounceAnimationCounter--;
+                            pogoBounceAnimationFrameAccum -= 1.0;
+                        }
+                    }
+                    else if (paused)
+                    {
+                        // Do nothing, wait until unpaused
+                    }
+                    else
+                    {
+                        pogoBounceAnimationFrameAccum = 0.0;  // Reset accumulator when animation ends
+                    }
+                    
+                    // Track current image name via a tag property
+                    string currentImageName = playerImage?.Tag as string ?? "";
+                    
+                    // Only reload if different
+                    if (!currentImageName.Equals(pogoChoice, StringComparison.OrdinalIgnoreCase) && playerImage != null)
+                    {
+                        // Try embedded resource first
+                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                        var names = asm.GetManifestResourceNames();
+                        var found = names.FirstOrDefault(n => n.EndsWith(pogoChoice, StringComparison.OrdinalIgnoreCase));
+                        
+                        if (!string.IsNullOrEmpty(found))
+                        {
+                            using (var s = asm.GetManifestResourceStream(found))
+                            {
+                                if (s != null)
+                                {
+                                    var newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.StreamSource = s;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                    if (playerImage != null) playerImage.Tag = pogoChoice;  // Track which image is loaded
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Fallback to file system
+                            string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
+                            string candidateOut = System.IO.Path.Combine(exeDir, pogoChoice);
+                            if (System.IO.File.Exists(candidateOut) && playerImage != null)
+                            {
+                                var newImg = new BitmapImage();
+                                newImg.BeginInit();
+                                newImg.UriSource = new Uri(candidateOut);
+                                newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                newImg.EndInit();
+                                newImg.Freeze();
+                                if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                if (playerImage != null) playerImage.Tag = pogoChoice;  // Track which image is loaded
+                            }
+                            else
+                            {
+                                // Try relative path
+                                string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\" + pogoChoice));
+                                if (System.IO.File.Exists(candidate))
+                                {
+                                    var newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.UriSource = new Uri(candidate);
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                    if (playerImage != null) playerImage.Tag = pogoChoice;  // Track which image is loaded
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex) { AppendSimDebug($"[POGO_ICON] Exception: {ex.Message}"); }
+            }
+            
+            // Update ball icon animation counter (alternates every 3 frames, accounting for timescale)
+            // Only animate for normal ball mode, not mini ball
+            if (currentGameMode == 2 && !miniMode)
+            {
+                try
+                {
+                    // Only animate if not paused
+                    if (!paused)
+                    {
+                        // Increment accumulator and cycle counter (0-5 cycle: 3 frames ball.png, 3 frames ball2.png)
+                        ballAnimationFrameAccum += simTimeScale;
+                        if (ballAnimationFrameAccum >= 1.0)
+                        {
+                            ballAnimationFrameCounter++;
+                            if (ballAnimationFrameCounter >= 6)  // 6-frame cycle (0-5)
+                            {
+                                ballAnimationFrameCounter = 0;
+                            }
+                            ballAnimationFrameAccum -= 1.0;
+                        }
+                    }
+                    
+                    string ballChoice = (ballAnimationFrameCounter < 3) ? "ball.png" : "ball2.png";
+                    AppendSimDebug($"[BALL_ANIM] counter={ballAnimationFrameCounter}, accum={ballAnimationFrameAccum:F2}, simTimeScale={simTimeScale}, choice={ballChoice}");
+                    
+                    // Track current image name via a tag property
+                    string currentImageName = playerImage?.Tag as string ?? "";
+                    
+                    // Only reload if different
+                    if (!currentImageName.Equals(ballChoice, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Try embedded resource first
+                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                        var names = asm.GetManifestResourceNames();
+                        var found = names.FirstOrDefault(n => n.EndsWith("." + ballChoice, StringComparison.OrdinalIgnoreCase) || n.Equals(ballChoice, StringComparison.OrdinalIgnoreCase));
+                        
+                        if (!string.IsNullOrEmpty(found))
+                        {
+                            using (var s = asm.GetManifestResourceStream(found))
+                            {
+                                if (s != null)
+                                {
+                                    var newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.StreamSource = s;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                    if (playerImage != null) playerImage.Tag = ballChoice;  // Track which image is loaded
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Fallback to file system
+                            string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
+                            string candidateOut = System.IO.Path.Combine(exeDir, ballChoice);
+                            if (System.IO.File.Exists(candidateOut))
+                            {
+                                var newImg = new BitmapImage();
+                                newImg.BeginInit();
+                                newImg.UriSource = new Uri(candidateOut);
+                                newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                newImg.EndInit();
+                                newImg.Freeze();
+                                if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                if (playerImage != null) playerImage.Tag = ballChoice;  // Track which image is loaded
+                            }
+                            else
+                            {
+                                // Try relative path
+                                string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\" + ballChoice));
+                                if (System.IO.File.Exists(candidate))
+                                {
+                                    var newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.UriSource = new Uri(candidate);
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                    if (playerImage != null) playerImage.Tag = ballChoice;  // Track which image is loaded
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+            else
+            {
+                // Reset counter when not in ball mode
+                ballAnimationFrameCounter = 0;
+                ballAnimationFrameAccum = 0.0;
+            }
+            
+            // Update robot icon animation (4 frames x 5 frames each when grounded)
+            if (currentGameMode == 4)
+            {
+                try
+                {
+                    // Determine if robot is in "grounded" state (using onGround or ground stabilize)
+                    bool robotIsGrounded = onGround || groundStabilizeCounter > 0;
+                    
+                    if (robotIsGrounded && !paused)
+                    {
+                        // Increment accumulator and cycle counter (0-19 cycle: 5 frames per frame state, 4 frames total)
+                        robotAnimationFrameAccum += simTimeScale;
+                        if (robotAnimationFrameAccum >= 1.0)
+                        {
+                            robotAnimationFrameCounter++;
+                            if (robotAnimationFrameCounter >= 20)  // 20-frame cycle (0-19)
+                            {
+                                robotAnimationFrameCounter = 0;
+                            }
+                            robotAnimationFrameAccum -= 1.0;
+                        }
+                    }
+                    else if (!robotIsGrounded)
+                    {
+                        // Reset counter when leaving ground
+                        robotAnimationFrameCounter = 0;
+                        robotAnimationFrameAccum = 0.0;
+                    }
+                    
+                    // Determine which image to show based on animation counter or jump state
+                    string robotChoice;
+                    // Use robotjump.png if velocity is outside a small tolerance (not standing still)
+                    // Tolerance: 0x0100 (same as wave animation uses for near-zero)
+                    bool robotHasVerticalVelocity = Math.Abs(playerVelY_fixed) > 0x0100;
+                    
+                    if (robotIsGrounded && !robotHasVerticalVelocity)
+                    {
+                        // Frame mapping: 0-4=robot.png, 5-9=robot2.png, 10-14=robot3.png, 15-19=robot4.png
+                        int frameIndex = robotAnimationFrameCounter / 5;
+                        robotChoice = frameIndex switch
+                        {
+                            0 => "robot.png",
+                            1 => "robot2.png",
+                            2 => "robot3.png",
+                            3 => "robot4.png",
+                            _ => "robot.png"
+                        };
+                    }
+                    else
+                    {
+                        robotChoice = "robotjump.png";
+                    }
+                    
+                    // Track current image name via a tag property
+                    string currentImageName = playerImage?.Tag as string ?? "";
+                    
+                    // Only reload if different
+                    if (!currentImageName.Equals(robotChoice, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Try embedded resource first
+                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                        var names = asm.GetManifestResourceNames();
+                        var found = names.FirstOrDefault(n => n.EndsWith("." + robotChoice, StringComparison.OrdinalIgnoreCase) || n.Equals(robotChoice, StringComparison.OrdinalIgnoreCase));
+                        
+                        BitmapImage? newImg = null;
+                        if (!string.IsNullOrEmpty(found))
+                        {
+                            using (var s = asm.GetManifestResourceStream(found))
+                            {
+                                if (s != null)
+                                {
+                                    newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.StreamSource = s;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Fallback to file system
+                            string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
+                            string candidateOut = System.IO.Path.Combine(exeDir, robotChoice);
+                            if (System.IO.File.Exists(candidateOut))
+                            {
+                                newImg = new BitmapImage();
+                                newImg.BeginInit();
+                                newImg.UriSource = new Uri(candidateOut);
+                                newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                newImg.EndInit();
+                                newImg.Freeze();
+                            }
+                            else
+                            {
+                                // Try relative path
+                                string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\" + robotChoice));
+                                if (System.IO.File.Exists(candidate))
+                                {
+                                    newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.UriSource = new Uri(candidate);
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                }
+                            }
+                        }
+                        
+                        if (newImg != null && playerImage != null)
+                        {
+                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Tag = robotChoice;  // Track which image is loaded
+                            playerImage.Width = newImg.PixelWidth;
+                            playerImage.Height = newImg.PixelHeight;
+                            
+                            // Handle special sizing for robot2 and robot4 (24x16 - wider, right-aligned)
+                            // For these frames, the extra width extends to the left
+                            if ((robotChoice == "robot2.png" || robotChoice == "robot4.png") && playerImage != null)
+                            {
+                                // 24 pixels wide image, but hitbox is still 16x16
+                                // Shift left by 8 pixels so right edge aligns, extra comes out left
+                                // Do NOT change playerVisualWidth/Height - those are used for collision detection
+                                var translateTransform = new System.Windows.Media.TransformGroup();
+                                var translate = new System.Windows.Media.TranslateTransform(-8, 0);
+                                var scaleTransform = gravityReversed ? new System.Windows.Media.ScaleTransform(1, -1) : new System.Windows.Media.ScaleTransform(1, 1);
+                                translateTransform.Children.Add(translate);
+                                translateTransform.Children.Add(scaleTransform);
+                                playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                                playerImage.RenderTransform = translateTransform;
+                            }
+                            else if (playerImage != null)
+                            {
+                                // Normal 16x16
+                                // Apply gravity flip only for normal images
+                                if (gravityReversed)
+                                {
+                                    playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                                    playerImage.RenderTransform = new System.Windows.Media.ScaleTransform(1, -1);
+                                }
+                                else
+                                {
+                                    playerImage.RenderTransform = System.Windows.Media.Transform.Identity;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+            else
+            {
+                // Reset counter when not in robot mode
+                robotAnimationFrameCounter = 0;
+                robotAnimationFrameAccum = 0.0;
+            }
+            
+            // Update spider icon animation (4 frames x 5 frames each when grounded, same as robot)
+            if (currentGameMode == 5)
+            {
+                try
+                {
+                    // Determine if spider is in "grounded" state (using onGround or ground stabilize)
+                    bool spiderIsGrounded = onGround || groundStabilizeCounter > 0;
+                    
+                    if (spiderIsGrounded && !paused)
+                    {
+                        // Increment accumulator and cycle counter (0-19 cycle: 5 frames per frame state, 4 frames total)
+                        spiderAnimationFrameAccum += simTimeScale;
+                        if (spiderAnimationFrameAccum >= 1.0)
+                        {
+                            spiderAnimationFrameCounter++;
+                            if (spiderAnimationFrameCounter >= 20)  // 20-frame cycle (0-19)
+                            {
+                                spiderAnimationFrameCounter = 0;
+                            }
+                            spiderAnimationFrameAccum -= 1.0;
+                        }
+                    }
+                    else if (!spiderIsGrounded)
+                    {
+                        // Reset counter when leaving ground
+                        spiderAnimationFrameCounter = 0;
+                        spiderAnimationFrameAccum = 0.0;
+                    }
+                    
+                    // Determine which image to show based on animation counter or jump state
+                    string spiderChoice;
+                    // Use spiderjump.png if velocity is outside a small tolerance (not standing still)
+                    // Tolerance: 0x0100 (same as wave animation uses for near-zero)
+                    bool spiderHasVerticalVelocity = Math.Abs(playerVelY_fixed) > 0x0100;
+                    
+                    if (spiderIsGrounded && !spiderHasVerticalVelocity)
+                    {
+                        // Frame mapping: 0-4=spider.png, 5-9=spider2.png, 10-14=spider3.png, 15-19=spider4.png
+                        int frameIndex = spiderAnimationFrameCounter / 5;
+                        spiderChoice = frameIndex switch
+                        {
+                            0 => "spider.png",
+                            1 => "spider2.png",
+                            2 => "spider3.png",
+                            3 => "spider4.png",
+                            _ => "spider.png"
+                        };
+                    }
+                    else
+                    {
+                        spiderChoice = "spiderjump.png";
+                    }
+                    
+                    // Load the spider image from embedded resources
+                    try
+                    {
+                        if (playerImage != null)
+                        {
+                            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+                            var resourceNames = assembly.GetManifestResourceNames();
+                            var resourceName = resourceNames.FirstOrDefault(n => n.EndsWith("." + spiderChoice) || n.Equals(spiderChoice));
+                            
+                            if (resourceName != null)
+                            {
+                                using (var stream = assembly.GetManifestResourceStream(resourceName))
+                                {
+                                    if (stream != null)
+                                    {
+                                        var decoder = new System.Windows.Media.Imaging.PngBitmapDecoder(stream, System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+                                        var bitmap = decoder.Frames[0];
+                                        bitmap.Freeze();
+                                        playerImage.Source = bitmap;
+                                        playerImage.Tag = spiderChoice;
+                                        playerImage.Width = bitmap.PixelWidth;
+                                        playerImage.Height = bitmap.PixelHeight;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                    
+                    // Apply visual offset for spider/spider2/spider3 (24x16 images, right-aligned)
+                    // spider4 is 16x16 so it needs no offset
+                    if (playerImage != null && (spiderChoice == "spider.png" || spiderChoice == "spider2.png" || spiderChoice == "spider3.png"))
+                    {
+                        // These are 24x16 images, offset -8px to right-align them to 16x16 hitbox
+                        playerImage.RenderTransformOrigin = new Point(0, 0.5);
+                        var transform = new System.Windows.Media.TransformGroup();
+                        transform.Children.Add(new System.Windows.Media.TranslateTransform(-8, 0));
+                        if (gravityFlipped)
+                        {
+                            transform.Children.Add(new System.Windows.Media.ScaleTransform(1, -1));
+                        }
+                        playerImage.RenderTransform = transform;
+                    }
+                    else if (playerImage != null && gravityFlipped)
+                    {
+                        // Standard images with gravity flip only
+                        playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                        playerImage.RenderTransform = new System.Windows.Media.ScaleTransform(1, -1);
+                    }
+                    else if (playerImage != null)
+                    {
+                        playerImage.RenderTransform = System.Windows.Media.Transform.Identity;
+                    }
+                }
+                catch { }
+            }
+            else
+            {
+                // Reset counter when not in spider mode
+                spiderAnimationFrameCounter = 0;
+                spiderAnimationFrameAccum = 0.0;
+            }
+            
             // Advance per-frame counter used for caching overlay-computed hitboxes
             try { renderFrameCounter++; } catch { renderFrameCounter = 1; }
             // One-time first-frame diagnostic snapshot (Option A)
@@ -7141,15 +7741,21 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        // Special-case rainbow portal (0x64): cycle through the ordered portal
-                        // preview images deterministically per-position and advance by animation frame.
-                        if (s == 0x64)
+                        // Special-case rainbow portals: cycle through the ordered portal sprites
+                        // 0x64 = Limited random (modes 0-7: Cube through Swingcopter)
+                        // 0x7E = Super random (modes 0-11: all modes including Ninja, Pogo, Snake, Football)
+                        if (s == 0x64 || s == 0x7E)
                         {
                             try
                             {
                                 if (previewSpriteMap != null)
                                 {
-                                    int[] orderIds = new int[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x24, 0x17, 0x4B, 0x58, 0x6A, 0x6B, 0x6C };
+                                    // For 0x64: limited to Swingcopter (8 modes)
+                                    // For 0x7E: all modes (12 modes)
+                                    int[] orderIds = (s == 0x64) 
+                                        ? new int[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x24, 0x17, 0x4B }  // Cube, Ship, Ball, UFO, Robot, Wave, Spider, Swing
+                                        : new int[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x24, 0x17, 0x4B, 0x58, 0x6A, 0x6B, 0x6C };  // + Ninja, Pogo, Snake, Football
+                                    
                                     var list = new System.Collections.Generic.List<ImageSource?>();
                                     foreach (var id in orderIds)
                                     {
@@ -7159,7 +7765,7 @@ namespace FamidashEditor
                                     {
                                         int len = list.Count;
                                         int frameAdvance = 0;
-                                        try { frameAdvance = (animationFrame / 8) % Math.Max(1, len); } catch { frameAdvance = 0; }
+                                        try { frameAdvance = (animationFrame / 30) % Math.Max(1, len); } catch { frameAdvance = 0; }
                                         uint seed = (uint)idx; // deterministic per-position offset (matches editor behavior)
                                         uint offset = (uint)((seed * 2654435761u) % (uint)len);
                                         int sel = (int)((offset + (uint)frameAdvance) % (uint)len);
@@ -7644,14 +8250,17 @@ namespace FamidashEditor
                     double now = renderStopwatch.Elapsed.TotalMilliseconds;
                     double delta = Math.Max(0.0, now - uiAnimLastMs);
                     uiAnimLastMs = now;
-                    uiAnimAccumulatedMs += delta;
-                    // Advance UI-driven animation counter regardless of pause state so
-                    // decorative/preview animations (eg. rainbow portal) continue animating
-                    // even when numeric simulation is paused.
-                    while (uiAnimAccumulatedMs >= SIM_STEP_MS)
+                    // Apply time scaling to animation accumulation so animations respect slow-motion
+                    uiAnimAccumulatedMs += delta * simTimeScale;
+                    // Only advance UI-driven animation counter when NOT paused
+                    // Animations should not advance while simulation is paused
+                    if (!paused)
                     {
-                        animationFrame++;
-                        uiAnimAccumulatedMs -= SIM_STEP_MS;
+                        while (uiAnimAccumulatedMs >= SIM_STEP_MS)
+                        {
+                            animationFrame++;
+                            uiAnimAccumulatedMs -= SIM_STEP_MS;
+                        }
                     }
                 }
                 catch { }
@@ -8329,7 +8938,7 @@ namespace FamidashEditor
                                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
                                             try { gravityReversed = true; gravityFlipped = true; currplayer_gravity = 0xFF; effectiveInvertedByW = gravityReversed; } catch { }
                                             try { UpdateEffectiveGravity(); } catch { }
-                                            try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
+                                            try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
                                             try { UpdatePlayerImageForMode(); } catch { }
                                             processedGravityPortals.Add(idx);
                                             break; // only one portal per frame
@@ -8340,7 +8949,7 @@ namespace FamidashEditor
                                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
                                             try { gravityReversed = false; gravityFlipped = false; currplayer_gravity = 0x00; effectiveInvertedByW = gravityReversed; } catch { }
                                             try { UpdateEffectiveGravity(); } catch { }
-                                            try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
+                                            try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
                                             try { UpdatePlayerImageForMode(); } catch { }
                                             processedGravityPortals.Add(idx);
                                             break; // only one portal per frame
@@ -8531,9 +9140,10 @@ namespace FamidashEditor
                     }
                     catch { }
 
-                    // Portal handling: All 9 gamemode portals
+                    // Portal handling: All 9 gamemode portals + random portals (0x64, 0x7E)
                     try
                     {
+                        // Regular mode portals
                         if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58 || sid == 0x6A || sid == 0x6B || sid == 0x6C)
                         {
                             // require 2D overlap with player's hitbox for portal activation
@@ -8570,6 +9180,52 @@ namespace FamidashEditor
                                     try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
                                 }
                                 try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
+                                break;
+                            }
+                        }
+                        // Random portals: 0x64 = Limited random (up to Swingcopter), 0x7E = Super random (any mode)
+                        else if (sid == 0x64 || sid == 0x7E)
+                        {
+                            // Check if already activated
+                            if (processedRandomPortals.Contains(idx)) continue;
+
+                            // require 2D overlap with player's hitbox for portal activation
+                            const int HITBOX_W_RAND = 15; const int HITBOX_H_RAND = 15;
+                            int playerCenter_px_rand = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            int playerLeft_px_rand = playerCenter_px_rand - (HITBOX_W_RAND / 2);
+                            int playerRight_px_rand = playerLeft_px_rand + (HITBOX_W_RAND - 1);
+                            int playerTop_px_rand = (playerY_fixed >> 8);
+                            int playerBottom_px_rand = playerTop_px_rand + (HITBOX_H_RAND - 1);
+
+                            if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_rand, playerRight_px_rand, playerTop_px_rand, playerBottom_px_rand))
+                            {
+                                int oldMode = currentGameMode;
+                                int newMode;
+                                
+                                // 0x64 = Random up to Swingcopter (modes 0-7)
+                                // 0x7E = Super random including all modes (0-11: includes Ninja, Pogo, Snake, Football)
+                                if (sid == 0x64)
+                                {
+                                    // Limited random: 0-7 (Cube, Ship, Ball, UFO, Robot, Spider, Wave, Swing)
+                                    newMode = new System.Random().Next(0, 8);
+                                }
+                                else // sid == 0x7E
+                                {
+                                    // Super random: 0-11 (all modes including Ninja, Pogo, Snake, Football)
+                                    newMode = new System.Random().Next(0, 12);
+                                }
+
+                                if (newMode != oldMode)
+                                {
+                                    currentGameMode = newMode;
+                                    try { UpdateGameModeDisplay(); } catch { }
+                                    try { UpdateEffectiveGravity(); } catch { }
+                                    try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                                }
+                                try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
+                                
+                                // Mark this random portal as activated so it only works once
+                                processedRandomPortals.Add(idx);
                                 break;
                             }
                         }

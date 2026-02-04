@@ -11,47 +11,6 @@ namespace FamidashEditor
         /// </summary>
         private void RobotPhysics_Fresh()
         {
-            // Check for orb activation
-            {
-                bool holdJump_orb = IsXDownAsync() || keyXHeld;
-                int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
-                bool pressJump_orb = pressCount_orb > 0;
-                bool gravityInverted_orb = (currplayer_gravity != 0);
-                int playerX_px_orb = playerX_fixed >> 8;
-                int playerY_px_orb = playerY_fixed >> 8;
-                int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
-                
-                // Adjust Y position for mini mode collision box (bottom-left alignment)
-                if (currplayer_mini != 0 && !gravityInverted_orb)
-                {
-                    playerY_px_orb += 9;
-                }
-                
-                int scrollX_px_orb = 0;
-                
-                int tempVelY = playerVelY_fixed;
-                var (orbActivated, _) = UpdateOrbSystem(3, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
-                                                   scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
-                                                   (currplayer_mini != 0), ref tempVelY);
-                if (orbActivated)
-                {
-                    playerVelY_fixed = tempVelY;
-                    AppendSimDebug($"[ROBOT] Orb activated! New velY={playerVelY_fixed}");
-                    
-                    // Set orbed flag for robot mode (matches famidash line 432)
-                    orbed = true;
-                    
-                    // Consume the X press if it was used for orb
-                    if (pressJump_orb)
-                        Interlocked.Exchange(ref keyXPressedCount, 0);
-                }
-                
-                // Clear orb buffer when X is released
-                if (!holdJump_orb)
-                    ClearOrbBuffer();
-            }
-            
             // Get base physics values (always from down-gravity index)
             int baseTableIdx = (currplayer_mini != 0 ? 4 : 0);
             bool gravityInverted = (currplayer_gravity != 0);
@@ -92,7 +51,13 @@ namespace FamidashEditor
                 isGrounded = collided;
             }
             
+            // Update the global onGround flag so the main loop grounding check can work
+            onGround = isGrounded;
+            
             AppendSimDebug($"[ROBOT] grounded={isGrounded}, jumpPressed={robotJumpPressed}, holdJump={holdJump}, orbed={orbed}, dashing={dashing}");
+            
+            // Note: Unlike earlier code, we do NOT zero velocity when grounded (matches Cube behavior)
+            // Gravity will be applied naturally, and collision detection will handle grounding
             
             if (isGrounded && robotJumpPressed && !orbed && dashing == 0) {
                 robotJumpPressed = false; // Clear flag
@@ -118,7 +83,18 @@ namespace FamidashEditor
             }
             
             // Apply gravity (applies simTimeScale internally)
-            CommonGravityRoutine_Fresh();
+            // BUT skip gravity acceleration if a pad/orb was just hit this frame - let the pad velocity apply first
+            if (!orbhitonthisframe)
+            {
+                CommonGravityRoutine_Fresh();
+            }
+            else
+            {
+                // Pad/orb hit: skip gravity acceleration but still integrate velocity into position
+                AppendSimDebug($"[ROBOT] Pad/orb hit this frame - skipping gravity acceleration but integrating velocity. velY=0x{playerVelY_fixed:X4}");
+                playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                AppendSimDebug($"[ROBOT] Position integrated: posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px)");
+            }
             
             // If grounded with inverted gravity, prevent velocity from pulling into ceiling
             if (currplayer_gravity != 0) {
@@ -137,6 +113,7 @@ namespace FamidashEditor
             }
             
             // Collision
+            byte gravityAtFrameStart = currplayer_gravity;
             CubeEject_Fresh();
             
             // Record trail

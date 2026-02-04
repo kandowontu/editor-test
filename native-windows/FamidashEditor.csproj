@@ -52,15 +52,26 @@
     <EmbeddedResource Include="..\spider.png" />
     <EmbeddedResource Include="..\spider-mini.png" />
     <EmbeddedResource Include="..\robot.png" />
+    <EmbeddedResource Include="..\robot2.png" />
+    <EmbeddedResource Include="..\robot3.png" />
+    <EmbeddedResource Include="..\robot4.png" />
+    <EmbeddedResource Include="..\robotjump.png" />
+    <EmbeddedResource Include="..\spider2.png" />
+    <EmbeddedResource Include="..\spider3.png" />
+    <EmbeddedResource Include="..\spider4.png" />
+    <EmbeddedResource Include="..\spiderjump.png" />
     <EmbeddedResource Include="..\robot-mini.png" />
     <EmbeddedResource Include="..\wave.png" />
+    <EmbeddedResource Include="..\wave2.png" />
     <EmbeddedResource Include="..\wave-mini.png" />
     <EmbeddedResource Include="..\ninja.png" />
     <EmbeddedResource Include="..\ninja-mini.png" />
     <EmbeddedResource Include="..\swingcopter.png" />
     <EmbeddedResource Include="..\swingcopter-mini.png" />
     <EmbeddedResource Include="..\pogo.png" />
+    <EmbeddedResource Include="..\pogo2.png" />
     <EmbeddedResource Include="..\pogo-mini.png" />
+    <EmbeddedResource Include="..\pogo-mini2.png" />
     <EmbeddedResource Include="..\snake.png" />
     <EmbeddedResource Include="..\snake-mini.png" />
     <EmbeddedResource Include="..\football.png" />
@@ -278,6 +289,7 @@
     <EmbeddedResource Include="..\cube.png" />
     <EmbeddedResource Include="..\ship.png" />
     <EmbeddedResource Include="..\ball.png" />
+    <EmbeddedResource Include="..\ball2.png" />
     <EmbeddedResource Include="..\ufo.png" />
     <!-- Tileset block variations - moved to src/renderer for embedding -->
     <EmbeddedResource Include="..\src\renderer\BlocksaSpikesaSawsaSlopesa.png" />

@@ -274,20 +274,42 @@ namespace FamidashEditor
             if (modeCol == 8) modeCol = 0; // Ninja uses cube values
             if (modeCol == 9) modeCol = 7; // Pogo uses swing values
             if (modeCol == 10) modeCol = 0; // Football uses cube values
+            if (modeCol == 6 || modeCol == 11) { modeCol = 6; } // Wave (6) and Snake (11) use wave values
             if (modeCol < 0 || modeCol >= 8) return;
+            
+            // Wave and Snake special case: only blue orbs and spider orbs/pads work, just reverse gravity
+            bool isWaveOrSnake = (gamemode == 6 || gamemode == 11);
+            if (isWaveOrSnake && orbType != BLUE_ORB && orbType != BLUE_ORB_MULTI && 
+                orbType != SPIDER_ORB_UP && orbType != SPIDER_ORB_DOWN && 
+                orbType != SPIDER_PAD_UP && orbType != SPIDER_PAD_DOWN)
+            {
+                // Wave/Snake ignore non-blue, non-spider orbs
+                return;
+            }
             
             switch (orbType)
             {
                 case BLUE_ORB:
                 case BLUE_ORB_MULTI:
-                    // Blue orb: reverse gravity then apply velocity
+                case SPIDER_ORB_UP:
+                case SPIDER_ORB_DOWN:
+                case SPIDER_PAD_UP:
+                case SPIDER_PAD_DOWN:
+                    // Blue orb and spider orbs/pads: reverse gravity
                     gravityInverted = !gravityInverted;
                     currplayer_gravity = (byte)(gravityInverted ? 1 : 0);
                     gravityReversed = gravityInverted;
                     gravityFlipped = gravityInverted;
                     UpdatePlayerIconFlip();
                     
-                    // Set velocity based on gamemode and mini state
+                    // Wave and Snake: no velocity change, just reverse gravity
+                    if (isWaveOrSnake)
+                    {
+                        // Velocity remains unchanged, will be set by wave/snake movement code
+                        break;
+                    }
+                    
+                    // Other modes: Set velocity based on gamemode and mini state
                     // Ball mode uses ORB_BALL_HEIGHT_BLUE, others use PAD_HEIGHT_BLUE
                     if (gamemode == 2) // BALL_MODE
                     {

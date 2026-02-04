@@ -70,6 +70,11 @@ namespace FamidashEditor
             int offsetY = (playerY_fixed >> 8) + (gravityInverted ? -2 : 1);
             SpiderEject_Fresh(offsetY);
             
+            // Update the global onGround flag based on whether we're grounded
+            // If velocity is 0 after eject, we hit something and are grounded
+            onGround = (playerVelY_fixed == 0);
+            AppendSimDebug($"[SPIDER] After eject: onGround={onGround}, velY={playerVelY_fixed}");
+            
             // Input handling
             bool holdingJump = IsXDownAsync() || keyXHeld;
             int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
@@ -188,7 +193,13 @@ namespace FamidashEditor
                     int newY_px = currentY_px - ejectAmount;
                     playerY_fixed = newY_px << 8;
                     playerVelY_fixed = 0;
+                    wasZeroedByCollisionLastFrame = true;  // Signal gravity not to re-apply next frame
                     AppendSimDebug($"[SPIDER_EJECT] Floor collision: eject={ejectAmount}, Y {currentY_px} -> {newY_px}");
+                }
+                else
+                {
+                    // No collision - allow gravity to apply
+                    wasZeroedByCollisionLastFrame = false;
                 }
             }
             else
@@ -202,7 +213,13 @@ namespace FamidashEditor
                     int newY_px = currentY_px + ejectAmount;
                     playerY_fixed = newY_px << 8;
                     playerVelY_fixed = 0;
+                    wasZeroedByCollisionLastFrame = true;  // Signal gravity not to re-apply next frame
                     AppendSimDebug($"[SPIDER_EJECT] Ceiling collision: eject={ejectAmount}, Y {currentY_px} -> {newY_px}");
+                }
+                else
+                {
+                    // No collision - allow gravity to apply
+                    wasZeroedByCollisionLastFrame = false;
                 }
             }
         }

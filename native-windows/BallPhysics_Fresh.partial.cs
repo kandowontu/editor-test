@@ -384,6 +384,7 @@ namespace FamidashEditor
                                 if (newVel > minVel)
                                     newVel = minVel;
                                 playerVelY_fixed = newVel;
+                                pogoBounceAnimationCounter = 8; // Show pogo2.png for 8 frames
                                 AppendSimDebug($"[POGO_BOUNCE_D] velY: old=0x{playerVelY_fixed:X4} -> new=0x{newVel:X4}, min=0x{minVel:X4}");
                             }
                         }
@@ -457,6 +458,7 @@ namespace FamidashEditor
                                 if (newVel < minVel)
                                     newVel = minVel;
                                 playerVelY_fixed = newVel;
+                                pogoBounceAnimationCounter = 8; // Show pogo2.png for 8 frames
                                 AppendSimDebug($"[POGO_BOUNCE_U] velY: old=0x{playerVelY_fixed:X4} -> new=0x{newVel:X4}, min=0x{minVel:X4}");
                             }
                         }

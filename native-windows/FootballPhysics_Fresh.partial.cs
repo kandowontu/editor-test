@@ -19,39 +19,6 @@ namespace FamidashEditor
         /// </summary>
         private void FootballPhysics_Fresh()
         {
-            // Football: Check for orb/pad activations (uses Cube interactions)
-            {
-                bool holdJump_orb = IsXDownAsync() || keyXHeld;
-                int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
-                bool pressJump_orb = pressCount_orb > 0;
-                bool gravityInverted_orb = (currplayer_gravity != 0);
-                int playerX_px_orb = playerX_fixed >> 8;
-                int playerY_px_orb = playerY_fixed >> 8;
-                int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
-                
-                int scrollX_px_orb = 0;
-                
-                int tempVelY = playerVelY_fixed;
-                // Football uses Cube (0) interactions
-                var (orbActivated, _) = UpdateOrbSystem(0, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
-                                                   scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
-                                                   (currplayer_mini != 0), ref tempVelY);
-                if (orbActivated)
-                {
-                    playerVelY_fixed = tempVelY;
-                    AppendSimDebug($"[FOOTBALL] Orb/Pad activated! New velY={playerVelY_fixed}");
-                    
-                    // Consume the X press if it was used for orb
-                    if (pressJump_orb)
-                        Interlocked.Exchange(ref keyXPressedCount, 0);
-                }
-                
-                // Clear orb buffer when X is released
-                if (!holdJump_orb)
-                    ClearOrbBuffer();
-            }
-            
             int baseTableIdx = (currplayer_mini != 0 ? 4 : 0);
             bool gravityInverted = (currplayer_gravity != 0);
             int gravityMultiplier = gravityInverted ? -1 : 1;
@@ -61,7 +28,15 @@ namespace FamidashEditor
             tmpgravity = GameModePhysics.CUBE_GRAVITY(baseTableIdx) * gravityMultiplier;
             
             // Apply gravity using common routine
-            CommonGravityRoutine_Fresh();
+            // BUT skip gravity if a pad/orb was just hit this frame - let the pad velocity apply first
+            if (!orbhitonthisframe)
+            {
+                CommonGravityRoutine_Fresh();
+            }
+            else
+            {
+                AppendSimDebug($"[FOOTBALL] Pad/orb hit this frame - skipping gravity. velY=0x{playerVelY_fixed:X4}");
+            }
             
             // Football always has headbonking enabled (like H block)
             // This will be handled in CubeEject_Fresh by temporarily setting hblocked

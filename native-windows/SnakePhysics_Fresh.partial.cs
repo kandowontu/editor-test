@@ -40,9 +40,9 @@ namespace FamidashEditor
                         playerVelY_fixed = currplayer_gravity != 0 ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
                     }
                     
-                    // Invert velocity if not holding X (normal wave behavior)
+                    // If holding X, invert velocity (when holding, go opposite of default direction)
                     bool holding = IsXDownAsync() || keyXHeld;
-                    if (!holding)
+                    if (holding)
                     {
                         playerVelY_fixed = -playerVelY_fixed;
                     }

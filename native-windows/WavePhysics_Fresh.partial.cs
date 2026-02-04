@@ -57,11 +57,14 @@ namespace FamidashEditor
             
             switch (tmp1) {
                 case 0:
-                    // Calculate vel_y based on vel_x
-                    if (currplayer_mini == 0) {
-                        playerVelY_fixed = currplayer_gravity != 0 ? -playerVelX_fixed : playerVelX_fixed;
-                    } else {
-                        playerVelY_fixed = currplayer_gravity != 0 ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
+                    // Calculate vel_y based on vel_x UNLESS we just landed
+                    if (!wasZeroedByCollisionLastFrame)
+                    {
+                        if (currplayer_mini == 0) {
+                            playerVelY_fixed = currplayer_gravity != 0 ? -playerVelX_fixed : playerVelX_fixed;
+                        } else {
+                            playerVelY_fixed = currplayer_gravity != 0 ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
+                        }
                     }
                     
                     // Input handling - use same system as cube
@@ -96,8 +99,13 @@ namespace FamidashEditor
                     break;
             }
             
-            // Offset collision 2 pixels based on vel_y direction
-            int offsetY = (playerY_fixed >> 8) + ((playerVelY_fixed < 0) ? 2 : -2);
+            // Offset collision based on vel_y direction and gravity
+            // Normal gravity: moving down = -2, moving up = +2
+            // Inverted gravity: moving up (negative vel) = -2, moving down (positive vel) = +2
+            int offsetY = (playerY_fixed >> 8) + ((playerVelY_fixed > 0) ? -2 : 2);
+            
+            // Reset the "just landed" flag for next frame
+            wasZeroedByCollisionLastFrame = false;
             
             // Only run collision if death hasn't been triggered yet
             if (!deathTriggered)
@@ -153,8 +161,9 @@ namespace FamidashEditor
             int playerLeft_px = playerX_px + collisionXOffset;
             int playerRight_px = playerX_px + collisionXOffset + hitboxW - 1;
             
-            // Check collision based on VELOCITY DIRECTION, not gravity
-            bool isMovingDown = (playerVelY_fixed > 0);
+            // Determine collision direction: when gravity is inverted, "down" means toward the top of the map
+            // so we need to check the OPPOSITE direction
+            bool isMovingDown = gravityInverted ? (playerVelY_fixed < 0) : (playerVelY_fixed > 0);
             
             if (isMovingDown)
             {
@@ -163,6 +172,7 @@ namespace FamidashEditor
                 int checkTileY = checkY_px / TILE;
                 
                 // Calculate ground layer offset
+                // When gravity is inverted, ground is at TOP, so offset differently
                 int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 
                 // Scan for tiles - check if SAFE
@@ -175,8 +185,9 @@ namespace FamidashEditor
                     {
                         if (tx >= 0 && tx < mapWidth)
                         {
-                            int checkTileArrayY = checkTileY + groundRowsToReserve;
-                            if (checkTileArrayY >= mapHeight) continue;
+                            // Ground offset: normal gravity adds offset (ground at bottom), inverted gravity subtracts (ground at top)
+                            int checkTileArrayY = gravityInverted ? (checkTileY - groundRowsToReserve) : (checkTileY + groundRowsToReserve);
+                            if (checkTileArrayY < 0 || checkTileArrayY >= mapHeight) continue;
                             
                             int tileIdx = checkTileArrayY * mapWidth + tx;
                             if (tileIdx >= 0 && tileIdx < tiles.Length)
@@ -250,10 +261,11 @@ namespace FamidashEditor
             else
             {
                 // Moving UP: check above at offsetY
-                int checkY_px = offsetY - 1;
+                int checkY_px = offsetY - hitboxH;
                 int checkTileY = checkY_px / TILE;
                 
                 // Calculate ground layer offset
+                // When gravity is inverted, ground is at TOP, so offset differently
                 int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 
                 // Scan for tiles - check if SAFE
@@ -266,8 +278,9 @@ namespace FamidashEditor
                     {
                         if (tx >= 0 && tx < mapWidth)
                         {
-                            int checkTileArrayY = checkTileY + groundRowsToReserve;
-                            if (checkTileArrayY >= mapHeight) continue;
+                            // Ground offset: normal gravity adds offset (ground at bottom), inverted gravity subtracts (ground at top)
+                            int checkTileArrayY = gravityInverted ? (checkTileY - groundRowsToReserve) : (checkTileY + groundRowsToReserve);
+                            if (checkTileArrayY < 0 || checkTileArrayY >= mapHeight) continue;
                             
                             int tileIdx = checkTileArrayY * mapWidth + tx;
                             if (tileIdx >= 0 && tileIdx < tiles.Length)

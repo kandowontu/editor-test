@@ -686,9 +686,14 @@ namespace FamidashEditor
         catch { }
 
         // Numeric shortcuts: 1 = TILES, 2 = SPRITES, 3 = BOTH
+        // Skip layer switching if map width/height textboxes are focused
         try
         {
-            if (!e.IsRepeat && (e.Key == Key.D1 || e.Key == Key.NumPad1))
+            bool widthBoxFocused = WidthBox != null && WidthBox.IsFocused;
+            bool heightBoxFocused = HeightBox != null && HeightBox.IsFocused;
+            bool suppressLayerSwitch = widthBoxFocused || heightBoxFocused;
+
+            if (!suppressLayerSwitch && !e.IsRepeat && (e.Key == Key.D1 || e.Key == Key.NumPad1))
             {
                 e.Handled = true;
                 tilesLayerActive = true;
@@ -699,7 +704,7 @@ namespace FamidashEditor
                 if (StatusText != null) StatusText.Text = "Switched to TILES layer";
                 return;
             }
-            if (!e.IsRepeat && (e.Key == Key.D2 || e.Key == Key.NumPad2))
+            if (!suppressLayerSwitch && !e.IsRepeat && (e.Key == Key.D2 || e.Key == Key.NumPad2))
             {
                 e.Handled = true;
                 tilesLayerActive = false;
@@ -710,7 +715,7 @@ namespace FamidashEditor
                 if (StatusText != null) StatusText.Text = "Switched to SPRITES layer";
                 return;
             }
-            if (!e.IsRepeat && (e.Key == Key.D3 || e.Key == Key.NumPad3))
+            if (!suppressLayerSwitch && !e.IsRepeat && (e.Key == Key.D3 || e.Key == Key.NumPad3))
             {
                 e.Handled = true;
                 tilesLayerActive = true;
@@ -1222,13 +1227,16 @@ namespace FamidashEditor
         // Public setter used by dialogs to enable/disable the accurate tileset swapping feature.
         // When enabled, this will attempt to locate a matching PNG tileset for the current Block/Spike/NoParallax
         // combination and load it. When disabled, it reverts to the default embedded/fallback tileset.
-        public void SetShowAccurateTileset(bool enabled, string? blockOverride = null, string? spikeOverride = null)
+        public void SetShowAccurateTileset(bool enabled, string? blockOverride = null, string? spikeOverride = null, bool persistSetting = true)
         {
             try
             {
                 showAccurateTileset = enabled;
-                // persist as global editor setting
-                try { SaveSettingsWithTriggerOption(); } catch { }
+                // persist as global editor setting (unless this is a temporary toggle)
+                if (persistSetting)
+                {
+                    try { SaveSettingsWithTriggerOption(); } catch { }
+                }
 
                 if (showAccurateTileset)
                 {
@@ -4998,8 +5006,8 @@ namespace FamidashEditor
                      spriteIdx == 0x17 || spriteIdx == 0x18 || spriteIdx == 0x19 || spriteIdx == 0x4B || spriteIdx == 0x58 ||
                      spriteIdx == 0x6A || spriteIdx == 0x6B || spriteIdx == 0x6C ||
                      spriteIdx == 0x08 || spriteIdx == 0x09 ||
-                     // Rainbow portal (new): treat 0x64 as a portal for preview rendering
-                     spriteIdx == 0x64 ||
+                     // Rainbow portals: 0x64 (limited random), 0x7E (super random)
+                     spriteIdx == 0x64 || spriteIdx == 0x7E ||
                      // Teleport portal preview replacements
                      spriteIdx == 0x4E || spriteIdx == 0x4F ||
                      // Horizontal gravity portals
@@ -5018,22 +5026,38 @@ namespace FamidashEditor
         // a per-position deterministic variant (used for the rainbow portal 0x64).
         private BitmapSource? GetPortalSpriteForId(int spriteIdx, int positionKey = -1)
         {
-            // Rainbow portal (0x64) cycles through a specific ordered list of portal images.
-            if (spriteIdx == 0x64)
+            // Rainbow portals: 0x64 (limited random), 0x7E (super random with all 12 modes)
+            if (spriteIdx == 0x64 || spriteIdx == 0x7E)
             {
-                // Ordered list: cube, ship, ball, ufo, robot, wave, spider, swingcopter, ninja
-                BitmapSource?[] order = new BitmapSource?[]
-                {
-                    cubePortalSprite,
-                    shipPortalSprite,
-                    ballPortalSprite,
-                    ufoPortalSprite,
-                    robotPortalSprite,
-                    wavePortalSprite,
-                    spiderPortalSprite,
-                    swingcopterPortalSprite,
-                    ninjaPortalSprite
-                };
+                // 0x64: limited to Swingcopter (8 modes)
+                // 0x7E: all modes including Ninja, Pogo, Snake, Football (12 modes)
+                BitmapSource?[] order = (spriteIdx == 0x64)
+                    ? new BitmapSource?[]
+                    {
+                        cubePortalSprite,
+                        shipPortalSprite,
+                        ballPortalSprite,
+                        ufoPortalSprite,
+                        robotPortalSprite,
+                        wavePortalSprite,
+                        spiderPortalSprite,
+                        swingcopterPortalSprite
+                    }
+                    : new BitmapSource?[]
+                    {
+                        cubePortalSprite,
+                        shipPortalSprite,
+                        ballPortalSprite,
+                        ufoPortalSprite,
+                        robotPortalSprite,
+                        wavePortalSprite,
+                        spiderPortalSprite,
+                        swingcopterPortalSprite,
+                        ninjaPortalSprite,
+                        pogoPortalSprite,
+                        snakePortalSprite,
+                        footballPortalSprite
+                    };
 
                 // If positionKey not provided, fall back to cube portal
                 if (positionKey < 0)
@@ -5050,7 +5074,7 @@ namespace FamidashEditor
 
                 // Advance based on global animationFrame so portals animate over time
                 int frameAdvance = 0;
-                try { frameAdvance = (animationFrame / 8) % len; } catch { frameAdvance = 0; }
+                try { frameAdvance = (animationFrame / 10) % len; } catch { frameAdvance = 0; }
 
                 int idx = (int)((offset + (uint)frameAdvance) % (uint)len);
                 return order[idx];
@@ -5116,9 +5140,10 @@ namespace FamidashEditor
             
             // Check if this is a portal sprite
             if (originalIndex == 0x00) return 3000; // Cube portal
-            // Treat 0x64 as the rainbow portal which should be rendered using the
-            // same sizing as standard tall portals (map it to 3000 for sizing).
-            if (originalIndex == 0x64) return 3000; // Rainbow portal (cycles through portal images)
+            // Treat 0x64 and 0x7E as rainbow portals which should be rendered using the
+            // same sizing as standard tall portals (map them to 3000 for sizing).
+            if (originalIndex == 0x64) return 3000; // Rainbow portal (cycles through portal images, limited to 8 modes)
+            if (originalIndex == 0x7E) return 3000; // Super rainbow portal (cycles through all 12 portal images)
             if (originalIndex == 0x01) return 3001; // Ship portal
             if (originalIndex == 0x02) return 3002; // Ball portal
             if (originalIndex == 0x03) return 3003; // UFO portal
@@ -7872,7 +7897,7 @@ namespace FamidashEditor
                 {
                     if (!originalShowAccurate)
                     {
-                        try { SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet); } catch { }
+                        try { SetShowAccurateTileset(true, loadedBlockSet, loadedSpikeSet, persistSetting: false); } catch { }
                     }
 
                     // Ensure simulator always has parallax/ground assets available.
@@ -8156,8 +8181,8 @@ namespace FamidashEditor
                 }
                 finally
                 {
-                    // Restore previous accurate-tileset setting so editor state is unchanged
-                    try { if (!originalShowAccurate) SetShowAccurateTileset(false, loadedBlockSet, loadedSpikeSet); } catch { }
+                    // Restore previous accurate-tileset setting so editor state is unchanged (don't persist, just restore in-memory state)
+                    try { if (!originalShowAccurate) SetShowAccurateTileset(false, loadedBlockSet, loadedSpikeSet, persistSetting: false); } catch { }
                 }
             }
             catch { }
@@ -14542,10 +14567,10 @@ namespace FamidashEditor
                 // Check if this is a custom animated sprite
                 if (animatedIdx >= 2000)
                 {
-                    // Special-case: rainbow portal (original sprite 0x64) should be
-                    // provided by GetPortalSpriteForId so it can start at a per-position
+                    // Special-case: rainbow portals (0x64 and 0x7E) should be
+                    // provided by GetPortalSpriteForId so they can start at a per-position
                     // randomized frame and cycle through the ordered portal images.
-                    if (spriteIdx == 0x64)
+                    if (spriteIdx == 0x64 || spriteIdx == 0x7E)
                     {
                         // currentSpritePositionKey was set earlier in this method
                         sprite = GetPortalSpriteForId(spriteIdx, currentSpritePositionKey);

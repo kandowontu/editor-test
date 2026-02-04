@@ -64,9 +64,21 @@ namespace FamidashEditor
             // Reset triple jump when grounded - be more strict to avoid resetting mid-jump
             // Only reset if velocity is near zero (not actively jumping)
             bool isGrounded = (playerVelY_fixed > -8 && playerVelY_fixed < 8);
+            
+            // Update the global onGround flag so the main loop grounding check can work
+            onGround = isGrounded;
+            
+            // When grounded, zero out Y velocity to keep player on ground
             if (isGrounded) {
+                playerVelY_fixed = 0;
+                wasZeroedByCollisionLastFrame = true;  // Signal gravity not to re-apply next frame
                 ninjaJumps = 3;
-                AppendSimDebug($"[NINJA] Grounded - reset jumps to 3");
+                AppendSimDebug($"[NINJA] Grounded - zeroed Y velocity, set collision flag, and reset jumps to 3");
+            }
+            else {
+                // When NOT grounded, reset the collision flag so gravity can apply
+                wasZeroedByCollisionLastFrame = false;
+                AppendSimDebug($"[NINJA] NOT grounded - reset collision flag to allow gravity");
             }
             
             // Read input
@@ -112,6 +124,7 @@ namespace FamidashEditor
             }
             
             // Collision
+            byte gravityAtFrameStart = currplayer_gravity;
             CubeEject_Fresh();
             
             // Record trail
