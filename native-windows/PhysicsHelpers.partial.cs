@@ -18,7 +18,7 @@ namespace FamidashEditor
             int tmpaccel = gravity;
             
             // Check if at max fall speed
-            bool atMaxFall = gravityFlipped ? 
+            bool atMaxFall = gravityFlipped[currplayer] ? 
                 (velocityY <= maxFallSpeed) : 
                 (velocityY >= maxFallSpeed);
             

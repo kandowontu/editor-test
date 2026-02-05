@@ -568,14 +568,14 @@ namespace FamidashEditor
                 {
                     // Upward dash (vertical)
                     velocityY = velocityX * 4;  // currplayer_vel_y = currplayer_vel_x * 4
-                    dashing = 4;
+                    dashing[currplayer] = 4;
                     AppendSimDebug($"[DASH_ORB] Upward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_DOWNWARDS || spriteType == DASH_GRAVITY_ORB_DOWNWARDS)
                 {
                     // Downward dash (vertical)
                     velocityY = -velocityX * 4;  // currplayer_vel_y = -currplayer_vel_x * 4
-                    dashing = 5;
+                    dashing[currplayer] = 5;
                     AppendSimDebug($"[DASH_ORB] Downward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
 

@@ -229,8 +229,8 @@ namespace FamidashEditor
         {
             try
             {
-                int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;  // Extract high byte (current frame 0-6)
-                int subFrame = cubeRotate_fixed & 0xFF;            // Extract low byte (accumulator)
+                int frameIndex = (cubeRotate_fixed[currplayer] >> 8) & 0xFF;  // Extract high byte (current frame 0-6)
+                int subFrame = cubeRotate_fixed[currplayer] & 0xFF;            // Extract low byte (accumulator)
                 
                 // If velocity is zero, snap to frame 0 (upright)
                 if (playerVelY_fixed[currplayer] == 0)
@@ -270,7 +270,7 @@ namespace FamidashEditor
                     }
                     
                     // Recombine into 16-bit value
-                    cubeRotate_fixed = (frameIndex << 8) | subFrame;
+                    cubeRotate_fixed[currplayer] = (frameIndex << 8) | subFrame;
                 }
             }
             catch { }
@@ -290,7 +290,7 @@ namespace FamidashEditor
                 // The NES uses a simple formula: cube_rotate = 0x0400 - player_vel_y
                 // where player_vel_y is the full 16-bit signed velocity
                 // Add tolerance/dead zone around zero velocity to prevent flickering when grounded
-                int adjustedVel = playerVelY_fixed;
+                int adjustedVel = playerVelY_fixed[currplayer];
                 if (adjustedVel > -0x0080 && adjustedVel < 0x0080)
                 {
                     adjustedVel = 0x0100;  // Snap to 0x0100 within ±128 units to keep straight frame
@@ -314,7 +314,7 @@ namespace FamidashEditor
                 }
                 
                 shipRotate_fixed = cubeRotate;
-                int frameIndex = (shipRotate_fixed >> 8) & 0xFF;
+                int frameIndex = (shipRotate_fixed[currplayer] >> 8) & 0xFF;
                 
                 AppendSimDebug($"[SHIP_ROT] velY=0x{playerVelY_fixed:X4}, rotate=0x{cubeRotate:X4}, frame={frameIndex}");
             }
@@ -331,7 +331,7 @@ namespace FamidashEditor
             {
                 // Swingcopter frame index: 0x0400 - playerVelY (same as ship)
                 // Add tolerance/dead zone around zero velocity to prevent flickering
-                int adjustedVel = playerVelY_fixed;
+                int adjustedVel = playerVelY_fixed[currplayer];
                 if (adjustedVel > -0x0080 && adjustedVel < 0x0080)
                 {
                     adjustedVel = 0x0100;  // Snap to 0x0100 within ±128 units
@@ -354,7 +354,7 @@ namespace FamidashEditor
                 }
                 
                 swingcopterRotate_fixed = cubeRotate;
-                int frameIndex = (swingcopterRotate_fixed >> 8) & 0xFF;
+                int frameIndex = (swingcopterRotate_fixed[currplayer] >> 8) & 0xFF;
                 
                 AppendSimDebug($"[SWING_ROT] velY=0x{playerVelY_fixed:X4}, rotate=0x{cubeRotate:X4}, frame={frameIndex}");
             }
@@ -399,7 +399,7 @@ namespace FamidashEditor
                         else
                             frameToSet = 6;
                         
-                        footballRotate_fixed = (frameToSet << 8) | 0;  // Set frame, zero accumulator
+                        footballRotate_fixed[currplayer] = (frameToSet << 8) | 0;  // Set frame, zero accumulator
                         AppendSimDebug($"[FOOTBALL_ROT] CHARGE: chargeFrames={footballChargeFrames} -> frame={frameToSet}");
                     }
                     else
@@ -412,8 +412,8 @@ namespace FamidashEditor
                 else
                 {
                     // Velocity is non-zero: accumulate gravity increment (use CUBE_GRAVITY like cube mode)
-                    int frameIndex = (footballRotate_fixed >> 8) & 0xFF;  // Extract high byte
-                    int subFrame = footballRotate_fixed & 0xFF;            // Extract low byte (accumulator)
+                    int frameIndex = (footballRotate_fixed[currplayer] >> 8) & 0xFF;  // Extract high byte
+                    int subFrame = footballRotate_fixed[currplayer] & 0xFF;            // Extract low byte (accumulator)
                     
                     int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
                     
@@ -447,7 +447,7 @@ namespace FamidashEditor
                     if (frameIndex < 0) frameIndex += 24;
                     
                     // Recombine into 16-bit value: (frame << 8) | accumulator
-                    footballRotate_fixed = (frameIndex << 8) | subFrame;
+                    footballRotate_fixed[currplayer] = (frameIndex << 8) | subFrame;
                 }
             }
             catch { }
@@ -461,7 +461,7 @@ namespace FamidashEditor
         {
             try
             {
-                int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;  // Extract frame 0-6
+                int frameIndex = (cubeRotate_fixed[currplayer] >> 8) & 0xFF;  // Extract frame 0-6
                 
                 // When gravity is inverted, mirror the frame around the centerline
                 // to show rotation in opposite visual direction
@@ -487,8 +487,8 @@ namespace FamidashEditor
         {
             try
             {
-                int frameIndex = (cubeRotateMini_fixed >> 8) & 0xFF;  // Extract high byte (current frame 0-6)
-                int subFrame = cubeRotateMini_fixed & 0xFF;            // Extract low byte (accumulator)
+                int frameIndex = (cubeRotateMini_fixed[currplayer] >> 8) & 0xFF;  // Extract high byte (current frame 0-6)
+                int subFrame = cubeRotateMini_fixed[currplayer] & 0xFF;            // Extract low byte (accumulator)
                 
                 // If velocity is zero, snap to frame 0 (upright)
                 if (playerVelY_fixed[currplayer] == 0)
@@ -526,7 +526,7 @@ namespace FamidashEditor
                     }
                     
                     // Recombine into 16-bit value
-                    cubeRotateMini_fixed = (frameIndex << 8) | subFrame;
+                    cubeRotateMini_fixed[currplayer] = (frameIndex << 8) | subFrame;
                 }
             }
             catch { }
@@ -540,7 +540,7 @@ namespace FamidashEditor
         {
             try
             {
-                int frameIndex = (cubeRotateMini_fixed >> 8) & 0xFF;
+                int frameIndex = (cubeRotateMini_fixed[currplayer] >> 8) & 0xFF;
                 
                 // When gravity is inverted, mirror the frame to show opposite visual rotation
                 if (gravityFlipped[currplayer])
@@ -568,7 +568,7 @@ namespace FamidashEditor
             try
             {
                 // Use the stored shipRotate_fixed value that was updated in UpdateShipRotation()
-                int frameIndex = (shipRotate_fixed >> 8) & 0xFF;
+                int frameIndex = (shipRotate_fixed[currplayer] >> 8) & 0xFF;
                 
                 // Clamp to 0-7 range
                 if (frameIndex > 0x07) frameIndex = 0x07;
@@ -593,7 +593,7 @@ namespace FamidashEditor
             try
             {
                 // Use the stored swingcopterRotate_fixed value that was updated in UpdateSwingcopterRotation()
-                int frameIndex = (swingcopterRotate_fixed >> 8) & 0xFF;
+                int frameIndex = (swingcopterRotate_fixed[currplayer] >> 8) & 0xFF;
                 
                 // Clamp to 0-7 range
                 if (frameIndex > 0x07) frameIndex = 0x07;
@@ -620,7 +620,7 @@ namespace FamidashEditor
             try
             {
                 // Extract frame index (0-23) from high byte
-                int frameIndex = (footballRotate_fixed >> 8) & 0xFF;
+                int frameIndex = (footballRotate_fixed[currplayer] >> 8) & 0xFF;
                 
                 // Clamp to valid 24-frame range
                 if (frameIndex > 0x17) frameIndex = 0x17;  // 0x17 = 23
@@ -1731,7 +1731,7 @@ namespace FamidashEditor
                             try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
                             
                             // Halve Y velocity
-                            playerVelY_fixed /= 2;
+                            playerVelY_fixed[currplayer] /= 2;
                             
                             AppendSimDebug($"[GRAV_PORTAL] POST-ACTIVATION: currplayer_gravity={currplayer_gravity:X2} gravityFlipped[currplayer]={gravityFlipped[currplayer]} gravityReversed={gravityReversed}");
                             
@@ -1810,7 +1810,7 @@ namespace FamidashEditor
                     // Use SpriteIntersectsPlayer to check sprite hitbox overlap
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     {
-                        bool newMiniMode = isMiniPortal;
+                        bool newminiMode[currplayer] = isMiniPortal;
                         
                         if (miniMode[currplayer] != newMiniMode)
                         {
@@ -1878,37 +1878,37 @@ namespace FamidashEditor
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     {
                         // S_BLOCK: Stop dashing, set orbed, zero velocity (sprite_loading.h line 935)
-                        if (isSBlock && dashing != 0)
+                        if (isSBlock && dashing[currplayer] != 0)
                         {
-                            dashing = 0;
-                            orbed = true;
-                            playerVelY_fixed = 0;
+                            dashing[currplayer] = 0;
+                            orbed[currplayer] = true;
+                            playerVelY_fixed[currplayer] = 0;
                             velocityY = 0;
                             AppendSimDebug($"[S_BLOCK] Stopped dash, orbed=true, velocityY=0");
                         }
                         // D_BLOCK: Set dblocked (sprite_loading.h line 940)
                         else if (isDBlock)
                         {
-                            dblocked = true;
+                            dblocked[currplayer] = true;
                             AppendSimDebug($"[D_BLOCK] dblocked=true");
                         }
                         // H_BLOCK: Set hblocked (headbonk) (sprite_loading.h line 938)
                         else if (isHBlock)
                         {
-                            hblocked = true;
+                            hblocked[currplayer] = true;
                             AppendSimDebug($"[H_BLOCK] hblocked=true (headbonk)");
                         }
                         // J_BLOCK: Set jblocked and orbed (sprite_loading.h line 939)
                         else if (isJBlock)
                         {
-                            jblocked = true;
-                            orbed = true;
+                            jblocked[currplayer] = true;
+                            orbed[currplayer] = true;
                             AppendSimDebug($"[J_BLOCK] jblocked=true, orbed=true");
                         }
                         // F_BLOCK: Set fblocked (sprite_loading.h line 941)
                         else if (isFBlock)
                         {
-                            fblocked = true;
+                            fblocked[currplayer] = true;
                             AppendSimDebug($"[F_BLOCK] fblocked=true");
                         }
                     }
@@ -1935,15 +1935,15 @@ namespace FamidashEditor
                 int playerY_px = playerY_fixed[currplayer] >> 8;
                 
                 // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
-                bool miniMode = (currplayer_mini != 0);
-                bool gravityFlipped = (currplayer_gravity != 0);
-                int hitboxW = miniMode ? 8 : 15;
-                int hitboxH = miniMode ? 7 : 15;
+                bool miniMode[currplayer] = (currplayer_mini != 0);
+                bool gravityFlipped[currplayer] = (currplayer_gravity != 0);
+                int hitboxW = miniMode[currplayer] ? 8 : 15;
+                int hitboxH = miniMode[currplayer] ? 7 : 15;
                 
                 // playerY_fixed is the visual sprite top-left position
                 // Need to calculate actual hitbox position based on mode and gravity
                 // From rendering code: normal hitbox is at Y+0, mini at Y+9 (normal gravity) or Y+0 (inverted)
-                if (miniMode && !gravityFlipped)
+                if (miniMode[currplayer] && !gravityFlipped[currplayer])
                 {
                     playerY_px += 9;  // Mini normal gravity: hitbox at bottom of 16x16 visual
                 }
@@ -2027,8 +2027,8 @@ namespace FamidashEditor
                             int gravityMultiplier = gravityInverted ? 1 : -1;
                             int newVel = baseVel * gravityMultiplier;
                             
-                            playerVelY_fixed = newVel;
-                            orbhitonthisframe = true; // Signal that a pad/orb was activated this frame (prevents bounce in Pogo)
+                            playerVelY_fixed[currplayer] = newVel;
+                            orbhitonthisframe[currplayer] = true; // Signal that a pad/orb was activated this frame (prevents bounce in Pogo)
                             
                             AppendSimDebug($"[PAD_SET] sid=0x{sid:X2}, row={padRow}, mode={modeCol}, mini={isMini}, baseVel=0x{baseVel:X4}, newVel=0x{newVel:X4}, velY_after=0x{playerVelY_fixed:X4}");
                         }
@@ -2145,7 +2145,7 @@ namespace FamidashEditor
                                     playerY_fixed -= (eject_pre << 8);
                                     AppendSimDebug($"[SPIDER_ORB/PAD] Ejected from floor by {eject_pre}px");
                                 }
-                                playerVelY_fixed = 0;
+                                playerVelY_fixed[currplayer] = 0;
                                 
                                 // Flip gravity
                                 currplayer_gravity = 0xFF; // GRAVITY_UP
@@ -2165,10 +2165,10 @@ namespace FamidashEditor
                                     playerY_fixed -= (eject_final << 8);
                                     AppendSimDebug($"[SPIDER_ORB/PAD] Ejected from ceiling by {eject_final}px");
                                 }
-                                playerVelY_fixed = 0;
+                                playerVelY_fixed[currplayer] = 0;
                                 
                                 // Set orbed flag
-                                orbed = true;
+                                orbed[currplayer] = true;
                                 
                                 try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
                                 AppendSimDebug($"[SPIDER_ORB/PAD] Teleported to ceiling Y={playerY_fixed[currplayer] >> 8}");
@@ -2185,7 +2185,7 @@ namespace FamidashEditor
                                     playerY_fixed += ((eject_pre + 1) << 8);
                                     AppendSimDebug($"[SPIDER_ORB/PAD] Ejected from ceiling by {eject_pre + 1}px");
                                 }
-                                playerVelY_fixed = 0;
+                                playerVelY_fixed[currplayer] = 0;
                                 
                                 // Flip gravity
                                 currplayer_gravity = 0x00; // GRAVITY_DOWN
@@ -2208,10 +2208,10 @@ namespace FamidashEditor
                                     playerY_fixed -= (eject_final << 8);
                                     AppendSimDebug($"[SPIDER_ORB/PAD] Ejected from floor by {eject_final}px");
                                 }
-                                playerVelY_fixed = 0;
+                                playerVelY_fixed[currplayer] = 0;
                                 
                                 // Set orbed flag
-                                orbed = true;
+                                orbed[currplayer] = true;
                                 
                                 try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
                                 AppendSimDebug($"[SPIDER_ORB/PAD] Teleported to floor Y={playerY_fixed[currplayer] >> 8}");
@@ -2616,7 +2616,7 @@ namespace FamidashEditor
                 else if (miniMode[currplayer] && currentGameMode == 8) choice = "ninja-mini.png";
                 else if (miniMode[currplayer] && currentGameMode == 9) {
                     // Mini pogo bounce animation - show pogo-mini2.png for 8 frames after bounce
-                    if (pogoBounceAnimationCounter > 0) {
+                    if (pogoBounceAnimationCounter[currplayer] > 0) {
                         choice = "pogo-mini2.png";
                     } else {
                         choice = "pogo-mini.png";
@@ -2654,7 +2654,7 @@ namespace FamidashEditor
                 }
                 else if (currentGameMode == 2) {
                     // Ball animation alternates every 3 frames
-                    if (ballAnimationFrameCounter < 3) {
+                    if (ballAnimationFrameCounter[currplayer] < 3) {
                         choice = "ball.png";
                     } else {
                         choice = "ball2.png";
@@ -2699,7 +2699,7 @@ namespace FamidashEditor
                 else if (currentGameMode == 8) choice = "ninja.png";
                 else if (currentGameMode == 9) {
                     // Show pogo2.png for 8 frames after bounce
-                    if (pogoBounceAnimationCounter > 0) {
+                    if (pogoBounceAnimationCounter[currplayer] > 0) {
                         choice = "pogo2.png";
                     } else {
                         choice = "pogo.png";
@@ -3191,7 +3191,7 @@ namespace FamidashEditor
                 if (lastMiniIdx.HasValue && lastMiniSid.HasValue)
                 {
                     bool newMini = (lastMiniSid.Value == 0x18);
-                    miniMode = newMini;
+                    miniMode[currplayer] = newMini;
                     currplayer_mini = (byte)(newMini ? 1 : 0);
                     try { Dispatcher.BeginInvoke(new Action(() => { if (MiniCheckBox != null) MiniCheckBox.IsChecked = miniMode[currplayer]; })); } catch { }
                     try { UpdatePlayerImageForMode(); } catch { }
@@ -3206,7 +3206,7 @@ namespace FamidashEditor
                     // 0x09, 0x12, 0x13, 0xFB = Reverse (up), 0x08, 0x10, 0x11, 0xFC = Normal (down)
                     bool newGravity = (sid == 0x09 || sid == 0x12 || sid == 0x13 || sid == 0xFB);
                     gravityReversed = newGravity;
-                    gravityFlipped = newGravity;
+                    gravityFlipped[currplayer] = newGravity;
                     currplayer_gravity = (byte)(newGravity ? 0xFF : 0x00);
                     try { UpdatePlayerIconFlip(); } catch { }
                     // Don't add to processed set - let collision detection handle it during gameplay
@@ -3221,7 +3221,7 @@ namespace FamidashEditor
                     bool isBottomPad = (sid == 0x0D || sid == 0xFD);
                     bool newGravity = isBottomPad; // Bottom pad = inverted gravity
                     gravityReversed = newGravity;
-                    gravityFlipped = newGravity;
+                    gravityFlipped[currplayer] = newGravity;
                     currplayer_gravity = (byte)(newGravity ? 0xFF : 0x00);
                     try { UpdatePlayerIconFlip(); } catch { }
                     try { Dispatcher.BeginInvoke(new Action(() => { if (InvertedCheckBox != null) InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
@@ -5009,7 +5009,7 @@ namespace FamidashEditor
                 }
 
                 // Reset velocity and physics state
-                playerVelY_fixed = 0;
+                playerVelY_fixed[currplayer] = 0;
                 cubeRotate_fixed = 0;  // Reset cube rotation to frame 0 (upright)
                 cubeRotateMini_fixed = 0;  // Reset mini cube rotation to frame 0 (upright)
 
@@ -5049,7 +5049,7 @@ namespace FamidashEditor
                     // Without START POS: restore the saved Set Options settings
                     currentGameMode = savedGameMode;
                     miniMode[currplayer] = savedMiniMode;
-                    currplayer_mini = savedMiniMode ? (byte)1 : (byte)0;
+                    currplayer_mini = savedminiMode[currplayer] ? (byte)1 : (byte)0;
                     currplayer_gravity = savedGravity;
                     gravityReversed = savedGravityReversed;
                     gravityFlipped[currplayer] = savedGravityReversed;
@@ -5115,7 +5115,7 @@ namespace FamidashEditor
                 // Reset ball/swing state
                 ballSwitched[0] = false;
                 ballFlipCooldown = 0;
-                ufoOrbed = false;
+                ufoorbed[currplayer] = false;
 
                 // Stop music first (same as death) before restarting simulation
                 try
@@ -5757,7 +5757,7 @@ namespace FamidashEditor
                     }
 
                     // integrate velocity
-                    playerY_fixed += playerVelY_fixed;
+                    playerY_fixed += playerVelY_fixed[currplayer];
                     // Prevent the player's world Y from going negative (above map top).
                     // The simulation uses pixel Y coordinates where 0 is the top of the world
                     // and increasing values go downwards; negative fixed-point Y can cause
@@ -6046,7 +6046,7 @@ namespace FamidashEditor
                                     int nudged = floorTop_fixed - (1 << 8);
                                     if (nudged < 0) nudged = 0;
                                     playerY_fixed = nudged;
-                                    playerVelY_fixed = 0;
+                                    playerVelY_fixed[currplayer] = 0;
                                     onGround = true;
                                     
                                     groundStabilizeCounter = 2;
@@ -6060,7 +6060,7 @@ namespace FamidashEditor
                                                 if (currentGameMode == 2 && buffered_ball_ui > 0)
                                                 {
                                                     ballGoingDown = !ballGoingDown;
-                                                    try { playerVelY_fixed = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
+                                                    try { playerVelY_fixed[currplayer] = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed[currplayer] = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
                                                     onGround = false;
                                                     jumpedOnce = true;
                                                     LogBallEvent($"UI-Landing: consumed queued toggle; ballGoingDown={ballGoingDown}");
@@ -6081,7 +6081,7 @@ namespace FamidashEditor
                                 {
                                     int nudged = floorTop_fixed + (1 << 8);
                                     playerY_fixed = nudged;
-                                    playerVelY_fixed = 0;
+                                    playerVelY_fixed[currplayer] = 0;
                                     onGround = true;
 
                                     // try { Cube_HandleUILanding_NoLocals(); } catch { } // REMOVED - fresh port
@@ -6092,7 +6092,7 @@ namespace FamidashEditor
                                         if (currentGameMode == 2 && buffered_ball_ui > 0)
                                         {
                                             ballGoingDown = !ballGoingDown;
-                                            try { playerVelY_fixed = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
+                                            try { playerVelY_fixed[currplayer] = (int)Math.Round((ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL) * simTimeScale); } catch { playerVelY_fixed[currplayer] = ballGoingDown ? BALL_IMMEDIATE_VEL : -BALL_IMMEDIATE_VEL; }
                                             onGround = false;
                                             jumpedOnce = true;
                                             LogBallEvent($"UI-ReversedLanding: consumed queued toggle; ballGoingDown={ballGoingDown}");
@@ -6116,7 +6116,7 @@ namespace FamidashEditor
             if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
 
             // Final safety clamp: ensure player remains above ground after camera moves
-            if (playerY_fixed > maxPlayerY_fixed) { playerY_fixed = maxPlayerY_fixed; playerVelY_fixed = 0; }
+            if (playerY_fixed > maxPlayerY_fixed) { playerY_fixed = maxPlayerY_fixed; playerVelY_fixed[currplayer] = 0; }
 
             // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
             // Skip this enforcement when gravity is inverted (allow jumping into ground rows from ceiling)
@@ -6137,7 +6137,7 @@ namespace FamidashEditor
                         playerY_fixed = desiredPlayerY_fixed;
                         // When the UI enforces a screen-space clamp we should treat the player as effectively grounded
                         // (prevent further gravity) and zero vertical velocity so the player doesn't sink while camera constraints apply.
-                        playerVelY_fixed = 0;
+                        playerVelY_fixed[currplayer] = 0;
                         onGround = true;
                     }
                 }
@@ -6212,7 +6212,7 @@ namespace FamidashEditor
                                             currentGameMode = newMode;
                                             try { UpdateGameModeDisplay(); } catch { }
                                             try { UpdateEffectiveGravity(); } catch { }
-                                            try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                                            try { playerVelY_fixed[currplayer] = playerVelY_fixed / 2; } catch { }
                                         }
                                         try { UpdatePlayerImageForMode(); } catch { }
                                     }
@@ -6928,7 +6928,7 @@ namespace FamidashEditor
                     if (!miniMode[currplayer])  // Only animate non-mini
                     {
                         // Extract actual frame index (high byte of cubeRotate_fixed)
-                        int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;
+                        int frameIndex = (cubeRotate_fixed[currplayer] >> 8) & 0xFF;
                         frameIndex = frameIndex % 7;  // Map to 0-6 (we have 7 base frames)
                         
                         // Choose frame names based on mode
@@ -7124,11 +7124,11 @@ namespace FamidashEditor
                     if (!paused && pogoBounceAnimationCounter > 0)
                     {
                         // Use a sub-frame accumulator to handle fractional decrements based on timescale
-                        pogoBounceAnimationFrameAccum += simTimeScale;
-                        if (pogoBounceAnimationFrameAccum >= 1.0)
+                        pogoBounceAnimationFrameAccum[currplayer] += simTimeScale;
+                        if (pogoBounceAnimationFrameAccum[currplayer] >= 1.0)
                         {
                             pogoBounceAnimationCounter--;
-                            pogoBounceAnimationFrameAccum -= 1.0;
+                            pogoBounceAnimationFrameAccum[currplayer] -= 1.0;
                         }
                     }
                     else if (paused)
@@ -7137,7 +7137,7 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        pogoBounceAnimationFrameAccum = 0.0;  // Reset accumulator when animation ends
+                        pogoBounceAnimationFrameAccum[currplayer] = 0.0;  // Reset accumulator when animation ends
                     }
                     
                     // Track current image name via a tag property
@@ -7216,15 +7216,15 @@ namespace FamidashEditor
                     if (!paused)
                     {
                         // Increment accumulator and cycle counter (0-5 cycle: 3 frames ball.png, 3 frames ball2.png)
-                        ballAnimationFrameAccum += simTimeScale;
-                        if (ballAnimationFrameAccum >= 1.0)
+                        ballAnimationFrameAccum[currplayer] += simTimeScale;
+                        if (ballAnimationFrameAccum[currplayer] >= 1.0)
                         {
                             ballAnimationFrameCounter++;
-                            if (ballAnimationFrameCounter >= 6)  // 6-frame cycle (0-5)
+                            if (ballAnimationFrameCounter[currplayer] >= 6)  // 6-frame cycle (0-5)
                             {
-                                ballAnimationFrameCounter = 0;
+                                ballAnimationFrameCounter[currplayer] = 0;
                             }
-                            ballAnimationFrameAccum -= 1.0;
+                            ballAnimationFrameAccum[currplayer] -= 1.0;
                         }
                     }
                     
@@ -7299,8 +7299,8 @@ namespace FamidashEditor
             else
             {
                 // Reset counter when not in ball mode
-                ballAnimationFrameCounter = 0;
-                ballAnimationFrameAccum = 0.0;
+                ballAnimationFrameCounter[currplayer] = 0;
+                ballAnimationFrameAccum[currplayer] = 0.0;
             }
             
             // Update robot icon animation (4 frames x 5 frames each when grounded)
@@ -7314,22 +7314,22 @@ namespace FamidashEditor
                     if (robotIsGrounded && !paused)
                     {
                         // Increment accumulator and cycle counter (0-19 cycle: 5 frames per frame state, 4 frames total)
-                        robotAnimationFrameAccum += simTimeScale;
-                        if (robotAnimationFrameAccum >= 1.0)
+                        robotAnimationFrameAccum[currplayer] += simTimeScale;
+                        if (robotAnimationFrameAccum[currplayer] >= 1.0)
                         {
                             robotAnimationFrameCounter++;
-                            if (robotAnimationFrameCounter >= 20)  // 20-frame cycle (0-19)
+                            if (robotAnimationFrameCounter[currplayer] >= 20)  // 20-frame cycle (0-19)
                             {
-                                robotAnimationFrameCounter = 0;
+                                robotAnimationFrameCounter[currplayer] = 0;
                             }
-                            robotAnimationFrameAccum -= 1.0;
+                            robotAnimationFrameAccum[currplayer] -= 1.0;
                         }
                     }
                     else if (!robotIsGrounded)
                     {
                         // Reset counter when leaving ground
-                        robotAnimationFrameCounter = 0;
-                        robotAnimationFrameAccum = 0.0;
+                        robotAnimationFrameCounter[currplayer] = 0;
+                        robotAnimationFrameAccum[currplayer] = 0.0;
                     }
                     
                     // Determine which image to show based on animation counter or jump state
@@ -7457,8 +7457,8 @@ namespace FamidashEditor
             else
             {
                 // Reset counter when not in robot mode
-                robotAnimationFrameCounter = 0;
-                robotAnimationFrameAccum = 0.0;
+                robotAnimationFrameCounter[currplayer] = 0;
+                robotAnimationFrameAccum[currplayer] = 0.0;
             }
             
             // Update spider icon animation (4 frames x 5 frames each when grounded, same as robot)
@@ -7472,22 +7472,22 @@ namespace FamidashEditor
                     if (spiderIsGrounded && !paused)
                     {
                         // Increment accumulator and cycle counter (0-19 cycle: 5 frames per frame state, 4 frames total)
-                        spiderAnimationFrameAccum += simTimeScale;
-                        if (spiderAnimationFrameAccum >= 1.0)
+                        spiderAnimationFrameAccum[currplayer] += simTimeScale;
+                        if (spiderAnimationFrameAccum[currplayer] >= 1.0)
                         {
                             spiderAnimationFrameCounter++;
-                            if (spiderAnimationFrameCounter >= 20)  // 20-frame cycle (0-19)
+                            if (spiderAnimationFrameCounter[currplayer] >= 20)  // 20-frame cycle (0-19)
                             {
-                                spiderAnimationFrameCounter = 0;
+                                spiderAnimationFrameCounter[currplayer] = 0;
                             }
-                            spiderAnimationFrameAccum -= 1.0;
+                            spiderAnimationFrameAccum[currplayer] -= 1.0;
                         }
                     }
                     else if (!spiderIsGrounded)
                     {
                         // Reset counter when leaving ground
-                        spiderAnimationFrameCounter = 0;
-                        spiderAnimationFrameAccum = 0.0;
+                        spiderAnimationFrameCounter[currplayer] = 0;
+                        spiderAnimationFrameAccum[currplayer] = 0.0;
                     }
                     
                     // Determine which image to show based on animation counter or jump state
@@ -7573,8 +7573,8 @@ namespace FamidashEditor
             else
             {
                 // Reset counter when not in spider mode
-                spiderAnimationFrameCounter = 0;
-                spiderAnimationFrameAccum = 0.0;
+                spiderAnimationFrameCounter[currplayer] = 0;
+                spiderAnimationFrameAccum[currplayer] = 0.0;
             }
             
             // Advance per-frame counter used for caching overlay-computed hitboxes
@@ -9123,7 +9123,7 @@ namespace FamidashEditor
                     try
                     {
                         // Show fixed-point Y velocity as hex (and decimal px/frame for convenience)
-                        int v_fixed = playerVelY_fixed; // fixed-point (8 frac bits)
+                        int v_fixed = playerVelY_fixed[currplayer]; // fixed-point (8 frac bits)
                         double vel_px = v_fixed / 256.0;
                         string hex;
                         if (v_fixed < 0) hex = "-0x" + ((-v_fixed) & 0xFFFF).ToString("X4");
@@ -9295,7 +9295,7 @@ namespace FamidashEditor
                     try
                     {
                         // Reset orb/pad activation flag for this frame (will be set if collision occurs)
-                        orbhitonthisframe = false;
+                        orbhitonthisframe[currplayer] = false;
                         
                         // Check for gravity portal activation
                         CheckGravityPortals();
@@ -9632,25 +9632,25 @@ namespace FamidashEditor
                         gravityFlippedThisFrame = false;
                         
                         // Clear dblocked every frame (matches state_game.h line 636)
-                        dblocked = false;
+                        dblocked[currplayer] = false;
                         
                         // Clear dashing state when X is released (user requested Y velocity = 0)
-                        if (dashing != 0)
+                        if (dashing[currplayer] != 0)
                         {
                             if (!(IsXDownAsync() || keyXHeld))
                             {
                                 // Zero Y velocity when stopping dash
                                 velocityY = 0;
-                                playerVelY_fixed = 0;
-                                dashing = 0;
+                                playerVelY_fixed[currplayer] = 0;
+                                dashing[currplayer] = 0;
                             }
                         }
                         
                         // Clear orbed flag when X is released (matches state_game.h lines 142-143)
-                        if (orbed)
+                        if (orbed[currplayer])
                         {
                             if (!(IsXDownAsync() || keyXHeld))
-                                orbed = false;
+                                orbed[currplayer] = false;
                         }
                         
                         // Check for death collision (skip in cam mode)
@@ -9894,7 +9894,7 @@ namespace FamidashEditor
                             }
 
                             // integrate
-                            playerY_fixed += playerVelY_fixed;
+                            playerY_fixed += playerVelY_fixed[currplayer];
 
                             // Gravity portal numeric activation: detect sprite overlap in numeric path
                             try
@@ -9930,7 +9930,7 @@ namespace FamidashEditor
                                         if (isReverse && !gravityReversed)
                                         {
                                             AppendSimDebug($"[GRAV_7895] ACTIVATED mini={miniMode[currplayer]}/{currplayer_mini} grav before={gravityReversed}");
-                                            try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                                            try { playerVelY_fixed[currplayer] = playerVelY_fixed / 2; } catch { }
                                             try { gravityReversed = true; gravityFlipped[currplayer] = true; currplayer_gravity = 0xFF; effectiveInvertedByW = gravityReversed; gravityFlippedThisFrame = true; wasZeroedByCollisionLastFrame = false; } catch { }
                                             try { UpdateEffectiveGravity(); } catch { }
                                             try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
@@ -9941,7 +9941,7 @@ namespace FamidashEditor
                                         // Normal portal: only activate if gravity currently reversed
                                         else if (!isReverse && gravityReversed)
                                         {
-                                            try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                                            try { playerVelY_fixed[currplayer] = playerVelY_fixed / 2; } catch { }
                                             try { gravityReversed = false; gravityFlipped[currplayer] = false; currplayer_gravity = 0x00; effectiveInvertedByW = gravityReversed; gravityFlippedThisFrame = true; wasZeroedByCollisionLastFrame = false; } catch { }
                                             try { UpdateEffectiveGravity(); } catch { }
                                             try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
@@ -9989,7 +9989,7 @@ namespace FamidashEditor
                 if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
 
                 // Final safety clamp: ensure player remains above ground after camera moves
-                if (playerY_fixed > maxPlayerY_fixed_local) { playerY_fixed = maxPlayerY_fixed_local; playerVelY_fixed = 0; }
+                if (playerY_fixed > maxPlayerY_fixed_local) { playerY_fixed = maxPlayerY_fixed_local; playerVelY_fixed[currplayer] = 0; }
 
                 // === RIGHT SIDE DEATH/SNAP CHECK ===
                 // Right-edge collision with death check:
@@ -10076,7 +10076,7 @@ namespace FamidashEditor
                             if (desiredPlayerY_fixed_local > maxPlayerY_fixed_local) desiredPlayerY_fixed_local = maxPlayerY_fixed_local;
                             playerY_fixed = desiredPlayerY_fixed_local;
                             // When numeric sim enforces a screen-space clamp, treat the player as grounded so gravity stops.
-                            playerVelY_fixed = 0;
+                            playerVelY_fixed[currplayer] = 0;
                             onGround = true;
                         }
                     }
@@ -10113,7 +10113,7 @@ namespace FamidashEditor
                                     gravityReversed = true;
                                     gravityFlipped[currplayer] = true;
                                     currplayer_gravity = 0xFF;
-                                    try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                                    try { playerVelY_fixed[currplayer] = playerVelY_fixed / 2; } catch { }
                                     try { UpdateEffectiveGravity(); } catch { }
                                     try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
                                     processedGravityPortals.Add(idx);
@@ -10124,7 +10124,7 @@ namespace FamidashEditor
                                     gravityReversed = false;
                                     gravityFlipped[currplayer] = false;
                                     currplayer_gravity = 0x00;
-                                    try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                                    try { playerVelY_fixed[currplayer] = playerVelY_fixed / 2; } catch { }
                                     try { UpdateEffectiveGravity(); } catch { }
                                     try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
                                     processedGravityPortals.Add(idx);
@@ -10172,7 +10172,7 @@ namespace FamidashEditor
                                     currentGameMode = newMode;
                                     try { UpdateGameModeDisplay(); } catch { }
                                     try { UpdateEffectiveGravity(); } catch { }
-                                    try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                                    try { playerVelY_fixed[currplayer] = playerVelY_fixed / 2; } catch { }
                                 }
                                 try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
                                 break;
@@ -10215,7 +10215,7 @@ namespace FamidashEditor
                                     currentGameMode = newMode;
                                     try { UpdateGameModeDisplay(); } catch { }
                                     try { UpdateEffectiveGravity(); } catch { }
-                                    try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                                    try { playerVelY_fixed[currplayer] = playerVelY_fixed / 2; } catch { }
                                 }
                                 try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
                                 
