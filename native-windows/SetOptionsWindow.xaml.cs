@@ -1195,6 +1195,14 @@ namespace FamidashEditor
                             case "HARDER": mapped = 3; break;
                             case "INSANE": mapped = 4; break;
                             case "DEMON": mapped = 5; break;
+                            // Demon difficulties map to UI tags 7-13 (repeat of 0-6 internally, different string names)
+                            case "EASYDEMON": mapped = 7; break;
+                            case "MEDIUMDEMON": mapped = 8; break;
+                            case "HARDDEMON": mapped = 9; break;
+                            case "INSANEDEMON": mapped = 10; break;
+                            case "EXTREMEDEMON": mapped = 11; break;
+                            case "IMPOSSIBLEDEMON": mapped = 12; break;
+                            case "GRANDPADEMON": mapped = 13; break;
                             default: mapped = 6; break;
                         }
                         mainWindow.LoadedStartingDifficulty = mapped;
@@ -1477,9 +1485,20 @@ namespace FamidashEditor
                 spikeLetter = (spikeLetter ?? "").ToUpperInvariant();
 
                 // Difficulty / stars
+                // UI tags 0-6 map to normal difficulties, tags 7-13 map to demon difficulties (same internal values 0-6 with different string names)
                 string difficulty = "AUTO";
                 var diffVal = GetNullableInt("LoadedStartingDifficulty");
-                try { difficulty = (diffVal.HasValue ? (new string[] { "EASY","NORMAL","HARD","HARDER","INSANE","DEMON","AUTO" })[Math.Clamp(diffVal.Value, 0, 6)] : "AUTO"); } catch { difficulty = "AUTO"; }
+                try
+                {
+                    if (diffVal.HasValue)
+                    {
+                        int val = Math.Clamp(diffVal.Value, 0, 13);
+                        string[] normalDiffs = { "EASY", "NORMAL", "HARD", "HARDER", "INSANE", "DEMON", "AUTO" };
+                        string[] demonDiffs = { "EASYDEMON", "MEDIUMDEMON", "HARDDEMON", "INSANEDEMON", "EXTREMEDEMON", "IMPOSSIBLEDEMON", "GRANDPADEMON" };
+                        difficulty = (val < 7) ? normalDiffs[val] : demonDiffs[val - 7];
+                    }
+                }
+                catch { difficulty = "AUTO"; }
                 int stars = GetNullableInt("LoadedStartingStars") ?? 3;
 
                 // Song normalization: prefer live MainWindow property, then per-tab SelectedSong, then FamiTrackCombo control

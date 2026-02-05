@@ -186,6 +186,13 @@
                 <ComboBoxItem Content="Harder" Tag="3" />
                 <ComboBoxItem Content="Insane" Tag="4" />
                 <ComboBoxItem Content="Demon" Tag="5" />
+                <ComboBoxItem Content="Easy Demon" Tag="7" />
+                <ComboBoxItem Content="Medium Demon" Tag="8" />
+                <ComboBoxItem Content="Hard Demon" Tag="9" />
+                <ComboBoxItem Content="Insane Demon" Tag="10" />
+                <ComboBoxItem Content="Extreme Demon" Tag="11" />
+                <ComboBoxItem Content="Impossible Demon" Tag="12" />
+                <ComboBoxItem Content="Grandpa Demon" Tag="13" />
             </ComboBox>
 
             <TextBlock Grid.Row="8" Grid.Column="0" Text="Stars:" Margin="0,8,0,6" />

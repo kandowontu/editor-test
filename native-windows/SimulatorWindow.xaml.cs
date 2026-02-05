@@ -3498,29 +3498,7 @@ namespace FamidashEditor
                 {
                     try { SimulateNumericStep(); } catch { }
                     simAccumulatedMs -= SIM_STEP_MS;
-                // Record player path at fixed 60Hz (after physics step completes)
-                try
-                {
-                    int worldX = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                    int worldY;
-                    if (miniMode)
-                    {
-                        if (gravityFlipped)
-                        {
-                            worldY = (playerY_fixed >> 8) + 4;  // Inverted mini: hitbox at Y+0, center at Y+3.5
-                        }
-                        else
-                        {
-                            worldY = (playerY_fixed >> 8) + 13; // Normal mini: hitbox at Y+9, center at Y+12.5
-                        }
-                    }
-                    else
-                    {
-                        worldY = (playerY_fixed >> 8) + 8;  // Normal: center of 15x15 hitbox
-                    }
-                    recordedPlayerPath.Add((worldX, worldY));
-                }
-                catch { }
+                // Path recording now happens in physics routines (SimulateNumericStep)
                 
                 // Automatic camera-follow while physics is active: ensure player stays within vertical thresholds
                 try
@@ -8567,6 +8545,17 @@ namespace FamidashEditor
                     int idx = mapY * mapWidth + mapX;
                     int s = sprites[idx];
                     if (s < 0) continue;
+                    
+                    // OPTIMIZATION: Fast screen-space cull - skip if sprite is completely off-screen
+                    // Check approximate position early to avoid expensive sprite lookups for off-screen sprites
+                    double cullPx = (vx * TILE) - offsetX;
+                    double cullPy = (vy * TILE) - offsetY + gridRenderShiftYPx;
+                    // Conservative bounds: assume max sprite size of 32x32 pixels
+                    if (cullPx + 32 < 0 || cullPx > NES_W * TILE || cullPy + 32 < 0 || cullPy > NES_H * TILE)
+                    {
+                        // Off-screen, skip all expensive processing for this sprite
+                        continue;
+                    }
 
                     // Visual alias: make sprite 0x7B render identically to 0x05
                     int s_vis = (s == 0x7B) ? 0x05 : s;
@@ -8762,18 +8751,7 @@ namespace FamidashEditor
                     if (s == 0x8F || s == 0xCF) continue;
                     if (hideColorTriggers && IsColorTriggerSprite(s)) continue;
 
-                    // Apply player tint to decoration sprites when enabled
-                    try
-                    {
-                            // No special-case preview override for 0x3D: let the normal selection/fallbacks apply.
-
-                        if (playerTintEnabled && decorationSpriteIds.Contains(s) && !nonPlayerTintSpriteIds.Contains(s) && chosenSprite != null)
-                        {
-                            chosenSprite = GetPlayerTintedSprite(chosenSprite, s_vis);
-                        }
-                    }
-                    catch { }
-
+                    // Calculate position early for bounds checking
                     double px = (mapX - startTileX) * TILE - offsetX;
                     double py = (vy * TILE) - offsetY + gridRenderShiftYPx;
                     if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
@@ -8787,6 +8765,33 @@ namespace FamidashEditor
                         px = anchorDisplayX + tileDeltaX * TILE;
                         py = anchorDisplayY + tileDeltaY * TILE + gridRenderShiftYPx;
                     }
+                    
+                    // OPTIMIZATION: Skip expensive tinting/compositing for off-screen sprites
+                    // Get sprite dimensions to do proper bounds checking before expensive operations
+                    int spriteWidth = 16, spriteHeight = 16;
+                    if (chosenSprite is BitmapSource bs)
+                    {
+                        spriteWidth = bs.PixelWidth;
+                        spriteHeight = bs.PixelHeight;
+                    }
+                    // Check if completely off-screen (with margin for sprites that extend beyond)
+                    if (px + spriteWidth < -16 || px > NES_W * TILE + 16 || py + spriteHeight < -16 || py > NES_H * TILE + 16)
+                    {
+                        // Off-screen: skip expensive tinting and compositing operations
+                        continue;
+                    }
+
+                    // Apply player tint to decoration sprites when enabled
+                    try
+                    {
+                            // No special-case preview override for 0x3D: let the normal selection/fallbacks apply.
+
+                        if (playerTintEnabled && decorationSpriteIds.Contains(s) && !nonPlayerTintSpriteIds.Contains(s) && chosenSprite != null)
+                        {
+                            chosenSprite = GetPlayerTintedSprite(chosenSprite, s_vis);
+                        }
+                    }
+                    catch { }
                     if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs))
                     {
                         px += offs.offsetX;

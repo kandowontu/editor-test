@@ -147,7 +147,7 @@ namespace FamidashEditor
                 bool gravityInverted_trail = (currplayer_gravity != 0);
                 if (isMini_trail && !gravityInverted_trail)
                 {
-                    playerY_px_trail += 8;
+                    playerY_px_trail += 4;  // Adjust for visual position offset
                 }
                 int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
                 recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));

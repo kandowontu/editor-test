@@ -55,8 +55,8 @@
         </StackPanel>
         
         <!-- Canvas size corrected to match runtime NES_W * TILE / NES_H * TILE (256x240) -->
-        <!-- ClipToBounds prevents the cached tile layer (which is intentionally one tile larger) from rendering outside the visible area -->
-        <Canvas x:Name="RenderCanvas" Grid.Row="1" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" ClipToBounds="True" SnapsToDevicePixels="True" UseLayoutRounding="True" MouseLeftButtonDown="RenderCanvas_MouseLeftButtonDown" />
+        <!-- Removed ClipToBounds to allow sprites with negative offsets to render without being cut off -->
+        <Canvas x:Name="RenderCanvas" Grid.Row="1" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" SnapsToDevicePixels="True" UseLayoutRounding="True" MouseLeftButtonDown="RenderCanvas_MouseLeftButtonDown" />
 
         <!-- Pause overlay shown while simulation is paused -->
         <Grid x:Name="PauseOverlay" Grid.Row="1" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="True" MouseLeftButtonUp="PauseOverlay_MouseLeftButtonUp" Cursor="Hand">
