@@ -12,6 +12,9 @@ namespace FamidashEditor
 {
     public partial class SimulatorWindow : Window
     {
+        // Current player index for dual-player support (0 or 1)
+        private int currplayer = 0;
+
         // Window base title used for UI string formatting
         private string baseWindowTitle = "Simulator";
         // Option to hide trigger sprites in simulator rendering
@@ -1810,11 +1813,11 @@ namespace FamidashEditor
                     // Use SpriteIntersectsPlayer to check sprite hitbox overlap
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     {
-                        bool newminiMode[currplayer] = isMiniPortal;
+                        //bool newminiMode[currplayer] = isMiniPortal;  // ERROR CS0650/CS0270 fixed: removed invalid syntax
                         
-                        if (miniMode[currplayer] != newMiniMode)
+                        if (miniMode[currplayer] != isMiniPortal)
                         {
-                            miniMode[currplayer] = newMiniMode;
+                            miniMode[currplayer] = isMiniPortal;
                             currplayer_mini = (byte)(miniMode[currplayer] ? 1 : 0);
                             
                             // Update UI checkbox
@@ -1935,15 +1938,15 @@ namespace FamidashEditor
                 int playerY_px = playerY_fixed[currplayer] >> 8;
                 
                 // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
-                bool miniMode[currplayer] = (currplayer_mini != 0);
-                bool gravityFlipped[currplayer] = (currplayer_gravity != 0);
-                int hitboxW = miniMode[currplayer] ? 8 : 15;
-                int hitboxH = miniMode[currplayer] ? 7 : 15;
+                //bool miniMode[currplayer] = (currplayer_mini != 0);  // ERROR CS0650/CS0270 fixed: removed invalid syntax
+                //bool gravityFlipped[currplayer] = (currplayer_gravity != 0);  // ERROR CS0650/CS0270 fixed: removed invalid syntax
+                int hitboxW = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH = (currplayer_mini != 0) ? 7 : 15;
                 
                 // playerY_fixed is the visual sprite top-left position
                 // Need to calculate actual hitbox position based on mode and gravity
                 // From rendering code: normal hitbox is at Y+0, mini at Y+9 (normal gravity) or Y+0 (inverted)
-                if (miniMode[currplayer] && !gravityFlipped[currplayer])
+                if ((currplayer_mini != 0) && (currplayer_gravity == 0))
                 {
                     playerY_px += 9;  // Mini normal gravity: hitbox at bottom of 16x16 visual
                 }
