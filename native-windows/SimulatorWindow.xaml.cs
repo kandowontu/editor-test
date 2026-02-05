@@ -277,6 +277,183 @@ namespace FamidashEditor
         }
 
         /// <summary>
+        /// Update ship rotation frame based on velocity.
+        /// Similar to cube rotation, but uses direct velocity calculation with clamping.
+        /// NOTE: playerVelY_fixed in the simulator uses a different scale than NES velocity,
+        /// so we need to amplify it to get the full range of frame animations.
+        /// </summary>
+        private void UpdateShipRotation()
+        {
+            try
+            {
+                // Ship frame index: 0x0400 - playerVelY (from NES code)
+                // The NES uses a simple formula: cube_rotate = 0x0400 - player_vel_y
+                // where player_vel_y is the full 16-bit signed velocity
+                // Add tolerance/dead zone around zero velocity to prevent flickering when grounded
+                int adjustedVel = playerVelY_fixed;
+                if (adjustedVel > -0x0080 && adjustedVel < 0x0080)
+                {
+                    adjustedVel = 0x0100;  // Snap to 0x0100 within ±128 units to keep straight frame
+                }
+                
+                int cubeRotate = 0x0400 - adjustedVel;
+                int hiBytes = (cubeRotate >> 8) & 0xFF;
+                
+                // Apply NES clamping: if high_byte >= 0x08, clamp the entire value
+                // This prevents velocity extremes from wrapping around
+                if (hiBytes >= 0x08)
+                {
+                    if (hiBytes < 0x80)
+                    {
+                        cubeRotate = 0x07FF;  // High byte becomes 0x07
+                    }
+                    else
+                    {
+                        cubeRotate = 0x0000;  // High byte becomes 0x00
+                    }
+                }
+                
+                shipRotate_fixed = cubeRotate;
+                int frameIndex = (shipRotate_fixed >> 8) & 0xFF;
+                
+                AppendSimDebug($"[SHIP_ROT] velY=0x{playerVelY_fixed:X4}, rotate=0x{cubeRotate:X4}, frame={frameIndex}");
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Update swingcopter rotation frame based on velocity.
+        /// Identical to ship animation logic - velocity-based 7 frames.
+        /// </summary>
+        private void UpdateSwingcopterRotation()
+        {
+            try
+            {
+                // Swingcopter frame index: 0x0400 - playerVelY (same as ship)
+                // Add tolerance/dead zone around zero velocity to prevent flickering
+                int adjustedVel = playerVelY_fixed;
+                if (adjustedVel > -0x0080 && adjustedVel < 0x0080)
+                {
+                    adjustedVel = 0x0100;  // Snap to 0x0100 within ±128 units
+                }
+                
+                int cubeRotate = 0x0400 - adjustedVel;
+                int hiBytes = (cubeRotate >> 8) & 0xFF;
+                
+                // Apply NES clamping
+                if (hiBytes >= 0x08)
+                {
+                    if (hiBytes < 0x80)
+                    {
+                        cubeRotate = 0x07FF;
+                    }
+                    else
+                    {
+                        cubeRotate = 0x0000;
+                    }
+                }
+                
+                swingcopterRotate_fixed = cubeRotate;
+                int frameIndex = (swingcopterRotate_fixed >> 8) & 0xFF;
+                
+                AppendSimDebug($"[SWING_ROT] velY=0x{playerVelY_fixed:X4}, rotate=0x{cubeRotate:X4}, frame={frameIndex}");
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Update football rotation using cube-style rotation (0-23 frames) with flip table.
+        /// This provides seamless 360-degree rotation for football mode.
+        /// Uses same gravity-based accumulator system as cube rotation but with 24 frames.
+        /// While charging on ground, rotates backwards based on charge power (like cube).
+        /// </summary>
+        private void UpdateFootballRotation()
+        {
+            try
+            {
+                // If velocity is zero, handle ground behavior (charge-based rotation or static)
+                if (playerVelY_fixed == 0)
+                {
+                    // FIRST: Check if actively charging - if so, use charge-based rotation
+                    if (footballChargeFrames > 0)
+                    {
+                        // While charging on ground, rotate backwards based on charge power (matches NES cube behavior)
+                        // chargepower < 10:  frame 23
+                        // chargepower < 20:  frame 22
+                        // chargepower < 30:  frame 21
+                        // chargepower < 38:  frame 20
+                        // chargepower < 50:  frame 20
+                        // chargepower >= 50: frame 6
+                        
+                        int frameToSet = 0;
+                        if (footballChargeFrames < 10)
+                            frameToSet = 23;
+                        else if (footballChargeFrames < 20)
+                            frameToSet = 22;
+                        else if (footballChargeFrames < 30)
+                            frameToSet = 21;
+                        else if (footballChargeFrames < 38)
+                            frameToSet = 20;
+                        else if (footballChargeFrames < 50)
+                            frameToSet = 20;
+                        else
+                            frameToSet = 6;
+                        
+                        footballRotate_fixed = (frameToSet << 8) | 0;  // Set frame, zero accumulator
+                        AppendSimDebug($"[FOOTBALL_ROT] CHARGE: chargeFrames={footballChargeFrames} -> frame={frameToSet}");
+                    }
+                    else
+                    {
+                        // No charge power - static at frame 0 (upright)
+                        footballRotate_fixed = 0;
+                        AppendSimDebug($"[FOOTBALL_ROT] GROUND: Reset to frame 0");
+                    }
+                }
+                else
+                {
+                    // Velocity is non-zero: accumulate gravity increment (use CUBE_GRAVITY like cube mode)
+                    int frameIndex = (footballRotate_fixed >> 8) & 0xFF;  // Extract high byte
+                    int subFrame = footballRotate_fixed & 0xFF;            // Extract low byte (accumulator)
+                    
+                    int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
+                    
+                    // Add gravity to low byte, detect overflow using simple comparison
+                    int result = subFrame + gravityIncrement;
+                    bool overflowed = result >= 256;
+                    
+                    if (overflowed)
+                    {
+                        // Low byte overflowed - advance frame and wrap low byte
+                        subFrame = result - 256;
+                        frameIndex++;
+                        
+                        // Wrap at 24 frames (0-23) for full 360-degree rotation
+                        if (frameIndex >= 24)
+                        {
+                            frameIndex = 0;
+                        }
+                    }
+                    else
+                    {
+                        // No overflow - just update low byte
+                        subFrame = result;
+                    }
+                    
+                    AppendSimDebug($"[FOOTBALL_ROT] frame={frameIndex} sub={subFrame} (added 0x{gravityIncrement:X2})");
+                    
+                    // Ensure subFrame is properly masked to low byte (0-255) and frameIndex to 0-23
+                    subFrame = subFrame & 0xFF;
+                    frameIndex = frameIndex % 24;
+                    if (frameIndex < 0) frameIndex += 24;
+                    
+                    // Recombine into 16-bit value: (frame << 8) | accumulator
+                    footballRotate_fixed = (frameIndex << 8) | subFrame;
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
         /// Get the sprite frame and flip flags for the current cube rotation.
         /// Returns the frame index (0-6) in the low 3 bits and flip flags in bits 6-7.
         /// </summary>
@@ -379,6 +556,90 @@ namespace FamidashEditor
                 if (frameIndex == 3 || frameIndex == 4) return 2;
                 if (frameIndex == 5 || frameIndex == 6) return 3;
                 return 0;
+            }
+            catch { return 0; }
+        }
+
+        /// <summary>
+        /// Get the ship frame index (0-7) based on stored rotation value.
+        /// </summary>
+        private int GetShipSpriteFrame()
+        {
+            try
+            {
+                // Use the stored shipRotate_fixed value that was updated in UpdateShipRotation()
+                int frameIndex = (shipRotate_fixed >> 8) & 0xFF;
+                
+                // Clamp to 0-7 range
+                if (frameIndex > 0x07) frameIndex = 0x07;
+                if (frameIndex < 0x00) frameIndex = 0x00;
+                
+                // If gravity is inverted, reverse the frame
+                if (currplayer_gravity != 0)
+                {
+                    frameIndex = 7 - frameIndex;
+                }
+                
+                return frameIndex;
+            }
+            catch { return 0; }
+        }
+
+        /// <summary>
+        /// Get the swingcopter frame index (0-7) based on stored rotation value.
+        /// </summary>
+        private int GetSwingcopterSpriteFrame()
+        {
+            try
+            {
+                // Use the stored swingcopterRotate_fixed value that was updated in UpdateSwingcopterRotation()
+                int frameIndex = (swingcopterRotate_fixed >> 8) & 0xFF;
+                
+                // Clamp to 0-7 range
+                if (frameIndex > 0x07) frameIndex = 0x07;
+                if (frameIndex < 0x00) frameIndex = 0x00;
+                
+                // If gravity is inverted, reverse the frame
+                if (currplayer_gravity != 0)
+                {
+                    frameIndex = 7 - frameIndex;
+                }
+                
+                return frameIndex;
+            }
+            catch { return 0; }
+        }
+
+        /// <summary>
+        /// Get football sprite frame and flip flags (0-6 for frame, with flip bits).
+        /// Uses the flip table from NES nesdash.s for 360-degree seamless rotation.
+        /// Flip table: { 0,0,1,2,2,3,4,4, 6,5F,4F,3F,2F,1F, 0HV,1HV,2HV,3HV,4HV,5HV, 6H,5H,4H,3H,2H,1H }
+        /// </summary>
+        private int GetFootballSpriteFrameAndFlip()
+        {
+            try
+            {
+                // Extract frame index (0-23) from high byte
+                int frameIndex = (footballRotate_fixed >> 8) & 0xFF;
+                
+                // Clamp to valid 24-frame range
+                if (frameIndex > 0x17) frameIndex = 0x17;  // 0x17 = 23
+                if (frameIndex < 0x00) frameIndex = 0x00;
+                
+                // Apply flip table based on frame index
+                // Flip table maps 24 frames with flip flags for 360-degree rotation
+                int[] flipTable = new int[] {
+                    // Frames 0-5: No flip
+                    0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+                    // Frame 6 + Frames 5-1 with V_FLIP (0x80)
+                    0x06, 0x85, 0x84, 0x83, 0x82, 0x81,
+                    // Frames 0-5 with HV_FLIP (0xC0)
+                    0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5,
+                    // Frame 6 + Frames 5-1 with H_FLIP (0x40)
+                    0xC6, 0x45, 0x44, 0x43, 0x42, 0x41
+                };
+                
+                return flipTable[frameIndex & 0x17];  // Return frame (low 3 bits) + flip flags (high bits)
             }
             catch { return 0; }
         }
@@ -804,6 +1065,10 @@ namespace FamidashEditor
         
         // Cube rotation state (16-bit: low byte = sub-frame accumulator, high byte = frame 0-23)
         private int cubeRotate_fixed = 0;  // 16-bit fixed point for sub-frame position
+        private int shipRotate_fixed = 0;  // 16-bit fixed point for ship velocity-based animation
+        private int swingcopterRotate_fixed = 0;  // 16-bit fixed point for swingcopter velocity-based animation
+        private int footballRotate_fixed = 0;  // 16-bit fixed point for football cube-style rotation with flip table
+
         
         // Rounding table for snapping cube to nearest 90° when velocity = 0
         // Maps rotation values to rounding adjustments
@@ -2359,7 +2624,34 @@ namespace FamidashEditor
                 }
                 else if (miniMode && currentGameMode == 10) choice = "snake-mini.png";
                 else if (miniMode && currentGameMode == 11) choice = "football-mini.png";
-                else if (currentGameMode == 1) choice = "ship.png";
+                else if (currentGameMode == 1) {
+                    // Ship animation based on velocity
+                    // Game frames 0-7 map to PNG frames 0-6 (7 unique frames from NES shipFrameTable)
+                    // PNG frame mapping: 0(0/1) -> 1(2) -> 2(3) -> 3(4) -> 4(5) -> 5(6) -> 6(7)
+                    int shipFrame = GetShipSpriteFrame();  // Returns 0-7
+                    int[] shipFrameMap = { 0, 0, 1, 2, 3, 4, 5, 6 };  // Map game frame 0-7 to PNG frame index 0-6
+                    int pngFrame = shipFrameMap[shipFrame & 0x07];  // Clamp to 0-7
+                    
+                    choice = miniMode ? (pngFrame switch {
+                        0 => "ship-mini.png",
+                        1 => "ship-mini1.png",
+                        2 => "ship-mini2.png",
+                        3 => "ship-mini3.png",
+                        4 => "ship-mini4.png",
+                        5 => "ship-mini5.png",
+                        6 => "ship-mini6.png",
+                        _ => "ship-mini.png"
+                    }) : (pngFrame switch {
+                        0 => "ship.png",
+                        1 => "ship2.png",
+                        2 => "ship3.png",
+                        3 => "ship4.png",
+                        4 => "ship5.png",
+                        5 => "ship6.png",
+                        6 => "ship7.png",
+                        _ => "ship.png"
+                    });
+                }
                 else if (currentGameMode == 2) {
                     // Ball animation alternates every 3 frames
                     if (ballAnimationFrameCounter < 3) {
@@ -2381,7 +2673,29 @@ namespace FamidashEditor
                         choice = "wave.png";   // Going down (normal, no flip)
                     }
                 }
-                else if (currentGameMode == 7) choice = "swingcopter.png";
+                else if (currentGameMode == 7) {
+                    // Swingcopter animation based on velocity - same as ship
+                    // Game frames 0-7 map to PNG frames 0-4 (5 unique frames)
+                    int swingFrame = GetSwingcopterSpriteFrame();  // Returns 0-7
+                    int[] swingFrameMap = { 0, 0, 1, 2, 2, 3, 4, 4 };  // Map game frame 0-7 to PNG frame index 0-4
+                    int pngFrame = swingFrameMap[swingFrame & 0x07];  // Clamp to 0-7
+                    
+                    choice = miniMode ? (pngFrame switch {
+                        0 => "swingcopter-mini.png",
+                        1 => "swingcopter-mini1.png",
+                        2 => "swingcopter-mini2.png",
+                        3 => "swingcopter-mini3.png",
+                        4 => "swingcopter-mini4.png",
+                        _ => "swingcopter-mini.png"
+                    }) : (pngFrame switch {
+                        0 => "swingcopter.png",
+                        1 => "swingcopter1.png",
+                        2 => "swingcopter2.png",
+                        3 => "swingcopter3.png",
+                        4 => "swingcopter4.png",
+                        _ => "swingcopter.png"
+                    });
+                }
                 else if (currentGameMode == 8) choice = "ninja.png";
                 else if (currentGameMode == 9) {
                     // Show pogo2.png for 8 frames after bounce
@@ -2392,7 +2706,15 @@ namespace FamidashEditor
                     }
                 }
                 else if (currentGameMode == 10) choice = "snake.png";
-                else if (currentGameMode == 11) choice = "football.png";
+                else if (currentGameMode == 11) {
+                    // Football animation - cube-style rotation with flip table (7 frames across 24 rotation frames)
+                    int footballFrameAndFlip = GetFootballSpriteFrameAndFlip();
+                    int frameIndex = footballFrameAndFlip & 0x0F;  // Extract frame 0-6 from low byte
+                    int flipFlags = footballFrameAndFlip & 0xC0;   // Extract flip bits
+                    
+                    choice = miniMode ? $"football-mini{(frameIndex > 0 ? frameIndex.ToString() : "")}.png" 
+                                      : $"football{(frameIndex > 0 ? frameIndex.ToString() : "")}.png";
+                }
 
                 if (currentGameMode == 2)
                 {
@@ -6403,12 +6725,219 @@ namespace FamidashEditor
                 catch { }
             }
             
+            // Update ship icon based on rotation animation (every frame)
+            if (currentGameMode == 1)
+            {
+                try
+                {
+                    // Ship animation: velocity-based 7 frames mapped to 7 PNG files
+                    int shipFrame = GetShipSpriteFrame();  // Returns 0-7
+                    int[] shipFrameMap = { 0, 0, 1, 2, 3, 4, 5, 6 };  // Map game frame 0-7 to PNG frame index 0-6
+                    int pngFrame = shipFrameMap[shipFrame & 0x07];  // Clamp to 0-7
+                    
+                    // Use mini ship images if in mini mode
+                    string shipChoice = miniMode ? (pngFrame switch {
+                        0 => "ship-mini.png",
+                        1 => "ship-mini1.png",
+                        2 => "ship-mini2.png",
+                        3 => "ship-mini3.png",
+                        4 => "ship-mini4.png",
+                        5 => "ship-mini5.png",
+                        6 => "ship-mini6.png",
+                        _ => "ship-mini.png"
+                    }) : (pngFrame switch {
+                        0 => "ship.png",
+                        1 => "ship2.png",
+                        2 => "ship3.png",
+                        3 => "ship4.png",
+                        4 => "ship5.png",
+                        5 => "ship6.png",
+                        6 => "ship7.png",
+                        _ => "ship.png"
+                    });
+                    
+                    // Check current image
+                    BitmapImage? currentBitmap = playerImage?.Source as BitmapImage;
+                    string currentImageName = "";
+                    if (currentBitmap?.UriSource != null)
+                    {
+                        currentImageName = System.IO.Path.GetFileName(currentBitmap.UriSource.OriginalString);
+                    }
+                    
+                    // Only reload if different
+                    if (!currentImageName.Equals(shipChoice, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                        var names = asm.GetManifestResourceNames();
+                        var found = names.FirstOrDefault(n => n.EndsWith(shipChoice, StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrEmpty(found))
+                        {
+                            using (var s = asm.GetManifestResourceStream(found))
+                            {
+                                if (s != null)
+                                {
+                                    var newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.StreamSource = s;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Update flip every frame for ship based on gravity
+                    UpdatePlayerIconFlip();
+                }
+                catch { }
+            }
+
+            // Update swingcopter icon based on rotation animation (every frame)
+            if (currentGameMode == 7)
+            {
+                try
+                {
+                    // Swingcopter animation: velocity-based 5 frames mapped to 8 game frames
+                    int swingFrame = GetSwingcopterSpriteFrame();  // Returns 0-7
+                    int[] swingFrameMap = { 0, 0, 1, 2, 2, 3, 4, 4 };  // Map game frame 0-7 to PNG frame index 0-4
+                    int pngFrame = swingFrameMap[swingFrame & 0x07];  // Clamp to 0-7
+                    
+                    // Use mini swingcopter images if in mini mode
+                    string swingChoice = miniMode ? (pngFrame switch {
+                        0 => "swingcopter-mini.png",
+                        1 => "swingcopter-mini1.png",
+                        2 => "swingcopter-mini2.png",
+                        3 => "swingcopter-mini3.png",
+                        4 => "swingcopter-mini4.png",
+                        _ => "swingcopter-mini.png"
+                    }) : (pngFrame switch {
+                        0 => "swingcopter.png",
+                        1 => "swingcopter1.png",
+                        2 => "swingcopter2.png",
+                        3 => "swingcopter3.png",
+                        4 => "swingcopter4.png",
+                        _ => "swingcopter.png"
+                    });
+                    
+                    // Check current image
+                    BitmapImage? currentBitmap = playerImage?.Source as BitmapImage;
+                    string currentImageName = "";
+                    if (currentBitmap?.UriSource != null)
+                    {
+                        currentImageName = System.IO.Path.GetFileName(currentBitmap.UriSource.OriginalString);
+                    }
+                    
+                    // Only reload if different
+                    if (!currentImageName.Equals(swingChoice, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                        var names = asm.GetManifestResourceNames();
+                        var found = names.FirstOrDefault(n => n.EndsWith(swingChoice, StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrEmpty(found))
+                        {
+                            using (var s = asm.GetManifestResourceStream(found))
+                            {
+                                if (s != null)
+                                {
+                                    var newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.StreamSource = s;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Update flip every frame for swingcopter based on gravity
+                    UpdatePlayerIconFlip();
+                }
+                catch { }
+            }
+            
             // Update snake icon flip (every frame for gravity changes)
             if (currentGameMode == 10)
             {
                 try
                 {
                     UpdatePlayerIconFlip();
+                }
+                catch { }
+            }
+
+            // Update football icon based on rotation animation (every frame)
+            if (currentGameMode == 11)
+            {
+                try
+                {
+                    // Football uses cube-style rotation with flip table (24 frames total)
+                    int footballFrameAndFlip = GetFootballSpriteFrameAndFlip();
+                    int frameIndex = footballFrameAndFlip & 0x0F;  // Extract frame 0-6 from low byte
+                    int flipFlags = footballFrameAndFlip & 0xC0;   // Extract flip bits
+                    
+                    // Construct image name based on frame
+                    string footballChoice = miniMode ? $"football-mini{(frameIndex > 0 ? frameIndex.ToString() : "")}.png"
+                                                     : $"football{(frameIndex > 0 ? frameIndex.ToString() : "")}.png";
+                    
+                    // Check current image
+                    BitmapImage? currentBitmap = playerImage?.Source as BitmapImage;
+                    string currentImageName = "";
+                    if (currentBitmap?.UriSource != null)
+                    {
+                        currentImageName = System.IO.Path.GetFileName(currentBitmap.UriSource.OriginalString);
+                    }
+                    
+                    // Only reload if different
+                    if (!currentImageName.Equals(footballChoice, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                        var names = asm.GetManifestResourceNames();
+                        var found = names.FirstOrDefault(n => n.EndsWith(footballChoice, StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrEmpty(found))
+                        {
+                            using (var s = asm.GetManifestResourceStream(found))
+                            {
+                                if (s != null)
+                                {
+                                    var newImg = new BitmapImage();
+                                    newImg.BeginInit();
+                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    newImg.StreamSource = s;
+                                    newImg.EndInit();
+                                    newImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Apply flip flags if needed
+                    if (flipFlags != 0)
+                    {
+                        if (playerImage != null)
+                        {
+                            // Apply H_FLIP and/or V_FLIP
+                            bool hFlip = (flipFlags & 0x40) != 0;
+                            bool vFlip = (flipFlags & 0x80) != 0;
+                            playerImage.RenderTransform = new ScaleTransform(
+                                hFlip ? -1 : 1,
+                                vFlip ? -1 : 1
+                            );
+                            playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                        }
+                    }
+                    else
+                    {
+                        // Reset flip
+                        if (playerImage != null)
+                        {
+                            playerImage.RenderTransform = new ScaleTransform(1, 1);
+                        }
+                    }
                 }
                 catch { }
             }
@@ -9046,6 +9575,7 @@ namespace FamidashEditor
                                 break;
                             case 1: // Ship
                                 ShipPhysics_Fresh();
+                                UpdateShipRotation();
                                 break;
                             case 2: // Ball
                                 BallPhysics_Fresh();
@@ -9066,8 +9596,9 @@ namespace FamidashEditor
                             case 6: // Wave
                                 WavePhysics_Fresh();
                                 break;
-                            case 7: // Swing
-                                BallPhysics_Fresh(); // Swing uses ball physics
+                            case 7: // Swingcopter
+                                BallPhysics_Fresh(); // Swingcopter uses ball physics
+                                UpdateSwingcopterRotation();
                                 break;
                             case 8: // Ninja (uses cube physics with triple jump)
                                 NinjaPhysics_Fresh();
@@ -9082,8 +9613,9 @@ namespace FamidashEditor
                             case 10: // Snake (uses wave movement with gravity dash)
                                 SnakePhysics_Fresh();
                                 break;
-                            case 11: // Football (uses cube gravity with charge mechanic)
-                                ProcessCubePhysics_Fresh();
+                            case 11: // Football (uses cube physics with rotation animation)
+                                FootballPhysics_Fresh();
+                                UpdateFootballRotation();
                                 break;
                         }
                         

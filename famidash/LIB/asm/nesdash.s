@@ -2500,34 +2500,34 @@ drawplayer_center_offsets:
 		lda _chargepower
 		beq @normalstuff
 
-		cmp #5
+		cmp #10
 		BCS :+
 		ldx #23
 		stx _cube_rotate+1
 		jmp @fin
 
-	: 	cmp #15
+	: 	cmp #20
 		BCS :+
 		ldx #22
 		stx _cube_rotate+1
 		jmp @fin
 
 
-	: 	cmp #25
+	: 	cmp #30
 		BCS :+
 		ldx #21
 		stx _cube_rotate+1
 		jmp @fin
 
 
-	: 	cmp #30
+	: 	cmp #38
 		BCS :+
 		ldx #20
 		stx _cube_rotate+1
 		jmp @fin
 
 
-	: 	cmp #46
+	: 	cmp #50
 		BCS @hi
 		ldx #20
 		stx _cube_rotate+1
@@ -2615,6 +2615,8 @@ drawplayer_center_offsets:
 			PLA
 		@resume:
 			STA xargs+0	; flip setting
+
+
 			TXA
 			AND #$07
 			TAY
@@ -2884,6 +2886,15 @@ drawplayer_center_offsets:
 
 
 	fin:
+			LDA _gamemode
+			cmp #$08
+			bne :+
+			LDA _player_gravity+0
+			BEQ :+
+			lda xargs+0
+			ORA #$80
+			STA xargs+0
+			:	
     common:
 		TYA					;
 		ASL					;	Double da index cuz it's a table of shorts
@@ -3202,6 +3213,17 @@ drawplayer_common := _drawplayerone::common
 			TXA
 			AND #$07
 			TAY
+
+			LDA _gamemode
+			cmp #$08
+			bne :+
+			LDA _player_gravity+1
+			BEQ :+
+			lda xargs+0
+			ORA #$80
+			STA xargs+0
+			:				
+
 			JMP drawplayer_common
 
 	ship:
