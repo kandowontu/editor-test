@@ -31,8 +31,8 @@ namespace FamidashEditor
                     int pressCount_peek = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                     bool pressJump_peek = pressCount_peek > 0;
                     bool gravityInverted_orb = (currplayer_gravity != 0);
-                    int playerX_px_orb = playerX_fixed >> 8;
-                    int playerY_px_orb = playerY_fixed >> 8;
+                    int playerX_px_orb = playerX_fixed[currplayer] >> 8;
+                    int playerY_px_orb = playerY_fixed[currplayer] >> 8;
                     int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
                     int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
                     
@@ -44,14 +44,14 @@ namespace FamidashEditor
                     
                     int scrollX_px_orb = 0;
                     
-                    int tempVelY = playerVelY_fixed;
+                    int tempVelY = playerVelY_fixed[currplayer];
                     var (orbActivated, _) = UpdateOrbSystem(2, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
                                                        scrollX_px_orb, pressJump_peek, holdJump_orb, gravityInverted_orb, 
                                                        (currplayer_mini != 0), ref tempVelY);
                     if (orbActivated)
                     {
-                        playerVelY_fixed = tempVelY;
-                        AppendSimDebug($"[BALL] Orb activated! New velY={playerVelY_fixed}");
+                        playerVelY_fixed[currplayer] = tempVelY;
+                        AppendSimDebug($"[BALL] Orb activated! New velY={playerVelY_fixed[currplayer]}");
                         
                         // Consume the X press if it was used for orb
                         if (pressJump_peek)
@@ -81,7 +81,7 @@ namespace FamidashEditor
                 }
                 
                 // Check if grounded by doing a collision check
-                int savedY = playerY_fixed;
+                int savedY = playerY_fixed[currplayer];
                 
                 // Check if grounded by testing a small collision hitbox slightly below/above player
                 // This detects if there's ground to grip onto for gravity flip
@@ -91,7 +91,7 @@ namespace FamidashEditor
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-                int collisionX = (playerX_fixed >> 8);
+                int collisionX = (playerX_fixed[currplayer] >> 8);
                 
                 // If we're in cooldown from a recent flip, use the cached grounded state
                 if (ballFlipCooldown > 0) {
@@ -99,7 +99,7 @@ namespace FamidashEditor
                     AppendSimDebug($"[BALL] Using cached grounded state during cooldown: isGrounded={isGrounded}");
                 } else if (currplayer_gravity == 0) {
                     // Normal gravity - test a 2px tall hitbox starting at player's bottom (tests downward)
-                    int playerBottom = (playerY_fixed >> 8) + hitboxOffsetY + hitboxH;
+                    int playerBottom = (playerY_fixed[currplayer] >> 8) + hitboxOffsetY + hitboxH;
                     int testHeight = 2;
                     int testTop = playerBottom;  // Start test at player's bottom edge
                     var (collided, _) = CheckCollisionDown(collisionX, testTop, hitboxW, testHeight);
@@ -108,7 +108,7 @@ namespace FamidashEditor
                 } else {
                     // Inverted gravity - test UPWARD at player's TOP (ceiling contact)
                     // When inverted, the ball hangs from ceiling, so TOP touches the surface
-                    int playerTop = (playerY_fixed >> 8) + hitboxOffsetY;
+                    int playerTop = (playerY_fixed[currplayer] >> 8) + hitboxOffsetY;
                     int testHeight = 2;
                     int testTop = playerTop - 2;  // Start test 2px above player's top to detect ceiling
                     var (collided, _) = CheckCollisionUp(collisionX, testTop, hitboxW, testHeight);
@@ -116,7 +116,7 @@ namespace FamidashEditor
                     AppendSimDebug($"[BALL] Grounded check (inverted): playerTop={playerTop}, testTop={testTop}, isGrounded={isGrounded}");
                 }
                 
-                AppendSimDebug($"[BALL] press={pressJump}, hold={holdJump}, ballSwitched={ballSwitched[0]}, velY={playerVelY_fixed}, grounded={isGrounded}");
+                AppendSimDebug($"[BALL] press={pressJump}, hold={holdJump}, ballSwitched[currplayer]={ballSwitched[0]}, velY={playerVelY_fixed[currplayer]}, grounded={isGrounded}");
                 
                 // Ground flip buffering - similar to orb buffering
                 // Can buffer the input while falling to trigger when landing
@@ -127,7 +127,7 @@ namespace FamidashEditor
                 {
                     if (isGrounded)
                     {
-                        // Allow flip even if ballSwitched is true - fresh press overrides
+                        // Allow flip even if ballSwitched[currplayer] is true - fresh press overrides
                         shouldFlip = true;
                     }
                     orbBufferActive = true; // Buffer the input
@@ -155,7 +155,7 @@ namespace FamidashEditor
                     tmpgravity = GameModePhysics.BALL_GRAVITY(baseTableIdx) * gravityMultiplier;
                     
                     ballSwitched[0] = true;
-                    playerVelY_fixed = GameModePhysics.BALL_SWITCH_VEL(currplayer_table_idx);
+                    playerVelY_fixed[currplayer] = GameModePhysics.BALL_SWITCH_VEL(currplayer_table_idx);
                     
                     // Skip collision checks for 2 frames after flip to prevent stutter
                     ballFlipCooldown = 2;
@@ -168,7 +168,7 @@ namespace FamidashEditor
                     ClearOrbBuffer();
                 }
                 
-                // Clear ballSwitched flag when key is released
+                // Clear ballSwitched[currplayer] flag when key is released
                 if (ballSwitched[0] && !holdJump) {
                     ballSwitched[0] = false;
                 }
@@ -193,28 +193,28 @@ namespace FamidashEditor
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-                int collisionX = (playerX_fixed >> 8);
+                int collisionX = (playerX_fixed[currplayer] >> 8);
                 
                 if (currplayer_gravity != 0) {
                     // Inverted gravity - prevent velocity from pulling into ceiling
-                    int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
+                    int testY = (playerY_fixed[currplayer] >> 8) + hitboxOffsetY - 1;
                     var (collided, _) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
                     
                     // Only zero velocity if moving UP (negative Y velocity) into ceiling
-                    if (collided && playerVelY_fixed < 0) {
-                        playerVelY_fixed = 0;
+                    if (collided && playerVelY_fixed[currplayer] < 0) {
+                        playerVelY_fixed[currplayer] = 0;
                         AppendSimDebug($"[BALL] Ceiling grounded - zeroed upward velocity");
                     }
                 } else {
                     // Normal gravity - prevent velocity from pulling into ground
-                    int playerBottom = (playerY_fixed >> 8) + hitboxOffsetY + hitboxH;
+                    int playerBottom = (playerY_fixed[currplayer] >> 8) + hitboxOffsetY + hitboxH;
                     int testTop = playerBottom;
                     int testHeight = 2;
                     var (collided, _) = CheckCollisionDown(collisionX, testTop, hitboxW, testHeight);
                     
                     // Only zero velocity if moving DOWN (positive Y velocity) into ground
-                    if (collided && playerVelY_fixed > 0) {
-                        playerVelY_fixed = 0;
+                    if (collided && playerVelY_fixed[currplayer] > 0) {
+                        playerVelY_fixed[currplayer] = 0;
                         AppendSimDebug($"[BALL] Floor grounded - zeroed downward velocity");
                     }
                 }
@@ -228,7 +228,7 @@ namespace FamidashEditor
                 int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
                 bool pressedJump = pressCount > 0;
                 
-                if (pressedJump && !ufoOrbed) {
+                if (pressedJump && !ufoOrbed[currplayer]) {
                     InvertGravity_Fresh();
                     UpdateCurrplayerTableIdx_Fresh(); // Must update table_idx AFTER gravity flip!
                     // Swing does NOT apply velocity like Ball does - just flips gravity
@@ -240,8 +240,8 @@ namespace FamidashEditor
                 int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                 bool pressJump_orb = pressCount_orb > 0;
                 bool gravityInverted_orb = (currplayer_gravity != 0);
-                int playerX_px_orb = playerX_fixed >> 8;
-                int playerY_px_orb = playerY_fixed >> 8;
+                int playerX_px_orb = playerX_fixed[currplayer] >> 8;
+                int playerY_px_orb = playerY_fixed[currplayer] >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
                 int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
                 
@@ -253,7 +253,7 @@ namespace FamidashEditor
                 
                 int scrollX_px_orb = 0;
                 
-                int tempVelY = playerVelY_fixed;
+                int tempVelY = playerVelY_fixed[currplayer];
                 // Pogo uses Swing (7) interactions, not its own gamemode
                 int orbGamemode = (currentGameMode == 9) ? 7 : currentGameMode;
                 var (orbActivated, _) = UpdateOrbSystem(orbGamemode, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
@@ -261,8 +261,8 @@ namespace FamidashEditor
                                                    (currplayer_mini != 0), ref tempVelY);
                 if (orbActivated)
                 {
-                    playerVelY_fixed = tempVelY;
-                    AppendSimDebug($"[SWING/POGO] Orb/Pad activated! New velY={playerVelY_fixed}");
+                    playerVelY_fixed[currplayer] = tempVelY;
+                    AppendSimDebug($"[SWING/POGO] Orb/Pad activated! New velY={playerVelY_fixed[currplayer]}");
                     
                     // Consume the X press if it was used for orb
                     if (pressJump_orb)
@@ -279,14 +279,14 @@ namespace FamidashEditor
                 int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
                 bool pressedJump = pressCount > 0;
                 
-                if (pressedJump && !orbhitonthisframe) {
+                if (pressedJump && !orbhitonthisframe[currplayer]) {
                     // Black orb velocity: opposite direction to normal orbs
                     // Normal gravity: positive (downward), Inverted gravity: negative (upward)
                     bool isMini_orb = (currplayer_mini != 0);
                     int blackOrbVel = isMini_orb ? PadOrbHeights_Mini[6][7] : PadOrbHeights[6][7];
                     int orbGravityMult = (currplayer_gravity == 0) ? -1 : 1;  // Normal: negate, Inverted: keep
-                    playerVelY_fixed = blackOrbVel * orbGravityMult;
-                    AppendSimDebug($"[POGO_BLACKORB] X pressed! velY set to 0x{playerVelY_fixed:X4}");
+                    playerVelY_fixed[currplayer] = blackOrbVel * orbGravityMult;
+                    AppendSimDebug($"[POGO_BLACKORB] X pressed! velY set to 0x{playerVelY_fixed[currplayer]:X4}");
                     // Clear orb buffer on pogo activation (require fresh press for next orb)
                     ClearOrbBuffer();
                 }
@@ -295,11 +295,11 @@ namespace FamidashEditor
             // Record position for trail
             try
             {
-                int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                int playerWorldCenterX_px = (playerX_fixed[currplayer] >> 8) + (playerVisualWidth / 2);
                 bool isMini = (currplayer_mini != 0);
                 int hitboxH = isMini ? 7 : 15;
                 int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-                int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2) + hitboxOffsetY;
+                int playerWorldCenterY_px = (playerY_fixed[currplayer] >> 8) + (playerVisualHeight / 2) + hitboxOffsetY;
                 recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
             }
             catch { }
@@ -314,8 +314,8 @@ namespace FamidashEditor
             int hitboxW = isMini ? 8 : 15;
             int hitboxH = isMini ? 7 : 15;
             int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-            int collisionX = (playerX_fixed >> 8);
-            int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
+            int collisionX = (playerX_fixed[currplayer] >> 8);
+            int collisionY = (playerY_fixed[currplayer] >> 8) + hitboxOffsetY;
             
             if (currplayer_gravity == 0) {
                 // Normal gravity: Check TOP collision with right-side pixel test
@@ -358,7 +358,7 @@ namespace FamidashEditor
                 }
                 
                 // Skip downward collision if we just flipped and are moving up
-                if (playerVelY_fixed >= 0) {
+                if (playerVelY_fixed[currplayer] >= 0) {
                     var (collided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
                     if (collided) {
                         // Calculate where player Y should be so that bottom lands correctly
@@ -366,16 +366,16 @@ namespace FamidashEditor
                         // We want: playerY + hitboxOffsetY + hitboxH = collisionTopY - 1
                         // So: playerY = collisionTopY - 1 - hitboxOffsetY - hitboxH
                         int newY = collisionTopY - hitboxH - hitboxOffsetY - 1;
-                        int oldY = playerY_fixed >> 8;
+                        int oldY = playerY_fixed[currplayer] >> 8;
                         AppendSimDebug($"[BALL_EJECT_D] collisionTopY={collisionTopY}, hitboxH={hitboxH}, hitboxOffsetY={hitboxOffsetY}, oldY={oldY}, newY={newY}");
-                        playerY_fixed = (newY << 8);
+                        playerY_fixed[currplayer] = (newY << 8);
                         
                         // Pogo mode: bounce instead of zero velocity
                         if (currentGameMode == 9)
                         {
-                            if (!orbhitonthisframe)
+                            if (!orbhitonthisframe[currplayer])
                             {
-                                int newVel = (-playerVelY_fixed * 2) / 3;
+                                int newVel = (-playerVelY_fixed[currplayer] * 2) / 3;
                                 // Bounce minimum = yellow pad velocity for swing (mode 7, col index 7)
                                 int yellowPadMin = isMini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
                                 int gravityMultiplier = (currplayer_gravity == 0) ? -1 : 1;
@@ -383,14 +383,14 @@ namespace FamidashEditor
                                 // For downward bounce (normal gravity): check if vel > min
                                 if (newVel > minVel)
                                     newVel = minVel;
-                                playerVelY_fixed = newVel;
-                                pogoBounceAnimationCounter = 8; // Show pogo2.png for 8 frames
-                                AppendSimDebug($"[POGO_BOUNCE_D] velY: old=0x{playerVelY_fixed:X4} -> new=0x{newVel:X4}, min=0x{minVel:X4}");
+                                playerVelY_fixed[currplayer] = newVel;
+                                pogoBounceAnimationCounter[currplayer] = 8; // Show pogo2.png for 8 frames
+                                AppendSimDebug($"[POGO_BOUNCE_D] velY: old=0x{playerVelY_fixed[currplayer]:X4} -> new=0x{newVel:X4}, min=0x{minVel:X4}");
                             }
                         }
                         else
                         {
-                            playerVelY_fixed = 0;
+                            playerVelY_fixed[currplayer] = 0;
                         }
                     }
                 }
@@ -435,21 +435,21 @@ namespace FamidashEditor
                 }
                 
                 // Skip upward collision if we just flipped and are moving down
-                if (playerVelY_fixed <= 0) {
+                if (playerVelY_fixed[currplayer] <= 0) {
                     var (collided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
                     if (collided) {
                         // Place player directly at collision surface
                         int newY = collisionBottomY - hitboxOffsetY;
-                        int oldY = playerY_fixed >> 8;
+                        int oldY = playerY_fixed[currplayer] >> 8;
                         AppendSimDebug($"[BALL_EJECT_U] collisionBottomY={collisionBottomY}, hitboxOffsetY={hitboxOffsetY}, oldY={oldY}, newY={newY}");
-                        playerY_fixed = (newY << 8);
+                        playerY_fixed[currplayer] = (newY << 8);
                         
                         // Pogo mode: bounce instead of zero velocity
                         if (currentGameMode == 9)
                         {
-                            if (!orbhitonthisframe)
+                            if (!orbhitonthisframe[currplayer])
                             {
-                                int newVel = (-playerVelY_fixed * 2) / 3;
+                                int newVel = (-playerVelY_fixed[currplayer] * 2) / 3;
                                 // Bounce minimum = yellow pad velocity for swing (mode 7, col index 7)
                                 int yellowPadMin = isMini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
                                 int gravityMultiplier = (currplayer_gravity == 0) ? -1 : 1;
@@ -457,14 +457,14 @@ namespace FamidashEditor
                                 // For upward bounce (inverted gravity): check if vel < min
                                 if (newVel < minVel)
                                     newVel = minVel;
-                                playerVelY_fixed = newVel;
-                                pogoBounceAnimationCounter = 8; // Show pogo2.png for 8 frames
-                                AppendSimDebug($"[POGO_BOUNCE_U] velY: old=0x{playerVelY_fixed:X4} -> new=0x{newVel:X4}, min=0x{minVel:X4}");
+                                playerVelY_fixed[currplayer] = newVel;
+                                pogoBounceAnimationCounter[currplayer] = 8; // Show pogo2.png for 8 frames
+                                AppendSimDebug($"[POGO_BOUNCE_U] velY: old=0x{playerVelY_fixed[currplayer]:X4} -> new=0x{newVel:X4}, min=0x{minVel:X4}");
                             }
                         }
                         else
                         {
-                            playerVelY_fixed = 0;
+                            playerVelY_fixed[currplayer] = 0;
                         }
                     }
                 }
@@ -478,7 +478,7 @@ namespace FamidashEditor
         {
             currplayer_gravity = (byte)(currplayer_gravity == 0 ? 0xFF : 0);
             gravityReversed = (currplayer_gravity != 0);
-            gravityFlipped = (currplayer_gravity != 0);
+            gravityFlipped[currplayer] = (currplayer_gravity != 0);
             UpdateCurrplayerTableIdx_Fresh();
             UpdatePlayerIconFlip();
         }
@@ -489,3 +489,4 @@ namespace FamidashEditor
         }
     }
 }
+

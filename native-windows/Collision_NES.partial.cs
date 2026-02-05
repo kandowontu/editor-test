@@ -376,7 +376,7 @@ namespace FamidashEditor
         private bool bg_coll_D()
         {
             // Slopes check
-            if ((playerX_fixed >> 8) >= 0x10)
+            if ((playerX_fixed[currplayer] >> 8) >= 0x10)
             {
                 temp_y = Generic_y + Generic_height - 2;
                 temp_x = Generic_x;
@@ -403,7 +403,7 @@ namespace FamidashEditor
             }
             
             // Regular collision (only if velocity >= 0)
-            if ((playerVelY_fixed & 0x8000) == 0)  // velocity not negative
+            if ((playerVelY_fixed[currplayer] & 0x8000) == 0)  // velocity not negative
             {
                 temp_x = Generic_x;
                 temp_y = Generic_y + Generic_height;
@@ -461,7 +461,7 @@ namespace FamidashEditor
         private bool bg_coll_U()
         {
             // Simplified version - just check top edge
-            if ((playerVelY_fixed & 0x8000) != 0)  // velocity negative (moving up)
+            if ((playerVelY_fixed[currplayer] & 0x8000) != 0)  // velocity negative (moving up)
             {
                 temp_x = Generic_x;
                 temp_y = Generic_y - 1;
@@ -624,10 +624,10 @@ namespace FamidashEditor
                 // Normal gravity - check below
                 if (bg_coll_D())
                 {
-                    int currentY = playerY_fixed >> 8;
+                    int currentY = playerY_fixed[currplayer] >> 8;
                     currentY -= eject_D;
-                    playerY_fixed = currentY << 8;
-                    playerVelY_fixed = 0;
+                    playerY_fixed[currplayer] = currentY << 8;
+                    playerVelY_fixed[currplayer] = 0;
                 }
             }
             else
@@ -635,10 +635,10 @@ namespace FamidashEditor
                 // Reversed gravity - check above
                 if (bg_coll_U())
                 {
-                    int currentY = playerY_fixed >> 8;
+                    int currentY = playerY_fixed[currplayer] >> 8;
                     currentY -= eject_U;
-                    playerY_fixed = currentY << 8;
-                    playerVelY_fixed = 0;
+                    playerY_fixed[currplayer] = currentY << 8;
+                    playerVelY_fixed[currplayer] = 0;
                 }
             }
         }

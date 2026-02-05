@@ -43,10 +43,10 @@ namespace FamidashEditor
             try
             {
                 int groundRowsCalc = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                AppendSimDebug($"[CUBE_START] posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), velY=0x{playerVelY_fixed:X4}, gravity=0x{currplayer_gravity:X2}, mini={currplayer_mini}");
+                AppendSimDebug($"[CUBE_START] posY=0x{playerY_fixed[currplayer]:X4} ({playerY_fixed[currplayer] >> 8}px), velY=0x{playerVelY_fixed[currplayer]:X4}, gravity=0x{currplayer_gravity:X2}, mini={currplayer_mini}");
                 
                 // Save grounded state BEFORE gravity is applied (for Football release)
-                bool wasGroundedAtFrameStart = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
+                bool wasGroundedAtFrameStart = (playerVelY_fixed[currplayer] >= -16 && playerVelY_fixed[currplayer] <= 16);
                 
                 // Set physics constants using table index
                 // From gamemode_cube.h lines 16-22
@@ -74,17 +74,17 @@ namespace FamidashEditor
                     int hitboxW_check = isMini_check ? 8 : 15;
                     int hitboxH_check = isMini_check ? 7 : 15;
                     int hitboxOffsetY_check = isMini_check ? ((0x10 - hitboxH_check) >> 1) : 0;
-                    int collisionX_check = (playerX_fixed >> 8);
-                    int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
+                    int collisionX_check = (playerX_fixed[currplayer] >> 8);
+                    int testY_check = (playerY_fixed[currplayer] >> 8) + hitboxOffsetY_check - 1;
                     var (collided_check, _) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
                     
-                    if (collided_check && playerVelY_fixed < 0) {
-                        playerVelY_fixed = 0;
+                    if (collided_check && playerVelY_fixed[currplayer] < 0) {
+                        playerVelY_fixed[currplayer] = 0;
                         // AppendSimDebug($"[CUBE] Ceiling grounded - zeroed velocity");
                     }
                 }
                 
-                // AppendSimDebug($"[CUBE] After gravity: velY={playerVelY_fixed}, posY={playerY_fixed >> 8}");
+                // AppendSimDebug($"[CUBE] After gravity: velY={playerVelY_fixed[currplayer]}, posY={playerY_fixed[currplayer] >> 8}");
                 
                 // Check center-point death (matches bg_coll_death() in collision.h line 1019)
                 CheckCenterPointDeath_Fresh();
@@ -92,13 +92,13 @@ namespace FamidashEditor
                 // STEP 3: cube_eject() - collision detection and ejection
                 CubeEject_Fresh();
                 
-                // AppendSimDebug($"[CUBE] After collision: velY={playerVelY_fixed}, posY={playerY_fixed >> 8}");
+                // AppendSimDebug($"[CUBE] After collision: velY={playerVelY_fixed[currplayer]}, posY={playerY_fixed[currplayer] >> 8}");
                 
                 // STEP 4: Jump input check (AFTER gravity and collision, matching famidash order)
                 // This happens after position update, so on jump frame:
                 // - Frame 1: gravity applied (0), position updated (0), then jump sets velocity
                 // - Frame 2+: gravity applied to jump velocity, position moves
-                if (playerVelY_fixed == 0)
+                if (playerVelY_fixed[currplayer] == 0)
                 {
                     // NORMAL CUBE JUMP (if NOT Football mode)
                     if (currentGameMode != 11) // NOT GAMEMODE_FOOTBALL
@@ -111,15 +111,15 @@ namespace FamidashEditor
                         // AppendSimDebug($"[CUBE] Input check: hold={holdJump}, press={pressJump}, pressCount={pressCount}");
                         
                         // Two jump paths from gamemode_cube.h:
-                        // Path 1 (lines 81-91): Hold A to buffer jump (no jblocked/fblocked)
-                        // Path 2 (lines 92-102): Press A for immediate jump (with jblocked/fblocked)
+                        // Path 1 (lines 81-91): Hold A to buffer jump (no jblocked[currplayer]/fblocked[currplayer])
+                        // Path 2 (lines 92-102): Press A for immediate jump (with jblocked[currplayer]/fblocked[currplayer])
                         // For now, simplified: either hold or press allows jump
                         
                         // Use tolerance for grounded check (check if at rest)
-                        bool isGrounded = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
+                        bool isGrounded = (playerVelY_fixed[currplayer] >= -16 && playerVelY_fixed[currplayer] <= 16);
                         
                         // Check gamemode_cube.h line 70: dashing[currplayer] == 0
-                        if ((holdJump || pressJump) && isGrounded && !orbed && dashing == 0)
+                        if ((holdJump || pressJump) && isGrounded && !orbed[currplayer] && dashing[currplayer] == 0)
                         {
                             // AppendSimDebug($"[CUBE] JUMP TRIGGERED!");
                             
@@ -133,9 +133,9 @@ namespace FamidashEditor
                             
                             // From gamemode_cube.h: currplayer_vel_y = JUMP_VEL(currplayer_table_idx);
                             int jumpVel = GameModePhysics.JUMP_VEL(baseTableIdx) * gravityMultiplier;
-                            playerVelY_fixed = jumpVel;
+                            playerVelY_fixed[currplayer] = jumpVel;
                             
-                            // AppendSimDebug($"[CUBE] Jump applied: table_idx={currplayer_table_idx}, jumpVel={jumpVel}, velY now = {playerVelY_fixed}");
+                            // AppendSimDebug($"[CUBE] Jump applied: table_idx={currplayer_table_idx}, jumpVel={jumpVel}, velY now = {playerVelY_fixed[currplayer]}");
                         }
                         
                         // Update orb hold suppression (X hold from ground jump shouldn't activate orbs)
@@ -144,7 +144,7 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    // AppendSimDebug($"[CUBE] Cannot jump: velY={playerVelY_fixed} (must be 0)");
+                    // AppendSimDebug($"[CUBE] Cannot jump: velY={playerVelY_fixed[currplayer]} (must be 0)");
                 }
                 
                 // STEP 4A: Football mode charging (gamemode_cube.h lines 140-143)
@@ -154,18 +154,18 @@ namespace FamidashEditor
                     bool holdX = IsXDownAsync() || keyXHeld;
                     
                     // Charging phase: increment chargepower while holding X
-                    if (holdX && !orbed)
+                    if (holdX && !orbed[currplayer])
                     {
                         chargepower[0]++;
                         
-                        // Handle overcharge: if chargepower >= 45, reset and set orbed flag
+                        // Handle overcharge: if chargepower >= 45, reset and set orbed[currplayer] flag
                         if (chargepower[0] >= 45)
                         {
                             chargepower[0] = 0;
-                            orbed = true;
+                            orbed[currplayer] = true;
                         }
                         
-                        AppendSimDebug($"[FOOTBALL] Charging: chargepower={chargepower[0]}, orbed={orbed}");
+                        AppendSimDebug($"[FOOTBALL] Charging: chargepower={chargepower[0]}, orbed[currplayer]={orbed[currplayer]}");
                     }
                 }
                 
@@ -182,8 +182,8 @@ namespace FamidashEditor
                         int tmp3 = chargepower[0];
                         AppendSimDebug($"[FOOTBALL] Release triggered: tmp3={tmp3}, holdX={holdX}");
                         
-                        // Clear orbed flag on release
-                        orbed = false;
+                        // Clear orbed[currplayer] flag on release
+                        orbed[currplayer] = false;
                         
                         // Calculate jump velocity using chargepower (from gamemode_cube.h line 154)
                         // tmpA = chargepower[currplayer] * (currplayer_gravity ? 0x004C : -0x004C)
@@ -196,14 +196,14 @@ namespace FamidashEditor
                         // Apply velocity if chargepower > 0 and player velocity is zero or small (grounded state)
                         // From gamemode_cube.h: if (chargepower[currplayer] && currplayer_vel_y == 0)
                         // But we also allow release when velocity is small (just started falling) to handle walk-off-edge case
-                        bool isGroundedOrNearGround = (playerVelY_fixed == 0) || 
-                                                      (!gravityInverted_fb && playerVelY_fixed > 0 && playerVelY_fixed < 0x100) ||
-                                                      (gravityInverted_fb && playerVelY_fixed < 0 && playerVelY_fixed > -0x100);
+                        bool isGroundedOrNearGround = (playerVelY_fixed[currplayer] == 0) || 
+                                                      (!gravityInverted_fb && playerVelY_fixed[currplayer] > 0 && playerVelY_fixed[currplayer] < 0x100) ||
+                                                      (gravityInverted_fb && playerVelY_fixed[currplayer] < 0 && playerVelY_fixed[currplayer] > -0x100);
                         
                         if (tmp3 > 0 && isGroundedOrNearGround)
                         {
-                            playerVelY_fixed = tmpA;
-                            AppendSimDebug($"[FOOTBALL] Released! chargepower={tmp3}, tmpA=0x{tmpA:X4}, velY now = {playerVelY_fixed}");
+                            playerVelY_fixed[currplayer] = tmpA;
+                            AppendSimDebug($"[FOOTBALL] Released! chargepower={tmp3}, tmpA=0x{tmpA:X4}, velY now = {playerVelY_fixed[currplayer]}");
                         }
                         
                         // Reset chargepower on release (gamemode_cube.h line 154)
@@ -217,8 +217,8 @@ namespace FamidashEditor
                     int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0); // Peek without consuming
                     bool pressJump = pressCount > 0;
                     bool gravityInverted = (currplayer_gravity != 0);
-                    int playerX_px = playerX_fixed >> 8;
-                    int playerY_px = playerY_fixed >> 8;
+                    int playerX_px = playerX_fixed[currplayer] >> 8;
+                    int playerY_px = playerY_fixed[currplayer] >> 8;
                     int hitboxW = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
                     int hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
                     
@@ -230,14 +230,14 @@ namespace FamidashEditor
                     
                     int scrollX_px = 0; // Cube mode doesn't scroll in this implementation
                     
-                    int tempVelY = playerVelY_fixed;
+                    int tempVelY = playerVelY_fixed[currplayer];
                     var (orbActivated, _) = UpdateOrbSystem(0, playerX_px, playerY_px, hitboxW, hitboxH, 
                                                        scrollX_px, pressJump, holdJump, gravityInverted, 
                                                        (currplayer_mini != 0), ref tempVelY);
                     if (orbActivated)
                     {
-                        playerVelY_fixed = tempVelY;
-                        // AppendSimDebug($"[CUBE] Orb activated! New velY={playerVelY_fixed}");
+                        playerVelY_fixed[currplayer] = tempVelY;
+                        // AppendSimDebug($"[CUBE] Orb activated! New velY={playerVelY_fixed[currplayer]}");
                         
                         // Consume the X press if it was used for orb
                         if (pressJump)
@@ -255,8 +255,8 @@ namespace FamidashEditor
                 // Record position for trail AFTER physics completes (for smooth visualization)
                 try
                 {
-                    int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                    int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+                    int playerWorldCenterX_px = (playerX_fixed[currplayer] >> 8) + (playerVisualWidth / 2);
+                    int playerWorldCenterY_px = (playerY_fixed[currplayer] >> 8) + (playerVisualHeight / 2);
                     
                     // Apply mini mode offset for visual position consistency
                     // Mini mode: 8x7 hitbox at Y+9 (normal gravity) or Y+0 (inverted)
@@ -281,7 +281,7 @@ namespace FamidashEditor
                 // CRITICAL: After all physics updates, verify that cube still has ground support
                 // This ensures that walking off a platform immediately triggers falling
                 // rather than waiting for the next frame's main loop check
-                if (onGround && playerVelY_fixed == 0)
+                if (onGround && playerVelY_fixed[currplayer] == 0)
                 {
                     try
                     {
@@ -289,10 +289,10 @@ namespace FamidashEditor
                         if (currplayer_gravity == 0)  // Normal gravity
                         {
                             const int HITBOX_W_LOCAL = 15;
-                            int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            int playerCenter_px = (playerX_fixed[currplayer] >> 8) + (playerVisualWidth / 2);
                             int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
                             int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
-                            int footWorldY_px = (playerY_fixed >> 8) + playerVisualHeight - 1;
+                            int footWorldY_px = (playerY_fixed[currplayer] >> 8) + playerVisualHeight - 1;
                             int tileBelowY_world = footWorldY_px / TILE;
                             int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
@@ -339,16 +339,16 @@ namespace FamidashEditor
             // From gamemode_cube.h line 247: register int16_t tmpaccel;
             int tmpaccel;
             
-            AppendSimDebug($"[GRAV_START] velY=0x{playerVelY_fixed:X4}, posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), dashing={dashing}, wasZeroedByCollision={wasZeroedByCollisionLastFrame}, mode={currentGameMode}");
+            AppendSimDebug($"[GRAV_START] velY=0x{playerVelY_fixed[currplayer]:X4}, posY=0x{playerY_fixed[currplayer]:X4} ({playerY_fixed[currplayer] >> 8}px), dashing[currplayer]={dashing[currplayer]}, wasZeroedByCollision={wasZeroedByCollisionLastFrame}, mode={currentGameMode}");
             
             // From gamemode_cube.h line 249: tmp1 = dashing[currplayer];
-            int tmp1 = dashing;
+            int tmp1 = dashing[currplayer];
             
             // CRITICAL FIX: Don't apply gravity if we were just zeroed by collision detection
             // This prevents oscillation where gravity re-applies to already-grounded players
             // EXCEPTION: Pogo mode needs gravity even when grounded so it can bounce
             // Only reset the flag when velocity becomes non-zero (player leaves ground)
-            if (playerVelY_fixed == 0 && wasZeroedByCollisionLastFrame && currentGameMode != 9)
+            if (playerVelY_fixed[currplayer] == 0 && wasZeroedByCollisionLastFrame && currentGameMode != 9)
             {
                 // We're grounded - skip gravity application (but NOT for Pogo mode)
                 AppendSimDebug($"[GRAV_SKIP] velY==0 && wasZeroedByCollision=true - skipping gravity, velocity stays at 0");
@@ -356,7 +356,7 @@ namespace FamidashEditor
             }
             
             // Reset the flag if velocity is non-zero (means player left the ground)
-            if (playerVelY_fixed != 0)
+            if (playerVelY_fixed[currplayer] != 0)
             {
                 wasZeroedByCollisionLastFrame = false;
                 AppendSimDebug($"[GRAV_RESET_FLAG] velY is non-zero, resetting collision flag for next frame");
@@ -364,7 +364,7 @@ namespace FamidashEditor
             
             if (tmp1 == 0)
             {
-                // Not dashing: apply normal gravity normally
+                // Not dashing[currplayer]: apply normal gravity normally
                 // From gamemode_cube.h line 251: tmpaccel = tmpgravity;
                 tmpaccel = tmpgravity;
                 
@@ -374,15 +374,15 @@ namespace FamidashEditor
                 if (currplayer_gravity == 0)
                 {
                     // Normal gravity: check if positive velocity exceeds negative fallspeed
-                    atMaxFallSpeed = (playerVelY_fixed > tmpfallspeed);
+                    atMaxFallSpeed = (playerVelY_fixed[currplayer] > tmpfallspeed);
                 }
                 else
                 {
                     // Inverted gravity: check if negative velocity exceeds positive fallspeed
-                    atMaxFallSpeed = (playerVelY_fixed < tmpfallspeed);
+                    atMaxFallSpeed = (playerVelY_fixed[currplayer] < tmpfallspeed);
                 }
                 
-                AppendSimDebug($"[GRAV_CHECK] atMaxFallSpeed={atMaxFallSpeed}, velY=0x{playerVelY_fixed:X4}, fallspeed=0x{tmpfallspeed:X4}");
+                AppendSimDebug($"[GRAV_CHECK] atMaxFallSpeed={atMaxFallSpeed}, velY=0x{playerVelY_fixed[currplayer]:X4}, fallspeed=0x{tmpfallspeed:X4}");
                 
                 if (atMaxFallSpeed)
                 {
@@ -394,49 +394,49 @@ namespace FamidashEditor
                 // gravity_mod handling (lines 256-262) - skip for now, assume gravity_mod = 0
                 
                 // From gamemode_cube.h line 264: currplayer_vel_y += tmpaccel;
-                int velY_before = playerVelY_fixed;
-                playerVelY_fixed += (int)Math.Round(tmpaccel * simTimeScale);
-                AppendSimDebug($"[GRAV_APPLY] velY: 0x{velY_before:X4} + (0x{tmpaccel:X} * {simTimeScale:F2}) = 0x{playerVelY_fixed:X4}");
+                int velY_before = playerVelY_fixed[currplayer];
+                playerVelY_fixed[currplayer] += (int)Math.Round(tmpaccel * simTimeScale);
+                AppendSimDebug($"[GRAV_APPLY] velY: 0x{velY_before:X4} + (0x{tmpaccel:X} * {simTimeScale:F2}) = 0x{playerVelY_fixed[currplayer]:X4}");
             }
             else if (tmp1 == 2)
             {
                 // 45deg up dash: vel_y = -vel_x
-                playerVelY_fixed = -velocityX;
+                playerVelY_fixed[currplayer] = -velocityX;
             }
             else if (tmp1 == 3)
             {
                 // 45deg down dash: vel_y = vel_x
-                playerVelY_fixed = velocityX;
+                playerVelY_fixed[currplayer] = velocityX;
             }
             else if (tmp1 == 4)
             {
                 // Upward dash: vel_y = vel_x * 2, then subtract from position and return early
-                playerVelY_fixed = velocityX * 2;
-                playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale);
+                playerVelY_fixed[currplayer] = velocityX * 2;
+                playerY_fixed[currplayer] -= (int)Math.Round(playerVelY_fixed[currplayer] * simTimeScale);
                 return;
             }
             else if (tmp1 == 5)
             {
                 // Downward dash: vel_y = vel_x * 2
-                playerVelY_fixed = velocityX * 2;
+                playerVelY_fixed[currplayer] = velocityX * 2;
             }
             else
             {
                 // Horizontal dash (tmp1 == 1): vel_y = gravity ? -1 : 1, then return early
-                playerVelY_fixed = (currplayer_gravity != 0) ? -1 : 1;
-                playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                playerVelY_fixed[currplayer] = (currplayer_gravity != 0) ? -1 : 1;
+                playerY_fixed[currplayer] += (int)Math.Round(playerVelY_fixed[currplayer] * simTimeScale);
                 return;
             }
             
             // From gamemode_cube.h line 278: currplayer_y += currplayer_vel_y;
-            int posY_before = playerY_fixed;
-            playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
-            AppendSimDebug($"[GRAV_POS] posY: 0x{posY_before:X4} ({posY_before >> 8}px) + (0x{playerVelY_fixed:X4} * {simTimeScale:F2}) = 0x{playerY_fixed:X4} ({playerY_fixed >> 8}px)");
+            int posY_before = playerY_fixed[currplayer];
+            playerY_fixed[currplayer] += (int)Math.Round(playerVelY_fixed[currplayer] * simTimeScale);
+            AppendSimDebug($"[GRAV_POS] posY: 0x{posY_before:X4} ({posY_before >> 8}px) + (0x{playerVelY_fixed[currplayer]:X4} * {simTimeScale:F2}) = 0x{playerY_fixed[currplayer]:X4} ({playerY_fixed[currplayer] >> 8}px)");
             
             // Clamp to world bounds
-            if (playerY_fixed < 0) playerY_fixed = 0;
+            if (playerY_fixed[currplayer] < 0) playerY_fixed[currplayer] = 0;
             int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
-            if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+            if (playerY_fixed[currplayer] > maxPlayerY_fixed) playerY_fixed[currplayer] = maxPlayerY_fixed;
         }
         
         /// <summary>
@@ -446,8 +446,8 @@ namespace FamidashEditor
         private void CubeEject_Fresh()
         {
             // Calculate hitbox in pixels
-            int playerX_px = playerX_fixed >> 8;
-            int playerY_px = playerY_fixed >> 8;
+            int playerX_px = playerX_fixed[currplayer] >> 8;
+            int playerY_px = playerY_fixed[currplayer] >> 8;
             
             // Dynamic hitbox size based on mini mode
             int hitboxW = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
@@ -481,16 +481,16 @@ namespace FamidashEditor
                         // high_byte(currplayer_y) -= eject_D;
                         // low_byte(currplayer_y) = 0;
                         // This subtracts eject_D from pixel position and clears subpixels
-                        int oldY = playerY_fixed >> 8;
-                        // AppendSimDebug($"[CUBE]   BEFORE slope eject: playerY_fixed={playerY_fixed}, oldY={oldY}");
+                        int oldY = playerY_fixed[currplayer] >> 8;
+                        // AppendSimDebug($"[CUBE]   BEFORE slope eject: playerY_fixed[currplayer]={playerY_fixed[currplayer]}, oldY={oldY}");
                         
                         // Get current pixel position, subtract eject_D, then clear subpixels
-                        int newPixelY = (playerY_fixed >> 8) - eject_D;
-                        playerY_fixed = newPixelY << 8;  // Clear subpixels by shifting back
-                        playerVelY_fixed = 0;
+                        int newPixelY = (playerY_fixed[currplayer] >> 8) - eject_D;
+                        playerY_fixed[currplayer] = newPixelY << 8;  // Clear subpixels by shifting back
+                        playerVelY_fixed[currplayer] = 0;
                         wasZeroedByCollisionLastFrame = true;  // Signal that gravity should not re-apply next frame
                         
-                        // AppendSimDebug($"[CUBE]   AFTER slope eject: eject_D={eject_D}, oldY={oldY}, newY={newPixelY}, playerY_fixed={playerY_fixed}");
+                        // AppendSimDebug($"[CUBE]   AFTER slope eject: eject_D={eject_D}, oldY={oldY}, newY={newPixelY}, playerY_fixed[currplayer]={playerY_fixed[currplayer]}");
                         
                         // CRITICAL FIX: Update playerY_px after slope ejection so subsequent code uses correct position
                         playerY_px = newPixelY;
@@ -499,7 +499,7 @@ namespace FamidashEditor
                     {
                         // eject_D=0 means player is at correct height, just stop velocity
                         // AppendSimDebug($"[CUBE]   Slope hit with eject_D=0 - player at correct height");
-                        playerVelY_fixed = 0;
+                        playerVelY_fixed[currplayer] = 0;
                         wasZeroedByCollisionLastFrame = true;  // Signal that gravity should not re-apply next frame
                     }
                 }
@@ -508,7 +508,7 @@ namespace FamidashEditor
                     // Slope check failed - fall back to flat collision
                     // This matches collision.h lines 946-968
                     // AppendSimDebug($"[CUBE]   Falling back to flat collision (slopeHit={slopeHit}, eject_D={eject_D})");
-                    // AppendSimDebug($"[CUBE]   Checking from: playerX={playerX_px}, playerY={playerY_px}, velY={playerVelY_fixed}");
+                    // AppendSimDebug($"[CUBE]   Checking from: playerX={playerX_px}, playerY={playerY_px}, velY={playerVelY_fixed[currplayer]}");
                     
                     // Normal gravity: Bottom is for landing (always collide), top can passthrough
                     // Check downward collision for landing
@@ -518,13 +518,13 @@ namespace FamidashEditor
                     {
                         // Only snap if falling/stationary (velY >= 0). Don't snap while jumping up (velY < 0).
                         // This prevents snapping onto higher floors during upward jump arc.
-                        if (playerVelY_fixed >= 0)
+                        if (playerVelY_fixed[currplayer] >= 0)
                         {
                             // Snap player to rest position above the collision surface
                             int newY = collisionTopY - hitboxH - hitboxOffsetY - 1;
                             // AppendSimDebug($"[CUBE]     Eject down: collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
-                            playerY_fixed = newY << 8;
-                            playerVelY_fixed = 0;
+                            playerY_fixed[currplayer] = newY << 8;
+                            playerVelY_fixed[currplayer] = 0;
                             wasZeroedByCollisionLastFrame = true;  // Signal that gravity should not re-apply next frame
                             onGround = true;  // Mark as grounded so main loop can check if still supported
                             
@@ -535,7 +535,7 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            // AppendSimDebug($"[CUBE]     Collision detected but NOT snapping (jumping up, velY={playerVelY_fixed})");
+                            // AppendSimDebug($"[CUBE]     Collision detected but NOT snapping (jumping up, velY={playerVelY_fixed[currplayer]})");
                         }
                     }
                     else
@@ -546,7 +546,7 @@ namespace FamidashEditor
                 
                 // Normal gravity: Check TOP collision with passthrough/death for Cube/Robot/Ninja
                 // H block: skip death check and always eject like UFO
-                if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && !MainWindow.Option_NoDeath && !hblocked)
+                if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && !MainWindow.Option_NoDeath && !hblocked[currplayer])
                 {
                     var (topCollided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
                     if (topCollided)
@@ -592,27 +592,27 @@ namespace FamidashEditor
                         }
                     }
                 }
-                else if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (MainWindow.Option_NoDeath || hblocked))
+                else if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (MainWindow.Option_NoDeath || hblocked[currplayer]))
                 {
                     // NO DEATH mode OR H block: eject from top collision like UFO/Ship
                     var (topCollided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
                     if (topCollided)
                     {
                         int newY = collisionBottomY - hitboxOffsetY + 1;
-                        AppendSimDebug($"[CUBE]     Eject up ({(hblocked ? "H BLOCK" : "NO DEATH")}): collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
-                        playerY_fixed = newY << 8;
+                        AppendSimDebug($"[CUBE]     Eject up ({(hblocked[currplayer] ? "H BLOCK" : "NO DEATH")}): collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
+                        playerY_fixed[currplayer] = newY << 8;
                         
                         // H block: headbonk - set velocity to 1 instead of 0 for instant ejection (gamemode_cube.h line 309)
-                        if (!hblocked)
-                            playerVelY_fixed = 0;
+                        if (!hblocked[currplayer])
+                            playerVelY_fixed[currplayer] = 0;
                         else
-                            playerVelY_fixed = 1;
+                            playerVelY_fixed[currplayer] = 1;
                         
                         // F block: flip gravity on ceiling hit (gamemode_cube.h line 312-315)
-                        if (fblocked)
+                        if (fblocked[currplayer])
                         {
                             currplayer_gravity = 0xFF; // GRAVITY_UP
-                            gravityFlipped = true;
+                            gravityFlipped[currplayer] = true;
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
                         }
                     }
@@ -622,7 +622,7 @@ namespace FamidashEditor
             {
                 // Reversed gravity: Top is for landing (always collide), bottom can passthrough
                 // Check upward collision for landing (only when moving toward ceiling or grounded)
-                if (playerVelY_fixed <= 0) // Moving toward ceiling or stationary
+                if (playerVelY_fixed[currplayer] <= 0) // Moving toward ceiling or stationary
                 {
                     var (collided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
                     if (collided)
@@ -632,7 +632,7 @@ namespace FamidashEditor
                         // We want hitbox top (playerY + hitboxOffsetY) at collisionBottomY
                         int newY = collisionBottomY - hitboxOffsetY;
                         // AppendSimDebug($"[CUBE]     Eject up: collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
-                        playerY_fixed = newY << 8;
+                        playerY_fixed[currplayer] = newY << 8;
                         
                         // CRITICAL: Update playerY_px and collisionY after ceiling snap
                         // so floor death check uses the NEW position
@@ -640,19 +640,19 @@ namespace FamidashEditor
                         collisionY = playerY_px + hitboxOffsetY;
                         
                         // H block: headbonk - set velocity to 1 instead of 0 for instant ejection (gamemode_cube.h line 309)
-                        if (!hblocked)
+                        if (!hblocked[currplayer])
                         {
-                            playerVelY_fixed = 0;
+                            playerVelY_fixed[currplayer] = 0;
                             onGround = true;  // Mark as grounded so main loop can check if still supported
                         }
                         else
-                            playerVelY_fixed = 1;
+                            playerVelY_fixed[currplayer] = 1;
                         
                         // F block: flip gravity on ceiling hit (gamemode_cube.h line 312-315)
-                        if (fblocked)
+                        if (fblocked[currplayer])
                         {
                             currplayer_gravity = 0xFF; // GRAVITY_UP
-                            gravityFlipped = true;
+                            gravityFlipped[currplayer] = true;
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
                         }
                     }
@@ -660,7 +660,7 @@ namespace FamidashEditor
                 
                 // Reversed gravity: Check BOTTOM collision with passthrough/death for Cube/Robot/Ninja
                 // H block: skip death check and always eject like UFO
-                if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && !MainWindow.Option_NoDeath && !hblocked)
+                if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && !MainWindow.Option_NoDeath && !hblocked[currplayer])
                 {
                     var (bottomCollided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
                     if (bottomCollided)
@@ -705,27 +705,27 @@ namespace FamidashEditor
                         }
                     }
                 }
-                else if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (MainWindow.Option_NoDeath || hblocked))
+                else if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (MainWindow.Option_NoDeath || hblocked[currplayer]))
                 {
                     // NO DEATH mode OR H block: eject from bottom collision like UFO/Ship
                     var (bottomCollided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
                     if (bottomCollided)
                     {
                         int newY = collisionTopY - hitboxH - hitboxOffsetY - 1;
-                        AppendSimDebug($"[CUBE]     Eject down ({(hblocked ? "H BLOCK" : "NO DEATH")}): collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
-                        playerY_fixed = newY << 8;
+                        AppendSimDebug($"[CUBE]     Eject down ({(hblocked[currplayer] ? "H BLOCK" : "NO DEATH")}): collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
+                        playerY_fixed[currplayer] = newY << 8;
                         
                         // H block: headbonk for floor - set velocity to 0xffff instead of 0 (gamemode_cube.h line 291)
-                        if (!hblocked)
-                            playerVelY_fixed = 0;
+                        if (!hblocked[currplayer])
+                            playerVelY_fixed[currplayer] = 0;
                         else
-                            playerVelY_fixed = unchecked((int)0xffff); // -1 in signed 16-bit
+                            playerVelY_fixed[currplayer] = unchecked((int)0xffff); // -1 in signed 16-bit
                         
                         // F block: flip gravity on floor hit (gamemode_cube.h line 294-297)
-                        if (fblocked)
+                        if (fblocked[currplayer])
                         {
                             currplayer_gravity = 0; // GRAVITY_DOWN
-                            gravityFlipped = false;
+                            gravityFlipped[currplayer] = false;
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
                         }
                     }
@@ -733,9 +733,9 @@ namespace FamidashEditor
             }
             
             // Clear alphabet block flags at end of frame (matches gamemode_cube.h lines 170-172)
-            fblocked = false;
-            hblocked = false;
-            jblocked = false;
+            fblocked[currplayer] = false;
+            hblocked[currplayer] = false;
+            jblocked[currplayer] = false;
         }
         
         /// <summary>
@@ -746,8 +746,8 @@ namespace FamidashEditor
         {
             if (MainWindow.Option_NoDeath || deathTriggered) return;
             
-            int playerX_px = playerX_fixed >> 8;
-            int playerY_px = playerY_fixed >> 8;
+            int playerX_px = playerX_fixed[currplayer] >> 8;
+            int playerY_px = playerY_fixed[currplayer] >> 8;
             
             // Calculate hitbox dimensions
             int hitboxW = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
@@ -821,3 +821,4 @@ namespace FamidashEditor
         }
     }
 }
+

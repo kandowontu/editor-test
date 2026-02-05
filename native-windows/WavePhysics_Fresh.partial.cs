@@ -23,8 +23,8 @@ namespace FamidashEditor
                 int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                 bool pressJump_orb = pressCount_orb > 0;
                 bool gravityInverted_orb = (currplayer_gravity != 0);
-                int playerX_px_orb = playerX_fixed >> 8;
-                int playerY_px_orb = playerY_fixed >> 8;
+                int playerX_px_orb = playerX_fixed[currplayer] >> 8;
+                int playerY_px_orb = playerY_fixed[currplayer] >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
                 int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
                 
@@ -36,14 +36,14 @@ namespace FamidashEditor
                 
                 int scrollX_px_orb = 0;
                 
-                int tempVelY = playerVelY_fixed;
+                int tempVelY = playerVelY_fixed[currplayer];
                 var (orbActivated, _) = UpdateOrbSystem(4, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
                                                    scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
                                                    (currplayer_mini != 0), ref tempVelY);
                 if (orbActivated)
                 {
-                    playerVelY_fixed = tempVelY;
-                    AppendSimDebug($"[WAVE] Orb activated! New velY={playerVelY_fixed}");
+                    playerVelY_fixed[currplayer] = tempVelY;
+                    AppendSimDebug($"[WAVE] Orb activated! New velY={playerVelY_fixed[currplayer]}");
                     
                     // Consume the X press if it was used for orb
                     if (pressJump_orb)
@@ -55,7 +55,7 @@ namespace FamidashEditor
                     ClearOrbBuffer();
             }
             
-            // tmp1 = dashing (we don't have dashing, assume 0)
+            // tmp1 = dashing[currplayer] (we don't have dashing[currplayer], assume 0)
             int tmp1 = 0;
             
             switch (tmp1) {
@@ -64,48 +64,48 @@ namespace FamidashEditor
                     if (!wasZeroedByCollisionLastFrame)
                     {
                         if (currplayer_mini == 0) {
-                            playerVelY_fixed = currplayer_gravity != 0 ? -playerVelX_fixed : playerVelX_fixed;
+                            playerVelY_fixed[currplayer] = currplayer_gravity != 0 ? -playerVelX_fixed : playerVelX_fixed;
                         } else {
-                            playerVelY_fixed = currplayer_gravity != 0 ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
+                            playerVelY_fixed[currplayer] = currplayer_gravity != 0 ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
                         }
                     }
                     
                     // Input handling - use same system as cube
                     bool holding = IsXDownAsync() || keyXHeld;
-                    if (holding) playerVelY_fixed = -playerVelY_fixed;
+                    if (holding) playerVelY_fixed[currplayer] = -playerVelY_fixed[currplayer];
                     
                     // Apply movement
                     if (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0) {
-                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                        playerY_fixed[currplayer] += (int)Math.Round(playerVelY_fixed[currplayer] * simTimeScale);
                     } else {
-                        playerVelY_fixed = 0;
+                        playerVelY_fixed[currplayer] = 0;
                     }
                     break;
                 case 1: 
-                    playerVelY_fixed = 1; 
+                    playerVelY_fixed[currplayer] = 1; 
                     break;
                 case 2: 
-                    playerVelY_fixed = -playerVelX_fixed; 
-                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale); 
+                    playerVelY_fixed[currplayer] = -playerVelX_fixed; 
+                    playerY_fixed[currplayer] += (int)Math.Round(playerVelY_fixed[currplayer] * simTimeScale); 
                     break;
                 case 3: 
-                    playerVelY_fixed = playerVelX_fixed; 
-                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale); 
+                    playerVelY_fixed[currplayer] = playerVelX_fixed; 
+                    playerY_fixed[currplayer] += (int)Math.Round(playerVelY_fixed[currplayer] * simTimeScale); 
                     break;
                 case 4: 
-                    playerVelY_fixed = playerVelX_fixed; 
-                    playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale); 
+                    playerVelY_fixed[currplayer] = playerVelX_fixed; 
+                    playerY_fixed[currplayer] -= (int)Math.Round(playerVelY_fixed[currplayer] * simTimeScale); 
                     break;
                 case 5: 
-                    playerVelY_fixed = playerVelX_fixed; 
-                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale); 
+                    playerVelY_fixed[currplayer] = playerVelX_fixed; 
+                    playerY_fixed[currplayer] += (int)Math.Round(playerVelY_fixed[currplayer] * simTimeScale); 
                     break;
             }
             
             // Offset collision based on vel_y direction and gravity
             // Normal gravity: moving down = -2, moving up = +2
             // Inverted gravity: moving up (negative vel) = -2, moving down (positive vel) = +2
-            int offsetY = (playerY_fixed >> 8) + ((playerVelY_fixed > 0) ? -2 : 2);
+            int offsetY = (playerY_fixed[currplayer] >> 8) + ((playerVelY_fixed[currplayer] > 0) ? -2 : 2);
             
             // Only run collision if death hasn't been triggered yet
             if (!deathTriggered)
@@ -116,8 +116,8 @@ namespace FamidashEditor
             // Record position for trail - only record when moving horizontally to create clean line
             try
             {
-                int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+                int playerWorldCenterX_px = (playerX_fixed[currplayer] >> 8) + (playerVisualWidth / 2);
+                int playerWorldCenterY_px = (playerY_fixed[currplayer] >> 8) + (playerVisualHeight / 2);
                 
                 // Move path down 8 pixels when mini and gravity is normal
                 bool isMini = (currplayer_mini != 0);
@@ -152,8 +152,8 @@ namespace FamidashEditor
             // Set up Generic struct for collision detection
             // Wave has special X offsets: +10 when moving UP, +4 when moving DOWN
             // X offset is based on raw velocity sign
-            int xOffset = (playerVelY_fixed < 0) ? 10 : 4;
-            Generic_x = (playerX_fixed >> 8) + xOffset;
+            int xOffset = (playerVelY_fixed[currplayer] < 0) ? 10 : 4;
+            Generic_x = (playerX_fixed[currplayer] >> 8) + xOffset;
             
             // For mini wave: adjust hitbox based on DIRECTION (relative to gravity)
             // Not gravity state itself, but direction the wave is actually moving
@@ -162,24 +162,24 @@ namespace FamidashEditor
             int miniOffset = 0;
             if (isMini)
             {
-                bool isMovingUp = gravityInverted ? (playerVelY_fixed > 0) : (playerVelY_fixed < 0);
+                bool isMovingUp = gravityInverted ? (playerVelY_fixed[currplayer] > 0) : (playerVelY_fixed[currplayer] < 0);
                 miniOffset = isMovingUp ? 0 : 8;  // 0 for up direction, 8 for down direction
             }
             
-            Generic_y = (playerY_fixed >> 8) + miniOffset;
+            Generic_y = (playerY_fixed[currplayer] >> 8) + miniOffset;
             Generic_width = 8;
             Generic_height = isMini ? 8 : 16;
             
             // Check collision based on VELOCITY direction
-            if ((playerVelY_fixed & 0x8000) != 0)  // Velocity is negative (moving UP)
+            if ((playerVelY_fixed[currplayer] & 0x8000) != 0)  // Velocity is negative (moving UP)
             {
                 // Check upward collision (using wave_coll_U which has no velocity check)
                 if (wave_coll_U())
                 {
-                    int currentY = playerY_fixed >> 8;
+                    int currentY = playerY_fixed[currplayer] >> 8;
                     currentY -= eject_U;
-                    playerY_fixed = currentY << 8;
-                    playerVelY_fixed = 0;
+                    playerY_fixed[currplayer] = currentY << 8;
+                    playerVelY_fixed[currplayer] = 0;
                     wasZeroedByCollisionLastFrame = true;
                     return;
                 }
@@ -189,10 +189,10 @@ namespace FamidashEditor
                 // Check downward collision (using wave_coll_D which has no velocity check)
                 if (wave_coll_D())
                 {
-                    int currentY = playerY_fixed >> 8;
+                    int currentY = playerY_fixed[currplayer] >> 8;
                     currentY -= eject_D;
-                    playerY_fixed = currentY << 8;
-                    playerVelY_fixed = 0;
+                    playerY_fixed[currplayer] = currentY << 8;
+                    playerVelY_fixed[currplayer] = 0;
                     wasZeroedByCollisionLastFrame = true;
                     return;
                 }
@@ -200,3 +200,4 @@ namespace FamidashEditor
         }
     }
 }
+

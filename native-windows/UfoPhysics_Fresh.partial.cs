@@ -15,8 +15,8 @@ namespace FamidashEditor
                 int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                 bool pressJump_orb = pressCount_orb > 0;
                 bool gravityInverted_orb = (currplayer_gravity != 0);
-                int playerX_px_orb = playerX_fixed >> 8;
-                int playerY_px_orb = playerY_fixed >> 8;
+                int playerX_px_orb = playerX_fixed[currplayer] >> 8;
+                int playerY_px_orb = playerY_fixed[currplayer] >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
                 int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
                 
@@ -28,14 +28,14 @@ namespace FamidashEditor
                 
                 int scrollX_px_orb = 0;
                 
-                int tempVelY = playerVelY_fixed;
+                int tempVelY = playerVelY_fixed[currplayer];
                 var (orbActivated, _) = UpdateOrbSystem(6, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
                                                    scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
                                                    (currplayer_mini != 0), ref tempVelY);
                 if (orbActivated)
                 {
-                    playerVelY_fixed = tempVelY;
-                    AppendSimDebug($"[UFO] Orb activated! New velY={playerVelY_fixed}");
+                    playerVelY_fixed[currplayer] = tempVelY;
+                    AppendSimDebug($"[UFO] Orb activated! New velY={playerVelY_fixed[currplayer]}");
                     
                     // Consume the X press if it was used for orb
                     if (pressJump_orb)
@@ -63,12 +63,12 @@ namespace FamidashEditor
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-                int collisionX = (playerX_fixed >> 8);
-                int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
+                int collisionX = (playerX_fixed[currplayer] >> 8);
+                int testY = (playerY_fixed[currplayer] >> 8) + hitboxOffsetY - 1;
                 var (collided, _) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
                 
-                if (collided && playerVelY_fixed < 0) {
-                    playerVelY_fixed = 0;
+                if (collided && playerVelY_fixed[currplayer] < 0) {
+                    playerVelY_fixed[currplayer] = 0;
                     AppendSimDebug($"[UFO] Ceiling grounded - zeroed velocity");
                 }
             }
@@ -80,25 +80,25 @@ namespace FamidashEditor
             int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
             bool pressedJump = pressCount > 0;
             
-            AppendSimDebug($"[UFO] Input: pressCount={pressCount}, pressedJump={pressedJump}, ufoOrbed={ufoOrbed}");
+            AppendSimDebug($"[UFO] Input: pressCount={pressCount}, pressedJump={pressedJump}, ufoOrbed[currplayer]={ufoOrbed[currplayer]}");
             
-            if (pressedJump && !ufoOrbed) {
+            if (pressedJump && !ufoOrbed[currplayer]) {
                 // Consume the press count now that we're using it
                 Interlocked.Exchange(ref keyXPressedCount, 0);
                 int baseJumpIdx = (currplayer_mini != 0 ? 4 : 0);
                 bool jumpGravityInverted = (currplayer_gravity != 0);
                 int jumpGravityMultiplier = jumpGravityInverted ? -1 : 1;
                 int jumpVel = GameModePhysics.UFO_JUMP_VEL(baseJumpIdx) * jumpGravityMultiplier;
-                playerVelY_fixed = jumpVel; // JUMP
-                AppendSimDebug($"[UFO] JUMP! table_idx={currplayer_table_idx}, jumpVel={jumpVel}, velY={playerVelY_fixed}");
+                playerVelY_fixed[currplayer] = jumpVel; // JUMP
+                AppendSimDebug($"[UFO] JUMP! table_idx={currplayer_table_idx}, jumpVel={jumpVel}, velY={playerVelY_fixed[currplayer]}");
             }
-            ufoOrbed = false;
+            ufoOrbed[currplayer] = false;
             
             // Record position for trail
             try
             {
-                int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                int playerY_px_trail = playerY_fixed >> 8;
+                int playerWorldCenterX_px = (playerX_fixed[currplayer] >> 8) + (playerVisualWidth / 2);
+                int playerY_px_trail = playerY_fixed[currplayer] >> 8;
                 // Apply mini mode offset for trail to match visual position
                 bool isMini_trail = (currplayer_mini != 0);
                 bool gravityInverted_trail = (currplayer_gravity != 0);
@@ -113,3 +113,4 @@ namespace FamidashEditor
         }
     }
 }
+

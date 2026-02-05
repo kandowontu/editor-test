@@ -170,7 +170,7 @@ namespace FamidashEditor
                 
                 // CRITICAL: Do not activate orbs while dashing (from dash orb)
                 // Dash state prevents all orb activations until dash ends
-                if (dashing != 0) continue;
+                if (dashing[currplayer] != 0) continue;
                 
                 // Check collision with player using same method as pads/portals
                 if (!CheckOrbCollision(idx, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
@@ -299,7 +299,7 @@ namespace FamidashEditor
                     gravityInverted = !gravityInverted;
                     currplayer_gravity = (byte)(gravityInverted ? 1 : 0);
                     gravityReversed = gravityInverted;
-                    gravityFlipped = gravityInverted;
+                    gravityFlipped[currplayer] = gravityInverted;
                     UpdatePlayerIconFlip();
                     
                     // Wave and Snake: no velocity change, just reverse gravity
@@ -334,7 +334,7 @@ namespace FamidashEditor
                     gravityInverted = !gravityInverted;
                     currplayer_gravity = (byte)(gravityInverted ? 1 : 0);
                     gravityReversed = gravityInverted;
-                    gravityFlipped = gravityInverted;
+                    gravityFlipped[currplayer] = gravityInverted;
                     UpdatePlayerIconFlip();
                     
                     // Use yellow orb row (0) from PadOrbHeights
@@ -444,15 +444,15 @@ namespace FamidashEditor
         {
             if (sprites == null || mapWidth <= 0 || mapHeight <= 0) return;
 
-            int playerX_px = playerX_fixed >> 8;
-            int playerY_px = playerY_fixed >> 8;
+            int playerX_px = playerX_fixed[currplayer] >> 8;
+            int playerY_px = playerY_fixed[currplayer] >> 8;
             
             // Use actual collision hitbox size, not visual size
-            int hitboxW = miniMode ? 8 : 15;
-            int hitboxH = miniMode ? 7 : 15;
+            int hitboxW = miniMode[currplayer] ? 8 : 15;
+            int hitboxH = miniMode[currplayer] ? 7 : 15;
             
             // Apply mini mode offset: bottom-left for normal, top-left for inverted
-            if (miniMode && !gravityFlipped)
+            if (miniMode[currplayer] && !gravityFlipped[currplayer])
             {
                 playerY_px += 9;
             }
@@ -535,11 +535,11 @@ namespace FamidashEditor
                                     spriteType == DASH_GRAVITY_ORB_UPWARDS ||
                                     spriteType == DASH_GRAVITY_ORB_DOWNWARDS;
 
-                if (isGravityDash && dashing == 0)
+                if (isGravityDash && dashing[currplayer] == 0)
                 {
                     // Flip gravity (common_dash_orb_routine)
-                    gravityFlipped = !gravityFlipped;
-                    AppendSimDebug($"[DASH_ORB] Gravity flipped to {(gravityFlipped ? "UP" : "DOWN")} by orb 0x{spriteType:X2}");
+                    gravityFlipped[currplayer] = !gravityFlipped[currplayer];
+                    AppendSimDebug($"[DASH_ORB] Gravity flipped to {(gravityFlipped[currplayer] ? "UP" : "DOWN")} by orb 0x{spriteType:X2}");
                 }
 
                 // Set dash state and velocity based on orb type
@@ -547,21 +547,21 @@ namespace FamidashEditor
                 {
                     // Horizontal dash (right)
                     velocityY = 0;
-                    dashing = 1;
+                    dashing[currplayer] = 1;
                     AppendSimDebug($"[DASH_ORB] Horizontal dash activated (0x{spriteType:X2})");
                 }
                 else if (spriteType == DASH_ORB_45DEG_UP || spriteType == DASH_GRAVITY_ORB_45DEG_UP)
                 {
                     // 45 degree upward dash
                     velocityY = -velocityX;  // currplayer_vel_y = -currplayer_vel_x
-                    dashing = 2;
+                    dashing[currplayer] = 2;
                     AppendSimDebug($"[DASH_ORB] 45deg upward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_45DEG_DOWN || spriteType == DASH_GRAVITY_ORB_45DEG_DOWN)
                 {
                     // 45 degree downward dash
                     velocityY = velocityX;  // currplayer_vel_y = currplayer_vel_x
-                    dashing = 3;
+                    dashing[currplayer] = 3;
                     AppendSimDebug($"[DASH_ORB] 45deg downward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_UPWARDS || spriteType == DASH_GRAVITY_ORB_UPWARDS)
