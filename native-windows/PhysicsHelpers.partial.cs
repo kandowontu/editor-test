@@ -14,8 +14,8 @@ namespace FamidashEditor
         /// </summary>
         private void ApplyGravity(int gravity, int maxFallSpeed)
         {
-            // Apply gravity acceleration
-            int tmpaccel = gravity;
+            // Apply gravity acceleration with multiplier from gravity mod portals
+            int tmpaccel = (int)(gravity * gravityMultiplier);
             
             // Check if at max fall speed
             bool atMaxFall = gravityFlipped ? 
@@ -31,7 +31,7 @@ namespace FamidashEditor
             // Apply acceleration
             velocityY += tmpaccel;
             
-            AppendSimDebug($"[GRAVITY] Applied: accel={tmpaccel}, newVelY={velocityY}, maxFall={maxFallSpeed}");
+            AppendSimDebug($"[GRAVITY] Applied: accel={tmpaccel} (base={gravity}, mult={gravityMultiplier:F2}), newVelY={velocityY}, maxFall={maxFallSpeed}");
         }
         
         /// <summary>

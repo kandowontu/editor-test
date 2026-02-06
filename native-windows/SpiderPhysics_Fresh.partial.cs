@@ -56,7 +56,7 @@ namespace FamidashEditor
             
             // Get base physics values
             int baseTableIdx = (miniMode ? 4 : 0);
-            bool gravityInverted = (!gravityFlipped);
+            bool gravityInverted = gravityFlipped;
             int gravityMultiplier = gravityInverted ? -1 : 1;
             
             tmpfallspeed = GameModePhysics.SPIDER_MAX_FALLSPEED(baseTableIdx) * gravityMultiplier;

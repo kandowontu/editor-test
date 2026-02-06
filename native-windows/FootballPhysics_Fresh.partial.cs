@@ -20,7 +20,7 @@ namespace FamidashEditor
         private void FootballPhysics_Fresh()
         {
             int baseTableIdx = (miniMode ? 4 : 0);
-            bool gravityInverted = (!gravityFlipped);
+            bool gravityInverted = gravityFlipped;
             int gravityMultiplier = gravityInverted ? -1 : 1;
             
             // Use Cube gravity/fallspeed

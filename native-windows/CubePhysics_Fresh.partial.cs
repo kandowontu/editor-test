@@ -395,7 +395,8 @@ namespace FamidashEditor
                     AppendSimDebug($"[GRAV_REVERSE] tmpaccel reversed to 0x{tmpaccel:X}");
                 }
                 
-                // gravity_mod handling (lines 256-262) - skip for now, assume gravity_mod = 0
+                // gravity_mod handling (lines 256-262) - apply gravity multiplier
+                tmpaccel = (int)(tmpaccel * gravityMultiplier);
                 
                 // From gamemode_cube.h line 264: currplayer_vel_y += tmpaccel;
                 int velY_before = playerVelY_fixed;

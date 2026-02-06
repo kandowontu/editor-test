@@ -1772,6 +1772,187 @@ namespace FamidashEditor
         }
 
         /// <summary>
+        /// Check for gravity modifier portal collision (0x5F-0x63)
+        /// 0x5F = 1/3 gravity, 0x60 = 1/2 gravity, 0x61 = 2/3 gravity
+        /// 0x62 = 2x gravity, 0x63 = 1x gravity (normal)
+        /// </summary>
+        private void CheckGravityModPortals()
+        {
+            try
+            {
+                AppendSimDebug($"[GRAV_MOD] Checking portals - playerX={playerX_fixed >> 8}, playerY={playerY_fixed >> 8}, gravMult={gravityMultiplier:F3}");
+                
+                int playerX_px = playerX_fixed >> 8;
+                int playerY_px = playerY_fixed >> 8;
+                
+                // Use actual collision hitbox size
+                int hitboxW = miniMode ? 8 : 15;
+                int hitboxH = miniMode ? 7 : 15;
+                
+                // Apply mini mode offset
+                if (miniMode)
+                {
+                    if (!gravityFlipped)
+                        playerY_px += 9;
+                }
+                
+                // Player bounding box
+                int playerLeft_px = playerX_px;
+                int playerRight_px = playerX_px + hitboxW - 1;
+                int playerTop_px = playerY_px;
+                int playerBottom_px = playerY_px + hitboxH - 1;
+                
+                // Iterate through sprites and check for gravity mod portals
+                for (int idx = 0; idx < sprites.Length; idx++)
+                {
+                    int sid = sprites[idx];
+                    if (sid < 0) continue;
+                    
+                    // Check if this sprite is a gravity mod portal (0x5F-0x63)
+                    if (sid < 0x5F || sid > 0x63) continue;
+                    
+                    // Check if already activated
+                    if (processedGravityModPortals.Contains(idx)) continue;
+                    
+                    // Check sprite collision
+                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                    {
+                        // Set gravity multiplier based on portal type
+                        double newMultiplier = 1.0;
+                        switch (sid)
+                        {
+                            case 0x5F: newMultiplier = 1.0 / 3.0; break;  // 1/3 gravity
+                            case 0x60: newMultiplier = 0.5; break;         // 1/2 gravity
+                            case 0x61: newMultiplier = 2.0 / 3.0; break;  // 2/3 gravity
+                            case 0x62: newMultiplier = 2.0; break;         // 2x gravity
+                            case 0x63: newMultiplier = 1.0; break;         // Normal gravity
+                        }
+                        
+                        gravityMultiplier = newMultiplier;
+                        
+                        // Update effective gravity with the new multiplier
+                        UpdateEffectiveGravity();
+                        
+                        AppendSimDebug($"[GRAV_MOD] Portal 0x{sid:X2} activated: multiplier set to {gravityMultiplier:F3}x, effectiveGravity={effectiveGravity_fixed}");
+                        
+                        // Mark as activated
+                        processedGravityModPortals.Add(idx);
+                        
+                        // Only one portal per frame
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendSimDebug($"[GRAV_MOD] Error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Check for gravity mod triggers (0x70-0x74) crossing the interaction line
+        /// These are threshold-based (like color triggers) but control gravity multiplier
+        /// </summary>
+        private void CheckGravityModTriggers(int prevPlayerCenter_fixed, int attemptedPlayerCenter_fixed)
+        {
+            try
+            {
+                // Calculate interaction line and player center positions
+                int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
+                int centerOffset_fixed = (TILE / 2) << 8;
+                bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
+                
+                // Scan all sprites for gravity mod triggers
+                for (int idx = 0; idx < sprites.Length; idx++)
+                {
+                    int sid = sprites[idx];
+                    if (sid < 0) continue;
+                    
+                    if (!IsGravityModTrigger(sid)) continue;
+                    
+                    // Determine anchor tile X for this trigger
+                    int anchorTileX;
+                    if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
+                        anchorTileX = anchor.anchorTileX;
+                    else
+                        anchorTileX = idx % mapWidth;
+                    
+                    int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
+                    
+                    if (crossedInteraction)
+                    {
+                        // During a player crossing, check if this trigger crossed the interaction line
+                        if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
+                        {
+                            if (!processedGravityModPortals.Contains(idx))
+                            {
+                                // Set gravity multiplier based on trigger type (same order as portals)
+                                double newMultiplier = 1.0;
+                                switch (sid)
+                                {
+                                    case 0x70: newMultiplier = 1.0 / 3.0; break;  // 1/3 gravity
+                                    case 0x71: newMultiplier = 0.5; break;         // 1/2 gravity
+                                    case 0x72: newMultiplier = 2.0 / 3.0; break;  // 2/3 gravity
+                                    case 0x73: newMultiplier = 2.0; break;         // 2x gravity
+                                    case 0x74: newMultiplier = 1.0; break;         // Normal gravity
+                                }
+                                
+                                gravityMultiplier = newMultiplier;
+                                UpdateEffectiveGravity();
+                                
+                                AppendSimDebug($"[GRAV_MOD_TRIG] Trigger 0x{sid:X2} activated at X={anchorTileX * TILE}: multiplier={gravityMultiplier:F3}x");
+                                
+                                processedGravityModPortals.Add(idx);
+                            }
+                        }
+                        else
+                        {
+                            // Anchor is to the right of the interaction line; clear processed flag so it can trigger again when recrossed
+                            if (processedGravityModPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED)
+                                processedGravityModPortals.Remove(idx);
+                        }
+                    }
+                    else
+                    {
+                        // Camera-centered detection
+                        if (anchorX_center_fixed <= center_fixed)
+                        {
+                            if (!processedGravityModPortals.Contains(idx))
+                            {
+                                double newMultiplier = 1.0;
+                                switch (sid)
+                                {
+                                    case 0x70: newMultiplier = 1.0 / 3.0; break;
+                                    case 0x71: newMultiplier = 0.5; break;
+                                    case 0x72: newMultiplier = 2.0 / 3.0; break;
+                                    case 0x73: newMultiplier = 2.0; break;
+                                    case 0x74: newMultiplier = 1.0; break;
+                                }
+                                
+                                gravityMultiplier = newMultiplier;
+                                UpdateEffectiveGravity();
+                                
+                                AppendSimDebug($"[GRAV_MOD_TRIG] Trigger 0x{sid:X2} activated at X={anchorTileX * TILE}: multiplier={gravityMultiplier:F3}x");
+                                
+                                processedGravityModPortals.Add(idx);
+                            }
+                        }
+                        else
+                        {
+                            // Anchor is left-of-center; clear processed flag
+                            if (processedGravityModPortals.Contains(idx))
+                                processedGravityModPortals.Remove(idx);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendSimDebug($"[GRAV_MOD_TRIG] Error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Check for mini/growth portal collision and activate if touched
         /// Portals: 0x18 = mini portal, 0x19 = growth portal
         /// </summary>
@@ -2649,6 +2830,7 @@ namespace FamidashEditor
         private int effectiveJumpVel_fixed;
         private int effectiveMaxFall_fixed;
         private bool gravityReversed = false;
+        private double gravityMultiplier = 1.0;  // Gravity modifier from portals 0x5F-0x63 (1/3, 1/2, 2/3, 2x, 1x)
         // NOTE: `gravityReversed` is the canonical logical gravity direction used
         // by collision/landing logic. A separate flag `effectiveInvertedByW`
         // allows the editor's No-Death option to invert numeric physics (gravity,
@@ -2662,6 +2844,7 @@ namespace FamidashEditor
         // Track gravity portals we've already activated this pass so each
         // portal activates only once per crossing.
         private System.Collections.Generic.HashSet<int> processedGravityPortals = new System.Collections.Generic.HashSet<int>();
+        private System.Collections.Generic.HashSet<int> processedGravityModPortals = new System.Collections.Generic.HashSet<int>();
         private System.Collections.Generic.HashSet<int> processedMiniPortals = new System.Collections.Generic.HashSet<int>();
         // Track random portals (0x64 and 0x7E) we've already activated so each only activates once
         private System.Collections.Generic.HashSet<int> processedRandomPortals = new System.Collections.Generic.HashSet<int>();
@@ -4595,17 +4778,18 @@ namespace FamidashEditor
                 {
                     if (!e.IsRepeat)
                     {
+                        AppendSimDebug($"[KEYDOWN_X] Key={e.Key} IsRepeat={e.IsRepeat} CamMode={MainWindow.Option_CamMode} currentGameMode={currentGameMode}");
                         lock (simLock)
                         {
                             // Increment press counter atomically for cube physics
                             // Physics will be ignored if physicsEnabled is false (cam mode)
-                            try { Interlocked.Increment(ref keyXPressedCount); } catch { }
+                            int newCount = Interlocked.Increment(ref keyXPressedCount);
+                            AppendSimDebug($"[KEYDOWN_X] Incremented keyXPressedCount to {newCount}");
                             
                             // For ball mode, queue a toggle request
                             if (currentGameMode == 2)
                             {
                                 try { Interlocked.Exchange(ref ballToggleRequested, 1); } catch { }
-                                LogBallEvent($"KeyDown: queued toggle");
                             }
                         }
                     }
@@ -4967,12 +5151,8 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
-                // If the player released X, cancel any queued ball toggle request.
-                try
-                {
-                    Interlocked.Exchange(ref ballToggleRequested, 0);
-                }
-                catch { }
+                // Don't clear ballToggleRequested here - let BallPhysics_Fresh consume it
+                // (KeyUp can fire before physics processes the flag, causing it to be lost)
                 try { Interlocked.Exchange(ref keyXHeldStartedOnGroundInt, 0); } catch { }
                 try { Interlocked.Exchange(ref keyXPressStartedOnGroundInt, 0); } catch { }
                 // Clear orb buffer immediately on UI release so holds cannot persist.
@@ -5270,6 +5450,7 @@ namespace FamidashEditor
                     currplayer_gravity = 0;
                     gravityReversed = false;
                     gravityFlipped = false;
+                    gravityMultiplier = 1.0;  // Reset gravity modifier
                     speed = 1; // 1x speed
                     playerVelX_fixed = CUBE_SPEED_X1;
 
@@ -5292,6 +5473,7 @@ namespace FamidashEditor
                     currplayer_gravity = savedGravity;
                     gravityReversed = savedGravityReversed;
                     gravityFlipped = savedGravityReversed;
+                    gravityMultiplier = 1.0;  // Reset gravity modifier
                     speed = savedSpeed;
                     playerVelX_fixed = savedPlayerVelX;
 
@@ -5326,6 +5508,7 @@ namespace FamidashEditor
                 try { recordedPlayer2Path.Clear(); } catch { }
                 try { recordedPlayer2Path.Clear(); } catch { }
                 try { processedGravityPortals.Clear(); } catch { }
+                try { processedGravityModPortals.Clear(); } catch { }
                 try { processedSpeedPortals.Clear(); } catch { }
                 try { processedRandomPortals.Clear(); } catch { }
                 try { processedMiniPortals.Clear(); } catch { }  // Reset dual/single portal tracking
@@ -5950,7 +6133,7 @@ namespace FamidashEditor
                                 }
                                 catch { }
                             }
-                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; } }
+                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * gravityMultiplier * simTimeScale * simTimeScale); } catch { playerVelY_fixed += (int)(effectiveGravity_fixed * gravityMultiplier); } }
                         }
                         else if (currentGameMode == 2)
                         {
@@ -5982,11 +6165,11 @@ namespace FamidashEditor
                                 }
                                 catch { }
                             }
-                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; } }
+                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * gravityMultiplier * simTimeScale * simTimeScale); } catch { playerVelY_fixed += (int)(effectiveGravity_fixed * gravityMultiplier); } }
                         }
                         else
                         {
-                            try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; }
+                            try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * gravityMultiplier * simTimeScale * simTimeScale); } catch { playerVelY_fixed += (int)(effectiveGravity_fixed * gravityMultiplier); }
                             // cap velocity according to the sign of effectiveMaxFall_fixed
                             try
                             {
@@ -6628,6 +6811,7 @@ namespace FamidashEditor
                             // Anchor is to the right of the interaction line; clear processed flags so they can trigger again when recrossed
                             if (processedColorTriggers.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedColorTriggers.Remove(idx);
                             if (processedGravityPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityPortals.Remove(idx);
+                            if (processedGravityModPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityModPortals.Remove(idx);
                             if (processedOrbs.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedOrbs.Remove(idx);
                             if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
                             if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
@@ -8996,6 +9180,8 @@ namespace FamidashEditor
                     if (chosenSprite == null) continue;
                     // Always hide black color-trigger sprites (they should activate but not be visible in simulator)
                     if (s == 0x8F || s == 0xCF) continue;
+                    // Always hide gravity mod triggers (0x70-0x74) - they activate but don't render
+                    if (s >= 0x70 && s <= 0x74) continue;
                     if (hideColorTriggers && IsColorTriggerSprite(s)) continue;
 
                     // Calculate position early for bounds checking
@@ -9598,6 +9784,12 @@ namespace FamidashEditor
                         CheckGravityPortals();
                         AppendSimDebug($"[GRAV_PRE_MOVEMENT] currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed}");
                         
+                        // Check for gravity modifier portals (0x5F-0x63)
+                        CheckGravityModPortals();
+                        
+                        // Check for gravity modifier triggers (0x70-0x74)
+                        CheckGravityModTriggers(prevPlayerCenter_fixed, attemptedPlayerCenter_fixed);
+                        
                         // Check for mini/growth portal activation
                         CheckMiniGrowthPortals();
                         
@@ -10016,6 +10208,7 @@ namespace FamidashEditor
                                 CheckSinglePortal();
                                 // Dual portal check is not needed here (only one-way into dual mode)
                                 CheckGravityPortals();
+                                CheckGravityModPortals();
                                 CheckMiniGrowthPortals();
                                 CheckPadCollision();
                                 CheckSpiderOrbPadCollision();
@@ -10177,7 +10370,8 @@ namespace FamidashEditor
                             bool effectiveOnGround_local = onGround || groundStabilizeCounter > 0 || invertedCeilingHoldCounter > 0;
 
                             // Atomically consume any pending UI-edge presses recorded by the UI poll
-                            int pendingPresses_num = Interlocked.Exchange(ref keyXPressedCount, 0);
+                            // NOTE: Ball mode (2) handles key presses internally, so don't consume here
+                            int pendingPresses_num = (currentGameMode == 2) ? Interlocked.CompareExchange(ref keyXPressedCount, 0, 0) : Interlocked.Exchange(ref keyXPressedCount, 0);
                             // Also consume whether the pending press was recorded as starting on-ground
                             int pendingPressStartedOnGround = Interlocked.Exchange(ref keyXPressStartedOnGroundInt, 0);
                             // For Cube mode we want to defer applying the jump until after gravity+integration
@@ -10280,7 +10474,7 @@ namespace FamidashEditor
                                                 int tmpMag_local = movingUpRelative_local ? (xheld_local ? SHIP_GRAVITY_HOLD_FALL : SHIP_GRAVITY_BASE)
                                                                                       : (xheld_local ? SHIP_GRAVITY_AFTER_HOLD : SHIP_GRAVITY);
 
-                                                int tmpgravity_local = tmpMag_local * gravitySign_local;
+                                                int tmpgravity_local = (int)(tmpMag_local * gravitySign_local * gravityMultiplier);
                                                 if (xheld_local) tmpgravity_local = -tmpgravity_local; // X = thrust opposite to gravity
 
                                                 try { playerVelY_fixed += (int)Math.Round(tmpgravity_local * simTimeScale * simTimeScale); } catch { playerVelY_fixed += tmpgravity_local; }
@@ -10300,7 +10494,7 @@ namespace FamidashEditor
                                                 }
                                                 catch { }
                                             }
-                                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; } }
+                                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * gravityMultiplier * simTimeScale * simTimeScale); } catch { playerVelY_fixed += (int)(effectiveGravity_fixed * gravityMultiplier); } }
                                 }
                                         else if (currentGameMode == 2)
                                         {
@@ -10334,11 +10528,11 @@ namespace FamidashEditor
                                                 }
                                                 catch { }
                                             }
-                                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; } }
+                                            catch { try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * gravityMultiplier * simTimeScale * simTimeScale); } catch { playerVelY_fixed += (int)(effectiveGravity_fixed * gravityMultiplier); } }
                                         }
                                         else
                                         {
-                                            try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * simTimeScale * simTimeScale); } catch { playerVelY_fixed += effectiveGravity_fixed; }
+                                            try { playerVelY_fixed += (int)Math.Round(effectiveGravity_fixed * gravityMultiplier * simTimeScale * simTimeScale); } catch { playerVelY_fixed += (int)(effectiveGravity_fixed * gravityMultiplier); }
                                             try
                                             {
                                                 if (effectiveMaxFall_fixed >= 0)
@@ -10777,6 +10971,7 @@ namespace FamidashEditor
                         {
                             if (processedColorTriggers.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedColorTriggers.Remove(idx);
                             if (processedGravityPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityPortals.Remove(idx);
+                            if (processedGravityModPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityModPortals.Remove(idx);
                         }
                     }
                     else
@@ -10790,7 +10985,7 @@ namespace FamidashEditor
                                 else if (IsGroundTrigger(sid)) { if (anchorX_center_fixed < bestGround_fixed) { bestGround_fixed = anchorX_center_fixed; groundIdxLocal = idx; groundSidLocal = sid; } }
                             }
                         }
-                        else { if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx); if (processedGravityPortals.Contains(idx)) processedGravityPortals.Remove(idx); if (processedOrbs.Contains(idx)) processedOrbs.Remove(idx); }
+                        else { if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx); if (processedGravityPortals.Contains(idx)) processedGravityPortals.Remove(idx); if (processedGravityModPortals.Contains(idx)) processedGravityModPortals.Remove(idx); if (processedOrbs.Contains(idx)) processedOrbs.Remove(idx); }
                     }
                 }
 
@@ -11364,6 +11559,11 @@ namespace FamidashEditor
         private bool IsTileTrigger(int spriteIdx)
         {
             return spriteIdx >= 0xB0 && spriteIdx <= 0xBF && IsColorTriggerSprite(spriteIdx);
+        }
+
+        private bool IsGravityModTrigger(int spriteIdx)
+        {
+            return spriteIdx >= 0x70 && spriteIdx <= 0x74;
         }
 
         private bool IsGroundTrigger(int spriteIdx)

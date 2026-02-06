@@ -7675,6 +7675,13 @@ namespace FamidashEditor
                     if (gravityUpDownwardsPortalSprite != null) previewMap[0x12] = gravityUpDownwardsPortalSprite;
                     if (gravityUpUpwardsPortalSprite != null) previewMap[0x13] = gravityUpUpwardsPortalSprite;
 
+                    // Gravity modifier portals (0x5F-0x63)
+                    if (gravity1ThirdXPortalSprite != null) previewMap[0x5F] = gravity1ThirdXPortalSprite;
+                    if (gravity1HalfXPortalSprite != null) previewMap[0x60] = gravity1HalfXPortalSprite;
+                    if (gravity2ThirdXPortalSprite != null) previewMap[0x61] = gravity2ThirdXPortalSprite;
+                    if (gravity2XPortalSprite != null) previewMap[0x62] = gravity2XPortalSprite;
+                    if (gravity1XPortalSprite != null) previewMap[0x63] = gravity1XPortalSprite;
+
                     // Multi-frame or animated previews: use first frame as representative
                     if (yellowOrbFrame1 != null && yellowOrbFrame1.Length > 0) { previewMap[0x0B] = yellowOrbFrame1[0]; previewMap[0x1F] = yellowOrbFrame1[0]; previewMap[0x29] = yellowOrbFrame1[0]; }
                     if (blueOrbFrame1 != null && blueOrbFrame1.Length > 0) previewMap[0x05] = blueOrbFrame1[0];

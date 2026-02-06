@@ -12,7 +12,7 @@ namespace FamidashEditor
         {
             // Get base physics values (always from down-gravity index)
             int baseTableIdx = (miniMode ? 4 : 0);
-            bool gravityInverted = (!gravityFlipped);
+            bool gravityInverted = gravityFlipped;
             int gravityMultiplier = gravityInverted ? -1 : 1;
             
             if (currentGameMode == 7 || currentGameMode == 9) { // GAMEMODE_SWING or GAMEMODE_POGO
@@ -67,9 +67,9 @@ namespace FamidashEditor
                 }
                 
                 // Read input for ground flip - track fresh press and hold state
-                int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
-                bool pressJump = pressCount > 0;
                 bool holdJump = IsXDownAsync() || keyXHeld;
+                int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
+                bool pressJump = (pressCount > 0);
                 
                 // Also check ballToggleRequested flag (set by UI KeyDown)
                 int toggleRequested = Interlocked.CompareExchange(ref ballToggleRequested, 0, 0);
@@ -122,6 +122,8 @@ namespace FamidashEditor
                 // Can buffer the input while falling to trigger when landing
                 bool shouldFlip = false;
                 
+                AppendSimDebug($"[BALL_FLIP_CHECK] pressJump={pressJump} holdJump={holdJump} isGrounded={isGrounded} currplayer={currplayer} orbHoldConsumed={orbHoldConsumedKeyStillDown[currplayer]} orbHoldSuppress={orbHoldSuppressing[currplayer]} ballSwitched={ballSwitched[0]}");
+                
                 // Set buffer when X is freshly pressed
                 if (pressJump && !orbHoldConsumedKeyStillDown[currplayer] && !orbHoldSuppressing[currplayer])
                 {
@@ -149,7 +151,7 @@ namespace FamidashEditor
                     UpdateCurrplayerTableIdx_Fresh(); // Must update table_idx AFTER gravity flip!
                     
                     // Recalculate physics values with new gravity
-                    gravityInverted = (!gravityFlipped);
+                    gravityInverted = gravityFlipped;
                     gravityMultiplier = gravityInverted ? -1 : 1;
                     tmpfallspeed = GameModePhysics.BALL_MAX_FALLSPEED(baseTableIdx) * gravityMultiplier;
                     tmpgravity = GameModePhysics.BALL_GRAVITY(baseTableIdx) * gravityMultiplier;
@@ -228,7 +230,10 @@ namespace FamidashEditor
                 int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
                 bool pressedJump = pressCount > 0;
                 
+                AppendSimDebug($"[SWING] pressCount={pressCount} pressedJump={pressedJump} ufoOrbed={ufoOrbed}");
+                
                 if (pressedJump && !ufoOrbed) {
+                    AppendSimDebug($"[SWING] FLIPPING GRAVITY!");
                     InvertGravity_Fresh();
                     UpdateCurrplayerTableIdx_Fresh(); // Must update table_idx AFTER gravity flip!
                     // Swing does NOT apply velocity like Ball does - just flips gravity
@@ -481,7 +486,8 @@ namespace FamidashEditor
         private void InvertGravity_Fresh()
         {
             gravityFlipped = !gravityFlipped;
-            gravityReversed = !gravityFlipped;
+            gravityReversed = gravityFlipped;
+            currplayer_gravity = (byte)(gravityFlipped ? 0xFF : 0x00);
             UpdateCurrplayerTableIdx_Fresh();
             UpdatePlayerIconFlip();
         }

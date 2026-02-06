@@ -37,11 +37,11 @@ namespace FamidashEditor
                     // vel_y = !mini ? (gravity ? -vel_x : vel_x) : (gravity ? -(vel_x << 1) : (vel_x << 1))
                     if (!miniMode)
                     {
-                        playerVelY_fixed = !gravityFlipped ? -playerVelX_fixed : playerVelX_fixed;
+                        playerVelY_fixed = gravityFlipped ? -playerVelX_fixed : playerVelX_fixed;
                     }
                     else
                     {
-                        playerVelY_fixed = !gravityFlipped ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
+                        playerVelY_fixed = gravityFlipped ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
                     }
                     
                     // If holding X, invert velocity (when holding, go opposite of default direction)

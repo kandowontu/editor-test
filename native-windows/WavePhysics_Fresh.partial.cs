@@ -64,9 +64,9 @@ namespace FamidashEditor
                     if (!wasZeroedByCollisionLastFrame)
                     {
                         if (!miniMode) {
-                            playerVelY_fixed = !gravityFlipped ? -playerVelX_fixed : playerVelX_fixed;
+                            playerVelY_fixed = gravityFlipped ? -playerVelX_fixed : playerVelX_fixed;
                         } else {
-                            playerVelY_fixed = !gravityFlipped ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
+                            playerVelY_fixed = gravityFlipped ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
                         }
                     }
                     
@@ -121,7 +121,7 @@ namespace FamidashEditor
                 
                 // Move path down 8 pixels when mini and gravity is normal
                 bool isMini = (miniMode);
-                bool gravityInverted = (!gravityFlipped);
+                bool gravityInverted = gravityFlipped;
                 if (isMini && !gravityInverted)
                 {
                     playerWorldCenterY_px += 8;
@@ -148,7 +148,7 @@ namespace FamidashEditor
         private void WaveEject_Fresh(int offsetY)
         {
             bool isMini = (miniMode);
-            bool gravityInverted = (!gravityFlipped);
+            bool gravityInverted = gravityFlipped;
             
             // Set up Generic struct for collision detection
             // Wave has special X offsets: +10 when moving UP, +4 when moving DOWN

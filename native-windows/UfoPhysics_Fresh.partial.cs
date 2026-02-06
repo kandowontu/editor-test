@@ -49,7 +49,7 @@ namespace FamidashEditor
             
             // Get base physics values (always from down-gravity index)
             int baseTableIdx = (miniMode ? 4 : 0);
-            bool gravityInverted = (!gravityFlipped);
+            bool gravityInverted = gravityFlipped;
             int gravityMultiplier = gravityInverted ? -1 : 1;
             
             tmpfallspeed = GameModePhysics.UFO_MAX_FALLSPEED(baseTableIdx) * gravityMultiplier;
@@ -86,7 +86,7 @@ namespace FamidashEditor
                 // Consume the press count now that we're using it
                 Interlocked.Exchange(ref keyXPressedCount, 0);
                 int baseJumpIdx = (miniMode ? 4 : 0);
-                bool jumpGravityInverted = (!gravityFlipped);
+                bool jumpGravityInverted = gravityFlipped;
                 int jumpGravityMultiplier = jumpGravityInverted ? -1 : 1;
                 int jumpVel = GameModePhysics.UFO_JUMP_VEL(baseJumpIdx) * jumpGravityMultiplier;
                 playerVelY_fixed = jumpVel; // JUMP

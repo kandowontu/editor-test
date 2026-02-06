@@ -33,6 +33,7 @@ namespace FamidashEditor
         private const byte DASH_GRAVITY_ORB_UPWARDS = 0x5C;
         private const byte DASH_ORB_DOWNWARDS = 0x5D;
         private const byte DASH_GRAVITY_ORB_DOWNWARDS = 0x5E;
+        private const byte WHITE_ORB = 0x7A;
         private const byte BLUE_ORB_MULTI = 0x7B;
         private const byte GREEN_ORB_MULTI = 0x7C;
 
@@ -260,6 +261,7 @@ namespace FamidashEditor
                    spriteType == BLACK_ORB ||
                    spriteType == BLUE_ORB ||
                    spriteType == GREEN_ORB ||
+                   spriteType == WHITE_ORB ||
                    spriteType == BLUE_ORB_MULTI ||
                    spriteType == GREEN_ORB_MULTI;
                    // Spider orbs/pads (0x54-0x57) are handled separately
@@ -326,6 +328,11 @@ namespace FamidashEditor
                     // Constants are already negative, so negate them when gravity is normal
                     if (!gravityInverted)
                         velocityY = -velocityY;
+                    break;
+                    
+                case WHITE_ORB:
+                    // White orb: reset Y velocity to 0
+                    velocityY = 0;
                     break;
                     
                 case GREEN_ORB:
