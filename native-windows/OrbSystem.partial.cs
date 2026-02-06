@@ -302,6 +302,8 @@ namespace FamidashEditor
                     gravityInverted = !gravityInverted;
                     gravityFlipped = gravityInverted;
                     gravityReversed = gravityInverted;
+                    currplayer_gravity = (byte)(gravityInverted ? 0xFF : 0x00);
+                    UpdateEffectiveGravity();
                     UpdatePlayerIconFlip();
                     
                     // Wave and Snake: no velocity change, just reverse gravity
@@ -341,6 +343,8 @@ namespace FamidashEditor
                     gravityInverted = !gravityInverted;
                     gravityFlipped = gravityInverted;
                     gravityReversed = gravityInverted;
+                    currplayer_gravity = (byte)(gravityInverted ? 0xFF : 0x00);
+                    UpdateEffectiveGravity();
                     UpdatePlayerIconFlip();
                     
                     // Use yellow orb row (0) from PadOrbHeights
@@ -549,6 +553,9 @@ namespace FamidashEditor
                 {
                     // Flip gravity (common_dash_orb_routine)
                     gravityFlipped = !gravityFlipped;
+                    gravityReversed = !gravityReversed;
+                    currplayer_gravity = (byte)(gravityReversed ? 0xFF : 0x00);
+                    UpdateEffectiveGravity();
                     AppendSimDebug($"[DASH_ORB] Gravity flipped to {(gravityFlipped ? "UP" : "DOWN")} by orb 0x{spriteType:X2}");
                 }
 
