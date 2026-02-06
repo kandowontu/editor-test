@@ -13,8 +13,8 @@ namespace FamidashEditor
         /// </summary>
         private bool BgCollD_Fresh()
         {
-            Generic_x = playerX_fixed[currplayer] >> 8;
-            Generic_y = playerY_fixed[currplayer] >> 8;
+            Generic_x = playerX_fixed >> 8;
+            Generic_y = playerY_fixed >> 8;
             // Use 8x7 hitbox for mini mode, 15x15 for normal mode
             Generic_width = (currplayer_mini != 0) ? 8 : 15;
             Generic_height = (currplayer_mini != 0) ? 7 : 15;
@@ -41,8 +41,8 @@ namespace FamidashEditor
         /// </summary>
         private bool BgCollU_Fresh()
         {
-            Generic_x = playerX_fixed[currplayer] >> 8;
-            Generic_y = playerY_fixed[currplayer] >> 8;
+            Generic_x = playerX_fixed >> 8;
+            Generic_y = playerY_fixed >> 8;
             // Use 8x7 hitbox for mini mode, 15x15 for normal mode
             Generic_width = (currplayer_mini != 0) ? 8 : 15;
             Generic_height = (currplayer_mini != 0) ? 7 : 15;
@@ -65,3 +65,4 @@ namespace FamidashEditor
         }
     }
 }
+

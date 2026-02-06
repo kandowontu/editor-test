@@ -248,8 +248,8 @@ namespace FamidashEditor
                 {
                     // Add extra velocity for slope jumps (not on 22deg slopes)
                     // MAKE_CUBE_JUMP_HIGHER is typically -0x100 to -0x200
-                    int bonus = currplayer_mini == 0 ? -0x100 : -0xC0;
-                    playerVelY_fixed[currplayer] += bonus;
+                    int bonus = !miniMode ? -0x100 : -0xC0;
+                    playerVelY_fixed += bonus;
                 }
                 make_cube_jump_higher = false;
             }
@@ -505,8 +505,8 @@ namespace FamidashEditor
         /// </summary>
         private bool bg_coll_D_slopes()
         {
-            int playerX_px = playerX_fixed[currplayer] >> 8;
-            int playerY_px = playerY_fixed[currplayer] >> 8;
+            int playerX_px = playerX_fixed >> 8;
+            int playerY_px = playerY_fixed >> 8;
             int cameraX_px = cameraX_fixed >> 8;
             int screenX = playerX_px - cameraX_px;
             
@@ -583,3 +583,5 @@ namespace FamidashEditor
         }
     }
 }
+
+

@@ -27,12 +27,12 @@ namespace FamidashEditor
         {
             try
             {
-                int playerX_px = playerX_fixed[currplayer] >> 8;
-                int playerY_px = playerY_fixed[currplayer] >> 8;
+                int playerX_px = playerX_fixed >> 8;
+                int playerY_px = playerY_fixed >> 8;
                 
                 // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
-                bool isMini = (currplayer_mini != 0);
-                bool gravityInverted = (currplayer_gravity != 0);
+                bool isMini = (miniMode);
+                bool gravityInverted = (!gravityFlipped);
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 
@@ -92,9 +92,8 @@ namespace FamidashEditor
                         
                         // Reverse gravity state
                         gravityInverted = !gravityInverted;
-                        currplayer_gravity = (byte)(gravityInverted ? 1 : 0);
+                        gravityFlipped = gravityInverted;
                         gravityReversed = gravityInverted;
-                        gravityFlipped[currplayer] = gravityInverted;
                         
                         // Update player icon flip on UI thread (this is called from simulation thread)
                         try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
@@ -109,7 +108,7 @@ namespace FamidashEditor
                         // If gravity is now normal: negate to positive (downward in normal gravity)
                         int newVel = gravityInverted ? baseVel : -baseVel;
                         
-                        playerVelY_fixed[currplayer] = newVel;
+                        playerVelY_fixed = newVel;
                     }
                 }
             }
@@ -127,3 +126,5 @@ namespace FamidashEditor
         }
     }
 }
+
+

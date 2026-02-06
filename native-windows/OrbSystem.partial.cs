@@ -53,8 +53,8 @@ namespace FamidashEditor
         /// </summary>
         private void ClearOrbBuffer()
         {
-            orbBufferActive = false;
-            orbHoldConsumedKeyStillDown = false;
+            orbBufferActive[currplayer] = false;
+            orbHoldConsumedKeyStillDown[currplayer] = false;
             keyXHeldStartedOnGround = false;
         }
         
@@ -67,17 +67,17 @@ namespace FamidashEditor
             if (xHeld && isGrounded)
             {
                 keyXHeldStartedOnGround = true;
-                orbHoldSuppressing = true;
+                orbHoldSuppressing[currplayer] = true;
             }
             else if (!xHeld)
             {
                 keyXHeldStartedOnGround = false;
-                orbHoldSuppressing = false;
+                orbHoldSuppressing[currplayer] = false;
             }
             else if (!isGrounded && keyXHeldStartedOnGround)
             {
                 // Still in air from ground jump, suppress orbs
-                orbHoldSuppressing = true;
+                orbHoldSuppressing[currplayer] = true;
             }
         }
 
@@ -170,15 +170,16 @@ namespace FamidashEditor
                 
                 // CRITICAL: Do not activate orbs while dashing (from dash orb)
                 // Dash state prevents all orb activations until dash ends
-                if (dashing[currplayer] != 0) continue;
+                if (dashing != 0) continue;
                 
                 // Check collision with player using same method as pads/portals
                 if (!CheckOrbCollision(idx, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     continue;
                     
-                // Check if already activated (except multi orbs)
+                // Check if already activated (except multi orbs and dual mode)
+                // In dual mode, each player can independently activate the same orb
                 bool isMultiOrb = (spriteType == BLUE_ORB_MULTI || spriteType == GREEN_ORB_MULTI);
-                if (!isMultiOrb && orbActivated.ContainsKey(idx) && orbActivated[idx])
+                if (!isMultiOrb && !dual && orbActivated.ContainsKey(idx) && orbActivated[idx])
                     continue;
                     
                 // Handle activation based on gamemode and input
@@ -188,21 +189,21 @@ namespace FamidashEditor
                 {
                     // Bufferable modes: can hold X before hitting orb
                     // Set buffer when X is first pressed (not from ground)
-                    if (xPressed && !orbHoldConsumedKeyStillDown && !orbHoldSuppressing)
+                    if (xPressed && !orbHoldConsumedKeyStillDown[currplayer] && !orbHoldSuppressing[currplayer])
                     {
                         shouldActivate = true;
-                        orbBufferActive = true;
+                        orbBufferActive[currplayer] = true;
                     }
                     // While X is held and buffer is active, continue activating orbs
-                    else if (xHeld && orbBufferActive && !orbHoldSuppressing)
+                    else if (xHeld && orbBufferActive[currplayer] && !orbHoldSuppressing[currplayer])
                     {
                         shouldActivate = true;
                         // Keep buffer active - will be cleared on activation or release
                     }
                     // If X is held but buffer not active yet, set it
-                    else if (xHeld && !orbBufferActive && !orbHoldSuppressing && !orbHoldConsumedKeyStillDown)
+                    else if (xHeld && !orbBufferActive[currplayer] && !orbHoldSuppressing[currplayer] && !orbHoldConsumedKeyStillDown[currplayer])
                     {
-                        orbBufferActive = true;
+                        orbBufferActive[currplayer] = true;
                         shouldActivate = true;
                     }
                 }
@@ -222,24 +223,24 @@ namespace FamidashEditor
                     // Activate the orb!
                     ActivateOrb(spriteType, gamemode, gravityInverted, mini, ref velocityY);
                     
-                    // Mark as activated
-                    if (!isMultiOrb)
+                    // Mark as activated (but not in dual mode - each player can activate independently)
+                    if (!isMultiOrb && !dual)
                     {
                         orbActivated[idx] = true;
                     }
                     
                     orbActivatedThisFrame = true;
                     activatedOrbType = spriteType;
-                    orbHoldConsumedKeyStillDown = true;
+                    orbHoldConsumedKeyStillDown[currplayer] = true;
                     // Clear buffer on orb activation - require fresh press/hold for next orb
-                    orbBufferActive = false;
+                    orbBufferActive[currplayer] = false;
                     
                     // Only one orb per frame
                     return (true, activatedOrbType);
                 }
                 else
                 {
-                    try { AppendSimDebug($"[ORB] Orb NOT activated (collision but no input): xPressed={xPressed}, xHeld={xHeld}, canBuffer={canBuffer}, orbBufferActive={orbBufferActive}, orbHoldSuppressing={orbHoldSuppressing}, orbHoldConsumedKeyStillDown={orbHoldConsumedKeyStillDown}, alreadyActivated={orbActivated[idx]}"); } catch { }
+                    try { AppendSimDebug($"[ORB] Orb NOT activated (collision but no input): xPressed={xPressed}, xHeld={xHeld}, canBuffer={canBuffer}, orbBufferActive[currplayer] ={orbBufferActive}, orbHoldSuppressing[currplayer] ={orbHoldSuppressing}, orbHoldConsumedKeyStillDown[currplayer] ={orbHoldConsumedKeyStillDown}, alreadyActivated={orbActivated[idx]}"); } catch { }
                 }
             }
             
@@ -297,9 +298,8 @@ namespace FamidashEditor
                 case SPIDER_PAD_DOWN:
                     // Blue orb and spider orbs/pads: reverse gravity
                     gravityInverted = !gravityInverted;
-                    currplayer_gravity = (byte)(gravityInverted ? 1 : 0);
+                    gravityFlipped = gravityInverted;
                     gravityReversed = gravityInverted;
-                    gravityFlipped[currplayer] = gravityInverted;
                     UpdatePlayerIconFlip();
                     
                     // Wave and Snake: no velocity change, just reverse gravity
@@ -332,9 +332,8 @@ namespace FamidashEditor
                 case GREEN_ORB_MULTI:
                     // Green orb: reverse gravity then apply yellow orb velocity
                     gravityInverted = !gravityInverted;
-                    currplayer_gravity = (byte)(gravityInverted ? 1 : 0);
+                    gravityFlipped = gravityInverted;
                     gravityReversed = gravityInverted;
-                    gravityFlipped[currplayer] = gravityInverted;
                     UpdatePlayerIconFlip();
                     
                     // Use yellow orb row (0) from PadOrbHeights
@@ -403,9 +402,9 @@ namespace FamidashEditor
         private void ResetOrbSystem()
         {
             orbActivated.Clear();
-            orbBufferActive = false;
-            orbHoldConsumedKeyStillDown = false;
-            orbHoldSuppressing = false;
+            orbBufferActive[currplayer] = false;
+            orbHoldConsumedKeyStillDown[currplayer] = false;
+            orbHoldSuppressing[currplayer] = false;
             
             // Debug: Log all orbs in the level
             try
@@ -444,15 +443,15 @@ namespace FamidashEditor
         {
             if (sprites == null || mapWidth <= 0 || mapHeight <= 0) return;
 
-            int playerX_px = playerX_fixed[currplayer] >> 8;
-            int playerY_px = playerY_fixed[currplayer] >> 8;
+            int playerX_px = playerX_fixed >> 8;
+            int playerY_px = playerY_fixed >> 8;
             
             // Use actual collision hitbox size, not visual size
-            int hitboxW = miniMode[currplayer] ? 8 : 15;
-            int hitboxH = miniMode[currplayer] ? 7 : 15;
+            int hitboxW = miniMode ? 8 : 15;
+            int hitboxH = miniMode ? 7 : 15;
             
             // Apply mini mode offset: bottom-left for normal, top-left for inverted
-            if (miniMode[currplayer] && !gravityFlipped[currplayer])
+            if (miniMode && !gravityFlipped)
             {
                 playerY_px += 9;
             }
@@ -481,7 +480,8 @@ namespace FamidashEditor
                     continue;
 
                 // Check if already activated (prevent reactivation)
-                if (orbActivated.ContainsKey(idx) && orbActivated[idx])
+                // In dual mode, each player can independently activate the same orb
+                if (!dual && orbActivated.ContainsKey(idx) && orbActivated[idx])
                     continue;
 
                 // Check for press/hold/buffer like regular orbs
@@ -494,18 +494,18 @@ namespace FamidashEditor
                 if (canBuffer)
                 {
                     // Bufferable modes: can hold X before hitting orb
-                    if (xPressed && !orbHoldConsumedKeyStillDown && !orbHoldSuppressing)
+                    if (xPressed && !orbHoldConsumedKeyStillDown[currplayer] && !orbHoldSuppressing[currplayer])
                     {
                         shouldActivate = true;
-                        orbBufferActive = true;
+                        orbBufferActive[currplayer] = true;
                     }
-                    else if (xHeld && orbBufferActive && !orbHoldSuppressing)
+                    else if (xHeld && orbBufferActive[currplayer] && !orbHoldSuppressing[currplayer])
                     {
                         shouldActivate = true;
                     }
-                    else if (xHeld && !orbBufferActive && !orbHoldSuppressing && !orbHoldConsumedKeyStillDown)
+                    else if (xHeld && !orbBufferActive[currplayer] && !orbHoldSuppressing[currplayer] && !orbHoldConsumedKeyStillDown[currplayer])
                     {
-                        orbBufferActive = true;
+                        orbBufferActive[currplayer] = true;
                         shouldActivate = true;
                     }
                 }
@@ -520,9 +520,12 @@ namespace FamidashEditor
                 
                 if (!shouldActivate) continue;
                 
-                // Mark as activated
-                orbActivated[idx] = true;
-                orbHoldConsumedKeyStillDown = true;
+                // Mark as activated (but not in dual mode - each player can activate independently)
+                if (!dual)
+                {
+                    orbActivated[idx] = true;
+                }
+                orbHoldConsumedKeyStillDown[currplayer] = true;
                 
                 // Consume the X press if it was used
                 if (xPressed)
@@ -535,11 +538,11 @@ namespace FamidashEditor
                                     spriteType == DASH_GRAVITY_ORB_UPWARDS ||
                                     spriteType == DASH_GRAVITY_ORB_DOWNWARDS;
 
-                if (isGravityDash && dashing[currplayer] == 0)
+                if (isGravityDash && dashing == 0)
                 {
                     // Flip gravity (common_dash_orb_routine)
-                    gravityFlipped[currplayer] = !gravityFlipped[currplayer];
-                    AppendSimDebug($"[DASH_ORB] Gravity flipped to {(gravityFlipped[currplayer] ? "UP" : "DOWN")} by orb 0x{spriteType:X2}");
+                    gravityFlipped = !gravityFlipped;
+                    AppendSimDebug($"[DASH_ORB] Gravity flipped to {(gravityFlipped ? "UP" : "DOWN")} by orb 0x{spriteType:X2}");
                 }
 
                 // Set dash state and velocity based on orb type
@@ -547,35 +550,35 @@ namespace FamidashEditor
                 {
                     // Horizontal dash (right)
                     velocityY = 0;
-                    dashing[currplayer] = 1;
+                    dashing = 1;
                     AppendSimDebug($"[DASH_ORB] Horizontal dash activated (0x{spriteType:X2})");
                 }
                 else if (spriteType == DASH_ORB_45DEG_UP || spriteType == DASH_GRAVITY_ORB_45DEG_UP)
                 {
                     // 45 degree upward dash
                     velocityY = -velocityX;  // currplayer_vel_y = -currplayer_vel_x
-                    dashing[currplayer] = 2;
+                    dashing = 2;
                     AppendSimDebug($"[DASH_ORB] 45deg upward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_45DEG_DOWN || spriteType == DASH_GRAVITY_ORB_45DEG_DOWN)
                 {
                     // 45 degree downward dash
                     velocityY = velocityX;  // currplayer_vel_y = currplayer_vel_x
-                    dashing[currplayer] = 3;
+                    dashing = 3;
                     AppendSimDebug($"[DASH_ORB] 45deg downward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_UPWARDS || spriteType == DASH_GRAVITY_ORB_UPWARDS)
                 {
                     // Upward dash (vertical)
                     velocityY = velocityX * 4;  // currplayer_vel_y = currplayer_vel_x * 4
-                    dashing[currplayer] = 4;
+                    dashing = 4;
                     AppendSimDebug($"[DASH_ORB] Upward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_DOWNWARDS || spriteType == DASH_GRAVITY_ORB_DOWNWARDS)
                 {
                     // Downward dash (vertical)
                     velocityY = -velocityX * 4;  // currplayer_vel_y = -currplayer_vel_x * 4
-                    dashing[currplayer] = 5;
+                    dashing = 5;
                     AppendSimDebug($"[DASH_ORB] Downward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
 
@@ -585,3 +588,6 @@ namespace FamidashEditor
         }
     }
 }
+
+
+

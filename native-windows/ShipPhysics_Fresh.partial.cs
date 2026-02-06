@@ -15,8 +15,8 @@ namespace FamidashEditor
                 int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                 bool pressJump_orb = pressCount_orb > 0;
                 bool gravityInverted_orb = (currplayer_gravity != 0);
-                int playerX_px_orb = playerX_fixed[currplayer] >> 8;
-                int playerY_px_orb = playerY_fixed[currplayer] >> 8;
+                int playerX_px_orb = playerX_fixed >> 8;
+                int playerY_px_orb = playerY_fixed >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
                 int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
                 
@@ -28,14 +28,14 @@ namespace FamidashEditor
                 
                 int scrollX_px_orb = 0;
                 
-                int tempVelY = playerVelY_fixed[currplayer];
+                int tempVelY = playerVelY_fixed;
                 var (orbActivated, _) = UpdateOrbSystem(1, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
                                                    scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
                                                    (currplayer_mini != 0), ref tempVelY);
                 if (orbActivated)
                 {
-                    playerVelY_fixed[currplayer] = tempVelY;
-                    AppendSimDebug($"[SHIP] Orb activated! New velY={playerVelY_fixed[currplayer]}");
+                    playerVelY_fixed = tempVelY;
+                    AppendSimDebug($"[SHIP] Orb activated! New velY={playerVelY_fixed}");
                     
                     // Consume the X press if it was used for orb
                     if (pressJump_orb)
@@ -53,7 +53,7 @@ namespace FamidashEditor
             int gravityMultiplier = gravityInverted ? -1 : 1;
             
             // is_player_falling()
-            bool tmp1 = currplayer_gravity != 0 ? (playerVelY_fixed[currplayer] < 0) : (playerVelY_fixed[currplayer] > 0);
+            bool tmp1 = currplayer_gravity != 0 ? (playerVelY_fixed < 0) : (playerVelY_fixed > 0);
             
             // tmp2 = input (holding A or UP) - use same system as cube
             bool tmp2 = IsXDownAsync() || keyXHeld;
@@ -86,12 +86,12 @@ namespace FamidashEditor
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-                int collisionX = (playerX_fixed[currplayer] >> 8);
-                int testY = (playerY_fixed[currplayer] >> 8) + hitboxOffsetY - 1;
+                int collisionX = (playerX_fixed >> 8);
+                int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
                 var (collided, _) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
                 
-                if (collided && playerVelY_fixed[currplayer] < 0) {
-                    playerVelY_fixed[currplayer] = 0;
+                if (collided && playerVelY_fixed < 0) {
+                    playerVelY_fixed = 0;
                     AppendSimDebug($"[SHIP] Ceiling grounded - zeroed velocity");
                 }
             }
@@ -102,12 +102,12 @@ namespace FamidashEditor
             
             if (gravityMultiplier > 0) {
                 // Normal gravity: up is negative, down is positive
-                if (playerVelY_fixed[currplayer] < maxUpSpeed) playerVelY_fixed[currplayer] = maxUpSpeed;
-                if (playerVelY_fixed[currplayer] > maxDownSpeed) playerVelY_fixed[currplayer] = maxDownSpeed;
+                if (playerVelY_fixed < maxUpSpeed) playerVelY_fixed = maxUpSpeed;
+                if (playerVelY_fixed > maxDownSpeed) playerVelY_fixed = maxDownSpeed;
             } else {
                 // Inverted gravity: up is positive, down is negative
-                if (playerVelY_fixed[currplayer] > maxUpSpeed) playerVelY_fixed[currplayer] = maxUpSpeed;
-                if (playerVelY_fixed[currplayer] < maxDownSpeed) playerVelY_fixed[currplayer] = maxDownSpeed;
+                if (playerVelY_fixed > maxUpSpeed) playerVelY_fixed = maxUpSpeed;
+                if (playerVelY_fixed < maxDownSpeed) playerVelY_fixed = maxDownSpeed;
             }
             
             UfoShipEject_Fresh();
@@ -122,26 +122,26 @@ namespace FamidashEditor
             int hitboxW = isMini ? 8 : 15;
             int hitboxH = isMini ? 7 : 15;
             int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-            int collisionX = (playerX_fixed[currplayer] >> 8);
-            int collisionY = (playerY_fixed[currplayer] >> 8) + hitboxOffsetY;
+            int collisionX = (playerX_fixed >> 8);
+            int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
             
             var (collidedUp, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-            if (collidedUp && playerVelY_fixed[currplayer] <= 0) {
-                playerY_fixed[currplayer] = ((collisionBottomY - hitboxOffsetY) << 8);
-                playerVelY_fixed[currplayer] = 0;
+            if (collidedUp && playerVelY_fixed <= 0) {
+                playerY_fixed = ((collisionBottomY - hitboxOffsetY) << 8);
+                playerVelY_fixed = 0;
             }
             
             var (collidedDown, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
-            if (collidedDown && playerVelY_fixed[currplayer] >= 0) {
-                playerY_fixed[currplayer] = ((collisionTopY - hitboxH - hitboxOffsetY - 1) << 8);
-                playerVelY_fixed[currplayer] = 0;
+            if (collidedDown && playerVelY_fixed >= 0) {
+                playerY_fixed = ((collisionTopY - hitboxH - hitboxOffsetY - 1) << 8);
+                playerVelY_fixed = 0;
             }
             
             // Record position for trail
             try
             {
-                int playerWorldCenterX_px = (playerX_fixed[currplayer] >> 8) + (playerVisualWidth / 2);
-                int playerY_px_trail = playerY_fixed[currplayer] >> 8;
+                int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                int playerY_px_trail = playerY_fixed >> 8;
                 // Apply mini mode offset for trail to match visual position
                 bool isMini_trail = (currplayer_mini != 0);
                 bool gravityInverted_trail = (currplayer_gravity != 0);
@@ -150,10 +150,16 @@ namespace FamidashEditor
                     playerY_px_trail += 4;  // Adjust for visual position offset
                 }
                 int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
-                recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                
+                // Record to appropriate path list based on which player is active
+                if (currplayer == 0)
+                    recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                else if (dual)
+                    recordedPlayer2Path.Add((playerWorldCenterX_px, playerWorldCenterY_px));
             }
             catch { }
         }
     }
 }
+
 

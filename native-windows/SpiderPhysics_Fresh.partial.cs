@@ -16,34 +16,34 @@ namespace FamidashEditor
                 bool holdJump_orb = IsXDownAsync() || keyXHeld;
                 int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                 bool pressJump_orb = pressCount_orb > 0;
-                bool gravityInverted_orb = (currplayer_gravity != 0);
-                int playerX_px_orb = playerX_fixed[currplayer] >> 8;
-                int playerY_px_orb = playerY_fixed[currplayer] >> 8;
-                int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
+                bool gravityInverted_orb = (!gravityFlipped);
+                int playerX_px_orb = playerX_fixed >> 8;
+                int playerY_px_orb = playerY_fixed >> 8;
+                int hitboxW_orb = (miniMode) ? 8 : 15;
+                int hitboxH_orb = (miniMode) ? 7 : 15;  // Correct: 8x7 for mini
                 
                 // Adjust Y position for mini mode collision box (bottom-left alignment)
-                if (currplayer_mini != 0 && !gravityInverted_orb)
+                if (miniMode && !gravityInverted_orb)
                 {
                     playerY_px_orb += 9;
                 }
                 
                 int scrollX_px_orb = 0;
                 
-                int tempVelY = playerVelY_fixed[currplayer];
+                int tempVelY = playerVelY_fixed;
                 var (orbActivated, orbType) = UpdateOrbSystem(5, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
                                                    scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
-                                                   (currplayer_mini != 0), ref tempVelY);
+                                                   (miniMode), ref tempVelY);
                 if (orbActivated)
                 {
-                    playerVelY_fixed[currplayer] = tempVelY;
-                    AppendSimDebug($"[SPIDER] Orb activated! Type=0x{orbType:X2}, New velY={playerVelY_fixed[currplayer]}");
+                    playerVelY_fixed = tempVelY;
+                    AppendSimDebug($"[SPIDER] Orb activated! Type=0x{orbType:X2}, New velY={playerVelY_fixed}");
                     
-                    // Set blackOrbed[currplayer] flag if this was a black orb (0x44)
+                    // Set blackOrbed flag if this was a black orb (0x44)
                     if (orbType == 0x44)
                     {
-                        blackOrbed[currplayer] = true;
-                        AppendSimDebug($"[SPIDER] BLACK ORB activated - blackOrbed[currplayer] set to true");
+                        blackOrbed = true;
+                        AppendSimDebug($"[SPIDER] BLACK ORB activated - blackOrbed set to true");
                     }
                     
                     if (pressJump_orb)
@@ -55,8 +55,8 @@ namespace FamidashEditor
             }
             
             // Get base physics values
-            int baseTableIdx = (currplayer_mini != 0 ? 4 : 0);
-            bool gravityInverted = (currplayer_gravity != 0);
+            int baseTableIdx = (miniMode ? 4 : 0);
+            bool gravityInverted = (!gravityFlipped);
             int gravityMultiplier = gravityInverted ? -1 : 1;
             
             tmpfallspeed = GameModePhysics.SPIDER_MAX_FALLSPEED(baseTableIdx) * gravityMultiplier;
@@ -67,33 +67,32 @@ namespace FamidashEditor
             
             // Spider eject - check collision and zero velocity if grounded
             // Offset collision check down 1 pixel (normal) or up 2 pixels (inverted)
-            int offsetY = (playerY_fixed[currplayer] >> 8) + (gravityInverted ? -2 : 1);
+            int offsetY = (playerY_fixed >> 8) + (gravityInverted ? -2 : 1);
             SpiderEject_Fresh(offsetY);
             
             // Update the global onGround flag based on whether we're grounded
             // If velocity is 0 after eject, we hit something and are grounded
-            onGround = (playerVelY_fixed[currplayer] == 0);
-            AppendSimDebug($"[SPIDER] After eject: onGround={onGround}, velY={playerVelY_fixed[currplayer]}");
+            onGround = (playerVelY_fixed == 0);
+            AppendSimDebug($"[SPIDER] After eject: onGround={onGround}, velY={playerVelY_fixed}");
             
             // Input handling
             bool holdingJump = IsXDownAsync() || keyXHeld;
             int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
             bool pressedJump = pressCount > 0;
             
-            // Spider can only teleport when velocity is 0 (grounded) and not orbed[currplayer]
-            bool canTeleport = (playerVelY_fixed[currplayer] == 0) && !orbed[currplayer];
+            // Spider can only teleport when velocity is 0 (grounded) and not orbed
+            bool canTeleport = (playerVelY_fixed == 0) && !orbed;
             
-            if (currplayer_gravity == 0)
+            if (!gravityFlipped)
             {
                 // Normal gravity - on floor, can teleport to ceiling
-                if ((pressedJump || (holdingJump && blackOrbed[currplayer])) && canTeleport)
+                if ((pressedJump || (holdingJump && blackOrbed)) && canTeleport)
                 {
-                    AppendSimDebug($"[SPIDER] TELEPORTING TO CEILING! Start Y={playerY_fixed[currplayer] >> 8}");
+                    AppendSimDebug($"[SPIDER] TELEPORTING TO CEILING! Start Y={playerY_fixed >> 8}");
                     
                     // Flip gravity and table index
-                    currplayer_gravity = 0xFF; // GRAVITY_UP
+                    gravityFlipped = true; // GRAVITY_UP
                     gravityReversed = true;
-                    gravityFlipped[currplayer] = true;
                     UpdateCurrplayerTableIdx_Fresh();
                     
                     // Scan upward for ceiling
@@ -101,39 +100,38 @@ namespace FamidashEditor
                     
                     // Apply eject to position correctly (matching famidash: scan then eject)
                     int groundRowsToReserve_up = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                    int hitboxH_up = (currplayer_mini != 0) ? 8 : 15;
-                    int hitboxW_up = (currplayer_mini != 0) ? 8 : 15;
-                    int hitboxOffsetY_up = (currplayer_mini != 0) ? 8 : 0;  // Was normal gravity before flip
-                    int playerX_up = playerX_fixed[currplayer] >> 8;
-                    int playerY_up = playerY_fixed[currplayer] >> 8;
+                    int hitboxH_up = (miniMode) ? 8 : 15;
+                    int hitboxW_up = (miniMode) ? 8 : 15;
+                    int hitboxOffsetY_up = (miniMode) ? 8 : 0;  // Was normal gravity before flip
+                    int playerX_up = playerX_fixed >> 8;
+                    int playerY_up = playerY_fixed >> 8;
                     var (collided_up, ejectAmount_up) = BgCollU_Spider(playerX_up, playerY_up + hitboxOffsetY_up, hitboxW_up, hitboxH_up, groundRowsToReserve_up);
                     if (collided_up) {
-                        playerY_fixed[currplayer] = ((playerY_up - ejectAmount_up) << 8);
+                        playerY_fixed = ((playerY_up - ejectAmount_up) << 8);
                     }
                     
-                    playerVelY_fixed[currplayer] = 0;
+                    playerVelY_fixed = 0;
                     try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
                     
-                    AppendSimDebug($"[SPIDER] Teleported to ceiling Y={playerY_fixed[currplayer] >> 8}");
-                    blackOrbed[currplayer] = false;
+                    AppendSimDebug($"[SPIDER] Teleported to ceiling Y={playerY_fixed >> 8}");
+                    blackOrbed = false;
                 }
                 else if (!holdingJump) 
                 {
-                    blackOrbed[currplayer] = false;
-                    orbed[currplayer] = false;
+                    blackOrbed = false;
+                    orbed = false;
                 }
             }
             else
             {
                 // Inverted gravity - on ceiling, can teleport to floor
-                if ((pressedJump || (holdingJump && blackOrbed[currplayer])) && canTeleport)
+                if ((pressedJump || (holdingJump && blackOrbed)) && canTeleport)
                 {
-                    AppendSimDebug($"[SPIDER] TELEPORTING TO FLOOR! Start Y={playerY_fixed[currplayer] >> 8}");
+                    AppendSimDebug($"[SPIDER] TELEPORTING TO FLOOR! Start Y={playerY_fixed >> 8}");
                     
                     // Flip gravity and table index
-                    currplayer_gravity = 0; // GRAVITY_DOWN
+                    gravityFlipped = false; // GRAVITY_DOWN
                     gravityReversed = false;
-                    gravityFlipped[currplayer] = false;
                     UpdateCurrplayerTableIdx_Fresh();
                     
                     // Scan downward for floor
@@ -141,29 +139,51 @@ namespace FamidashEditor
                     
                     // Apply eject to position correctly (matching famidash: scan then eject)
                     int groundRowsToReserve_down = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                    bool isMini_down = (currplayer_mini != 0);
+                    bool isMini_down = (miniMode);
                     int hitboxW_down = isMini_down ? 8 : 15;
                     int hitboxH_down = isMini_down ? 7 : 15;
                     int hitboxOffsetY_down = isMini_down ? ((0x10 - hitboxH_down) >> 1) : 0;
-                    int playerX_down = playerX_fixed[currplayer] >> 8;
-                    int playerY_down = playerY_fixed[currplayer] >> 8;
+                    int playerX_down = playerX_fixed >> 8;
+                    int playerY_down = playerY_fixed >> 8;
                     var (collided_down, ejectAmount_down) = BgCollD_Spider(playerX_down, playerY_down + hitboxOffsetY_down, hitboxW_down, hitboxH_down, groundRowsToReserve_down);
                     if (collided_down) {
-                        playerY_fixed[currplayer] = ((playerY_down - ejectAmount_down) << 8);
+                        playerY_fixed = ((playerY_down - ejectAmount_down) << 8);
                     }
                     
-                    playerVelY_fixed[currplayer] = 0;
+                    playerVelY_fixed = 0;
                     try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
                     
-                    AppendSimDebug($"[SPIDER] Teleported to floor Y={playerY_fixed[currplayer] >> 8}");
-                    blackOrbed[currplayer] = false;
+                    AppendSimDebug($"[SPIDER] Teleported to floor Y={playerY_fixed >> 8}");
+                    blackOrbed = false;
                 }
                 else if (!holdingJump)
                 {
-                    blackOrbed[currplayer] = false;
-                    orbed[currplayer] = false;
+                    blackOrbed = false;
+                    orbed = false;
                 }
             }
+            
+            // Record position for trail
+            try
+            {
+                int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                int playerY_px_trail = playerY_fixed >> 8;
+                // Apply mini mode offset for trail to match visual position
+                bool isMini_trail = (currplayer_mini != 0);
+                bool gravityInverted_trail = (currplayer_gravity != 0);
+                if (isMini_trail && !gravityInverted_trail)
+                {
+                    playerY_px_trail += 4;  // Adjust for visual position offset
+                }
+                int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
+                
+                // Record to appropriate path list based on which player is active
+                if (currplayer == 0)
+                    recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                else if (dual)
+                    recordedPlayer2Path.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+            }
+            catch { }
         }
         
         /// <summary>
@@ -173,26 +193,26 @@ namespace FamidashEditor
         /// </summary>
         private void SpiderEject_Fresh(int offsetY)
         {
-            bool isMini = (currplayer_mini != 0);
+            bool isMini = (miniMode);
             int hitboxW = isMini ? 8 : 15;
             int hitboxH = isMini ? 7 : 15;
             int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-            int collisionX = (playerX_fixed[currplayer] >> 8);
+            int collisionX = (playerX_fixed >> 8);
             int collisionY = offsetY + hitboxOffsetY;
             
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             
-            if (currplayer_gravity == 0)
+            if (!gravityFlipped)
             {
                 // Normal gravity - check floor collision
                 var (collided, ejectAmount) = BgCollD_Spider(collisionX, collisionY, hitboxW, hitboxH, groundRowsToReserve);
                 if (collided)
                 {
                     // Eject upward from floor
-                    int currentY_px = playerY_fixed[currplayer] >> 8;
+                    int currentY_px = playerY_fixed >> 8;
                     int newY_px = currentY_px - ejectAmount;
-                    playerY_fixed[currplayer] = newY_px << 8;
-                    playerVelY_fixed[currplayer] = 0;
+                    playerY_fixed = newY_px << 8;
+                    playerVelY_fixed = 0;
                     wasZeroedByCollisionLastFrame = true;  // Signal gravity not to re-apply next frame
                     AppendSimDebug($"[SPIDER_EJECT] Floor collision: eject={ejectAmount}, Y {currentY_px} -> {newY_px}");
                 }
@@ -209,10 +229,10 @@ namespace FamidashEditor
                 if (collided)
                 {
                     // Eject downward from ceiling - use minimal adjustment
-                    int currentY_px = playerY_fixed[currplayer] >> 8;
+                    int currentY_px = playerY_fixed >> 8;
                     int newY_px = currentY_px + ejectAmount;
-                    playerY_fixed[currplayer] = newY_px << 8;
-                    playerVelY_fixed[currplayer] = 0;
+                    playerY_fixed = newY_px << 8;
+                    playerVelY_fixed = 0;
                     wasZeroedByCollisionLastFrame = true;  // Signal gravity not to re-apply next frame
                     AppendSimDebug($"[SPIDER_EJECT] Ceiling collision: eject={ejectAmount}, Y {currentY_px} -> {newY_px}");
                 }
@@ -230,13 +250,13 @@ namespace FamidashEditor
         /// </summary>
         private void SpiderUpWait_Fresh()
         {
-            int hitboxW = (currplayer_mini != 0) ? 8 : 15;
-            int hitboxH = (currplayer_mini != 0) ? 8 : 15;
-            int hitboxOffsetY = (currplayer_mini != 0) ? 0 : 0; // Spider doesn't use mini offset during scan
-            int playerX_px = playerX_fixed[currplayer] >> 8;
+            int hitboxW = (miniMode) ? 8 : 15;
+            int hitboxH = (miniMode) ? 8 : 15;
+            int hitboxOffsetY = (miniMode) ? 0 : 0; // Spider doesn't use mini offset during scan
+            int playerX_px = playerX_fixed >> 8;
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             
-            int scanY_px = playerY_fixed[currplayer] >> 8;
+            int scanY_px = playerY_fixed >> 8;
             int maxIterations = 200; // Safety limit
             int iteration = 0;
             
@@ -244,7 +264,7 @@ namespace FamidashEditor
             {
                 // Move up 8 pixels
                 scanY_px -= 8;
-                playerY_fixed[currplayer] = scanY_px << 8;
+                playerY_fixed = scanY_px << 8;
                 
                 // Process camera scroll (matching famidash's process_y_scroll)
                 ProcessCameraScrollDuringSpiderScan();
@@ -253,7 +273,7 @@ namespace FamidashEditor
                 if (scanY_px <= -(groundRowsToReserve * TILE))
                 {
                     AppendSimDebug($"[SPIDER_UP] Hit top boundary at Y={scanY_px}");
-                    playerY_fixed[currplayer] = 0;
+                    playerY_fixed = 0;
                     break;
                 }
                 
@@ -264,7 +284,7 @@ namespace FamidashEditor
                     // Use eject amount to position precisely at collision surface
                     scanY_px += eject;
                     AppendSimDebug($"[SPIDER_UP] Found ceiling, eject={eject}, final scanY={scanY_px}");
-                    playerY_fixed[currplayer] = scanY_px << 8;
+                    playerY_fixed = scanY_px << 8;
                     break;
                 }
                 
@@ -274,7 +294,7 @@ namespace FamidashEditor
             if (iteration >= maxIterations)
             {
                 AppendSimDebug($"[SPIDER_UP] Max iterations reached, stopping at Y={scanY_px}");
-                playerY_fixed[currplayer] = scanY_px << 8;
+                playerY_fixed = scanY_px << 8;
             }
         }
         
@@ -284,14 +304,14 @@ namespace FamidashEditor
         /// </summary>
         private void SpiderDownWait_Fresh()
         {
-            bool isMini = (currplayer_mini != 0);
+            bool isMini = (miniMode);
             int hitboxW = isMini ? 8 : 15;
             int hitboxH = isMini ? 7 : 15;
             int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-            int playerX_px = playerX_fixed[currplayer] >> 8;
+            int playerX_px = playerX_fixed >> 8;
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             
-            int scanY_px = playerY_fixed[currplayer] >> 8;
+            int scanY_px = playerY_fixed >> 8;
             int maxY_px = (mapHeight - groundRowsToReserve) * TILE - hitboxH;
             int maxIterations = 200; // Safety limit
             int iteration = 0;
@@ -300,7 +320,7 @@ namespace FamidashEditor
             {
                 // Move down 8 pixels
                 scanY_px += 8;
-                playerY_fixed[currplayer] = scanY_px << 8;
+                playerY_fixed = scanY_px << 8;
                 
                 // Process camera scroll (matching famidash's process_y_scroll)
                 ProcessCameraScrollDuringSpiderScan();
@@ -309,7 +329,7 @@ namespace FamidashEditor
                 if (scanY_px >= maxY_px)
                 {
                     AppendSimDebug($"[SPIDER_DOWN] Hit bottom boundary at Y={scanY_px}");
-                    playerY_fixed[currplayer] = maxY_px << 8;
+                    playerY_fixed = maxY_px << 8;
                     break;
                 }
                 
@@ -320,7 +340,7 @@ namespace FamidashEditor
                     // Use eject amount to position precisely at collision surface
                     scanY_px -= eject;
                     AppendSimDebug($"[SPIDER_DOWN] Found floor, eject={eject}, final scanY={scanY_px}");
-                    playerY_fixed[currplayer] = scanY_px << 8;
+                    playerY_fixed = scanY_px << 8;
                     break;
                 }
                 
@@ -330,7 +350,7 @@ namespace FamidashEditor
             if (iteration >= maxIterations)
             {
                 AppendSimDebug($"[SPIDER_DOWN] Max iterations reached, stopping at Y={scanY_px}");
-                playerY_fixed[currplayer] = scanY_px << 8;
+                playerY_fixed = scanY_px << 8;
             }
         }
         
@@ -523,7 +543,7 @@ namespace FamidashEditor
             {
                 if (physicsEnabled && jumpedOnce)
                 {
-                    int playerCenterScreenY = (playerY_fixed[currplayer] >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                    int playerCenterScreenY = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
                     int topThreshold = 5 * TILE;
                     int bottomThreshold = NES_H * TILE - 5 * TILE;
 
@@ -546,7 +566,31 @@ namespace FamidashEditor
                 }
             }
             catch { }
+            
+            // Record position for trail
+            try
+            {
+                int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                int playerY_px_trail = playerY_fixed >> 8;
+                // Apply mini mode offset for trail to match visual position
+                bool isMini_trail = (currplayer_mini != 0);
+                bool gravityInverted_trail = (currplayer_gravity != 0);
+                if (isMini_trail && !gravityInverted_trail)
+                {
+                    playerY_px_trail += 4;  // Adjust for visual position offset
+                }
+                int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
+                
+                // Record to appropriate path list based on which player is active
+                if (currplayer == 0)
+                    recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                else if (dual)
+                    recordedPlayer2Path.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+            }
+            catch { }
         }
     }
 }
+
+
 

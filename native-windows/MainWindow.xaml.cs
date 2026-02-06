@@ -2378,7 +2378,9 @@ namespace FamidashEditor
     private int gridRenderShiftYPx = 0;
     // Player-path overlay state (populated by simulator on close)
     private System.Collections.Generic.List<(int x, int y)> playerPathPoints = new System.Collections.Generic.List<(int x, int y)>();
+    private System.Collections.Generic.List<(int x, int y)> playerPath2Points = new System.Collections.Generic.List<(int x, int y)>();  // Player 2 path for dual mode
     private Shapes.Polyline? playerPathPolyline = null;
+    private Shapes.Polyline? playerPath2Polyline = null;  // Player 2 path line for dual mode
     // Optional death marker (red X) placed by simulator when a death occurs
     private Shapes.Line? playerDeathMarkerA = null;
     private Shapes.Line? playerDeathMarkerB = null;
@@ -12289,11 +12291,16 @@ namespace FamidashEditor
             try
             {
                 if (CanvasHost == null) return;
-                // Remove previous polyline
+                // Remove previous polylines
                 if (playerPathPolyline != null)
                 {
                     try { CanvasHost.Children.Remove(playerPathPolyline); } catch { }
                     playerPathPolyline = null;
+                }
+                if (playerPath2Polyline != null)
+                {
+                    try { CanvasHost.Children.Remove(playerPath2Polyline); } catch { }
+                    playerPath2Polyline = null;
                 }
 
                 if (playerPathPoints == null || playerPathPoints.Count == 0) return;
@@ -12301,6 +12308,7 @@ namespace FamidashEditor
                 double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
                 double pad = mapViewportPadding;
 
+                // Draw Player 1 path (light green)
                 var poly = new Shapes.Polyline()
                 {
                     Stroke = new SolidColorBrush(Color.FromArgb(0xE0, 0x90, 0xEE, 0x90)),
@@ -12320,6 +12328,30 @@ namespace FamidashEditor
                 // Put overlay above normal canvas content
                 Canvas.SetZIndex(poly, 2000);
                 CanvasHost.Children.Add(poly);
+
+                // Draw Player 2 path if in dual mode (cyan/light blue)
+                if (playerPath2Points != null && playerPath2Points.Count > 0)
+                {
+                    var poly2 = new Shapes.Polyline()
+                    {
+                        Stroke = new SolidColorBrush(Color.FromArgb(0xE0, 0x87, 0xCE, 0xEB)),  // Sky blue
+                        StrokeThickness = Math.Max(1.0, 2.0 * scale),
+                        IsHitTestVisible = false
+                    };
+
+                    foreach (var p in playerPath2Points)
+                    {
+                        double dx = pad + p.x * scale;
+                        // Shift path down 3 tiles so it lines up with player visuals/ground
+                        double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                        poly2.Points.Add(new System.Windows.Point(dx, dy));
+                    }
+
+                    playerPath2Polyline = poly2;
+                    // Put overlay above normal canvas content
+                    Canvas.SetZIndex(poly2, 2000);
+                    CanvasHost.Children.Add(poly2);
+                }
             }
             catch { }
         }
@@ -12334,6 +12366,25 @@ namespace FamidashEditor
                     try
                     {
                         playerPathPoints = pts?.ToList() ?? new System.Collections.Generic.List<(int x, int y)>();
+                        playerPath2Points = new System.Collections.Generic.List<(int x, int y)>();  // Clear player 2 path
+                        UpdatePlayerPathOverlay();
+                    }
+                    catch { }
+                }));
+            }
+            catch { }
+        }
+
+        public void ShowPlayerPathsFromSimulator(System.Collections.Generic.IEnumerable<(int x, int y)> path1, System.Collections.Generic.IEnumerable<(int x, int y)> path2, bool dualMode)
+        {
+            try
+            {
+                Dispatcher?.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        playerPathPoints = path1?.ToList() ?? new System.Collections.Generic.List<(int x, int y)>();
+                        playerPath2Points = (path2?.ToList() ?? new System.Collections.Generic.List<(int x, int y)>());  // Always show path2 if it has data, even after exiting dual mode
                         UpdatePlayerPathOverlay();
                     }
                     catch { }
@@ -12347,10 +12398,16 @@ namespace FamidashEditor
             try
             {
                 playerPathPoints.Clear();
+                playerPath2Points.Clear();
                 if (playerPathPolyline != null && CanvasHost != null)
                 {
                     try { CanvasHost.Children.Remove(playerPathPolyline); } catch { }
                     playerPathPolyline = null;
+                }
+                if (playerPath2Polyline != null && CanvasHost != null)
+                {
+                    try { CanvasHost.Children.Remove(playerPath2Polyline); } catch { }
+                    playerPath2Polyline = null;
                 }
                 // Remove any death marker as well
                 try { if (playerDeathMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerA); } catch { }
