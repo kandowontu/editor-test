@@ -16,14 +16,14 @@ namespace FamidashEditor
                 bool holdJump_orb = IsXDownAsync() || keyXHeld;
                 int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                 bool pressJump_orb = pressCount_orb > 0;
-                bool gravityInverted_orb = (!gravityFlipped);
+                bool gravityInverted_orb = (currplayer_gravity != 0);
                 int playerX_px_orb = playerX_fixed >> 8;
                 int playerY_px_orb = playerY_fixed >> 8;
-                int hitboxW_orb = (miniMode) ? 8 : 15;
-                int hitboxH_orb = (miniMode) ? 7 : 15;  // Correct: 8x7 for mini
+                int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
                 
                 // Adjust Y position for mini mode collision box (bottom-left alignment)
-                if (miniMode && !gravityInverted_orb)
+                if ((currplayer_mini != 0) && !gravityInverted_orb)
                 {
                     playerY_px_orb += 9;
                 }
@@ -33,7 +33,7 @@ namespace FamidashEditor
                 int tempVelY = playerVelY_fixed;
                 var (orbActivated, orbType) = UpdateOrbSystem(5, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
                                                    scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
-                                                   (miniMode), ref tempVelY);
+                                                   (currplayer_mini != 0), ref tempVelY);
                 if (orbActivated)
                 {
                     playerVelY_fixed = tempVelY;
@@ -81,7 +81,7 @@ namespace FamidashEditor
             bool pressedJump = pressCount > 0;
             
             // Spider can only teleport when velocity is 0 (grounded) and not orbed
-            bool canTeleport = (playerVelY_fixed == 0) && !orbed;
+            bool canTeleport = (playerVelY_fixed == 0) && !orbed[currplayer];
             
             if (!gravityFlipped)
             {
@@ -91,7 +91,8 @@ namespace FamidashEditor
                     AppendSimDebug($"[SPIDER] TELEPORTING TO CEILING! Start Y={playerY_fixed >> 8}");
                     
                     // Flip gravity and table index
-                    gravityFlipped = true; // GRAVITY_UP
+                    currplayer_gravity = 0xFF; // GRAVITY_UP
+                    gravityFlipped = true;
                     gravityReversed = true;
                     UpdateCurrplayerTableIdx_Fresh();
                     
@@ -119,7 +120,7 @@ namespace FamidashEditor
                 else if (!holdingJump) 
                 {
                     blackOrbed = false;
-                    orbed = false;
+                    orbed[currplayer] = false;
                 }
             }
             else
@@ -130,7 +131,8 @@ namespace FamidashEditor
                     AppendSimDebug($"[SPIDER] TELEPORTING TO FLOOR! Start Y={playerY_fixed >> 8}");
                     
                     // Flip gravity and table index
-                    gravityFlipped = false; // GRAVITY_DOWN
+                    currplayer_gravity = 0x00; // GRAVITY_DOWN
+                    gravityFlipped = false;
                     gravityReversed = false;
                     UpdateCurrplayerTableIdx_Fresh();
                     
@@ -159,7 +161,7 @@ namespace FamidashEditor
                 else if (!holdingJump)
                 {
                     blackOrbed = false;
-                    orbed = false;
+                    orbed[currplayer] = false;
                 }
             }
             

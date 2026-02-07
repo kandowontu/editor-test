@@ -31,8 +31,8 @@ namespace FamidashEditor
                 int playerY_px = playerY_fixed >> 8;
                 
                 // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
-                bool isMini = (miniMode);
-                bool gravityInverted = (!gravityFlipped);
+                bool isMini = (currplayer_mini != 0);
+                bool gravityInverted = (currplayer_gravity != 0);
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 

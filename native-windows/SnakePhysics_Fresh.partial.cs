@@ -19,7 +19,7 @@ namespace FamidashEditor
                 // On X press: invert gravity once and activate dash
                 gravityReversed = !gravityReversed;
                 gravityFlipped = !gravityFlipped;
-                dashing = 1;  // Set to 1 for gravity dash
+                dashing[currplayer] = 1;  // Set to 1 for gravity dash
                 Interlocked.Exchange(ref keyXPressedCount, 0);  // Consume the press
                 
                 // Update icon flip and checkbox when gravity reverses (marshal to UI thread)
@@ -28,7 +28,7 @@ namespace FamidashEditor
             
             // Wave movement calculation (from gamemode_wave.h)
             // tmp1 = dashing
-            int tmp1 = dashing;
+            int tmp1 = dashing[currplayer];
             
             switch (tmp1)
             {

@@ -45,6 +45,43 @@ namespace FamidashEditor
                 int groundRowsCalc = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 AppendSimDebug($"[CUBE_START] posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), velY=0x{playerVelY_fixed:X4}, gravity=0x{currplayer_gravity:X2}, mini={currplayer_mini}");
                 
+                // STEP 0: Check for orb activation FIRST (before any input consumption)
+                {
+                    bool holdJump_orb = IsXDownAsync() || keyXHeld;
+                    int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
+                    bool pressJump_orb = pressCount_orb > 0;
+                    bool gravityInverted_orb = (currplayer_gravity != 0);
+                    int playerX_px_orb = playerX_fixed >> 8;
+                    int playerY_px_orb = playerY_fixed >> 8;
+                    int hitboxW_orb = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
+                    int hitboxH_orb = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
+                    
+                    // Adjust Y position for mini mode collision box (bottom-left alignment)
+                    if (currplayer_mini != 0 && !gravityInverted_orb)
+                    {
+                        playerY_px_orb += 9;
+                    }
+                    
+                    int scrollX_px_orb = 0;
+                    
+                    int tempVelY = playerVelY_fixed;
+                    var (orbActivated, _) = UpdateOrbSystem(0, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
+                                                       scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
+                                                       (currplayer_mini != 0), ref tempVelY);
+                    if (orbActivated)
+                    {
+                        playerVelY_fixed = tempVelY;
+                        
+                        // Consume the X press if it was used for orb
+                        if (pressJump_orb)
+                            Interlocked.Exchange(ref keyXPressedCount, 0);
+                    }
+                    
+                    // Clear orb buffer when X is released
+                    if (!holdJump_orb)
+                        ClearOrbBuffer();
+                }
+                
                 // Save grounded state BEFORE gravity is applied (for Football release)
                 bool wasGroundedAtFrameStart = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
                 
@@ -119,7 +156,7 @@ namespace FamidashEditor
                         bool isGrounded = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
                         
                         // Check gamemode_cube.h line 70: dashing == 0
-                        if ((holdJump || pressJump) && isGrounded && !orbed && dashing == 0)
+                        if ((holdJump || pressJump) && isGrounded && !orbed[currplayer] && dashing[currplayer] == 0)
                         {
                             // AppendSimDebug($"[CUBE] JUMP TRIGGERED!");
                             
@@ -154,7 +191,7 @@ namespace FamidashEditor
                     bool holdX = IsXDownAsync() || keyXHeld;
                     
                     // Charging phase: increment chargepower while holding X
-                    if (holdX && !orbed)
+                    if (holdX && !orbed[currplayer])
                     {
                         chargepower[0]++;
                         
@@ -162,10 +199,10 @@ namespace FamidashEditor
                         if (chargepower[0] >= 45)
                         {
                             chargepower[0] = 0;
-                            orbed = true;
+                            orbed[currplayer] = true;
                         }
                         
-                        AppendSimDebug($"[FOOTBALL] Charging: chargepower={chargepower[0]}, orbed={orbed}");
+                        AppendSimDebug($"[FOOTBALL] Charging: chargepower={chargepower[0]}, orbed={orbed[currplayer]}");
                     }
                 }
                 
@@ -183,7 +220,7 @@ namespace FamidashEditor
                         AppendSimDebug($"[FOOTBALL] Release triggered: tmp3={tmp3}, holdX={holdX}");
                         
                         // Clear orbed flag on release
-                        orbed = false;
+                        orbed[currplayer] = false;
                         
                         // Calculate jump velocity using chargepower (from gamemode_cube.h line 154)
                         // tmpA = chargepower * (currplayer_gravity ? 0x004C : -0x004C)
@@ -211,45 +248,7 @@ namespace FamidashEditor
                     }
                 }
                 
-                // STEP 5: Check for orb activation (after jump and collision)
-                {
-                    bool holdJump = IsXDownAsync() || keyXHeld;
-                    int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0); // Peek without consuming
-                    bool pressJump = pressCount > 0;
-                    bool gravityInverted = (currplayer_gravity != 0);
-                    int playerX_px = playerX_fixed >> 8;
-                    int playerY_px = playerY_fixed >> 8;
-                    int hitboxW = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
-                    int hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
-                    
-                    // Adjust Y position for mini mode collision box (bottom-left alignment)
-                    if (currplayer_mini != 0 && !gravityInverted)
-                    {
-                        playerY_px += 9;
-                    }
-                    
-                    int scrollX_px = 0; // Cube mode doesn't scroll in this implementation
-                    
-                    int tempVelY = playerVelY_fixed;
-                    var (orbActivated, _) = UpdateOrbSystem(0, playerX_px, playerY_px, hitboxW, hitboxH, 
-                                                       scrollX_px, pressJump, holdJump, gravityInverted, 
-                                                       (currplayer_mini != 0), ref tempVelY);
-                    if (orbActivated)
-                    {
-                        playerVelY_fixed = tempVelY;
-                        // AppendSimDebug($"[CUBE] Orb activated! New velY={playerVelY_fixed}");
-                        
-                        // Consume the X press if it was used for orb
-                        if (pressJump)
-                            Interlocked.Exchange(ref keyXPressedCount, 0);
-                    }
-                    
-                    // Clear orb buffer when X is released
-                    if (!holdJump)
-                        ClearOrbBuffer();
-                }
-                
-                // STEP 6: Update slope counters (decrement each frame)
+                // STEP 5: Update slope counters (decrement each frame)
                 UpdateSlopeCounters_Fresh();
                 
                 // Record position for trail AFTER physics completes (for smooth visualization)
@@ -343,10 +342,10 @@ namespace FamidashEditor
             // From gamemode_cube.h line 247: register int16_t tmpaccel;
             int tmpaccel;
             
-            AppendSimDebug($"[GRAV_START] velY=0x{playerVelY_fixed:X4}, posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), dashing={dashing}, wasZeroedByCollision={wasZeroedByCollisionLastFrame}, mode={currentGameMode}");
+            AppendSimDebug($"[GRAV_START] velY=0x{playerVelY_fixed:X4}, posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), dashing={dashing[currplayer]}, wasZeroedByCollision={wasZeroedByCollisionLastFrame}, mode={currentGameMode}");
             
             // From gamemode_cube.h line 249: tmp1 = dashing;
-            int tmp1 = dashing;
+            int tmp1 = dashing[currplayer];
             
             // CRITICAL FIX: Don't apply gravity if we were just zeroed by collision detection
             // This prevents oscillation where gravity re-applies to already-grounded players
@@ -438,8 +437,7 @@ namespace FamidashEditor
             playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
             AppendSimDebug($"[GRAV_POS] posY: 0x{posY_before:X4} ({posY_before >> 8}px) + (0x{playerVelY_fixed:X4} * {simTimeScale:F2}) = 0x{playerY_fixed:X4} ({playerY_fixed >> 8}px)");
             
-            // Clamp to world bounds
-            if (playerY_fixed < 0) playerY_fixed = 0;
+            // Clamp to world bounds (allow negative Y to reach top tiles)
             int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
             if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
         }

@@ -195,6 +195,10 @@
     <EmbeddedResource Include="..\pink-pad-up-frame2.png" />
     <EmbeddedResource Include="..\pink-pad-up-frame3.png" />
     <EmbeddedResource Include="..\pink-pad-up-frame4.png" />
+    <EmbeddedResource Include="..\green-pad-expanded-frame1.png" />
+    <EmbeddedResource Include="..\green-pad-expanded-frame2.png" />
+    <EmbeddedResource Include="..\green-pad-expanded-frame3.png" />
+    <EmbeddedResource Include="..\green-pad-expanded-frame4.png" />
     <EmbeddedResource Include="..\red-pad-down-frame1.png" />
     <EmbeddedResource Include="..\red-pad-down-frame2.png" />
     <EmbeddedResource Include="..\red-pad-down-frame3.png" />

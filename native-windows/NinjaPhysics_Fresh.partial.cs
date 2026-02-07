@@ -81,7 +81,7 @@ namespace FamidashEditor
             // Ninja can jump if:
             // 1. Grounded (vel_y == 0), OR
             // 2. In air with jumps remaining and not already jumped this frame
-            if (pressJump && ninjaJumps > 0 && !ninjaJumpedThisFrame && !orbed && dashing == 0) {
+            if (pressJump && ninjaJumps > 0 && !ninjaJumpedThisFrame && !orbed[currplayer] && dashing[currplayer] == 0) {
                 int baseJumpIdx = (currplayer_mini != 0 ? 4 : 0);
                 bool jumpGravityInverted = (currplayer_gravity != 0);
                 int jumpGravityMultiplier = jumpGravityInverted ? -1 : 1;

@@ -2535,6 +2535,11 @@ namespace FamidashEditor
     private BitmapSource[]? pinkPadUpFrame2;
     private BitmapSource[]? pinkPadUpFrame3;
     private BitmapSource[]? pinkPadUpFrame4;
+    // Sprite 0x65: green-pad-expanded-frame1..4 (32 pixels tall, centered on anchor)
+    private BitmapSource[]? greenPadExpandedFrame1;
+    private BitmapSource[]? greenPadExpandedFrame2;
+    private BitmapSource[]? greenPadExpandedFrame3;
+    private BitmapSource[]? greenPadExpandedFrame4;
     // Pink orb animation frames: 4 frames for sprite 0x06
     private BitmapSource[]? pinkOrbFrame1;
     private BitmapSource[]? pinkOrbFrame2;
@@ -4854,6 +4859,7 @@ namespace FamidashEditor
                                     spriteIdx == 0xFE || // Blue pad up   (alias)
                                     spriteIdx == 0x25 || // Pink pad down
                                         spriteIdx == 0x26 || // Pink pad up
+                                        spriteIdx == 0x65 || // Green pad expanded (32px tall, centered)
                                         spriteIdx == 0x7A || // White orb
                                         spriteIdx == 0x07 || // Coin types
                                         spriteIdx == 0x1A ||
@@ -5286,8 +5292,8 @@ namespace FamidashEditor
             // Mini coin (preview-only animation): sprite 0x6E
             bool isMiniCoin = (originalIndex == 0x6E);
             // Pads (preview-only): 0x52 red-pad-down, 0x53 red-pad-up, 0x0A yellow-pad-down, 0x0C yellow-pad-up,
-            // 0x0D blue-pad-down, 0x0E blue-pad-up, 0x25 pink-pad-down, 0x26 pink-pad-up
-            bool isPad = (originalIndex == 0x52 || originalIndex == 0x53 || originalIndex == 0x0A || originalIndex == 0x0C || originalIndex == 0x0D || originalIndex == 0x0E || originalIndex == 0x25 || originalIndex == 0x26 || originalIndex == 0xFD || originalIndex == 0xFE);
+            // 0x0D blue-pad-down, 0x0E blue-pad-up, 0x25 pink-pad-down, 0x26 pink-pad-up, 0x65 green-pad-expanded
+            bool isPad = (originalIndex == 0x52 || originalIndex == 0x53 || originalIndex == 0x0A || originalIndex == 0x0C || originalIndex == 0x0D || originalIndex == 0x0E || originalIndex == 0x25 || originalIndex == 0x26 || originalIndex == 0x65 || originalIndex == 0xFD || originalIndex == 0xFE);
             
             if (isYellowOrb || isBlueOrb || isPinkOrb || isGreenOrb || isRedOrb || isBlackOrb || isPad || isWhiteOrb || isCoin || isMiniCoin)
             {
@@ -5374,6 +5380,7 @@ namespace FamidashEditor
                         case 0xFE: baseIndex = 2052; break; // blue-pad-up   (alias 0xFE)
                         case 0x25: baseIndex = 2056; break; // pink-pad-down
                         case 0x26: baseIndex = 2060; break; // pink-pad-up
+                        case 0x65: baseIndex = 2154; break; // green-pad-expanded
                         default: baseIndex = 2032; break;
                     }
                     return baseIndex + frame;
@@ -5734,6 +5741,19 @@ namespace FamidashEditor
                     1 => pinkPadUpFrame2?[0],
                     2 => pinkPadUpFrame3?[0],
                     3 => pinkPadUpFrame4?[0],
+                    _ => null
+                };
+            }
+            else if (customIndex >= 2154 && customIndex <= 2157)
+            {
+                // Green pad expanded (32px tall, centered on anchor)
+                int frame = customIndex - 2154;
+                return frame switch
+                {
+                    0 => greenPadExpandedFrame1?[0],
+                    1 => greenPadExpandedFrame2?[0],
+                    2 => greenPadExpandedFrame3?[0],
+                    3 => greenPadExpandedFrame4?[0],
                     _ => null
                 };
             }
@@ -6952,6 +6972,45 @@ namespace FamidashEditor
             }
         }
 
+        private void InitializeGreenPadExpandedAnimationFrames()
+        {
+            try
+            {
+                var f1 = LoadEmbeddedImage("green-pad-expanded-frame1.png");
+                var f2 = LoadEmbeddedImage("green-pad-expanded-frame2.png");
+                var f3 = LoadEmbeddedImage("green-pad-expanded-frame3.png");
+                var f4 = LoadEmbeddedImage("green-pad-expanded-frame4.png");
+
+                if (f1 != null && f2 != null && f3 != null && f4 != null)
+                {
+                    var converted1 = new FormatConvertedBitmap(f1, PixelFormats.Pbgra32, null, 0);
+                    var converted2 = new FormatConvertedBitmap(f2, PixelFormats.Pbgra32, null, 0);
+                    var converted3 = new FormatConvertedBitmap(f3, PixelFormats.Pbgra32, null, 0);
+                    var converted4 = new FormatConvertedBitmap(f4, PixelFormats.Pbgra32, null, 0);
+
+                    greenPadExpandedFrame1 = new BitmapSource[1];
+                    greenPadExpandedFrame2 = new BitmapSource[1];
+                    greenPadExpandedFrame3 = new BitmapSource[1];
+                    greenPadExpandedFrame4 = new BitmapSource[1];
+
+                    greenPadExpandedFrame1[0] = converted1;
+                    greenPadExpandedFrame2[0] = converted2;
+                    greenPadExpandedFrame3[0] = converted3;
+                    greenPadExpandedFrame4[0] = converted4;
+
+                    System.Diagnostics.Debug.WriteLine("? Loaded green pad expanded animation frames (4 frames, 32px tall)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("? green pad expanded frame files not found");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load green pad expanded animation frames: {ex.Message}");
+            }
+        }
+
         private void InitializeBlackOrbAnimationFrames()
         {
             LoadOrbFrames("black", ref blackOrbFrame1, ref blackOrbFrame2, ref blackOrbFrame3, ref blackOrbFrame4);
@@ -7764,6 +7823,7 @@ namespace FamidashEditor
                         if (bluePadUpFrame1 != null && bluePadUpFrame1.Length > 0) previewMap[0x0E] = bluePadUpFrame1[0];
                         if (pinkPadDownFrame1 != null && pinkPadDownFrame1.Length > 0) previewMap[0x25] = pinkPadDownFrame1[0];
                         if (pinkPadUpFrame1 != null && pinkPadUpFrame1.Length > 0) previewMap[0x26] = pinkPadUpFrame1[0];
+                        if (greenPadExpandedFrame1 != null && greenPadExpandedFrame1.Length > 0) previewMap[0x65] = greenPadExpandedFrame1[0];
                     }
                     catch { }
 
@@ -7859,6 +7919,7 @@ namespace FamidashEditor
                     if (bluePadUpFrame1 != null && bluePadUpFrame2 != null && bluePadUpFrame3 != null && bluePadUpFrame4 != null) animationFrames[0x0E] = new ImageSource?[] { bluePadUpFrame1[0], bluePadUpFrame2[0], bluePadUpFrame3[0], bluePadUpFrame4[0] };
                     if (pinkPadDownFrame1 != null && pinkPadDownFrame2 != null && pinkPadDownFrame3 != null && pinkPadDownFrame4 != null) animationFrames[0x25] = new ImageSource?[] { pinkPadDownFrame1[0], pinkPadDownFrame2[0], pinkPadDownFrame3[0], pinkPadDownFrame4[0] };
                     if (pinkPadUpFrame1 != null && pinkPadUpFrame2 != null && pinkPadUpFrame3 != null && pinkPadUpFrame4 != null) animationFrames[0x26] = new ImageSource?[] { pinkPadUpFrame1[0], pinkPadUpFrame2[0], pinkPadUpFrame3[0], pinkPadUpFrame4[0] };
+                    if (greenPadExpandedFrame1 != null && greenPadExpandedFrame2 != null && greenPadExpandedFrame3 != null && greenPadExpandedFrame4 != null) animationFrames[0x65] = new ImageSource?[] { greenPadExpandedFrame1[0], greenPadExpandedFrame2[0], greenPadExpandedFrame3[0], greenPadExpandedFrame4[0] };
                     // Pole two-frame animations
                     if (poleShortFrame1 != null && poleShortFrame2 != null) animationFrames[0x2C] = new ImageSource?[] { poleShortFrame1[0], poleShortFrame2[0] };
                     if (poleShortUpsideDownFrame1 != null && poleShortUpsideDownFrame2 != null) animationFrames[0x3C] = new ImageSource?[] { poleShortUpsideDownFrame1[0], poleShortUpsideDownFrame2[0] };
@@ -7897,6 +7958,10 @@ namespace FamidashEditor
                     // Spider orb two-frame animation mapping for simulator (sprite IDs 0x54/0x55)
                     if (spiderOrbUpFrame1 != null && spiderOrbUpFrame2 != null) animationFrames[0x54] = new ImageSource?[] { spiderOrbUpFrame1[0], spiderOrbUpFrame2[0] };
                     if (spiderOrbDownFrame1 != null && spiderOrbDownFrame2 != null) animationFrames[0x55] = new ImageSource?[] { spiderOrbDownFrame1[0], spiderOrbDownFrame2[0] };
+                    
+                    // Teleport orb two-frame animation mapping for simulator (sprite IDs 0x59/0x5A)
+                    if (teleportOrbEnterFrame1 != null && teleportOrbEnterFrame2 != null) animationFrames[0x59] = new ImageSource?[] { teleportOrbEnterFrame1[0], teleportOrbEnterFrame2[0] };
+                    if (teleportOrbExitFrame1 != null && teleportOrbExitFrame2 != null) animationFrames[0x5A] = new ImageSource?[] { teleportOrbExitFrame1[0], teleportOrbExitFrame2[0] };
                 }
                 catch { }
 
@@ -9941,6 +10006,7 @@ namespace FamidashEditor
                 InitializeBluePadUpAnimationFrames();
                 InitializePinkPadDownAnimationFrames();
                 InitializePinkPadUpAnimationFrames();
+                InitializeGreenPadExpandedAnimationFrames();
                 // Initialize new dash orb two-frame slow animations
                 LoadTwoFrameOrb("dash-orb-right", ref dashOrbRightFrame1, ref dashOrbRightFrame2);
                 LoadTwoFrameOrb("dash-gravity-orb-right", ref dashGravityOrbRightFrame1, ref dashGravityOrbRightFrame2);
@@ -14789,6 +14855,15 @@ namespace FamidashEditor
                     renderWidth = spritePixelW; // 1 tile wide
                 }
 
+                // Treat green pad expanded (sprite 0x65) as 2 tiles tall (32px).
+                // Render at natural position with sprite geometry handling the centering.
+                if (!isMultiTilePortal && spriteIdx == 0x65)
+                {
+                    renderHeight = spritePixelH * 2; // 2 tiles tall (32px)
+                    renderWidth = spritePixelW; // 1 tile wide (16px)
+                    // No position adjustment - let sprite_y_offset handle centering
+                }
+
                 // Treat medium pole decorations (custom indices 2132/2133 and 2134/2135)
                 // as 1.5 tiles tall. Additionally, the left-medium pole (original sprite 0x3E)
                 // should be anchored so its right side aligns with the anchor tile; compute
@@ -15500,19 +15575,17 @@ namespace FamidashEditor
                     int worldX = (int)((pos.X - pad) / scale) - 8;  // Center horizontally
                     int worldY = (int)((pos.Y - pad - gridRenderShiftY) / scale) - (3 * TileSize) - 8;  // Center vertically
                     
-                    // Clamp to map bounds
+                    // Clamp X to map bounds
                     if (worldX < 0) worldX = 0;
-                    if (worldY < 0) worldY = 0;
                     int maxX = mapWidth * TileSize;
-                    int maxY = mapHeight * TileSize;
                     if (worldX >= maxX - 16) worldX = maxX - 16;
+                    
+                    // Allow negative Y for placement at very top of grid (player can render partially off-top)
+                    // Only clamp at floor level
                     
                     // Calculate the actual visible floor position (top of the ground rows)
                     int groundRowsToReserve = (groundBitmap != null && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                     int floorY_px = (mapHeight - groundRowsToReserve) * TileSize;
-                    // Allow placement up to 8 tiles above the floor
-                    int allowedMinY = Math.Max(0, floorY_px - (8 * TileSize));
-                    if (worldY < allowedMinY) worldY = allowedMinY;
                     // Don't allow placement below the floor
                     if (worldY >= floorY_px) worldY = floorY_px - TileSize;
                     

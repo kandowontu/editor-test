@@ -11,8 +11,8 @@ namespace FamidashEditor
         private void BallPhysics_Fresh()
         {
             // Get base physics values (always from down-gravity index)
-            int baseTableIdx = (miniMode ? 4 : 0);
-            bool gravityInverted = gravityFlipped;
+            int baseTableIdx = (currplayer_mini != 0 ? 4 : 0);
+            bool gravityInverted = (currplayer_gravity != 0);
             int gravityMultiplier = gravityInverted ? -1 : 1;
             
             if (currentGameMode == 7 || currentGameMode == 9) { // GAMEMODE_SWING or GAMEMODE_POGO
@@ -30,14 +30,11 @@ namespace FamidashEditor
                     bool holdJump_orb = IsXDownAsync() || keyXHeld;
                     int pressCount_peek = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                     bool pressJump_peek = pressCount_peek > 0;
-                    bool gravityInverted_orb = (!gravityFlipped);
+                    bool gravityInverted_orb = (currplayer_gravity != 0);
                     int playerX_px_orb = playerX_fixed >> 8;
                     int playerY_px_orb = playerY_fixed >> 8;
-                    int hitboxW_orb = (miniMode) ? 8 : 15;
-                    int hitboxH_orb = (miniMode) ? 7 : 15;  // Correct: 8x7 for mini
-                    
-                    // Adjust Y position for mini mode collision box (bottom-left alignment)
-                    if (miniMode && !gravityInverted_orb)
+                    int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
+                    int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
                     {
                         playerY_px_orb += 9;
                     }
@@ -47,7 +44,7 @@ namespace FamidashEditor
                     int tempVelY = playerVelY_fixed;
                     var (orbActivated, _) = UpdateOrbSystem(2, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
                                                        scrollX_px_orb, pressJump_peek, holdJump_orb, gravityInverted_orb, 
-                                                       (miniMode), ref tempVelY);
+                                                       (currplayer_mini != 0), ref tempVelY);
                     if (orbActivated)
                     {
                         playerVelY_fixed = tempVelY;
@@ -87,7 +84,7 @@ namespace FamidashEditor
                 // This detects if there's ground to grip onto for gravity flip
                 // During cooldown after flip, use cached grounded state from flip frame
                 bool isGrounded = false;
-                bool isMini = (miniMode);
+                bool isMini = (currplayer_mini != 0);
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
@@ -97,7 +94,7 @@ namespace FamidashEditor
                 if (ballFlipCooldown > 0) {
                     isGrounded = ballWasGroundedBeforeFlip;
                     AppendSimDebug($"[BALL] Using cached grounded state during cooldown: isGrounded={isGrounded}");
-                } else if (!gravityFlipped) {
+                } else if (currplayer_gravity == 0) {
                     // Normal gravity - test a 2px tall hitbox starting at player's bottom (tests downward)
                     int playerBottom = (playerY_fixed >> 8) + hitboxOffsetY + hitboxH;
                     int testHeight = 2;
@@ -151,7 +148,7 @@ namespace FamidashEditor
                     UpdateCurrplayerTableIdx_Fresh(); // Must update table_idx AFTER gravity flip!
                     
                     // Recalculate physics values with new gravity
-                    gravityInverted = gravityFlipped;
+                    gravityInverted = (currplayer_gravity != 0);
                     gravityMultiplier = gravityInverted ? -1 : 1;
                     tmpfallspeed = GameModePhysics.BALL_MAX_FALLSPEED(baseTableIdx) * gravityMultiplier;
                     tmpgravity = GameModePhysics.BALL_GRAVITY(baseTableIdx) * gravityMultiplier;
@@ -191,13 +188,13 @@ namespace FamidashEditor
             
             // Prevent velocity accumulation when grounded (only runs when cooldown == 0)
             if (currentGameMode == 2) {
-                bool isMini = (miniMode);
+                bool isMini = (currplayer_mini != 0);
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
                 int collisionX = (playerX_fixed >> 8);
                 
-                if (!gravityFlipped) {
+                if (currplayer_gravity == 0) {
                     // Inverted gravity - prevent velocity from pulling into ceiling
                     int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
                     var (collided, _) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
@@ -244,14 +241,14 @@ namespace FamidashEditor
                 bool holdJump_orb = IsXDownAsync() || keyXHeld;
                 int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                 bool pressJump_orb = pressCount_orb > 0;
-                bool gravityInverted_orb = (!gravityFlipped);
+                bool gravityInverted_orb = (currplayer_gravity != 0);
                 int playerX_px_orb = playerX_fixed >> 8;
                 int playerY_px_orb = playerY_fixed >> 8;
-                int hitboxW_orb = (miniMode) ? 8 : 15;
-                int hitboxH_orb = (miniMode) ? 7 : 15;
+                int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
                 
                 // Adjust Y position for mini mode collision box
-                if (miniMode && !gravityInverted_orb)
+                if ((currplayer_mini != 0) && !gravityInverted_orb)
                 {
                     playerY_px_orb += 9;
                 }
@@ -263,7 +260,7 @@ namespace FamidashEditor
                 int orbGamemode = (currentGameMode == 9) ? 7 : currentGameMode;
                 var (orbActivated, _) = UpdateOrbSystem(orbGamemode, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
                                                    scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
-                                                   (miniMode), ref tempVelY);
+                                                   (currplayer_mini != 0), ref tempVelY);
                 if (orbActivated)
                 {
                     playerVelY_fixed = tempVelY;
@@ -287,9 +284,9 @@ namespace FamidashEditor
                 if (pressedJump && !orbhitonthisframe[currplayer]) {
                     // Black orb velocity: opposite direction to normal orbs
                     // Normal gravity: positive (downward), Inverted gravity: negative (upward)
-                    bool isMini_orb = (miniMode);
+                    bool isMini_orb = (currplayer_mini != 0);
                     int blackOrbVel = isMini_orb ? PadOrbHeights_Mini[6][7] : PadOrbHeights[6][7];
-                    int orbGravityMult = (!gravityFlipped) ? -1 : 1;  // Normal: negate, Inverted: keep
+                    int orbGravityMult = (currplayer_gravity == 0) ? -1 : 1;  // Normal: negate, Inverted: keep
                     playerVelY_fixed = blackOrbVel * orbGravityMult;
                     AppendSimDebug($"[POGO_BLACKORB] X pressed! velY set to 0x{playerVelY_fixed:X4}");
                     // Clear orb buffer on pogo activation (require fresh press for next orb)
@@ -301,7 +298,7 @@ namespace FamidashEditor
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                bool isMini = (miniMode);
+                bool isMini = (currplayer_mini != 0);
                 int hitboxH = isMini ? 7 : 15;
                 int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
                 int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2) + hitboxOffsetY;
@@ -319,14 +316,14 @@ namespace FamidashEditor
         /// </summary>
         private void BallEject_Fresh()
         {
-            bool isMini = (miniMode);
+            bool isMini = (currplayer_mini != 0);
             int hitboxW = isMini ? 8 : 15;
             int hitboxH = isMini ? 7 : 15;
             int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
             int collisionX = (playerX_fixed >> 8);
             int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
             
-            if (!gravityFlipped) {
+            if (currplayer_gravity == 0) {
                 // Normal gravity: Check TOP collision with right-side pixel test
                 if (!MainWindow.Option_NoDeath)
                 {
@@ -387,7 +384,7 @@ namespace FamidashEditor
                                 int newVel = (-playerVelY_fixed * 2) / 3;
                                 // Bounce minimum = yellow pad velocity for swing (mode 7, col index 7)
                                 int yellowPadMin = isMini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
-                                int gravityMultiplier = (!gravityFlipped) ? -1 : 1;
+                                int gravityMultiplier = (currplayer_gravity == 0) ? -1 : 1;
                                 int minVel = yellowPadMin * gravityMultiplier;
                                 // For downward bounce (normal gravity): check if vel > min
                                 if (newVel > minVel)
@@ -461,7 +458,7 @@ namespace FamidashEditor
                                 int newVel = (-playerVelY_fixed * 2) / 3;
                                 // Bounce minimum = yellow pad velocity for swing (mode 7, col index 7)
                                 int yellowPadMin = isMini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
-                                int gravityMultiplier = (!gravityFlipped) ? -1 : 1;
+                                int gravityMultiplier = (currplayer_gravity == 0) ? -1 : 1;
                                 int minVel = yellowPadMin * gravityMultiplier;
                                 // For upward bounce (inverted gravity): check if vel < min
                                 if (newVel < minVel)
@@ -494,7 +491,7 @@ namespace FamidashEditor
         
         private void UpdateCurrplayerTableIdx_Fresh()
         {
-            currplayer_table_idx = (!gravityFlipped ? 1 : 0) | (miniMode ? 4 : 0);
+            currplayer_table_idx = (currplayer_gravity == 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
         }
     }
 }

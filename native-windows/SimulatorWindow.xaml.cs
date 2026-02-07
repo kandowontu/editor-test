@@ -697,7 +697,7 @@ namespace FamidashEditor
             0x28,0x10,0x10,0x34,0x12,0x12,0x30,0x10, // 48-4F
             0x12,0x12,0x03,0x03,0x12,0x12,0x03,0x03, // 50-57
             0x34,0x10,0x10,0x12,0x12,0x12,0x12,0x34, // 58-5F
-            0x34,0x34,0x34,0x34,0x34,0x02,0x10,0x10, // 60-67
+            0x34,0x34,0x34,0x34,0x34,0x02,0x10,0x10, // 60-67 (0x65 = green pad, 2px tall hitbox)
             0x10,0x10,0x34,0x34,0x34,0x20,0x08,0x10, // 68-6F
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 70-77
             0x10,0x12,0x12,0x12,0x12,0x10,0x10,0x10, // 78-7F
@@ -732,7 +732,7 @@ namespace FamidashEditor
             0x0e,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 48-4F
             0x10,0x10,0x0F,0x0F,0x10,0x10,0x0F,0x0F, // 50-57
             0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 58-5F
-            0x10,0x10,0x10,0x10,0x10,0x0E,0x30,0x30, // 60-67
+            0x10,0x10,0x10,0x10,0x10,0x0E,0x30,0x30, // 60-67 (0x65 = green pad, 14px wide hitbox)
             0x30,0x30,0x10,0x10,0x10,0x10,0x08,0x10, // 68-6F
             0x10,0x10,0x10,0x10,0x10,0x30,0x30,0x30, // 70-77
             0x30,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 78-7F
@@ -2233,10 +2233,10 @@ namespace FamidashEditor
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     {
                         // S_BLOCK: Stop dashing, set orbed, zero velocity (sprite_loading.h line 935)
-                        if (isSBlock && dashing != 0)
+                        if (isSBlock && dashing[currplayer] != 0)
                         {
-                            dashing = 0;
-                            orbed = true;
+                            dashing[currplayer] = 0;
+                            orbed[currplayer] = true;
                             playerVelY_fixed = 0;
                             velocityY = 0;
                             AppendSimDebug($"[S_BLOCK] Stopped dash, orbed=true, velocityY=0");
@@ -2257,7 +2257,7 @@ namespace FamidashEditor
                         else if (isJBlock)
                         {
                             jblocked = true;
-                            orbed = true;
+                            orbed[currplayer] = true;
                             AppendSimDebug($"[J_BLOCK] jblocked=true, orbed=true");
                         }
                         // F_BLOCK: Set fblocked (sprite_loading.h line 941)
@@ -2277,7 +2277,7 @@ namespace FamidashEditor
 
         /// <summary>
         /// Check for pad collision and apply velocity change
-        /// Pads: 0x0A/0x0C = yellow pad (down/up), 0x25/0x26 = pink pad (down/up), 0x52/0x53 = red pad (down/up)
+        /// Pads: 0x0A/0x0C = yellow pad (down/up), 0x25/0x26 = pink pad (down/up), 0x52/0x53 = red pad (down/up), 0x65 = green pad expanded
         /// </summary>
         private void CheckPadCollision()
         {
@@ -2320,6 +2320,7 @@ namespace FamidashEditor
                     // Yellow pads: 0x0A (down), 0x0C (up)
                     // Pink pads: 0x25 (down), 0x26 (up)
                     // Red pads: 0x52 (down), 0x53 (up)
+                    // Green pad: 0x65 (expanded, 2 tiles tall)
                     int padRow = -1;
                     bool isDownPad = false;
                     
@@ -2337,6 +2338,67 @@ namespace FamidashEditor
                     {
                         padRow = 8; // red pad
                         isDownPad = (sid == 0x52);
+                    }
+                    else if (sid == 0x65)
+                    {
+                        // Green pad reverses gravity (one-time activation like orbs)
+                        // Check if already activated
+                        if (orbActivated.ContainsKey(idx) && orbActivated[idx])
+                            continue;
+                        
+                        // Check collision with player BEFORE activating
+                        if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                            continue;
+                        
+                        // Toggle gravity
+                        if (!gravityReversed)
+                        {
+                            gravityReversed = true;
+                            currplayer_gravity = 0xFF;
+                            gravityFlipped = true;
+                            AppendSimDebug($"[GREEN_PAD] REVERSE ACTIVATED at idx {idx}");
+                        }
+                        else
+                        {
+                            gravityReversed = false;
+                            currplayer_gravity = 0x00;
+                            gravityFlipped = false;
+                            AppendSimDebug($"[GREEN_PAD] NORMAL ACTIVATED at idx {idx}");
+                        }
+                        
+                        // Update effective gravity
+                        UpdateEffectiveGravity();
+                        
+                        // Update UI
+                        try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
+                        
+                        // Apply yellow orb velocity (padRow 0)
+                        int modeCol = currentGameMode;
+                        if (modeCol == 8) modeCol = 0; // Ninja uses cube values
+                        if (modeCol == 9) modeCol = 7; // Pogo uses Swingcopter values
+                        if (modeCol == 11) modeCol = 0; // Football uses cube values
+                        if (modeCol >= 0 && modeCol <= 11)
+                        {
+                            bool isMini = (currplayer_mini != 0);
+                            int baseVel = isMini 
+                                ? PadOrbHeights_Mini[0][modeCol]  // Yellow orb row = 0
+                                : PadOrbHeights[0][modeCol];
+                            
+                            // After gravity flip: launch against new gravity direction
+                            int gravityMultiplier = gravityReversed ? 1 : -1;
+                            int newVel = baseVel * gravityMultiplier;
+                            
+                            playerVelY_fixed = newVel;
+                            orbhitonthisframe[currplayer] = true;
+                            
+                            AppendSimDebug($"[GREEN_PAD] Applied yellow orb velocity: baseVel=0x{baseVel:X4}, newVel=0x{newVel:X4}, gravityReversed={gravityReversed}");
+                        }
+                        
+                        // Mark as activated
+                        orbActivated[idx] = true;
+                        
+                        // Skip normal pad velocity logic
+                        continue;
                     }
                     else
                     {
@@ -2524,7 +2586,7 @@ namespace FamidashEditor
                                 playerVelY_fixed = 0;
                                 
                                 // Set orbed flag
-                                orbed = true;
+                                orbed[currplayer] = true;
                                 
                                 try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
                                 AppendSimDebug($"[SPIDER_ORB/PAD] Teleported to ceiling Y={playerY_fixed >> 8}");
@@ -2567,7 +2629,7 @@ namespace FamidashEditor
                                 playerVelY_fixed = 0;
                                 
                                 // Set orbed flag
-                                orbed = true;
+                                orbed[currplayer] = true;
                                 
                                 try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
                                 AppendSimDebug($"[SPIDER_ORB/PAD] Teleported to floor Y={playerY_fixed >> 8}");
@@ -2933,9 +2995,9 @@ namespace FamidashEditor
         private int ballFlipCooldown = 0;
         private bool ballWasGroundedBeforeFlip = false;
         private bool ufoOrbed = false;
-        private bool orbed = false; // Prevents jumps/teleports until X released (spider orbs/pads, teleport portals, S blocks, J blocks)
+        private bool[] orbed = new bool[2]; // Prevents jumps/teleports until X released (spider orbs/pads, teleport portals, S blocks, J blocks)
         private bool blackOrbed = false; // Spider black orb hold mechanic
-        private int dashing = 0; // 0=not dashing, 1=horizontal, 2=45deg up, 3=45deg down, 4=upward, 5=downward
+        private int[] dashing = new int[2]; // 0=not dashing, 1=horizontal, 2=45deg up, 3=45deg down, 4=upward, 5=downward
         private bool hblocked = false; // H block - headbonk block: causes instant ceiling ejection instead of passthrough
         private bool jblocked = false; // J block - requires press instead of hold for next jump
         private bool dblocked = false; // D block - allows wave to walk on surfaces instead of going through/colliding/dying
@@ -4314,7 +4376,7 @@ namespace FamidashEditor
                         }
                     }
                     // Also ensure dash-orbs pulse even when the editor didn't provide two-frame images.
-                    int[] dashOrbIds = new int[] { 0x45, 0x46, 0x4C, 0x4D, 0x50, 0x51, 0x5B, 0x5C, 0x5D, 0x5E };
+                    int[] dashOrbIds = new int[] { 0x45, 0x46, 0x4C, 0x4D, 0x50, 0x51, 0x5B, 0x5C, 0x5D, 0x5E, 0x59, 0x5A };
                     foreach (var id in dashOrbIds)
                     {
                         if (!this.animationFrames.ContainsKey(id))
@@ -5458,11 +5520,15 @@ namespace FamidashEditor
                     try { UpdateGameModeDisplay(); } catch { }
                     try { UpdateSpeedDisplay(); } catch { }
 #pragma warning disable CS4014
-                    try { Dispatcher.BeginInvoke(new Action(() => { if (MiniCheckBox != null) MiniCheckBox.IsChecked = false; })); } catch { }
+                    try { Dispatcher.BeginInvoke(new Action(() => { 
+                        if (MiniCheckBox != null) MiniCheckBox.IsChecked = false;
+                        if (InvertedCheckBox != null) InvertedCheckBox.IsChecked = false;
+                    })); } catch { }
 #pragma warning restore CS4014
                     try { UpdatePlayerImageForMode(); } catch { }
                     try { UpdatePlayerVisualSizeForMode(); } catch { }
                     try { UpdatePlayerIconFlip(); } catch { }
+                    try { UpdateEffectiveGravity(); } catch { }
                 }
                 else
                 {
@@ -5477,7 +5543,14 @@ namespace FamidashEditor
                     speed = savedSpeed;
                     playerVelX_fixed = savedPlayerVelX;
 
-                    // UI already matches current settings, no need to update
+                    // Update UI to match restored settings
+                    try { UpdatePlayerIconFlip(); } catch { }
+                    try { UpdateEffectiveGravity(); } catch { }
+#pragma warning disable CS4014
+                    try { Dispatcher.BeginInvoke(new Action(() => { 
+                        if (InvertedCheckBox != null) InvertedCheckBox.IsChecked = gravityReversed;
+                    })); } catch { }
+#pragma warning restore CS4014
                 }
 
                 // Reset camera to starting position or START POS marker
@@ -5494,7 +5567,7 @@ namespace FamidashEditor
                         cameraX_fixed = 0;
                     }
                     int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                    cameraY_fixed = Math.Max(0, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
+                    cameraY_fixed = Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8));
                 }
                 else
                 {
@@ -5512,6 +5585,7 @@ namespace FamidashEditor
                 try { processedSpeedPortals.Clear(); } catch { }
                 try { processedRandomPortals.Clear(); } catch { }
                 try { processedMiniPortals.Clear(); } catch { }  // Reset dual/single portal tracking
+                try { processedTeleportPortals.Clear(); } catch { }  // Reset teleport portal tracking
                 
                 // Reset dual mode state
                 dual = false;
@@ -5536,9 +5610,10 @@ namespace FamidashEditor
                 try { ResetOrbSystem(); } catch { }
                 try { ResetBluePadSystem(); } catch { }
 
-                // Clear input buffers
+                // Clear input buffers and reset key state tracking
                 try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
                 keyXHeld = false;
+                prevKeyXDown = false;  // Must reset this too, otherwise edge detection breaks if user is holding key during restart
                 upHeld = false;
                 downHeld = false;
 
@@ -6815,6 +6890,7 @@ namespace FamidashEditor
                             if (processedOrbs.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedOrbs.Remove(idx);
                             if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
                             if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
+                            if (processedTeleportPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedTeleportPortals.Remove(idx);
                         }
                     }
                     else
@@ -9069,7 +9145,7 @@ namespace FamidashEditor
                                                      // Dash-orbs: sync them to the same two-frame decoration cadence
                                                      || s == 0x45 || s == 0x46 || s == 0x4C || s == 0x4D
                                                      || s == 0x50 || s == 0x51 || s == 0x5B || s == 0x5C
-                                                     || s == 0x5D || s == 0x5E))
+                                                     || s == 0x5D || s == 0x5E || s == 0x59 || s == 0x5A))
                         {
                             // Match editor preview two-frame cadence used by dash-orbs and decorations
                             // Make spider-orbs (0x54/0x55) pulse exactly like the dash-orb routine,
@@ -9648,9 +9724,9 @@ namespace FamidashEditor
                         hblocked,
                         fblocked,
                         jblocked,
-                        orbed,
+                        orbed[currplayer],
                         blackOrbed,
-                        dashing,
+                        dashing[currplayer],
                         robotJumpTime[0],
                         playerVelY_fixed,
                         orbBufferActive[currplayer]
@@ -9783,6 +9859,9 @@ namespace FamidashEditor
                         // Check for gravity portal activation
                         CheckGravityPortals();
                         AppendSimDebug($"[GRAV_PRE_MOVEMENT] currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed}");
+                        
+                        // Check for teleport portal activation (0x4E entrance, 0x4F exit)
+                        CheckTeleportPortals();
                         
                         // Check for gravity modifier portals (0x5F-0x63)
                         CheckGravityModPortals();
@@ -10124,22 +10203,22 @@ namespace FamidashEditor
                         dblocked = false;
                         
                         // Clear dashing state when X is released (user requested Y velocity = 0)
-                        if (dashing != 0)
+                        if (dashing[currplayer] != 0)
                         {
                             if (!(IsXDownAsync() || keyXHeld))
                             {
                                 // Zero Y velocity when stopping dash
                                 velocityY = 0;
                                 playerVelY_fixed = 0;
-                                dashing = 0;
+                                dashing[currplayer] = 0;
                             }
                         }
                         
                         // Clear orbed flag when X is released (matches state_game.h lines 142-143)
-                        if (orbed)
+                        if (orbed[currplayer])
                         {
                             if (!(IsXDownAsync() || keyXHeld))
-                                orbed = false;
+                                orbed[currplayer] = false;
                         }
                         
                         // Check for death collision (skip in cam mode)
@@ -10284,19 +10363,19 @@ namespace FamidashEditor
                                 
                                 // Clear per-frame flags for player 2
                                 dblocked = false;
-                                if (dashing != 0)
+                                if (dashing[currplayer] != 0)
                                 {
                                     if (!(IsXDownAsync() || keyXHeld))
                                     {
                                         velocityY = 0;
                                         playerVelY_fixed = 0;
-                                        dashing = 0;
+                                        dashing[currplayer] = 0;
                                     }
                                 }
-                                if (orbed)
+                                if (orbed[currplayer])
                                 {
                                     if (!(IsXDownAsync() || keyXHeld))
-                                        orbed = false;
+                                        orbed[currplayer] = false;
                                 }
                             }
                             catch (Exception ex)
@@ -10972,6 +11051,7 @@ namespace FamidashEditor
                             if (processedColorTriggers.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedColorTriggers.Remove(idx);
                             if (processedGravityPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityPortals.Remove(idx);
                             if (processedGravityModPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityModPortals.Remove(idx);
+                            if (processedTeleportPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedTeleportPortals.Remove(idx);
                         }
                     }
                     else
@@ -10985,7 +11065,7 @@ namespace FamidashEditor
                                 else if (IsGroundTrigger(sid)) { if (anchorX_center_fixed < bestGround_fixed) { bestGround_fixed = anchorX_center_fixed; groundIdxLocal = idx; groundSidLocal = sid; } }
                             }
                         }
-                        else { if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx); if (processedGravityPortals.Contains(idx)) processedGravityPortals.Remove(idx); if (processedGravityModPortals.Contains(idx)) processedGravityModPortals.Remove(idx); if (processedOrbs.Contains(idx)) processedOrbs.Remove(idx); }
+                        else { if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx); if (processedGravityPortals.Contains(idx)) processedGravityPortals.Remove(idx); if (processedGravityModPortals.Contains(idx)) processedGravityModPortals.Remove(idx); if (processedOrbs.Contains(idx)) processedOrbs.Remove(idx); if (processedTeleportPortals.Contains(idx)) processedTeleportPortals.Remove(idx); }
                     }
                 }
 

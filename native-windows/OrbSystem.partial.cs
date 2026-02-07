@@ -33,6 +33,8 @@ namespace FamidashEditor
         private const byte DASH_GRAVITY_ORB_UPWARDS = 0x5C;
         private const byte DASH_ORB_DOWNWARDS = 0x5D;
         private const byte DASH_GRAVITY_ORB_DOWNWARDS = 0x5E;
+        private const byte TELEPORT_ORB_ENTER = 0x59;
+        private const byte TELEPORT_ORB_EXIT = 0x5A;
         private const byte WHITE_ORB = 0x7A;
         private const byte BLUE_ORB_MULTI = 0x7B;
         private const byte GREEN_ORB_MULTI = 0x7C;
@@ -171,7 +173,7 @@ namespace FamidashEditor
                 
                 // CRITICAL: Do not activate orbs while dashing (from dash orb)
                 // Dash state prevents all orb activations until dash ends
-                if (dashing != 0) continue;
+                if (dashing[currplayer] != 0) continue;
                 
                 // Check collision with player using same method as pads/portals
                 if (!CheckOrbCollision(idx, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
@@ -263,8 +265,10 @@ namespace FamidashEditor
                    spriteType == GREEN_ORB ||
                    spriteType == WHITE_ORB ||
                    spriteType == BLUE_ORB_MULTI ||
-                   spriteType == GREEN_ORB_MULTI;
+                   spriteType == GREEN_ORB_MULTI ||
+                   spriteType == TELEPORT_ORB_ENTER;
                    // Spider orbs/pads (0x54-0x57) are handled separately
+                   // TELEPORT_ORB_EXIT (0x5A) is NOT activatable - only provides Y position
         }
         
         /// <summary>
@@ -335,6 +339,81 @@ namespace FamidashEditor
                 case WHITE_ORB:
                     // White orb: reset Y velocity to 0
                     velocityY = 0;
+                    break;
+                    
+                case TELEPORT_ORB_ENTER:
+                    // Teleport orb: find corresponding exit orb (0x5A) on visible screen and teleport player there
+                    // Only exit orbs currently visible on screen are active
+                    bool foundExit = false;
+                    int exitY_px = 0;
+                    
+                    // Calculate visible screen bounds
+                    int cameraLeft_px = cameraX_fixed >> 8;
+                    int cameraTop_px = cameraY_fixed >> 8;
+                    int cameraRight_px = cameraLeft_px + (NES_W * TILE);
+                    int cameraBottom_px = cameraTop_px + (NES_H * TILE);
+                    
+                    // Search for exit orb (0x5A) on visible screen
+                    // If multiple exits are visible, the last one loaded will be used
+                    for (int idx = 0; idx < sprites.Length; idx++)
+                    {
+                        if (sprites[idx] == TELEPORT_ORB_EXIT)
+                        {
+                            // Get exit orb world position
+                            int exitTileX = idx % mapWidth;
+                            int exitTileY = idx / mapWidth;
+                            int exitWorldX_px = exitTileX * TILE;
+                            int exitWorldY_px = exitTileY * TILE;
+                            
+                            // Apply sprite anchoring/offset if present
+                            if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
+                            {
+                                exitWorldX_px = anchor.anchorTileX * TILE;
+                                exitWorldY_px = anchor.anchorTileY * TILE;
+                            }
+                            
+                            // Apply pixel offsets if present
+                            if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offset))
+                            {
+                                exitWorldY_px += offset.offsetY;
+                            }
+                            
+                            // Check if this exit orb is on the visible screen
+                            if (exitWorldX_px >= cameraLeft_px && exitWorldX_px < cameraRight_px &&
+                                exitWorldY_px >= cameraTop_px && exitWorldY_px < cameraBottom_px)
+                            {
+                                // This exit is visible - use it (if multiple visible, last one wins)
+                                exitY_px = exitWorldY_px;
+                                foundExit = true;
+                                AppendSimDebug($"[TELEPORT_ORB] Found visible exit at ({exitWorldX_px}, {exitWorldY_px})");
+                            }
+                        }
+                    }
+                    
+                    if (foundExit)
+                    {
+                        // Apply 3-tile ground offset (same as all collision detection)
+                        // The map reserves 3 tiles at the bottom for the ground layer
+                        exitY_px -= (3 * TILE);
+                        
+                        // Teleport player Y position only (keep X position unchanged)
+                        playerY_fixed = exitY_px << 8;
+                        
+                        // Update camera to follow the teleport (center on player Y)
+                        int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                        cameraY_fixed = Math.Max(0, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
+                        
+                        // Reset velocity and set orbed flag
+                        velocityY = 0;
+                        playerVelY_fixed = 0;
+                        orbed[currplayer] = true;
+                        
+                        AppendSimDebug($"[TELEPORT_ORB] Teleported to Y={exitY_px} (camera Y={cameraY_fixed >> 8})");
+                    }
+                    else
+                    {
+                        AppendSimDebug($"[TELEPORT_ORB] WARNING: No exit orb (0x5A) visible on screen!");
+                    }
                     break;
                     
                 case GREEN_ORB:
@@ -549,7 +628,7 @@ namespace FamidashEditor
                                     spriteType == DASH_GRAVITY_ORB_UPWARDS ||
                                     spriteType == DASH_GRAVITY_ORB_DOWNWARDS;
 
-                if (isGravityDash && dashing == 0)
+                if (isGravityDash && dashing[currplayer] == 0)
                 {
                     // Flip gravity (common_dash_orb_routine)
                     gravityFlipped = !gravityFlipped;
@@ -564,35 +643,35 @@ namespace FamidashEditor
                 {
                     // Horizontal dash (right)
                     velocityY = 0;
-                    dashing = 1;
+                    dashing[currplayer] = 1;
                     AppendSimDebug($"[DASH_ORB] Horizontal dash activated (0x{spriteType:X2})");
                 }
                 else if (spriteType == DASH_ORB_45DEG_UP || spriteType == DASH_GRAVITY_ORB_45DEG_UP)
                 {
                     // 45 degree upward dash
                     velocityY = -velocityX;  // currplayer_vel_y = -currplayer_vel_x
-                    dashing = 2;
+                    dashing[currplayer] = 2;
                     AppendSimDebug($"[DASH_ORB] 45deg upward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_45DEG_DOWN || spriteType == DASH_GRAVITY_ORB_45DEG_DOWN)
                 {
                     // 45 degree downward dash
                     velocityY = velocityX;  // currplayer_vel_y = currplayer_vel_x
-                    dashing = 3;
+                    dashing[currplayer] = 3;
                     AppendSimDebug($"[DASH_ORB] 45deg downward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_UPWARDS || spriteType == DASH_GRAVITY_ORB_UPWARDS)
                 {
                     // Upward dash (vertical)
                     velocityY = velocityX * 4;  // currplayer_vel_y = currplayer_vel_x * 4
-                    dashing = 4;
+                    dashing[currplayer] = 4;
                     AppendSimDebug($"[DASH_ORB] Upward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_DOWNWARDS || spriteType == DASH_GRAVITY_ORB_DOWNWARDS)
                 {
                     // Downward dash (vertical)
                     velocityY = -velocityX * 4;  // currplayer_vel_y = -currplayer_vel_x * 4
-                    dashing = 5;
+                    dashing[currplayer] = 5;
                     AppendSimDebug($"[DASH_ORB] Downward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
 
