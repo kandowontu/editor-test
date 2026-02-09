@@ -113,13 +113,16 @@ namespace FamidashEditor
         }
 
         // BALL_SWITCH_VEL - Velocity when switching gravity
-        // Returns signed velocity: negative for upward (inverted gravity), positive for downward (normal gravity)
+        // Returns signed velocity: launches ball AWAY from the surface it was on
+        // After gravity flip, table_idx reflects NEW gravity state
+        // - If NEW gravity is inverted (bit 0 = 0): was on ground, launch UP (negative)
+        // - If NEW gravity is normal (bit 0 = 1): was on ceiling, launch DOWN (positive)
         public static int BALL_SWITCH_VEL(int table_idx)
         {
             bool mini = (table_idx & 4) != 0;
-            bool inverted = (table_idx & 1) != 0;
+            bool normalGravity = (table_idx & 1) != 0;  // bit 0 = 1 means normal (down) gravity
             int baseVel = mini ? 0x120 : 0x200;
-            return inverted ? -baseVel : baseVel;
+            return normalGravity ? baseVel : -baseVel;  // Normal gravity: launch down (positive), Inverted: launch up (negative)
         }
         #endregion
 

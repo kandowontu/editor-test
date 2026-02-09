@@ -1034,6 +1034,9 @@ namespace FamidashEditor
                 // If a cached hitbox for this sprite was populated during rendering this frame,
                 // prefer that rectangle (it exactly matches the overlay) to avoid subtle
                 // geometry mismatches from duplicate math paths.
+                // CRITICAL: Hitbox cache disabled for determinism (rendering is async and non-deterministic)
+                // The cache causes collision detection to vary between runs based on render timing
+                /*
                 try
                 {
                     if (hitboxWorldCache != null && hitboxWorldCache.TryGetValue(idx, out var cached) && cached.frame == renderFrameCounter)
@@ -1044,6 +1047,7 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
+                */
 
                 bool overlap = !(playerRight_px < spriteLeft_world_px || playerLeft_px > spriteRight_world_px || playerBottom_px < spriteTop_world_px || playerTop_px > spriteBottom_world_px);
                 return overlap;
@@ -2979,6 +2983,7 @@ namespace FamidashEditor
         // Simulation time scale (1.0 = normal). Adjusting this slows/speeds the simulation
         // in even 10% increments when the user presses +/-.
         private double simTimeScale = 1.0;
+        private bool isFullSpeed = true; // Set at start of each frame: true when simTimeScale == 1.0 for deterministic integer math
         private const int JUMP_BUFFER_FRAMES = 6; // ~100ms @60Hz
         // Flag to enable refactored collision/physics system
         private bool useRefactoredPhysics = true;
@@ -3370,7 +3375,15 @@ namespace FamidashEditor
         // P/Invoke to check key state asynchronously from background threads
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
-        private static bool IsXDownAsync() { 
+        
+        // Flag to disable async keyboard polling for perfect determinism in auto levels
+        // Set to true when you want completely deterministic physics (no external keyboard state)
+        private bool disableAsyncKeyboardInput = true;  // Default to true for deterministic auto levels
+        
+        private bool IsXDownAsync() { 
+            // In deterministic mode (auto levels), never check actual keyboard state
+            if (disableAsyncKeyboardInput) return false;
+            
             // Check X (0x58), UP (0x26), or SPACE (0x20)
             return (GetAsyncKeyState(0x58) & 0x8000) != 0 || 
                    (GetAsyncKeyState(0x26) & 0x8000) != 0 || 
@@ -5915,6 +5928,7 @@ namespace FamidashEditor
                     if (!stillSupported)
                     {
                         onGround = false;
+                        wasZeroedByCollisionLastFrame = false;  // Clear flag so gravity resumes immediately
                     }
                 }
                 catch { onGround = false; }
@@ -7815,10 +7829,12 @@ namespace FamidashEditor
             {
                 try
                 {
-                    // Determine if robot is in "grounded" state (using onGround or ground stabilize)
-                    bool robotIsGrounded = onGround || groundStabilizeCounter > 0;
+                    // Use velocity to determine animation state (not onGround flag)
+                    // Tolerance: 0x0100 (same as wave animation uses for near-zero)
+                    bool robotHasVerticalVelocity = Math.Abs(playerVelY_fixed) > 0x0100;
+                    bool robotIsStationary = !robotHasVerticalVelocity;
                     
-                    if (robotIsGrounded && !paused)
+                    if (robotIsStationary && !paused)
                     {
                         // Increment accumulator and cycle counter (0-19 cycle: 5 frames per frame state, 4 frames total)
                         robotAnimationFrameAccum += simTimeScale;
@@ -7832,20 +7848,17 @@ namespace FamidashEditor
                             robotAnimationFrameAccum -= 1.0;
                         }
                     }
-                    else if (!robotIsGrounded)
+                    else if (robotHasVerticalVelocity)
                     {
-                        // Reset counter when leaving ground
+                        // Reset counter when velocity becomes non-zero
                         robotAnimationFrameCounter = 0;
                         robotAnimationFrameAccum = 0.0;
                     }
                     
-                    // Determine which image to show based on animation counter or jump state
+                    // Determine which image to show based on animation counter or velocity
                     string robotChoice;
-                    // Use robotjump.png if velocity is outside a small tolerance (not standing still)
-                    // Tolerance: 0x0100 (same as wave animation uses for near-zero)
-                    bool robotHasVerticalVelocity = Math.Abs(playerVelY_fixed) > 0x0100;
                     
-                    if (robotIsGrounded && !robotHasVerticalVelocity)
+                    if (robotIsStationary)
                     {
                         // Frame mapping: 0-4=robot.png, 5-9=robot2.png, 10-14=robot3.png, 15-19=robot4.png
                         int frameIndex = robotAnimationFrameCounter / 5;
@@ -9719,7 +9732,7 @@ namespace FamidashEditor
                         playerX_fixed >> 8,
                         playerY_fixed >> 8,
                         speedStr,
-                        ninjaJumps,
+                        ninjajumps[currplayer],
                         dblocked,
                         hblocked,
                         fblocked,
@@ -9832,12 +9845,18 @@ namespace FamidashEditor
                 // Respect pause: do not advance numeric simulation when paused.
                 if (paused) return;
                 
-                AppendSimDebug($"[STEP_START] playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
+                AppendSimDebug($"[STEP_START] playerX_fixed=0x{playerX_fixed:X4} ({playerX_fixed >> 8}px), playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
                 prevCameraCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
                 prevPlayerCenter_fixed = playerX_fixed + centerOffset_fixed;
 
+                // CRITICAL: Determine if at 100% speed to use pure integer math (no floating-point)
+                isFullSpeed = (simTimeScale == 1.0);
                 speedMultiplierLocal = tabSpeedMultiplier; // atomic read of volatile-like field
-                attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplierLocal) * simTimeScale);
+                // Use exact integer math when at 100% speed to ensure determinism
+                if (isFullSpeed)
+                    attemptedPlayerX_fixed = playerX_fixed + (currentSpeed_fixed * speedMultiplierLocal);
+                else
+                    attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplierLocal) * simTimeScale);
                 attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
 
                 // === SPRITE INTERACTIONS (BEFORE MOVEMENT) ===
@@ -9886,6 +9905,66 @@ namespace FamidashEditor
 
                 // Move the player forward in world coordinates AFTER sprite interactions
                 playerX_fixed = attemptedPlayerX_fixed;
+                
+                // When player moves horizontally while grounded, verify still supported
+                // Clear onGround if walking off platform to resume gravity immediately
+                if (onGround && physicsEnabled)
+                {
+                    try
+                    {
+                        bool stillSupported = false;
+                        if (gravityReversed)
+                        {
+                            stillSupported = IsTouchingCeiling();
+                        }
+                        else
+                        {
+                            const int HITBOX_W_LOCAL = 15;
+                            int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
+                            int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
+                            int footWorldY_px = (playerY_fixed >> 8) + playerVisualHeight - 1;
+                            int tileBelowY_world = footWorldY_px / TILE;
+                            int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
+                            if (tileIndexY >= 0 && tileIndexY < mapHeight)
+                            {
+                                for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
+                                {
+                                    if (tx < 0 || tx >= mapWidth) continue;
+                                    int tid = tiles[tileIndexY * mapWidth + tx];
+                                    int useTidForAnim = MapAnimatedTileIndex(tid);
+                                    int collisionTid = useTidForAnim;
+                                    if (useTidForAnim >= 1000)
+                                    {
+                                        if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
+                                            collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
+                                        else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
+                                        {
+                                            int group = (useTidForAnim - 1010) % 3;
+                                            collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
+                                        }
+                                        else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
+                                            collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
+                                        else
+                                            collisionTid = tid;
+                                    }
+                                    var col = MetatileCollisionTable.GetCollision((byte)collisionTid);
+                                    int tileStartX = tx * TILE;
+                                    int localX = Math.Max(0, Math.Min(TILE - 1, playerCenter_px - tileStartX));
+                                    if (ProvidesFloorAtColumnStatic(col, localX, out int _)) { stillSupported = true; break; }
+                                }
+                            }
+                        }
+
+                        if (!stillSupported)
+                        {
+                            onGround = false;
+                            wasZeroedByCollisionLastFrame = false;  // Clear flag so gravity resumes
+                        }
+                    }
+                    catch { }
+                }
                 
                 // === COLLISION/GROUNDING DISABLED ===
                 /*
@@ -10195,6 +10274,61 @@ namespace FamidashEditor
                         // Sync state back (gravity might have flipped)
                         gravityFlipped = (currplayer_gravity != 0);
                         AppendSimDebug($"[GRAV_POST_PHYSICS] currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed} mini={miniMode}");
+                        
+                        // === FORWARD COLLISION CHECK (x_movement_coll in famidash) ===
+                        // Check middle pixel on right edge for death AFTER X movement has occurred
+                        // This matches famidash's order: sprite_collide → movement (Y) → x_movement_coll → x_movement → bg_coll_death
+                        // Modes that have custom collision (spider/wave/snake) handle this themselves
+                        if (!MainWindow.Option_NoDeath && !hblocked && !deathTriggered)
+                        {
+                            bool needsForwardCheck = currentGameMode == 0 || // Cube
+                                                    currentGameMode == 4 || // Robot
+                                                    currentGameMode == 8 || // Ninja
+                                                    currentGameMode == 10;  // Football
+                            
+                            if (needsForwardCheck)
+                            {
+                                int playerX_px = playerX_fixed >> 8;
+                                int playerY_px = playerY_fixed >> 8;
+                                int hitboxW = (currplayer_mini != 0) ? 8 : 15;
+                                int hitboxH = (currplayer_mini != 0) ? 7 : 15;
+                                int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 9 : 0;
+                                
+                                int collisionX = playerX_px;
+                                int collisionY = playerY_px + hitboxOffsetY;
+                                
+                                int playerRightEdge_px = collisionX + hitboxW - 1;
+                                int playerCenterY_px = collisionY + (hitboxH / 2);
+                                
+                                int groundRowsToReserve_fwd = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                                bool middlePixelBlocked = CheckPixelCollision(playerRightEdge_px, playerCenterY_px, groundRowsToReserve_fwd);
+                                
+                                if (middlePixelBlocked)
+                                {
+                                    AppendSimDebug($"[DEATH] Forward middle pixel collision at ({playerRightEdge_px},{playerCenterY_px})");
+                                    deathTriggered = true;
+                                    deathTileX = playerRightEdge_px;
+                                    deathTileY = playerCenterY_px;
+                                    paused = true;
+                                    _ = StopMusicAsync();
+                                    
+                                    try
+                                    {
+                                        Dispatcher.BeginInvoke(new Action(() =>
+                                        {
+                                            try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                            if (this.Owner is MainWindow mw)
+                                            {
+                                                try { mw.PauseSimulatorPlayback(); } catch { }
+                                                try { mw.AddDeathMarker(playerRightEdge_px, playerCenterY_px); } catch { }
+                                            }
+                                        }));
+                                    }
+                                    catch { }
+                                }
+                            }
+                        }
+                        // === END FORWARD COLLISION CHECK ===
                         
                         // Reset gravity flip flag now that physics has processed it
                         gravityFlippedThisFrame = false;
@@ -10725,72 +10859,10 @@ namespace FamidashEditor
                 // Final safety clamp: ensure player remains above ground after camera moves
                 if (playerY_fixed > maxPlayerY_fixed_local) { playerY_fixed = maxPlayerY_fixed_local; playerVelY_fixed = 0; }
 
-                // === RIGHT SIDE DEATH/SNAP CHECK ===
-                // Right-edge collision with death check:
-                // - Middle pixel collision → DEATH (when NO DEATH is disabled)
-                // - Bottom half collision (but not middle) → snap up
-                // - NO DEATH enabled → always snap (no death)
-                // Disabled entirely for ball mode (mode 2) and cam mode
-                try
-                {
-                    bool skipSnap = currentGameMode == 2 || camModeActive; // Skip all snap logic for ball mode and cam mode
-                    
-                    if (!deathTriggered && !skipSnap)
-                    {
-                        int playerRightEdge_px = (playerX_fixed >> 8) + playerVisualWidth - 1;
-                        int playerTop_px = (playerY_fixed >> 8);
-                        int playerCenterY_px = playerTop_px + (playerVisualHeight / 2);
-                        int playerBottomHalfStart_px = playerCenterY_px;
-                        int playerBottom_px = playerTop_px + playerVisualHeight - 1;
-
-                        int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-
-                        // Check middle pixel on right edge - only death, not solid collision
-                        bool middlePixelBlocked = CheckPixelCollision(playerRightEdge_px, playerCenterY_px, groundRowsToReserve_local);
-                        
-                        // Debug: Log tile info at collision point
-                        int checkTileX = playerRightEdge_px / TILE;
-                        int checkTileY = playerCenterY_px / TILE;
-                        int checkTileIndexY = checkTileY + groundRowsToReserve_local;
-                        int checkTid = (checkTileIndexY >= 0 && checkTileIndexY < mapHeight && checkTileX >= 0 && checkTileX < mapWidth) 
-                            ? tiles[checkTileIndexY * mapWidth + checkTileX] : -1;
-                        var checkCol = checkTid >= 0 ? MetatileCollisionTable.GetCollision((byte)checkTid) : MetatileCollision.COL_NONE;
-                        AppendSimDebug($"[RIGHT-CHECK] Pos=({playerX_fixed >> 8},{playerY_fixed >> 8}) CheckPx=({playerRightEdge_px},{playerCenterY_px}) Tile=({checkTileX},{checkTileY}) TID={checkTid} Col={checkCol} Result={middlePixelBlocked}");
-                        
-                        if (middlePixelBlocked && !MainWindow.Option_NoDeath)
-                        {
-                            // DEATH - middle pixel hit (matches bg_coll_R in auto-scroll mode)
-                            // In famidash: x_movement_coll() calls bg_coll_R() which checks ONLY middle pixel
-                            // If blocked in auto-scroll: cube_data | 0x01 (death flag)
-                            AppendSimDebug($"[DEATH] Right middle pixel collision at ({playerRightEdge_px},{playerCenterY_px})");
-                            deathTriggered = true;
-                            paused = true;
-                            _ = StopMusicAsync();
-                            
-                            try
-                            {
-                                Dispatcher?.BeginInvoke(new Action(() =>
-                                {
-                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                    if (this.Owner is MainWindow mw)
-                                    {
-                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(playerRightEdge_px, playerCenterY_px); } catch { }
-                                    }
-                                }));
-                            }
-                            catch { }
-                        }
-                        // NOTE: Bottom-half collision and snapping happens separately in cube_eject() phase
-                        // (the general downward collision check that runs after x_movement_coll)
-                        // NOT part of right-side collision logic in famidash source
-                    }
-                }
-                catch (Exception ex)
-                {
-                    AppendSimDebug($"Right collision death check error: {ex.Message}");
-                }
-                // === END RIGHT SIDE DEATH/SNAP CHECK ===
+                // === RIGHT SIDE DEATH CHECK - REMOVED ===
+                // This check has been moved to CubeEject_Fresh() where it runs as part of collision detection
+                // Keeping it here caused inconsistent timing between runs
+                // === END RIGHT SIDE DEATH CHECK ===
                 
                 // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
                 // Skip this enforcement when gravity is inverted (allow jumping into ground rows from ceiling)

@@ -59,26 +59,41 @@ namespace FamidashEditor
                     
                 case 2:
                     playerVelY_fixed = -playerVelX_fixed;
-                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                    if (isFullSpeed)
+                        playerY_fixed += playerVelY_fixed;
+                    else
+                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                     break;
                 case 3:
                     playerVelY_fixed = playerVelX_fixed;
-                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                    if (isFullSpeed)
+                        playerY_fixed += playerVelY_fixed;
+                    else
+                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                     break;
                 case 4:
                     playerVelY_fixed = playerVelX_fixed;
-                    playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale);
+                    if (isFullSpeed)
+                        playerY_fixed -= playerVelY_fixed;
+                    else
+                        playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale);
                     break;
                 case 5:
                     playerVelY_fixed = playerVelX_fixed;
-                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                    if (isFullSpeed)
+                        playerY_fixed += playerVelY_fixed;
+                    else
+                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                     break;
             }
             
             // Apply velocity if not on slope
             if (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0)
             {
-                playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                if (isFullSpeed)
+                    playerY_fixed += playerVelY_fixed;
+                else
+                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
             }
             else
             {

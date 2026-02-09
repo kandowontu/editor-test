@@ -350,8 +350,9 @@ namespace FamidashEditor
             // CRITICAL FIX: Don't apply gravity if we were just zeroed by collision detection
             // This prevents oscillation where gravity re-applies to already-grounded players
             // EXCEPTION: Pogo mode needs gravity even when grounded so it can bounce
+            // EXCEPTION: Ninja mode needs gravity to reset triple jump properly when grounded
             // Only reset the flag when velocity becomes non-zero (player leaves ground)
-            if (playerVelY_fixed == 0 && wasZeroedByCollisionLastFrame && currentGameMode != 9)
+            if (playerVelY_fixed == 0 && wasZeroedByCollisionLastFrame && currentGameMode != 9 && currentGameMode != 8)
             {
                 // We're grounded - skip gravity application (but NOT for Pogo mode)
                 AppendSimDebug($"[GRAV_SKIP] velY==0 && wasZeroedByCollision=true - skipping gravity, velocity stays at 0");
@@ -399,7 +400,11 @@ namespace FamidashEditor
                 
                 // From gamemode_cube.h line 264: currplayer_vel_y += tmpaccel;
                 int velY_before = playerVelY_fixed;
-                playerVelY_fixed += (int)Math.Round(tmpaccel * simTimeScale);
+                // Use exact integer math when simTimeScale is 1.0 for perfect determinism
+                if (isFullSpeed)
+                    playerVelY_fixed += tmpaccel;
+                else
+                    playerVelY_fixed += (int)Math.Round(tmpaccel * simTimeScale);
                 AppendSimDebug($"[GRAV_APPLY] velY: 0x{velY_before:X4} + (0x{tmpaccel:X} * {simTimeScale:F2}) = 0x{playerVelY_fixed:X4}");
             }
             else if (tmp1 == 2)
@@ -416,7 +421,10 @@ namespace FamidashEditor
             {
                 // Upward dash: vel_y = vel_x * 2, then subtract from position and return early
                 playerVelY_fixed = velocityX * 2;
-                playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale);
+                if (isFullSpeed)
+                    playerY_fixed -= playerVelY_fixed;
+                else
+                    playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale);
                 return;
             }
             else if (tmp1 == 5)
@@ -428,13 +436,20 @@ namespace FamidashEditor
             {
                 // Horizontal dash (tmp1 == 1): vel_y = gravity ? -1 : 1, then return early
                 playerVelY_fixed = (currplayer_gravity != 0) ? -1 : 1;
-                playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                if (isFullSpeed)
+                    playerY_fixed += playerVelY_fixed;
+                else
+                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                 return;
             }
             
             // From gamemode_cube.h line 278: currplayer_y += currplayer_vel_y;
             int posY_before = playerY_fixed;
-            playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+            // Use exact integer math when simTimeScale is 1.0 for perfect determinism
+            if (isFullSpeed)
+                playerY_fixed += playerVelY_fixed;
+            else
+                playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
             AppendSimDebug($"[GRAV_POS] posY: 0x{posY_before:X4} ({posY_before >> 8}px) + (0x{playerVelY_fixed:X4} * {simTimeScale:F2}) = 0x{playerY_fixed:X4} ({playerY_fixed >> 8}px)");
             
             // Clamp to world bounds (allow negative Y to reach top tiles)
@@ -448,6 +463,9 @@ namespace FamidashEditor
         /// </summary>
         private void CubeEject_Fresh()
         {
+            // Clear grounded flag - will be set to true if collision finds ground
+            onGround = false;
+            
             // Calculate hitbox in pixels
             int playerX_px = playerX_fixed >> 8;
             int playerY_px = playerY_fixed >> 8;
