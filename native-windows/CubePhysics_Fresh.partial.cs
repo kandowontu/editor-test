@@ -542,7 +542,11 @@ namespace FamidashEditor
                         if (playerVelY_fixed >= 0)
                         {
                             // Snap player to rest position above the collision surface
-                            int newY = collisionTopY - hitboxH - hitboxOffsetY - 1;
+                            // NES: player occupies y to y+height-1 (15 pixels for h=15).
+                            // Floor starts at collisionTopY. Player must sit flush:
+                            // y + height - 1 = collisionTopY - 1  →  y = collisionTopY - height
+                            // Then subtract hitboxOffsetY for mini mode offset.
+                            int newY = collisionTopY - hitboxH - hitboxOffsetY;
                             // AppendSimDebug($"[CUBE]     Eject down: collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
                             playerY_fixed = newY << 8;
                             playerVelY_fixed = 0;
@@ -565,62 +569,18 @@ namespace FamidashEditor
                     }
                 }
                 
-                // Normal gravity: Check TOP collision with passthrough/death for Cube/Robot/Ninja
-                // H block: skip death check and always eject like UFO
-                if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && !MainWindow.Option_NoDeath && !hblocked)
+                // Normal gravity: Check TOP collision ONLY when hblocked or fblocked
+                // NES cube_eject: bg_coll_U is ONLY called when currplayer_gravity!=0 OR hblocked/fblocked
+                // For normal gravity without h/f blocks, ceiling collision is NOT checked at all
+                // Spike death is handled separately by bg_coll_death (CheckDeathCollision/CheckCenterPointDeath)
+                if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (hblocked || fblocked))
                 {
+                    // H/F block: eject from top collision (NES cube_eject bg_coll_U path)
                     var (topCollided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
                     if (topCollided)
                     {
-                        
-                        // Check right-side pixel of player (right edge horizontally, upper portion vertically)
-                        // Use right edge X, and Y + hitboxH/3 to catch COL_TOP (collision in top 8px)
-                        int rightX_px = collisionX + hitboxW - 1;  // Right edge of hitbox
-                        int upperY_px = collisionY + (hitboxH / 3);  // Upper third
-                        int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                        
-                        bool rightPixelBlocked = CheckPixelCollision(rightX_px, upperY_px, groundRowsToReserve);
-                        AppendSimDebug($"[CUBE] Top collision check: rightX={rightX_px}, upperY={upperY_px}, blocked={rightPixelBlocked}, collisionY={collisionY}, hitboxH={hitboxH}");
-                        
-                        if (rightPixelBlocked)
-                        {
-                            // Center pixel hit - DEATH
-                            AppendSimDebug($"[DEATH] Top right pixel collision at ({rightX_px},{upperY_px})");
-                            deathTriggered = true;
-                            deathTileX = rightX_px;
-                            deathTileY = upperY_px;
-                            paused = true;
-                            _ = StopMusicAsync();
-                            
-                            try
-                            {
-                                Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                    if (this.Owner is MainWindow mw)
-                                    {
-                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(rightX_px, upperY_px); } catch { }
-                                    }
-                                }));
-                            }
-                            catch { }
-                        }
-                        else
-                        {
-                            // Center is clear - allow passthrough (no collision)
-                            AppendSimDebug($"[CUBE]   Top center clear - passthrough allowed");
-                        }
-                    }
-                }
-                else if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (MainWindow.Option_NoDeath || hblocked))
-                {
-                    // NO DEATH mode OR H block: eject from top collision like UFO/Ship
-                    var (topCollided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-                    if (topCollided)
-                    {
-                        int newY = collisionBottomY - hitboxOffsetY + 1;
-                        AppendSimDebug($"[CUBE]     Eject up ({(hblocked ? "H BLOCK" : "NO DEATH")}): collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
+                        int newY = collisionBottomY - hitboxOffsetY;
+                        AppendSimDebug($"[CUBE]     Eject up ({(hblocked ? "H BLOCK" : "F BLOCK")}): collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
                         playerY_fixed = newY << 8;
                         
                         // H block: headbonk - set velocity to 1 instead of 0 for instant ejection (gamemode_cube.h line 309)
@@ -679,61 +639,18 @@ namespace FamidashEditor
                     }
                 }
                 
-                // Reversed gravity: Check BOTTOM collision with passthrough/death for Cube/Robot/Ninja
-                // H block: skip death check and always eject like UFO
-                if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && !MainWindow.Option_NoDeath && !hblocked)
+                // Reversed gravity: Check BOTTOM collision ONLY when hblocked or fblocked
+                // NES cube_eject: bg_coll_D is ONLY called when currplayer_gravity==0 OR hblocked/fblocked
+                // For reversed gravity without h/f blocks, floor collision is NOT checked at all
+                // Spike death is handled separately by bg_coll_death (CheckDeathCollision/CheckCenterPointDeath)
+                if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (hblocked || fblocked))
                 {
+                    // H/F block: eject from bottom collision (NES cube_eject bg_coll_D path)
                     var (bottomCollided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
                     if (bottomCollided)
                     {
-                        // Check right-side pixel of player (right edge horizontally, lower portion vertically)
-                        // Use right edge X, and Y + hitboxH*2/3 to catch COL_BOTTOM (collision in bottom 8px)
-                        int rightX_px = collisionX + hitboxW - 1;  // Right edge of hitbox
-                        int lowerY_px = collisionY + (hitboxH * 2 / 3);  // Lower two-thirds
-                        int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                        
-                        bool rightPixelBlocked = CheckPixelCollision(rightX_px, lowerY_px, groundRowsToReserve);
-                        AppendSimDebug($"[CUBE] Bottom collision check: rightX={rightX_px}, lowerY={lowerY_px}, blocked={rightPixelBlocked}, collisionY={collisionY}, hitboxH={hitboxH}");
-                        
-                        if (rightPixelBlocked)
-                        {
-                            // Center pixel hit - DEATH
-                            AppendSimDebug($"[DEATH] Bottom right pixel collision at ({rightX_px},{lowerY_px})");
-                            deathTriggered = true;
-                            deathTileX = rightX_px;
-                            deathTileY = lowerY_px;
-                            paused = true;
-                            _ = StopMusicAsync();
-                            
-                            try
-                            {
-                                Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                    if (this.Owner is MainWindow mw)
-                                    {
-                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(rightX_px, lowerY_px); } catch { }
-                                    }
-                                }));
-                            }
-                            catch { }
-                        }
-                        else
-                        {
-                            // Center is clear - allow passthrough (no collision)
-                            AppendSimDebug($"[CUBE]   Bottom center clear - passthrough allowed");
-                        }
-                    }
-                }
-                else if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (MainWindow.Option_NoDeath || hblocked))
-                {
-                    // NO DEATH mode OR H block: eject from bottom collision like UFO/Ship
-                    var (bottomCollided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
-                    if (bottomCollided)
-                    {
-                        int newY = collisionTopY - hitboxH - hitboxOffsetY - 1;
-                        AppendSimDebug($"[CUBE]     Eject down ({(hblocked ? "H BLOCK" : "NO DEATH")}): collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
+                        int newY = collisionTopY - hitboxH - hitboxOffsetY;
+                        AppendSimDebug($"[CUBE]     Eject down ({(hblocked ? "H BLOCK" : "F BLOCK")}): collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
                         playerY_fixed = newY << 8;
                         
                         // H block: headbonk for floor - set velocity to 0xffff instead of 0 (gamemode_cube.h line 291)

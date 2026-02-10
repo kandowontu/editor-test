@@ -371,7 +371,7 @@ namespace FamidashEditor
                         // Player bottom = playerY + hitboxOffsetY + hitboxH
                         // We want: playerY + hitboxOffsetY + hitboxH = collisionTopY - 1
                         // So: playerY = collisionTopY - 1 - hitboxOffsetY - hitboxH
-                        int newY = collisionTopY - hitboxH - hitboxOffsetY - 1;
+                        int newY = collisionTopY - hitboxH - hitboxOffsetY;
                         int oldY = playerY_fixed >> 8;
                         AppendSimDebug($"[BALL_EJECT_D] collisionTopY={collisionTopY}, hitboxH={hitboxH}, hitboxOffsetY={hitboxOffsetY}, oldY={oldY}, newY={newY}");
                         playerY_fixed = (newY << 8);

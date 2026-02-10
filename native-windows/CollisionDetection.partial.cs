@@ -181,69 +181,70 @@ namespace FamidashEditor
             int playerRight_px = playerX_px + width - 1;
             
             // CRITICAL FIX: Check for spike death BEFORE processing any collision
-            // This matches famidash bg_coll_floor_spikes() behavior
+            // NES bg_coll_D checks 3 X-points at Y = bottom edge (Generic.y + height):
+            //   left edge, left + width/2, left + width
             if (!MainWindow.Option_NoDeath)
             {
-                // For tiles with spikes in upper region (like COL_BOTTOM_SPIKES), we need to check
-                // multiple Y levels, not just the bottom edge. Check bottom edge and 7 pixels up.
-                for (int yOffset = 0; yOffset <= Math.Min(7, height - 1); yOffset++)
+                // Match NES bg_coll_D: 3 check points at Y = playerBottom (exclusive bottom pixel)
+                int checkY = playerBottom_px;
+                int[] checkPointsX = new int[]
                 {
-                    int checkY = playerBottom_px - yOffset;
+                    playerLeft_px,               // Left edge (NES: Generic.x + scroll_x)
+                    playerLeft_px + width / 2,   // Center (NES: + width/2)
+                    playerLeft_px + width,        // Right edge + 1 (NES: + width, exclusive)
+                };
+                
+                foreach (int px in checkPointsX)
+                {
+                    int tileX = px / TILE;
+                    int tileY = checkY / TILE;
                     
-                    // Check at left, center, and right X positions
-                    int[] checkPointsX = new int[]
-                    {
-                        playerLeft_px + 3,           // Left (inset 3px)
-                        playerLeft_px + width / 2,   // Center
-                        playerRight_px - 3,          // Right (inset 3px)
-                    };
+                    if (tileX < 0 || tileX >= mapWidth || tileY < 0 || tileY >= mapHeight) continue;
                     
-                    foreach (int px in checkPointsX)
+                    int checkTileArrayY = tileY + groundRowsToReserve;
+                    if (checkTileArrayY >= mapHeight) continue;
+                    
+                    int checkTileIdx = checkTileArrayY * mapWidth + tileX;
+                    if (checkTileIdx < 0 || checkTileIdx >= tiles.Length) continue;
+                    
+                    int checkTileId = tiles[checkTileIdx];
+                    var checkCollision = MetatileCollisionTable.GetCollision((byte)checkTileId);
+                    
+                    int localX = px % TILE;
+                    int localY = checkY % TILE;
+                    
+                    // NES bg_coll_D → bg_coll_return_D → bg_coll_U_D_checks only handles:
+                    //   0x03 (COL_DEATH_TOP) → col_death_top_routine()
+                    //   0x04 (COL_DEATH_BOTTOM) → col_death_bottom_routine()
+                    // All other spike types (COL_DEATH, COL_DEATH_LEFT/RIGHT, etc.) are handled
+                    // by bg_coll_death() (the center-point check = CheckDeathCollision)
+                    if ((checkCollision == MetatileCollision.COL_DEATH_TOP || checkCollision == MetatileCollision.COL_DEATH_BOTTOM) &&
+                        MetatileCollisionTable.TileKillsAtPixel(checkCollision, localX, localY))
                     {
-                        int tileX = px / TILE;
-                        int tileY = checkY / TILE;
+                        // SPIKE DEATH DETECTED - trigger death immediately and return
+                        AppendSimDebug($"[DEATH] Floor spike detected at ({px},{checkY}) tile={checkTileId:X2}");
+                        deathTriggered = true;
+                        deathTileX = px;
+                        deathTileY = checkY;
+                        paused = true;
+                        _ = StopMusicAsync();
                         
-                        if (tileX < 0 || tileX >= mapWidth || tileY < 0 || tileY >= mapHeight) continue;
-                        
-                        int checkTileArrayY = tileY + groundRowsToReserve;
-                        if (checkTileArrayY >= mapHeight) continue;
-                        
-                        int checkTileIdx = checkTileArrayY * mapWidth + tileX;
-                        if (checkTileIdx < 0 || checkTileIdx >= tiles.Length) continue;
-                        
-                        int checkTileId = tiles[checkTileIdx];
-                        var checkCollision = MetatileCollisionTable.GetCollision((byte)checkTileId);
-                        
-                        int localX = px % TILE;
-                        int localY = checkY % TILE;
-                        
-                        if (MetatileCollisionTable.TileKillsAtPixel(checkCollision, localX, localY))
+                        try
                         {
-                            // SPIKE DEATH DETECTED - trigger death immediately and return
-                            AppendSimDebug($"[DEATH] Floor spike detected at ({px},{checkY}) tile={checkTileId:X2} yOffset={yOffset}");
-                            deathTriggered = true;
-                            deathTileX = px;
-                            deathTileY = checkY;
-                            paused = true;
-                            _ = StopMusicAsync();
-                            
-                            try
+                            Dispatcher.BeginInvoke(new Action(() =>
                             {
-                                Dispatcher.BeginInvoke(new Action(() =>
+                                try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                if (this.Owner is MainWindow mw)
                                 {
-                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                    if (this.Owner is MainWindow mw)
-                                    {
-                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(px, checkY); } catch { }
-                                    }
-                                }));
-                            }
-                            catch { }
-                            
-                            // Return no collision so position doesn't snap
-                            return (false, 0);
+                                    try { mw.PauseSimulatorPlayback(); } catch { }
+                                    try { mw.AddDeathMarker(px, checkY); } catch { }
+                                }
+                            }));
                         }
+                        catch { }
+                        
+                        // Return no collision so position doesn't snap
+                        return (false, 0);
                     }
                 }
             }
@@ -358,23 +359,24 @@ namespace FamidashEditor
             int playerLeft_px = playerX_px;
             int playerRight_px = playerX_px + width - 1;
             
-            // CRITICAL FIX: Check for spike death BEFORE processing any collision (reversed gravity)
+            // CRITICAL FIX: Check for spike death BEFORE processing any collision
+            // NES bg_coll_U checks 3 X-points at Y = top + 1:
+            //   left edge, left + width/2, left + width
             if (!MainWindow.Option_NoDeath)
             {
-                // Check 4 corner points + right-center point (5-point check) for ceiling spikes
+                // Match NES bg_coll_U: 3 check points at Y = playerTop + 1
+                int checkY = playerTop_px + 1;
                 int[] checkPointsX = new int[]
                 {
-                    playerLeft_px + 3,           // Top-left (inset 3px)
-                    playerRight_px - 3,          // Top-right (inset 3px)
-                    playerLeft_px + width / 2,   // Top-center
-                    playerRight_px - 3,          // Right-center (for side spikes)
+                    playerLeft_px,               // Left edge (NES: Generic.x + scroll_x)
+                    playerLeft_px + width / 2,   // Center (NES: + width/2)
+                    playerLeft_px + width,        // Right edge + 1 (NES: + width, exclusive)
                 };
                 int[] checkPointsY = new int[]
                 {
-                    playerTop_px,                // Top-left Y
-                    playerTop_px,                // Top-right Y
-                    playerTop_px,                // Top-center Y
-                    playerY_px + height / 2,     // Right-center Y (middle of hitbox)
+                    checkY,                      // All 3 points at same Y
+                    checkY,
+                    checkY,
                 };
                 
                 for (int i = 0; i < checkPointsX.Length; i++)
@@ -398,7 +400,13 @@ namespace FamidashEditor
                     int localX = px % TILE;
                     int localY = py % TILE;
                     
-                    if (MetatileCollisionTable.TileKillsAtPixel(checkCollision, localX, localY))
+                    // NES bg_coll_U → bg_coll_return_U → bg_coll_U_D_checks only handles:
+                    //   0x03 (COL_DEATH_TOP) → col_death_top_routine()
+                    //   0x04 (COL_DEATH_BOTTOM) → col_death_bottom_routine()
+                    // All other spike types (COL_DEATH, COL_DEATH_LEFT/RIGHT, etc.) are handled
+                    // by bg_coll_death() (the center-point check = CheckDeathCollision)
+                    if ((checkCollision == MetatileCollision.COL_DEATH_TOP || checkCollision == MetatileCollision.COL_DEATH_BOTTOM) &&
+                        MetatileCollisionTable.TileKillsAtPixel(checkCollision, localX, localY))
                     {
                         // SPIKE DEATH DETECTED - trigger death immediately and return
                         AppendSimDebug($"[DEATH] Ceiling spike detected at ({px},{py}) tile={checkTileId:X2} BEFORE collision check");

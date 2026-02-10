@@ -903,12 +903,12 @@ namespace FamidashEditor
                     pxOff = offs2.offsetX; pyOff = offs2.offsetY;
                 }
 
-                // Compute world-space sprite rectangle (inclusive pixels)
+                // Compute world-space sprite rectangle using NES-style exclusive bounds
                 int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 int spriteLeft_world_px = storageTileX * TILE + hxoff + pxOff;
                 int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff;
-                int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw) - 1;
-                int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh) - 1;
+                int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw);   // exclusive (NES-style)
+                int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh);   // exclusive (NES-style)
 
                 // If the hitbox table entry is the default TILE size but a larger sprite image
                 // is available, prefer the image size for collision
@@ -927,21 +927,22 @@ namespace FamidashEditor
                         {
                             hw = Math.Max(1, bs.PixelWidth);
                             hh = Math.Max(1, bs.PixelHeight);
-                            spriteRight_world_px = spriteLeft_world_px + hw - 1;
-                            spriteBottom_world_px = spriteTop_world_px + hh - 1;
+                            spriteRight_world_px = spriteLeft_world_px + hw;   // exclusive (NES-style)
+                            spriteBottom_world_px = spriteTop_world_px + hh;   // exclusive (NES-style)
                         }
                     }
                 }
                 catch { }
 
                 // Check for "touching" - edges can be adjacent (1 pixel apart) without overlapping
-                // Standard overlap: !(right < left || left > right)
-                // Touching: !(right + 1 < left || left > right + 1)
-                // Equivalently: !(right < left - 1 || left > right + 1)
-                bool touching = !(playerRight_px < spriteLeft_world_px - 1 || 
-                                 playerLeft_px > spriteRight_world_px + 1 || 
-                                 playerBottom_px < spriteTop_world_px - 1 || 
-                                 playerTop_px > spriteBottom_world_px + 1);
+                // Player bounds are inclusive (x + w - 1), sprite bounds are exclusive (x + w, NES-style).
+                // NES overlap: !((x1+w1 < x2) || (x2+w2 < x1) || (y1+h1 < y2) || (y2+h2 < y1))
+                // playerRight_excl = playerRight_px + 1 (convert inclusive to exclusive)
+                // Touching adds 1px tolerance: use (pR+2) and (sR+1) / (sL-1) etc.
+                bool touching = !((playerRight_px + 2) < spriteLeft_world_px || 
+                                 (spriteRight_world_px + 1) < playerLeft_px || 
+                                 (playerBottom_px + 2) < spriteTop_world_px || 
+                                 (spriteBottom_world_px + 1) < playerTop_px);
                 return touching;
             }
             catch { return false; }
@@ -993,15 +994,19 @@ namespace FamidashEditor
                     pxOff = offs2.offsetX; pyOff = offs2.offsetY;
                 }
 
-                // Compute world-space sprite rectangle (inclusive pixels)
+                // Compute world-space sprite rectangle using NES-style EXCLUSIVE right/bottom bounds.
+                // NES check_collision() tests: (x + width >= other_x), where (x + width) is the
+                // exclusive bound (one pixel past the last occupied pixel). Using inclusive
+                // bounds (x + w - 1) makes the collision window 1px too narrow on each side,
+                // totalling 2px narrower horizontally and 2px shorter vertically vs Famidash.
                 // Rendering subtracts `groundRowsToReserve` from the displayed anchor Y to
                 // reserve bottom ground rows. Adjust collision to match displayed origin
                 // by applying the same vertical shift when computing world sprite rect.
                 int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 int spriteLeft_world_px = storageTileX * TILE + hxoff + pxOff;
                 int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff;
-                int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw) - 1;
-                int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh) - 1;
+                int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw);   // exclusive bound (NES: x + width)
+                int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh);   // exclusive bound (NES: y + height)
 
                 // If the hitbox table entry is the default TILE size but a larger sprite image
                 // is available (either in preview map or spriteImages), prefer the image size
@@ -1024,8 +1029,8 @@ namespace FamidashEditor
                         {
                             hw = Math.Max(1, bs.PixelWidth);
                             hh = Math.Max(1, bs.PixelHeight);
-                            spriteRight_world_px = spriteLeft_world_px + hw - 1;
-                            spriteBottom_world_px = spriteTop_world_px + hh - 1;
+                            spriteRight_world_px = spriteLeft_world_px + hw;   // exclusive (NES-style)
+                            spriteBottom_world_px = spriteTop_world_px + hh;   // exclusive (NES-style)
                         }
                     }
                 }
@@ -1049,7 +1054,13 @@ namespace FamidashEditor
                 catch { }
                 */
 
-                bool overlap = !(playerRight_px < spriteLeft_world_px || playerLeft_px > spriteRight_world_px || playerBottom_px < spriteTop_world_px || playerTop_px > spriteBottom_world_px);
+                // NES check_collision() uses exclusive bounds: collision when (x1+w1 >= x2) && (x2+w2 >= x1).
+                // Player bounds arrive as inclusive (x + w - 1), so playerRight_excl = playerRight_px + 1.
+                // Sprite bounds are now exclusive (x + w).
+                // NES no-collision: (x1+w1 < x2) || (x2+w2 < x1) || (y1+h1 < y2) || (y2+h2 < y1)
+                // With our variables: ((pR+1) < sL) || (sR < pL) || ((pB+1) < sT) || (sB < pT)
+                // Note: sR < pL is equivalent to pL > sR, using strict > because NES uses bcc (< unsigned)
+                bool overlap = !((playerRight_px + 1) < spriteLeft_world_px || spriteRight_world_px < playerLeft_px || (playerBottom_px + 1) < spriteTop_world_px || spriteBottom_world_px < playerTop_px);
                 return overlap;
             }
             catch { return false; }

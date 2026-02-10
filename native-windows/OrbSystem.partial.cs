@@ -125,18 +125,20 @@ namespace FamidashEditor
                     pxOff = offs2.offsetX; pyOff = offs2.offsetY;
                 }
 
-                // Compute world-space sprite rectangle
+                // Compute world-space sprite rectangle (NES-style exclusive bounds)
                 int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 int spriteLeft_world_px = storageTileX * TILE + hxoff + pxOff;
                 int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff;
-                int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw) - 1;
-                int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh) - 1;
+                int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw);   // exclusive (NES-style)
+                int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh);   // exclusive (NES-style)
 
-                // Check AABB overlap
-                return !(playerLeft_px > spriteRight_world_px ||
-                         playerRight_px < spriteLeft_world_px ||
-                         playerTop_px > spriteBottom_world_px ||
-                         playerBottom_px < spriteTop_world_px);
+                // Check AABB overlap using NES check_collision() semantics
+                // Player bounds are inclusive (x + w - 1), sprite bounds are exclusive (x + w)
+                // NES: no collision when (x1+w1 < x2) || (x2+w2 < x1) || (y1+h1 < y2) || (y2+h2 < y1)
+                return !((playerRight_px + 1) < spriteLeft_world_px ||
+                         spriteRight_world_px < playerLeft_px ||
+                         (playerBottom_px + 1) < spriteTop_world_px ||
+                         spriteBottom_world_px < playerTop_px);
             }
             catch
             {
