@@ -68,6 +68,9 @@ namespace FamidashEditor
             byte gravityAtFrameStart = currplayer_gravity;
             CubeEject_Fresh();
             
+            // Update slope exit velocity counters (NES: called after eject in process_cube)
+            UpdateSlopeCounters_Fresh();
+            
             // Read input
             bool holdJump = IsXDownAsync() || keyXHeld;
             int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);

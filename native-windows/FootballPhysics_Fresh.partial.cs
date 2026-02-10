@@ -45,6 +45,9 @@ namespace FamidashEditor
             // Handle collision detection like Cube does
             CubeEject_Fresh();
             
+            // Update slope exit velocity counters (NES: called after eject in process_cube)
+            UpdateSlopeCounters_Fresh();
+            
             // Clear hblocked flag at end of frame
             hblocked = false;
             

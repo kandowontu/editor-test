@@ -32,8 +32,12 @@ namespace FamidashEditor
         private int tmp7 = 0;
         private int tmp8 = 0;
         
-        // Last slope type tracking
-        private int currplayer_last_slope_type = 0;
+        // Last slope type tracking - accessor to dual-mode array in SlopeCollision.partial.cs
+        private int currplayer_last_slope_type
+        {
+            get => last_slope_type_arr[currplayer];
+            set => last_slope_type_arr[currplayer] = value;
+        }
         
         /// <summary>
         /// bg_collision_sub - Get collision type at temp_x, temp_y
@@ -123,9 +127,10 @@ namespace FamidashEditor
             int tileIndexY = tileY + groundRowsToReserve;
             
             // Check if past bottom of map (ground layer)
+            // NES ground tiles are COL_FLOOR_CEIL (0x01, 0x05, etc.), which auto-sets dblocked
             if (tileIndexY >= mapHeight)
             {
-                collision = (byte)MetatileCollision.COL_ALL;  // Ground is solid
+                collision = (byte)MetatileCollision.COL_FLOOR_CEIL;  // Ground = floor/ceil (auto-dblocks wave)
                 return;
             }
             

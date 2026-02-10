@@ -102,6 +102,9 @@ namespace FamidashEditor
             byte gravityAtFrameStart = currplayer_gravity;
             CubeEject_Fresh();
             
+            // Update slope exit velocity counters (NES: called after eject in process_cube)
+            UpdateSlopeCounters_Fresh();
+            
             // Check jump AFTER collision (matches Cube order) - velocity will be 0 if grounded
             if (playerVelY_fixed == 0 && robotJumpPressed && !orbed[currplayer] && dashing[currplayer] == 0) {
                 robotJumpPressed = false; // Clear flag

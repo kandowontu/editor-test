@@ -565,7 +565,8 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        // AppendSimDebug($"[CUBE]     NO COLLISION - falling! Y={playerY_px}");
+                        // No slope or flat collision — clear flag so gravity resumes next frame
+                        wasZeroedByCollisionLastFrame = false;
                     }
                 }
                 
@@ -624,6 +625,7 @@ namespace FamidashEditor
                         if (!hblocked)
                         {
                             playerVelY_fixed = 0;
+                            wasZeroedByCollisionLastFrame = true;
                             onGround = true;  // Mark as grounded so main loop can check if still supported
                         }
                         else
@@ -636,6 +638,11 @@ namespace FamidashEditor
                             gravityFlipped = true;
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
                         }
+                    }
+                    else
+                    {
+                        // No ceiling collision — clear flag so gravity resumes next frame
+                        wasZeroedByCollisionLastFrame = false;
                     }
                 }
                 

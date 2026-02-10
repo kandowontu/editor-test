@@ -134,8 +134,10 @@ namespace FamidashEditor
                 case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
                     return (0, 0, 16, 16); // Use full tile for initial bounds, check regions specially
                 
-                // Slope tiles - return full tile bounds so flat collision fallback can detect them
-                // This matches NES behavior where slope tiles have RISING/FALLING flags in collision_table
+                // Slope tiles - return EMPTY bounds so CheckCollisionDown/Up does NOT
+                // treat them as full 16x16 solid blocks. Slope collision is handled entirely
+                // by the dedicated bg_coll_D_slopes() / bg_coll_U_slopes() system which
+                // correctly computes per-pixel slope height and ejection.
                 case MetatileCollision.COL_SLOPE_RD45:
                 case MetatileCollision.COL_SLOPE_RD22_RIGHT:
                 case MetatileCollision.COL_SLOPE_RD22_LEFT:
@@ -156,7 +158,7 @@ namespace FamidashEditor
                 case MetatileCollision.COL_SLOPE_LU22_LEFT:
                 case MetatileCollision.COL_SLOPE_LU66_BOT:
                 case MetatileCollision.COL_SLOPE_LU66_TOP:
-                    return (0, 0, 16, 16); // Full tile bounds for flat collision fallback
+                    return (16, 16, 0, 0); // Invalid bounds = no solid collision (handled by slope system)
                 
                 // No collision
                 case MetatileCollision.COL_NONE:
@@ -187,15 +189,10 @@ namespace FamidashEditor
             {
                 // Match NES bg_coll_D: 3 check points at Y = playerBottom (exclusive bottom pixel)
                 int checkY = playerBottom_px;
-                int[] checkPointsX = new int[]
+                // Inline 3 check points to avoid per-frame array allocation
+                for (int cpIdx = 0; cpIdx < 3; cpIdx++)
                 {
-                    playerLeft_px,               // Left edge (NES: Generic.x + scroll_x)
-                    playerLeft_px + width / 2,   // Center (NES: + width/2)
-                    playerLeft_px + width,        // Right edge + 1 (NES: + width, exclusive)
-                };
-                
-                foreach (int px in checkPointsX)
-                {
+                    int px = cpIdx == 0 ? playerLeft_px : cpIdx == 1 ? playerLeft_px + width / 2 : playerLeft_px + width;
                     int tileX = px / TILE;
                     int tileY = checkY / TILE;
                     
@@ -366,23 +363,11 @@ namespace FamidashEditor
             {
                 // Match NES bg_coll_U: 3 check points at Y = playerTop + 1
                 int checkY = playerTop_px + 1;
-                int[] checkPointsX = new int[]
+                // Inline 3 check points to avoid per-frame array allocation
+                for (int cpIdx = 0; cpIdx < 3; cpIdx++)
                 {
-                    playerLeft_px,               // Left edge (NES: Generic.x + scroll_x)
-                    playerLeft_px + width / 2,   // Center (NES: + width/2)
-                    playerLeft_px + width,        // Right edge + 1 (NES: + width, exclusive)
-                };
-                int[] checkPointsY = new int[]
-                {
-                    checkY,                      // All 3 points at same Y
-                    checkY,
-                    checkY,
-                };
-                
-                for (int i = 0; i < checkPointsX.Length; i++)
-                {
-                    int px = checkPointsX[i];
-                    int py = checkPointsY[i];
+                    int px = cpIdx == 0 ? playerLeft_px : cpIdx == 1 ? playerLeft_px + width / 2 : playerLeft_px + width;
+                    int py = checkY;
                     int tileX = px / TILE;
                     int tileY = py / TILE;
                     

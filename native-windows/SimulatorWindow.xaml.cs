@@ -12,6 +12,48 @@ namespace FamidashEditor
 {
     public partial class SimulatorWindow : Window
     {
+        // Cached embedded resource lookup to avoid calling GetManifestResourceNames() every frame.
+        // Maps resource suffix (e.g. "cube.png") to BitmapImage. Thread-safe via lock.
+        private static readonly object s_resourceCacheLock = new object();
+        private static System.Collections.Generic.Dictionary<string, BitmapImage?>? s_resourceImageCache;
+        private static string[]? s_resourceNames;
+
+        /// <summary>
+        /// Load an embedded resource image by filename suffix, using a static cache so each
+        /// image is decoded from the assembly at most once across all SimulatorWindow instances.
+        /// Returns null if not found.
+        /// </summary>
+        private static BitmapImage? LoadCachedResourceImage(string suffix)
+        {
+            lock (s_resourceCacheLock)
+            {
+                s_resourceImageCache ??= new System.Collections.Generic.Dictionary<string, BitmapImage?>(StringComparer.OrdinalIgnoreCase);
+                if (s_resourceImageCache.TryGetValue(suffix, out var cached)) return cached;
+
+                s_resourceNames ??= System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceNames();
+                var found = Array.Find(s_resourceNames, n => n.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+                BitmapImage? result = null;
+                if (found != null)
+                {
+                    using (var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream(found))
+                    {
+                        if (stream != null)
+                        {
+                            var bi = new BitmapImage();
+                            bi.BeginInit();
+                            bi.CacheOption = BitmapCacheOption.OnLoad;
+                            bi.StreamSource = stream;
+                            bi.EndInit();
+                            bi.Freeze();
+                            result = bi;
+                        }
+                    }
+                }
+                s_resourceImageCache[suffix] = result;
+                return result;
+            }
+        }
+
         // Current player index for dual-player support (0 or 1)
         private int currplayer = 0;
 
@@ -235,8 +277,17 @@ namespace FamidashEditor
                 int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;  // Extract high byte (current frame 0-6)
                 int subFrame = cubeRotate_fixed & 0xFF;            // Extract low byte (accumulator)
                 
-                // If velocity is zero, snap to frame 0 (upright)
-                if (playerVelY_fixed == 0)
+                // NES: BIT _cube_data; BMI @round — if on slope, ALWAYS use rounding
+                // regardless of velocity (skip velocity-based rotation entirely)
+                bool onSlope = (currplayer_slope_frames > 0 || currplayer_slope_type != 0);
+                
+                if (onSlope && currplayer_slope_type > 0 && currplayer_slope_type < slopeRotationFrame_7.Length)
+                {
+                    int slopeFrame = slopeRotationFrame_7[currplayer_slope_type];
+                    cubeRotate_fixed = slopeFrame << 8;
+                    AppendSimDebug($"[CUBE_ROT] Slope rotation: slope_type=0x{currplayer_slope_type:X2} -> frame {slopeFrame}");
+                }
+                else if (playerVelY_fixed == 0)
                 {
                     cubeRotate_fixed = 0;
                 }
@@ -374,10 +425,18 @@ namespace FamidashEditor
         {
             try
             {
-                // If velocity is zero, handle ground behavior (charge-based rotation or static)
-                if (playerVelY_fixed == 0)
+                // NES: BIT _cube_data; BMI @round — if on slope, ALWAYS use rounding
+                bool onSlope_fb = (currplayer_slope_frames > 0 || currplayer_slope_type != 0);
+                
+                if (onSlope_fb && currplayer_slope_type > 0 && currplayer_slope_type < slopeRotationFrame_24.Length)
                 {
-                    // FIRST: Check if actively charging - if so, use charge-based rotation
+                    int slopeFrame = slopeRotationFrame_24[currplayer_slope_type];
+                    footballRotate_fixed = slopeFrame << 8;
+                    AppendSimDebug($"[FOOTBALL_ROT] SLOPE: slope_type=0x{currplayer_slope_type:X2} -> frame {slopeFrame}");
+                }
+                else if (playerVelY_fixed == 0)
+                {
+                    // Check if actively charging - if so, use charge-based rotation
                     if (footballChargeFrames > 0)
                     {
                         // While charging on ground, rotate backwards based on charge power (matches NES cube behavior)
@@ -493,8 +552,15 @@ namespace FamidashEditor
                 int frameIndex = (cubeRotateMini_fixed >> 8) & 0xFF;  // Extract high byte (current frame 0-6)
                 int subFrame = cubeRotateMini_fixed & 0xFF;            // Extract low byte (accumulator)
                 
-                // If velocity is zero, snap to frame 0 (upright)
-                if (playerVelY_fixed == 0)
+                // NES: BIT _cube_data; BMI @round — if on slope, ALWAYS use rounding
+                bool onSlope = (currplayer_slope_frames > 0 || currplayer_slope_type != 0);
+                
+                if (onSlope && currplayer_slope_type > 0 && currplayer_slope_type < slopeRotationFrame_7.Length)
+                {
+                    int slopeFrame = slopeRotationFrame_7[currplayer_slope_type];
+                    cubeRotateMini_fixed = slopeFrame << 8;
+                }
+                else if (playerVelY_fixed == 0)
                 {
                     cubeRotateMini_fixed = 0;
                 }
@@ -613,6 +679,18 @@ namespace FamidashEditor
             catch { return 0; }
         }
 
+        // Static flip table for football rotation - avoids per-frame allocation
+        private static readonly int[] s_footballFlipTable = new int[] {
+            // Frames 0-5: No flip
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+            // Frame 6 + Frames 5-1 with V_FLIP (0x80)
+            0x06, 0x85, 0x84, 0x83, 0x82, 0x81,
+            // Frames 0-5 with HV_FLIP (0xC0)
+            0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5,
+            // Frame 6 + Frames 5-1 with H_FLIP (0x40)
+            0xC6, 0x45, 0x44, 0x43, 0x42, 0x41
+        };
+
         /// <summary>
         /// Get football sprite frame and flip flags (0-6 for frame, with flip bits).
         /// Uses the flip table from NES nesdash.s for 360-degree seamless rotation.
@@ -631,18 +709,8 @@ namespace FamidashEditor
                 
                 // Apply flip table based on frame index
                 // Flip table maps 24 frames with flip flags for 360-degree rotation
-                int[] flipTable = new int[] {
-                    // Frames 0-5: No flip
-                    0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
-                    // Frame 6 + Frames 5-1 with V_FLIP (0x80)
-                    0x06, 0x85, 0x84, 0x83, 0x82, 0x81,
-                    // Frames 0-5 with HV_FLIP (0xC0)
-                    0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5,
-                    // Frame 6 + Frames 5-1 with H_FLIP (0x40)
-                    0xC6, 0x45, 0x44, 0x43, 0x42, 0x41
-                };
                 
-                return flipTable[frameIndex & 0x17];  // Return frame (low 3 bits) + flip flags (high bits)
+                return s_footballFlipTable[frameIndex & 0x17];  // Return frame (low 3 bits) + flip flags (high bits)
             }
             catch { return 0; }
         }
@@ -1407,11 +1475,13 @@ namespace FamidashEditor
                 return false;
             }
 
-            // Handle slope tiles - check if pixel is below the slope's floor height at this X
+            // Slope tiles are NOT solid blocks - they are handled entirely by the
+            // dedicated bg_coll_D_slopes() / bg_coll_U_slopes() slope collision system.
+            // Returning true here would cause the forward collision check (CheckPixelCollision)
+            // to treat slopes as walls and kill the player.
             if (IsSlopeTile(col))
             {
-                int slopeFloor = GetSlopeFloorAtX(col, localX);
-                return (localY >= slopeFloor);
+                return false;
             }
 
             // Pure death tiles have no solid collision - player passes through
@@ -1607,16 +1677,18 @@ namespace FamidashEditor
             int centerY = playerY_px + (height / 2);     // bg_side_coll_common middle (no extra offset)
             
             // Check the 4 corner points + right-center for side spikes
-            var checkPoints = new[] {
-                (leftX, topY),          // Top-left
-                (rightX, topY),         // Top-right
-                (leftX, bottomY),       // Bottom-left
-                (rightX, bottomY),      // Bottom-right
-                (rightEdgeX, centerY)   // Right-center (for right-facing spikes, no X inset)
-            };
-            
-            foreach (var (px, py) in checkPoints)
+            // Inline loop to avoid per-frame tuple array allocation
+            for (int cpIdx = 0; cpIdx < 5; cpIdx++)
             {
+                int px, py;
+                switch (cpIdx)
+                {
+                    case 0: px = leftX; py = topY; break;
+                    case 1: px = rightX; py = topY; break;
+                    case 2: px = leftX; py = bottomY; break;
+                    case 3: px = rightX; py = bottomY; break;
+                    default: px = rightEdgeX; py = centerY; break;
+                }
                 int sampleTileX = px / TILE;
                 int sampleTileY = py / TILE;
                 int tileIndexY = sampleTileY + groundRowsToReserve_local;
@@ -3196,34 +3268,20 @@ namespace FamidashEditor
                     catch { }
                 }
 
-                // 3) Final fallback: embedded resource in the assembly
+                // 3) Final fallback: embedded resource in the assembly (via cache)
                 if (bi == null)
                 {
                     try
                     {
-                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                        var names = asm.GetManifestResourceNames();
-                        // Look for exact filename match (not just EndsWith, which would match "football.png" when looking for "ball.png")
-                        var found = names.FirstOrDefault(n => n.EndsWith("." + choice, StringComparison.OrdinalIgnoreCase) || n.Equals(choice, StringComparison.OrdinalIgnoreCase));
+                        // Use "." prefix to avoid partial matches (e.g. football.png matching ball.png)
+                        var cached = LoadCachedResourceImage("." + choice);
                         if (currentGameMode == 2)
                         {
-                            AppendSimDebug($"[BALL_RES] Looking for '{choice}', found resource: '{found}'");
+                            AppendSimDebug($"[BALL_RES] Looking for '{choice}', cached: {cached != null}");
                         }
-                        if (!string.IsNullOrEmpty(found))
+                        if (cached != null)
                         {
-                            using (var s = asm.GetManifestResourceStream(found))
-                            {
-                                if (s != null)
-                                {
-                                    var b3 = new BitmapImage();
-                                    b3.BeginInit();
-                                    b3.CacheOption = BitmapCacheOption.OnLoad;
-                                    b3.StreamSource = s;
-                                    b3.EndInit();
-                                    b3.Freeze();
-                                    bi = App.EnsureUnfrozenForRender(b3) ?? b3;
-                                }
-                            }
+                            bi = App.EnsureUnfrozenForRender(cached) ?? cached;
                         }
                     }
                     catch { }
@@ -4032,6 +4090,10 @@ namespace FamidashEditor
         private bool paused = true;
         // If a death has been triggered by collision, suppress further triggers until reset
         private bool deathTriggered = false;
+        // If the end-level trigger (sprite 0x0F) has been reached
+        private bool levelCompleteTriggered = false;
+        // Track processed end-level triggers to avoid re-triggering
+        private System.Collections.Generic.HashSet<int> processedEndLevelTriggers = new System.Collections.Generic.HashSet<int>();
         // Death location (tile pixel coordinates)
         private int deathTileX = -1;
         private int deathTileY = -1;
@@ -4338,31 +4400,13 @@ namespace FamidashEditor
                 // (leave loading to the conditional fallbacks below so we don't overwrite editor-provided images)
                 if ((!this.hasParallaxLayer) || this.parallaxImages == null || this.parallaxImages.Length == 0)
                 {
-                    var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                    var names = asm.GetManifestResourceNames();
-                    var fullName = names.FirstOrDefault(r => r.IndexOf("Assets.parallax.bmp", StringComparison.OrdinalIgnoreCase) >= 0);
-                    if (fullName == null) fullName = names.FirstOrDefault(r => r.IndexOf("parallax", StringComparison.OrdinalIgnoreCase) >= 0);
-                    if (!string.IsNullOrEmpty(fullName))
+                    var asm_plx = LoadCachedResourceImage("Assets.parallax.bmp")
+                              ?? LoadCachedResourceImage("parallax.bmp");
+                    if (asm_plx != null)
                     {
-                        using (var s = asm.GetManifestResourceStream(fullName))
-                        {
-                            if (s != null)
-                            {
-                                try
-                                {
-                                    var bi = new BitmapImage();
-                                    bi.BeginInit();
-                                    bi.CacheOption = BitmapCacheOption.OnLoad;
-                                    bi.StreamSource = s;
-                                    bi.EndInit();
-                                    bi.Freeze();
-                                    var imgs = new ImageSource[] { bi };
-                                    this.parallaxImages = imgs;
-                                    this.hasParallaxLayer = true;
-                                }
-                                catch { /* ignore - fallback below will provide a transparent tile */ }
-                            }
-                        }
+                        var imgs = new ImageSource[] { asm_plx };
+                        this.parallaxImages = imgs;
+                        this.hasParallaxLayer = true;
                     }
 
                     if (this.groundImages == null || this.groundImages.Length == 0)
@@ -4458,6 +4502,7 @@ namespace FamidashEditor
                 var scaleTransform = new System.Windows.Media.ScaleTransform(simulatorScale, simulatorScale);
                 RenderCanvas.LayoutTransform = scaleTransform;
                 try { PauseOverlay.LayoutTransform = scaleTransform; } catch { }
+                try { LevelCompleteOverlay.LayoutTransform = scaleTransform; } catch { }
 
                 // Adjust window size so the scaled canvas fits comfortably (preserve original chrome padding)
                 // Original XAML used Width=288 Height=320 for 256x240 canvas. Compute padding from that.
@@ -4513,27 +4558,13 @@ namespace FamidashEditor
                     {
                         try
                         {
-                            var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                            var names = asm.GetManifestResourceNames();
-                            string? found = names.FirstOrDefault(n => n.EndsWith("cube.png", StringComparison.OrdinalIgnoreCase));
-                            if (!string.IsNullOrEmpty(found))
+                            var bi = LoadCachedResourceImage("cube.png");
+                            if (bi != null)
                             {
-                                using (var s = asm.GetManifestResourceStream(found))
-                                {
-                                    if (s != null)
-                                    {
-                                        var bi = new BitmapImage();
-                                        bi.BeginInit();
-                                        bi.CacheOption = BitmapCacheOption.OnLoad;
-                                        bi.StreamSource = s;
-                                        bi.EndInit();
-                                        bi.Freeze();
-                                        playerImage.Source = App.EnsureUnfrozenForRender(bi) ?? bi;
-                                        playerImage.Width = bi.PixelWidth;
-                                        playerImage.Height = bi.PixelHeight;
-                                        loaded = true;
-                                    }
-                                }
+                                playerImage.Source = App.EnsureUnfrozenForRender(bi) ?? bi;
+                                playerImage.Width = bi.PixelWidth;
+                                playerImage.Height = bi.PixelHeight;
+                                loaded = true;
                             }
                         }
                         catch { /* ignore embedded load errors */ }
@@ -5084,6 +5115,9 @@ namespace FamidashEditor
             }
             if (e.Key == Key.Escape)
             {
+                // Don't allow ESC toggle when level is complete — only restart can clear it
+                if (levelCompleteTriggered) return;
+
                 // toggle pause. When unpausing, request the owner to start music so music
                 // and gameplay begin on the same frame.
                 bool wasPaused = paused;
@@ -5633,6 +5667,7 @@ namespace FamidashEditor
 
                 try { ResetOrbSystem(); } catch { }
                 try { ResetBluePadSystem(); } catch { }
+                try { ResetSlopeState(); } catch { }
 
                 // Clear input buffers and reset key state tracking
                 try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
@@ -5666,6 +5701,10 @@ namespace FamidashEditor
 
                 // Clear death state if any
                 deathTriggered = false;
+                // Clear level complete state
+                levelCompleteTriggered = false;
+                processedEndLevelTriggers.Clear();
+                try { LevelCompleteOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
             }
             catch { }
         }
@@ -7198,34 +7237,16 @@ namespace FamidashEditor
                     }
                     
                     // Check current image
-                    BitmapImage? currentBitmap = playerImage?.Source as BitmapImage;
-                    string currentImageName = "";
-                    if (currentBitmap?.UriSource != null)
-                    {
-                        currentImageName = System.IO.Path.GetFileName(currentBitmap.UriSource.OriginalString);
-                    }
+                    string currentImageName = playerImage?.Tag as string ?? "";
                     
                     // Only reload if different
                     if (!currentImageName.Equals(waveChoice, StringComparison.OrdinalIgnoreCase))
                     {
-                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                        var names = asm.GetManifestResourceNames();
-                        var found = names.FirstOrDefault(n => n.EndsWith(waveChoice, StringComparison.OrdinalIgnoreCase));
-                        if (!string.IsNullOrEmpty(found))
+                        var newImg = LoadCachedResourceImage(waveChoice);
+                        if (newImg != null && playerImage != null)
                         {
-                            using (var s = asm.GetManifestResourceStream(found))
-                            {
-                                if (s != null)
-                                {
-                                    var newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.StreamSource = s;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                }
-                            }
+                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Tag = waveChoice;
                         }
                     }
                     
@@ -7267,34 +7288,16 @@ namespace FamidashEditor
                     });
                     
                     // Check current image
-                    BitmapImage? currentBitmap = playerImage?.Source as BitmapImage;
-                    string currentImageName = "";
-                    if (currentBitmap?.UriSource != null)
-                    {
-                        currentImageName = System.IO.Path.GetFileName(currentBitmap.UriSource.OriginalString);
-                    }
+                    string currentImageName = playerImage?.Tag as string ?? "";
                     
                     // Only reload if different
                     if (!currentImageName.Equals(shipChoice, StringComparison.OrdinalIgnoreCase))
                     {
-                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                        var names = asm.GetManifestResourceNames();
-                        var found = names.FirstOrDefault(n => n.EndsWith(shipChoice, StringComparison.OrdinalIgnoreCase));
-                        if (!string.IsNullOrEmpty(found))
+                        var newImg = LoadCachedResourceImage(shipChoice);
+                        if (newImg != null && playerImage != null)
                         {
-                            using (var s = asm.GetManifestResourceStream(found))
-                            {
-                                if (s != null)
-                                {
-                                    var newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.StreamSource = s;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                }
-                            }
+                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Tag = shipChoice;
                         }
                     }
                     
@@ -7331,35 +7334,17 @@ namespace FamidashEditor
                         _ => "swingcopter.png"
                     });
                     
-                    // Check current image
-                    BitmapImage? currentBitmap = playerImage?.Source as BitmapImage;
-                    string currentImageName = "";
-                    if (currentBitmap?.UriSource != null)
-                    {
-                        currentImageName = System.IO.Path.GetFileName(currentBitmap.UriSource.OriginalString);
-                    }
+                    // Check current image via Tag
+                    string currentImageName = playerImage?.Tag as string ?? "";
                     
                     // Only reload if different
                     if (!currentImageName.Equals(swingChoice, StringComparison.OrdinalIgnoreCase))
                     {
-                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                        var names = asm.GetManifestResourceNames();
-                        var found = names.FirstOrDefault(n => n.EndsWith(swingChoice, StringComparison.OrdinalIgnoreCase));
-                        if (!string.IsNullOrEmpty(found))
+                        var newImg = LoadCachedResourceImage(swingChoice);
+                        if (newImg != null && playerImage != null)
                         {
-                            using (var s = asm.GetManifestResourceStream(found))
-                            {
-                                if (s != null)
-                                {
-                                    var newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.StreamSource = s;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                }
-                            }
+                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Tag = swingChoice;
                         }
                     }
                     
@@ -7393,35 +7378,17 @@ namespace FamidashEditor
                     string footballChoice = miniMode ? $"football-mini{(frameIndex > 0 ? frameIndex.ToString() : "")}.png"
                                                      : $"football{(frameIndex > 0 ? frameIndex.ToString() : "")}.png";
                     
-                    // Check current image
-                    BitmapImage? currentBitmap = playerImage?.Source as BitmapImage;
-                    string currentImageName = "";
-                    if (currentBitmap?.UriSource != null)
-                    {
-                        currentImageName = System.IO.Path.GetFileName(currentBitmap.UriSource.OriginalString);
-                    }
+                    // Check current image via Tag
+                    string currentImageName = playerImage?.Tag as string ?? "";
                     
                     // Only reload if different
                     if (!currentImageName.Equals(footballChoice, StringComparison.OrdinalIgnoreCase))
                     {
-                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                        var names = asm.GetManifestResourceNames();
-                        var found = names.FirstOrDefault(n => n.EndsWith(footballChoice, StringComparison.OrdinalIgnoreCase));
-                        if (!string.IsNullOrEmpty(found))
+                        var newImg = LoadCachedResourceImage(footballChoice);
+                        if (newImg != null && playerImage != null)
                         {
-                            using (var s = asm.GetManifestResourceStream(found))
-                            {
-                                if (s != null)
-                                {
-                                    var newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.StreamSource = s;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                }
-                            }
+                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Tag = footballChoice;
                         }
                     }
                     
@@ -7492,27 +7459,12 @@ namespace FamidashEditor
                         // Only reload if different
                         if (!currentImageName.Equals(chosenFrame, StringComparison.OrdinalIgnoreCase) && playerImage != null)
                         {
-                            // Try embedded resource first
-                            var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                            var names = asm.GetManifestResourceNames();
-                            var found = names.FirstOrDefault(n => n.EndsWith(chosenFrame, StringComparison.OrdinalIgnoreCase));
-                            
-                            if (!string.IsNullOrEmpty(found))
+                            // Try cached embedded resource first
+                            var newImg = LoadCachedResourceImage(chosenFrame);
+                            if (newImg != null)
                             {
-                                using (var s = asm.GetManifestResourceStream(found))
-                                {
-                                    if (s != null)
-                                    {
-                                        var newImg = new BitmapImage();
-                                        newImg.BeginInit();
-                                        newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                        newImg.StreamSource = s;
-                                        newImg.EndInit();
-                                        newImg.Freeze();
-                                        if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                        if (playerImage != null) playerImage.Tag = chosenFrame;  // Track which image is loaded
-                                    }
-                                }
+                                playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                playerImage.Tag = chosenFrame;
                             }
                             else
                             {
@@ -7521,14 +7473,14 @@ namespace FamidashEditor
                                 string candidateOut = System.IO.Path.Combine(exeDir, chosenFrame);
                                 if (System.IO.File.Exists(candidateOut))
                                 {
-                                    var newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.UriSource = new Uri(candidateOut);
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                    if (playerImage != null) playerImage.Tag = chosenFrame;
+                                    var fsImg = new BitmapImage();
+                                    fsImg.BeginInit();
+                                    fsImg.UriSource = new Uri(candidateOut);
+                                    fsImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    fsImg.EndInit();
+                                    fsImg.Freeze();
+                                    playerImage.Source = App.EnsureUnfrozenForRender(fsImg) ?? fsImg;
+                                    playerImage.Tag = chosenFrame;
                                 }
                                 else
                                 {
@@ -7536,14 +7488,14 @@ namespace FamidashEditor
                                     string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\" + chosenFrame));
                                     if (System.IO.File.Exists(candidate))
                                     {
-                                        var newImg = new BitmapImage();
-                                        newImg.BeginInit();
-                                        newImg.UriSource = new Uri(candidate);
-                                        newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                        newImg.EndInit();
-                                        newImg.Freeze();
-                                        if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                        if (playerImage != null) playerImage.Tag = chosenFrame;
+                                        var fsImg = new BitmapImage();
+                                        fsImg.BeginInit();
+                                        fsImg.UriSource = new Uri(candidate);
+                                        fsImg.CacheOption = BitmapCacheOption.OnLoad;
+                                        fsImg.EndInit();
+                                        fsImg.Freeze();
+                                        playerImage.Source = App.EnsureUnfrozenForRender(fsImg) ?? fsImg;
+                                        playerImage.Tag = chosenFrame;
                                     }
                                 }
                             }
@@ -7579,27 +7531,12 @@ namespace FamidashEditor
                         // Only reload if different
                         if (!currentImageName.Equals(chosenFrame, StringComparison.OrdinalIgnoreCase) && playerImage != null)
                         {
-                            // Try embedded resource first
-                            var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                            var names = asm.GetManifestResourceNames();
-                            var found = names.FirstOrDefault(n => n.EndsWith(chosenFrame, StringComparison.OrdinalIgnoreCase));
-                            
-                            if (!string.IsNullOrEmpty(found))
+                            // Try cached embedded resource first
+                            var newImg = LoadCachedResourceImage(chosenFrame);
+                            if (newImg != null)
                             {
-                                using (var s = asm.GetManifestResourceStream(found))
-                                {
-                                    if (s != null)
-                                    {
-                                        var newImg = new BitmapImage();
-                                        newImg.BeginInit();
-                                        newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                        newImg.StreamSource = s;
-                                        newImg.EndInit();
-                                        newImg.Freeze();
-                                        if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                        if (playerImage != null) playerImage.Tag = chosenFrame;
-                                    }
-                                }
+                                playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                                playerImage.Tag = chosenFrame;
                             }
                             else
                             {
@@ -7608,14 +7545,14 @@ namespace FamidashEditor
                                 string candidateOut = System.IO.Path.Combine(exeDir, chosenFrame);
                                 if (System.IO.File.Exists(candidateOut))
                                 {
-                                    var newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.UriSource = new Uri(candidateOut);
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                    if (playerImage != null) playerImage.Tag = chosenFrame;
+                                    var fsImg = new BitmapImage();
+                                    fsImg.BeginInit();
+                                    fsImg.UriSource = new Uri(candidateOut);
+                                    fsImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    fsImg.EndInit();
+                                    fsImg.Freeze();
+                                    playerImage.Source = App.EnsureUnfrozenForRender(fsImg) ?? fsImg;
+                                    playerImage.Tag = chosenFrame;
                                 }
                                 else
                                 {
@@ -7623,14 +7560,14 @@ namespace FamidashEditor
                                     string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\" + chosenFrame));
                                     if (System.IO.File.Exists(candidate))
                                     {
-                                        var newImg = new BitmapImage();
-                                        newImg.BeginInit();
-                                        newImg.UriSource = new Uri(candidate);
-                                        newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                        newImg.EndInit();
-                                        newImg.Freeze();
-                                        if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                        if (playerImage != null) playerImage.Tag = chosenFrame;
+                                        var fsImg = new BitmapImage();
+                                        fsImg.BeginInit();
+                                        fsImg.UriSource = new Uri(candidate);
+                                        fsImg.CacheOption = BitmapCacheOption.OnLoad;
+                                        fsImg.EndInit();
+                                        fsImg.Freeze();
+                                        playerImage.Source = App.EnsureUnfrozenForRender(fsImg) ?? fsImg;
+                                        playerImage.Tag = chosenFrame;
                                     }
                                 }
                             }
@@ -7678,43 +7615,28 @@ namespace FamidashEditor
                     // Only reload if different
                     if (!currentImageName.Equals(pogoChoice, StringComparison.OrdinalIgnoreCase) && playerImage != null)
                     {
-                        // Try embedded resource first
-                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                        var names = asm.GetManifestResourceNames();
-                        var found = names.FirstOrDefault(n => n.EndsWith(pogoChoice, StringComparison.OrdinalIgnoreCase));
-                        
-                        if (!string.IsNullOrEmpty(found))
+                        // Try cached embedded resource first
+                        var newImg = LoadCachedResourceImage(pogoChoice);
+                        if (newImg != null)
                         {
-                            using (var s = asm.GetManifestResourceStream(found))
-                            {
-                                if (s != null)
-                                {
-                                    var newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.StreamSource = s;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                    if (playerImage != null) playerImage.Tag = pogoChoice;  // Track which image is loaded
-                                }
-                            }
+                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Tag = pogoChoice;
                         }
                         else
                         {
                             // Fallback to file system
                             string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
                             string candidateOut = System.IO.Path.Combine(exeDir, pogoChoice);
-                            if (System.IO.File.Exists(candidateOut) && playerImage != null)
+                            if (System.IO.File.Exists(candidateOut))
                             {
-                                var newImg = new BitmapImage();
-                                newImg.BeginInit();
-                                newImg.UriSource = new Uri(candidateOut);
-                                newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                newImg.EndInit();
-                                newImg.Freeze();
-                                if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                if (playerImage != null) playerImage.Tag = pogoChoice;  // Track which image is loaded
+                                var fsImg = new BitmapImage();
+                                fsImg.BeginInit();
+                                fsImg.UriSource = new Uri(candidateOut);
+                                fsImg.CacheOption = BitmapCacheOption.OnLoad;
+                                fsImg.EndInit();
+                                fsImg.Freeze();
+                                playerImage.Source = App.EnsureUnfrozenForRender(fsImg) ?? fsImg;
+                                playerImage.Tag = pogoChoice;
                             }
                             else
                             {
@@ -7722,14 +7644,14 @@ namespace FamidashEditor
                                 string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\" + pogoChoice));
                                 if (System.IO.File.Exists(candidate))
                                 {
-                                    var newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.UriSource = new Uri(candidate);
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                    if (playerImage != null) playerImage.Tag = pogoChoice;  // Track which image is loaded
+                                    var fsImg = new BitmapImage();
+                                    fsImg.BeginInit();
+                                    fsImg.UriSource = new Uri(candidate);
+                                    fsImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    fsImg.EndInit();
+                                    fsImg.Freeze();
+                                    playerImage.Source = App.EnsureUnfrozenForRender(fsImg) ?? fsImg;
+                                    playerImage.Tag = pogoChoice;
                                 }
                             }
                         }
@@ -7769,27 +7691,12 @@ namespace FamidashEditor
                     // Only reload if different
                     if (!currentImageName.Equals(ballChoice, StringComparison.OrdinalIgnoreCase))
                     {
-                        // Try embedded resource first
-                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                        var names = asm.GetManifestResourceNames();
-                        var found = names.FirstOrDefault(n => n.EndsWith("." + ballChoice, StringComparison.OrdinalIgnoreCase) || n.Equals(ballChoice, StringComparison.OrdinalIgnoreCase));
-                        
-                        if (!string.IsNullOrEmpty(found))
+                        // Use "." prefix to avoid partial match (e.g. football.png matching ball.png)
+                        var newImg = LoadCachedResourceImage("." + ballChoice);
+                        if (newImg != null && playerImage != null)
                         {
-                            using (var s = asm.GetManifestResourceStream(found))
-                            {
-                                if (s != null)
-                                {
-                                    var newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.StreamSource = s;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                    if (playerImage != null) playerImage.Tag = ballChoice;  // Track which image is loaded
-                                }
-                            }
+                            playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
+                            playerImage.Tag = ballChoice;
                         }
                         else
                         {
@@ -7798,14 +7705,14 @@ namespace FamidashEditor
                             string candidateOut = System.IO.Path.Combine(exeDir, ballChoice);
                             if (System.IO.File.Exists(candidateOut))
                             {
-                                var newImg = new BitmapImage();
-                                newImg.BeginInit();
-                                newImg.UriSource = new Uri(candidateOut);
-                                newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                newImg.EndInit();
-                                newImg.Freeze();
-                                if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                if (playerImage != null) playerImage.Tag = ballChoice;  // Track which image is loaded
+                                var fsImg = new BitmapImage();
+                                fsImg.BeginInit();
+                                fsImg.UriSource = new Uri(candidateOut);
+                                fsImg.CacheOption = BitmapCacheOption.OnLoad;
+                                fsImg.EndInit();
+                                fsImg.Freeze();
+                                if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(fsImg) ?? fsImg;
+                                if (playerImage != null) playerImage.Tag = ballChoice;
                             }
                             else
                             {
@@ -7813,14 +7720,14 @@ namespace FamidashEditor
                                 string candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(exeDir, "..\\..\\..\\..\\" + ballChoice));
                                 if (System.IO.File.Exists(candidate))
                                 {
-                                    var newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.UriSource = new Uri(candidate);
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(newImg) ?? newImg;
-                                    if (playerImage != null) playerImage.Tag = ballChoice;  // Track which image is loaded
+                                    var fsImg = new BitmapImage();
+                                    fsImg.BeginInit();
+                                    fsImg.UriSource = new Uri(candidate);
+                                    fsImg.CacheOption = BitmapCacheOption.OnLoad;
+                                    fsImg.EndInit();
+                                    fsImg.Freeze();
+                                    if (playerImage != null) playerImage.Source = App.EnsureUnfrozenForRender(fsImg) ?? fsImg;
+                                    if (playerImage != null) playerImage.Tag = ballChoice;
                                 }
                             }
                         }
@@ -7893,28 +7800,9 @@ namespace FamidashEditor
                     // Only reload if different
                     if (!currentImageName.Equals(robotChoice, StringComparison.OrdinalIgnoreCase))
                     {
-                        // Try embedded resource first
-                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                        var names = asm.GetManifestResourceNames();
-                        var found = names.FirstOrDefault(n => n.EndsWith("." + robotChoice, StringComparison.OrdinalIgnoreCase) || n.Equals(robotChoice, StringComparison.OrdinalIgnoreCase));
-                        
-                        BitmapImage? newImg = null;
-                        if (!string.IsNullOrEmpty(found))
-                        {
-                            using (var s = asm.GetManifestResourceStream(found))
-                            {
-                                if (s != null)
-                                {
-                                    newImg = new BitmapImage();
-                                    newImg.BeginInit();
-                                    newImg.CacheOption = BitmapCacheOption.OnLoad;
-                                    newImg.StreamSource = s;
-                                    newImg.EndInit();
-                                    newImg.Freeze();
-                                }
-                            }
-                        }
-                        else
+                        // Try cached embedded resource first (use "." prefix to avoid partial matches)
+                        BitmapImage? newImg = LoadCachedResourceImage("." + robotChoice);
+                        if (newImg == null)
                         {
                             // Fallback to file system
                             string exeDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
@@ -8045,29 +7933,21 @@ namespace FamidashEditor
                         spiderChoice = miniMode ? "spider-mini-jump.png" : "spiderjump.png";
                     }
                     
-                    // Load the spider image from embedded resources
+                    // Load the spider image from embedded resources (cached)
                     try
                     {
                         if (playerImage != null)
                         {
-                            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
-                            var resourceNames = assembly.GetManifestResourceNames();
-                            var resourceName = resourceNames.FirstOrDefault(n => n.EndsWith("." + spiderChoice) || n.Equals(spiderChoice));
-                            
-                            if (resourceName != null)
+                            string currentTag = playerImage.Tag as string ?? "";
+                            if (!currentTag.Equals(spiderChoice, StringComparison.OrdinalIgnoreCase))
                             {
-                                using (var stream = assembly.GetManifestResourceStream(resourceName))
+                                var cachedImg = LoadCachedResourceImage("." + spiderChoice);
+                                if (cachedImg != null)
                                 {
-                                    if (stream != null)
-                                    {
-                                        var decoder = new System.Windows.Media.Imaging.PngBitmapDecoder(stream, System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
-                                        var bitmap = decoder.Frames[0];
-                                        bitmap.Freeze();
-                                        playerImage.Source = bitmap;
-                                        playerImage.Tag = spiderChoice;
-                                        playerImage.Width = bitmap.PixelWidth;
-                                        playerImage.Height = bitmap.PixelHeight;
-                                    }
+                                    playerImage.Source = App.EnsureUnfrozenForRender(cachedImg) ?? cachedImg;
+                                    playerImage.Tag = spiderChoice;
+                                    playerImage.Width = cachedImg.PixelWidth;
+                                    playerImage.Height = cachedImg.PixelHeight;
                                 }
                             }
                         }
@@ -8233,44 +8113,29 @@ namespace FamidashEditor
                         // If no src was selectable, attempt an on-the-spot load of the embedded project parallax
                         try
                         {
-                            var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                            var names = asm.GetManifestResourceNames();
-                            var fullName = names.FirstOrDefault(r => r.IndexOf("Assets.parallax.bmp", StringComparison.OrdinalIgnoreCase) >= 0)
-                                ?? names.FirstOrDefault(r => r.IndexOf("parallax Blue.bmp", StringComparison.OrdinalIgnoreCase) >= 0)
-                                ?? names.FirstOrDefault(r => r.IndexOf("parallax.bmp", StringComparison.OrdinalIgnoreCase) >= 0)
-                                ?? names.FirstOrDefault(r => r.IndexOf("parallax", StringComparison.OrdinalIgnoreCase) >= 0);
-                            if (!string.IsNullOrEmpty(fullName))
+                            var bi = LoadCachedResourceImage("Assets.parallax.bmp")
+                                  ?? LoadCachedResourceImage("parallax Blue.bmp")
+                                  ?? LoadCachedResourceImage("parallax.bmp");
+                            if (bi != null)
                             {
-                                using (var s = asm.GetManifestResourceStream(fullName))
-                                {
-                                    if (s != null)
-                                    {
-                                        var bi = new BitmapImage();
-                                        bi.BeginInit();
-                                        bi.CacheOption = BitmapCacheOption.OnLoad;
-                                        bi.StreamSource = s;
-                                        bi.EndInit();
-                                        bi.Freeze();
-                                        // set as runtime parallax bitmap and create a brush
-                                        this.parallaxBitmap = bi;
-                                        this.parallaxImages = new ImageSource[] { bi };
-                                        this.parallaxTonedImages = null;
-                                        this.hasParallaxLayer = true;
+                                // set as runtime parallax bitmap and create a brush
+                                this.parallaxBitmap = bi;
+                                this.parallaxImages = new ImageSource[] { bi };
+                                this.parallaxTonedImages = null;
+                                this.hasParallaxLayer = true;
 
-                                        var brush2Img = App.EnsureUnfrozenForRender(bi) ?? bi;
-                                        var brush2 = new ImageBrush(brush2Img)
-                                        {
-                                            TileMode = TileMode.Tile,
-                                            ViewportUnits = BrushMappingMode.Absolute,
-                                            Viewport = new Rect(0, 0, Math.Max(1.0, bi.PixelWidth), Math.Max(1.0, bi.PixelHeight)),
-                                            Stretch = Stretch.None
-                                        };
-                                        double parallaxOffsetX2 = -(pixelX) * (1.0 - parallaxX);
-                                        double parallaxOffsetY2 = -(cameraY_fixed >> 8) * (1.0 - parallaxY);
-                                        brush2.Transform = new TranslateTransform(parallaxOffsetX2, parallaxOffsetY2);
-                                        if (bgRectPersistent != null) bgRectPersistent.Fill = brush2;
-                                    }
-                                }
+                                var brush2Img = App.EnsureUnfrozenForRender(bi) ?? bi;
+                                var brush2 = new ImageBrush(brush2Img)
+                                {
+                                    TileMode = TileMode.Tile,
+                                    ViewportUnits = BrushMappingMode.Absolute,
+                                    Viewport = new Rect(0, 0, Math.Max(1.0, bi.PixelWidth), Math.Max(1.0, bi.PixelHeight)),
+                                    Stretch = Stretch.None
+                                };
+                                double parallaxOffsetX2 = -(pixelX) * (1.0 - parallaxX);
+                                double parallaxOffsetY2 = -(cameraY_fixed >> 8) * (1.0 - parallaxY);
+                                brush2.Transform = new TranslateTransform(parallaxOffsetX2, parallaxOffsetY2);
+                                if (bgRectPersistent != null) bgRectPersistent.Fill = brush2;
                             }
                         }
                         catch { }
@@ -9110,25 +8975,7 @@ namespace FamidashEditor
                             {
                                 try
                                 {
-                                    var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                                    var names = asm.GetManifestResourceNames();
-                                    var fullName = names.FirstOrDefault(r => r.EndsWith("chain-upsidedown.png", StringComparison.OrdinalIgnoreCase) || r.IndexOf("chain-upsidedown.png", StringComparison.OrdinalIgnoreCase) >= 0);
-                                    BitmapImage? bi = null;
-                                    if (fullName != null)
-                                    {
-                                        using (var st = asm.GetManifestResourceStream(fullName))
-                                        {
-                                            if (st != null)
-                                            {
-                                                bi = new BitmapImage();
-                                                bi.BeginInit();
-                                                bi.CacheOption = BitmapCacheOption.OnLoad;
-                                                bi.StreamSource = st;
-                                                bi.EndInit();
-                                                bi.Freeze();
-                                            }
-                                        }
-                                    }
+                                    BitmapImage? bi = LoadCachedResourceImage("chain-upsidedown.png");
                                     if (bi == null)
                                     {
                                         var p = System.IO.Path.Combine(AppContext.BaseDirectory ?? ".", "chain-upsidedown.png");
@@ -9519,8 +9366,7 @@ namespace FamidashEditor
                             double hy = hitbase_px_y + hyoff;
                             // If this sprite is a non-upside-down pad, shift hitbox down an extra 8 px on top of specified offsets
                             // Known non-upside-down pad IDs include typical down variants; extend set as needed.
-                            var padDownIds = new System.Collections.Generic.HashSet<int> { 0x52, 0x0A, 0x0D, 0x25, 0xFD };
-                            if (padDownIds.Contains(id)) hy += 8;
+                            if (id == 0x52 || id == 0x0A || id == 0x0D || id == 0x25 || id == 0xFD) hy += 8;
                             hrect.Width = Math.Max(1, hw);
                             hrect.Height = Math.Max(1, hh);
                             System.Windows.Controls.Canvas.SetLeft(hrect, hx);
@@ -9819,7 +9665,25 @@ namespace FamidashEditor
                 if (paused)
                 {
                     RenderFrame();
-                    try { if (!deathTriggered) PauseOverlay.Visibility = System.Windows.Visibility.Visible; else PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                    try
+                    {
+                        if (levelCompleteTriggered)
+                        {
+                            PauseOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                            LevelCompleteOverlay.Visibility = System.Windows.Visibility.Visible;
+                        }
+                        else if (!deathTriggered)
+                        {
+                            PauseOverlay.Visibility = System.Windows.Visibility.Visible;
+                            LevelCompleteOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                        }
+                        else
+                        {
+                            PauseOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                            LevelCompleteOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                        }
+                    }
+                    catch { }
                     return;
                 }
 
@@ -9829,8 +9693,9 @@ namespace FamidashEditor
                     try { ApplyPendingTints(); } catch { }
                 }
 
-                // Ensure overlay is not visible while running
+                // Ensure overlays are not visible while running
                 try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                try { LevelCompleteOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
                 RenderFrame();
             }
             catch { }
@@ -10412,6 +10277,9 @@ namespace FamidashEditor
                             player_mini[0] = miniMode;
                             player_gravity[0] = currplayer_gravity;
                             
+                            // Save player 1 slope state
+                            SaveSlopeStateForPlayer(0);
+                            
                             // Switch to player 2
                             currplayer = 1;
                             applyPlayer2Colors = true;  // Flag that we should apply player 2 colors to icons
@@ -10423,6 +10291,9 @@ namespace FamidashEditor
                             gravityFlipped = (player_gravity[1] != 0);
                             currplayer_gravity = player_gravity[1];
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            
+                            // Load player 2 slope state
+                            LoadSlopeStateForPlayer(1);
                             
                             // === SPRITE INTERACTIONS FOR PLAYER 2 ===
                             try
@@ -10541,6 +10412,9 @@ namespace FamidashEditor
                             player_mini[1] = miniMode;
                             player_gravity[1] = currplayer_gravity;
                             
+                            // Save player 2 slope state
+                            SaveSlopeStateForPlayer(1);
+                            
                             AppendSimDebug($"[PLAYER2_END] Player 2 final state: X={player_x_fixed[1]>>8} Y={player_y_fixed[1]>>8}");
                             
                             // Switch back to player 1 for rendering
@@ -10554,6 +10428,9 @@ namespace FamidashEditor
                             gravityFlipped = (player_gravity[0] != 0);
                             currplayer_gravity = player_gravity[0];
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            
+                            // Load player 1 slope state
+                            LoadSlopeStateForPlayer(0);
                         }
                     }
                     catch (Exception ex)
@@ -11156,6 +11033,57 @@ namespace FamidashEditor
                 if (bgIdxLocal.HasValue) { pendingBgIdx = bgIdxLocal ?? -1; pendingBgSid = bgSidLocal ?? -1; pendingTintChange = true; }
                 if (tileIdxLocal.HasValue) { pendingTileIdx = tileIdxLocal ?? -1; pendingTileSid = tileSidLocal ?? -1; pendingTintChange = true; }
                 if (groundIdxLocal.HasValue) { pendingGroundIdx = groundIdxLocal ?? -1; pendingGroundSid = groundSidLocal ?? -1; pendingTintChange = true; }
+
+                // Detect end-level trigger (sprite 0x0F) using the same X position logic as color triggers
+                if (!levelCompleteTriggered && !deathTriggered)
+                {
+                    for (int idx = 0; idx < sprites.Length; idx++)
+                    {
+                        int sid = sprites[idx];
+                        if (sid != 0x0F) continue;
+                        if (processedEndLevelTriggers.Contains(idx)) continue;
+                        int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var aEnd)) ? aEnd.anchorTileX : idx % mapWidth;
+                        int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
+
+                        bool activated = false;
+                        if (crossedInteraction)
+                        {
+                            if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
+                                activated = true;
+                        }
+                        else
+                        {
+                            if (anchorX_center_fixed <= center_fixed)
+                                activated = true;
+                        }
+
+                        if (activated)
+                        {
+                            processedEndLevelTriggers.Add(idx);
+                            levelCompleteTriggered = true;
+                            paused = true;
+                            // Music keeps running — do NOT call StopMusicAsync()
+                            AppendSimDebug($"[LEVEL_COMPLETE] End-level trigger 0x0F at anchor tile X={anchorTileX}");
+
+                            try
+                            {
+                                Dispatcher?.BeginInvoke(new Action(() =>
+                                {
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    try { LevelCompleteOverlay.Visibility = System.Windows.Visibility.Visible; } catch { }
+                                }));
+                            }
+                            catch { }
+                            break;
+                        }
+                        else
+                        {
+                            // If trigger moved past the player (scrolled off), allow re-detection
+                            if (anchorX_center_fixed > center_fixed && processedEndLevelTriggers.Contains(idx))
+                                processedEndLevelTriggers.Remove(idx);
+                        }
+                    }
+                }
             }
 
             // If we have pending tints, schedule application on UI thread for heavier image work

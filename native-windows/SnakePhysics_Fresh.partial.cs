@@ -88,7 +88,9 @@ namespace FamidashEditor
             }
             
             // Apply velocity if not on slope
-            if (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0)
+            // Snake with dblocked: skip slope freeze so it can traverse multi-tile slopes
+            bool skipSlopeFreeze = dblocked;
+            if (skipSlopeFreeze || (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0))
             {
                 if (isFullSpeed)
                     playerY_fixed += playerVelY_fixed;
@@ -103,6 +105,9 @@ namespace FamidashEditor
             // Collision detection (offset collision 2 pixels based on vel_y direction)
             int offsetY = (playerY_fixed >> 8) + ((playerVelY_fixed < 0) ? 2 : -2);
             WaveEject_Fresh(offsetY);
+            
+            // Update slope exit velocity counters (NES: called after eject in process_cube)
+            UpdateSlopeCounters_Fresh();
             
             // Record position for trail
             try

@@ -76,6 +76,9 @@ namespace FamidashEditor
             // No collision offset - use exact position
             UfoShipEject_Fresh();
             
+            // Update slope exit velocity counters (NES: called after eject in process_cube)
+            UpdateSlopeCounters_Fresh();
+            
             // Check for jump input (press, not hold) - read without consuming first
             int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
             bool pressedJump = pressCount > 0;

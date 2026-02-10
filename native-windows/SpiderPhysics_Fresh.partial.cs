@@ -70,6 +70,9 @@ namespace FamidashEditor
             int offsetY = (playerY_fixed >> 8) + (gravityInverted ? -2 : 1);
             SpiderEject_Fresh(offsetY);
             
+            // Update slope exit velocity counters (NES: called after eject in process_cube)
+            UpdateSlopeCounters_Fresh();
+            
             // Update the global onGround flag based on whether we're grounded
             // If velocity is 0 after eject, we hit something and are grounded
             onGround = (playerVelY_fixed == 0);
@@ -204,24 +207,44 @@ namespace FamidashEditor
             
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             
+            // Update slope counters each frame
+            UpdateSlopeCounters();
+            
             if (!gravityFlipped)
             {
-                // Normal gravity - check floor collision
-                var (collided, ejectAmount) = BgCollD_Spider(collisionX, collisionY, hitboxW, hitboxH, groundRowsToReserve);
-                if (collided)
+                // Normal gravity - check slopes first, then floor collision
+                bool slopeHit = bg_coll_D_slopes();
+                if (slopeHit)
                 {
-                    // Eject upward from floor
-                    int currentY_px = playerY_fixed >> 8;
-                    int newY_px = currentY_px - ejectAmount;
-                    playerY_fixed = newY_px << 8;
+                    if (eject_D > 0)
+                    {
+                        int currentY_px = playerY_fixed >> 8;
+                        int newY_px = currentY_px - eject_D;
+                        playerY_fixed = newY_px << 8;
+                        AppendSimDebug($"[SPIDER_SLOPE_D] eject_D={eject_D}, Y {currentY_px} -> {newY_px}");
+                    }
                     playerVelY_fixed = 0;
-                    wasZeroedByCollisionLastFrame = true;  // Signal gravity not to re-apply next frame
-                    AppendSimDebug($"[SPIDER_EJECT] Floor collision: eject={ejectAmount}, Y {currentY_px} -> {newY_px}");
+                    wasZeroedByCollisionLastFrame = true;
                 }
                 else
                 {
-                    // No collision - allow gravity to apply
-                    wasZeroedByCollisionLastFrame = false;
+                    // No slope - fall back to flat collision
+                    var (collided, ejectAmount) = BgCollD_Spider(collisionX, collisionY, hitboxW, hitboxH, groundRowsToReserve);
+                    if (collided)
+                    {
+                        // Eject upward from floor
+                        int currentY_px = playerY_fixed >> 8;
+                        int newY_px = currentY_px - ejectAmount;
+                        playerY_fixed = newY_px << 8;
+                        playerVelY_fixed = 0;
+                        wasZeroedByCollisionLastFrame = true;
+                        AppendSimDebug($"[SPIDER_EJECT] Floor collision: eject={ejectAmount}, Y {currentY_px} -> {newY_px}");
+                    }
+                    else
+                    {
+                        // No collision - allow gravity to apply
+                        wasZeroedByCollisionLastFrame = false;
+                    }
                 }
             }
             else
