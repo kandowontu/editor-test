@@ -404,7 +404,7 @@ namespace FamidashEditor
                 if (playerVelY_fixed >= 0) {
                     var (collided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
                     if (collided) {
-                        int newY = collisionTopY - hitboxH - hitboxOffsetY - 1 - ballYOffset;
+                        int newY = collisionTopY - hitboxH - hitboxOffsetY - ballYOffset;
                         int oldY = playerY_fixed >> 8;
                         AppendSimDebug($"[BALL_EJECT_D] collisionTopY={collisionTopY}, hitboxH={hitboxH}, hitboxOffsetY={hitboxOffsetY}, oldY={oldY}, newY={newY}");
                         playerY_fixed = (newY << 8);

@@ -69,29 +69,10 @@ namespace FamidashEditor
                 AppendSimDebug($"[ROBOT] Press detected - flag set");
             }
             
-            // Grounding check - velocity-based only (matches Cube and Football)
-            // Only use velocity to determine if grounded. Collision detection will handle actual grounding
-            bool isGrounded = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
-            onGround = isGrounded;
+            AppendSimDebug($"[ROBOT] jumpPressed={robotJumpPressed}, holdJump={holdJump}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}");
             
-            AppendSimDebug($"[ROBOT] grounded={isGrounded}, jumpPressed={robotJumpPressed}, holdJump={holdJump}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}");
-            
-            // Note: Unlike earlier code, we do NOT zero velocity when grounded (matches Cube behavior)
-            // Gravity will be applied naturally, and collision detection will handle grounding
-            
-            if (isGrounded && robotJumpPressed && !orbed[currplayer] && dashing[currplayer] == 0) {
-                robotJumpPressed = false; // Clear flag
-                if (holdJump) {
-                    if (pressJump) {
-                        // Just pressed - start jump
-                        playerVelY_fixed = GameModePhysics.ROBOT_JUMP_VEL(baseTableIdx) * gravityMultiplier;
-                        robotJumpTime[0] = 19; // ROBOT_JUMP_TIME for 60fps (0x13)
-                        AppendSimDebug($"[ROBOT] Jump started: vel={playerVelY_fixed}, time={robotJumpTime[0]}");
-                    }
-                }
-            }
             // Continue jump if timer active and holding
-            else if (robotJumpTime[0] > 0 && !orbed[currplayer] && dashing[currplayer] == 0) {
+            if (robotJumpTime[0] > 0 && !orbed[currplayer] && dashing[currplayer] == 0) {
                 robotJumpTime[0]--;
                 if (holdJump) {
                     playerVelY_fixed = GameModePhysics.ROBOT_JUMP_VEL(baseTableIdx) * gravityMultiplier;
@@ -112,13 +93,29 @@ namespace FamidashEditor
             {
                 // Pad/orb hit: skip gravity acceleration but still integrate velocity into position
                 AppendSimDebug($"[ROBOT] Pad/orb hit this frame - skipping gravity acceleration but integrating velocity. velY=0x{playerVelY_fixed:X4}");
-                playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                if (isFullSpeed)
+                    playerY_fixed += playerVelY_fixed;
+                else
+                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                 AppendSimDebug($"[ROBOT] Position integrated: posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px)");
             }
             
             // Collision
             byte gravityAtFrameStart = currplayer_gravity;
             CubeEject_Fresh();
+            
+            // Robot jump start - check after collision (when we know if grounded)
+            if (playerVelY_fixed == 0 && robotJumpPressed && !orbed[currplayer] && dashing[currplayer] == 0) {
+                robotJumpPressed = false; // Clear flag
+                if (holdJump) {
+                    if (pressJump) {
+                        // Just pressed - start jump
+                        playerVelY_fixed = GameModePhysics.ROBOT_JUMP_VEL(baseTableIdx) * gravityMultiplier;
+                        robotJumpTime[0] = 19; // ROBOT_JUMP_TIME for 60fps (0x13)
+                        AppendSimDebug($"[ROBOT] Jump started: vel={playerVelY_fixed}, time={robotJumpTime[0]}");
+                    }
+                }
+            }
             
             // Record trail
             try

@@ -1104,9 +1104,9 @@ namespace FamidashEditor
                 }
                 catch { }
 
-                // If a cached hitbox for this sprite was populated during rendering this frame,
-                // prefer that rectangle (it exactly matches the overlay) to avoid subtle
-                // geometry mismatches from duplicate math paths.
+                // CRITICAL: Hitbox cache disabled for determinism (rendering is async and non-deterministic)
+                // The cache causes collision detection to vary between runs based on render timing
+                /*
                 try
                 {
                     if (hitboxWorldCache != null && hitboxWorldCache.TryGetValue(idx, out var cached) && cached.frame == renderFrameCounter)
@@ -1117,6 +1117,7 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
+                */
 
                 // NES check_collision() uses exclusive bounds: collision when (x1+w1 >= x2) && (x2+w2 >= x1).
                 // Player bounds arrive as inclusive (x + w - 1), so playerRight_excl = playerRight_px + 1.
@@ -3440,15 +3441,29 @@ namespace FamidashEditor
         // P/Invoke to check key state asynchronously from background threads
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
-        
-        // Flag to disable async keyboard polling for perfect determinism in auto levels
-        // Set to true when you want completely deterministic physics (no external keyboard state)
-        private bool disableAsyncKeyboardInput = false;  // Set false so keyboard input works normally
-        
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        private static readonly uint currentProcessId = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+
         private bool IsXDownAsync() { 
-            // In deterministic mode (auto levels), never check actual keyboard state
-            if (disableAsyncKeyboardInput) return false;
-            
+            // Only poll keyboard when the current process owns the foreground window.
+            // This prevents stray key state from OTHER applications (typing in notepad, etc.)
+            // from causing non-deterministic physics in auto levels, while keeping controls
+            // fully responsive when any editor window is active/focused.
+            try
+            {
+                IntPtr fg = GetForegroundWindow();
+                if (fg == IntPtr.Zero) return false;
+                GetWindowThreadProcessId(fg, out uint fgPid);
+                if (fgPid != currentProcessId) return false;
+            }
+            catch { return false; }
+
             // Check X (0x58), UP (0x26), or SPACE (0x20)
             return (GetAsyncKeyState(0x58) & 0x8000) != 0 || 
                    (GetAsyncKeyState(0x26) & 0x8000) != 0 || 
@@ -5406,6 +5421,26 @@ namespace FamidashEditor
             catch { }
         }
 
+        private void PathfinderCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            lock (simLock)
+            {
+                pathfinderEnabled = PathfinderCheckBox.IsChecked == true;
+                if (!pathfinderEnabled)
+                {
+                    // Clear plan when disabling
+                    lock (pfLock)
+                    {
+                        pfPlan.Clear();
+                        pfPlanIndex = 0;
+                    }
+                    // Release any injected input
+                    Interlocked.Exchange(ref keyXPressedCount, 0);
+                    keyXHeld = false;
+                }
+            }
+        }
+
         private void SpeedComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             try
@@ -5875,7 +5910,9 @@ namespace FamidashEditor
             try
             {
                 // Use IsXDownAsync() to get global keyboard state (works even when window is unfocused)
+                // Also poll X key directly via WPF so held state works even when IsXDownAsync is disabled
                 bool curX = IsXDownAsync() || 
+                            System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.X) ||
                             (!MainWindow.Option_CamMode && (System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.Up) || 
                                                              System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.Space)));
                 bool curUp = System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.Up);
@@ -5979,6 +6016,7 @@ namespace FamidashEditor
                     if (!stillSupported)
                     {
                         onGround = false;
+                        wasZeroedByCollisionLastFrame = false;  // Clear flag so gravity resumes immediately
                     }
                 }
                 catch { onGround = false; }
@@ -6222,12 +6260,9 @@ namespace FamidashEditor
                     // Consume UI-frame jump press if present and on-ground (do this before gravity)
                     bool effectiveOnGround_local = onGround || groundStabilizeCounter > 0 || invertedCeilingHoldCounter > 0;
                     bool jumpAppliedThisFrame = false;
-                    // Atomically grab and clear any pending UI edges
-                    int pendingPress = Interlocked.Exchange(ref keyXPressedCount, 0);
-                    if (pendingPress > 0)
-                    {
-                        // try { ProcessModeSimPendingPress(pendingPress, effectiveOnGround_local, ref jumpAppliedThisFrame); } catch { } // REMOVED - fresh port
-                    }
+                    // NOTE: Fresh physics handlers consume keyXPressedCount themselves.
+                    // Do NOT consume it here - just peek for any legacy code paths.
+                    int pendingPress = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0); // peek only
 
                     // Do not age the jump-buffer here (would race with numeric sim).
                     // We'll atomically consume the buffer at the moment of landing below.
@@ -6706,8 +6741,14 @@ namespace FamidashEditor
                         playerY_fixed = desiredPlayerY_fixed;
                         // When the UI enforces a screen-space clamp we should treat the player as effectively grounded
                         // (prevent further gravity) and zero vertical velocity so the player doesn't sink while camera constraints apply.
-                        playerVelY_fixed = 0;
-                        onGround = true;
+                        // NOTE: Only zero velocity when Fresh physics (simTimer) is NOT running.
+                        // Fresh physics handles grounding via CubeEject_Fresh. Zeroing velocity here
+                        // kills jump velocity before it can be integrated on the next physics frame.
+                        if (simTimer == null)
+                        {
+                            playerVelY_fixed = 0;
+                            onGround = true;
+                        }
                     }
                 }
             }
@@ -9722,6 +9763,14 @@ namespace FamidashEditor
                 if (paused) return;
                 
                 AppendSimDebug($"[STEP_START] playerX_fixed=0x{playerX_fixed:X4} ({playerX_fixed >> 8}px), playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
+
+                // === PATHFINDER AI INPUT INJECTION ===
+                if (pathfinderEnabled)
+                {
+                    bool pfInput = PF_GetInput();
+                    PF_InjectInput(pfInput);
+                }
+
                 prevCameraCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
                 prevPlayerCenter_fixed = playerX_fixed + centerOffset_fixed;
 
@@ -9841,6 +9890,7 @@ namespace FamidashEditor
                         if (!stillSupported)
                         {
                             onGround = false;
+                            wasZeroedByCollisionLastFrame = false;  // Clear flag so gravity resumes immediately
                         }
                     }
                     catch { }
@@ -10474,18 +10524,12 @@ namespace FamidashEditor
 
                             bool effectiveOnGround_local = onGround || groundStabilizeCounter > 0 || invertedCeilingHoldCounter > 0;
 
-                            // Atomically consume any pending UI-edge presses recorded by the UI poll
-                            // NOTE: Ball mode (2) handles key presses internally, so don't consume here
-                            int pendingPresses_num = (currentGameMode == 2) ? Interlocked.CompareExchange(ref keyXPressedCount, 0, 0) : Interlocked.Exchange(ref keyXPressedCount, 0);
-                            // Also consume whether the pending press was recorded as starting on-ground
-                            int pendingPressStartedOnGround = Interlocked.Exchange(ref keyXPressStartedOnGroundInt, 0);
-                            // For Cube mode we want to defer applying the jump until after gravity+integration
-                            // so the first frame applies gravity/integration before jump velocity is set.
+                            // NOTE: Fresh physics handlers read and consume keyXPressedCount themselves
+                            // (via Interlocked.CompareExchange/Exchange inside ProcessCubePhysics_Fresh, etc.)
+                            // Do NOT consume keyXPressedCount here - it would eat the press before Fresh physics sees it.
+                            int pendingPresses_num = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0); // peek only
+                            int pendingPressStartedOnGround = Interlocked.CompareExchange(ref keyXPressStartedOnGroundInt, 0, 0); // peek only
                             int pendingPresses_forLater = 0;
-                            if (pendingPresses_num > 0)
-                            {
-                                // try { Cube_HandlePendingPresses_NoLocals(pendingPresses_num, pendingPressStartedOnGround, ref pendingPresses_forLater, ref jumpAppliedThisStep_local); } catch { } // REMOVED - fresh port
-                            }
 
                             // Update orb buffer: set/clear according to strict rules
                             try
@@ -10774,8 +10818,10 @@ namespace FamidashEditor
                             if (desiredPlayerY_fixed_local > maxPlayerY_fixed_local) desiredPlayerY_fixed_local = maxPlayerY_fixed_local;
                             playerY_fixed = desiredPlayerY_fixed_local;
                             // When numeric sim enforces a screen-space clamp, treat the player as grounded so gravity stops.
-                            playerVelY_fixed = 0;
-                            onGround = true;
+                            // NOTE: Do NOT zero velocity here — Fresh physics (CubeEject_Fresh) handles grounding.
+                            // Zeroing velocity here kills jump velocity before CommonGravityRoutine can integrate it.
+                            // playerVelY_fixed = 0;
+                            // onGround = true;
                         }
                     }
                 }

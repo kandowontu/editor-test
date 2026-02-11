@@ -61,47 +61,39 @@ namespace FamidashEditor
             // Reset jumped flag at start of frame
             ninjaJumpedThisFrame = false;
             
-            // Grounding check - velocity-based only (matches Cube and Football)
-            // Only use velocity to determine if grounded. Collision detection will handle actual grounding
-            bool isGrounded = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
-            onGround = isGrounded;
-            
-            // Reset triple jump when grounded
-            if (isGrounded)
-            {
-                ninjaJumps = 3;
-                AppendSimDebug($"[NINJA] Grounded - reset jumps to 3");
-            }
-            
-            // Read input
-            bool holdJump = IsXDownAsync() || keyXHeld;
-            int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
-            bool pressJump = pressCount > 0;
-            
-            // Ninja can jump if:
-            // 1. Grounded (vel_y == 0), OR
-            // 2. In air with jumps remaining and not already jumped this frame
-            if (pressJump && ninjaJumps > 0 && !ninjaJumpedThisFrame && !orbed[currplayer] && dashing[currplayer] == 0) {
-                int baseJumpIdx = (currplayer_mini != 0 ? 4 : 0);
-                bool jumpGravityInverted = (currplayer_gravity != 0);
-                int jumpGravityMultiplier = jumpGravityInverted ? -1 : 1;
-                playerVelY_fixed = GameModePhysics.JUMP_VEL(baseJumpIdx) * jumpGravityMultiplier;
-                
-                // Only decrement jumps if in air
-                if (playerVelY_fixed != 0) {
-                    ninjaJumps--;
-                }
-                
-                ninjaJumpedThisFrame = true;
-                AppendSimDebug($"[NINJA] Jump! Remaining={ninjaJumps}, vel={playerVelY_fixed}");
-            }
-            
             // Apply gravity (applies simTimeScale internally)
             CommonGravityRoutine_Fresh();
             
             // Collision
             byte gravityAtFrameStart = currplayer_gravity;
             CubeEject_Fresh();
+            
+            // Read input
+            bool holdJump = IsXDownAsync() || keyXHeld;
+            int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
+            bool pressJump = pressCount > 0;
+            
+            // Reset triple jump when grounded and not pressing jump
+            if (onGround && !pressJump)
+            {
+                ninjajumps[currplayer] = 3;
+                AppendSimDebug($"[NINJA] Grounded - reset jumps to 3");
+            }
+            
+            // Ninja can jump if:
+            // 1. Grounded (vel_y == 0), OR
+            // 2. In air with jumps remaining and not already jumped this frame
+            if (pressJump && ninjajumps[currplayer] > 0 && !ninjaJumpedThisFrame && !orbed[currplayer] && dashing[currplayer] == 0) {
+                int baseJumpIdx = (currplayer_mini != 0 ? 4 : 0);
+                bool jumpGravityInverted = (currplayer_gravity != 0);
+                int jumpGravityMultiplier = jumpGravityInverted ? -1 : 1;
+                playerVelY_fixed = GameModePhysics.JUMP_VEL(baseJumpIdx) * jumpGravityMultiplier;
+                
+                ninjajumps[currplayer]--;
+                
+                ninjaJumpedThisFrame = true;
+                AppendSimDebug($"[NINJA] Jump! Remaining={ninjajumps[currplayer]}, vel={playerVelY_fixed}");
+            }
             
             // Record trail
             try

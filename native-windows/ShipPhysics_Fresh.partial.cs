@@ -153,7 +153,7 @@ namespace FamidashEditor
             {
                 var (collidedDown, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
                 if (collidedDown && playerVelY_fixed >= 0) {
-                    playerY_fixed = ((collisionTopY - hitboxH - hitboxOffsetY - 1) << 8);
+                    playerY_fixed = ((collisionTopY - hitboxH - hitboxOffsetY) << 8);
                     playerVelY_fixed = 0;
                 }
                 // NOTE: No wasZeroed changes — ship never managed this flag

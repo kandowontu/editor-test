@@ -42,6 +42,7 @@
             <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
                 <CheckBox x:Name="MiniCheckBox" Content="Mini" Foreground="White" VerticalAlignment="Center" Margin="4,0,12,0" Checked="MiniCheckBox_Changed" Unchecked="MiniCheckBox_Changed" Focusable="False"/>
                 <CheckBox x:Name="InvertedCheckBox" Content="Inverted" Foreground="White" VerticalAlignment="Center" Margin="0,0,12,0" Checked="InvertedCheckBox_Changed" Unchecked="InvertedCheckBox_Changed" Focusable="False"/>
+                <CheckBox x:Name="PathfinderCheckBox" Content="Pathfinder" Foreground="#FFAAFFAA" VerticalAlignment="Center" Margin="0,0,12,0" Checked="PathfinderCheckBox_Changed" Unchecked="PathfinderCheckBox_Changed" Focusable="False"/>
                 <TextBlock Text="Speed:" Foreground="White" VerticalAlignment="Center" Margin="4,0,8,0"/>
                 <ComboBox x:Name="SpeedComboBox" Width="80" SelectionChanged="SpeedComboBox_SelectionChanged" VerticalAlignment="Center" Margin="0,0,4,0" Focusable="False">
                     <ComboBoxItem Content="0.5x" Tag="0"/>
