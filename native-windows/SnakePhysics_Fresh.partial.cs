@@ -59,43 +59,26 @@ namespace FamidashEditor
                     
                 case 2:
                     playerVelY_fixed = -playerVelX_fixed;
-                    if (isFullSpeed)
-                        playerY_fixed += playerVelY_fixed;
-                    else
-                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                     break;
                 case 3:
                     playerVelY_fixed = playerVelX_fixed;
-                    if (isFullSpeed)
-                        playerY_fixed += playerVelY_fixed;
-                    else
-                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                     break;
                 case 4:
                     playerVelY_fixed = playerVelX_fixed;
-                    if (isFullSpeed)
-                        playerY_fixed -= playerVelY_fixed;
-                    else
-                        playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale);
+                    playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale);
                     break;
                 case 5:
                     playerVelY_fixed = playerVelX_fixed;
-                    if (isFullSpeed)
-                        playerY_fixed += playerVelY_fixed;
-                    else
-                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                     break;
             }
             
             // Apply velocity if not on slope
-            // Snake with dblocked: skip slope freeze so it can traverse multi-tile slopes
-            bool skipSlopeFreeze = dblocked;
-            if (skipSlopeFreeze || (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0))
+            if (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0)
             {
-                if (isFullSpeed)
-                    playerY_fixed += playerVelY_fixed;
-                else
-                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
             }
             else
             {
@@ -105,9 +88,6 @@ namespace FamidashEditor
             // Collision detection (offset collision 2 pixels based on vel_y direction)
             int offsetY = (playerY_fixed >> 8) + ((playerVelY_fixed < 0) ? 2 : -2);
             WaveEject_Fresh(offsetY);
-            
-            // Update slope exit velocity counters (NES: called after eject in process_cube)
-            UpdateSlopeCounters_Fresh();
             
             // Record position for trail
             try

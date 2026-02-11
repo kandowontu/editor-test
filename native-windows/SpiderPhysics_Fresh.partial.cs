@@ -69,10 +69,10 @@ namespace FamidashEditor
             // Offset collision check down 1 pixel (normal) or up 2 pixels (inverted)
             int offsetY = (playerY_fixed >> 8) + (gravityInverted ? -2 : 1);
             SpiderEject_Fresh(offsetY);
-            
-            // Update slope exit velocity counters (NES: called after eject in process_cube)
+
+            // Update slope exit velocity counters
             UpdateSlopeCounters_Fresh();
-            
+
             // Update the global onGround flag based on whether we're grounded
             // If velocity is 0 after eject, we hit something and are grounded
             onGround = (playerVelY_fixed == 0);
@@ -206,7 +206,7 @@ namespace FamidashEditor
             int collisionY = offsetY + hitboxOffsetY;
             
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-            
+
             // Update slope counters each frame
             UpdateSlopeCounters();
             
@@ -221,7 +221,6 @@ namespace FamidashEditor
                         int currentY_px = playerY_fixed >> 8;
                         int newY_px = currentY_px - eject_D;
                         playerY_fixed = newY_px << 8;
-                        AppendSimDebug($"[SPIDER_SLOPE_D] eject_D={eject_D}, Y {currentY_px} -> {newY_px}");
                     }
                     playerVelY_fixed = 0;
                     wasZeroedByCollisionLastFrame = true;
@@ -232,7 +231,6 @@ namespace FamidashEditor
                     var (collided, ejectAmount) = BgCollD_Spider(collisionX, collisionY, hitboxW, hitboxH, groundRowsToReserve);
                     if (collided)
                     {
-                        // Eject upward from floor
                         int currentY_px = playerY_fixed >> 8;
                         int newY_px = currentY_px - ejectAmount;
                         playerY_fixed = newY_px << 8;

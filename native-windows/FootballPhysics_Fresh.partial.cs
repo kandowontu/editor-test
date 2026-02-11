@@ -45,9 +45,6 @@ namespace FamidashEditor
             // Handle collision detection like Cube does
             CubeEject_Fresh();
             
-            // Update slope exit velocity counters (NES: called after eject in process_cube)
-            UpdateSlopeCounters_Fresh();
-            
             // Clear hblocked flag at end of frame
             hblocked = false;
             
@@ -69,7 +66,7 @@ namespace FamidashEditor
                 }
                 footballWasHeld = true;
             }
-            // When X transitions from held to released - check velocity instead of onGround
+            // When X transitions from held to released
             else if (!xHeld && footballWasHeld)
             {
                 AppendSimDebug($"[FOOTBALL] RELEASE DETECTED: chargeFrames={footballChargeFrames}, wasHeld={footballWasHeld}, xHeld={xHeld}");
@@ -77,14 +74,14 @@ namespace FamidashEditor
                 footballOrbed = false;  // Clear orbed state on release (allows recharging next time)
                 footballWasHeld = false;  // Mark that we've processed this release
                 
-                // Check velocity <= 0x6B tolerance (handles oscillation between 0x0000 and 0x006B)
-                AppendSimDebug($"[FOOTBALL] Released: chargeFrames={footballChargeFrames}, velY=0x{playerVelY_fixed:X4}");
+                // Use existing onGround state instead of rechecking collisions
+                AppendSimDebug($"[FOOTBALL] Released: chargeFrames={footballChargeFrames}, onGround={onGround}, velY_before=0x{playerVelY_fixed:X4}");
                 
                 // Apply jump velocity ONLY if:
                 // 1. Charged (chargeFrames > 0)
                 // 2. NOT overcharged (chargeFrames < 50) - at 50 frames the charge is dead
-                // 3. Velocity <= 0x6B (grounded - handles oscillation)
-                if (footballChargeFrames > 0 && footballChargeFrames < 50 && Math.Abs(playerVelY_fixed) <= 0x006B)
+                // 3. On ground
+                if (footballChargeFrames > 0 && footballChargeFrames < 50 && onGround)
                 {
                     // Clamp charge power to 45 frames max (frames 46-50 don't add more power, and 50 is overcharge = no jump)
                     int effectiveCharge = Math.Min(footballChargeFrames, 45);
@@ -101,9 +98,9 @@ namespace FamidashEditor
                 {
                     AppendSimDebug($"[FOOTBALL] OVERCHARGED (>=50) - charge is dead, no jump");
                 }
-                else if (Math.Abs(playerVelY_fixed) > 0x006B)
+                else if (!onGround)
                 {
-                    AppendSimDebug($"[FOOTBALL] velY > 0x6B (not grounded) - not jumping");
+                    AppendSimDebug($"[FOOTBALL] NOT ON GROUND - not jumping");
                 }
                 
                 footballChargeFrames = 0;  // Reset charge on release

@@ -111,8 +111,8 @@ namespace FamidashEditor
             }
             
             UfoShipEject_Fresh();
-            
-            // Update slope exit velocity counters (NES: called after eject in process_cube)
+
+            // Update slope exit velocity counters (NES: called after eject)
             UpdateSlopeCounters_Fresh();
         }
         
@@ -127,8 +127,8 @@ namespace FamidashEditor
             int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
             int collisionX = (playerX_fixed >> 8);
             int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
-            
-            // Update slope counters each frame (NES: called inside bg_coll_D/U)
+
+            // Update slope counters each frame
             UpdateSlopeCounters();
             
             var (collidedUp, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
@@ -136,7 +136,7 @@ namespace FamidashEditor
                 playerY_fixed = ((collisionBottomY - hitboxOffsetY) << 8);
                 playerVelY_fixed = 0;
             }
-            
+
             // Check slopes BEFORE flat downward collision
             bool slopeHit = bg_coll_D_slopes();
             if (slopeHit)
@@ -147,22 +147,16 @@ namespace FamidashEditor
                     playerY_fixed = newPixelY << 8;
                 }
                 playerVelY_fixed = 0;
-                wasZeroedByCollisionLastFrame = true;
-                AppendSimDebug($"[SHIP_SLOPE_D] slopeHit=true, eject_D={eject_D}");
+                // NOTE: Ship does NOT set wasZeroedByCollisionLastFrame — GRAV_SKIP would block thrust
             }
             else
             {
                 var (collidedDown, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
                 if (collidedDown && playerVelY_fixed >= 0) {
-                    playerY_fixed = ((collisionTopY - hitboxH - hitboxOffsetY) << 8);
+                    playerY_fixed = ((collisionTopY - hitboxH - hitboxOffsetY - 1) << 8);
                     playerVelY_fixed = 0;
-                    wasZeroedByCollisionLastFrame = true;
                 }
-                else
-                {
-                    // No slope or flat collision — clear flag so gravity resumes next frame
-                    wasZeroedByCollisionLastFrame = false;
-                }
+                // NOTE: No wasZeroed changes — ship never managed this flag
             }
             
             // Record position for trail

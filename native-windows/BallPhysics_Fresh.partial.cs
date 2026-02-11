@@ -221,10 +221,10 @@ namespace FamidashEditor
             
             // Collision ejection (only runs when cooldown == 0)
             BallEject_Fresh();
-            
-            // Update slope exit velocity counters (NES: called after eject in process_cube)
+
+            // Update slope exit velocity counters
             UpdateSlopeCounters_Fresh();
-            
+
             // Swing gravity flip logic
             if (currentGameMode == 7) { // GAMEMODE_SWING
                 int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
@@ -324,16 +324,15 @@ namespace FamidashEditor
             int hitboxH = isMini ? 7 : 15;
             int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
             int collisionX = (playerX_fixed >> 8);
-            // NES ball_movement: "this literally offsets the collision down 1 pixel
-            // for the vel reset to happen every frame instead of each other frame"
+            // NES ball_movement: offsets collision 1 pixel to prevent every-other-frame oscillation
             int ballYOffset = (currplayer_gravity == 0) ? 1 : -1;
             int collisionY = (playerY_fixed >> 8) + hitboxOffsetY + ballYOffset;
-            
-            // Update slope counters each frame (NES: called inside bg_coll_D/U)
+
+            // Update slope counters each frame
             UpdateSlopeCounters();
             
             if (currplayer_gravity == 0) {
-                // Normal gravity: Check slopes FIRST (same as CubeEject_Fresh)
+                // Normal gravity: Check slopes FIRST
                 bool slopeHit = bg_coll_D_slopes();
                 if (slopeHit)
                 {
@@ -342,29 +341,26 @@ namespace FamidashEditor
                         int newPixelY = (playerY_fixed >> 8) - eject_D;
                         playerY_fixed = newPixelY << 8;
                     }
-                    // Pogo mode: bounce off slopes instead of zeroing velocity
+                    // Pogo mode: bounce off slopes
                     if (currentGameMode == 9 && !orbhitonthisframe[currplayer])
                     {
                         int newVel = (-playerVelY_fixed / 3) * 2;
                         int yellowPadMin = isMini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
-                        int minVel = yellowPadMin * -1; // normal gravity: upward bounce
+                        int minVel = yellowPadMin * -1;
                         if (newVel > minVel)
                             newVel = minVel;
                         playerVelY_fixed = newVel;
                         pogoBounceAnimationCounter = 8;
-                        AppendSimDebug($"[POGO_BOUNCE_SLOPE_D] velY=0x{playerVelY_fixed:X4}, eject_D={eject_D}");
                     }
                     else
                     {
                         playerVelY_fixed = 0;
-                        wasZeroedByCollisionLastFrame = true;
                     }
-                    AppendSimDebug($"[BALL_SLOPE_D] slopeHit=true, eject_D={eject_D}, mode={currentGameMode}");
                 }
                 else
                 {
-                // No slope hit - fall through to flat collision below
-                
+                // No slope hit - fall through to flat collision
+
                 // Normal gravity: Check TOP collision with right-side pixel test
                 if (!MainWindow.Option_NoDeath)
                 {
@@ -408,7 +404,7 @@ namespace FamidashEditor
                 if (playerVelY_fixed >= 0) {
                     var (collided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
                     if (collided) {
-                        int newY = collisionTopY - hitboxH - hitboxOffsetY - ballYOffset;
+                        int newY = collisionTopY - hitboxH - hitboxOffsetY - 1 - ballYOffset;
                         int oldY = playerY_fixed >> 8;
                         AppendSimDebug($"[BALL_EJECT_D] collisionTopY={collisionTopY}, hitboxH={hitboxH}, hitboxOffsetY={hitboxOffsetY}, oldY={oldY}, newY={newY}");
                         playerY_fixed = (newY << 8);
@@ -418,42 +414,26 @@ namespace FamidashEditor
                         {
                             if (!orbhitonthisframe[currplayer])
                             {
-                                // NES formula: (-vel / 3) * 2 — divide first, then multiply
                                 int newVel = (-playerVelY_fixed / 3) * 2;
                                 // Bounce minimum = yellow pad velocity for swing (mode 7, col index 7)
                                 int yellowPadMin = isMini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
-                                int minVel = yellowPadMin * -1; // normal gravity: upward bounce (negative)
-                                // For downward bounce (normal gravity): if bounce too weak, use minimum
+                                int minVel = yellowPadMin * -1;
+                                // For downward bounce (normal gravity): check if vel > min (more negative)
                                 if (newVel > minVel)
                                     newVel = minVel;
                                 playerVelY_fixed = newVel;
-                                pogoBounceAnimationCounter = 8;
-                                AppendSimDebug($"[POGO_BOUNCE_D] newVel=0x{newVel:X4}, min=0x{minVel:X4}");
+                                pogoBounceAnimationCounter = 8; // Show pogo2.png for 8 frames
+                                AppendSimDebug($"[POGO_BOUNCE_D] velY: old=0x{playerVelY_fixed:X4} -> new=0x{newVel:X4}, min=0x{minVel:X4}");
                             }
                         }
                         else
                         {
                             playerVelY_fixed = 0;
-                            wasZeroedByCollisionLastFrame = true;
                         }
                     }
-                    else
-                    {
-                        // No slope or flat collision — clear flag so gravity resumes next frame
-                        wasZeroedByCollisionLastFrame = false;
-                    }
                 }
-                else
-                {
-                    // Moving upward — no floor collision possible, clear flag
-                    wasZeroedByCollisionLastFrame = false;
-                }
-                } // end else (no slope hit)
+                } // close slope else branch
             } else {
-                // Inverted gravity: Check slopes for ceiling (upside-down slopes)
-                // TODO: bg_coll_U_slopes() when implemented
-                // For now, fall through to flat collision
-                
                 // Inverted gravity: Check BOTTOM collision with right-side pixel test
                 if (!MainWindow.Option_NoDeath)
                 {
@@ -498,7 +478,7 @@ namespace FamidashEditor
                     var (collided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
                     if (collided) {
                         // Place player directly at collision surface
-                        int newY = collisionBottomY - hitboxOffsetY - ballYOffset;
+                        int newY = collisionBottomY - hitboxOffsetY;
                         int oldY = playerY_fixed >> 8;
                         AppendSimDebug($"[BALL_EJECT_U] collisionBottomY={collisionBottomY}, hitboxOffsetY={hitboxOffsetY}, oldY={oldY}, newY={newY}");
                         playerY_fixed = (newY << 8);
@@ -508,35 +488,23 @@ namespace FamidashEditor
                         {
                             if (!orbhitonthisframe[currplayer])
                             {
-                                // NES formula: (-vel / 3) * 2 — divide first, then multiply
                                 int newVel = (-playerVelY_fixed / 3) * 2;
                                 // Bounce minimum = yellow pad velocity for swing (mode 7, col index 7)
                                 int yellowPadMin = isMini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
-                                int minVel = yellowPadMin * 1; // inverted gravity: downward bounce (positive)
-                                // For upward bounce (inverted gravity): if bounce too weak, use minimum
+                                int minVel = yellowPadMin;
+                                // For upward bounce (inverted gravity): check if vel < min (more positive)
                                 if (newVel < minVel)
                                     newVel = minVel;
                                 playerVelY_fixed = newVel;
-                                pogoBounceAnimationCounter = 8;
-                                AppendSimDebug($"[POGO_BOUNCE_U] newVel=0x{newVel:X4}, min=0x{minVel:X4}");
+                                pogoBounceAnimationCounter = 8; // Show pogo2.png for 8 frames
+                                AppendSimDebug($"[POGO_BOUNCE_U] velY: old=0x{playerVelY_fixed:X4} -> new=0x{newVel:X4}, min=0x{minVel:X4}");
                             }
                         }
                         else
                         {
                             playerVelY_fixed = 0;
-                            wasZeroedByCollisionLastFrame = true;
                         }
                     }
-                    else
-                    {
-                        // No collision — clear flag so gravity resumes next frame
-                        wasZeroedByCollisionLastFrame = false;
-                    }
-                }
-                else
-                {
-                    // Moving downward in inverted gravity — no ceiling collision possible, clear flag
-                    wasZeroedByCollisionLastFrame = false;
                 }
             }
         }

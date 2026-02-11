@@ -1107,9 +1107,6 @@ namespace FamidashEditor
                 // If a cached hitbox for this sprite was populated during rendering this frame,
                 // prefer that rectangle (it exactly matches the overlay) to avoid subtle
                 // geometry mismatches from duplicate math paths.
-                // CRITICAL: Hitbox cache disabled for determinism (rendering is async and non-deterministic)
-                // The cache causes collision detection to vary between runs based on render timing
-                /*
                 try
                 {
                     if (hitboxWorldCache != null && hitboxWorldCache.TryGetValue(idx, out var cached) && cached.frame == renderFrameCounter)
@@ -1120,7 +1117,6 @@ namespace FamidashEditor
                     }
                 }
                 catch { }
-                */
 
                 // NES check_collision() uses exclusive bounds: collision when (x1+w1 >= x2) && (x2+w2 >= x1).
                 // Player bounds arrive as inclusive (x + w - 1), so playerRight_excl = playerRight_px + 1.
@@ -3447,7 +3443,7 @@ namespace FamidashEditor
         
         // Flag to disable async keyboard polling for perfect determinism in auto levels
         // Set to true when you want completely deterministic physics (no external keyboard state)
-        private bool disableAsyncKeyboardInput = true;  // Default to true for deterministic auto levels
+        private bool disableAsyncKeyboardInput = false;  // Set false so keyboard input works normally
         
         private bool IsXDownAsync() { 
             // In deterministic mode (auto levels), never check actual keyboard state
@@ -5945,7 +5941,12 @@ namespace FamidashEditor
                         int tileBelowY_world = footWorldY_px / TILE;
                         int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                         int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
-                        if (tileIndexY >= 0 && tileIndexY < mapHeight)
+                        if (tileIndexY >= mapHeight)
+                        {
+                            // Player is over the implicit ground layer — always supported
+                            stillSupported = true;
+                        }
+                        else if (tileIndexY >= 0)
                         {
                             for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
                             {
@@ -5978,7 +5979,6 @@ namespace FamidashEditor
                     if (!stillSupported)
                     {
                         onGround = false;
-                        wasZeroedByCollisionLastFrame = false;  // Clear flag so gravity resumes immediately
                     }
                 }
                 catch { onGround = false; }
@@ -9803,7 +9803,12 @@ namespace FamidashEditor
                             int tileBelowY_world = footWorldY_px / TILE;
                             int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
-                            if (tileIndexY >= 0 && tileIndexY < mapHeight)
+                            if (tileIndexY >= mapHeight)
+                            {
+                                // Player is over the implicit ground layer — always supported
+                                stillSupported = true;
+                            }
+                            else if (tileIndexY >= 0)
                             {
                                 for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
                                 {
@@ -9836,7 +9841,6 @@ namespace FamidashEditor
                         if (!stillSupported)
                         {
                             onGround = false;
-                            wasZeroedByCollisionLastFrame = false;  // Clear flag so gravity resumes
                         }
                     }
                     catch { }

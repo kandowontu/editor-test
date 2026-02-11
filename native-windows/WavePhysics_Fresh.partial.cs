@@ -14,8 +14,8 @@ namespace FamidashEditor
             // Skip all physics if death already triggered
             if (deathTriggered || paused) return;
             
-            // NES wave_movement: always recalculates vel_y from vel_x each frame
-            // (no wasZeroedByCollisionLastFrame check in NES wave code)
+            // Reset the "just landed" flag at the START of the frame so velocity can be recalculated
+            wasZeroedByCollisionLastFrame = false;
             
             // Check for orb activation
             {
@@ -60,11 +60,14 @@ namespace FamidashEditor
             
             switch (tmp1) {
                 case 0:
-                    // Calculate vel_y based on vel_x — NES always recalculates, no "just landed" guard
-                    if (!miniMode) {
-                        playerVelY_fixed = gravityFlipped ? -playerVelX_fixed : playerVelX_fixed;
-                    } else {
-                        playerVelY_fixed = gravityFlipped ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
+                    // Calculate vel_y based on vel_x UNLESS we just landed
+                    if (!wasZeroedByCollisionLastFrame)
+                    {
+                        if (!miniMode) {
+                            playerVelY_fixed = gravityFlipped ? -playerVelX_fixed : playerVelX_fixed;
+                        } else {
+                            playerVelY_fixed = gravityFlipped ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
+                        }
                     }
                     
                     // Input handling - use same system as cube
@@ -73,13 +76,9 @@ namespace FamidashEditor
                     
                     // Apply movement
                     // Wave/snake with dblocked: skip slope freeze so wave can traverse multi-tile slopes
-                    // (cube uses gravity to naturally fall into next slope tile; wave needs movement to do same)
                     bool skipSlopeFreeze = dblocked;
                     if (skipSlopeFreeze || (currplayer_slope_frames == 0 && currplayer_was_on_slope_counter == 0)) {
-                        if (isFullSpeed)
-                            playerY_fixed += playerVelY_fixed;
-                        else
-                            playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
+                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                     } else {
                         playerVelY_fixed = 0;
                     }
@@ -89,31 +88,19 @@ namespace FamidashEditor
                     break;
                 case 2: 
                     playerVelY_fixed = -playerVelX_fixed; 
-                    if (isFullSpeed)
-                        playerY_fixed += playerVelY_fixed;
-                    else
-                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale); 
+                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale); 
                     break;
                 case 3: 
                     playerVelY_fixed = playerVelX_fixed; 
-                    if (isFullSpeed)
-                        playerY_fixed += playerVelY_fixed;
-                    else
-                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale); 
+                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale); 
                     break;
                 case 4: 
                     playerVelY_fixed = playerVelX_fixed; 
-                    if (isFullSpeed)
-                        playerY_fixed -= playerVelY_fixed;
-                    else
-                        playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale); 
+                    playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale); 
                     break;
                 case 5: 
                     playerVelY_fixed = playerVelX_fixed; 
-                    if (isFullSpeed)
-                        playerY_fixed += playerVelY_fixed;
-                    else
-                        playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale); 
+                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale); 
                     break;
             }
             
@@ -126,8 +113,8 @@ namespace FamidashEditor
             if (!deathTriggered)
             {
                 WaveEject_Fresh(offsetY);
-                
-                // Update slope exit velocity counters (NES: called after eject in process_cube)
+
+                // Update slope exit velocity counters
                 UpdateSlopeCounters_Fresh();
             }
             
@@ -167,12 +154,11 @@ namespace FamidashEditor
         {
             bool isMini = (miniMode);
             bool gravityInverted = gravityFlipped;
-            
+
             // Update slope counters each frame
             UpdateSlopeCounters();
-            
+
             // Check slopes BEFORE wave collision
-            // NES: bg_coll_D() includes slopes. wave_eject checks dblocked on hit.
             if (playerVelY_fixed >= 0)
             {
                 bool slopeHit = bg_coll_D_slopes();
@@ -180,9 +166,6 @@ namespace FamidashEditor
                 {
                     if (dblocked)
                     {
-                        // NES wave_eject: dblocked → eject upward, zero vel
-                        // Slope counters stay set (re-set by bg_coll_slope each frame)
-                        // so wave movement is frozen, but X advances and eject pushes up
                         if (eject_D > 0)
                         {
                             int currentY = playerY_fixed >> 8;
@@ -190,7 +173,7 @@ namespace FamidashEditor
                             playerY_fixed = currentY << 8;
                         }
                         playerVelY_fixed = 0;
-                        AppendSimDebug($"[WAVE_SLOPE_D] dblocked climb, eject_D={eject_D}");
+                        wasZeroedByCollisionLastFrame = true;
                         return;
                     }
                     else if (!MainWindow.Option_NoDeath)
@@ -198,12 +181,11 @@ namespace FamidashEditor
                         deathTriggered = true;
                         paused = true;
                         _ = StopMusicAsync();
-                        AppendSimDebug($"[WAVE_SLOPE_DEATH] Slope collision without dblocked - death!");
                         return;
                     }
                 }
             }
-            
+
             // Set up Generic struct for collision detection
             // Wave has special X offsets: +10 when moving UP, +4 when moving DOWN
             // X offset is based on raw velocity sign
@@ -211,14 +193,11 @@ namespace FamidashEditor
             Generic_x = (playerX_fixed >> 8) + xOffset;
             
             // For mini wave: adjust hitbox based on DIRECTION (relative to gravity)
-            // Not gravity state itself, but direction the wave is actually moving
-            // With normal gravity: up = negative vel, down = positive vel
-            // With inverted gravity: up = positive vel, down = negative vel
             int miniOffset = 0;
             if (isMini)
             {
                 bool isMovingUp = gravityInverted ? (playerVelY_fixed > 0) : (playerVelY_fixed < 0);
-                miniOffset = isMovingUp ? 0 : 8;  // 0 for up direction, 8 for down direction
+                miniOffset = isMovingUp ? 0 : 8;
             }
             
             Generic_y = (playerY_fixed >> 8) + miniOffset;
@@ -227,30 +206,27 @@ namespace FamidashEditor
             
             // Check collision based on VELOCITY direction
             // NES wave_eject: if dblocked → eject + zero vel; else → death
-            // NES bg_coll_U_D_checks: COL_FLOOR_CEIL auto-sets dblocked (tiles 0x01,0x02,0x05,0x06,0x88,0x89)
             if ((playerVelY_fixed & 0x8000) != 0)  // Velocity is negative (moving UP)
             {
                 if (wave_coll_U())
                 {
-                    // NES: COL_FLOOR_CEIL tiles auto-set dblocked in bg_coll_U_D_checks
+                    // NES: COL_FLOOR_CEIL tiles auto-set dblocked
                     if ((MetatileCollision)collision == MetatileCollision.COL_FLOOR_CEIL)
                         dblocked = true;
-                    
-                    AppendSimDebug($"[WAVE_COLL_U] collision=0x{collision:X2} ({(MetatileCollision)collision}), dblocked={dblocked}");
-                    
+
                     if (dblocked)
                     {
                         int currentY = playerY_fixed >> 8;
                         currentY -= eject_U;
                         playerY_fixed = currentY << 8;
                         playerVelY_fixed = 0;
+                        wasZeroedByCollisionLastFrame = true;
                     }
                     else if (!MainWindow.Option_NoDeath)
                     {
                         deathTriggered = true;
                         paused = true;
                         _ = StopMusicAsync();
-                        AppendSimDebug($"[WAVE_DEATH] Upward collision without dblocked");
                     }
                     return;
                 }
@@ -259,32 +235,27 @@ namespace FamidashEditor
             {
                 if (wave_coll_D())
                 {
-                    // NES: COL_FLOOR_CEIL tiles auto-set dblocked in bg_coll_U_D_checks
+                    // NES: COL_FLOOR_CEIL tiles auto-set dblocked
                     if ((MetatileCollision)collision == MetatileCollision.COL_FLOOR_CEIL)
                         dblocked = true;
-                    
-                    AppendSimDebug($"[WAVE_COLL_D] collision=0x{collision:X2} ({(MetatileCollision)collision}), dblocked={dblocked}");
-                    
+
                     if (dblocked)
                     {
                         int currentY = playerY_fixed >> 8;
                         currentY -= eject_D;
                         playerY_fixed = currentY << 8;
                         playerVelY_fixed = 0;
+                        wasZeroedByCollisionLastFrame = true;
                     }
                     else if (!MainWindow.Option_NoDeath)
                     {
                         deathTriggered = true;
                         paused = true;
                         _ = StopMusicAsync();
-                        AppendSimDebug($"[WAVE_DEATH] Downward collision without dblocked");
                     }
                     return;
                 }
             }
-            
-            // No collision — clear wasZeroed so other systems know
-            wasZeroedByCollisionLastFrame = false;
         }
     }
 }
