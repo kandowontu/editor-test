@@ -3457,10 +3457,10 @@ namespace FamidashEditor
         private static readonly uint currentProcessId = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
 
         private bool IsXDownAsync() { 
-            // During pathfinder speculative simulation, ignore real keyboard input.
-            // PF_InjectInput sets keyXHeld/keyXPressedCount directly; we must not
-            // let the actual keyboard state bleed into the lookahead evaluation.
-            if (pfSimulating) return false;
+            // During pathfinder speculative simulation OR pathfinder replay,
+            // ignore real keyboard input. PF_InjectInput sets keyXHeld/keyXPressedCount
+            // directly; real keyboard state must not bleed into physics.
+            if (pfSimulating || pathfinderEnabled) return false;
 
             // Only poll keyboard when the current process owns the foreground window.
             // This prevents stray key state from OTHER applications (typing in notepad, etc.)
@@ -3947,7 +3947,7 @@ namespace FamidashEditor
                 simLastMs = simStopwatch.Elapsed.TotalMilliseconds;
                 simAccumulatedMs = 0.0;
                 // Run timer at a small interval and accumulate elapsed time to drive fixed steps.
-                simTimer = new System.Threading.Timer(_ => { try { TimerSimulationLoop(); } catch { } }, null, 0, 10);
+                simTimer = new System.Threading.Timer(_ => { try { TimerSimulationLoop(); } catch { } try { simTimer?.Change(10, System.Threading.Timeout.Infinite); } catch { } }, null, 0, System.Threading.Timeout.Infinite);
 
                 // NOTE: Do NOT reset playerY_fixed here - RestartButton_Click and constructor handle position initialization
 
@@ -5848,7 +5848,9 @@ namespace FamidashEditor
                             try { if (this.Owner is MainWindow mw2) { var t = mw2.ResumeSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
                         }
                         
-                        try { SimulateNumericStep(); } catch { }
+                        // NOTE: removed extra SimulateNumericStep() here — the timer loop
+                        // handles all fixed-step simulation. Calling it here caused ±1 frame
+                        // jitter depending on timer thread scheduling, breaking determinism.
                         try { RenderFrame(); } catch { }
                     }
                     finally

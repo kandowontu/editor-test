@@ -21099,7 +21099,8 @@ namespace FamidashEditor
                             tiles, sprites, spriteAnchors,
                             mapWidth, mapHeight,
                             hasGround, groundTileRows,
-                            loadedMaxFallSpeed);
+                            loadedMaxFallSpeed,
+                            spritePixelOffsets);
                         engine.JumpTimingBias = jumpTimingBias;
 
                         engine.Run(startX_px, startY_px, startSpeedUiIndex, startGameMode,
