@@ -124,6 +124,12 @@ namespace FamidashEditor
         private void AppendSimDebug(string msg)
         {
 #if !DISABLE_DEBUG_LOGGING
+            // Skip ALL debug logging during pathfinder speculative simulation.
+            // Each physics frame generates ~6 debug entries with string interpolation,
+            // DateTime formatting, lock acquisition, and FILE I/O. At 180 speculative
+            // frames per evaluation this would be ~1000 file writes per real frame.
+            if (pfSimulating) return;
+
             // Early return if debug is completely disabled
             if (!simDebugWriteToFile && simDebugBuffer.Count == 0)
             {
@@ -3451,6 +3457,11 @@ namespace FamidashEditor
         private static readonly uint currentProcessId = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
 
         private bool IsXDownAsync() { 
+            // During pathfinder speculative simulation, ignore real keyboard input.
+            // PF_InjectInput sets keyXHeld/keyXPressedCount directly; we must not
+            // let the actual keyboard state bleed into the lookahead evaluation.
+            if (pfSimulating) return false;
+
             // Only poll keyboard when the current process owns the foreground window.
             // This prevents stray key state from OTHER applications (typing in notepad, etc.)
             // from causing non-deterministic physics in auto levels, while keeping controls
@@ -4662,12 +4673,17 @@ namespace FamidashEditor
                 interactionScreenOffset_px = -1;
                 
                 // Initialize Y position on ground (unless START POS overrides this later)
+                // Use physics resting position: groundSurface - hitboxH.
+                // Normal cube hitbox is 15px; ground surface is at (mapHeight-groundRows)*TILE.
+                // This gives Y=369 for a 27-row map with 3 ground rows, so the hitbox
+                // bottom (369+15=384) sits exactly ON the implicit ground floor.
                 try
                 {
                     int groundRowsToReserve = 0;
                     try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
-                    int playerRow = Math.Max(0, mapHeight - groundRowsToReserve - 1);
-                    playerY_fixed = (playerRow * TILE) << 8;
+                    int groundSurface_px = (mapHeight - groundRowsToReserve) * TILE;
+                    int cubeHitboxH = 15; // normal cube hitbox height (always starts as normal cube)
+                    playerY_fixed = Math.Max(0, groundSurface_px - cubeHitboxH) << 8;
                     int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
                     if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
                 }
@@ -4685,6 +4701,18 @@ namespace FamidashEditor
                 // Update UI to reflect starting game mode
                 try { UpdateGameModeDisplay(); } catch { }
                 try { UpdateSpeedDisplay(); } catch { }
+                // Auto-enable pathfinder when precomputed inputs exist
+                try
+                {
+                    if (this.Owner is MainWindow mw && mw.PrecomputedPathfinderInputs != null && mw.PrecomputedPathfinderInputs.Count > 0)
+                    {
+                        pathfinderEnabled = true;
+                        PF_LoadPrecomputedInputs();
+                        try { PathfinderCheckBox.IsChecked = true; } catch { }
+                        AppendSimDebug($"[PATHFINDER] Auto-enabled with {mw.PrecomputedPathfinderInputs.Count} inputs");
+                    }
+                }
+                catch { }
             };
             // Create persistent background / tile-layer / ground children to avoid re-allocating each frame
             try
@@ -5426,17 +5454,22 @@ namespace FamidashEditor
             lock (simLock)
             {
                 pathfinderEnabled = PathfinderCheckBox.IsChecked == true;
-                if (!pathfinderEnabled)
+                if (pathfinderEnabled)
                 {
-                    // Clear plan when disabling
-                    lock (pfLock)
+                    // Load precomputed inputs from editor
+                    PF_LoadPrecomputedInputs();
+                    if (!PF_HasInputData())
                     {
-                        pfPlan.Clear();
-                        pfPlanIndex = 0;
+                        AppendSimDebug("[PATHFINDER] No precomputed path data! Use 'Calculate Path' in editor first.");
                     }
+                }
+                else
+                {
                     // Release any injected input
                     Interlocked.Exchange(ref keyXPressedCount, 0);
                     keyXHeld = false;
+                    pfInputSequence = null;
+                    pfFrameIndex = 0;
                 }
             }
         }
@@ -5570,8 +5603,9 @@ namespace FamidashEditor
                     {
                         int groundRowsToReserve = 0;
                         try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
-                        int playerRow = Math.Max(0, mapHeight - groundRowsToReserve - 1);
-                        playerY_fixed = (playerRow * TILE) << 8;
+                        int groundSurface_px = (mapHeight - groundRowsToReserve) * TILE;
+                        int cubeHitboxH = 15; // normal cube hitbox height
+                        playerY_fixed = Math.Max(0, groundSurface_px - cubeHitboxH) << 8;
                         int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
                         if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
                     }
@@ -5706,6 +5740,15 @@ namespace FamidashEditor
                 prevKeyXDown = false;  // Must reset this too, otherwise edge detection breaks if user is holding key during restart
                 upHeld = false;
                 downHeld = false;
+
+                // Reset grounded physics state — player starts on the ground, so signal
+                // gravity not to apply on the first frame (matching PathfinderEngine).
+                wasZeroedByCollisionLastFrame = true;
+                onGround = true;
+
+                // Reset pathfinder frame counter so inputs replay from the beginning
+                pfFrameIndex = 0;
+                if (pathfinderEnabled) PF_LoadPrecomputedInputs();
 
                 // Reset ball/swing state
                 ballSwitched[0] = false;
@@ -5906,6 +5949,11 @@ namespace FamidashEditor
 
         private void Timer_Tick(object? sender, EventArgs e)
         {
+            // Skip ALL Timer_Tick work during pathfinder precomputation to prevent
+            // racing with the background thread (Timer_Tick advances playerX_fixed,
+            // checks ground support, and polls input — all conflicting with pathfinder).
+            if (pfSimulating) return;
+
             // Poll input on UI thread to generate stable per-frame pressed/held flags for numeric sim
             try
             {
@@ -5919,6 +5967,17 @@ namespace FamidashEditor
                 bool curDown = System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.Down);
                 lock (simLock)
                 {
+                    // When pathfinder is active, PF_InjectInput exclusively controls
+                    // keyXHeld / keyXPressedCount inside SimulateNumericStep. 
+                    // Do NOT overwrite them here to avoid the race where Timer_Tick
+                    // clears the injected input before the jump check reads it.
+                    if (pathfinderEnabled)
+                    {
+                        upHeld = curUp;
+                        downHeld = curDown;
+                    }
+                    else
+                    {
                     // Only register an X press edge if the player is currently on the ground (no queued mid-air presses)
                     int maxPlayerY_fixed_poll = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
                     // Edge detect X regardless of ground so mid-air jumps (for testing) are possible.
@@ -5935,6 +5994,7 @@ namespace FamidashEditor
                     // Also poll Up/Down to avoid missing key events; these set the held flags used by movement logic
                     upHeld = curUp;
                     downHeld = curDown;
+                    } // end else (!pathfinderEnabled)
                 }
             }
             catch { }
@@ -5947,14 +6007,21 @@ namespace FamidashEditor
             int speedMultiplier = tabSpeedMultiplier;
             int centerOffset_fixed = (TILE / 2) << 8;
             int prevPlayerCenter_fixed = playerX_fixed + centerOffset_fixed;
-            int attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplier) * simTimeScale);
+            // When pathfinder is active, SimulateNumericStep is the sole driver of X advancement.
+            // Without this guard, Timer_Tick ALSO advances X, causing double horizontal speed
+            // during playback (precompute only advances X once per frame).
+            int attemptedPlayerX_fixed = pathfinderEnabled
+                ? playerX_fixed  // Don't advance — SimulateNumericStep handles it
+                : playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplier) * simTimeScale);
             int attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
 
             // Move the player forward in world coordinates first
             playerX_fixed = attemptedPlayerX_fixed;
             // When player moves horizontally while considered grounded, clear the
             // stabilization counter so walking off platforms causes immediate fall.
-            if (onGround)
+            // Skip this when pathfinder is active — SimulateNumericStep handles
+            // ground support inside the lock, avoiding data races.
+            if (onGround && !pathfinderEnabled)
             {
                 groundStabilizeCounter = 0;
                 // Immediately verify the player still has supporting surface underfoot
@@ -9705,7 +9772,10 @@ namespace FamidashEditor
                 // If paused, still render the current frame and show the pause overlay.
                 if (paused)
                 {
-                    RenderFrame();
+                    // Skip rendering player during pathfinder precompute to avoid showing
+                    // speculative positions from the background beam search.
+                    if (!pfSimulating)
+                        RenderFrame();
                     try
                     {
                         if (levelCompleteTriggered)
@@ -9769,6 +9839,8 @@ namespace FamidashEditor
                 {
                     bool pfInput = PF_GetInput();
                     PF_InjectInput(pfInput);
+                    if (pfInput)
+                        AppendSimDebug($"[PF] Frame {pfFrameIndex - 1}: JUMP INPUT injected (keyXHeld={keyXHeld}, pressCount={keyXPressedCount}, velY=0x{playerVelY_fixed:X4}, wasZeroed={wasZeroedByCollisionLastFrame})");
                 }
 
                 prevCameraCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
@@ -9829,6 +9901,7 @@ namespace FamidashEditor
                 }
 
                 // Move the player forward in world coordinates AFTER sprite interactions
+                int preAdvancePlayerX_fixed = playerX_fixed;  // Save OLD X for forward collision (NES checks at OLD X)
                 playerX_fixed = attemptedPlayerX_fixed;
                 
                 // When player moves horizontally while grounded, verify still supported
@@ -10130,6 +10203,11 @@ namespace FamidashEditor
                     }
                 }
 
+                // === NES ORDER: physics/eject must run at OLD X ===
+                // Save NEW X, temporarily revert to OLD X for physics dispatch + forward collision.
+                // NES order: sprite_collide → movement (at OLD X) → x_movement_coll (at OLD X) → x_movement → bg_coll_death
+                playerX_fixed = preAdvancePlayerX_fixed;
+
                 // Call game mode physics when enabled (disabled in cam mode for complete passthrough)
                 if (physicsEnabled && !camModeActive)
                 {
@@ -10206,39 +10284,75 @@ namespace FamidashEditor
                         AppendSimDebug($"[GRAV_POST_PHYSICS] currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed} mini={miniMode}");
                         
                         // === FORWARD COLLISION CHECK (x_movement_coll in famidash) ===
-                        // Check middle pixel on right edge for death AFTER X movement has occurred
-                        // This matches famidash's order: sprite_collide → movement (Y) → x_movement_coll → x_movement → bg_coll_death
-                        // Modes that have custom collision (spider/wave/snake) handle this themselves
+                        // NES x_movement_coll() refreshes Generic.y = high_byte(currplayer_y) AFTER eject,
+                        // so bg_coll_R sees post-eject Y. This lets cubes walk onto single blocks.
                         if (!MainWindow.Option_NoDeath && !hblocked && !deathTriggered)
                         {
                             bool needsForwardCheck = currentGameMode == 0 || // Cube
+                                                    currentGameMode == 1 || // Ship
                                                     currentGameMode == 4 || // Robot
                                                     currentGameMode == 8 || // Ninja
                                                     currentGameMode == 10;  // Football
                             
                             if (needsForwardCheck)
                             {
-                                int playerX_px = playerX_fixed >> 8;
-                                int playerY_px = playerY_fixed >> 8;
-                                int hitboxW = (currplayer_mini != 0) ? 8 : 15;
-                                int hitboxH = (currplayer_mini != 0) ? 7 : 15;
-                                int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 9 : 0;
+                                // OLD X, post-eject Y — matches NES x_movement_coll which refreshes
+                                // Generic.y from currplayer_y (post-eject) before calling bg_coll_R
+                                int playerX_px_fwd = preAdvancePlayerX_fixed >> 8;
+                                int playerY_px_fwd = playerY_fixed >> 8;
+                                int hitboxW_fwd = (currplayer_mini != 0) ? 8 : 15;
+                                int hitboxH_fwd = (currplayer_mini != 0) ? 7 : 15;
+                                int hitboxOffsetY_fwd = (currplayer_mini != 0 && currplayer_gravity == 0) ? 9 : 0;
                                 
-                                int collisionX = playerX_px;
-                                int collisionY = playerY_px + hitboxOffsetY;
+                                int collisionX_fwd = playerX_px_fwd;
+                                int collisionY_fwd = playerY_px_fwd + hitboxOffsetY_fwd;
                                 
-                                int playerRightEdge_px = collisionX + hitboxW - 1;
-                                int playerCenterY_px = collisionY + (hitboxH / 2);
+                                // NES bg_coll_R checks at Generic.x + Generic.width (one pixel PAST the hitbox)
+                                int playerRightEdge_fwd = collisionX_fwd + hitboxW_fwd;
+                                // NES bg_side_coll_common: Generic.y + (mini ? (0x10-height)>>1 : 0) + (height>>1)
+                                // then for mini cube/robot/ninja: += gravity ? 3 : -2
+                                int playerCenterY_fwd;
+                                if (currplayer_mini != 0)
+                                {
+                                    int miniTopOff = (0x10 - hitboxH_fwd) >> 1;  // (16-7)>>1 = 4
+                                    playerCenterY_fwd = playerY_px_fwd + miniTopOff + (hitboxH_fwd >> 1);  // +4+3 = +7
+                                    if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8)
+                                        playerCenterY_fwd += (currplayer_gravity != 0) ? 3 : -2;
+                                }
+                                else
+                                {
+                                    playerCenterY_fwd = playerY_px_fwd + (hitboxH_fwd >> 1);  // +7 for normal cube
+                                }
                                 
                                 int groundRowsToReserve_fwd = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                                bool middlePixelBlocked = CheckPixelCollision(playerRightEdge_px, playerCenterY_px, groundRowsToReserve_fwd);
+                                
+                                // Diagnostic: log forward collision probe details every frame
+                                {
+                                    int dbgTileX = playerRightEdge_fwd / TILE;
+                                    int dbgTileY = playerCenterY_fwd / TILE;
+                                    int dbgTileIdxY = dbgTileY + groundRowsToReserve_fwd;
+                                    int dbgTid = -1;
+                                    string dbgCol = "OOB";
+                                    if (dbgTileX >= 0 && dbgTileX < mapWidth && dbgTileIdxY >= 0 && dbgTileIdxY < mapHeight)
+                                    {
+                                        int dbgIdx = dbgTileIdxY * mapWidth + dbgTileX;
+                                        if (dbgIdx >= 0 && dbgIdx < tiles.Length)
+                                        {
+                                            dbgTid = tiles[dbgIdx];
+                                            dbgCol = MetatileCollisionTable.GetCollision((byte)dbgTid).ToString();
+                                        }
+                                    }
+                                    AppendSimDebug($"[FWD_CHECK] probe=({playerRightEdge_fwd},{playerCenterY_fwd}) tile=({dbgTileX},{dbgTileY}) tileIdxY={dbgTileIdxY} tid=0x{dbgTid:X2} col={dbgCol} oldX={playerX_px_fwd} newX={attemptedPlayerX_fixed >> 8}");
+                                }
+                                
+                                bool middlePixelBlocked = CheckPixelCollision(playerRightEdge_fwd, playerCenterY_fwd, groundRowsToReserve_fwd);
                                 
                                 if (middlePixelBlocked)
                                 {
-                                    AppendSimDebug($"[DEATH] Forward middle pixel collision at ({playerRightEdge_px},{playerCenterY_px})");
+                                    AppendSimDebug($"[DEATH] Forward middle pixel collision at ({playerRightEdge_fwd},{playerCenterY_fwd}) - post-eject check at OLD X");
                                     deathTriggered = true;
-                                    deathTileX = playerRightEdge_px;
-                                    deathTileY = playerCenterY_px;
+                                    deathTileX = playerRightEdge_fwd;
+                                    deathTileY = playerCenterY_fwd;
                                     paused = true;
                                     _ = StopMusicAsync();
                                     
@@ -10250,7 +10364,7 @@ namespace FamidashEditor
                                             if (this.Owner is MainWindow mw)
                                             {
                                                 try { mw.PauseSimulatorPlayback(); } catch { }
-                                                try { mw.AddDeathMarker(playerRightEdge_px, playerCenterY_px); } catch { }
+                                                try { mw.AddDeathMarker(playerRightEdge_fwd, playerCenterY_fwd); } catch { }
                                             }
                                         }));
                                     }
@@ -10259,6 +10373,9 @@ namespace FamidashEditor
                             }
                         }
                         // === END FORWARD COLLISION CHECK ===
+                        
+                        // Restore NEW X after physics+forward collision ran at OLD X
+                        playerX_fixed = attemptedPlayerX_fixed;
                         
                         // Reset gravity flip flag now that physics has processed it
                         gravityFlippedThisFrame = false;
@@ -10800,32 +10917,14 @@ namespace FamidashEditor
                 // Keeping it here caused inconsistent timing between runs
                 // === END RIGHT SIDE DEATH CHECK ===
                 
-                // Additional screen-space enforcement: ensure at least 3 rows of ground remain visible
-                // Skip this enforcement when gravity is inverted (allow jumping into ground rows from ceiling)
-                try
-                {
-                    if (currplayer_gravity == 0) // Only enforce for normal gravity
-                    {
-                        int playerScreenY_now_local = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
-                        int allowedBottom_px_local = (NES_H * TILE) - (3 * TILE);
-                        int playerScreenBottom_local = playerScreenY_now_local + playerVisualHeight;
-                        if (playerScreenBottom_local > allowedBottom_px_local)
-                        {
-                            int desiredPlayerScreenY_local = allowedBottom_px_local - playerVisualHeight;
-                            int desiredPlayerWorldY_local = desiredPlayerScreenY_local + (cameraY_fixed >> 8) - gridRenderShiftYPx;
-                            if (desiredPlayerWorldY_local < 0) desiredPlayerWorldY_local = 0;
-                            int desiredPlayerY_fixed_local = desiredPlayerWorldY_local << 8;
-                            if (desiredPlayerY_fixed_local > maxPlayerY_fixed_local) desiredPlayerY_fixed_local = maxPlayerY_fixed_local;
-                            playerY_fixed = desiredPlayerY_fixed_local;
-                            // When numeric sim enforces a screen-space clamp, treat the player as grounded so gravity stops.
-                            // NOTE: Do NOT zero velocity here — Fresh physics (CubeEject_Fresh) handles grounding.
-                            // Zeroing velocity here kills jump velocity before CommonGravityRoutine can integrate it.
-                            // playerVelY_fixed = 0;
-                            // onGround = true;
-                        }
-                    }
-                }
-                catch { }
+                // === SCREEN-SPACE ENFORCEMENT — DISABLED ===
+                // This was pushing playerY to keep the sprite above the visual ground boundary,
+                // but it fights physics: the implicit-ground eject places the cube at Y=369,
+                // while this clamp pushed it to Y=368, which clips into tile row 23 and causes
+                // a floor eject to Y=353. The forward collision probe at center Y=360 (tile 22)
+                // then misses the block at tile 23 — "snap over" bug.
+                // NES has no such enforcement — ground position is determined purely by physics.
+                // === END SCREEN-SPACE ENFORCEMENT ===
 
                 // Detect speed portals between prevCameraCenter_fixed and current center
                 int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);

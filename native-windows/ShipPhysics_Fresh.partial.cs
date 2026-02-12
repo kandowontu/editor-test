@@ -131,8 +131,9 @@ namespace FamidashEditor
             // Update slope counters each frame
             UpdateSlopeCounters();
             
+            // NES ufo_ship_eject: NO velocity guard on ceiling eject
             var (collidedUp, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-            if (collidedUp && playerVelY_fixed <= 0) {
+            if (collidedUp) {
                 playerY_fixed = ((collisionBottomY - hitboxOffsetY) << 8);
                 playerVelY_fixed = 0;
             }
@@ -151,15 +152,17 @@ namespace FamidashEditor
             }
             else
             {
+                // NES ufo_ship_eject: NO velocity guard on floor eject
                 var (collidedDown, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
-                if (collidedDown && playerVelY_fixed >= 0) {
+                if (collidedDown) {
                     playerY_fixed = ((collisionTopY - hitboxH - hitboxOffsetY) << 8);
                     playerVelY_fixed = 0;
                 }
                 // NOTE: No wasZeroed changes — ship never managed this flag
             }
             
-            // Record position for trail
+            // Record position for trail (skip during pathfinder speculative simulation)
+            if (!pfSimulating)
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);

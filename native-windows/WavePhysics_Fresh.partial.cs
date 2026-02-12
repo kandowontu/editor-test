@@ -194,8 +194,7 @@ namespace FamidashEditor
                     else if (!MainWindow.Option_NoDeath)
                     {
                         deathTriggered = true;
-                        paused = true;
-                        _ = StopMusicAsync();
+                        if (!pfSimulating) { paused = true; _ = StopMusicAsync(); }
                         return;
                     }
                 }
@@ -240,8 +239,7 @@ namespace FamidashEditor
                     else if (!MainWindow.Option_NoDeath)
                     {
                         deathTriggered = true;
-                        paused = true;
-                        _ = StopMusicAsync();
+                        if (!pfSimulating) { paused = true; _ = StopMusicAsync(); }
                     }
                     return;
                 }
@@ -265,8 +263,7 @@ namespace FamidashEditor
                     else if (!MainWindow.Option_NoDeath)
                     {
                         deathTriggered = true;
-                        paused = true;
-                        _ = StopMusicAsync();
+                        if (!pfSimulating) { paused = true; _ = StopMusicAsync(); }
                     }
                     return;
                 }

@@ -63,12 +63,14 @@
         <Grid x:Name="PauseOverlay" Grid.Row="1" Width="256" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="True" MouseLeftButtonUp="PauseOverlay_MouseLeftButtonUp" Cursor="Hand">
             <Rectangle Fill="#80000000" Width="256" Height="240" />
             <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Ellipse Width="120" Height="120" Fill="#AA000000" />
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Width="60" Height="80" Margin="0,0,0,0">
+                <Ellipse x:Name="PauseOverlayCircle" Width="120" Height="120" Fill="#AA000000" />
+                <StackPanel x:Name="PauseOverlayIcon" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Width="60" Height="80" Margin="0,0,0,0">
                     <Rectangle Width="16" Height="80" Fill="White" RadiusX="2" RadiusY="2" Margin="6,0" />
                     <Rectangle Width="16" Height="80" Fill="White" RadiusX="2" RadiusY="2" Margin="6,0" />
                 </StackPanel>
             </Grid>
+            <TextBlock x:Name="PauseOverlayText" Text="" Foreground="#AAFFAAFF" FontSize="11" FontFamily="Consolas"
+                       HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,12" Visibility="Collapsed" />
         </Grid>
 
         <!-- Level complete overlay shown when end-level trigger (0x0F) is reached -->

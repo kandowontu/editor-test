@@ -2392,6 +2392,10 @@ namespace FamidashEditor
     // Public accessors for START POS marker
     public int? StartPosMarkerX { get { return startPosMarkerX; } }
     public int? StartPosMarkerY { get { return startPosMarkerY; } }
+
+    // Precomputed pathfinder data (calculated in editor, played back in simulator)
+    private System.Collections.Generic.List<bool>? precomputedPathfinderInputs = null;
+    public System.Collections.Generic.List<bool>? PrecomputedPathfinderInputs => precomputedPathfinderInputs;
     
     // Preview mode for animations (saws, etc.)
     private bool previewMode = false;
@@ -21036,6 +21040,117 @@ namespace FamidashEditor
                     shiftArrowScrollTimer = null;
                     shiftArrowScrollDir = 0;
                 }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  PATHFINDER — Calculate Path button handler
+        // ═══════════════════════════════════════════════════════════════════
+        private void CalculatePathButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (tiles == null || tiles.Length == 0)
+                {
+                    StatusText.Text = "Pathfinder: No tiles loaded.";
+                    return;
+                }
+
+                // Show pathfinder settings popup
+                var settingsWin = new PathfinderSettingsWindow { Owner = this };
+                if (settingsWin.ShowDialog() != true)
+                    return;
+                double jumpTimingBias = settingsWin.JumpTimingBias;
+
+                // Determine starting position
+                int startX_px = 0;
+                int startY_px;
+                int groundRowsToReserve = (groundBitmap != null && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                bool hasGround = (groundBitmap != null && groundTileRows > 0);
+
+                if (startPosMarkerX.HasValue && startPosMarkerY.HasValue)
+                {
+                    startX_px = startPosMarkerX.Value;
+                    startY_px = startPosMarkerY.Value;
+                }
+                else
+                {
+                    // Default: start on the ground at X=0
+                    // Use physics resting position: groundSurface - hitboxH (15 for normal cube)
+                    int groundSurface_px = (mapHeight - groundRowsToReserve) * 16;
+                    startY_px = Math.Max(0, groundSurface_px - 15);
+                    int maxY = Math.Max(0, (mapHeight * 16 - 16));
+                    if (startY_px > maxY) startY_px = maxY;
+                }
+
+                // Get starting game mode and speed
+                int startGameMode = loadedStartingGameMode.HasValue ? loadedStartingGameMode.Value : 0;
+                int startSpeedUiIndex = loadedStartingSpeedUiIndex;
+
+                StatusText.Text = "Pathfinder: Calculating...";
+                CalculatePathButton.IsEnabled = false;
+
+                // Run asynchronously to avoid blocking the UI
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    try
+                    {
+                        var engine = new PathfinderEngine(
+                            tiles, sprites, spriteAnchors,
+                            mapWidth, mapHeight,
+                            hasGround, groundTileRows,
+                            loadedMaxFallSpeed);
+                        engine.JumpTimingBias = jumpTimingBias;
+
+                        engine.Run(startX_px, startY_px, startSpeedUiIndex, startGameMode,
+                                   false, false);
+
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            try
+                            {
+                                if (engine.Success)
+                                {
+                                    precomputedPathfinderInputs = engine.Inputs;
+                                    playerPathPoints = engine.PathPoints;
+                                    UpdatePlayerPathOverlay();
+                                    StatusText.Text = $"Pathfinder: {engine.ResultMessage}";
+                                }
+                                else
+                                {
+                                    // Still use partial inputs so the simulator can replay
+                                    // as far as the pathfinder got (user can enable pathfinder
+                                    // checkbox even for incomplete paths)
+                                    precomputedPathfinderInputs = engine.Inputs;
+                                    playerPathPoints = engine.PathPoints;
+                                    UpdatePlayerPathOverlay();
+                                    StatusText.Text = $"Pathfinder: INCOMPLETE — {engine.ResultMessage}";
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                StatusText.Text = $"Pathfinder error: {ex.Message}";
+                            }
+                            finally
+                            {
+                                CalculatePathButton.IsEnabled = true;
+                            }
+                        }));
+                    }
+                    catch (Exception ex)
+                    {
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            StatusText.Text = $"Pathfinder error: {ex.Message}";
+                            CalculatePathButton.IsEnabled = true;
+                        }));
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Pathfinder error: {ex.Message}";
+                CalculatePathButton.IsEnabled = true;
             }
         }
 

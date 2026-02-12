@@ -297,7 +297,8 @@ namespace FamidashEditor
                 }
             }
             
-            // Record position for trail
+            // Record position for trail (skip during pathfinder speculative simulation)
+            if (!pfSimulating)
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
@@ -379,6 +380,10 @@ namespace FamidashEditor
                             // Right pixel hit - DEATH
                             AppendSimDebug($"[DEATH] Ball top right pixel collision at ({rightX_px},{upperY_px})");
                             deathTriggered = true;
+                            
+                            // Skip UI side effects during pathfinder speculative simulation
+                            if (pfSimulating) return;
+                            
                             paused = true;
                             _ = StopMusicAsync();
                             
@@ -452,6 +457,10 @@ namespace FamidashEditor
                             // Right pixel hit - DEATH
                             AppendSimDebug($"[DEATH] Ball bottom right pixel collision at ({rightX_px},{lowerY_px})");
                             deathTriggered = true;
+                            
+                            // Skip UI side effects during pathfinder speculative simulation
+                            if (pfSimulating) return;
+                            
                             paused = true;
                             _ = StopMusicAsync();
                             

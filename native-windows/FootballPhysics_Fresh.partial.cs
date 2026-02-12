@@ -111,7 +111,8 @@ namespace FamidashEditor
                 footballWasHeld = false;
             }
             
-            // Record position for trail
+            // Record position for trail (skip during pathfinder speculative simulation)
+            if (!pfSimulating)
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);

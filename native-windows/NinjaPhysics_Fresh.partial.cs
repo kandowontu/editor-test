@@ -95,7 +95,8 @@ namespace FamidashEditor
                 AppendSimDebug($"[NINJA] Jump! Remaining={ninjajumps[currplayer]}, vel={playerVelY_fixed}");
             }
             
-            // Record trail
+            // Record trail (skip during pathfinder speculative simulation)
+            if (!pfSimulating)
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);

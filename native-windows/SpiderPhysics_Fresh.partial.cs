@@ -168,7 +168,8 @@ namespace FamidashEditor
                 }
             }
             
-            // Record position for trail
+            // Record position for trail (skip during pathfinder speculative simulation)
+            if (!pfSimulating)
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
@@ -590,7 +591,8 @@ namespace FamidashEditor
             }
             catch { }
             
-            // Record position for trail
+            // Record position for trail (skip during pathfinder speculative simulation)
+            if (!pfSimulating)
             try
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);

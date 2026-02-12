@@ -29,7 +29,8 @@ namespace FamidashEditor
         private byte currplayer_gravity = 0;   // 0 = down, 0xFF = up
         
         // Track if we zeroed velocity due to ground collision (for preventing gravity oscillation)
-        private bool wasZeroedByCollisionLastFrame = false;
+        // Initialized to true because the player starts grounded on the floor.
+        private bool wasZeroedByCollisionLastFrame = true;
         
         // Temporary variables used in cube_movement()
         private int tmpgravity = 0;
@@ -145,8 +146,9 @@ namespace FamidashEditor
                         int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                         bool pressJump = pressCount > 0;
                         
-                        // AppendSimDebug($"[CUBE] Input check: hold={holdJump}, press={pressJump}, pressCount={pressCount}, velY={playerVelY_fixed}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}");
-                        
+                        // Log pathfinder jump check data when pathfinder is active and input is present
+                        if (pathfinderEnabled && (holdJump || pressJump))
+                            AppendSimDebug($"[PF-JUMP] hold={holdJump}, press={pressJump}, velY=0x{playerVelY_fixed:X4}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}, wasZeroed={wasZeroedByCollisionLastFrame}");                        
                         // Two jump paths from gamemode_cube.h:
                         // Path 1 (lines 81-91): Hold A to buffer jump (no jblocked/fblocked)
                         // Path 2 (lines 92-102): Press A for immediate jump (with jblocked/fblocked)
@@ -158,7 +160,7 @@ namespace FamidashEditor
                         // Check gamemode_cube.h line 70: dashing == 0
                         if ((holdJump || pressJump) && isGrounded && !orbed[currplayer] && dashing[currplayer] == 0)
                         {
-                            // AppendSimDebug($"[CUBE] JUMP TRIGGERED!");
+                            if (pathfinderEnabled) AppendSimDebug($"[PF-JUMP] JUMP TRIGGERED! velY → 0x{(GameModePhysics.JUMP_VEL(currplayer_mini != 0 ? 4 : 0) * (currplayer_gravity != 0 ? -1 : 1)):X4}");
                             
                             // Consume the press now that we're using it for jump
                             Interlocked.Exchange(ref keyXPressedCount, 0);
@@ -252,6 +254,8 @@ namespace FamidashEditor
                 UpdateSlopeCounters_Fresh();
                 
                 // Record position for trail AFTER physics completes (for smooth visualization)
+                // Skip during pathfinder speculative simulation to avoid polluting trail
+                if (!pfSimulating)
                 try
                 {
                     int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
@@ -711,6 +715,10 @@ namespace FamidashEditor
                 deathTriggered = true;
                 deathTileX = centerX_px;
                 deathTileY = centerY_px;
+                
+                // Skip UI side effects during pathfinder speculative simulation
+                if (pfSimulating) return;
+                
                 paused = true;
                 _ = StopMusicAsync();
                 
