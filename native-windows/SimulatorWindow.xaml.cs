@@ -3969,7 +3969,7 @@ namespace FamidashEditor
                 {
                     if (this.Owner is MainWindow mw)
                     {
-                        try { mw.ClearPlayerPathOverlay(); } catch { }
+                        try { mw.ClearSimulatorPathOnly(); } catch { }
                     }
                 }
                 catch { }

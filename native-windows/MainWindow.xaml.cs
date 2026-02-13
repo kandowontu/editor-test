@@ -2381,6 +2381,9 @@ namespace FamidashEditor
     private System.Collections.Generic.List<(int x, int y)> playerPath2Points = new System.Collections.Generic.List<(int x, int y)>();  // Player 2 path for dual mode
     private Shapes.Polyline? playerPathPolyline = null;
     private Shapes.Polyline? playerPath2Polyline = null;  // Player 2 path line for dual mode
+    // Pathfinder-calculated paths (colored by bias, persist until F12 clear)
+    private System.Collections.Generic.List<(System.Collections.Generic.List<(int x, int y)> points, Color color)> pathfinderPaths = new();
+    private System.Collections.Generic.List<Shapes.Polyline> pathfinderPathPolylines = new();
     // Optional death marker (red X) placed by simulator when a death occurs
     private Shapes.Line? playerDeathMarkerA = null;
     private Shapes.Line? playerDeathMarkerB = null;
@@ -12362,6 +12365,16 @@ namespace FamidashEditor
             DrawMap();
         }
 
+        private static Color GetPathfinderBiasColor(double bias)
+        {
+            // Color-code pathfinder paths by timing bias
+            if (bias < 0.125) return Color.FromArgb(0xE0, 0xFF, 0x44, 0x44); // Earliest: Red
+            if (bias < 0.375) return Color.FromArgb(0xE0, 0xFF, 0xAA, 0x00); // Early: Orange
+            if (bias < 0.625) return Color.FromArgb(0xE0, 0xFF, 0xFF, 0x00); // Middle: Yellow
+            if (bias < 0.875) return Color.FromArgb(0xE0, 0x44, 0x99, 0xFF); // Late: Blue
+            return Color.FromArgb(0xE0, 0xFF, 0x44, 0xFF);                    // Latest: Magenta
+        }
+
         // Update the player-path overlay from stored raw points (world pixel coords)
         private void UpdatePlayerPathOverlay()
         {
@@ -12379,11 +12392,36 @@ namespace FamidashEditor
                     try { CanvasHost.Children.Remove(playerPath2Polyline); } catch { }
                     playerPath2Polyline = null;
                 }
-
-                if (playerPathPoints == null || playerPathPoints.Count == 0) return;
+                // Remove previous pathfinder polylines
+                foreach (var pfPoly in pathfinderPathPolylines)
+                    try { CanvasHost.Children.Remove(pfPoly); } catch { }
+                pathfinderPathPolylines.Clear();
 
                 double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
                 double pad = mapViewportPadding;
+
+                // Draw pathfinder paths (colored by bias, persist until F12)
+                foreach (var pfPath in pathfinderPaths)
+                {
+                    if (pfPath.points == null || pfPath.points.Count == 0) continue;
+                    var pfPolyLine = new Shapes.Polyline()
+                    {
+                        Stroke = new SolidColorBrush(pfPath.color),
+                        StrokeThickness = Math.Max(1.0, 2.0 * scale),
+                        IsHitTestVisible = false
+                    };
+                    foreach (var p in pfPath.points)
+                    {
+                        double dx = pad + p.x * scale;
+                        double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                        pfPolyLine.Points.Add(new System.Windows.Point(dx, dy));
+                    }
+                    Canvas.SetZIndex(pfPolyLine, 2000);
+                    CanvasHost.Children.Add(pfPolyLine);
+                    pathfinderPathPolylines.Add(pfPolyLine);
+                }
+
+                if (playerPathPoints == null || playerPathPoints.Count == 0) return;
 
                 // Draw Player 1 path (light green)
                 var poly = new Shapes.Polyline()
@@ -12470,7 +12508,8 @@ namespace FamidashEditor
             catch { }
         }
 
-        public void ClearPlayerPathOverlay()
+        /// <summary>Clear simulator path only (keeps pathfinder paths visible).</summary>
+        public void ClearSimulatorPathOnly()
         {
             try
             {
@@ -12490,6 +12529,21 @@ namespace FamidashEditor
                 try { if (playerDeathMarkerA != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerA); } catch { }
                 try { if (playerDeathMarkerB != null && CanvasHost != null) CanvasHost.Children.Remove(playerDeathMarkerB); } catch { }
                 playerDeathMarkerA = null; playerDeathMarkerB = null;
+            }
+            catch { }
+        }
+
+        /// <summary>Clear all path overlays: pathfinder paths, simulator paths, and death markers.</summary>
+        public void ClearPlayerPathOverlay()
+        {
+            try
+            {
+                ClearSimulatorPathOnly();
+                // Also clear pathfinder-calculated paths
+                pathfinderPaths.Clear();
+                foreach (var pfPoly in pathfinderPathPolylines)
+                    try { if (CanvasHost != null) CanvasHost.Children.Remove(pfPoly); } catch { }
+                pathfinderPathPolylines.Clear();
             }
             catch { }
         }
@@ -21110,12 +21164,13 @@ namespace FamidashEditor
                         {
                             try
                             {
+                                string biasLabel = jumpTimingBias < 0.125 ? "Earliest" : jumpTimingBias < 0.375 ? "Early" : jumpTimingBias < 0.625 ? "Middle" : jumpTimingBias < 0.875 ? "Late" : "Latest";
                                 if (engine.Success)
                                 {
                                     precomputedPathfinderInputs = engine.Inputs;
-                                    playerPathPoints = engine.PathPoints;
+                                    pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
                                     UpdatePlayerPathOverlay();
-                                    StatusText.Text = $"Pathfinder: {engine.ResultMessage}";
+                                    StatusText.Text = $"Pathfinder ({biasLabel}): {engine.ResultMessage}";
                                 }
                                 else
                                 {
@@ -21123,9 +21178,9 @@ namespace FamidashEditor
                                     // as far as the pathfinder got (user can enable pathfinder
                                     // checkbox even for incomplete paths)
                                     precomputedPathfinderInputs = engine.Inputs;
-                                    playerPathPoints = engine.PathPoints;
+                                    pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
                                     UpdatePlayerPathOverlay();
-                                    StatusText.Text = $"Pathfinder: INCOMPLETE — {engine.ResultMessage}";
+                                    StatusText.Text = $"Pathfinder ({biasLabel}): INCOMPLETE — {engine.ResultMessage}";
                                 }
                             }
                             catch (Exception ex)

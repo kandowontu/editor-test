@@ -28,6 +28,8 @@ namespace FamidashEditor
         private const int MAX_SPECULATIVE_DEPTH = 3; // max recursion depth for chained jump evaluation
         private const int CORRIDOR_LOOK_AHEAD_TILES = 10; // scan ahead for obstacles (160px ≈ 58 frames at 1x)
         private const int MAX_FRAMES = 60 * 60 * 5; // 5 minutes at 60fps
+        private const int MAX_BACKTRACK_ATTEMPTS = 150; // max total backtrack retries
+        private const int MAX_CHECKPOINT_DEPTH = 20;    // max saved decision checkpoints
 
         /// <summary>
         /// Jump timing bias: 0.0 = earliest viable jump, 0.5 = middle (default), 1.0 = latest viable jump.
@@ -109,6 +111,35 @@ namespace FamidashEditor
         private static bool IsRedPad(int sid) => sid == 0x52 || sid == 0x53;
         private static bool IsBluePad(int sid) => sid == 0x0D || sid == 0x0E || sid == 0xFD || sid == 0xFE;
         private static bool IsGreenPad(int sid) => sid == 0x65;
+
+        // ── Hold-jump state (persists across frames in the main loop) ────
+        private bool _cubeHoldJump = false; // when true, keep jumping every landing
+        private int _cubeHoldDelay = 0;    // frames to wait before first jump in hold mode
+        private int _committedJumpDelay = -1; // when >= 0, counting down to a committed single-jump
+
+        // ── Backtracking state ───────────────────────────────────────────
+        // When the pathfinder dies, it can rewind to a previous grounded
+        // decision point and try a different strategy (toggle hold/no-hold,
+        // skip the jump entirely, etc.).
+        private class BacktrackCheckpoint
+        {
+            public SimState State;
+            public int Frame;
+            public bool HoldJumpState;
+            public int HoldDelayState;
+            public int CommittedDelayState; // _committedJumpDelay before this frame
+            public int PathPointCount;  // PathPoints.Count before this frame
+            public int InputCount;      // Inputs.Count before this frame
+            public int RetryStage;      // 0=untried, 1=no-jump, 2=toggle-hold, 3=opposite-bias, >3=exhausted
+            public double UsedBias;     // JumpTimingBias active when checkpoint was created
+        }
+        private List<BacktrackCheckpoint> _backtrackCheckpoints = new();
+        private int _backtrackAttempts;
+        private int _btOverrideFrame = -1;  // frame at which to apply override
+        private int _btOverrideStage = 0;   // which alternative to try
+        private bool _backtrackActive;      // true while replaying from a checkpoint (suppress new checkpoints)
+        private bool _btSuppressJumpUntilAirborne; // stage-1 no-jump persists until cube falls off edge
+        private int _btDeathFrame;           // frame of the death that triggered backtracking
 
         // ── Debug logging ───────────────────────────────────────────────────
 #if !DISABLE_DEBUG_LOGGING
@@ -439,6 +470,48 @@ namespace FamidashEditor
         public void Run(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode,
                         bool startGravFlipped, bool startMini)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            double originalBias = JumpTimingBias;
+
+            RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
+                             startGameMode, startGravFlipped, startMini);
+
+            // If the primary bias failed, retry with intermediate biases.
+            // This handles cases where the level geometry forces convergence
+            // and the original bias+backtracking can't find a viable path.
+            if (!Success)
+            {
+                double[] fallbacks;
+                if (originalBias >= 0.5)
+                    fallbacks = new[] { 0.75, 0.5, 0.25, 0.0 };
+                else
+                    fallbacks = new[] { 0.25, 0.5, 0.75, 1.0 };
+
+                foreach (double fb in fallbacks)
+                {
+                    if (Math.Abs(fb - originalBias) < 0.01) continue;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[RETRY] primary bias {originalBias:F2} failed, retrying with bias {fb:F2}");
+#endif
+                    JumpTimingBias = fb;
+                    RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
+                                     startGameMode, startGravFlipped, startMini);
+                    if (Success) break;
+                }
+            }
+
+            JumpTimingBias = originalBias; // restore original bias
+            sw.Stop();
+            double elapsedSec = sw.Elapsed.TotalSeconds;
+            ResultMessage += $" [{elapsedSec:F1}s]";
+#if !DISABLE_DEBUG_LOGGING
+            PfLog($"[TIMING] generation took {elapsedSec:F3}s");
+#endif
+        }
+
+        private void RunSingleAttempt(int startX_px, int startY_px, int startSpeedUiIndex,
+                                       int startGameMode, bool startGravFlipped, bool startMini)
+        {
             var state = new SimState
             {
                 X_fixed = startX_px << 8,
@@ -458,6 +531,15 @@ namespace FamidashEditor
 
             PathPoints.Clear();
             Inputs.Clear();
+            _cubeHoldJump = false;
+            _cubeHoldDelay = 0;
+            _committedJumpDelay = -1;
+            _backtrackCheckpoints = new List<BacktrackCheckpoint>();
+            _backtrackAttempts = 0;
+            _btOverrideFrame = -1;
+            _backtrackActive = false;
+            _btSuppressJumpUntilAirborne = false;
+            _btDeathFrame = 0;
 
 #if !DISABLE_DEBUG_LOGGING
             _frameCounter = 0;
@@ -491,8 +573,67 @@ namespace FamidashEditor
                 PfLog($"[STEP_START] X_fixed=0x{state.X_fixed:X} ({state.X_fixed >> 8}px) Y_fixed=0x{state.Y_fixed:X} ({state.Y_fixed >> 8}px) VelY=0x{state.VelY_fixed:X} mode={state.GameMode} gravFlipped={state.GravFlipped} gravMul={state.GravMul} onGround={state.OnGround} wasZeroed={state.WasZeroedByCollision} mini={state.Mini}");
 #endif
 
+                // Snapshot pre-decision state for potential checkpoint
+                bool wasGrounded = state.VelY_fixed == 0 && state.OnGround;
+                bool preHoldJump = _cubeHoldJump;
+                int preHoldDelay = _cubeHoldDelay;
+                int preCommittedDelay = _committedJumpDelay;
+                int prePathCount = PathPoints.Count;
+                int preInputCount = Inputs.Count;
+                SimState preDecisionState = (wasGrounded || _cubeHoldJump) ? state.Clone() : default;
+                bool isBacktrackFrame = (_btOverrideFrame == frame);
+
                 bool input = DecideInput(state);
                 Inputs.Add(input);
+
+                // Once the replay path advances past the frame where the
+                // original death occurred, the backtrack has "succeeded"
+                // and we can resume creating new checkpoints for future
+                // obstacles.
+                if (_backtrackActive && frame > _btDeathFrame)
+                {
+                    _backtrackActive = false;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_DONE] advanced past death frame {_btDeathFrame}, resuming normal checkpointing");
+#endif
+                }
+
+                // Save checkpoint at grounded decisions where the cube jumps
+                // OR where a committed delay is set (these are also key
+                // decision points — choosing delay=17 vs delay=0 matters).
+                // Don't create new checkpoints during backtrack replays — the
+                // original checkpoints are the only ones we want to revisit.
+                // Also save periodic checkpoints during hold-jump mode,
+                // because hold-jump keeps the cube permanently airborne
+                // (lands and immediately jumps in one frame), so the normal
+                // wasGrounded && input condition never fires on stair landings.
+                // Save roughly one checkpoint per jump arc (~24 frames).
+                bool shouldCheckpoint = wasGrounded && (input || _committedJumpDelay > 0);
+                if (!shouldCheckpoint && preHoldJump && input && !wasGrounded
+                    && frame % 24 == 0)
+                {
+                    shouldCheckpoint = true;
+                }
+                if (shouldCheckpoint && !isBacktrackFrame && !_backtrackActive)
+                {
+                    if (_backtrackCheckpoints.Count >= MAX_CHECKPOINT_DEPTH)
+                        _backtrackCheckpoints.RemoveAt(0);
+                    // Use pre-decision state if captured, otherwise snapshot now
+                    var cpState = preDecisionState.ProcessedSprites != null
+                        ? preDecisionState : state.Clone();
+                    _backtrackCheckpoints.Add(new BacktrackCheckpoint
+                    {
+                        State = cpState,
+                        Frame = frame,
+                        HoldJumpState = preHoldJump,
+                        HoldDelayState = preHoldDelay,
+                        CommittedDelayState = preCommittedDelay,
+                        PathPointCount = prePathCount,
+                        InputCount = preInputCount,
+                        RetryStage = 0,
+                        UsedBias = JumpTimingBias
+                    });
+                }
 
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[DECIDE] input={input}");
@@ -501,11 +642,16 @@ namespace FamidashEditor
                 bool alive = StepFrame(ref state, input, out bool endLevel);
                 if (!alive)
                 {
-                    Success = false;
-                    ResultMessage = $"Died at frame {frame}, X={state.X_fixed >> 8}px";
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[DEATH] frame={frame} X={state.X_fixed >> 8}px Y={state.Y_fixed >> 8}px VelY=0x{state.VelY_fixed:X} gravFlipped={state.GravFlipped}");
 #endif
+                    // Try backtracking to a previous decision point
+                    if (TryBacktrack(ref state, ref frame))
+                        continue;
+
+                    // All backtracks exhausted — die permanently
+                    Success = false;
+                    ResultMessage = $"Died at frame {frame}, X={state.X_fixed >> 8}px";
                     return;
                 }
                 if (endLevel)
@@ -532,6 +678,86 @@ namespace FamidashEditor
         }
 
         // ═══════════════════════════════════════════════════════════════════
+        //  BACKTRACKING
+        // ═══════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// On death, rewind to the most recent checkpoint that still has
+        /// untried alternatives.  Each checkpoint offers up to 3 alternatives:
+        ///   Stage 1 — "no jump": skip the jump entirely, suppress until airborne.
+        ///   Stage 2 — "toggle hold": flip hold-jump on/off.
+        ///   Stage 3 — "opposite bias": retry with the opposite timing bias
+        ///             (earliest→latest or vice versa).
+        /// Returns true if a checkpoint was restored (caller should continue
+        /// the frame loop); false if all backtracks are exhausted.
+        /// </summary>
+        private bool TryBacktrack(ref SimState state, ref int frame)
+        {
+            if (!_backtrackActive)
+            {
+                // First backtrack from this death — record the death frame
+                _btDeathFrame = frame;
+            }
+            _backtrackActive = true;
+
+            while (_backtrackCheckpoints.Count > 0 &&
+                   _backtrackAttempts < MAX_BACKTRACK_ATTEMPTS)
+            {
+                int last = _backtrackCheckpoints.Count - 1;
+                var cp = _backtrackCheckpoints[last];
+                cp.RetryStage++;
+
+                if (cp.RetryStage > 3) // exhausted all alternatives
+                {
+                    _backtrackCheckpoints.RemoveAt(last);
+                    continue; // try the previous checkpoint
+                }
+
+                // Restore state to before the decision at this checkpoint
+                state = cp.State.Clone();
+                _cubeHoldJump = cp.HoldJumpState;
+                _cubeHoldDelay = cp.HoldDelayState;
+                _committedJumpDelay = cp.CommittedDelayState; // restore committed delay state
+                JumpTimingBias = cp.UsedBias; // restore bias so stage-3 flip doesn't permanently mutate it
+
+                // Truncate outputs to before this frame
+                if (PathPoints.Count > cp.PathPointCount)
+                    PathPoints.RemoveRange(cp.PathPointCount,
+                                           PathPoints.Count - cp.PathPointCount);
+                if (Inputs.Count > cp.InputCount)
+                    Inputs.RemoveRange(cp.InputCount,
+                                       Inputs.Count - cp.InputCount);
+
+                // Remove all checkpoints after the restored one — they
+                // were created in the path that just died and will be
+                // re-created (or not) in the new path.
+                while (_backtrackCheckpoints.Count > last + 1)
+                    _backtrackCheckpoints.RemoveAt(_backtrackCheckpoints.Count - 1);
+
+                // Tell DecideInput to use the alternative at this frame
+                _btOverrideFrame = cp.Frame;
+                _btOverrideStage = cp.RetryStage;
+                _btSuppressJumpUntilAirborne = false; // clear any prior suppression
+
+                // Rewind: for-loop will increment to cp.Frame
+                frame = cp.Frame - 1;
+                _backtrackAttempts++;
+
+#if !DISABLE_DEBUG_LOGGING
+                _frameCounter = cp.Frame;
+                PfLog($"[BACKTRACK] attempt={_backtrackAttempts}/{MAX_BACKTRACK_ATTEMPTS} " +
+                      $"rewind to frame={cp.Frame} stage={cp.RetryStage} " +
+                      $"remaining_checkpoints={_backtrackCheckpoints.Count} " +
+                      $"holdWas={cp.HoldJumpState}");
+#endif
+                return true;
+            }
+
+            _backtrackActive = false;
+            return false;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
         //  DECISION LOGIC
         // ═══════════════════════════════════════════════════════════════════
 
@@ -540,8 +766,176 @@ namespace FamidashEditor
             if (state.GameMode == 1) return DecideShipInput(state);
             if (state.GameMode != 0) return false; // only cube/ship for now
 
+            // ── Stage-2 "no-jump" suppression: persist until cube is airborne
+            //    (walked off edge and is now falling). ──
+            if (_btSuppressJumpUntilAirborne)
+            {
+                if (state.VelY_fixed != 0)
+                {
+                    _btSuppressJumpUntilAirborne = false; // cube is airborne, resume normal
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] no-jump suppression cleared (now airborne)");
+#endif
+                }
+                else
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] no-jump suppression active (grounded)");
+#endif
+                    return false; // don't jump — wait to fall off edge
+                }
+            }
+
+            // ── Backtrack override: when rewinding to a checkpoint, force
+            //    a different decision than the one that led to death. ──
+#if !DISABLE_DEBUG_LOGGING
+            if (_btOverrideFrame == _frameCounter && _speculativeDepth == 0)
+#else
+            if (_btOverrideFrame == _frameCounter)
+#endif
+            {
+                int stage = _btOverrideStage;
+                _btOverrideFrame = -1; // consume override
+
+                if (stage == 1) // No jump: skip this decision, suppress until airborne
+                {
+                    _cubeHoldJump = false;
+                    _cubeHoldDelay = 0;
+                    _btSuppressJumpUntilAirborne = true;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=1: forcing no-jump (suppress until airborne)");
+#endif
+                    return false;
+                }
+                else if (stage == 2) // Toggle hold: flip hold-jump on/off
+                {
+                    if (_cubeHoldJump)
+                    {
+                        _cubeHoldJump = false;
+                        _cubeHoldDelay = 0;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[BACKTRACK_OVERRIDE] stage=2: released hold, falling through to normal logic");
+#endif
+                    }
+                    else
+                    {
+                        _cubeHoldJump = true;
+                        _cubeHoldDelay = 0;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[BACKTRACK_OVERRIDE] stage=2: forcing hold-jump on");
+#endif
+                        return true;
+                    }
+                }
+                else if (stage == 3) // Opposite bias: flip timing
+                {
+                    // If bias was < 0.5, try 1.0 (latest); if >= 0.5, try 0.0 (earliest)
+                    double newBias = JumpTimingBias < 0.5 ? 1.0 : 0.0;
+                    JumpTimingBias = newBias;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=3: switching to opposite bias {newBias:F2}");
+#endif
+                    // Fall through to normal decision logic with new bias
+                }
+            }
+
             // Can only jump when velY == 0 (matching real game's jump check)
-            if (state.VelY_fixed != 0) return false;
+            if (state.VelY_fixed != 0)
+            {
+                if (!_cubeHoldJump)
+                {
+                    // Airborne: if we have a committed delay, it's being consumed
+                    // by not being grounded — the delay assumes grounded frames.
+                    return false;
+                }
+
+                // In hold-jump mode while airborne: re-evaluate whether
+                // releasing hold actually gives a BETTER outcome.  On stair
+                // sections both paths may die at the same time because the
+                // speculative horizon is finite — releasing there is pointless
+                // and causes the cube to drift toward edges.  Only release
+                // when the release path strictly out-survives the hold path.
+                int holdSurv = SimulateForwardWithJumpAt(state, 0, holdAfterLanding: true);
+                if (holdSurv >= LOOKAHEAD_HORIZON)
+                {
+                    // Hold path survives the full horizon — definitely keep
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_CUBE] hold-jump continuing (airborne): holdSurv={holdSurv}");
+#endif
+                    return true;
+                }
+                // Hold path dies within horizon — does releasing do better?
+                int releaseSurv = SimulateForwardWithJumpAt(state, -1);
+                if (releaseSurv > holdSurv)
+                {
+                    // Release genuinely survives longer — abandon hold
+                    _cubeHoldJump = false;
+                    _cubeHoldDelay = 0;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_CUBE] hold-jump released (airborne): holdSurv={holdSurv}, releaseSurv={releaseSurv} (release better)");
+#endif
+                    return false;
+                }
+                // Release is no better (or worse) — keep holding; the
+                // grounded re-evaluation will get another chance when we land.
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[DECIDE_CUBE] hold-jump kept (airborne): holdSurv={holdSurv}, releaseSurv={releaseSurv} (release not better)");
+#endif
+                return true;
+            }
+
+            // If we're in hold-jump mode from a previous decision, jump immediately
+            if (_cubeHoldJump && state.OnGround)
+            {
+                // If we had a countdown delay, decrement and wait
+                if (_cubeHoldDelay > 0)
+                {
+                    _cubeHoldDelay--;
+                    return false;
+                }
+                // Re-evaluate: does continuing to hold still survive?
+                int holdSurvival = SimulateForwardWithJumpAt(state, 0, holdAfterLanding: true);
+                // Also check: is NOT jumping safe?  If no-press survives
+                // beyond the detection horizon, there's no immediate danger
+                // and we should exit hold-jump to let normal logic decide.
+                const int HOLD_EXIT_HORIZON = 20;
+                int noPressHold = SimulateForwardWithJumpAt(state, -1);
+                if (holdSurvival >= LOOKAHEAD_HORIZON && noPressHold < HOLD_EXIT_HORIZON)
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_CUBE] hold-jump continuing: holdSurv={holdSurvival} noPressSurv={noPressHold}");
+#endif
+                    return true;
+                }
+                // Hold mode no longer beneficial (hold dies, OR no-press is
+                // safe enough that we don't need to chain-jump) — exit and
+                // fall through to normal decision logic
+                _cubeHoldJump = false;
+                _cubeHoldDelay = 0;
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[DECIDE_CUBE] hold-jump released (grounded): holdSurv={holdSurvival} noPressSurv={noPressHold}");
+#endif
+            }
+
+            // Committed jump delay: count down, fire when reaching 0.
+            // Merging decrement+fire so that delay=N fires after exactly N
+            // frames of waiting, matching SimulateForwardWithJumpAt(jumpFrame=N).
+            if (_committedJumpDelay > 0)
+            {
+                _committedJumpDelay--;
+                if (_committedJumpDelay == 0)
+                {
+                    _committedJumpDelay = -1; // consumed
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_CUBE] committed delay fired — jumping now");
+#endif
+                    return true;
+                }
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[DECIDE_CUBE] committed delay countdown: {_committedJumpDelay} remaining");
+#endif
+                return false;
+            }
 
 #if !DISABLE_DEBUG_LOGGING
             // Guard against deep recursion from chained jump evaluation
@@ -557,9 +951,12 @@ namespace FamidashEditor
             int noPressFrames = SimulateForwardWithJumpAt(state, -1);
 #endif
 
-            // ── Bias-controlled danger detection horizon ──
-            const int MIN_DETECTION = 20;
-            int detectionHorizon = LOOKAHEAD_HORIZON - (int)((LOOKAHEAD_HORIZON - MIN_DETECTION) * JumpTimingBias);
+            // ── Danger detection: only evaluate jumps when no-press
+            //    dies within the lookahead horizon.  The bias does NOT
+            //    change when we detect danger — it only changes which
+            //    delay we PICK once we decide a jump is needed. ──
+            const int DETECTION_HORIZON = 30; // evaluate jumps when obstacle within 30 frames
+                                                // (~27 frame jump arc means after landing, only 3 frames left — no double-jump)
 
             // Always test jumps if a gravity portal is within the lookahead X range.
             // The portal bonus makes portal-hitting paths score higher, but only if
@@ -581,16 +978,16 @@ namespace FamidashEditor
                 }
             }
 
-            if (noPressFrames >= detectionHorizon && !gravPortalAhead)
+            if (noPressFrames >= DETECTION_HORIZON && !gravPortalAhead)
             {
 #if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DECIDE_CUBE] noPressFrames={noPressFrames} >= detectionHorizon={detectionHorizon}, no danger (noPressDeath={npDeath}@X={npDX},Y={npDY})");
+                PfLog($"[DECIDE_CUBE] noPressFrames={noPressFrames} >= DETECTION_HORIZON={DETECTION_HORIZON}, no danger (noPressDeath={npDeath}@X={npDX},Y={npDY})");
 #endif
                 return false;
             }
 
 #if !DISABLE_DEBUG_LOGGING
-            PfLog($"[DECIDE_CUBE] noPressFrames={noPressFrames} < detectionHorizon={detectionHorizon}{(gravPortalAhead ? " (gravPortalAhead)" : "")}, testing jumps (noPressDeath={npDeath}@X={npDX},Y={npDY})");
+            PfLog($"[DECIDE_CUBE] noPressFrames={noPressFrames} < DETECTION_HORIZON={DETECTION_HORIZON}{(gravPortalAhead ? " (gravPortalAhead)" : "")}, testing jumps (noPressDeath={npDeath}@X={npDX},Y={npDY})");
 #endif
 
             // Test different jump timings: jump at delay 0 (now), 1, 2, ...
@@ -654,20 +1051,101 @@ namespace FamidashEditor
                 return false;
             }
 
+            // ── Also test hold-jump variants ──
+            // For each viable delay, test what happens if we hold jump
+            // (always re-jump on landing) instead of re-evaluating each frame.
+            // This can find paths that require continuous jumping without gaps.
+            int holdBestSurvival = 0;
+            int holdBestDelay = 0;
+            {
+                // Test hold for a few key delays (0, and a few others)
+                int holdMaxDelay = Math.Min(maxDelay, 10);
+#if !DISABLE_DEBUG_LOGGING
+                _speculativeDepth++;
+#endif
+                for (int delay = 0; delay < holdMaxDelay; delay++)
+                {
+                    int holdSurv = SimulateForwardWithJumpAt(state, delay, holdAfterLanding: true);
+                    if (holdSurv > holdBestSurvival)
+                    {
+                        holdBestSurvival = holdSurv;
+                        holdBestDelay = delay;
+                    }
+                }
+#if !DISABLE_DEBUG_LOGGING
+                _speculativeDepth--;
+#endif
+            }
+
             int threshold = bestSurvival - 2;
             var bestDelays = viableDelays.Where(d => d.survival >= threshold).ToList();
             if (bestDelays.Count == 0) bestDelays = viableDelays;
+
+            // When all best delays survive the full lookahead horizon,
+            // the jump isn't urgent — any timing clears the obstacle.
+            // Remove premature delays to avoid double-jump patterns where
+            // jumping too early forces another jump right after landing.
+            if (bestSurvival >= LOOKAHEAD_HORIZON && bestDelays.Count >= 2)
+            {
+                // 1) Remove d0: jumping immediately is always premature
+                //    when all timings equally survive the full horizon.
+                if (bestDelays[0].delay == 0)
+                    bestDelays.RemoveAt(0);
+
+                // 2) Remove isolated early outliers before a large gap.
+                //    E.g. best=[d1, d16..d28]: d1 clears the spike but
+                //    lands right before the next one (double-jump), while
+                //    d16+ positions the arc to clear both obstacles.
+                //    A gap > 5 between consecutive best delays signals
+                //    two separate obstacle-clearing patterns.
+                if (bestDelays.Count >= 2)
+                {
+                    for (int gi = 1; gi < bestDelays.Count; gi++)
+                    {
+                        if (bestDelays[gi].delay - bestDelays[gi - 1].delay > 5)
+                        {
+                            bestDelays.RemoveRange(0, gi);
+                            break;
+                        }
+                    }
+                }
+            }
 
             // Use JumpTimingBias to pick from the best delays:
             // 0.0 = earliest (index 0), 0.5 = middle, 1.0 = latest (last index)
             int pickIndex = (int)(JumpTimingBias * (bestDelays.Count - 1));
             pickIndex = Math.Clamp(pickIndex, 0, bestDelays.Count - 1);
 
+            int pickedDelay = bestDelays[pickIndex].delay;
+
+            // Only enter hold-jump when single-jump can't survive the
+            // full horizon but hold-jump can.  This prevents hold-jump from
+            // activating on flat ground where single jumps already work.
+            if (holdBestSurvival > bestSurvival && bestSurvival < LOOKAHEAD_HORIZON)
+            {
 #if !DISABLE_DEBUG_LOGGING
-            PfLog($"[DECIDE_CUBE] viable={viableDelays.Count} best=[{string.Join(",", bestDelays.Select(d => $"d{d.delay}:s{d.survival}"))}] bestSurvival={bestSurvival} bias={JumpTimingBias:F2} pickIdx={pickIndex} picking delay={bestDelays[pickIndex].delay}");
+                PfLog($"[DECIDE_CUBE] HOLD-JUMP wins: holdSurv={holdBestSurvival} > bestSingleSurv={bestSurvival}, delay={holdBestDelay}");
+#endif
+                _cubeHoldJump = true;
+                _cubeHoldDelay = holdBestDelay;
+                return holdBestDelay == 0;
+            }
+
+#if !DISABLE_DEBUG_LOGGING
+            PfLog($"[DECIDE_CUBE] viable={viableDelays.Count} best=[{string.Join(",", bestDelays.Select(d => $"d{d.delay}:s{d.survival}"))}] bestSurvival={bestSurvival} bias={JumpTimingBias:F2} pickIdx={pickIndex} picking delay={pickedDelay}{(holdBestSurvival > 0 ? $" (holdBest=d{holdBestDelay}:s{holdBestSurvival})" : "")}");
 #endif
 
-            return bestDelays[pickIndex].delay == 0;
+            // Commit to the picked delay: if delay > 0, store it and
+            // return false until the countdown reaches 0.  This prevents
+            // re-evaluation from eroding the "latest" timing back toward
+            // delay=0 on subsequent frames.
+            if (pickedDelay > 0)
+            {
+                _committedJumpDelay = pickedDelay;
+                return false;
+            }
+
+            return true;  // delay == 0 → jump now
         }
 
         /// <summary>
@@ -899,14 +1377,16 @@ namespace FamidashEditor
         /// After the initial jump lands, auto-jumps when danger is detected
         /// ahead (short lookahead) to evaluate multi-jump paths.
         /// </summary>
-        private int SimulateForwardWithJumpAt(SimState state, int jumpFrame)
+        private int SimulateForwardWithJumpAt(SimState state, int jumpFrame,
+            bool holdAfterLanding = false)
         {
-            return SimulateForwardWithJumpAt(state, jumpFrame, out _, out _, out _);
+            return SimulateForwardWithJumpAt(state, jumpFrame, out _, out _, out _,
+                false, holdAfterLanding);
         }
 
         private int SimulateForwardWithJumpAt(SimState state, int jumpFrame,
             out string deathReason, out int deathX, out int deathY,
-            bool logTrajectory = false)
+            bool logTrajectory = false, bool holdAfterLanding = false)
         {
             deathReason = ""; deathX = 0; deathY = 0;
             var s = state.Clone();
@@ -923,16 +1403,20 @@ namespace FamidashEditor
 
                 if (!initialJumpDone)
                 {
-                    // First jump at the specified delay frame
-                    input = (f == jumpFrame && s.VelY_fixed == 0);
+                    // First jump at or after the specified delay frame.
+                    // Using >= instead of == so that if the cube is airborne
+                    // at the delay frame (e.g. jumpFrame=0 but cube is mid-air),
+                    // the jump fires on the first subsequent landing (VelY==0)
+                    // rather than being silently skipped forever.
+                    input = (f >= jumpFrame && s.VelY_fixed == 0);
                     if (input) initialJumpDone = true;
                 }
                 else if (chainJumps && s.GameMode == 0 && s.VelY_fixed == 0 && s.OnGround)
                 {
-                    // After the initial jump has landed: check if danger is
-                    // ahead within a short horizon and auto-jump to survive.
-                    // Only for paths that actually jump (not the no-press baseline).
-                    input = QuickDangerCheck(s);
+                    // After the initial jump has landed:
+                    // holdAfterLanding = always re-jump (simulates holding the button)
+                    // otherwise = check short-horizon danger to decide
+                    input = holdAfterLanding || QuickDangerCheck(s);
                 }
 
 #if !DISABLE_DEBUG_LOGGING
@@ -1036,15 +1520,6 @@ namespace FamidashEditor
             {
                 CubeGravity(ref s);
 
-                if (CheckCenterPointDeath(ref s))
-                {
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                    _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
-#endif
-                    return false;
-                }
-
                 bool ejectDied = false;
                 CubeEject(ref s, out ejectDied);
                 if (ejectDied)
@@ -1052,6 +1527,15 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[EJECT_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
                     _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
+#endif
+                    return false;
+                }
+
+                if (CheckCenterPointDeath(ref s))
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                    _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
                     return false;
                 }
@@ -1128,12 +1612,16 @@ namespace FamidashEditor
 
         /// <summary>
         /// CommonGravityRoutine_Fresh — apply gravity and integrate Y.
-        /// Gravity always applies (no grounded skip). CubeEject handles
-        /// snapping back to the floor surface so the net pixel-level
-        /// position stays consistent with the simulator's actual behavior.
+        /// Matches simulator's gravity skip: when velocity was zeroed by
+        /// collision (player resting on ground), skip gravity entirely.
         /// </summary>
         private void CubeGravity(ref SimState s)
         {
+            // GRAV_SKIP: match CommonGravityRoutine_Fresh — skip gravity when
+            // velocity was zeroed by collision and is still 0.
+            if (s.VelY_fixed == 0 && s.WasZeroedByCollision)
+                return;
+
             // Clear wasZeroed flag when velocity is non-zero (player left ground)
             if (s.VelY_fixed != 0)
                 s.WasZeroedByCollision = false;
@@ -1540,14 +2028,18 @@ namespace FamidashEditor
                     bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < currentX_px);
                     bool yOverlap = !((playerBottom) < sp.HitTop || sp.HitBottom < playerTop);
 
+                    // End-level trigger (0x0F) fires on X overlap only (full-screen height),
+                    // matching the simulator's X-position-only detection.
+                    bool hit = IsEndLevel(sid) ? xOverlap : (xOverlap && yOverlap);
+
 #if !DISABLE_DEBUG_LOGGING
-                    if (IsGravityPortal(sid) || IsGameModePortal(sid))
+                    if (IsGravityPortal(sid) || IsGameModePortal(sid) || IsEndLevel(sid))
                     {
-                        PfLog($"[SPRITE_CHECK] sid=0x{sid:X2} idx={sp.Index} playerBox=({currentX_px},{playerTop})-({playerRight},{playerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom}) xOvlp={xOverlap} yOvlp={yOverlap}");
+                        PfLog($"[SPRITE_CHECK] sid=0x{sid:X2} idx={sp.Index} playerBox=({currentX_px},{playerTop})-({playerRight},{playerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom}) xOvlp={xOverlap} yOvlp={yOverlap} hit={hit}");
                     }
 #endif
 
-                    if (xOverlap && yOverlap)
+                    if (hit)
                     {
                         bool applied = ApplyPortalSprite(ref s, sid);
 #if !DISABLE_DEBUG_LOGGING
@@ -1699,6 +2191,13 @@ namespace FamidashEditor
             return true;
         }
 
+        // Pad velocities from simulator's PadOrbHeights matrix (cube column = 0)
+        // These are positive magnitudes; gravity direction is applied via GravMul
+        private static int GetYellowPadVel(bool mini) => mini ? -0x680 : -0x7C0;  // row 1
+        private static int GetPinkPadVel(bool mini)   => mini ? -0x3F0 : -0x510;  // row 3
+        private static int GetRedPadVel(bool mini)    => mini ? -0x650 : -0x9F0;  // row 8
+        // Blue/green pads use yellow orb velocity (row 0) — same as GetJumpVel
+
         private void ApplyPadSprite(ref SimState s, int sid)
         {
 #if !DISABLE_DEBUG_LOGGING
@@ -1706,21 +2205,19 @@ namespace FamidashEditor
 #endif
             if (IsYellowPad(sid))
             {
-                s.VelY_fixed = GetJumpVel(s.Mini) * s.GravMul;
+                s.VelY_fixed = GetYellowPadVel(s.Mini) * s.GravMul;
                 s.WasZeroedByCollision = false;
                 s.OnGround = false;
             }
             else if (IsPinkPad(sid))
             {
-                int pinkVel = s.Mini ? -0x680 : -0x7C0;
-                s.VelY_fixed = pinkVel * s.GravMul;
+                s.VelY_fixed = GetPinkPadVel(s.Mini) * s.GravMul;
                 s.WasZeroedByCollision = false;
                 s.OnGround = false;
             }
             else if (IsRedPad(sid))
             {
-                int redVel = s.Mini ? -0x800 : -0x990;
-                s.VelY_fixed = redVel * s.GravMul;
+                s.VelY_fixed = GetRedPadVel(s.Mini) * s.GravMul;
                 s.WasZeroedByCollision = false;
                 s.OnGround = false;
             }

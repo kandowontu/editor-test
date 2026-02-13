@@ -47,10 +47,12 @@ namespace FamidashEditor
             if (val)
             {
                 // Ship and UFO use per-frame inputs — don't stretch to 2 frames.
-                // Cube/robot/ninja need 2-frame hold so the jump registers on the
-                // correct velY==0 frame.
+                // Cube mode uses direct input — the pathfinder's internal sim applies
+                // input for exactly 1 frame, so playback must match.
+                // Robot/ninja/etc still need 2-frame hold for velY oscillation.
                 bool isContinuousThrust = (currentGameMode == 1 || currentGameMode == 3); // Ship or UFO
-                if (!isContinuousThrust)
+                bool isCube = (currentGameMode == 0);
+                if (!isContinuousThrust && !isCube)
                 {
                     pfHoldCounter = 1; // Hold for 1 extra frame after this one
                 }
