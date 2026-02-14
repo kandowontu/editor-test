@@ -10288,7 +10288,11 @@ namespace FamidashEditor
                         // === FORWARD COLLISION CHECK (x_movement_coll in famidash) ===
                         // NES x_movement_coll() refreshes Generic.y = high_byte(currplayer_y) AFTER eject,
                         // so bg_coll_R sees post-eject Y. This lets cubes walk onto single blocks.
-                        if (!MainWindow.Option_NoDeath && !hblocked && !deathTriggered)
+                        // NES bg_side_coll_common() skips the check entirely when
+                        // currplayer_was_on_slope_counter or currplayer_slope_frames is non-zero
+                        // (collision.h line 405-407). This prevents false wall-deaths when
+                        // the player recently left a slope.
+                        if (!MainWindow.Option_NoDeath && !hblocked && !deathTriggered && !ShouldSkipSideCollisionForSlope())
                         {
                             bool needsForwardCheck = currentGameMode == 0 || // Cube
                                                     currentGameMode == 1 || // Ship

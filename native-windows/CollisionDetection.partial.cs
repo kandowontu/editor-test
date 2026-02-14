@@ -180,7 +180,11 @@ namespace FamidashEditor
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             
             int playerLeft_px = playerX_px;
-            int playerRight_px = playerX_px + width - 1;
+            // NES bg_coll_D checks 3 X-points: playerX, playerX+width/2, playerX+width.
+            // The rightmost check is at playerX+width (one pixel PAST the inclusive right
+            // edge), which can land in the next tile column. Using width instead of
+            // width-1 ensures the tile scan includes that boundary tile, matching NES.
+            int playerRight_px = playerX_px + width;
             
             // CRITICAL FIX: Check for spike death BEFORE processing any collision
             // NES bg_coll_D checks 3 X-points at Y = bottom edge (Generic.y + height):
@@ -354,7 +358,9 @@ namespace FamidashEditor
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             
             int playerLeft_px = playerX_px;
-            int playerRight_px = playerX_px + width - 1;
+            // NES bg_coll_U also checks at playerX+width (one pixel past inclusive right
+            // edge), matching bg_coll_D. Use width not width-1 for consistency.
+            int playerRight_px = playerX_px + width;
             
             // CRITICAL FIX: Check for spike death BEFORE processing any collision
             // NES bg_coll_U checks 3 X-points at Y = top + 1:

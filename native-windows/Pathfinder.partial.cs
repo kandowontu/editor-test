@@ -72,12 +72,28 @@ namespace FamidashEditor
                 prevKeyXDown = true;
                 if (currentGameMode == 2)
                     Interlocked.Exchange(ref ballToggleRequested, 1);
+                // Clear orb hold-suppression on EVERY pathfinder press.
+                // The pathfinder explicitly decides each frame whether to
+                // press or not; it doesn't need the simulator's anti-hold
+                // guard (which prevents a continuous hold from a ground jump
+                // from accidentally activating orbs).  Without this, a
+                // continuous True sequence (ground jump → hold-jump → orb)
+                // keeps orbHoldSuppressing=true and blocks orb activation.
+                try { orbHoldSuppressing[currplayer] = false; } catch { }
+                try { orbHoldConsumedKeyStillDown[currplayer] = false; } catch { }
+                try { orbBufferActive[currplayer] = true; } catch { }
             }
             else
             {
                 Interlocked.Exchange(ref keyXPressedCount, 0);
                 keyXHeld = false;
                 prevKeyXDown = false;
+                // Mirror what KeyUp handler does: clear orb suppression so a
+                // subsequent pathfinder press while airborne can activate orbs.
+                // Without this, orbHoldSuppressing stays true after a ground jump
+                // because UpdateOrbHoldSuppression only runs when grounded (velY==0).
+                try { orbHoldSuppressing[currplayer] = false; } catch { }
+                try { orbHoldConsumedKeyStillDown[currplayer] = false; } catch { }
             }
         }
 

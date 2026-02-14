@@ -21143,6 +21143,15 @@ namespace FamidashEditor
 
                 StatusText.Text = "Pathfinder: Calculating...";
                 CalculatePathButton.IsEnabled = false;
+                PathfinderProgressBar.Value = 0;
+                PathfinderProgressBar.Visibility = System.Windows.Visibility.Visible;
+
+                // Progress callback that updates the UI from the background thread
+                var progress = new Progress<int>(pct =>
+                {
+                    PathfinderProgressBar.Value = pct;
+                    StatusText.Text = $"Pathfinder: Calculating... {pct}%";
+                });
 
                 // Run asynchronously to avoid blocking the UI
                 System.Threading.Tasks.Task.Run(() =>
@@ -21156,6 +21165,7 @@ namespace FamidashEditor
                             loadedMaxFallSpeed,
                             spritePixelOffsets);
                         engine.JumpTimingBias = jumpTimingBias;
+                        engine.Progress = progress;
 
                         engine.Run(startX_px, startY_px, startSpeedUiIndex, startGameMode,
                                    false, false);
@@ -21190,6 +21200,7 @@ namespace FamidashEditor
                             finally
                             {
                                 CalculatePathButton.IsEnabled = true;
+                                PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed;
                             }
                         }));
                     }
@@ -21199,6 +21210,7 @@ namespace FamidashEditor
                         {
                             StatusText.Text = $"Pathfinder error: {ex.Message}";
                             CalculatePathButton.IsEnabled = true;
+                            PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed;
                         }));
                     }
                 });
@@ -21207,6 +21219,7 @@ namespace FamidashEditor
             {
                 StatusText.Text = $"Pathfinder error: {ex.Message}";
                 CalculatePathButton.IsEnabled = true;
+                try { PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed; } catch { }
             }
         }
 

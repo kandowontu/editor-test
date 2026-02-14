@@ -26,15 +26,27 @@ namespace FamidashEditor
         private const int TILE = 16;
         private const int LOOKAHEAD_HORIZON = 90;
         private const int MAX_SPECULATIVE_DEPTH = 3; // max recursion depth for chained jump evaluation
-        private const int CORRIDOR_LOOK_AHEAD_TILES = 10; // scan ahead for obstacles (160px ≈ 58 frames at 1x)
+        private const int CORRIDOR_LOOK_AHEAD_TILES = 15; // scan ahead for obstacles (240px ≈ 87 frames at 1x)
+        private const int SHIP_LOOKAHEAD_HORIZON = 30;     // multi-frame lookahead for ship decisions
+        private const int SHIP_TREE_DEPTH = 20;            // binary-tree search depth for ship
+        private const int SHIP_TREE_MAX_NODES = 16000;      // cap on total nodes explored in tree search
         private const int MAX_FRAMES = 60 * 60 * 5; // 5 minutes at 60fps
-        private const int MAX_BACKTRACK_ATTEMPTS = 150; // max total backtrack retries
-        private const int MAX_CHECKPOINT_DEPTH = 20;    // max saved decision checkpoints
+        private const int MAX_BACKTRACK_ATTEMPTS = 600; // max backtrack retries PER death point (reset after each success)
+        private const int MAX_TOTAL_BACKTRACK_ATTEMPTS = 3000; // absolute cap on total backtracks across all deaths
+        private const int MAX_TOTAL_ITERATIONS = MAX_FRAMES * 10; // hard cap on total frame iterations (including replays)
+        private const int MAX_CHECKPOINT_DEPTH = 120;   // max saved decision checkpoints (deep history for long levels)
+        // No rewind limit — backtracker goes as far back as needed
+        private const int MIN_CHECKPOINT_SPACING = 8;   // minimum frames between consecutive checkpoints
 
         /// <summary>
         /// Jump timing bias: 0.0 = earliest viable jump, 0.5 = middle (default), 1.0 = latest viable jump.
         /// </summary>
         public double JumpTimingBias { get; set; } = 0.5;
+
+        /// <summary>
+        /// Optional progress reporter. Reports 0-100 (percentage of MAX_FRAMES).
+        /// </summary>
+        public IProgress<int>? Progress { get; set; }
 
         // Cube hitbox (from collision.h)
         private const int CUBE_HITBOX_W = 15;
@@ -92,9 +104,9 @@ namespace FamidashEditor
         private static int ShipGravityBase(bool mini) => mini ? 0x31 : 0x2A;
         private static int ShipGravityAfterHold(bool mini) => mini ? 0x3B : 0x32;
         private static int ShipGravityHoldFall(bool mini) => mini ? 0x3E : 0x34;
-        private static int ShipGravity(bool mini) => 0x22; // SHIP_GRAVITY at 60fps (same for mini and normal)
-        private static int ShipMaxFallSpeed(bool mini) => 0x02D7;   // SHIP_MAX_FALLSPEED at 60fps
-        private static int ShipMaxFallSpeedHold(bool mini) => 0x038D; // SHIP_MAX_FALLSPEED_HOLD at 60fps
+        private static int ShipGravity(bool mini) => mini ? 0x27 : 0x22; // SHIP_GRAVITY at 60fps
+        private static int ShipMaxFallSpeed(bool mini) => mini ? 0x0357 : 0x02D7;   // SHIP_MAX_FALLSPEED at 60fps
+        private static int ShipMaxFallSpeedHold(bool mini) => mini ? 0x042D : 0x038D; // SHIP_MAX_FALLSPEED_HOLD at 60fps
 
         // ── Sprite classification ──────────────────────────────────────────
         private static bool IsSpeedPortal(int sid) => SpriteIdToSpeedFixed(sid) >= 0;
@@ -111,6 +123,104 @@ namespace FamidashEditor
         private static bool IsRedPad(int sid) => sid == 0x52 || sid == 0x53;
         private static bool IsBluePad(int sid) => sid == 0x0D || sid == 0x0E || sid == 0xFD || sid == 0xFE;
         private static bool IsGreenPad(int sid) => sid == 0x65;
+
+        // ── Orb classification ─────────────────────────────────────────────
+        private static bool IsYellowOrb(int sid) => sid == 0x0B;
+        private static bool IsYellowOrbBigger(int sid) => sid == 0x1F;
+        private static bool IsYellowOrbSmaller(int sid) => sid == 0x29;
+        private static bool IsPinkOrb(int sid) => sid == 0x06;
+        private static bool IsRedOrb(int sid) => sid == 0x28;
+        private static bool IsBlueOrb(int sid) => sid == 0x05 || sid == 0x7B;  // includes multi
+        private static bool IsGreenOrb(int sid) => sid == 0x27 || sid == 0x7C; // includes multi
+        private static bool IsBlackOrb(int sid) => sid == 0x44;
+        private static bool IsWhiteOrb(int sid) => sid == 0x7A;
+        private static bool IsVelocityOrb(int sid) =>
+            IsYellowOrb(sid) || IsYellowOrbBigger(sid) || IsYellowOrbSmaller(sid) ||
+            IsPinkOrb(sid) || IsRedOrb(sid) || IsBlackOrb(sid);
+        private static bool IsGravityOrb(int sid) => IsBlueOrb(sid) || IsGreenOrb(sid);
+        private static bool IsOrbSprite(int sid) =>
+            IsVelocityOrb(sid) || IsGravityOrb(sid) || IsWhiteOrb(sid);
+
+        // ── Pad/Orb velocity tables (matching sim's PadOrbHeights) ────────
+        // Columns: 0=Cube, 1=Ship, 2=Ball, 3=UFO, 4=Robot, 5=Spider, 6=Wave, 7=Swingcopter
+        // Rows: 0=YellowOrb, 1=YellowPad, 2=PinkOrb, 3=PinkPad,
+        //       4=RedOrb, 5=YellowBigger, 6=BlackOrb, 7=YellowSmaller, 8=RedPad
+        private static readonly int[][] PadOrbHeights = new int[][] {
+            new int[] { 0x590, 0x450, 0x410, 0x3B0, 0x590, 0x440, 0x000, 0x3A0 }, // 0 yellow orb
+            new int[] { 0x7C0, 0x3C0, 0x4F0, 0x330, 0x8B0, 0x500, 0x000, 0x450 }, // 1 yellow pad
+            new int[] { 0x3D0, 0x200, 0x330, 0x220, 0x450, 0x350, 0x000, 0x2D0 }, // 2 pink orb
+            new int[] { 0x510, 0x270, 0x360, 0x250, 0x550, 0x350, 0x000, 0x360 }, // 3 pink pad
+            new int[] { 0x750, 0x5D0, 0x550, 0x510, 0x750, 0x500, 0x000, 0x4D0 }, // 4 red orb
+            new int[] { 0x590, 0x590, 0x5D0, 0x590, 0x590, 0x590, 0x000, 0x5D0 }, // 5 yellow orb bigger
+            new int[] { -0x990, -0x990, -0x970, -0x990, -0x990, -0x990, 0x000, -0x970 }, // 6 black orb
+            new int[] { 0x540, 0x540, 0x472, 0x4B0, 0x770, 0x4B0, 0x000, 0x472 }, // 7 yellow orb smaller
+            new int[] { 0x9F0, 0x620, 0x630, 0x400, 0xA50, 0x690, 0x000, 0x660 }  // 8 red pad
+        };
+        private static readonly int[][] PadOrbHeights_Mini = new int[][] {
+            new int[] { 0x4D0, 0x4A0, 0x450, 0x3D0, 0x470, 0x350, 0x000, 0x2A0 }, // 0 yellow orb
+            new int[] { 0x680, 0x430, 0x4D0, 0x3A0, 0x730, 0x400, 0x000, 0x340 }, // 1 yellow pad
+            new int[] { 0x350, 0x1E0, 0x350, 0x1B0, 0x370, 0x230, 0x000, 0x1F0 }, // 2 pink orb
+            new int[] { 0x3F0, 0x1E0, 0x390, 0x150, 0x350, 0x350, 0x000, 0x220 }, // 3 pink pad
+            new int[] { 0x650, 0x670, 0x500, 0x550, 0x650, 0x470, 0x000, 0x350 }, // 4 red orb
+            new int[] { 0x590, 0x590, 0x560, 0x590, 0x590, 0x590, 0x000, 0x560 }, // 5 yellow orb bigger
+            new int[] { -0x990, -0x990, -0x970, -0x990, -0x990, -0x990, 0x000, -0x970 }, // 6 black orb
+            new int[] { 0x540, 0x540, 0x472, 0x4B0, 0x770, 0x4B0, 0x000, 0x472 }, // 7 yellow orb smaller
+            new int[] { 0x830, 0x6C0, 0x5B0, 0x550, 0x8D0, 0x550, 0x000, 0x3A0 }  // 8 red pad
+        };
+
+        /// <summary>
+        /// Map game mode to PadOrbHeights column index, matching sim's mode remapping.
+        /// </summary>
+        private static int GetPadOrbModeCol(int gameMode)
+        {
+            if (gameMode == 8) return 0; // Ninja → Cube
+            if (gameMode == 9) return 7; // Pogo → Swingcopter
+            if (gameMode == 11) return 0; // Football → Cube
+            return gameMode; // 0-7 map directly
+        }
+
+        private static int GetPadOrbVel(int row, bool mini, int gameMode)
+        {
+            int col = GetPadOrbModeCol(gameMode);
+            return mini ? PadOrbHeights_Mini[row][col] : PadOrbHeights[row][col];
+        }
+
+        /// <summary>
+        /// Scan allSprites for an orb that overlaps the player hitbox at
+        /// the CURRENT position (pre-advance X).  Returns the orb's sprite
+        /// ID, or -1 if no orb overlaps.  Uses current X to match the NES
+        /// timing: sprite_collide() runs BEFORE x_movement, so orbs are
+        /// detected at the pre-advance position.
+        /// </summary>
+        private int ScanForOrbOverlap(in SimState state)
+        {
+            // Use current X (pre-advance) to match NES sprite_collide timing
+            int currentX_px = state.X_fixed >> 8;
+            int hbW = GetHitboxW(state.Mini);
+            int hbH = GetHitboxH(state.Mini);
+            int hbOffY = GetHitboxOffsetY(state.Mini, state.GravFlipped);
+            int playerY_px = state.Y_fixed >> 8;
+            int playerTop = playerY_px + hbOffY;
+            int playerBottom = playerTop + hbH;
+            int playerRight = currentX_px + hbW;
+
+            foreach (var sp in allSprites)
+            {
+                if (state.ProcessedSprites.Contains(sp.Index)) continue;
+                if (sp.HitRight <= currentX_px) continue;
+                if (sp.AnchorX_px - TILE > playerRight + TILE) break;
+
+                int sid = sp.SpriteId;
+                if (!IsOrbSprite(sid)) continue;
+
+                bool xOverlap = !(playerRight < sp.HitLeft || sp.HitRight < currentX_px);
+                bool yOverlap = !(playerBottom < sp.HitTop || sp.HitBottom < playerTop);
+
+                if (xOverlap && yOverlap)
+                    return sid;
+            }
+            return -1;
+        }
 
         // ── Hold-jump state (persists across frames in the main loop) ────
         private bool _cubeHoldJump = false; // when true, keep jumping every landing
@@ -132,14 +242,17 @@ namespace FamidashEditor
             public int InputCount;      // Inputs.Count before this frame
             public int RetryStage;      // 0=untried, 1=no-jump, 2=toggle-hold, 3=opposite-bias, >3=exhausted
             public double UsedBias;     // JumpTimingBias active when checkpoint was created
+            public int ShipBias;        // _shipCorridorBias at checkpoint creation
         }
         private List<BacktrackCheckpoint> _backtrackCheckpoints = new();
         private int _backtrackAttempts;
+        private int _totalBacktrackAttempts;
         private int _btOverrideFrame = -1;  // frame at which to apply override
         private int _btOverrideStage = 0;   // which alternative to try
         private bool _backtrackActive;      // true while replaying from a checkpoint (suppress new checkpoints)
         private bool _btSuppressJumpUntilAirborne; // stage-1 no-jump persists until cube falls off edge
         private int _btDeathFrame;           // frame of the death that triggered backtracking
+        private int _shipCorridorBias;       // sustained Y offset for ship corridor target during backtrack
 
         // ── Debug logging ───────────────────────────────────────────────────
 #if !DISABLE_DEBUG_LOGGING
@@ -350,6 +463,10 @@ namespace FamidashEditor
             public bool OnGround;               // separate from wasZeroed (cleared by jump)
             public HashSet<int> ProcessedSprites;
 
+            // Orb system: pending orb that overlaps the player (activation requires input)
+            public int PendingOrbIndex;         // -1 = no pending orb
+            public int PendingOrbSpriteId;      // sprite ID of pending orb
+
             public SimState Clone()
             {
                 var c = this;
@@ -524,7 +641,9 @@ namespace FamidashEditor
                 GravMul = startGravFlipped ? -1 : 1,
                 WasZeroedByCollision = true,
                 OnGround = true,
-                ProcessedSprites = new HashSet<int>()
+                ProcessedSprites = new HashSet<int>(),
+                PendingOrbIndex = -1,
+                PendingOrbSpriteId = -1
             };
 
             ApplyPortalsUpTo(ref state, startX_px);
@@ -536,10 +655,12 @@ namespace FamidashEditor
             _committedJumpDelay = -1;
             _backtrackCheckpoints = new List<BacktrackCheckpoint>();
             _backtrackAttempts = 0;
+            _totalBacktrackAttempts = 0;
             _btOverrideFrame = -1;
             _backtrackActive = false;
             _btSuppressJumpUntilAirborne = false;
             _btDeathFrame = 0;
+            _shipCorridorBias = 0;
 
 #if !DISABLE_DEBUG_LOGGING
             _frameCounter = 0;
@@ -557,18 +678,29 @@ namespace FamidashEditor
             }
 #endif
 
+            // Report progress interval: every 1% of MAX_FRAMES
+            int progressInterval = Math.Max(1, MAX_FRAMES / 100);
+            int highWaterFrame = 0; // track furthest frame reached for progress
+            int totalIterations = 0; // counts every frame step including replays
+
             for (int frame = 0; frame < MAX_FRAMES; frame++)
             {
+                totalIterations++;
+                if (totalIterations > MAX_TOTAL_ITERATIONS)
+                {
+                    Success = false;
+                    ResultMessage = $"Aborted: exceeded {MAX_TOTAL_ITERATIONS} total iterations (frame={frame}, attempts={_backtrackAttempts})";
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[ABORT] total iterations {totalIterations} exceeded cap");
+#endif
+                    return;
+                }
+                if (frame > highWaterFrame) highWaterFrame = frame;
+                if (frame % progressInterval == 0)
+                    Progress?.Report(highWaterFrame * 100 / MAX_FRAMES);
 #if !DISABLE_DEBUG_LOGGING
                 _frameCounter = frame;
 #endif
-                // Record path at hitbox center (matching simulator's recordedPlayerPath)
-                int hbW = GetHitboxW(state.Mini);
-                int hbH = GetHitboxH(state.Mini);
-                int hbOffY = GetHitboxOffsetY(state.Mini, state.GravFlipped);
-                PathPoints.Add(((state.X_fixed >> 8) + hbW / 2,
-                                (state.Y_fixed >> 8) + hbH / 2 + hbOffY));
-
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[STEP_START] X_fixed=0x{state.X_fixed:X} ({state.X_fixed >> 8}px) Y_fixed=0x{state.Y_fixed:X} ({state.Y_fixed >> 8}px) VelY=0x{state.VelY_fixed:X} mode={state.GameMode} gravFlipped={state.GravFlipped} gravMul={state.GravMul} onGround={state.OnGround} wasZeroed={state.WasZeroedByCollision} mini={state.Mini}");
 #endif
@@ -580,7 +712,8 @@ namespace FamidashEditor
                 int preCommittedDelay = _committedJumpDelay;
                 int prePathCount = PathPoints.Count;
                 int preInputCount = Inputs.Count;
-                SimState preDecisionState = (wasGrounded || _cubeHoldJump) ? state.Clone() : default;
+                bool isShipMode = (state.GameMode == 1);
+                SimState preDecisionState = (wasGrounded || _cubeHoldJump || isShipMode) ? state.Clone() : default;
                 bool isBacktrackFrame = (_btOverrideFrame == frame);
 
                 bool input = DecideInput(state);
@@ -593,8 +726,14 @@ namespace FamidashEditor
                 if (_backtrackActive && frame > _btDeathFrame)
                 {
                     _backtrackActive = false;
+                    _shipCorridorBias = 0; // clear ship bias once past the obstacle
+                    // Reset attempt budget after each successful backtrack.
+                    // Each death point gets a fresh budget — solving early
+                    // obstacles shouldn't deplete the budget for harder
+                    // sections ahead.
+                    _backtrackAttempts = 0;
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[BACKTRACK_DONE] advanced past death frame {_btDeathFrame}, resuming normal checkpointing");
+                    PfLog($"[BACKTRACK_DONE] advanced past death frame {_btDeathFrame}, resuming normal checkpointing (attempts={_backtrackAttempts}/{MAX_BACKTRACK_ATTEMPTS})");
 #endif
                 }
 
@@ -614,6 +753,38 @@ namespace FamidashEditor
                 {
                     shouldCheckpoint = true;
                 }
+
+                // Periodic "approach" checkpoints: when the cube is grounded and
+                // NOT jumping (decided "no danger"), save a checkpoint every 30
+                // frames.  This lets the backtracker try forcing a jump at
+                // positions the cube originally walked past — essential for
+                // multi-platform sections where the cube must jump ONTO blocks
+                // long before danger is detected.
+                if (!shouldCheckpoint && wasGrounded && !input && !preHoldJump
+                    && _committedJumpDelay < 0 && frame % 30 == 0)
+                {
+                    shouldCheckpoint = true;
+                }
+
+                // Ship mode periodic checkpoints: ship is always airborne,
+                // so the grounded-based checkpoint logic never fires.
+                // Save a checkpoint every 24 frames (roughly one corridor
+                // adjustment cycle) so the backtracker can try different
+                // hold/release decisions within the ship section.
+                if (!shouldCheckpoint && isShipMode && frame % 24 == 0)
+                {
+                    shouldCheckpoint = true;
+                }
+                // Enforce minimum spacing between checkpoints to prevent
+                // wasting slots on consecutive frames (e.g., hold-jump landing
+                // every frame).  This ensures the checkpoint buffer covers a
+                // wider time window for deeper backtracking.
+                if (shouldCheckpoint && _backtrackCheckpoints.Count > 0)
+                {
+                    int lastCpFrame = _backtrackCheckpoints[_backtrackCheckpoints.Count - 1].Frame;
+                    if (frame - lastCpFrame < MIN_CHECKPOINT_SPACING)
+                        shouldCheckpoint = false;
+                }
                 if (shouldCheckpoint && !isBacktrackFrame && !_backtrackActive)
                 {
                     if (_backtrackCheckpoints.Count >= MAX_CHECKPOINT_DEPTH)
@@ -631,7 +802,8 @@ namespace FamidashEditor
                         PathPointCount = prePathCount,
                         InputCount = preInputCount,
                         RetryStage = 0,
-                        UsedBias = JumpTimingBias
+                        UsedBias = JumpTimingBias,
+                        ShipBias = _shipCorridorBias
                     });
                 }
 
@@ -640,6 +812,17 @@ namespace FamidashEditor
 #endif
 
                 bool alive = StepFrame(ref state, input, out bool endLevel);
+
+                // Record path at visual center AFTER physics+eject (matching sim's
+                // recording inside UfoShipEject_Fresh / CubePhysics_Fresh which uses
+                //   X: (playerX_fixed >> 8) + playerVisualWidth / 2  (= X + 8)
+                //   Y: (playerY_fixed >> 8) + [4 if mini && !inverted] + playerVisualHeight / 2
+                {
+                    int pathMiniOffY = (state.Mini && !state.GravFlipped) ? 4 : 0;
+                    PathPoints.Add(((state.X_fixed >> 8) + 8,
+                                    (state.Y_fixed >> 8) + pathMiniOffY + 8));
+                }
+
                 if (!alive)
                 {
 #if !DISABLE_DEBUG_LOGGING
@@ -656,11 +839,7 @@ namespace FamidashEditor
                 }
                 if (endLevel)
                 {
-                    hbW = GetHitboxW(state.Mini);
-                    hbH = GetHitboxH(state.Mini);
-                    hbOffY = GetHitboxOffsetY(state.Mini, state.GravFlipped);
-                    PathPoints.Add(((state.X_fixed >> 8) + hbW / 2,
-                                    (state.Y_fixed >> 8) + hbH / 2 + hbOffY));
+                    // Path point already recorded above after StepFrame
                     Success = true;
                     ResultMessage = $"Completed in {frame} frames ({PathPoints.Count} path points)";
 #if !DISABLE_DEBUG_LOGGING
@@ -701,17 +880,23 @@ namespace FamidashEditor
             _backtrackActive = true;
 
             while (_backtrackCheckpoints.Count > 0 &&
-                   _backtrackAttempts < MAX_BACKTRACK_ATTEMPTS)
+                   _backtrackAttempts < MAX_BACKTRACK_ATTEMPTS &&
+                   _totalBacktrackAttempts < MAX_TOTAL_BACKTRACK_ATTEMPTS)
             {
                 int last = _backtrackCheckpoints.Count - 1;
                 var cp = _backtrackCheckpoints[last];
                 cp.RetryStage++;
 
-                if (cp.RetryStage > 3) // exhausted all alternatives
+                // Ship mode gets 3 stages (bias adjustments to give tree search
+                // different starting conditions).
+                // Other modes get 3 stages (no-jump, toggle-hold, flip-bias).
+                int maxStages = 3;
+                if (cp.RetryStage > maxStages)
                 {
                     _backtrackCheckpoints.RemoveAt(last);
                     continue; // try the previous checkpoint
                 }
+
 
                 // Restore state to before the decision at this checkpoint
                 state = cp.State.Clone();
@@ -719,6 +904,7 @@ namespace FamidashEditor
                 _cubeHoldDelay = cp.HoldDelayState;
                 _committedJumpDelay = cp.CommittedDelayState; // restore committed delay state
                 JumpTimingBias = cp.UsedBias; // restore bias so stage-3 flip doesn't permanently mutate it
+                _shipCorridorBias = cp.ShipBias; // restore ship bias
 
                 // Truncate outputs to before this frame
                 if (PathPoints.Count > cp.PathPointCount)
@@ -742,10 +928,12 @@ namespace FamidashEditor
                 // Rewind: for-loop will increment to cp.Frame
                 frame = cp.Frame - 1;
                 _backtrackAttempts++;
+                _totalBacktrackAttempts++;
 
 #if !DISABLE_DEBUG_LOGGING
                 _frameCounter = cp.Frame;
                 PfLog($"[BACKTRACK] attempt={_backtrackAttempts}/{MAX_BACKTRACK_ATTEMPTS} " +
+                      $"total={_totalBacktrackAttempts}/{MAX_TOTAL_BACKTRACK_ATTEMPTS} " +
                       $"rewind to frame={cp.Frame} stage={cp.RetryStage} " +
                       $"remaining_checkpoints={_backtrackCheckpoints.Count} " +
                       $"holdWas={cp.HoldJumpState}");
@@ -763,40 +951,40 @@ namespace FamidashEditor
 
         private bool DecideInput(SimState state)
         {
-            if (state.GameMode == 1) return DecideShipInput(state);
-            if (state.GameMode != 0) return false; // only cube/ship for now
-
-            // ── Stage-2 "no-jump" suppression: persist until cube is airborne
-            //    (walked off edge and is now falling). ──
-            if (_btSuppressJumpUntilAirborne)
-            {
-                if (state.VelY_fixed != 0)
-                {
-                    _btSuppressJumpUntilAirborne = false; // cube is airborne, resume normal
+            // ── Backtrack override: handle for ALL game modes before
+            //    mode-specific logic.  Without this, ship mode bypasses
+            //    all override handling and the backtracker can't alter
+            //    ship decisions. ──
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[BACKTRACK_OVERRIDE] no-jump suppression cleared (now airborne)");
-#endif
-                }
-                else
-                {
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[BACKTRACK_OVERRIDE] no-jump suppression active (grounded)");
-#endif
-                    return false; // don't jump — wait to fall off edge
-                }
-            }
-
-            // ── Backtrack override: when rewinding to a checkpoint, force
-            //    a different decision than the one that led to death. ──
-#if !DISABLE_DEBUG_LOGGING
-            if (_btOverrideFrame == _frameCounter && _speculativeDepth == 0)
+            bool isOverrideFrame = (_btOverrideFrame == _frameCounter && _speculativeDepth == 0);
 #else
-            if (_btOverrideFrame == _frameCounter)
+            bool isOverrideFrame = (_btOverrideFrame == _frameCounter);
 #endif
+            if (isOverrideFrame)
             {
                 int stage = _btOverrideStage;
                 _btOverrideFrame = -1; // consume override
 
+                if (state.GameMode == 1) // Ship mode overrides
+                {
+                    // Ship backtrack: set sustained corridor Y-bias to give the
+                    // tree search a different starting trajectory.
+                    int bias = 0;
+                    switch (stage)
+                    {
+                        case 1: bias = -32; break;
+                        case 2: bias = 32; break;
+                        default: bias = (_shipCorridorBias <= 0) ? 64 : -64; break;
+                    }
+                    _shipCorridorBias = bias;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE_SHIP] stage={stage}: setting corridor bias={_shipCorridorBias}");
+#endif
+                    // Fall through to normal DecideShipInput with new bias active
+                    return DecideShipInput(state);
+                }
+
+                // Cube/other mode overrides (original logic)
                 if (stage == 1) // No jump: skip this decision, suppress until airborne
                 {
                     _cubeHoldJump = false;
@@ -822,22 +1010,76 @@ namespace FamidashEditor
                         _cubeHoldJump = true;
                         _cubeHoldDelay = 0;
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[BACKTRACK_OVERRIDE] stage=2: forcing hold-jump on");
+                        PfLog($"[BACKTRACK_OVERRIDE] stage=2: activated hold-jump");
 #endif
                         return true;
                     }
                 }
-                else if (stage == 3) // Opposite bias: flip timing
+                else // stage 3 — opposite bias
                 {
-                    // If bias was < 0.5, try 1.0 (latest); if >= 0.5, try 0.0 (earliest)
-                    double newBias = JumpTimingBias < 0.5 ? 1.0 : 0.0;
-                    JumpTimingBias = newBias;
+                    JumpTimingBias = 1.0 - JumpTimingBias;
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[BACKTRACK_OVERRIDE] stage=3: switching to opposite bias {newBias:F2}");
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=3: flipped bias to {JumpTimingBias:F2}");
 #endif
-                    // Fall through to normal decision logic with new bias
+                    // Fall through to normal decision with flipped bias
                 }
             }
+
+            if (state.GameMode == 1) return DecideShipInput(state);
+            if (state.GameMode != 0) return false; // only cube/ship for now
+
+            // ── Orb decision: orbs can be activated while airborne (no
+            //    VelY==0 requirement), so this check must come BEFORE the
+            //    airborne early-return.  Skip on backtrack override frames
+            //    (let the override run instead) and during jump-suppression
+            //    (backtrack wants the cube to walk past, not activate). ──
+            if (!isOverrideFrame && !_btSuppressJumpUntilAirborne)
+            {
+                int orbSid = ScanForOrbOverlap(state);
+                if (orbSid >= 0)
+                {
+                    // Speculatively test: activate orb (input=true) vs skip (input=false)
+                    var orbState = state.Clone();
+                    bool orbAlive = StepFrame(ref orbState, true, out bool orbEnd);
+                    if (orbEnd) return true; // orb activation reaches level end
+
+                    int orbSurv = orbAlive
+                        ? (1 + SimulateForwardWithJumpAt(orbState, 0))
+                        : 0;
+                    int skipSurv = SimulateForwardWithJumpAt(state, -1);
+
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_ORB] sid=0x{orbSid:X2} orbSurv={orbSurv} skipSurv={skipSurv}");
+#endif
+                    if (orbSurv >= skipSurv) return true;  // activate orb
+                    return false; // skip orb
+                }
+            }
+
+            // ── Stage-2 "no-jump" suppression: persist until cube is airborne
+            //    (walked off edge and is now falling). ──
+            if (_btSuppressJumpUntilAirborne)
+            {
+                if (state.VelY_fixed != 0)
+                {
+                    _btSuppressJumpUntilAirborne = false; // cube is airborne, resume normal
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] no-jump suppression cleared (now airborne)");
+#endif
+                }
+                else
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] no-jump suppression active (grounded)");
+#endif
+                    return false; // don't jump — wait to fall off edge
+                }
+            }
+
+            // ── Backtrack override was already handled at the top of
+            //    DecideInput (before the ship early-return).  If we reach
+            //    here, the override was consumed and we fall through to
+            //    normal decision logic. ──
 
             // Can only jump when velY == 0 (matching real game's jump check)
             if (state.VelY_fixed != 0)
@@ -887,11 +1129,15 @@ namespace FamidashEditor
             // If we're in hold-jump mode from a previous decision, jump immediately
             if (_cubeHoldJump && state.OnGround)
             {
-                // If we had a countdown delay, decrement and wait
+                // If we had a countdown delay, decrement and fire on reaching 0
+                // (matches SimulateForwardWithJumpAt where jumpFrame=N fires at f==N)
                 if (_cubeHoldDelay > 0)
                 {
                     _cubeHoldDelay--;
-                    return false;
+                    if (_cubeHoldDelay > 0)
+                        return false;
+                    // Delay just hit 0 — fall through to jump
+                    return true;
                 }
                 // Re-evaluate: does continuing to hold still survive?
                 int holdSurvival = SimulateForwardWithJumpAt(state, 0, holdAfterLanding: true);
@@ -920,8 +1166,25 @@ namespace FamidashEditor
             // Committed jump delay: count down, fire when reaching 0.
             // Merging decrement+fire so that delay=N fires after exactly N
             // frames of waiting, matching SimulateForwardWithJumpAt(jumpFrame=N).
+            // Safety check: if the cube would die before the delay fires,
+            // abort the delay and jump immediately to avoid walking into
+            // hazards while blindly counting down.
             if (_committedJumpDelay > 0)
             {
+                // Abort check: simulate no-press for the remaining delay
+                // frames.  If the cube dies within that window, the delay
+                // is stale and we must jump now.
+                int remainingDelay = _committedJumpDelay;
+                int noPressSurvival = SimulateForwardWithJumpAt(state, -1);
+                if (noPressSurvival < remainingDelay)
+                {
+                    _committedJumpDelay = -1; // abort stale delay
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_CUBE] committed delay ABORTED — no-press dies in {noPressSurvival} frames but delay has {remainingDelay} remaining, jumping now");
+#endif
+                    return true;
+                }
+
                 _committedJumpDelay--;
                 if (_committedJumpDelay == 0)
                 {
@@ -955,14 +1218,20 @@ namespace FamidashEditor
             //    dies within the lookahead horizon.  The bias does NOT
             //    change when we detect danger — it only changes which
             //    delay we PICK once we decide a jump is needed. ──
-            const int DETECTION_HORIZON = 30; // evaluate jumps when obstacle within 30 frames
-                                                // (~27 frame jump arc means after landing, only 3 frames left — no double-jump)
+            // 50 frames gives room for 2 full jump arcs (~24f each)
+            // before danger — essential for multi-platform sections where
+            // the cube must chain-jump onto higher blocks.
+            const int DETECTION_HORIZON = 50;
 
             // Always test jumps if a gravity portal is within the lookahead X range.
             // The portal bonus makes portal-hitting paths score higher, but only if
             // we actually evaluate them. Without this, the detection horizon skips
             // jump evaluation entirely, and portal-bonus paths are never discovered.
             bool gravPortalAhead = false;
+            // Also force jump evaluation when unprocessed pads are ahead.
+            // Pads provide velocity boosts needed for progression — the cube may
+            // need to jump to reach an elevated pad that no-press would miss.
+            bool padAhead = false;
             {
                 int currentX = state.X_fixed >> 8;
                 int lookaheadX = currentX + ((state.VelX_fixed >> 8) + 1) * LOOKAHEAD_HORIZON;
@@ -970,15 +1239,25 @@ namespace FamidashEditor
                 {
                     if (sp.AnchorX_px < currentX) continue;
                     if (sp.AnchorX_px > lookaheadX) break; // sorted by X
-                    if (IsGravityPortal(sp.SpriteId) && !state.ProcessedSprites.Contains(sp.Index))
+                    if (!state.ProcessedSprites.Contains(sp.Index))
                     {
-                        gravPortalAhead = true;
-                        break;
+                        int sid = sp.SpriteId;
+                        if (IsGravityPortal(sid))
+                        {
+                            gravPortalAhead = true;
+                            if (padAhead) break; // found both, stop scanning
+                        }
+                        else if (IsYellowPad(sid) || IsPinkPad(sid) || IsRedPad(sid) ||
+                                 IsBluePad(sid) || IsGreenPad(sid))
+                        {
+                            padAhead = true;
+                            if (gravPortalAhead) break; // found both, stop scanning
+                        }
                     }
                 }
             }
 
-            if (noPressFrames >= DETECTION_HORIZON && !gravPortalAhead)
+            if (noPressFrames >= DETECTION_HORIZON && !gravPortalAhead && !padAhead)
             {
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[DECIDE_CUBE] noPressFrames={noPressFrames} >= DETECTION_HORIZON={DETECTION_HORIZON}, no danger (noPressDeath={npDeath}@X={npDX},Y={npDY})");
@@ -987,7 +1266,7 @@ namespace FamidashEditor
             }
 
 #if !DISABLE_DEBUG_LOGGING
-            PfLog($"[DECIDE_CUBE] noPressFrames={noPressFrames} < DETECTION_HORIZON={DETECTION_HORIZON}{(gravPortalAhead ? " (gravPortalAhead)" : "")}, testing jumps (noPressDeath={npDeath}@X={npDX},Y={npDY})");
+            PfLog($"[DECIDE_CUBE] noPressFrames={noPressFrames} < DETECTION_HORIZON={DETECTION_HORIZON}{(gravPortalAhead ? " (gravPortalAhead)" : "")}{(padAhead ? " (padAhead)" : "")}, testing jumps (noPressDeath={npDeath}@X={npDX},Y={npDY})");
 #endif
 
             // Test different jump timings: jump at delay 0 (now), 1, 2, ...
@@ -1157,36 +1436,86 @@ namespace FamidashEditor
         /// </summary>
         private bool DecideShipInput(SimState state)
         {
-            // Detect corridor center at the ship's current position
-            // (scans ahead CORRIDOR_LOOK_AHEAD_TILES for obstacles)
-            int targetY = FindCorridorCenter(ref state);
-            int currentY = state.Y_fixed >> 8;
-
-            // Simple proportional control: fly toward corridor center
-            // Normal gravity (GravMul>0): hold thrusts UP (negative Y)
-            // Reversed gravity (GravMul<0): hold thrusts DOWN (positive Y)
-            bool shouldHold = (state.GravMul > 0) ? (currentY > targetY) : (currentY < targetY);
-
-            // Test 1-frame survival for both options
+            // Test 1-frame survival for both options first
+            _speculativeDepth++;
             var sH = state.Clone();
             var sR = state.Clone();
             bool aliveH = StepFrame(ref sH, true, out bool endH);
             bool aliveR = StepFrame(ref sR, false, out bool endR);
+            _speculativeDepth--;
 
             // If one path reaches end-of-level, take it
             if (endH) return true;
             if (endR) return false;
 
-            // If only one survives, pick it regardless of corridor target
+            // If only one survives, pick it regardless
             if (aliveH && !aliveR) return true;
             if (!aliveH && aliveR) return false;
-            if (!aliveH && !aliveR) return false; // both die, doesn't matter
+            if (!aliveH && !aliveR) return false; // both die
 
-            // Both survive: if our chosen action (corridor tracking) survives, use it
-            // Otherwise flip
-            if (shouldHold && !aliveH) return false;
-            if (!shouldHold && !aliveR) return true;
-            return shouldHold;
+            // Both survive 1 frame — use binary tree search.
+            // Explore both hold and release branches recursively at each future frame.
+            // Pick whichever initial choice leads to the longest max-survival path.
+            _shipTreeNodesExplored = 0;
+            int survH = 1 + ShipTreeSearch(sH, SHIP_TREE_DEPTH - 1);
+            // Reset node budget so release gets equal exploration opportunity
+            _shipTreeNodesExplored = 0;
+            int survR = 1 + ShipTreeSearch(sR, SHIP_TREE_DEPTH - 1);
+
+            if (survH != survR)
+                return survH > survR;
+
+            // Equal survival — use velocity-aware corridor tracking as tiebreaker
+            int targetY = FindCorridorCenter(ref state) + _shipCorridorBias;
+            int currentY = state.Y_fixed >> 8;
+            int velY = state.VelY_fixed;
+
+            int posError = (state.GravMul > 0) ? (currentY - targetY) : (targetY - currentY);
+            int velComponent = -(velY * state.GravMul);
+            int pdSignal = posError - (velComponent * 2);
+
+            return pdSignal > 0;
+        }
+
+        /// <summary>
+        /// Binary tree search for ship: at each depth, try both hold and release,
+        /// recurse, and return the max survival depth achievable. This replaces the
+        /// greedy lookahead which used the PD controller internally and could not
+        /// find paths through complex obstacle sequences.
+        /// </summary>
+        private int _shipTreeNodesExplored;
+        private int ShipTreeSearch(SimState state, int depthRemaining)
+        {
+            if (depthRemaining <= 0 || _shipTreeNodesExplored >= SHIP_TREE_MAX_NODES)
+                return 0;
+
+            _shipTreeNodesExplored++;
+            _speculativeDepth++; // suppress logging during speculative search
+
+            // Try hold
+            var sH = state.Clone();
+            bool aliveH = StepFrame(ref sH, true, out bool endH);
+            int bestH = 0;
+            if (endH) bestH = depthRemaining; // reached end
+            else if (aliveH) bestH = 1 + ShipTreeSearch(sH, depthRemaining - 1);
+
+            // Early exit: if hold already achieves max depth, no need to try release
+            if (bestH >= depthRemaining)
+            {
+                _speculativeDepth--;
+                return bestH;
+            }
+
+            // Try release
+            _shipTreeNodesExplored++;
+            var sR = state.Clone();
+            bool aliveR = StepFrame(ref sR, false, out bool endR);
+            int bestR = 0;
+            if (endR) bestR = depthRemaining;
+            else if (aliveR) bestR = 1 + ShipTreeSearch(sR, depthRemaining - 1);
+
+            _speculativeDepth--;
+            return Math.Max(bestH, bestR);
         }
 
         /// <summary>
@@ -1195,6 +1524,8 @@ namespace FamidashEditor
         /// to detect upcoming obstacles and proactively adjust the corridor target.
         /// Uses the tightest ceiling/floor constraint across all scanned columns, so the ship
         /// steers early to clear walls, blocks, and narrow passages ahead.
+        /// Death tiles (spikes) are treated as obstacles that tighten the corridor,
+        /// preventing the ship from drifting into spike rows.
         /// </summary>
         private int FindCorridorCenter(ref SimState s)
         {
@@ -1203,7 +1534,6 @@ namespace FamidashEditor
             int hbW = GetHitboxW(s.Mini);
             int hbH = GetHitboxH(s.Mini);
             int centerX_px = playerX_px + hbW / 2;
-            int centerY_tile = (playerY_px + hbH / 2) / TILE;
 
             int worldBottom = (mapHeight - groundRowsToReserve) * TILE;
 
@@ -1227,10 +1557,18 @@ namespace FamidashEditor
                     var col = GetTileCollision(tx, ty);
                     if (col != MetatileCollision.COL_NONE)
                     {
+                        // Check solid first
                         var (cL, cT, cR, cB) = GetCollisionBounds(col);
                         if (cR > cL)
                         {
                             int thisCeiling = ty * TILE + cB;
+                            if (thisCeiling > ceilingY) ceilingY = thisCeiling;
+                            break;
+                        }
+                        // Death tiles act as obstacles too — tile bottom is obstacle boundary
+                        if (IsDeathCollision(col))
+                        {
+                            int thisCeiling = ty * TILE + TILE;
                             if (thisCeiling > ceilingY) ceilingY = thisCeiling;
                             break;
                         }
@@ -1250,63 +1588,73 @@ namespace FamidashEditor
                             if (thisFloor < floorY) floorY = thisFloor;
                             break;
                         }
+                        // Death tiles act as obstacles — tile top is obstacle boundary
+                        if (IsDeathCollision(col))
+                        {
+                            int thisFloor = ty * TILE;
+                            if (thisFloor < floorY) floorY = thisFloor;
+                            break;
+                        }
                     }
                 }
 
-                // For forward columns: check ALL tile rows the hitbox spans for obstacles
-                // This catches walls at any row the ship currently occupies
+                // For forward columns: check ALL tile rows the hitbox spans
+                // PLUS a 2-tile margin above/below for obstacles and spikes
                 if (tx > startTileX)
                 {
-                    for (int ty = topTile; ty <= botTile; ty++)
+                    int scanTop = Math.Max(0, topTile - 2);
+                    int scanBot = Math.Min(mapHeight - groundRowsToReserve - 1, botTile + 2);
+
+                    for (int ty = scanTop; ty <= scanBot; ty++)
                     {
                         var col = GetTileCollision(tx, ty);
-                        if (col != MetatileCollision.COL_NONE)
+                        if (col == MetatileCollision.COL_NONE) continue;
+
+                        bool isSolid = false;
+                        bool isDeath = false;
+                        int blockTop, blockBottom;
+
+                        var (cL, cT, cR, cB) = GetCollisionBounds(col);
+                        if (cR > cL)
                         {
-                            var (cL, cT, cR, cB) = GetCollisionBounds(col);
-                            if (cR > cL) // solid block in the ship's path
+                            isSolid = true;
+                            blockTop = ty * TILE + cT;
+                            blockBottom = ty * TILE + cB;
+                        }
+                        else if (IsDeathCollision(col))
+                        {
+                            isDeath = true;
+                            blockTop = ty * TILE;
+                            blockBottom = ty * TILE + TILE;
+                        }
+                        else continue;
+
+                        // Tiles within the hitbox span → route above or below
+                        if (ty >= topTile && ty <= botTile)
+                        {
+                            int spaceAbove = blockTop - ceilingY;
+                            int spaceBelow = floorY - blockBottom;
+
+                            if (spaceAbove >= hbH && (spaceAbove >= spaceBelow || spaceBelow < hbH))
                             {
-                                int blockTop = ty * TILE + cT;
-                                int blockBottom = ty * TILE + cB;
-
-                                // Determine if the ship should go above or below this obstacle.
-                                // Check available space above vs below the block.
-                                int spaceAbove = blockTop - ceilingY;
-                                int spaceBelow = floorY - blockBottom;
-
-                                if (spaceAbove >= hbH && (spaceAbove >= spaceBelow || spaceBelow < hbH))
-                                {
-                                    // Fly over: treat block top as floor
-                                    if (blockTop < floorY) floorY = blockTop;
-                                }
-                                else
-                                {
-                                    // Fly under: treat block bottom as ceiling
-                                    if (blockBottom > ceilingY) ceilingY = blockBottom;
-                                }
+                                if (blockTop < floorY) floorY = blockTop;
+                            }
+                            else
+                            {
+                                if (blockBottom > ceilingY) ceilingY = blockBottom;
                             }
                         }
-                    }
-
-                    // Also check 1 tile above and below the hitbox span for obstacles
-                    // that the ship would encounter if it adjusts vertically
-                    int[] marginTiles = { topTile - 1, botTile + 1 };
-                    foreach (int ty in marginTiles)
-                    {
-                        if (ty < 0 || ty >= mapHeight - groundRowsToReserve) continue;
-                        if (ty >= topTile && ty <= botTile) continue; // already checked in main scan
-                        var col = GetTileCollision(tx, ty);
-                        if (col != MetatileCollision.COL_NONE)
+                        // Tiles above the hitbox → tighten ceiling
+                        else if (ty < topTile)
                         {
-                            var (cL, cT, cR, cB) = GetCollisionBounds(col);
-                            if (cR > cL)
-                            {
-                                int blockTop = ty * TILE + cT;
-                                int blockBottom = ty * TILE + cB;
-                                // If block is above → tighten ceiling
-                                if (ty < topTile && blockBottom > ceilingY) ceilingY = blockBottom;
-                                // If block is below → tighten floor
-                                if (ty > botTile && blockTop < floorY) floorY = blockTop;
-                            }
+                            if (isSolid && blockBottom > ceilingY) ceilingY = blockBottom;
+                            if (isDeath && blockBottom > ceilingY) ceilingY = blockBottom;
+                        }
+                        // Tiles below the hitbox → tighten floor
+                        else if (ty > botTile)
+                        {
+                            if (isSolid && blockTop < floorY) floorY = blockTop;
+                            if (isDeath && blockTop < floorY) floorY = blockTop;
                         }
                     }
                 }
@@ -1314,6 +1662,39 @@ namespace FamidashEditor
 
             // Target: center of tightest corridor, offset so top-left Y puts center at midpoint
             return (ceilingY + floorY) / 2 - hbH / 2;
+        }
+
+        /// <summary>
+        /// Returns true if the collision type is any death/spike type.
+        /// </summary>
+        private static bool IsDeathCollision(MetatileCollision col)
+        {
+            return col == MetatileCollision.COL_DEATH ||
+                   col == MetatileCollision.COL_DEATH_TOP ||
+                   col == MetatileCollision.COL_DEATH_BOTTOM ||
+                   col == MetatileCollision.COL_DEATH_LEFT ||
+                   col == MetatileCollision.COL_DEATH_RIGHT ||
+                   col == MetatileCollision.COL_DEATH_TOP_RIGHT ||
+                   col == MetatileCollision.COL_DEATH_TOP_LEFT ||
+                   col == MetatileCollision.COL_DEATH_BOTTOM_RIGHT ||
+                   col == MetatileCollision.COL_DEATH_BOTTOM_LEFT ||
+                   col == MetatileCollision.COL_DEATH_TOP_RIGHT_LEFT ||
+                   col == MetatileCollision.COL_DEATH_TOP_BOTTOM ||
+                   col == MetatileCollision.COL_DEATH_LEFT_RIGHT ||
+                   col == MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM ||
+                   col == MetatileCollision.COL_TOP_CENTER_SPIKE ||
+                   col == MetatileCollision.COL_BOTTOM_CENTER_SPIKE ||
+                   col == MetatileCollision.COL_UP_LEFT_SPIKE ||
+                   col == MetatileCollision.COL_UP_RIGHT_SPIKE ||
+                   col == MetatileCollision.COL_UP_BOTH_SPIKES ||
+                   col == MetatileCollision.COL_DOWN_LEFT_SPIKE ||
+                   col == MetatileCollision.COL_DOWN_RIGHT_SPIKE ||
+                   col == MetatileCollision.COL_DOWN_BOTH_SPIKES ||
+                   col == MetatileCollision.COL_LEFT_SPIKE_BLOCK ||
+                   col == MetatileCollision.COL_RIGHT_SPIKE_BLOCK ||
+                   col == MetatileCollision.COL_BOTTOM_LEFT_SPIKE ||
+                   col == MetatileCollision.COL_BOTTOM_RIGHT_SPIKE ||
+                   col == MetatileCollision.COL_BOTTOM_SPIKES;
         }
 
         /// <summary>
@@ -1327,8 +1708,8 @@ namespace FamidashEditor
 
             for (int f = 0; f < horizon; f++)
             {
-                // Detect corridor center at current position for tiebreaking
-                int targetY = FindCorridorCenter(ref s);
+                // Detect corridor center at current position
+                int targetY = FindCorridorCenter(ref s) + _shipCorridorBias;
 
                 // Quick 1-step test for each option
                 var sH = s.Clone();
@@ -1345,10 +1726,13 @@ namespace FamidashEditor
                 else if (!aliveH && aliveR) pickHold = false;
                 else
                 {
-                    // Both survive — pick the one closer to corridor center
-                    int hDist = Math.Abs((sH.Y_fixed >> 8) - targetY);
-                    int rDist = Math.Abs((sR.Y_fixed >> 8) - targetY);
-                    pickHold = hDist <= rDist;
+                    // Both survive — PD controller: position + velocity damping
+                    int currentY = s.Y_fixed >> 8;
+                    int velY = s.VelY_fixed;
+                    int posError = (s.GravMul > 0) ? (currentY - targetY) : (targetY - currentY);
+                    int velComponent = -(velY * s.GravMul);
+                    int pdSignal = posError - (velComponent * 2);
+                    pickHold = pdSignal > 0;
                 }
 
                 // Advance with picked input
@@ -1409,6 +1793,13 @@ namespace FamidashEditor
                     // the jump fires on the first subsequent landing (VelY==0)
                     // rather than being silently skipped forever.
                     input = (f >= jumpFrame && s.VelY_fixed == 0);
+
+                    // Orbs can be activated while airborne (no VelY==0 requirement).
+                    // If there's a pending orb from the previous StepFrame and we've
+                    // reached/passed the jump frame, force input to activate the orb.
+                    if (!input && f >= jumpFrame && jumpFrame >= 0 && s.PendingOrbIndex >= 0)
+                        input = true;
+
                     if (input) initialJumpDone = true;
                 }
                 else if (chainJumps && s.GameMode == 0 && s.VelY_fixed == 0 && s.OnGround)
@@ -1418,6 +1809,13 @@ namespace FamidashEditor
                     // otherwise = check short-horizon danger to decide
                     input = holdAfterLanding || QuickDangerCheck(s);
                 }
+
+                // Auto-activate orbs encountered after the initial action.
+                // Orbs are typically required for level progression; speculative
+                // paths should handle them the same way a real player would.
+                // Only for action paths (jumpFrame >= 0); no-press (-1) stays passive.
+                if (jumpFrame >= 0 && initialJumpDone && !input && s.PendingOrbIndex >= 0)
+                    input = true;
 
 #if !DISABLE_DEBUG_LOGGING
                 if (trajLog != null)
@@ -1487,13 +1885,37 @@ namespace FamidashEditor
         {
             endLevel = false;
 
+            // ── Clear pending orb from previous frame ──
+            s.PendingOrbIndex = -1;
+            s.PendingOrbSpriteId = -1;
+
             int oldX_fixed = s.X_fixed;
             int oldX_px = oldX_fixed >> 8;
 
             // ── STEP 1: PROCESS SPRITES at current X (sprite_collide) ──
-            // Must use current X, not future X — matches simulator's sprite_collide
+            // NES order: sprite_collide() at OLD X → cube_movement() (Y physics)
+            // → x_movement() (X advance).  Orbs, pads, gravity/speed/mini portals
+            // detected at OLD X.  Game mode portals are detected AFTER Y physics
+            // at NEW X (matching sim's post-physics portal loop).
             endLevel = ProcessSprites(ref s, oldX_px);
             if (endLevel) return true;
+
+            // ── STEP 1b: ORB ACTIVATION at OLD X ──
+            // NES sprite_collide detects orbs at OLD X; cube_movement's Step 0
+            // (orb_check) then activates them before gravity.  This must happen
+            // BEFORE X advance to match NES/simulator timing.
+            if (s.PendingOrbIndex >= 0 && input)
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[ORB_ACTIVATE] sid=0x{s.PendingOrbSpriteId:X2} gravFlipped={s.GravFlipped} mini={s.Mini}");
+#endif
+                ApplyOrbSprite(ref s, s.PendingOrbSpriteId);
+                bool isMultiOrb = (s.PendingOrbSpriteId == 0x7B || s.PendingOrbSpriteId == 0x7C);
+                if (!isMultiOrb)
+                    s.ProcessedSprites.Add(s.PendingOrbIndex);
+                s.PendingOrbIndex = -1;
+                s.PendingOrbSpriteId = -1;
+            }
 
             // ── STEP 2: X ADVANCE for ground support check ──
             int newX_fixed = s.X_fixed + s.VelX_fixed;
@@ -1519,6 +1941,25 @@ namespace FamidashEditor
             if (s.GameMode == 0) // Cube mode
             {
                 CubeGravity(ref s);
+
+                // Ceiling proximity check (matches CubePhysics_Fresh.partial.cs lines 110-128):
+                // After gravity, if gravity is flipped and player is moving toward ceiling,
+                // check collision at Y-1 to detect boundary hits that CubeEject would miss
+                // (because CheckCeiling uses strict < on the boundary: topY < colBottom fails
+                // when topY == colBottom, but testing at Y-1 succeeds).
+                if (s.GravFlipped)
+                {
+                    int hbW_chk = GetHitboxW(s.Mini);
+                    int hbH_chk = GetHitboxH(s.Mini);
+                    int hbOffY_chk = s.Mini ? ((0x10 - hbH_chk) >> 1) : 0;
+                    int collX_chk = s.X_fixed >> 8;
+                    int testY_chk = (s.Y_fixed >> 8) + hbOffY_chk - 1;
+                    var (ceilHit, _) = CheckCeiling(collX_chk, testY_chk, hbW_chk, hbH_chk);
+                    if (ceilHit && s.VelY_fixed < 0)
+                    {
+                        s.VelY_fixed = 0;
+                    }
+                }
 
                 bool ejectDied = false;
                 CubeEject(ref s, out ejectDied);
@@ -1554,11 +1995,11 @@ namespace FamidashEditor
             {
                 ShipGravityAndThrust(ref s, input);
 
-                if (CheckCenterPointDeath(ref s))
-                    return false;
-
                 ShipEject(ref s, out bool shipDied);
                 if (shipDied)
+                    return false;
+
+                if (CheckCenterPointDeath(ref s))
                     return false;
             }
 
@@ -1580,6 +2021,13 @@ namespace FamidashEditor
 
             // ── STEP 8: RESTORE NEW X ──
             s.X_fixed = newX_fixed;
+
+            // ── STEP 8b: GAME MODE PORTAL CHECK at NEW X ──
+            // The sim detects game mode portals AFTER physics + forward collision,
+            // using NEW X (post-advance).  Matching sim's post-physics portal loop
+            // (SimulatorWindow line ~10983).  Uses centered 15×15 hitbox and NES-style
+            // (+1) overlap conversion, exactly as SpriteIntersectsPlayer does.
+            CheckGameModePortalsAtNewX(ref s);
 
             // ── STEP 9: DEATH CHECK at new X (bg_coll_death) ──
             if (CheckDeathCollision(ref s))
@@ -2022,7 +2470,12 @@ namespace FamidashEditor
 
                 int sid = sp.SpriteId;
 
-                if (IsGameModePortal(sid) || IsSpeedPortal(sid) || IsGravityPortal(sid) ||
+                // Game mode portals are detected AFTER Y physics at NEW X
+                // (matching sim's post-physics portal loop at line ~10983).
+                // Skip them here; they are handled by CheckGameModePortalsAtNewX.
+                if (IsGameModePortal(sid)) continue;
+
+                if (IsSpeedPortal(sid) || IsGravityPortal(sid) ||
                     IsMiniGrowthPortal(sid) || IsEndLevel(sid))
                 {
                     bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < currentX_px);
@@ -2033,7 +2486,7 @@ namespace FamidashEditor
                     bool hit = IsEndLevel(sid) ? xOverlap : (xOverlap && yOverlap);
 
 #if !DISABLE_DEBUG_LOGGING
-                    if (IsGravityPortal(sid) || IsGameModePortal(sid) || IsEndLevel(sid))
+                    if (IsGravityPortal(sid) || IsEndLevel(sid))
                     {
                         PfLog($"[SPRITE_CHECK] sid=0x{sid:X2} idx={sp.Index} playerBox=({currentX_px},{playerTop})-({playerRight},{playerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom}) xOvlp={xOverlap} yOvlp={yOverlap} hit={hit}");
                     }
@@ -2053,15 +2506,41 @@ namespace FamidashEditor
                 }
 
                 // Pad detection (requires hitbox overlap)
+                // Pads fire EVERY overlapping frame (famidash has activation tracking commented out).
+                // Do NOT add to ProcessedSprites — must match sim behavior.
                 if (IsYellowPad(sid) || IsPinkPad(sid) || IsRedPad(sid) || IsBluePad(sid) || IsGreenPad(sid))
+                {
+                    // Sim's CheckPadCollision uses (playerX_fixed >> 8) + 1 for yellow/pink/red/green pads,
+                    // matching NES sprite_collide() where Generic.x = high_byte(currplayer_x) + 1.
+                    // Blue pads are in a separate CheckBluePadCollision that uses plain (>> 8).
+                    int padXOffset = IsBluePad(sid) ? 0 : 1;
+                    int padLeft = currentX_px + padXOffset;
+                    int padRight = padLeft + hbW;  // exclusive right
+                    bool xOverlap = !((padRight) < sp.HitLeft || sp.HitRight < padLeft);
+                    bool yOverlap = !((playerBottom) < sp.HitTop || sp.HitBottom < playerTop);
+
+                    if (xOverlap && yOverlap)
+                    {
+                        ApplyPadSprite(ref s, sid);
+                    }
+                    continue;
+                }
+
+                // Orb detection: orbs require player input to activate.
+                // When overlapping, store as pending — the decision logic or
+                // StepFrame will decide whether to activate.
+                if (IsOrbSprite(sid))
                 {
                     bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < currentX_px);
                     bool yOverlap = !((playerBottom) < sp.HitTop || sp.HitBottom < playerTop);
 
                     if (xOverlap && yOverlap)
                     {
-                        s.ProcessedSprites.Add(sp.Index);
-                        ApplyPadSprite(ref s, sid);
+                        s.PendingOrbIndex = sp.Index;
+                        s.PendingOrbSpriteId = sid;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[ORB_PENDING] sid=0x{sid:X2} idx={sp.Index} playerBox=({currentX_px},{playerTop})-({playerRight},{playerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom})");
+#endif
                     }
                     continue;
                 }
@@ -2118,6 +2597,61 @@ namespace FamidashEditor
 #endif
                     if (applied)
                         s.ProcessedSprites.Add(sp.Index);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Post-physics game mode portal check at NEW X.
+        /// Matches the simulator's post-physics portal loop (SimulatorWindow ~line 10983)
+        /// which detects game mode portals AFTER Y physics, at the post-advance X position.
+        /// Uses a centered 15×15 hitbox and NES-style (+1) overlap conversion matching
+        /// SpriteIntersectsPlayer (line 1136): (playerRight+1) &lt; spriteLeft.
+        /// </summary>
+        private void CheckGameModePortalsAtNewX(ref SimState s)
+        {
+            int playerX_px = s.X_fixed >> 8;
+            const int HITBOX_W = 15;
+            const int HITBOX_H = 15;
+            // Centered hitbox matching sim: center = playerX + visualWidth/2 (8),
+            // left = center - 7, right = left + 14
+            int playerCenter = playerX_px + 8;       // playerVisualWidth / 2 = 8
+            int playerLeft = playerCenter - (HITBOX_W / 2);  // center - 7
+            int playerRight = playerLeft + (HITBOX_W - 1);   // inclusive right (left + 14)
+            int playerTop = s.Y_fixed >> 8;
+            int playerBottom = playerTop + (HITBOX_H - 1);   // inclusive bottom
+
+            foreach (var sp in allSprites)
+            {
+                if (s.ProcessedSprites.Contains(sp.Index)) continue;
+                if (sp.HitRight <= playerLeft) continue;
+                if (sp.AnchorX_px - TILE > playerRight + TILE) break;
+
+                int sid = sp.SpriteId;
+                if (!IsGameModePortal(sid)) continue;
+
+                // NES-style overlap: convert inclusive player bounds to exclusive with +1,
+                // matching SpriteIntersectsPlayer's check:
+                //   !((playerRight+1) < spriteLeft || spriteRight < playerLeft ||
+                //     (playerBottom+1) < spriteTop || spriteBottom < playerTop)
+                // Sprite HitRight/HitBottom are already exclusive (left + width).
+                bool xOverlap = !((playerRight + 1) < sp.HitLeft || sp.HitRight < playerLeft);
+                bool yOverlap = !((playerBottom + 1) < sp.HitTop || sp.HitBottom < playerTop);
+                bool hit = xOverlap && yOverlap;
+
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[GAMEMODE_NEWX_CHECK] sid=0x{sid:X2} idx={sp.Index} playerBox=({playerLeft},{playerTop})-({playerRight},{playerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom}) xOvlp={xOverlap} yOvlp={yOverlap} hit={hit}");
+#endif
+
+                if (hit)
+                {
+                    bool applied = ApplyPortalSprite(ref s, sid);
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[GAMEMODE_NEWX_HIT] sid=0x{sid:X2} applied={applied} mode={s.GameMode} VelY=0x{s.VelY_fixed:X}");
+#endif
+                    if (applied)
+                        s.ProcessedSprites.Add(sp.Index);
+                    break; // only one game mode portal per frame (matching sim's break)
                 }
             }
         }
@@ -2191,33 +2725,29 @@ namespace FamidashEditor
             return true;
         }
 
-        // Pad velocities from simulator's PadOrbHeights matrix (cube column = 0)
-        // These are positive magnitudes; gravity direction is applied via GravMul
-        private static int GetYellowPadVel(bool mini) => mini ? -0x680 : -0x7C0;  // row 1
-        private static int GetPinkPadVel(bool mini)   => mini ? -0x3F0 : -0x510;  // row 3
-        private static int GetRedPadVel(bool mini)    => mini ? -0x650 : -0x9F0;  // row 8
-        // Blue/green pads use yellow orb velocity (row 0) — same as GetJumpVel
-
         private void ApplyPadSprite(ref SimState s, int sid)
         {
 #if !DISABLE_DEBUG_LOGGING
-            PfLog($"[PAD] sid=0x{sid:X2} gravFlipped={s.GravFlipped}");
+            PfLog($"[PAD] sid=0x{sid:X2} gravFlipped={s.GravFlipped} mode={s.GameMode}");
 #endif
+            // Sim applies: baseVel * (gravInverted ? 1 : -1)  →  launch against gravity
+            int gravSign = s.GravFlipped ? 1 : -1;
+
             if (IsYellowPad(sid))
             {
-                s.VelY_fixed = GetYellowPadVel(s.Mini) * s.GravMul;
+                s.VelY_fixed = GetPadOrbVel(1, s.Mini, s.GameMode) * gravSign;
                 s.WasZeroedByCollision = false;
                 s.OnGround = false;
             }
             else if (IsPinkPad(sid))
             {
-                s.VelY_fixed = GetPinkPadVel(s.Mini) * s.GravMul;
+                s.VelY_fixed = GetPadOrbVel(3, s.Mini, s.GameMode) * gravSign;
                 s.WasZeroedByCollision = false;
                 s.OnGround = false;
             }
             else if (IsRedPad(sid))
             {
-                s.VelY_fixed = GetRedPadVel(s.Mini) * s.GravMul;
+                s.VelY_fixed = GetPadOrbVel(8, s.Mini, s.GameMode) * gravSign;
                 s.WasZeroedByCollision = false;
                 s.OnGround = false;
             }
@@ -2226,7 +2756,8 @@ namespace FamidashEditor
                 bool isBottomPad = (sid == 0x0D || sid == 0xFD);
                 s.GravFlipped = isBottomPad;
                 s.GravMul = isBottomPad ? -1 : 1;
-                s.VelY_fixed = GetJumpVel(s.Mini) * s.GravMul;
+                int blueGravSign = s.GravFlipped ? 1 : -1;
+                s.VelY_fixed = GetPadOrbVel(0, s.Mini, s.GameMode) * blueGravSign;
                 s.WasZeroedByCollision = false;
                 s.OnGround = false;
             }
@@ -2234,9 +2765,96 @@ namespace FamidashEditor
             {
                 s.GravFlipped = !s.GravFlipped;
                 s.GravMul = s.GravFlipped ? -1 : 1;
-                s.VelY_fixed = GetJumpVel(s.Mini) * s.GravMul;
+                int greenGravSign = s.GravFlipped ? 1 : -1;
+                s.VelY_fixed = GetPadOrbVel(0, s.Mini, s.GameMode) * greenGravSign;
                 s.WasZeroedByCollision = false;
                 s.OnGround = false;
+            }
+        }
+
+        /// <summary>
+        /// Apply orb physics when the player activates an orb (input while overlapping).
+        /// Orb velocities use positive magnitudes; the sign is determined by GravMul.
+        ///   "Against gravity" = -vel * GravMul  (yellow, pink, red, yellowBigger, yellowSmaller)
+        ///   "With gravity"    =  vel * GravMul  (black orb)
+        ///   Gravity flip orbs flip first, then apply velocity in new frame.
+        /// </summary>
+        private void ApplyOrbSprite(ref SimState s, int sid)
+        {
+#if !DISABLE_DEBUG_LOGGING
+            PfLog($"[ORB_ACTIVATE] sid=0x{sid:X2} gravFlipped={s.GravFlipped} mini={s.Mini}");
+#endif
+            // Sim applies: baseVel * (gravInverted ? 1 : -1)  →  launch against gravity
+            int orbGravSign = s.GravFlipped ? 1 : -1;
+
+            if (IsYellowOrb(sid))
+            {
+                s.VelY_fixed = GetPadOrbVel(0, s.Mini, s.GameMode) * orbGravSign;
+                s.WasZeroedByCollision = false;
+                s.OnGround = false;
+            }
+            else if (IsYellowOrbBigger(sid))
+            {
+                s.VelY_fixed = GetPadOrbVel(5, s.Mini, s.GameMode) * orbGravSign;
+                s.WasZeroedByCollision = false;
+                s.OnGround = false;
+            }
+            else if (IsYellowOrbSmaller(sid))
+            {
+                s.VelY_fixed = GetPadOrbVel(7, s.Mini, s.GameMode) * orbGravSign;
+                s.WasZeroedByCollision = false;
+                s.OnGround = false;
+            }
+            else if (IsPinkOrb(sid))
+            {
+                s.VelY_fixed = GetPadOrbVel(2, s.Mini, s.GameMode) * orbGravSign;
+                s.WasZeroedByCollision = false;
+                s.OnGround = false;
+            }
+            else if (IsRedOrb(sid))
+            {
+                s.VelY_fixed = GetPadOrbVel(4, s.Mini, s.GameMode) * orbGravSign;
+                s.WasZeroedByCollision = false;
+                s.OnGround = false;
+            }
+            else if (IsBlackOrb(sid))
+            {
+                // Black orb launches WITH gravity (downward when normal)
+                // Sim: baseVel is already negative in table, * (gravInverted ? 1 : -1)
+                // For normal gravity: negative baseVel * -1 = positive (downward) ✓
+                s.VelY_fixed = GetPadOrbVel(6, s.Mini, s.GameMode) * orbGravSign;
+                s.WasZeroedByCollision = false;
+                s.OnGround = false;
+            }
+            else if (IsBlueOrb(sid))
+            {
+                // Flip gravity first, then launch TOWARD new ground
+                s.GravFlipped = !s.GravFlipped;
+                s.GravMul = s.GravFlipped ? -1 : 1;
+                // Sim uses hardcoded constants (NOT PadOrbHeights):
+                //   PAD_HEIGHT_BLUE_normal = -0x3A0, PAD_HEIGHT_BLUE_mini = -0x160
+                // Sign: if (!gravInverted) negate → launches toward new ground
+                int blueVel = s.Mini ? -0x160 : -0x3A0;
+                if (!s.GravFlipped)
+                    blueVel = -blueVel;
+                s.VelY_fixed = blueVel;
+                s.WasZeroedByCollision = false;
+                s.OnGround = false;
+            }
+            else if (IsGreenOrb(sid))
+            {
+                // Flip gravity, then bounce AGAINST new gravity (yellow-orb-strength)
+                s.GravFlipped = !s.GravFlipped;
+                s.GravMul = s.GravFlipped ? -1 : 1;
+                int greenOrbGravSign = s.GravFlipped ? 1 : -1;
+                s.VelY_fixed = GetPadOrbVel(0, s.Mini, s.GameMode) * greenOrbGravSign;
+                s.WasZeroedByCollision = false;
+                s.OnGround = false;
+            }
+            else if (IsWhiteOrb(sid))
+            {
+                // White orb: zero Y velocity
+                s.VelY_fixed = 0;
             }
         }
 
@@ -2321,7 +2939,9 @@ namespace FamidashEditor
             int playerBottom_px = collY + collH;
             int tileBelowY = playerBottom_px / TILE;
             int playerLeft_px = collX;
-            int playerRight_px = collX + collW - 1;
+            // NES bg_coll_D checks at playerX+width (one pixel past inclusive right edge),
+            // which can reach the next tile column. Match NES by using collW not collW-1.
+            int playerRight_px = collX + collW;
 
             // ── SPIKE DEATH PRE-CHECK (3 points at bottom edge) ──
             // Matches CheckCollisionDown's spike detection
@@ -2430,7 +3050,8 @@ namespace FamidashEditor
             if (tileAboveY < 0) return (false, 0);
 
             int tileLeftX = collX / TILE;
-            int tileRightX = (collX + collW - 1) / TILE;
+            // NES bg_coll_U also checks at playerX+width; match with collW not collW-1.
+            int tileRightX = (collX + collW) / TILE;
             int tileArrayY = tileAboveY + groundRowsToReserve;
             if (tileArrayY < 0 || tileArrayY >= mapHeight) return (false, 0);
 
@@ -2453,7 +3074,7 @@ namespace FamidashEditor
                 int colLeft_px = tileWorldX + cLeft;
                 int colRight_px = tileWorldX + cRight;
 
-                if ((collX + collW - 1) >= colLeft_px && collX < colRight_px)
+                if ((collX + collW) >= colLeft_px && collX < colRight_px)
                 {
                     if (topY >= tileWorldY + cTop && topY < colBottom_px)
                         return (true, colBottom_px);
