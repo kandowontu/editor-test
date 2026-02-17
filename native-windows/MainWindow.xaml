@@ -363,6 +363,7 @@
             <Button x:Name="SetOptionsButton" Content="Set Options" Margin="8,2" ToolTip="Level options (deco set)" />
             <Button x:Name="CalculatePathButton" Content="Calculate Path" Margin="8,2" ToolTip="Pre-calculate pathfinder AI path" Click="CalculatePathButton_Click" />
             <ProgressBar x:Name="PathfinderProgressBar" Width="120" Height="16" Margin="4,2" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed" />
+            <Button x:Name="PathfinderJumpToButton" Content="Jump To" Margin="2" Visibility="Collapsed" Click="PathfinderJumpToButton_Click" ToolTip="Scroll map to current pathfinder position" />
             <TextBlock Text="Width (X):" VerticalAlignment="Center" Margin="6,0,2,0" />
             <TextBox x:Name="WidthBox" Width="60" Margin="2" />
             <TextBlock Text="Height (Y):" VerticalAlignment="Center" Margin="8,0,2,0" />

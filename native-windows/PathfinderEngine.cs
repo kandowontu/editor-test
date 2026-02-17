@@ -48,6 +48,10 @@ namespace FamidashEditor
         /// </summary>
         public IProgress<int>? Progress { get; set; }
 
+        public Action<List<(int x, int y)>?, int, int, bool>? OnSpeculativePath { get; set; }
+        public int CurrentX_px => _currentX_px;
+        private volatile int _currentX_px;
+
         // Cube hitbox (from collision.h)
         private const int CUBE_HITBOX_W = 15;
         private const int CUBE_HITBOX_H = 15;
@@ -99,6 +103,21 @@ namespace FamidashEditor
         private static int GetHitboxH(bool mini) => mini ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
         private static int GetHitboxOffsetY(bool mini, bool gravFlipped) =>
             (mini && !gravFlipped) ? 9 : 0;
+        /// <summary>
+        /// Mode-aware hitbox Y offset.  Cube mini=9, Ball mini=4, others=0.
+        /// </summary>
+        private static int GetHitboxOffsetY(int gameMode, bool mini, bool gravFlipped)
+        {
+            if (!mini) return 0;
+            if (gameMode == 2) // Ball: (0x10 - 7) >> 1 = 4
+                return gravFlipped ? 0 : 4;
+            return gravFlipped ? 0 : 9; // Cube/Robot/etc. mini offset
+        }
+
+        // Ball physics constants (from GameModePhysics.cs, 60fps values)
+        private static int BallGravity(bool mini) => mini ? 0x57 : 0x47;
+        private static int BallSwitchVel(bool mini) => mini ? 0x120 : 0x200;
+        // Ball max fall speed is 0x600 — same as cube (uses the class maxFallSpeed field)
 
         // Ship physics constants (from GameModePhysics.cs, 60fps values)
         private static int ShipGravityBase(bool mini) => mini ? 0x31 : 0x2A;
@@ -192,8 +211,9 @@ namespace FamidashEditor
         /// timing: sprite_collide() runs BEFORE x_movement, so orbs are
         /// detected at the pre-advance position.
         /// </summary>
-        private int ScanForOrbOverlap(in SimState state)
+        private int ScanForOrbOverlap(in SimState state, out int orbSpriteIndex)
         {
+            orbSpriteIndex = -1;
             // Use current X (pre-advance) to match NES sprite_collide timing
             int currentX_px = state.X_fixed >> 8;
             int hbW = GetHitboxW(state.Mini);
@@ -217,7 +237,10 @@ namespace FamidashEditor
                 bool yOverlap = !(playerBottom < sp.HitTop || sp.HitBottom < playerTop);
 
                 if (xOverlap && yOverlap)
+                {
+                    orbSpriteIndex = sp.Index;
                     return sid;
+                }
             }
             return -1;
         }
@@ -254,13 +277,15 @@ namespace FamidashEditor
         private int _btDeathFrame;           // frame of the death that triggered backtracking
         private int _shipCorridorBias;       // sustained Y offset for ship corridor target during backtrack
 
+        // ── Speculative depth / frame counter (needed in both debug and release) ───
+        private int _speculativeDepth; // >0 means we're inside lookahead — suppress logging
+        private int _frameCounter;     // current frame in the main Run() loop
+
         // ── Debug logging ───────────────────────────────────────────────────
 #if !DISABLE_DEBUG_LOGGING
         private readonly string pfDebugLogPath = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(),
             $"famidash_pf_debug_{System.DateTime.UtcNow:yyyyMMdd_HHmmss}.txt");
-        private int _speculativeDepth; // >0 means we're inside lookahead — suppress logging
-        private int _frameCounter;     // current frame in the main Run() loop
 
         private void PfLog(string msg)
         {
@@ -415,16 +440,16 @@ namespace FamidashEditor
         };
         private static readonly int[] sprite_y_offset = {
             -0x02,-0x02,-0x02,-0x02,-0x02,-0x01,-0x01,0x00, // 00-07
-            0x04,0x04,0x05,-0x01,0x00,0x05,0x00,0x00, // 08-0F
+            0x04,0x04,0x0D,-0x01,0x00,0x0D,0x00,0x00, // 08-0F (0x0A,0x0D: +8 from NES globalObjectOffset for bottom pads)
             0x01,0x01,0x01,0x01,-0x02,-0x02,-0x02,-0x02, // 10-17
             -0x02,-0x02,0x00,0x00,0x00,0x00,0x00,-0x01, // 18-1F
-            -0x02,-0x02,-0x02,-0x02,-0x02,0x05,0x00,-0x01, // 20-27
+            -0x02,-0x02,-0x02,-0x02,-0x02,0x0D,0x00,-0x01, // 20-27 (0x25: +8 from NES globalObjectOffset for bottom pads)
             -0x01,-0x01,0x00,0x00,0x00,0x00,0x00,0x00, // 28-2F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 30-37
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 38-3F
             0x00,0x00,0x00,0x00,-0x01,-0x01,-0x01,0x04, // 40-47
             0x04,0x00,0x00,-0x02,0x00,-0x01,-0x01,0x00, // 48-4F
-            -0x01,-0x01,0x05,0x00,-0x01,-0x01,0x0D,0x00, // 50-57
+            -0x01,-0x01,0x0D,0x00,-0x01,-0x01,0x0D,0x00, // 50-57 (0x52: +8 from NES globalObjectOffset for bottom pads)
             -0x02,0x00,0x00,-0x01,-0x01,-0x01,-0x01,-0x02, // 58-5F
             -0x02,-0x02,-0x02,-0x02,-0x02,0x00,0x00,0x00, // 60-67
             0x00,0x00,-0x02,-0x02,-0x02,0x00,0x04,0x00, // 68-6F
@@ -445,7 +470,7 @@ namespace FamidashEditor
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // E0-E7
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // E8-EF
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // F0-F7
-            0x00,0x00,-0x07,0x00,0x00,0x05,0x02,0x00  // F8-FF
+            0x00,0x00,-0x07,0x00,0x00,0x0D,0x02,0x00  // F8-FF (0xFD: +8 from NES globalObjectOffset for bottom pads)
         };
 
         // ── Simulation state ───────────────────────────────────────────────
@@ -461,6 +486,7 @@ namespace FamidashEditor
             public int GravMul;                 // +1 or -1
             public bool WasZeroedByCollision;   // set by eject when landing
             public bool OnGround;               // separate from wasZeroed (cleared by jump)
+            public int BallFlipCooldown;         // frames to skip eject after ball gravity flip
             public HashSet<int> ProcessedSprites;
 
             // Orb system: pending orb that overlaps the player (activation requires input)
@@ -480,6 +506,13 @@ namespace FamidashEditor
         public List<bool> Inputs { get; private set; }
         public bool Success { get; private set; }
         public string ResultMessage { get; private set; } = "";
+
+        /// <summary>
+        /// All paths attempted during backtracking (failed attempts).
+        /// Each entry is a snapshot of the path segment that was explored
+        /// before the backtracker rewound to try a different decision.
+        /// </summary>
+        public List<List<(int x, int y)>> AttemptedPaths { get; private set; } = new();
 
         // ── Constructor ────────────────────────────────────────────────────
         public PathfinderEngine(
@@ -554,7 +587,8 @@ namespace FamidashEditor
                 // World-space hitbox: same formula as simulator's SpriteIntersectsPlayer
                 // Position based on storage tile (NOT anchor tile)
                 int hitLeft = storageTileX * TILE + hxoff + pxOff;
-                int hitTop = (storageTileY - groundRowsToReserve) * TILE + hyoff + pyOff;
+                // NES check_spr_objects() applies -1 to sprite Y (clc;sbc intentionally subtracts 1 extra)
+                int hitTop = (storageTileY - groundRowsToReserve) * TILE + hyoff + pyOff - 1;
                 int hitRight = hitLeft + Math.Max(1, hw);    // exclusive (NES-style)
                 int hitBottom = hitTop + Math.Max(1, hh);    // exclusive (NES-style)
 
@@ -662,9 +696,9 @@ namespace FamidashEditor
             _btDeathFrame = 0;
             _shipCorridorBias = 0;
 
-#if !DISABLE_DEBUG_LOGGING
             _frameCounter = 0;
             _speculativeDepth = 0;
+#if !DISABLE_DEBUG_LOGGING
             PfLog($"[RUN_START] startX={startX_px} startY={startY_px} speed={startSpeedUiIndex} mode={startGameMode} gravFlipped={startGravFlipped} mini={startMini}");
             PfLog($"[RUN_STATE] X_fixed=0x{state.X_fixed:X} Y_fixed=0x{state.Y_fixed:X} VelX=0x{state.VelX_fixed:X} VelY=0x{state.VelY_fixed:X} gravMul={state.GravMul} onGround={state.OnGround}");
             PfLog($"[RUN_MAP] mapWidth={mapWidth} mapHeight={mapHeight} groundRowsToReserve={groundRowsToReserve} maxFallSpeed=0x{maxFallSpeed:X} sprites={allSprites.Count}");
@@ -698,9 +732,8 @@ namespace FamidashEditor
                 if (frame > highWaterFrame) highWaterFrame = frame;
                 if (frame % progressInterval == 0)
                     Progress?.Report(highWaterFrame * 100 / MAX_FRAMES);
-#if !DISABLE_DEBUG_LOGGING
+                _currentX_px = state.X_fixed >> 8;
                 _frameCounter = frame;
-#endif
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[STEP_START] X_fixed=0x{state.X_fixed:X} ({state.X_fixed >> 8}px) Y_fixed=0x{state.Y_fixed:X} ({state.Y_fixed >> 8}px) VelY=0x{state.VelY_fixed:X} mode={state.GameMode} gravFlipped={state.GravFlipped} gravMul={state.GravMul} onGround={state.OnGround} wasZeroed={state.WasZeroedByCollision} mini={state.Mini}");
 #endif
@@ -906,6 +939,14 @@ namespace FamidashEditor
                 JumpTimingBias = cp.UsedBias; // restore bias so stage-3 flip doesn't permanently mutate it
                 _shipCorridorBias = cp.ShipBias; // restore ship bias
 
+                // Snapshot the failed path segment before truncating
+                if (PathPoints.Count > cp.PathPointCount)
+                {
+                    var failedSegment = PathPoints.GetRange(cp.PathPointCount,
+                        PathPoints.Count - cp.PathPointCount);
+                    AttemptedPaths.Add(failedSegment);
+                }
+
                 // Truncate outputs to before this frame
                 if (PathPoints.Count > cp.PathPointCount)
                     PathPoints.RemoveRange(cp.PathPointCount,
@@ -930,8 +971,8 @@ namespace FamidashEditor
                 _backtrackAttempts++;
                 _totalBacktrackAttempts++;
 
-#if !DISABLE_DEBUG_LOGGING
                 _frameCounter = cp.Frame;
+#if !DISABLE_DEBUG_LOGGING
                 PfLog($"[BACKTRACK] attempt={_backtrackAttempts}/{MAX_BACKTRACK_ATTEMPTS} " +
                       $"total={_totalBacktrackAttempts}/{MAX_TOTAL_BACKTRACK_ATTEMPTS} " +
                       $"rewind to frame={cp.Frame} stage={cp.RetryStage} " +
@@ -955,11 +996,7 @@ namespace FamidashEditor
             //    mode-specific logic.  Without this, ship mode bypasses
             //    all override handling and the backtracker can't alter
             //    ship decisions. ──
-#if !DISABLE_DEBUG_LOGGING
             bool isOverrideFrame = (_btOverrideFrame == _frameCounter && _speculativeDepth == 0);
-#else
-            bool isOverrideFrame = (_btOverrideFrame == _frameCounter);
-#endif
             if (isOverrideFrame)
             {
                 int stage = _btOverrideStage;
@@ -1026,7 +1063,8 @@ namespace FamidashEditor
             }
 
             if (state.GameMode == 1) return DecideShipInput(state);
-            if (state.GameMode != 0) return false; // only cube/ship for now
+            if (state.GameMode == 2) return DecideBallInput(state, isOverrideFrame);
+            if (state.GameMode != 0) return false; // only cube/ship/ball for now
 
             // ── Orb decision: orbs can be activated while airborne (no
             //    VelY==0 requirement), so this check must come BEFORE the
@@ -1035,7 +1073,7 @@ namespace FamidashEditor
             //    (backtrack wants the cube to walk past, not activate). ──
             if (!isOverrideFrame && !_btSuppressJumpUntilAirborne)
             {
-                int orbSid = ScanForOrbOverlap(state);
+                int orbSid = ScanForOrbOverlap(state, out int orbIndex);
                 if (orbSid >= 0)
                 {
                     // Speculatively test: activate orb (input=true) vs skip (input=false)
@@ -1043,15 +1081,46 @@ namespace FamidashEditor
                     bool orbAlive = StepFrame(ref orbState, true, out bool orbEnd);
                     if (orbEnd) return true; // orb activation reaches level end
 
-                    int orbSurv = orbAlive
-                        ? (1 + SimulateForwardWithJumpAt(orbState, 0))
-                        : 0;
-                    int skipSurv = SimulateForwardWithJumpAt(state, -1);
+                    int orbSurv = 0;
+                    if (orbAlive)
+                    {
+                        // Test multiple jump timings after orb activation,
+                        // not just 0/-1.  The cube may need to ride the orb
+                        // boost for a few frames before jumping.
+                        int orbMaxDelay = Math.Min(15, LOOKAHEAD_HORIZON);
+                        for (int od = -1; od < orbMaxDelay; od++)
+                        {
+                            int os = 1 + SimulateForwardWithJumpAt(orbState, od);
+                            if (os > orbSurv) orbSurv = os;
+                        }
+                    }
+
+                    // Skip evaluation: step one frame with input=false to
+                    // actually skip the pending orb, then test what the cube
+                    // can do from the post-skip state.  We can't just call
+                    // SimulateForwardWithJumpAt(state, 0) because that still
+                    // activates the pending orb in the initial-jump phase.
+                    var skipState = state.Clone();
+                    bool skipAlive = StepFrame(ref skipState, false, out bool skipEnd);
+                    // Mark the orb as processed in the skip clone so the
+                    // forward simulation can't secretly re-activate it.
+                    skipState.ProcessedSprites.Add(orbIndex);
+                    int skipSurv = 0;
+                    if (skipEnd) skipSurv = LOOKAHEAD_HORIZON;
+                    else if (skipAlive)
+                    {
+                        int skipNoJump = 1 + SimulateForwardWithJumpAt(skipState, -1);
+                        int skipJump   = 1 + SimulateForwardWithJumpAt(skipState, 0);
+                        skipSurv = Math.Max(skipNoJump, skipJump);
+                    }
 
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[DECIDE_ORB] sid=0x{orbSid:X2} orbSurv={orbSurv} skipSurv={skipSurv}");
 #endif
                     if (orbSurv >= skipSurv) return true;  // activate orb
+                    // Decided to skip: mark the orb as processed so it won't
+                    // be re-evaluated on subsequent overlapping frames.
+                    state.ProcessedSprites.Add(orbIndex);
                     return false; // skip orb
                 }
             }
@@ -1167,52 +1236,56 @@ namespace FamidashEditor
             // Merging decrement+fire so that delay=N fires after exactly N
             // frames of waiting, matching SimulateForwardWithJumpAt(jumpFrame=N).
             // Safety check: if the cube would die before the delay fires,
-            // abort the delay and jump immediately to avoid walking into
-            // hazards while blindly counting down.
+            // abort the delay and re-evaluate from scratch instead of
+            // blindly jumping (which often arcs into hazards).
             if (_committedJumpDelay > 0)
             {
                 // Abort check: simulate no-press for the remaining delay
                 // frames.  If the cube dies within that window, the delay
-                // is stale and we must jump now.
+                // is stale — discard it and fall through to fresh evaluation.
                 int remainingDelay = _committedJumpDelay;
                 int noPressSurvival = SimulateForwardWithJumpAt(state, -1);
                 if (noPressSurvival < remainingDelay)
                 {
                     _committedJumpDelay = -1; // abort stale delay
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DECIDE_CUBE] committed delay ABORTED — no-press dies in {noPressSurvival} frames but delay has {remainingDelay} remaining, jumping now");
+                    PfLog($"[DECIDE_CUBE] committed delay ABORTED — no-press dies in {noPressSurvival} frames but delay has {remainingDelay} remaining, re-evaluating");
 #endif
-                    return true;
+                    // Fall through to normal decision logic below
                 }
-
-                _committedJumpDelay--;
-                if (_committedJumpDelay == 0)
+                else
                 {
-                    _committedJumpDelay = -1; // consumed
+                    _committedJumpDelay--;
+                    if (_committedJumpDelay == 0)
+                    {
+                        _committedJumpDelay = -1; // consumed
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DECIDE_CUBE] committed delay fired — jumping now");
+                        PfLog($"[DECIDE_CUBE] committed delay fired — jumping now");
 #endif
-                    return true;
+                        return true;
+                    }
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_CUBE] committed delay countdown: {_committedJumpDelay} remaining");
+#endif
+                    return false;
                 }
-#if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DECIDE_CUBE] committed delay countdown: {_committedJumpDelay} remaining");
-#endif
-                return false;
             }
 
-#if !DISABLE_DEBUG_LOGGING
             // Guard against deep recursion from chained jump evaluation
             if (_speculativeDepth >= MAX_SPECULATIVE_DEPTH) return false;
-#endif
 
             // How long does the cube survive without ever jumping?
-#if !DISABLE_DEBUG_LOGGING
             _speculativeDepth++;
-            int noPressFrames = SimulateForwardWithJumpAt(state, -1, out string npDeath, out int npDX, out int npDY);
-            _speculativeDepth--;
+            List<(int x, int y)>? noPressPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                ? new List<(int x, int y)>() : null;
+#if !DISABLE_DEBUG_LOGGING
+            int noPressFrames = SimulateForwardWithJumpAt(state, -1, out string npDeath, out int npDX, out int npDY,
+                pathPoints: noPressPath);
 #else
-            int noPressFrames = SimulateForwardWithJumpAt(state, -1);
+            int noPressFrames = SimulateForwardWithJumpAt(state, -1, pathPoints: noPressPath);
 #endif
+            OnSpeculativePath?.Invoke(noPressPath, -1, noPressFrames, false);
+            _speculativeDepth--;
 
             // ── Danger detection: only evaluate jumps when no-press
             //    dies within the lookahead horizon.  The bias does NOT
@@ -1274,30 +1347,31 @@ namespace FamidashEditor
             var viableDelays = new List<(int delay, int survival)>();
 
             int maxDelay = Math.Min(noPressFrames, 35);
-#if !DISABLE_DEBUG_LOGGING
             _speculativeDepth++;
+#if !DISABLE_DEBUG_LOGGING
             var specDeathDetails = new List<string>();
             // If reversed gravity and first speculative test, log the full trajectory
             bool logSpecTrajectory = state.GravFlipped;
 #endif
             for (int delay = 0; delay < maxDelay; delay++)
             {
+                List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                    ? new List<(int x, int y)>() : null;
 #if !DISABLE_DEBUG_LOGGING
                 int survival = SimulateForwardWithJumpAt(state, delay, out string dr, out int dx, out int dy,
-                    logSpecTrajectory && delay == 0);
+                    logSpecTrajectory && delay == 0, pathPoints: specPath);
                 if (delay < 5 && survival < LOOKAHEAD_HORIZON)
                     specDeathDetails.Add($"d{delay}:s{survival}@{dr}(X={dx},Y={dy})");
 #else
-                int survival = SimulateForwardWithJumpAt(state, delay);
+                int survival = SimulateForwardWithJumpAt(state, delay, pathPoints: specPath);
 #endif
+                OnSpeculativePath?.Invoke(specPath, delay, survival, false);
                 if (survival > bestSurvival)
                     bestSurvival = survival;
                 if (survival > noPressFrames)
                     viableDelays.Add((delay, survival));
             }
-#if !DISABLE_DEBUG_LOGGING
             _speculativeDepth--;
-#endif
 
             if (viableDelays.Count == 0)
             {
@@ -1339,21 +1413,20 @@ namespace FamidashEditor
             {
                 // Test hold for a few key delays (0, and a few others)
                 int holdMaxDelay = Math.Min(maxDelay, 10);
-#if !DISABLE_DEBUG_LOGGING
                 _speculativeDepth++;
-#endif
                 for (int delay = 0; delay < holdMaxDelay; delay++)
                 {
-                    int holdSurv = SimulateForwardWithJumpAt(state, delay, holdAfterLanding: true);
+                    List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                        ? new List<(int x, int y)>() : null;
+                    int holdSurv = SimulateForwardWithJumpAt(state, delay, holdAfterLanding: true, pathPoints: specPath);
+                    OnSpeculativePath?.Invoke(specPath, delay, holdSurv, true);
                     if (holdSurv > holdBestSurvival)
                     {
                         holdBestSurvival = holdSurv;
                         holdBestDelay = delay;
                     }
                 }
-#if !DISABLE_DEBUG_LOGGING
                 _speculativeDepth--;
-#endif
             }
 
             int threshold = bestSurvival - 2;
@@ -1377,13 +1450,27 @@ namespace FamidashEditor
                 //    d16+ positions the arc to clear both obstacles.
                 //    A gap > 5 between consecutive best delays signals
                 //    two separate obstacle-clearing patterns.
+                //    BUT: only remove the early group if they DON'T survive
+                //    the full horizon.  If they do, the gap just means
+                //    middle delays die during the arc — early delays are
+                //    still excellent paths.
                 if (bestDelays.Count >= 2)
                 {
                     for (int gi = 1; gi < bestDelays.Count; gi++)
                     {
                         if (bestDelays[gi].delay - bestDelays[gi - 1].delay > 5)
                         {
-                            bestDelays.RemoveRange(0, gi);
+                            bool earlyGroupSurvivedFull = true;
+                            for (int ei = 0; ei < gi; ei++)
+                            {
+                                if (bestDelays[ei].survival < LOOKAHEAD_HORIZON)
+                                {
+                                    earlyGroupSurvivedFull = false;
+                                    break;
+                                }
+                            }
+                            if (!earlyGroupSurvivedFull)
+                                bestDelays.RemoveRange(0, gi);
                             break;
                         }
                     }
@@ -1762,21 +1849,24 @@ namespace FamidashEditor
         /// ahead (short lookahead) to evaluate multi-jump paths.
         /// </summary>
         private int SimulateForwardWithJumpAt(SimState state, int jumpFrame,
-            bool holdAfterLanding = false)
+            bool holdAfterLanding = false, List<(int x, int y)>? pathPoints = null)
         {
             return SimulateForwardWithJumpAt(state, jumpFrame, out _, out _, out _,
-                false, holdAfterLanding);
+                false, holdAfterLanding, pathPoints);
         }
 
         private int SimulateForwardWithJumpAt(SimState state, int jumpFrame,
             out string deathReason, out int deathX, out int deathY,
-            bool logTrajectory = false, bool holdAfterLanding = false)
+            bool logTrajectory = false, bool holdAfterLanding = false,
+            List<(int x, int y)>? pathPoints = null)
         {
             deathReason = ""; deathX = 0; deathY = 0;
             var s = state.Clone();
+            pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + 8));
             bool initialJumpDone = (jumpFrame < 0);
             bool chainJumps = (jumpFrame >= 0); // only chain jumps when an actual jump was requested
             bool startGravFlipped = s.GravFlipped; // track gravity portal hits
+            bool isBallMode = (s.GameMode == 2); // ball flips change GravFlipped — don't confuse with portal hits
 #if !DISABLE_DEBUG_LOGGING
             var trajLog = logTrajectory ? new System.Text.StringBuilder() : null;
 #endif
@@ -1809,6 +1899,12 @@ namespace FamidashEditor
                     // otherwise = check short-horizon danger to decide
                     input = holdAfterLanding || QuickDangerCheck(s);
                 }
+                else if (chainJumps && s.GameMode == 2 && s.VelY_fixed == 0 && s.OnGround)
+                {
+                    // Ball mode: after the initial flip has landed, evaluate
+                    // whether to flip again (danger check).
+                    input = holdAfterLanding || QuickDangerCheck(s);
+                }
 
                 // Auto-activate orbs encountered after the initial action.
                 // Orbs are typically required for level progression; speculative
@@ -1823,6 +1919,7 @@ namespace FamidashEditor
 #endif
 
                 bool alive = StepFrame(ref s, input, out bool endLevel);
+                pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + 8));
                 if (!alive)
                 {
 #if !DISABLE_DEBUG_LOGGING
@@ -1836,15 +1933,16 @@ namespace FamidashEditor
                     }
 #endif
                     // Bonus for paths that went through a gravity portal:
-                    // these paths are structurally important for level progression
-                    int portalBonus = (s.GravFlipped != startGravFlipped) ? LOOKAHEAD_HORIZON : 0;
+                    // these paths are structurally important for level progression.
+                    // Ball mode: flips change GravFlipped every time — not a portal event.
+                    int portalBonus = (!isBallMode && s.GravFlipped != startGravFlipped) ? LOOKAHEAD_HORIZON : 0;
                     return f + portalBonus;
                 }
                 if (endLevel) return LOOKAHEAD_HORIZON;
             }
 
             // Bonus for paths that went through a gravity portal
-            int finalPortalBonus = (s.GravFlipped != startGravFlipped) ? LOOKAHEAD_HORIZON : 0;
+            int finalPortalBonus = (!isBallMode && s.GravFlipped != startGravFlipped) ? LOOKAHEAD_HORIZON : 0;
             return LOOKAHEAD_HORIZON + finalPortalBonus;
         }
 
@@ -2002,12 +2100,69 @@ namespace FamidashEditor
                 if (CheckCenterPointDeath(ref s))
                     return false;
             }
+            else if (s.GameMode == 2) // Ball mode
+            {
+                // Ball input: flip gravity when grounded
+                // Must happen BEFORE gravity application (matching sim)
+                if (input && s.VelY_fixed == 0 && s.OnGround)
+                {
+                    // Flip gravity
+                    s.GravFlipped = !s.GravFlipped;
+                    s.GravMul = s.GravFlipped ? -1 : 1;
+                    // Apply switch velocity (direction based on NEW gravity)
+                    // NES table_idx bit 0 = 1 means normal (down) gravity post-flip
+                    // normalGravity (bit0=1) → positive vel (launch down)
+                    // invertedGravity (bit0=0) → negative vel (launch up)
+                    s.VelY_fixed = BallSwitchVel(s.Mini) * s.GravMul;
+                    s.OnGround = false;
+                    s.WasZeroedByCollision = false;
+                    s.BallFlipCooldown = 2;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BALL_FLIP] gravFlipped={s.GravFlipped} gravMul={s.GravMul} VelY=0x{s.VelY_fixed:X} mini={s.Mini}");
+#endif
+                }
+
+                // Ball gravity (same structure as cube but different constants)
+                BallGravityStep(ref s);
+
+                // Skip eject during flip cooldown (prevents oscillation)
+                if (s.BallFlipCooldown > 0)
+                {
+                    s.BallFlipCooldown--;
+                }
+                else
+                {
+                    // Ball velocity zeroing when grounded (prevents accumulation)
+                    BallVelocityZeroing(ref s);
+
+                    // Ball eject (with 1px Y offset)
+                    bool ballEjectDied = false;
+                    BallEject(ref s, out ballEjectDied);
+                    if (ballEjectDied)
+                    {
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[BALL_EJECT_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                        _lastDeathReason = "BALL_EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
+#endif
+                        return false;
+                    }
+                }
+
+                if (CheckCenterPointDeath(ref s))
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                    _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
+#endif
+                    return false;
+                }
+            }
 
             // ── STEP 6: POST-Y GRAVITY PORTAL CHECK at OLD X, new Y ──
             CheckGravityPortalsPostY(ref s, oldX_px);
 
             // ── STEP 7: FORWARD COLLISION at OLD X, post-eject Y ──
-            if (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 10)
+            if (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 10)
             {
                 if (CheckForwardCollision(ref s))
                 {
@@ -2193,6 +2348,338 @@ namespace FamidashEditor
         }
 
         // ═══════════════════════════════════════════════════════════════════
+        //  BALL PHYSICS (matching BallPhysics_Fresh + BallEject_Fresh)
+        // ═══════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Ball gravity: same structure as CubeGravity but with ball-specific constants.
+        /// Ball gravity is lighter than cube (0x47 vs 0x6B normal, 0x57 vs 0x6F mini).
+        /// </summary>
+        private void BallGravityStep(ref SimState s)
+        {
+            // GRAV_SKIP: match CommonGravityRoutine_Fresh
+            if (s.VelY_fixed == 0 && s.WasZeroedByCollision)
+                return;
+
+            if (s.VelY_fixed != 0)
+                s.WasZeroedByCollision = false;
+
+            int gravity = BallGravity(s.Mini);
+            int accel = gravity * s.GravMul;
+
+            // Check past max fall speed → decelerate
+            if (s.GravMul > 0)
+            {
+                if (s.VelY_fixed > maxFallSpeed)
+                    accel = -accel;
+            }
+            else
+            {
+                if (s.VelY_fixed < -maxFallSpeed)
+                    accel = -accel;
+            }
+
+#if !DISABLE_DEBUG_LOGGING
+            int oldVelY = s.VelY_fixed;
+            int oldY = s.Y_fixed;
+#endif
+
+            s.VelY_fixed += accel;
+            s.Y_fixed += s.VelY_fixed;
+
+#if !DISABLE_DEBUG_LOGGING
+            PfLog($"[BALL_GRAV] velY: 0x{oldVelY:X} + 0x{accel:X} = 0x{s.VelY_fixed:X}, posY: 0x{oldY:X} ({oldY >> 8}px) -> 0x{s.Y_fixed:X} ({s.Y_fixed >> 8}px)");
+#endif
+
+            int maxY_fixed = Math.Max(0, (mapHeight * TILE - TILE)) << 8;
+            if (s.Y_fixed > maxY_fixed) s.Y_fixed = maxY_fixed;
+        }
+
+        /// <summary>
+        /// Ball velocity zeroing: prevents velocity accumulation when grounded.
+        /// Normal gravity: if touching ceiling and moving up → zero vel.
+        /// Inverted gravity (gravFlipped=true, currplayer_gravity=0xFF → NES check
+        /// is on gravity==0 which is "normal" i.e. gravFlipped=false in pathfinder
+        /// terms): if touching floor and moving down → zero vel.
+        ///
+        /// Wait — the sim code is confusing. Let me re-read the sim:
+        ///   if (currplayer_gravity == 0) { // Normal gravity in NES terms
+        ///       // "Inverted gravity - prevent velocity from pulling into ceiling"
+        ///       CheckCollisionUp; if collided && velY < 0 → zero
+        ///   } else {
+        ///       // "Normal gravity - prevent velocity from pulling into ground"
+        ///       CheckCollisionDown; if collided && velY > 0 → zero
+        ///   }
+        ///
+        /// In the sim, currplayer_gravity==0 means GravFlipped=false.  But the
+        /// comment says "Inverted gravity."  The sim checks ceiling for normal grav
+        /// and floor for flipped grav — this catches headbonk scenarios.
+        /// </summary>
+        private void BallVelocityZeroing(ref SimState s)
+        {
+            int hbW = GetHitboxW(s.Mini);
+            int hbH = GetHitboxH(s.Mini);
+            int hbOffY = GetHitboxOffsetY(2, s.Mini, s.GravFlipped);
+            int collX = s.X_fixed >> 8;
+
+            if (!s.GravFlipped) // currplayer_gravity == 0
+            {
+                // Check ceiling collision for velocity zeroing
+                int testY = (s.Y_fixed >> 8) + hbOffY - 1;
+                var (collided, _) = CheckCeiling(collX, testY, hbW, hbH);
+                if (collided && s.VelY_fixed < 0)
+                {
+                    s.VelY_fixed = 0;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BALL_VEL_ZERO] ceiling zeroed upward velocity");
+#endif
+                }
+            }
+            else // currplayer_gravity != 0
+            {
+                // Check floor collision for velocity zeroing
+                int playerBottom = (s.Y_fixed >> 8) + hbOffY + hbH;
+                int testHeight = 2;
+                var (collided, _, _) = CheckFloor(collX, playerBottom - testHeight, hbW, testHeight);
+                if (collided && s.VelY_fixed > 0)
+                {
+                    s.VelY_fixed = 0;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BALL_VEL_ZERO] floor zeroed downward velocity");
+#endif
+                }
+            }
+        }
+
+        /// <summary>
+        /// Ball eject: same idea as CubeEject but with 1px Y offset to prevent
+        /// every-other-frame oscillation (matching NES ball_eject).
+        /// </summary>
+        private void BallEject(ref SimState s, out bool died)
+        {
+            died = false;
+
+            int playerX_px = s.X_fixed >> 8;
+            int playerY_px = s.Y_fixed >> 8;
+            int hbW = GetHitboxW(s.Mini);
+            int hbH = GetHitboxH(s.Mini);
+            int hbOffY = GetHitboxOffsetY(2, s.Mini, s.GravFlipped);
+            int collX = playerX_px;
+
+            // Ball-specific: 1px Y offset prevents oscillation
+            int ballYOffset = s.GravFlipped ? -1 : 1;
+            int collY = playerY_px + hbOffY + ballYOffset;
+
+            if (!s.GravFlipped) // Normal gravity
+            {
+                // Floor collision (landing) — only when moving down
+                if (s.VelY_fixed >= 0)
+                {
+                    var (floorHit, floorTopY, floorSpikeDeath) = CheckFloor(collX, collY, hbW, hbH);
+                    if (floorSpikeDeath)
+                    {
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[BALL_EJECT] floor spike death at X={playerX_px} Y={playerY_px}");
+#endif
+                        died = true;
+                        return;
+                    }
+                    if (floorHit)
+                    {
+                        int newY = floorTopY - hbH - hbOffY - ballYOffset;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[BALL_EJECT] floor land Y: {playerY_px} -> {newY} (floorTop={floorTopY})");
+#endif
+                        s.Y_fixed = newY << 8;
+                        s.VelY_fixed = 0;
+                        s.WasZeroedByCollision = true;
+                        s.OnGround = true;
+                    }
+                }
+            }
+            else // Inverted gravity
+            {
+                // Ceiling collision (landing) — only when moving up
+                if (s.VelY_fixed <= 0)
+                {
+                    var (ceilHit, ceilBotY) = CheckCeiling(collX, collY, hbW, hbH);
+                    if (ceilHit)
+                    {
+                        int newY = ceilBotY - hbOffY;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[BALL_EJECT] ceiling land (inverted) Y: {playerY_px} -> {newY} (ceilBot={ceilBotY})");
+#endif
+                        s.Y_fixed = newY << 8;
+                        s.VelY_fixed = 0;
+                        s.WasZeroedByCollision = true;
+                        s.OnGround = true;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Ball decision logic: decide when to flip gravity.
+        /// Ball flips gravity on input when grounded.  Uses the same
+        /// speculative forward-simulation approach as cube to evaluate
+        /// whether flipping now vs waiting produces better survival.
+        /// </summary>
+        private bool DecideBallInput(SimState state, bool isOverrideFrame)
+        {
+            // ── Orb decision (same as cube — orbs apply to all modes) ──
+            if (!isOverrideFrame && !_btSuppressJumpUntilAirborne)
+            {
+                int orbSid = ScanForOrbOverlap(state, out int orbIndex);
+                if (orbSid >= 0)
+                {
+                    var orbState = state.Clone();
+                    bool orbAlive = StepFrame(ref orbState, true, out bool orbEnd);
+                    if (orbEnd) return true;
+
+                    int orbSurv = 0;
+                    if (orbAlive)
+                    {
+                        int orbMaxDelay = Math.Min(15, LOOKAHEAD_HORIZON);
+                        for (int od = -1; od < orbMaxDelay; od++)
+                        {
+                            int os = 1 + SimulateForwardWithJumpAt(orbState, od);
+                            if (os > orbSurv) orbSurv = os;
+                        }
+                    }
+
+                    var skipState = state.Clone();
+                    bool skipAlive = StepFrame(ref skipState, false, out bool skipEnd);
+                    skipState.ProcessedSprites.Add(orbIndex);
+                    int skipSurv = 0;
+                    if (skipEnd) skipSurv = LOOKAHEAD_HORIZON;
+                    else if (skipAlive)
+                    {
+                        int skipNoJump = 1 + SimulateForwardWithJumpAt(skipState, -1);
+                        int skipJump   = 1 + SimulateForwardWithJumpAt(skipState, 0);
+                        skipSurv = Math.Max(skipNoJump, skipJump);
+                    }
+
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_ORB_BALL] sid=0x{orbSid:X2} orbSurv={orbSurv} skipSurv={skipSurv}");
+#endif
+                    if (orbSurv >= skipSurv) return true;
+                    state.ProcessedSprites.Add(orbIndex);
+                    return false;
+                }
+            }
+
+            // Committed flip delay: count down, fire when reaching 0.
+            if (_committedJumpDelay > 0)
+            {
+                int remainingDelay = _committedJumpDelay;
+                int noPressSurvival = SimulateForwardWithJumpAt(state, -1);
+                if (noPressSurvival < remainingDelay)
+                {
+                    _committedJumpDelay = -1; // abort stale delay
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_BALL] committed delay ABORTED — no-press dies in {noPressSurvival} frames but delay has {remainingDelay} remaining, re-evaluating");
+#endif
+                    // Fall through to normal decision logic below
+                }
+                else
+                {
+                    _committedJumpDelay--;
+                    if (_committedJumpDelay == 0)
+                    {
+                        _committedJumpDelay = -1; // consumed
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[DECIDE_BALL] committed delay fired — flipping now");
+#endif
+                        return true;
+                    }
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_BALL] committed delay countdown: {_committedJumpDelay} remaining");
+#endif
+                    return false;
+                }
+            }
+
+            // Ball can only flip when grounded (VelY == 0 and OnGround)
+            if (state.VelY_fixed != 0 || !state.OnGround) return false;
+
+            // Guard against deep recursion
+            if (_speculativeDepth >= MAX_SPECULATIVE_DEPTH) return false;
+
+            // How long does the ball survive without flipping?
+            _speculativeDepth++;
+            List<(int x, int y)>? noPressPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                ? new List<(int x, int y)>() : null;
+            int noPressFrames = SimulateForwardWithJumpAt(state, -1, pathPoints: noPressPath);
+            _speculativeDepth--;
+
+            OnSpeculativePath?.Invoke(noPressPath, -1, noPressFrames, false);
+
+            const int DETECTION_HORIZON = 50;
+
+            if (noPressFrames >= DETECTION_HORIZON)
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[DECIDE_BALL] noPressFrames={noPressFrames} >= {DETECTION_HORIZON}, no flip needed");
+#endif
+                return false;
+            }
+
+#if !DISABLE_DEBUG_LOGGING
+            PfLog($"[DECIDE_BALL] noPressFrames={noPressFrames} < {DETECTION_HORIZON}, testing flips");
+#endif
+
+            // Test different flip timings
+            int bestSurvival = noPressFrames;
+            var viableDelays = new List<(int delay, int survival)>();
+
+            int maxDelay = Math.Min(noPressFrames, 35);
+            _speculativeDepth++;
+            for (int delay = 0; delay < maxDelay; delay++)
+            {
+                List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                    ? new List<(int x, int y)>() : null;
+                int survival = SimulateForwardWithJumpAt(state, delay, pathPoints: specPath);
+
+                OnSpeculativePath?.Invoke(specPath, delay, survival, false);
+
+                if (survival > bestSurvival)
+                    bestSurvival = survival;
+                if (survival > noPressFrames)
+                    viableDelays.Add((delay, survival));
+            }
+            _speculativeDepth--;
+
+            if (viableDelays.Count == 0)
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[DECIDE_BALL] no viable flip delays found");
+#endif
+                return false;
+            }
+
+            // Pick timing using bias (same as cube)
+            int threshold = bestSurvival - 2;
+            var bestDelays = viableDelays.Where(d => d.survival >= threshold).ToList();
+            if (bestDelays.Count == 0) bestDelays = viableDelays;
+
+            int pickIndex = (int)(JumpTimingBias * (bestDelays.Count - 1));
+            pickIndex = Math.Clamp(pickIndex, 0, bestDelays.Count - 1);
+            int pickedDelay = bestDelays[pickIndex].delay;
+
+#if !DISABLE_DEBUG_LOGGING
+            PfLog($"[DECIDE_BALL] viable={viableDelays.Count} best=[{string.Join(",", bestDelays.Select(d => $"d{d.delay}:s{d.survival}"))}] bestSurvival={bestSurvival} picking delay={pickedDelay}");
+#endif
+
+            if (pickedDelay > 0)
+            {
+                _committedJumpDelay = pickedDelay;
+                return false;
+            }
+
+            return true; // flip now
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
         //  SHIP PHYSICS (matching ShipPhysics_Fresh + UfoShipEject_Fresh)
         // ═══════════════════════════════════════════════════════════════════
 
@@ -2312,6 +2799,10 @@ namespace FamidashEditor
             {
                 // Normal gravity: check below feet
                 int footY_px = playerY_px + hbOffY + hbH;
+                // Ball mode: BallEject positions the ball 1px higher (ballYOffset=1)
+                // so feet are 1px above the floor tile.  Without compensation,
+                // the tile lookup checks the wrong row and falsely clears OnGround.
+                if (s.GameMode == 2) footY_px += 1;
                 int tileBelowY = footY_px / TILE;
                 int tileArrayY = tileBelowY + groundRowsToReserve;
 

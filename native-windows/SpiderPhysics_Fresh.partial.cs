@@ -17,15 +17,15 @@ namespace FamidashEditor
                 int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                 bool pressJump_orb = pressCount_orb > 0;
                 bool gravityInverted_orb = (currplayer_gravity != 0);
-                int playerX_px_orb = playerX_fixed >> 8;
+                int playerX_px_orb = (playerX_fixed >> 8) + 1;
                 int playerY_px_orb = playerY_fixed >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
+                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
                 
-                // Adjust Y position for mini mode collision box (bottom-left alignment)
+                // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
                 if ((currplayer_mini != 0) && !gravityInverted_orb)
                 {
-                    playerY_px_orb += 9;
+                    playerY_px_orb += 4;
                 }
                 
                 int scrollX_px_orb = 0;

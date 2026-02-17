@@ -757,39 +757,41 @@ namespace FamidashEditor
             catch { return idx; }
         }
 
-        // Sprite geometry tables (from user-provided data). Non-numeric placeholders use sensible defaults.
+        // Sprite geometry tables (from user-provided data).
+        // NES sentinel values: SPBH=0xFF, DECO=0xFE, COLR=0xFD, OUTL=0xFC
+        // Sprites with height >= 0xFC are skipped during collision (matching NES sprite_collide).
         private static readonly int[] sprite_heights = new int[] {
-            0x34,0x34,0x34,0x34,0x34,0x12,0x12,0x10, // 00-07
-            0x28,0x28,0x03,0x12,0x03,0x03,0x03,0x10, // 08-0F
+            0x34,0x34,0x34,0x34,0x34,0x12,0x12,0xFF, // 00-07 (07:SPBH)
+            0x28,0x28,0x03,0x12,0x03,0x03,0x03,0xFF, // 08-0F (0F:SPBH)
             0x0e,0x0e,0x0e,0x0e,0x24,0x24,0x24,0x34, // 10-17
-            0x34,0x34,0x10,0x10,0x10,0x10,0x10,0x12, // 18-1F
+            0x34,0x34,0xFF,0xFF,0xFF,0xFF,0xFF,0x12, // 18-1F (1A-1E:SPBH)
             0x24,0x24,0x34,0x34,0x34,0x03,0x03,0x12, // 20-27
-            0x12,0x12,0x10,0x10,0x10,0x10,0x10,0x10, // 28-2F
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 30-37
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 38-3F
-            0x10,0x10,0x10,0x10,0x12,0x12,0x12,0x28, // 40-47
-            0x28,0x10,0x10,0x34,0x12,0x12,0x30,0x10, // 48-4F
+            0x12,0x12,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE, // 28-2F (2A-2F:DECO)
+            0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE, // 30-37 (all DECO)
+            0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE, // 38-3F (all DECO)
+            0xFE,0xFE,0xFE,0xFE,0x12,0x12,0x12,0x28, // 40-47 (40-43:DECO)
+            0x28,0xFE,0xFE,0x34,0x12,0x12,0x30,0xFF, // 48-4F (49-4A:DECO, 4F:SPBH)
             0x12,0x12,0x03,0x03,0x12,0x12,0x03,0x03, // 50-57
-            0x34,0x10,0x10,0x12,0x12,0x12,0x12,0x34, // 58-5F
-            0x34,0x34,0x34,0x34,0x34,0x02,0x10,0x10, // 60-67 (0x65 = green pad, 2px tall hitbox)
-            0x10,0x10,0x34,0x34,0x34,0x20,0x08,0x10, // 68-6F
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 70-77
-            0x10,0x12,0x12,0x12,0x12,0x10,0x10,0x10, // 78-7F
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 80-87
-            0x10,0x10,0x10,0x10,0x10,0x00,0x10,0x10, // 88-8F
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 90-97
-            0x10,0x10,0x10,0x10,0x10,0x00,0x10,0x10, // 98-9F
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // A0-A7
-            0x10,0x10,0x10,0x10,0x10,0x00,0x10,0x10, // A8-AF
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // B0-B7
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // B8-BF
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // C0-C7
-            0x10,0x10,0x10,0x10,0x10,0x00,0x00,0x10, // C8-CF
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // D0-D7
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // D8-DF
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // E0-E7
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // E8-EF
-            0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // F0-F7
+            0x34,0x10,0xFF,0x12,0x12,0x12,0x12,0x34, // 58-5F (5A:SPBH)
+            0x34,0x34,0x34,0x34,0x34,0x02,0x10,0xFF, // 60-67 (0x65 = green pad 2px, 67:SPBH)
+            0x10,0xFF,0x34,0x34,0x34,0x20,0x08,0xFF, // 68-6F (69,6F:SPBH)
+            0xFF,0xFF,0xFF,0xFF,0xFF,0x10,0xFF,0x10, // 70-77 (70-74,76:SPBH)
+            0xFF,0x12,0x12,0x12,0x12,0xFF,0xFF,0xFF, // 78-7F (78,7D-7F:SPBH)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // 80-87 (all COLR)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0x00,0xFF,0xFD, // 88-8F (8E:SPBH)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // 90-97 (all COLR)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0x00,0xFF,0xFD, // 98-9F (9E:SPBH)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // A0-A7 (all COLR)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0x00,0xFD,0xFC, // A8-AF (AE:COLR, AF:OUTL)
+            0xFC,0xFC,0xFC,0xFC,0xFC,0xFC,0xFC,0xFC, // B0-B7 (all OUTL)
+            0xFC,0xFC,0xFC,0xFC,0xFC,0xFC,0xFC,0xFC, // B8-BF (all OUTL)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // C0-C7 (all COLR)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0x00,0x00,0xFD, // C8-CF
+            0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // D0-D7 (all COLR)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0xFF,0x00, // D8-DF (DD-DE:SPBH, DF:KNDO)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // E0-E7 (all COLR)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0x00,0x00, // E8-EF (ED:SPBH, EE-EF:KNDO)
+            0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x10,0x10, // F0-F7 (F0-F5:SPBH)
             0x10,0x10,0x1F,0x10,0x10,0x03,0x03,0x00  // F8-FF
         };
 
@@ -836,7 +838,7 @@ namespace FamidashEditor
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 20-27
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 28-2F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 30-37
-            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 38-3F
+            0x00,0x00,0x00,0x00,0x00,0x00,-0x08,0x00, // 38-3F (0x3E: -8 from NES globalObjectOffset for right medium post)
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01, // 40-47
             0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 48-4F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 50-57
@@ -865,21 +867,21 @@ namespace FamidashEditor
 
         private static readonly int[] sprite_y_offset = new int[] {
             -0x02,-0x02,-0x02,-0x02,-0x02,-0x01,-0x01,0x00, // 00-07
-            0x04,0x04,0x05,-0x01,0x00,0x05,0x00,0x00, // 08-0F
+            0x04,0x04,0x0D,-0x01,0x00,0x0D,0x00,0x00, // 08-0F (0x0A,0x0D: +8 from NES globalObjectOffset for bottom pads)
             0x01,0x01,0x01,0x01,-0x02,-0x02,-0x02,-0x02, // 10-17
             -0x02,-0x02,0x00,0x00,0x00,0x00,0x00,-0x01, // 18-1F
-            -0x02,-0x02,-0x02,-0x02,-0x02,0x05,0x00,-0x01, // 20-27
+            -0x02,-0x02,-0x02,-0x02,-0x02,0x0D,0x00,-0x01, // 20-27 (0x25: +8 from NES globalObjectOffset for bottom pads)
             -0x01,-0x01,0x00,0x00,0x00,0x00,0x00,0x00, // 28-2F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 30-37
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 38-3F
             0x00,0x00,0x00,0x00,-0x01,-0x01,-0x01,0x04, // 40-47
             0x04,0x00,0x00,-0x02,0x00,-0x01,-0x01,0x00, // 48-4F
-            -0x01,-0x01,0x05,0x00,-0x01,-0x01,0x0D,0x00, // 50-57
+            -0x01,-0x01,0x0D,0x00,-0x01,-0x01,0x0D,0x00, // 50-57 (0x52,0x56: +8 from NES globalObjectOffset for bottom pads)
             -0x02,0x00,0x00,-0x01,-0x01,-0x01,-0x01,-0x02, // 58-5F
             -0x02,-0x02,-0x02,-0x02,-0x02,0x00,0x00,0x00, // 60-67
             0x00,0x00,-0x02,-0x02,-0x02,0x00,0x04,0x00, // 68-6F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 70-77
-            0x00,-0x01,-0x01,0x00,0x00,0x00,0x00,0x00, // 78-7F
+            0x00,-0x01,-0x01,-0x01,-0x01,0x00,0x00,0x00, // 78-7F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 80-87
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 88-8F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 90-97
@@ -895,7 +897,7 @@ namespace FamidashEditor
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // E0-E7
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // E8-EF
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // F0-F7
-            0x00,0x00,-0x07,0x00,0x00,0x05,0x02,0x00  // F8-FF
+            0x00,0x00,-0x07,0x00,0x00,0x0D,0x02,0x00  // F8-FF (0xFD: +8 from NES globalObjectOffset for bottom pads)
         };
         // Pad / Orb velocity matrix (rows = pad/orb kind, cols = game mode)
         // Columns: 0=cube,1=ship,2=ball,3=ufo,4=robot,5=spider,6=wave,7=swing
@@ -963,6 +965,8 @@ namespace FamidashEditor
 
                 int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
                 int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
+                // NES sprite_collide() skips DECO/COLR/OUTL/SPBH sentinels (height >= 0xFC)
+                if (hh >= 0xFC) return false;
                 int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
                 int hyoff = (id_for_geom >= 0 && id_for_geom < sprite_y_offset.Length) ? sprite_y_offset[id_for_geom] : 0;
 
@@ -980,7 +984,8 @@ namespace FamidashEditor
                 // Compute world-space sprite rectangle using NES-style exclusive bounds
                 int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 int spriteLeft_world_px = storageTileX * TILE + hxoff + pxOff;
-                int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff;
+                // NES check_spr_objects() applies -1 to sprite Y (clc;sbc intentionally subtracts 1 extra)
+                int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff - 1;
                 int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw);   // exclusive (NES-style)
                 int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh);   // exclusive (NES-style)
 
@@ -1051,6 +1056,8 @@ namespace FamidashEditor
 
                 int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
                 int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
+                // NES sprite_collide() skips DECO/COLR/OUTL/SPBH sentinels (height >= 0xFC)
+                if (hh >= 0xFC) return false;
                 int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
                 int hyoff = (id_for_geom >= 0 && id_for_geom < sprite_y_offset.Length) ? sprite_y_offset[id_for_geom] : 0;
 
@@ -1078,7 +1085,8 @@ namespace FamidashEditor
                 // by applying the same vertical shift when computing world sprite rect.
                 int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 int spriteLeft_world_px = storageTileX * TILE + hxoff + pxOff;
-                int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff;
+                // NES check_spr_objects() applies -1 to sprite Y (clc;sbc intentionally subtracts 1 extra)
+                int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff - 1;
                 int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw);   // exclusive bound (NES: x + width)
                 int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh);   // exclusive bound (NES: y + height)
 
@@ -1770,18 +1778,19 @@ namespace FamidashEditor
         {
             try
             {
-                int playerX_px = playerX_fixed >> 8;
+                // NES: Generic.x = high_byte(currplayer_x) + 1
+                int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = playerY_fixed >> 8;
                 
                 // Use actual collision hitbox size, not visual size
                 int hitboxW = miniMode ? 8 : 15;
                 int hitboxH = miniMode ? 7 : 15;
                 
-                // Apply mini mode offset: bottom-left for normal, top-left for inverted
+                // NES: Generic.y = high_byte(currplayer_y) + ((0x10 - height) >> 1)
+                // Normal: +0, Mini: +4
                 if (miniMode)
                 {
-                    if (!gravityFlipped)
-                        playerY_px += 9;
+                    playerY_px += 4;
                 }
                 
                 // Player bounding box for collision using actual hitbox size
@@ -1797,6 +1806,8 @@ namespace FamidashEditor
                 {
                     int sid = sprites[idx];
                     if (sid < 0) continue;
+                    // NES only checks anchor sprites — skip sub-tiles of multi-tile sprites
+                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Check if this sprite is a gravity portal
                     bool isNormalGravityPortal = (sid == 0x08 || sid == 0x10 || sid == 0x11 || sid == 0xFC);
@@ -1872,18 +1883,19 @@ namespace FamidashEditor
             {
                 AppendSimDebug($"[GRAV_MOD] Checking portals - playerX={playerX_fixed >> 8}, playerY={playerY_fixed >> 8}, gravMult={gravityMultiplier:F3}");
                 
-                int playerX_px = playerX_fixed >> 8;
+                // NES: Generic.x = high_byte(currplayer_x) + 1
+                int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = playerY_fixed >> 8;
                 
                 // Use actual collision hitbox size
                 int hitboxW = miniMode ? 8 : 15;
                 int hitboxH = miniMode ? 7 : 15;
                 
-                // Apply mini mode offset
+                // NES: Generic.y = high_byte(currplayer_y) + ((0x10 - height) >> 1)
+                // Normal: +0, Mini: +4
                 if (miniMode)
                 {
-                    if (!gravityFlipped)
-                        playerY_px += 9;
+                    playerY_px += 4;
                 }
                 
                 // Player bounding box
@@ -1897,6 +1909,7 @@ namespace FamidashEditor
                 {
                     int sid = sprites[idx];
                     if (sid < 0) continue;
+                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Check if this sprite is a gravity mod portal (0x5F-0x63)
                     if (sid < 0x5F || sid > 0x63) continue;
@@ -2050,7 +2063,8 @@ namespace FamidashEditor
         {
             try
             {
-                int playerX_px = playerX_fixed >> 8;
+                // NES: Generic.x = high_byte(currplayer_x) + 1
+                int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = playerY_fixed >> 8;
                 
                 // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
@@ -2058,24 +2072,11 @@ namespace FamidashEditor
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 
-                // Apply Y offset for collision hitbox positioning within 16x16 player space
-                // Mini mode: Y+9 (normal gravity) or Y+0 (inverted gravity)
-                // Normal mode: Y+0 (normal gravity) or Y+1 (inverted gravity)
+                // NES: Generic.y = high_byte(currplayer_y) + ((0x10 - height) >> 1)
+                // Normal: +0, Mini: +4
                 if (isMini)
                 {
-                    if (currplayer_gravity == 0)
-                    {
-                        playerY_px += 9;  // Normal gravity: hitbox at bottom
-                    }
-                    // else: inverted gravity, hitbox at Y+0 (top)
-                }
-                else
-                {
-                    if (currplayer_gravity != 0)
-                    {
-                        playerY_px += 1;  // Inverted gravity: shift down 1px
-                    }
-                    // else: normal gravity, hitbox at Y+0
+                    playerY_px += 4;
                 }
                 
                 // Player bounding box for collision
@@ -2089,6 +2090,7 @@ namespace FamidashEditor
                 {
                     int sid = sprites[idx];
                     if (sid < 0) continue;
+                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Check if this sprite is a mini or growth portal
                     bool isMiniPortal = (sid == 0x18);
@@ -2153,18 +2155,25 @@ namespace FamidashEditor
             {
                 if (dual) return; // Already in dual mode
                 
-                int playerX_px = playerX_fixed >> 8;
+                // NES: Generic.x = high_byte(currplayer_x) + 1
+                int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = playerY_fixed >> 8;
+                
+                // NES hitbox: CUBE_WIDTH x CUBE_HEIGHT
+                int hitboxW = miniMode ? 8 : 15;
+                int hitboxH = miniMode ? 7 : 15;
+                if (miniMode) playerY_px += 4;
                 
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;
-                int playerRight_px = playerX_px + playerVisualWidth - 1;
+                int playerRight_px = playerX_px + hitboxW - 1;
                 int playerTop_px = playerY_px;
-                int playerBottom_px = playerY_px + playerVisualHeight - 1;
+                int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 for (int idx = 0; idx < sprites.Length; idx++)
                 {
                     int sid = sprites[idx];
+                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     if (sid != 0x22) continue; // Only dual portal
                     
                     // Check if already activated
@@ -2219,18 +2228,25 @@ namespace FamidashEditor
                 // Check the appropriate player(s)
                 for (int checkPlayer = playerCheckStart; checkPlayer < playerCheckEnd; checkPlayer++)
                 {
-                    int playerX_px = player_x_fixed[checkPlayer] >> 8;
+                    // NES: Generic.x = high_byte(currplayer_x) + 1
+                    int playerX_px = (player_x_fixed[checkPlayer] >> 8) + 1;
                     int playerY_px = player_y_fixed[checkPlayer] >> 8;
+                    
+                    // NES hitbox: CUBE_WIDTH x CUBE_HEIGHT
+                    int hitboxW = miniMode ? 8 : 15;
+                    int hitboxH = miniMode ? 7 : 15;
+                    if (miniMode) playerY_px += 4;
                     
                     // Player bounding box for collision
                     int playerLeft_px = playerX_px;
-                    int playerRight_px = playerX_px + playerVisualWidth - 1;
+                    int playerRight_px = playerX_px + hitboxW - 1;
                     int playerTop_px = playerY_px;
-                    int playerBottom_px = playerY_px + playerVisualHeight - 1;
+                    int playerBottom_px = playerY_px + hitboxH - 1;
                     
                     for (int idx = 0; idx < sprites.Length; idx++)
                     {
                         int sid = sprites[idx];
+                        if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                         if (sid != 0x23) continue; // Only single portal
                         
                         // Check if already activated
@@ -2296,19 +2312,26 @@ namespace FamidashEditor
         {
             try
             {
-                int playerX_px = playerX_fixed >> 8;
+                // NES: Generic.x = high_byte(currplayer_x) + 1
+                int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = playerY_fixed >> 8;
                 
-                // Player bounding box for collision (no offset needed - sprite positions are already in world coords)
+                // NES hitbox: CUBE_WIDTH x CUBE_HEIGHT
+                int hitboxW = miniMode ? 8 : 15;
+                int hitboxH = miniMode ? 7 : 15;
+                if (miniMode) playerY_px += 4;
+                
+                // Player bounding box for collision
                 int playerLeft_px = playerX_px;
-                int playerRight_px = playerX_px + playerVisualWidth - 1;
+                int playerRight_px = playerX_px + hitboxW - 1;
                 int playerTop_px = playerY_px;
-                int playerBottom_px = playerY_px + playerVisualHeight - 1;
+                int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 for (int idx = 0; idx < sprites.Length; idx++)
                 {
                     int sid = sprites[idx];
                     if (sid < 0) continue;
+                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Check if this sprite is an alphabet block
                     bool isSBlock = (sid == 0xF9);
@@ -2380,19 +2403,15 @@ namespace FamidashEditor
                 int playerY_px = playerY_fixed >> 8;
                 
                 // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
-                //bool miniMode = (currplayer_mini != 0);  // ERROR CS0650/CS0270 fixed: removed invalid syntax
-                //bool gravityFlipped = (currplayer_gravity != 0);  // ERROR CS0650/CS0270 fixed: removed invalid syntax
                 int hitboxW = (currplayer_mini != 0) ? 8 : 15;
                 int hitboxH = (currplayer_mini != 0) ? 7 : 15;
                 
-                // playerY_fixed is the visual sprite top-left position
-                // Need to calculate actual hitbox position based on mode and gravity
-                // From rendering code: normal hitbox is at Y+0, mini at Y+9 (normal gravity) or Y+0 (inverted)
-                if ((currplayer_mini != 0) && (currplayer_gravity == 0))
+                // NES: Generic.y = high_byte(currplayer_y) + ((0x10 - height) >> 1)
+                // Normal: +0, Mini: +4
+                if (currplayer_mini != 0)
                 {
-                    playerY_px += 9;  // Mini normal gravity: hitbox at bottom of 16x16 visual
+                    playerY_px += 4;
                 }
-                // For all other cases (normal cube, or mini inverted), hitbox starts at visual Y
                 
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;
@@ -2405,6 +2424,8 @@ namespace FamidashEditor
                 {
                     int sid = sprites[idx];
                     if (sid < 0) continue;
+                    // NES only checks anchor sprites — skip sub-tiles of multi-tile sprites
+                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Check if this sprite is a pad
                     // Yellow pads: 0x0A (down), 0x0C (up)
@@ -2554,17 +2575,19 @@ namespace FamidashEditor
             {
                 // Spider orbs/pads work in ALL game modes (they switch you to spider)
                 
-                int playerX_px = playerX_fixed >> 8;
+                // NES: Generic.x = high_byte(currplayer_x) + 1
+                int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = playerY_fixed >> 8;
                 
                 // Use actual collision hitbox size, not visual size
                 int hitboxWidth = miniMode ? 8 : 15;
                 int hitboxHeight = miniMode ? 7 : 15;
                 
-                // Apply mini mode offset: bottom-left for normal, top-left for inverted
-                if (miniMode && !gravityFlipped)
+                // NES: Generic.y = high_byte(currplayer_y) + ((0x10 - height) >> 1)
+                // Normal: +0, Mini: +4
+                if (miniMode)
                 {
-                    playerY_px += 9;
+                    playerY_px += 4;
                 }
                 
                 // Player bounding box for collision
@@ -2584,6 +2607,7 @@ namespace FamidashEditor
                 {
                     int sid = sprites[idx];
                     if (sid < 0) continue;
+                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Spider orb up: 0x54, Spider orb down: 0x55
                     // Spider pad up: 0x56, Spider pad down: 0x57
@@ -6847,24 +6871,24 @@ namespace FamidashEditor
                     {
                         int sid = sprites[idx];
                         if (sid < 0) continue;
+                        if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                         // Portal handling: All 9 gamemode portals
                         try
                         {
                             if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58 || sid == 0x6A || sid == 0x6B || sid == 0x6C)
                             {
-                                // Require actual 2D AABB overlap between player hitbox and sprite hitbox
-                                const int HITBOX_W = 15; const int HITBOX_H = 15;
-                                int playerCenter_px_now = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                                int playerLeft_px_now = playerCenter_px_now - (HITBOX_W / 2);
-                                int playerRight_px_now = playerLeft_px_now + (HITBOX_W - 1);
+                                // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1, hitbox = CUBE_WIDTH x CUBE_HEIGHT
+                                int hitboxW = miniMode ? 8 : 15;
+                                int hitboxH = miniMode ? 7 : 15;
+                                int playerLeft_px_now = (playerX_fixed >> 8) + 1;
+                                int playerRight_px_now = playerLeft_px_now + hitboxW - 1;
                                 int playerTop_px_now = (playerY_fixed >> 8);
-                                // Apply mini mode offset: bottom-left for normal, top-left for inverted
+                                // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
                                 if (miniMode)
                                 {
-                                    if (!gravityFlipped)
-                                        playerTop_px_now += 9;
+                                    playerTop_px_now += 4;
                                 }
-                                int playerBottom_px_now = playerTop_px_now + (HITBOX_H - 1);
+                                int playerBottom_px_now = playerTop_px_now + hitboxH - 1;
 
                                 if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_now, playerRight_px_now, playerTop_px_now, playerBottom_px_now))
                                 {
@@ -6911,13 +6935,14 @@ namespace FamidashEditor
                         // When cam mode is OFF, use collision-based activation like gamemode/gravity portals
                         if (!camModeActive)
                         {
-                            // Require actual 2D AABB overlap between player hitbox and sprite hitbox
-                            const int HITBOX_W_SPEED = 15; const int HITBOX_H_SPEED = 15;
-                            int playerCenter_px_speed = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                            int playerLeft_px_speed = playerCenter_px_speed - (HITBOX_W_SPEED / 2);
-                            int playerRight_px_speed = playerLeft_px_speed + (HITBOX_W_SPEED - 1);
+                            // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1
+                            int hitboxW_speed = miniMode ? 8 : 15;
+                            int hitboxH_speed = miniMode ? 7 : 15;
+                            int playerLeft_px_speed = (playerX_fixed >> 8) + 1;
+                            int playerRight_px_speed = playerLeft_px_speed + hitboxW_speed - 1;
                             int playerTop_px_speed = (playerY_fixed >> 8);
-                            int playerBottom_px_speed = playerTop_px_speed + (HITBOX_H_SPEED - 1);
+                            if (miniMode) playerTop_px_speed += 4;
+                            int playerBottom_px_speed = playerTop_px_speed + hitboxH_speed - 1;
                             
                             if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_speed, playerRight_px_speed, playerTop_px_speed, playerBottom_px_speed))
                             {
@@ -6993,13 +7018,14 @@ namespace FamidashEditor
                             int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                             int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
 
-                            // Require actual 2D overlap with player before selecting this portal
-                            const int HITBOX_W_LOCAL = 15; const int HITBOX_H_LOCAL = 15;
-                            int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                            int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
-                            int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
+                            // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1
+                            int hitboxW_local = miniMode ? 8 : 15;
+                            int hitboxH_local = miniMode ? 7 : 15;
+                            int playerLeft_px_local = (playerX_fixed >> 8) + 1;
+                            int playerRight_px_local = playerLeft_px_local + hitboxW_local - 1;
                             int playerTop_px_local = (playerY_fixed >> 8);
-                            int playerBottom_px_local = playerTop_px_local + (HITBOX_H_LOCAL - 1);
+                            if (miniMode) playerTop_px_local += 4;
+                            int playerBottom_px_local = playerTop_px_local + hitboxH_local - 1;
 
                             if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_local, playerRight_px_local, playerTop_px_local, playerBottom_px_local))
                             {
@@ -9382,6 +9408,8 @@ namespace FamidashEditor
                         int hw_o = 0x10; int hh_o = 0x10; int hxoff_o = 0; int hyoff_o = 0;
                         if (id_for_overlay >= 0 && id_for_overlay < sprite_widths.Length) hw_o = sprite_widths[id_for_overlay];
                         if (id_for_overlay >= 0 && id_for_overlay < sprite_heights.Length) hh_o = sprite_heights[id_for_overlay];
+                        // Skip hitbox overlay for DECO/COLR/OUTL/SPBH sentinel sprites
+                        if (hh_o >= 0xFC) continue;
                         if (id_for_overlay >= 0 && id_for_overlay < sprite_x_offset.Length) hxoff_o = sprite_x_offset[id_for_overlay];
                         if (id_for_overlay >= 0 && id_for_overlay < sprite_y_offset.Length) hyoff_o = sprite_y_offset[id_for_overlay];
 
@@ -9456,6 +9484,8 @@ namespace FamidashEditor
                             int hw = 0x10; int hh = 0x10; int hxoff = 0; int hyoff = 0;
                             if (id >= 0 && id < sprite_widths.Length) hw = sprite_widths[id];
                             if (id >= 0 && id < sprite_heights.Length) hh = sprite_heights[id];
+                            // Skip hitbox overlay for DECO/COLR/OUTL/SPBH sentinel sprites
+                            if (hh >= 0xFC) continue;
                             if (id >= 0 && id < sprite_x_offset.Length) hxoff = sprite_x_offset[id];
                             if (id >= 0 && id < sprite_y_offset.Length) hyoff = sprite_y_offset[id];
 
@@ -9476,7 +9506,7 @@ namespace FamidashEditor
                             double hy = hitbase_px_y + hyoff;
                             // If this sprite is a non-upside-down pad, shift hitbox down an extra 8 px on top of specified offsets
                             // Known non-upside-down pad IDs include typical down variants; extend set as needed.
-                            if (id == 0x52 || id == 0x0A || id == 0x0D || id == 0x25 || id == 0xFD) hy += 8;
+                            // NES globalObjectOffset (+8 Y for bottom pads) is now baked into sprite_y_offset table
                             hrect.Width = Math.Max(1, hw);
                             hrect.Height = Math.Max(1, hh);
                             System.Windows.Controls.Canvas.SetLeft(hrect, hx);
@@ -10826,24 +10856,24 @@ namespace FamidashEditor
                             // Gravity portal numeric activation: detect sprite overlap in numeric path
                             try
                             {
-                                // Use the same hitbox as other portal checks
-                                const int PORTAL_HIT_W_NUM = 14; const int PORTAL_HIT_H_NUM = 14;
-                                int playerCenter_px_num = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                                int playerLeft_px_num = playerCenter_px_num - (PORTAL_HIT_W_NUM / 2);
-                                int playerRight_px_num = playerLeft_px_num + (PORTAL_HIT_W_NUM - 1);
+                                // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1
+                                int hitboxW_num = miniMode ? 8 : 15;
+                                int hitboxH_num = miniMode ? 7 : 15;
+                                int playerLeft_px_num = (playerX_fixed >> 8) + 1;
+                                int playerRight_px_num = playerLeft_px_num + hitboxW_num - 1;
                                 int playerTop_px_num = (playerY_fixed >> 8);
-                                // Apply mini mode offset: bottom-left for normal, top-left for inverted
+                                // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
                                 if (miniMode)
                                 {
-                                    if (!gravityFlipped)
-                                        playerTop_px_num += 9;
+                                    playerTop_px_num += 4;
                                 }
-                                int playerBottom_px_num = playerTop_px_num + (PORTAL_HIT_H_NUM - 1);
+                                int playerBottom_px_num = playerTop_px_num + hitboxH_num - 1;
 
                                 for (int idx = 0; idx < sprites.Length; idx++)
                                 {
                                     int sid = sprites[idx];
                                     if (sid < 0) continue;
+                                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                                     // Gravity portals: normal (0x08,0x10,0x11,0xFC) and reverse (0x09,0x12,0x13,0xFB)
                                     if (!(sid == 0x08 || sid == 0x10 || sid == 0x11 || sid == 0xFC || sid == 0x09 || sid == 0x12 || sid == 0x13 || sid == 0xFB)) continue;
 
@@ -10939,6 +10969,7 @@ namespace FamidashEditor
                 {
                     int sid = sprites[idx];
                     if (sid < 0) continue;
+                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
 
                     // Gravity portals (UI/sprite-intersection path): handle independently
                     // of mode portals so invisible gravity tiles still work.
@@ -10946,12 +10977,14 @@ namespace FamidashEditor
                     {
                         if (sid == 0x08 || sid == 0x10 || sid == 0x11 || sid == 0xFB || sid == 0x09 || sid == 0x12 || sid == 0x13 || sid == 0xFC)
                         {
-                            const int HITBOX_W_UI = 15; const int HITBOX_H_UI = 15;
-                            int playerCenter_px_ui = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                            int playerLeft_px_ui = playerCenter_px_ui - (HITBOX_W_UI / 2);
-                            int playerRight_px_ui = playerLeft_px_ui + (HITBOX_W_UI - 1);
+                            // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1
+                            int hitboxW_ui = miniMode ? 8 : 15;
+                            int hitboxH_ui = miniMode ? 7 : 15;
+                            int playerLeft_px_ui = (playerX_fixed >> 8) + 1;
+                            int playerRight_px_ui = playerLeft_px_ui + hitboxW_ui - 1;
                             int playerTop_px_ui = (playerY_fixed >> 8);
-                            int playerBottom_px_ui = playerTop_px_ui + (HITBOX_H_UI - 1);
+                            if (miniMode) playerTop_px_ui += 4;
+                            int playerBottom_px_ui = playerTop_px_ui + hitboxH_ui - 1;
 
                             if (processedGravityPortals.Contains(idx)) { /* wait until portal moves past interaction line */ }
                             else if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_ui, playerRight_px_ui, playerTop_px_ui, playerBottom_px_ui))
@@ -10990,13 +11023,14 @@ namespace FamidashEditor
                         // Regular mode portals
                         if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58 || sid == 0x6A || sid == 0x6B || sid == 0x6C)
                         {
-                            // require 2D overlap with player's hitbox for portal activation
-                            const int HITBOX_W_LOCAL = 15; const int HITBOX_H_LOCAL = 15;
-                            int playerCenter_px_local = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                            int playerLeft_px_local = playerCenter_px_local - (HITBOX_W_LOCAL / 2);
-                            int playerRight_px_local = playerLeft_px_local + (HITBOX_W_LOCAL - 1);
+                            // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1
+                            int hitboxW_local = miniMode ? 8 : 15;
+                            int hitboxH_local = miniMode ? 7 : 15;
+                            int playerLeft_px_local = (playerX_fixed >> 8) + 1;
+                            int playerRight_px_local = playerLeft_px_local + hitboxW_local - 1;
                             int playerTop_px_local = (playerY_fixed >> 8);
-                            int playerBottom_px_local = playerTop_px_local + (HITBOX_H_LOCAL - 1);
+                            if (miniMode) playerTop_px_local += 4;
+                            int playerBottom_px_local = playerTop_px_local + hitboxH_local - 1;
 
                             if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_local, playerRight_px_local, playerTop_px_local, playerBottom_px_local))
                             {
@@ -11033,13 +11067,14 @@ namespace FamidashEditor
                             // Check if already activated
                             if (processedRandomPortals.Contains(idx)) continue;
 
-                            // require 2D overlap with player's hitbox for portal activation
-                            const int HITBOX_W_RAND = 15; const int HITBOX_H_RAND = 15;
-                            int playerCenter_px_rand = (playerX_fixed >> 8) + (playerVisualWidth / 2);
-                            int playerLeft_px_rand = playerCenter_px_rand - (HITBOX_W_RAND / 2);
-                            int playerRight_px_rand = playerLeft_px_rand + (HITBOX_W_RAND - 1);
+                            // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1
+                            int hitboxW_rand = miniMode ? 8 : 15;
+                            int hitboxH_rand = miniMode ? 7 : 15;
+                            int playerLeft_px_rand = (playerX_fixed >> 8) + 1;
+                            int playerRight_px_rand = playerLeft_px_rand + hitboxW_rand - 1;
                             int playerTop_px_rand = (playerY_fixed >> 8);
-                            int playerBottom_px_rand = playerTop_px_rand + (HITBOX_H_RAND - 1);
+                            if (miniMode) playerTop_px_rand += 4;
+                            int playerBottom_px_rand = playerTop_px_rand + hitboxH_rand - 1;
 
                             if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_rand, playerRight_px_rand, playerTop_px_rand, playerBottom_px_rand))
                             {

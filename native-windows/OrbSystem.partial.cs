@@ -111,6 +111,8 @@ namespace FamidashEditor
 
                 int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
                 int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
+                // NES sprite_collide() skips DECO/COLR/OUTL/SPBH sentinels (height >= 0xFC)
+                if (hh >= 0xFC) return false;
                 int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
                 int hyoff = (id_for_geom >= 0 && id_for_geom < sprite_y_offset.Length) ? sprite_y_offset[id_for_geom] : 0;
 
@@ -128,7 +130,8 @@ namespace FamidashEditor
                 // Compute world-space sprite rectangle (NES-style exclusive bounds)
                 int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 int spriteLeft_world_px = storageTileX * TILE + hxoff + pxOff;
-                int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff;
+                // NES check_spr_objects() applies -1 to sprite Y (clc;sbc intentionally subtracts 1 extra)
+                int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff - 1;
                 int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw);   // exclusive (NES-style)
                 int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh);   // exclusive (NES-style)
 
@@ -169,6 +172,8 @@ namespace FamidashEditor
             {
                 int spriteType = sprites[idx];
                 if (spriteType == -1) continue; // Empty
+                // NES only checks anchor sprites — skip sub-tiles of multi-tile sprites
+                if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                 
                 // Check if this is an orb sprite type
                 if (!IsOrbSprite(spriteType)) continue;
@@ -557,6 +562,7 @@ namespace FamidashEditor
             {
                 int spriteType = sprites[idx];
                 if (spriteType == -1) continue;
+                if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
 
                 // Check if this is a dash orb
                 bool isDashOrb = spriteType == DASH_ORB || spriteType == DASH_GRAVITY_ORB ||

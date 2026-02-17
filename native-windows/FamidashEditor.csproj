@@ -26,6 +26,7 @@
   </PropertyGroup>
   <PropertyGroup>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <!-- Debug logging enabled: remove DISABLE_DEBUG_LOGGING to generate PF logs in %TEMP% -->
   </PropertyGroup>
 
   <!-- Removed .fms from project: we now work exclusively with the FamiStudio text export (the album.txt) -->

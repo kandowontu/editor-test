@@ -31,12 +31,14 @@ namespace FamidashEditor
                     int pressCount_peek = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                     bool pressJump_peek = pressCount_peek > 0;
                     bool gravityInverted_orb = (currplayer_gravity != 0);
-                    int playerX_px_orb = playerX_fixed >> 8;
+                    int playerX_px_orb = (playerX_fixed >> 8) + 1;
                     int playerY_px_orb = playerY_fixed >> 8;
                     int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
-                    int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;  // Correct: 8x7 for mini
+                    int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
+                    // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
+                    if (currplayer_mini != 0 && !gravityInverted_orb)
                     {
-                        playerY_px_orb += 9;
+                        playerY_px_orb += 4;
                     }
                     
                     int scrollX_px_orb = 0;
@@ -245,15 +247,15 @@ namespace FamidashEditor
                 int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                 bool pressJump_orb = pressCount_orb > 0;
                 bool gravityInverted_orb = (currplayer_gravity != 0);
-                int playerX_px_orb = playerX_fixed >> 8;
+                int playerX_px_orb = (playerX_fixed >> 8) + 1;
                 int playerY_px_orb = playerY_fixed >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
                 int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
                 
-                // Adjust Y position for mini mode collision box
+                // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
                 if ((currplayer_mini != 0) && !gravityInverted_orb)
                 {
-                    playerY_px_orb += 9;
+                    playerY_px_orb += 4;
                 }
                 
                 int scrollX_px_orb = 0;
@@ -361,49 +363,10 @@ namespace FamidashEditor
                 else
                 {
                 // No slope hit - fall through to flat collision
-
-                // Normal gravity: Check TOP collision with right-side pixel test
-                if (!MainWindow.Option_NoDeath)
-                {
-                    var (topCollided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-                    if (topCollided)
-                    {
-                        // Check right-side pixel (right edge X, upper portion Y)
-                        int rightX_px = collisionX + hitboxW - 1;
-                        int upperY_px = collisionY + (hitboxH / 3);
-                        int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                        
-                        bool rightPixelBlocked = CheckPixelCollision(rightX_px, upperY_px, groundRowsToReserve);
-                        
-                        if (rightPixelBlocked)
-                        {
-                            // Right pixel hit - DEATH
-                            AppendSimDebug($"[DEATH] Ball top right pixel collision at ({rightX_px},{upperY_px})");
-                            deathTriggered = true;
-                            
-                            // Skip UI side effects during pathfinder speculative simulation
-                            if (pfSimulating) return;
-                            
-                            paused = true;
-                            _ = StopMusicAsync();
-                            
-                            try
-                            {
-                                Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                    if (this.Owner is MainWindow mw)
-                                    {
-                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(rightX_px, upperY_px); } catch { }
-                                    }
-                                }));
-                            }
-                            catch { }
-                            return;  // Don't do eject if death triggered
-                        }
-                    }
-                }
+                // NOTE: NES ball_eject does NOT have right-side pixel death here;
+                // death is handled separately by bg_coll_death / forward collision (bg_coll_R).
+                // Removed false-positive right-side pixel death check that triggered
+                // before eject could correct the player position.
                 
                 // Skip downward collision if we just flipped and are moving up
                 if (playerVelY_fixed >= 0) {
@@ -439,48 +402,11 @@ namespace FamidashEditor
                 }
                 } // close slope else branch
             } else {
-                // Inverted gravity: Check BOTTOM collision with right-side pixel test
-                if (!MainWindow.Option_NoDeath)
-                {
-                    var (bottomCollided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
-                    if (bottomCollided)
-                    {
-                        // Check right-side pixel (right edge X, lower portion Y)
-                        int rightX_px = collisionX + hitboxW - 1;
-                        int lowerY_px = collisionY + (hitboxH * 2 / 3);
-                        int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                        
-                        bool rightPixelBlocked = CheckPixelCollision(rightX_px, lowerY_px, groundRowsToReserve);
-                        
-                        if (rightPixelBlocked)
-                        {
-                            // Right pixel hit - DEATH
-                            AppendSimDebug($"[DEATH] Ball bottom right pixel collision at ({rightX_px},{lowerY_px})");
-                            deathTriggered = true;
-                            
-                            // Skip UI side effects during pathfinder speculative simulation
-                            if (pfSimulating) return;
-                            
-                            paused = true;
-                            _ = StopMusicAsync();
-                            
-                            try
-                            {
-                                Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                    if (this.Owner is MainWindow mw)
-                                    {
-                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(rightX_px, lowerY_px); } catch { }
-                                    }
-                                }));
-                            }
-                            catch { }
-                            return;  // Don't do eject if death triggered
-                        }
-                    }
-                }
+                // Inverted gravity
+                // NOTE: NES ball_eject does NOT have right-side pixel death here;
+                // death is handled by bg_coll_death / forward collision (bg_coll_R).
+                // Removed false-positive right-side pixel death check that fired
+                // BEFORE eject could correct position, causing spurious deaths.
                 
                 // Skip upward collision if we just flipped and are moving down
                 if (playerVelY_fixed <= 0) {

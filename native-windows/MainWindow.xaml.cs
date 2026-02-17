@@ -586,12 +586,25 @@ namespace FamidashEditor
                 catch { }
             }
 
-            // F12 clears player path
+            // F12 clears paths in two stages:
+            // 1st press: clear attempted (backtrack) paths only
+            // 2nd press: clear final pathfinder path and player path
             if (e.Key == System.Windows.Input.Key.F12 && !e.IsRepeat)
             {
                 try
                 {
-                    MenuOptionClearPlayerPath_Click(this, e);
+                    if (!_attemptedPathsCleared && attemptedPaths.Count > 0)
+                    {
+                        // Stage 1: clear attempted paths only
+                        ClearAttemptedPathOverlay();
+                        _attemptedPathsCleared = true;
+                        ShowTransientInfo("Attempted paths cleared (press F12 again for final path)", this, 1200);
+                    }
+                    else
+                    {
+                        // Stage 2: clear everything
+                        MenuOptionClearPlayerPath_Click(this, e);
+                    }
                     e.Handled = true;
                     return;
                 }
@@ -2384,6 +2397,16 @@ namespace FamidashEditor
     // Pathfinder-calculated paths (colored by bias, persist until F12 clear)
     private System.Collections.Generic.List<(System.Collections.Generic.List<(int x, int y)> points, Color color)> pathfinderPaths = new();
     private System.Collections.Generic.List<Shapes.Polyline> pathfinderPathPolylines = new();
+    // Attempted (failed backtrack) paths from pathfinder — shown in a different color
+    private System.Collections.Generic.List<System.Collections.Generic.List<(int x, int y)>> attemptedPaths = new();
+    private System.Collections.Generic.List<Shapes.Polyline> attemptedPathPolylines = new();
+    // Two-stage F12 clear: first press clears attempted paths, second press clears final path
+    private bool _attemptedPathsCleared = false;
+    // Speculative path visualization (updated in real-time during pathfinder computation)
+    // Speculative path polylines with timed removal (each stays 1 second)
+    private List<Shapes.Polyline> _speculativePolylines = new();
+    // Active pathfinder engine reference (for Jump To button)
+    private PathfinderEngine? _activePathfinderEngine = null;
     // Optional death marker (red X) placed by simulator when a death occurs
     private Shapes.Line? playerDeathMarkerA = null;
     private Shapes.Line? playerDeathMarkerB = null;
@@ -12396,9 +12419,34 @@ namespace FamidashEditor
                 foreach (var pfPoly in pathfinderPathPolylines)
                     try { CanvasHost.Children.Remove(pfPoly); } catch { }
                 pathfinderPathPolylines.Clear();
+                // Remove previous attempted path polylines
+                foreach (var aPoly in attemptedPathPolylines)
+                    try { CanvasHost.Children.Remove(aPoly); } catch { }
+                attemptedPathPolylines.Clear();
 
                 double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
                 double pad = mapViewportPadding;
+
+                // Draw attempted (backtrack) paths in semi-transparent dark red
+                foreach (var aPath in attemptedPaths)
+                {
+                    if (aPath == null || aPath.Count < 2) continue;
+                    var aPoly = new Shapes.Polyline()
+                    {
+                        Stroke = new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0x55, 0x55)),
+                        StrokeThickness = Math.Max(1.0, 1.0 * scale),
+                        IsHitTestVisible = false
+                    };
+                    foreach (var p in aPath)
+                    {
+                        double dx = pad + p.x * scale;
+                        double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                        aPoly.Points.Add(new System.Windows.Point(dx, dy));
+                    }
+                    Canvas.SetZIndex(aPoly, 1900); // below committed paths (2000)
+                    CanvasHost.Children.Add(aPoly);
+                    attemptedPathPolylines.Add(aPoly);
+                }
 
                 // Draw pathfinder paths (colored by bias, persist until F12)
                 foreach (var pfPath in pathfinderPaths)
@@ -12533,12 +12581,27 @@ namespace FamidashEditor
             catch { }
         }
 
-        /// <summary>Clear all path overlays: pathfinder paths, simulator paths, and death markers.</summary>
+        /// <summary>Clear attempted (backtrack) path overlays only.</summary>
+        public void ClearAttemptedPathOverlay()
+        {
+            try
+            {
+                attemptedPaths.Clear();
+                foreach (var aPoly in attemptedPathPolylines)
+                    try { if (CanvasHost != null) CanvasHost.Children.Remove(aPoly); } catch { }
+                attemptedPathPolylines.Clear();
+            }
+            catch { }
+        }
+
+        /// <summary>Clear all path overlays: pathfinder paths, attempted paths, simulator paths, and death markers.</summary>
         public void ClearPlayerPathOverlay()
         {
             try
             {
                 ClearSimulatorPathOnly();
+                ClearAttemptedPathOverlay();
+                _attemptedPathsCleared = false;
                 // Also clear pathfinder-calculated paths
                 pathfinderPaths.Clear();
                 foreach (var pfPoly in pathfinderPathPolylines)
@@ -21145,6 +21208,7 @@ namespace FamidashEditor
                 CalculatePathButton.IsEnabled = false;
                 PathfinderProgressBar.Value = 0;
                 PathfinderProgressBar.Visibility = System.Windows.Visibility.Visible;
+                PathfinderJumpToButton.Visibility = System.Windows.Visibility.Visible;
 
                 // Progress callback that updates the UI from the background thread
                 var progress = new Progress<int>(pct =>
@@ -21166,6 +21230,82 @@ namespace FamidashEditor
                             spritePixelOffsets);
                         engine.JumpTimingBias = jumpTimingBias;
                         engine.Progress = progress;
+                        _activePathfinderEngine = engine;
+
+                        // Real-time speculative path visualization callback.
+                        // Called from the background thread for each delay being tested.
+                        // Uses async BeginInvoke with timestamp throttle so the pathfinder
+                        // thread isn't blocked by UI rendering.
+                        var _lastSpecUpdate = System.Diagnostics.Stopwatch.StartNew();
+                        engine.OnSpeculativePath = (path, delay, survival, isHold) =>
+                        {
+                            // Throttle: only update UI every ~16ms (60fps) to avoid
+                            // flooding the dispatcher queue and slowing the pathfinder.
+                            // Always process clear requests (path == null).
+                            if (path != null && _lastSpecUpdate.ElapsedMilliseconds < 16)
+                                return;
+                            _lastSpecUpdate.Restart();
+
+                            // Snapshot the data for the UI thread
+                            var pathSnapshot = path != null ? new List<(int x, int y)>(path) : null;
+                            int survCopy = survival;
+                            bool isHoldCopy = isHold;
+
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    if (CanvasHost == null) return;
+
+                                    if (pathSnapshot == null || pathSnapshot.Count == 0) return;
+
+                                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                                    double pad = mapViewportPadding;
+
+                                    // Color: green if survived full horizon, red/orange otherwise
+                                    Color c;
+                                    if (survCopy >= 180)
+                                        c = Color.FromArgb(0xC0, 0x00, 0xFF, 0x00); // green = survived
+                                    else if (isHoldCopy)
+                                        c = Color.FromArgb(0xC0, 0xFF, 0x88, 0x00); // orange = hold-jump dying
+                                    else
+                                        c = Color.FromArgb(0xC0, 0xFF, 0x40, 0x40); // red = dying
+
+                                    var poly = new Shapes.Polyline()
+                                    {
+                                        Stroke = new SolidColorBrush(c),
+                                        StrokeThickness = Math.Max(1.0, 1.5 * scale),
+                                        IsHitTestVisible = false
+                                    };
+                                    foreach (var p in pathSnapshot)
+                                    {
+                                        double dx = pad + p.x * scale;
+                                        double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                                        poly.Points.Add(new System.Windows.Point(dx, dy));
+                                    }
+                                    Canvas.SetZIndex(poly, 2100); // above committed paths
+                                    CanvasHost.Children.Add(poly);
+                                    _speculativePolylines.Add(poly);
+
+                                    // Remove this polyline after 1 second
+                                    var removeTimer = new System.Windows.Threading.DispatcherTimer();
+                                    removeTimer.Interval = TimeSpan.FromSeconds(1);
+                                    var polyRef = poly;
+                                    removeTimer.Tick += (s, ev) =>
+                                    {
+                                        removeTimer.Stop();
+                                        try
+                                        {
+                                            CanvasHost?.Children.Remove(polyRef);
+                                            _speculativePolylines.Remove(polyRef);
+                                        }
+                                        catch { }
+                                    };
+                                    removeTimer.Start();
+                                }
+                                catch { }
+                            }));
+                        };
 
                         engine.Run(startX_px, startY_px, startSpeedUiIndex, startGameMode,
                                    false, false);
@@ -21175,12 +21315,21 @@ namespace FamidashEditor
                             try
                             {
                                 string biasLabel = jumpTimingBias < 0.125 ? "Earliest" : jumpTimingBias < 0.375 ? "Early" : jumpTimingBias < 0.625 ? "Middle" : jumpTimingBias < 0.875 ? "Late" : "Latest";
+
+                                // Store attempted (backtrack) paths for visualization
+                                if (engine.AttemptedPaths != null && engine.AttemptedPaths.Count > 0)
+                                {
+                                    attemptedPaths.AddRange(engine.AttemptedPaths);
+                                    _attemptedPathsCleared = false;
+                                }
+
                                 if (engine.Success)
                                 {
                                     precomputedPathfinderInputs = engine.Inputs;
                                     pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
                                     UpdatePlayerPathOverlay();
-                                    StatusText.Text = $"Pathfinder ({biasLabel}): {engine.ResultMessage}";
+                                    StatusText.Text = $"Pathfinder ({biasLabel}): {engine.ResultMessage}" +
+                                        (engine.AttemptedPaths?.Count > 0 ? $" ({engine.AttemptedPaths.Count} backtracks)" : "");
                                 }
                                 else
                                 {
@@ -21190,7 +21339,8 @@ namespace FamidashEditor
                                     precomputedPathfinderInputs = engine.Inputs;
                                     pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
                                     UpdatePlayerPathOverlay();
-                                    StatusText.Text = $"Pathfinder ({biasLabel}): INCOMPLETE — {engine.ResultMessage}";
+                                    StatusText.Text = $"Pathfinder ({biasLabel}): INCOMPLETE — {engine.ResultMessage}" +
+                                        (engine.AttemptedPaths?.Count > 0 ? $" ({engine.AttemptedPaths.Count} backtracks)" : "");
                                 }
                             }
                             catch (Exception ex)
@@ -21201,6 +21351,14 @@ namespace FamidashEditor
                             {
                                 CalculatePathButton.IsEnabled = true;
                                 PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed;
+                                PathfinderJumpToButton.Visibility = System.Windows.Visibility.Collapsed;
+                                _activePathfinderEngine = null;
+                                // Clean up all speculative path polylines
+                                foreach (var sp in _speculativePolylines)
+                                {
+                                    try { CanvasHost.Children.Remove(sp); } catch { }
+                                }
+                                _speculativePolylines.Clear();
                             }
                         }));
                     }
@@ -21211,6 +21369,8 @@ namespace FamidashEditor
                             StatusText.Text = $"Pathfinder error: {ex.Message}";
                             CalculatePathButton.IsEnabled = true;
                             PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed;
+                            PathfinderJumpToButton.Visibility = System.Windows.Visibility.Collapsed;
+                            _activePathfinderEngine = null;
                         }));
                     }
                 });
@@ -21221,6 +21381,25 @@ namespace FamidashEditor
                 CalculatePathButton.IsEnabled = true;
                 try { PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed; } catch { }
             }
+        }
+
+        private void PathfinderJumpToButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var engine = _activePathfinderEngine;
+                if (engine == null || MapScrollViewer == null) return;
+                int xPx = engine.CurrentX_px;
+                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double pad = mapViewportPadding;
+                double canvasX = pad + xPx * scale;
+                double viewportW = SafeViewportWidth();
+                double newH = Math.Max(0, canvasX - viewportW / 2.0);
+                double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - viewportW);
+                if (newH > maxH) newH = maxH;
+                MapScrollViewer.ScrollToHorizontalOffset(newH);
+            }
+            catch { }
         }
 
         private async void SetOptionsButton_Click(object? sender, RoutedEventArgs e)

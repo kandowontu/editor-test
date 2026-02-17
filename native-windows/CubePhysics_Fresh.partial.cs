@@ -52,15 +52,15 @@ namespace FamidashEditor
                     int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                     bool pressJump_orb = pressCount_orb > 0;
                     bool gravityInverted_orb = (currplayer_gravity != 0);
-                    int playerX_px_orb = playerX_fixed >> 8;
+                    int playerX_px_orb = (playerX_fixed >> 8) + 1;
                     int playerY_px_orb = playerY_fixed >> 8;
                     int hitboxW_orb = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
                     int hitboxH_orb = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
                     
-                    // Adjust Y position for mini mode collision box (bottom-left alignment)
+                    // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
                     if (currplayer_mini != 0 && !gravityInverted_orb)
                     {
-                        playerY_px_orb += 9;
+                        playerY_px_orb += 4;
                     }
                     
                     int scrollX_px_orb = 0;
@@ -606,8 +606,9 @@ namespace FamidashEditor
                     {
                         // Snap player to rest position below the collision surface
                         // collisionBottomY is exclusive (one past last solid pixel)
-                        // We want hitbox top (playerY + hitboxOffsetY) at collisionBottomY
-                        int newY = collisionBottomY - hitboxOffsetY;
+                        // NES bg_coll_U probes at Generic.y + miniOffset + 1 (1 pixel inside),
+                        // so resting position is 1 pixel closer to ceiling than collisionBottomY.
+                        int newY = collisionBottomY - hitboxOffsetY - 1;
                         // AppendSimDebug($"[CUBE]     Eject up: collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
                         playerY_fixed = newY << 8;
                         
