@@ -2405,6 +2405,8 @@ namespace FamidashEditor
     // Speculative path visualization (updated in real-time during pathfinder computation)
     // Speculative path polylines with timed removal (each stays 1 second)
     private List<Shapes.Polyline> _speculativePolylines = new();
+    // Speculative path data saved during calculation for persistent display after completion
+    private List<List<(int x, int y)>> _speculativePathData = new();
     // Active pathfinder engine reference (for Jump To button)
     private PathfinderEngine? _activePathfinderEngine = null;
     // Optional death marker (red X) placed by simulator when a death occurs
@@ -12427,14 +12429,14 @@ namespace FamidashEditor
                 double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
                 double pad = mapViewportPadding;
 
-                // Draw attempted (backtrack) paths in semi-transparent dark red
+                // Draw attempted (backtrack) paths — semi-transparent orange-red, above committed paths
                 foreach (var aPath in attemptedPaths)
                 {
                     if (aPath == null || aPath.Count < 2) continue;
                     var aPoly = new Shapes.Polyline()
                     {
-                        Stroke = new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0x55, 0x55)),
-                        StrokeThickness = Math.Max(1.0, 1.0 * scale),
+                        Stroke = new SolidColorBrush(Color.FromArgb(0xA0, 0xFF, 0x66, 0x33)),
+                        StrokeThickness = Math.Max(1.0, 1.5 * scale),
                         IsHitTestVisible = false
                     };
                     foreach (var p in aPath)
@@ -12443,7 +12445,7 @@ namespace FamidashEditor
                         double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
                         aPoly.Points.Add(new System.Windows.Point(dx, dy));
                     }
-                    Canvas.SetZIndex(aPoly, 1900); // below committed paths (2000)
+                    Canvas.SetZIndex(aPoly, 2050); // above committed paths (2000) so branches are visible
                     CanvasHost.Children.Add(aPoly);
                     attemptedPathPolylines.Add(aPoly);
                 }
@@ -21234,22 +21236,37 @@ namespace FamidashEditor
 
                         // Real-time speculative path visualization callback.
                         // Called from the background thread for each delay being tested.
-                        // Uses async BeginInvoke with timestamp throttle so the pathfinder
-                        // thread isn't blocked by UI rendering.
+                        // Uses async BeginInvoke so the pathfinder thread isn't blocked.
+                        // Throttle: allow max 8 paths per 16ms window so UI isn't flooded
+                        // but cube/ball decisions still show multiple paths per evaluation.
                         var _lastSpecUpdate = System.Diagnostics.Stopwatch.StartNew();
+                        int _specPathsInWindow = 0;
+                        _speculativePathData.Clear(); // clear from previous run
                         engine.OnSpeculativePath = (path, delay, survival, isHold) =>
                         {
-                            // Throttle: only update UI every ~16ms (60fps) to avoid
-                            // flooding the dispatcher queue and slowing the pathfinder.
-                            // Always process clear requests (path == null).
-                            if (path != null && _lastSpecUpdate.ElapsedMilliseconds < 16)
+                            // Reset counter every 16ms window
+                            if (_lastSpecUpdate.ElapsedMilliseconds >= 16)
+                            {
+                                _lastSpecUpdate.Restart();
+                                _specPathsInWindow = 0;
+                            }
+                            if (path != null && _specPathsInWindow >= 8)
                                 return;
-                            _lastSpecUpdate.Restart();
+                            _specPathsInWindow++;
 
                             // Snapshot the data for the UI thread
                             var pathSnapshot = path != null ? new List<(int x, int y)>(path) : null;
                             int survCopy = survival;
                             bool isHoldCopy = isHold;
+
+                            // Save path data for persistent display after engine completes
+                            if (pathSnapshot != null && pathSnapshot.Count >= 2)
+                            {
+                                lock (_speculativePathData)
+                                {
+                                    _speculativePathData.Add(pathSnapshot);
+                                }
+                            }
 
                             Dispatcher.BeginInvoke(new Action(() =>
                             {
@@ -21264,7 +21281,7 @@ namespace FamidashEditor
 
                                     // Color: green if survived full horizon, red/orange otherwise
                                     Color c;
-                                    if (survCopy >= 180)
+                                    if (survCopy >= 90)
                                         c = Color.FromArgb(0xC0, 0x00, 0xFF, 0x00); // green = survived
                                     else if (isHoldCopy)
                                         c = Color.FromArgb(0xC0, 0xFF, 0x88, 0x00); // orange = hold-jump dying
@@ -21321,6 +21338,19 @@ namespace FamidashEditor
                                 {
                                     attemptedPaths.AddRange(engine.AttemptedPaths);
                                     _attemptedPathsCleared = false;
+                                }
+
+                                // Also persist speculative paths (the paths the PF tested
+                                // during decision-making) so they remain visible after
+                                // completion — not just the backtrack failures.
+                                lock (_speculativePathData)
+                                {
+                                    if (_speculativePathData.Count > 0)
+                                    {
+                                        attemptedPaths.AddRange(_speculativePathData);
+                                        _speculativePathData.Clear();
+                                        _attemptedPathsCleared = false;
+                                    }
                                 }
 
                                 if (engine.Success)

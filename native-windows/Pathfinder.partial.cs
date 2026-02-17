@@ -52,7 +52,8 @@ namespace FamidashEditor
                 // Robot/ninja/etc still need 2-frame hold for velY oscillation.
                 bool isContinuousThrust = (currentGameMode == 1 || currentGameMode == 3); // Ship or UFO
                 bool isCube = (currentGameMode == 0);
-                if (!isContinuousThrust && !isCube)
+                bool isBall = (currentGameMode == 2); // Ball needs 1-frame press — 2-frame hold causes double gravity flip
+                if (!isContinuousThrust && !isCube && !isBall)
                 {
                     pfHoldCounter = 1; // Hold for 1 extra frame after this one
                 }

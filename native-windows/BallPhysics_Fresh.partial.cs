@@ -198,25 +198,35 @@ namespace FamidashEditor
                 
                 if (currplayer_gravity == 0) {
                     // Inverted gravity - prevent velocity from pulling into ceiling
-                    int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
-                    var (collided, _) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
-                    
-                    // Only zero velocity if moving UP (negative Y velocity) into ceiling
-                    if (collided && playerVelY_fixed < 0) {
-                        playerVelY_fixed = 0;
-                        AppendSimDebug($"[BALL] Ceiling grounded - zeroed upward velocity");
+                    // Only check when actually moving toward ceiling (velY < 0).
+                    // CheckCollisionUp may have spike death side-effects.
+                    if (playerVelY_fixed < 0) {
+                        int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
+                        var (collided, _) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
+                        
+                        if (collided) {
+                            playerVelY_fixed = 0;
+                            AppendSimDebug($"[BALL] Ceiling grounded - zeroed upward velocity");
+                        }
                     }
                 } else {
                     // Normal gravity - prevent velocity from pulling into ground
-                    int playerBottom = (playerY_fixed >> 8) + hitboxOffsetY + hitboxH;
-                    int testTop = playerBottom;
-                    int testHeight = 2;
-                    var (collided, _) = CheckCollisionDown(collisionX, testTop, hitboxW, testHeight);
-                    
-                    // Only zero velocity if moving DOWN (positive Y velocity) into ground
-                    if (collided && playerVelY_fixed > 0) {
-                        playerVelY_fixed = 0;
-                        AppendSimDebug($"[BALL] Floor grounded - zeroed downward velocity");
+                    // CRITICAL: Only call CheckCollisionDown when velY > 0 (moving toward floor).
+                    // CheckCollisionDown has a floor-spike death side-effect that fires
+                    // unconditionally.  When the ball is moving AWAY from the floor (velY <= 0),
+                    // the velocity guard below would reject the collision anyway, but the spike
+                    // death has already triggered inside CheckCollisionDown, killing the player
+                    // against a spike it's moving away from.
+                    if (playerVelY_fixed > 0) {
+                        int playerBottom = (playerY_fixed >> 8) + hitboxOffsetY + hitboxH;
+                        int testTop = playerBottom;
+                        int testHeight = 2;
+                        var (collided, _) = CheckCollisionDown(collisionX, testTop, hitboxW, testHeight);
+                        
+                        if (collided) {
+                            playerVelY_fixed = 0;
+                            AppendSimDebug($"[BALL] Floor grounded - zeroed downward velocity");
+                        }
                     }
                 }
             }
