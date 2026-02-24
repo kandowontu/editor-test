@@ -2396,10 +2396,10 @@ namespace FamidashEditor
     private Shapes.Polyline? playerPath2Polyline = null;  // Player 2 path line for dual mode
     // Pathfinder-calculated paths (colored by bias, persist until F12 clear)
     private System.Collections.Generic.List<(System.Collections.Generic.List<(int x, int y)> points, Color color)> pathfinderPaths = new();
-    private System.Collections.Generic.List<Shapes.Polyline> pathfinderPathPolylines = new();
+    private System.Collections.Generic.List<System.Windows.UIElement> pathfinderPathPolylines = new();
     // Attempted (failed backtrack) paths from pathfinder — shown in a different color
     private System.Collections.Generic.List<System.Collections.Generic.List<(int x, int y)>> attemptedPaths = new();
-    private System.Collections.Generic.List<Shapes.Polyline> attemptedPathPolylines = new();
+    private System.Collections.Generic.List<System.Windows.UIElement> attemptedPathPolylines = new();
     // Two-stage F12 clear: first press clears attempted paths, second press clears final path
     private bool _attemptedPathsCleared = false;
     // Speculative path visualization (updated in real-time during pathfinder computation)
@@ -2407,7 +2407,7 @@ namespace FamidashEditor
     private List<Shapes.Polyline> _speculativePolylines = new();
     // Speculative path data saved during calculation for persistent display after completion
     private List<List<(int x, int y)>> _speculativePathData = new();
-    // Active pathfinder engine reference (for Jump To button)
+    // Active pathfinder engine reference (for Jump To button and cancellation)
     private PathfinderEngine? _activePathfinderEngine = null;
     // Optional death marker (red X) placed by simulator when a death occurs
     private Shapes.Line? playerDeathMarkerA = null;
@@ -2424,6 +2424,8 @@ namespace FamidashEditor
     // Precomputed pathfinder data (calculated in editor, played back in simulator)
     private System.Collections.Generic.List<bool>? precomputedPathfinderInputs = null;
     public System.Collections.Generic.List<bool>? PrecomputedPathfinderInputs => precomputedPathfinderInputs;
+    private System.Collections.Generic.HashSet<int>? precomputedCollectedCoins = null;
+    public System.Collections.Generic.HashSet<int>? PrecomputedCollectedCoins => precomputedCollectedCoins;
     
     // Preview mode for animations (saws, etc.)
     private bool previewMode = false;
@@ -3522,6 +3524,8 @@ namespace FamidashEditor
             if (MenuFileLoad != null) MenuFileLoad.Click += LoadButton_Click;
             if (MenuFileClose != null) MenuFileClose.Click += MenuFileClose_Click;
             if (MenuFileExit != null) MenuFileExit.Click += (s, e) => { this.Close(); };
+            if (MenuFileSavePF != null) MenuFileSavePF.Click += MenuFileSavePF_Click;
+            if (MenuFileLoadPF != null) MenuFileLoadPF.Click += MenuFileLoadPF_Click;
             
             // Add keyboard shortcut handler
             this.PreviewKeyDown += MainWindow_KeyDown;
@@ -12430,45 +12434,99 @@ namespace FamidashEditor
                 double pad = mapViewportPadding;
 
                 // Draw attempted (backtrack) paths — semi-transparent orange-red, above committed paths
-                foreach (var aPath in attemptedPaths)
+                // Use a single StreamGeometry+Path instead of individual Polylines
+                // to avoid UI lockup when there are hundreds of paths.
+                if (attemptedPaths.Count > 0)
                 {
-                    if (aPath == null || aPath.Count < 2) continue;
-                    var aPoly = new Shapes.Polyline()
+                    var geo = new System.Windows.Media.StreamGeometry();
+                    using (var ctx = geo.Open())
                     {
+                        foreach (var aPath in attemptedPaths)
+                        {
+                            if (aPath == null || aPath.Count < 2) continue;
+                            var first = aPath[0];
+                            ctx.BeginFigure(
+                                new System.Windows.Point(pad + first.x * scale,
+                                    pad + (first.y + (3 * TileSize)) * scale + gridRenderShiftY),
+                                false, false);
+                            for (int pi = 1; pi < aPath.Count; pi++)
+                            {
+                                var p = aPath[pi];
+                                ctx.LineTo(
+                                    new System.Windows.Point(pad + p.x * scale,
+                                        pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY),
+                                    true, false);
+                            }
+                        }
+                    }
+                    geo.Freeze();
+                    var aPathElement = new Shapes.Path()
+                    {
+                        Data = geo,
                         Stroke = new SolidColorBrush(Color.FromArgb(0xA0, 0xFF, 0x66, 0x33)),
                         StrokeThickness = Math.Max(1.0, 1.5 * scale),
                         IsHitTestVisible = false
                     };
-                    foreach (var p in aPath)
-                    {
-                        double dx = pad + p.x * scale;
-                        double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
-                        aPoly.Points.Add(new System.Windows.Point(dx, dy));
-                    }
-                    Canvas.SetZIndex(aPoly, 2050); // above committed paths (2000) so branches are visible
-                    CanvasHost.Children.Add(aPoly);
-                    attemptedPathPolylines.Add(aPoly);
+                    Canvas.SetZIndex(aPathElement, 2050);
+                    CanvasHost.Children.Add(aPathElement);
+                    attemptedPathPolylines.Add(aPathElement);
                 }
 
                 // Draw pathfinder paths (colored by bias, persist until F12)
+                // Use StreamGeometry instead of Polyline for performance with
+                // large point counts (26k+ points for long levels).
                 foreach (var pfPath in pathfinderPaths)
                 {
                     if (pfPath.points == null || pfPath.points.Count == 0) continue;
-                    var pfPolyLine = new Shapes.Polyline()
+
+                    var pfGeo = new System.Windows.Media.StreamGeometry();
+                    using (var ctx = pfGeo.Open())
                     {
+                        // Decimate: skip points closer than 1 screen pixel
+                        double minDist2 = scale * scale; // 1px on screen
+                        double lastDx = 0, lastDy = 0;
+                        bool started = false;
+                        foreach (var p in pfPath.points)
+                        {
+                            double dx = pad + p.x * scale;
+                            double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                            if (!started)
+                            {
+                                ctx.BeginFigure(new System.Windows.Point(dx, dy), false, false);
+                                lastDx = dx; lastDy = dy;
+                                started = true;
+                            }
+                            else
+                            {
+                                double ddx = dx - lastDx, ddy = dy - lastDy;
+                                if (ddx * ddx + ddy * ddy >= minDist2)
+                                {
+                                    ctx.LineTo(new System.Windows.Point(dx, dy), true, false);
+                                    lastDx = dx; lastDy = dy;
+                                }
+                            }
+                        }
+                        // Always include last point
+                        if (started && pfPath.points.Count > 1)
+                        {
+                            var last = pfPath.points[pfPath.points.Count - 1];
+                            double dx = pad + last.x * scale;
+                            double dy = pad + (last.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                            ctx.LineTo(new System.Windows.Point(dx, dy), true, false);
+                        }
+                    }
+                    pfGeo.Freeze();
+
+                    var pfPathElement = new Shapes.Path()
+                    {
+                        Data = pfGeo,
                         Stroke = new SolidColorBrush(pfPath.color),
                         StrokeThickness = Math.Max(1.0, 2.0 * scale),
                         IsHitTestVisible = false
                     };
-                    foreach (var p in pfPath.points)
-                    {
-                        double dx = pad + p.x * scale;
-                        double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
-                        pfPolyLine.Points.Add(new System.Windows.Point(dx, dy));
-                    }
-                    Canvas.SetZIndex(pfPolyLine, 2000);
-                    CanvasHost.Children.Add(pfPolyLine);
-                    pathfinderPathPolylines.Add(pfPolyLine);
+                    Canvas.SetZIndex(pfPathElement, 2000);
+                    CanvasHost.Children.Add(pfPathElement);
+                    pathfinderPathPolylines.Add(pfPathElement);
                 }
 
                 if (playerPathPoints == null || playerPathPoints.Count == 0) return;
@@ -21180,6 +21238,11 @@ namespace FamidashEditor
                 if (settingsWin.ShowDialog() != true)
                     return;
                 double jumpTimingBias = settingsWin.JumpTimingBias;
+                bool preferCoins = settingsWin.PreferCoins;
+                bool drawPathLine = settingsWin.DrawPathLine;
+                bool showPathfinderLive = settingsWin.ShowPathfinderLive;
+                bool showProspectivePaths = settingsWin.ShowProspectivePaths;
+                int clickOptimization = settingsWin.ClickOptimization;
 
                 // Determine starting position
                 int startX_px = 0;
@@ -21208,6 +21271,7 @@ namespace FamidashEditor
 
                 StatusText.Text = "Pathfinder: Calculating...";
                 CalculatePathButton.IsEnabled = false;
+                StopPathfinderButton.Visibility = System.Windows.Visibility.Visible;
                 PathfinderProgressBar.Value = 0;
                 PathfinderProgressBar.Visibility = System.Windows.Visibility.Visible;
                 PathfinderJumpToButton.Visibility = System.Windows.Visibility.Visible;
@@ -21231,6 +21295,7 @@ namespace FamidashEditor
                             loadedMaxFallSpeed,
                             spritePixelOffsets);
                         engine.JumpTimingBias = jumpTimingBias;
+                        engine.PreferCoins = preferCoins;
                         engine.Progress = progress;
                         _activePathfinderEngine = engine;
 
@@ -21241,124 +21306,166 @@ namespace FamidashEditor
                         // but cube/ball decisions still show multiple paths per evaluation.
                         var _lastSpecUpdate = System.Diagnostics.Stopwatch.StartNew();
                         int _specPathsInWindow = 0;
+                        int _specDataCount = 0;
+                        const int MAX_SPEC_DATA = 500; // Cap stored paths to prevent editor hang
+                        bool _specCancelled = false; // set when Run() completes to abort queued dispatches
                         _speculativePathData.Clear(); // clear from previous run
                         engine.OnSpeculativePath = (path, delay, survival, isHold) =>
                         {
-                            // Reset counter every 16ms window
-                            if (_lastSpecUpdate.ElapsedMilliseconds >= 16)
-                            {
-                                _lastSpecUpdate.Restart();
-                                _specPathsInWindow = 0;
-                            }
-                            if (path != null && _specPathsInWindow >= 8)
-                                return;
-                            _specPathsInWindow++;
+                            if (_specCancelled) return; // Run() finished, stop queuing dispatches
 
                             // Snapshot the data for the UI thread
                             var pathSnapshot = path != null ? new List<(int x, int y)>(path) : null;
-                            int survCopy = survival;
-                            bool isHoldCopy = isHold;
 
-                            // Save path data for persistent display after engine completes
-                            if (pathSnapshot != null && pathSnapshot.Count >= 2)
+                            // Save path data for persistent "show after" display (capped)
+                            if (showProspectivePaths && pathSnapshot != null && pathSnapshot.Count >= 2
+                                && _specDataCount < MAX_SPEC_DATA)
                             {
                                 lock (_speculativePathData)
                                 {
                                     _speculativePathData.Add(pathSnapshot);
+                                    _specDataCount++;
                                 }
                             }
 
-                            Dispatcher.BeginInvoke(new Action(() =>
+                            // Live rendering (only if toggle is on)
+                            if (showPathfinderLive)
                             {
-                                try
+                                // Reset counter every 16ms window
+                                if (_lastSpecUpdate.ElapsedMilliseconds >= 16)
                                 {
-                                    if (CanvasHost == null) return;
-
-                                    if (pathSnapshot == null || pathSnapshot.Count == 0) return;
-
-                                    double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
-                                    double pad = mapViewportPadding;
-
-                                    // Color: green if survived full horizon, red/orange otherwise
-                                    Color c;
-                                    if (survCopy >= 90)
-                                        c = Color.FromArgb(0xC0, 0x00, 0xFF, 0x00); // green = survived
-                                    else if (isHoldCopy)
-                                        c = Color.FromArgb(0xC0, 0xFF, 0x88, 0x00); // orange = hold-jump dying
-                                    else
-                                        c = Color.FromArgb(0xC0, 0xFF, 0x40, 0x40); // red = dying
-
-                                    var poly = new Shapes.Polyline()
-                                    {
-                                        Stroke = new SolidColorBrush(c),
-                                        StrokeThickness = Math.Max(1.0, 1.5 * scale),
-                                        IsHitTestVisible = false
-                                    };
-                                    foreach (var p in pathSnapshot)
-                                    {
-                                        double dx = pad + p.x * scale;
-                                        double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
-                                        poly.Points.Add(new System.Windows.Point(dx, dy));
-                                    }
-                                    Canvas.SetZIndex(poly, 2100); // above committed paths
-                                    CanvasHost.Children.Add(poly);
-                                    _speculativePolylines.Add(poly);
-
-                                    // Remove this polyline after 1 second
-                                    var removeTimer = new System.Windows.Threading.DispatcherTimer();
-                                    removeTimer.Interval = TimeSpan.FromSeconds(1);
-                                    var polyRef = poly;
-                                    removeTimer.Tick += (s, ev) =>
-                                    {
-                                        removeTimer.Stop();
-                                        try
-                                        {
-                                            CanvasHost?.Children.Remove(polyRef);
-                                            _speculativePolylines.Remove(polyRef);
-                                        }
-                                        catch { }
-                                    };
-                                    removeTimer.Start();
+                                    _lastSpecUpdate.Restart();
+                                    _specPathsInWindow = 0;
                                 }
-                                catch { }
-                            }));
+                                if (path != null && _specPathsInWindow >= 3)
+                                    return;
+                                _specPathsInWindow++;
+
+                                int survCopy = survival;
+                                bool isHoldCopy = isHold;
+
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try
+                                    {
+                                        // Skip rendering if Run() already completed —
+                                        // this dispatch was queued before completion
+                                        if (_specCancelled) return;
+                                        if (CanvasHost == null) return;
+
+                                        if (pathSnapshot == null || pathSnapshot.Count == 0) return;
+
+                                        double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                                        double pad = mapViewportPadding;
+
+                                        // Color: green if survived full horizon, red/orange otherwise
+                                        Color c;
+                                        if (survCopy >= 90)
+                                            c = Color.FromArgb(0xC0, 0x00, 0xFF, 0x00); // green = survived
+                                        else if (isHoldCopy)
+                                            c = Color.FromArgb(0xC0, 0xFF, 0x88, 0x00); // orange = hold-jump dying
+                                        else
+                                            c = Color.FromArgb(0xC0, 0xFF, 0x40, 0x40); // red = dying
+
+                                        var poly = new Shapes.Polyline()
+                                        {
+                                            Stroke = new SolidColorBrush(c),
+                                            StrokeThickness = Math.Max(1.0, 1.5 * scale),
+                                            IsHitTestVisible = false
+                                        };
+                                        foreach (var p in pathSnapshot)
+                                        {
+                                            double dx = pad + p.x * scale;
+                                            double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                                            poly.Points.Add(new System.Windows.Point(dx, dy));
+                                        }
+                                        Canvas.SetZIndex(poly, 2100); // above committed paths
+                                        CanvasHost.Children.Add(poly);
+                                        _speculativePolylines.Add(poly);
+
+                                        // Remove this polyline after 250ms
+                                        var removeTimer = new System.Windows.Threading.DispatcherTimer();
+                                        removeTimer.Interval = TimeSpan.FromMilliseconds(250);
+                                        var polyRef = poly;
+                                        removeTimer.Tick += (s, ev) =>
+                                        {
+                                            removeTimer.Stop();
+                                            try
+                                            {
+                                                CanvasHost?.Children.Remove(polyRef);
+                                                _speculativePolylines.Remove(polyRef);
+                                            }
+                                            catch { }
+                                        };
+                                        removeTimer.Start();
+                                    }
+                                    catch { }
+                                }));
+                            }
                         };
 
                         engine.Run(startX_px, startY_px, startSpeedUiIndex, startGameMode,
                                    false, false);
 
-                        Dispatcher.BeginInvoke(new Action(() =>
+                        // Stop speculative path dispatches immediately — any already
+                        // queued on the dispatcher will see _specCancelled and no-op.
+                        _specCancelled = true;
+                        engine.OnSpeculativePath = null;
+
+                        // Click optimization (runs on background thread before UI update)
+                        if (clickOptimization > 0 && engine.Success)
+                        {
+                            engine.OptimizeClicks(clickOptimization, startX_px, startY_px,
+                                startSpeedUiIndex, startGameMode, false, false);
+                        }
+
+                        // Use Send priority so this executes BEFORE any remaining
+                        // speculative path dispatches still in the queue.
+                        Dispatcher.Invoke(System.Windows.Threading.DispatcherPriority.Send, new Action(() =>
                         {
                             try
                             {
                                 string biasLabel = jumpTimingBias < 0.125 ? "Earliest" : jumpTimingBias < 0.375 ? "Early" : jumpTimingBias < 0.625 ? "Middle" : jumpTimingBias < 0.875 ? "Late" : "Latest";
 
                                 // Store attempted (backtrack) paths for visualization
-                                if (engine.AttemptedPaths != null && engine.AttemptedPaths.Count > 0)
+                                if (showProspectivePaths && engine.AttemptedPaths != null && engine.AttemptedPaths.Count > 0)
                                 {
                                     attemptedPaths.AddRange(engine.AttemptedPaths);
                                     _attemptedPathsCleared = false;
                                 }
 
-                                // Also persist speculative paths (the paths the PF tested
-                                // during decision-making) so they remain visible after
-                                // completion — not just the backtrack failures.
-                                lock (_speculativePathData)
+                                // Persist speculative paths as attempted paths when "show after" is enabled
+                                if (showProspectivePaths)
                                 {
-                                    if (_speculativePathData.Count > 0)
+                                    lock (_speculativePathData)
                                     {
-                                        attemptedPaths.AddRange(_speculativePathData);
+                                        if (_speculativePathData.Count > 0)
+                                        {
+                                            attemptedPaths.AddRange(_speculativePathData);
+                                            _attemptedPathsCleared = false;
+                                        }
                                         _speculativePathData.Clear();
-                                        _attemptedPathsCleared = false;
+                                    }
+                                }
+                                else
+                                {
+                                    lock (_speculativePathData)
+                                    {
+                                        _speculativePathData.Clear();
                                     }
                                 }
 
                                 if (engine.Success)
                                 {
                                     precomputedPathfinderInputs = engine.Inputs;
-                                    pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
-                                    UpdatePlayerPathOverlay();
+                                    precomputedCollectedCoins = engine.FinalCollectedCoinIndices;
+                                    if (drawPathLine)
+                                    {
+                                        pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
+                                        UpdatePlayerPathOverlay();
+                                    }
                                     StatusText.Text = $"Pathfinder ({biasLabel}): {engine.ResultMessage}" +
+                                        (engine.CoinsCollected > 0 ? $" [{engine.CoinsCollected} coin(s)]" : "") +
                                         (engine.AttemptedPaths?.Count > 0 ? $" ({engine.AttemptedPaths.Count} backtracks)" : "");
                                 }
                                 else
@@ -21367,10 +21474,26 @@ namespace FamidashEditor
                                     // as far as the pathfinder got (user can enable pathfinder
                                     // checkbox even for incomplete paths)
                                     precomputedPathfinderInputs = engine.Inputs;
-                                    pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
-                                    UpdatePlayerPathOverlay();
-                                    StatusText.Text = $"Pathfinder ({biasLabel}): INCOMPLETE — {engine.ResultMessage}" +
+                                    precomputedCollectedCoins = engine.FinalCollectedCoinIndices;
+                                    if (drawPathLine)
+                                    {
+                                        pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
+                                        UpdatePlayerPathOverlay();
+                                    }
+                                    string incompleteMsg = $"Pathfinder ({biasLabel}): INCOMPLETE — {engine.ResultMessage}" +
+                                        (engine.CoinsCollected > 0 ? $" [{engine.CoinsCollected} coin(s)]" : "") +
                                         (engine.AttemptedPaths?.Count > 0 ? $" ({engine.AttemptedPaths.Count} backtracks)" : "");
+                                    StatusText.Text = incompleteMsg;
+                                    StatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x66, 0x66));
+                                    // Reset color after 8 seconds
+                                    var colorTimer = new System.Windows.Threading.DispatcherTimer();
+                                    colorTimer.Interval = TimeSpan.FromSeconds(8);
+                                    colorTimer.Tick += (s2, e2) =>
+                                    {
+                                        colorTimer.Stop();
+                                        try { StatusText.Foreground = new SolidColorBrush(Colors.White); } catch { }
+                                    };
+                                    colorTimer.Start();
                                 }
                             }
                             catch (Exception ex)
@@ -21380,9 +21503,12 @@ namespace FamidashEditor
                             finally
                             {
                                 CalculatePathButton.IsEnabled = true;
+                                StopPathfinderButton.Visibility = System.Windows.Visibility.Collapsed;
+                                StopPathfinderButton.IsEnabled = true;
                                 PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed;
                                 PathfinderJumpToButton.Visibility = System.Windows.Visibility.Collapsed;
                                 _activePathfinderEngine = null;
+                                StopPathfinderFollow();
                                 // Clean up all speculative path polylines
                                 foreach (var sp in _speculativePolylines)
                                 {
@@ -21398,8 +21524,10 @@ namespace FamidashEditor
                         {
                             StatusText.Text = $"Pathfinder error: {ex.Message}";
                             CalculatePathButton.IsEnabled = true;
+                            StopPathfinderButton.Visibility = System.Windows.Visibility.Collapsed;
                             PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed;
                             PathfinderJumpToButton.Visibility = System.Windows.Visibility.Collapsed;
+                            StopPathfinderFollow();
                             _activePathfinderEngine = null;
                         }));
                     }
@@ -21409,16 +21537,63 @@ namespace FamidashEditor
             {
                 StatusText.Text = $"Pathfinder error: {ex.Message}";
                 CalculatePathButton.IsEnabled = true;
+                StopPathfinderButton.Visibility = System.Windows.Visibility.Collapsed;
                 try { PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                try { StopPathfinderFollow(); } catch { }
             }
         }
+
+        private void StopPathfinderButton_Click(object sender, RoutedEventArgs e)
+        {
+            var engine = _activePathfinderEngine;
+            if (engine != null)
+            {
+                engine.CancelRequested = true;
+                StatusText.Text = "Pathfinder: Cancelling...";
+                StopPathfinderButton.IsEnabled = false;
+            }
+        }
+
+        private System.Windows.Threading.DispatcherTimer? _pathfinderFollowTimer;
+        private bool _pathfinderFollowing = false;
 
         private void PathfinderJumpToButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
+                _pathfinderFollowing = !_pathfinderFollowing;
+                if (_pathfinderFollowing)
+                {
+                    PathfinderJumpToButton.Content = "Following...";
+                    PathfinderJumpToButton.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x77, 0xAA));
+                    PathfinderJumpToButton.Foreground = new SolidColorBrush(Colors.White);
+                    if (_pathfinderFollowTimer == null)
+                    {
+                        _pathfinderFollowTimer = new System.Windows.Threading.DispatcherTimer();
+                        _pathfinderFollowTimer.Interval = TimeSpan.FromMilliseconds(100);
+                        _pathfinderFollowTimer.Tick += (s2, e2) => ScrollToPathfinderPosition();
+                    }
+                    _pathfinderFollowTimer.Start();
+                    ScrollToPathfinderPosition(); // immediate first scroll
+                }
+                else
+                {
+                    StopPathfinderFollow();
+                }
+            }
+            catch { }
+        }
+
+        private void ScrollToPathfinderPosition()
+        {
+            try
+            {
                 var engine = _activePathfinderEngine;
-                if (engine == null || MapScrollViewer == null) return;
+                if (engine == null || MapScrollViewer == null)
+                {
+                    StopPathfinderFollow();
+                    return;
+                }
                 int xPx = engine.CurrentX_px;
                 double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
                 double pad = mapViewportPadding;
@@ -21428,6 +21603,19 @@ namespace FamidashEditor
                 double maxH = Math.Max(0, (CanvasHost?.ActualWidth ?? 0) - viewportW);
                 if (newH > maxH) newH = maxH;
                 MapScrollViewer.ScrollToHorizontalOffset(newH);
+            }
+            catch { }
+        }
+
+        private void StopPathfinderFollow()
+        {
+            _pathfinderFollowing = false;
+            _pathfinderFollowTimer?.Stop();
+            try
+            {
+                PathfinderJumpToButton.Content = "Follow";
+                PathfinderJumpToButton.ClearValue(Button.BackgroundProperty);
+                PathfinderJumpToButton.ClearValue(Button.ForegroundProperty);
             }
             catch { }
         }
@@ -22656,6 +22844,166 @@ namespace FamidashEditor
         }
         
         return null;
+    }
+
+    // ========================================================================
+    // PATHFINDER SAVE / LOAD
+    // ========================================================================
+
+    /// <summary>Serialization DTO for pathfinder data files (.pfdat)</summary>
+    private class PathfinderSaveData
+    {
+        public int Version { get; set; } = 1;
+        public List<bool> Inputs { get; set; } = new();
+        public List<int>? CollectedCoins { get; set; }
+        public PathfinderValidation Validation { get; set; } = new();
+    }
+
+    private class PathfinderValidation
+    {
+        public int MapWidth { get; set; }
+        public int MapHeight { get; set; }
+        public int StartGameMode { get; set; }
+        public int StartSpeedUiIndex { get; set; }
+        public int MaxFallSpeed { get; set; }
+        public long TileChecksum { get; set; }
+        public long SpriteChecksum { get; set; }
+    }
+
+    /// <summary>Compute a simple FNV-1a-style checksum for an int array.</summary>
+    private static long ComputeArrayChecksum(int[] data)
+    {
+        unchecked
+        {
+            long hash = unchecked((long)0xcbf29ce484222325UL);
+            for (int i = 0; i < data.Length; i++)
+            {
+                hash ^= data[i];
+                hash *= unchecked((long)0x100000001b3L);
+            }
+            return hash;
+        }
+    }
+
+    private void MenuFileSavePF_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (precomputedPathfinderInputs == null || precomputedPathfinderInputs.Count == 0)
+            {
+                MessageBox.Show("No pathfinder data to save. Run the pathfinder first.",
+                    "Save Pathfinder Data", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dlg = new Microsoft.Win32.SaveFileDialog
+            {
+                Filter = "Pathfinder Data (*.pfdat)|*.pfdat|All Files (*.*)|*.*",
+                DefaultExt = ".pfdat",
+                Title = "Save Pathfinder Data"
+            };
+
+            if (dlg.ShowDialog() == true)
+            {
+                var saveData = new PathfinderSaveData
+                {
+                    Version = 1,
+                    Inputs = new List<bool>(precomputedPathfinderInputs),
+                    CollectedCoins = precomputedCollectedCoins != null
+                        ? new List<int>(precomputedCollectedCoins)
+                        : null,
+                    Validation = new PathfinderValidation
+                    {
+                        MapWidth = mapWidth,
+                        MapHeight = mapHeight,
+                        StartGameMode = loadedStartingGameMode ?? 0,
+                        StartSpeedUiIndex = loadedStartingSpeedUiIndex,
+                        MaxFallSpeed = loadedMaxFallSpeed,
+                        TileChecksum = ComputeArrayChecksum(tiles),
+                        SpriteChecksum = ComputeArrayChecksum(sprites),
+                    }
+                };
+
+                var opts = new JsonSerializerOptions { WriteIndented = true };
+                string json = JsonSerializer.Serialize(saveData, opts);
+                System.IO.File.WriteAllText(dlg.FileName, json);
+
+                MessageBox.Show($"Pathfinder data saved ({precomputedPathfinderInputs.Count} frames).",
+                    "Save Pathfinder Data", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to save pathfinder data:\n{ex.Message}",
+                "Save Pathfinder Data", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void MenuFileLoadPF_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "Pathfinder Data (*.pfdat)|*.pfdat|All Files (*.*)|*.*",
+                Title = "Load Pathfinder Data"
+            };
+
+            if (dlg.ShowDialog() != true) return;
+
+            string json = System.IO.File.ReadAllText(dlg.FileName);
+            var saveData = JsonSerializer.Deserialize<PathfinderSaveData>(json);
+
+            if (saveData == null || saveData.Inputs == null || saveData.Inputs.Count == 0)
+            {
+                MessageBox.Show("The file contains no pathfinder input data.",
+                    "Load Pathfinder Data", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Validate against current level
+            var v = saveData.Validation;
+            var mismatches = new List<string>();
+
+            if (v != null)
+            {
+                if (v.MapWidth != mapWidth) mismatches.Add($"Map width: file={v.MapWidth}, current={mapWidth}");
+                if (v.MapHeight != mapHeight) mismatches.Add($"Map height: file={v.MapHeight}, current={mapHeight}");
+                if (v.StartGameMode != (loadedStartingGameMode ?? 0)) mismatches.Add($"Start game mode: file={v.StartGameMode}, current={loadedStartingGameMode ?? 0}");
+                if (v.StartSpeedUiIndex != loadedStartingSpeedUiIndex) mismatches.Add($"Start speed: file={v.StartSpeedUiIndex}, current={loadedStartingSpeedUiIndex}");
+                if (v.MaxFallSpeed != loadedMaxFallSpeed) mismatches.Add($"Max fall speed: file={v.MaxFallSpeed}, current={loadedMaxFallSpeed}");
+                if (v.TileChecksum != ComputeArrayChecksum(tiles)) mismatches.Add("Tile data has changed");
+                if (v.SpriteChecksum != ComputeArrayChecksum(sprites)) mismatches.Add("Sprite data has changed");
+            }
+            else
+            {
+                mismatches.Add("No validation data in file (old format)");
+            }
+
+            if (mismatches.Count > 0)
+            {
+                string msg = "The pathfinder data may not match the current level:\n\n"
+                    + string.Join("\n", mismatches)
+                    + "\n\nLoad anyway?";
+                var result = MessageBox.Show(msg, "Pathfinder Data Mismatch",
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (result != MessageBoxResult.Yes) return;
+            }
+
+            precomputedPathfinderInputs = saveData.Inputs;
+            precomputedCollectedCoins = saveData.CollectedCoins != null
+                ? new HashSet<int>(saveData.CollectedCoins)
+                : null;
+
+            MessageBox.Show($"Pathfinder data loaded ({saveData.Inputs.Count} frames).\n"
+                + "Open the simulator to use it.",
+                "Load Pathfinder Data", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to load pathfinder data:\n{ex.Message}",
+                "Load Pathfinder Data", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 }
 

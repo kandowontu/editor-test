@@ -18,7 +18,8 @@ namespace FamidashEditor
     ///      c. CubeEject (floor/ceiling collision + snap)
     ///      d. Jump input (ONLY when velY == 0 after ejection)
     ///   5. Forward collision (right-edge death for cube/robot/ninja)
-    ///   6. CheckDeathCollision (5-point hitbox corners + right-center)
+    ///   6. Restore NEW X
+    ///   7. CheckDeathCollision at NEW X (4 hitbox corners + right-center, matching sim)
     /// </summary>
     public class PathfinderEngine
     {
@@ -27,16 +28,17 @@ namespace FamidashEditor
         private const int LOOKAHEAD_HORIZON = 90;
         private const int MAX_SPECULATIVE_DEPTH = 3; // max recursion depth for chained jump evaluation
         private const int CORRIDOR_LOOK_AHEAD_TILES = 15; // scan ahead for obstacles (240px ≈ 87 frames at 1x)
-        private const int SHIP_LOOKAHEAD_HORIZON = 60;     // greedy PD-controlled lookahead horizon for ship decisions
-        private const int SHIP_MIN_COMMIT = 3;             // minimum frames to hold/release before re-evaluating (creates arcs)
-        private const int DEATH_TILE_MARGIN = 10;          // extra clearance pixels around death/spike tiles in ship corridor
-        private const int MAX_FRAMES = 60 * 60 * 5; // 5 minutes at 60fps
-        private const int MAX_BACKTRACK_ATTEMPTS = 600; // max backtrack retries PER death point (reset after each success)
+        private const int SHIP_LOOKAHEAD_HORIZON = 30;     // multi-frame lookahead for ship decisions
+        private const int SHIP_TREE_DEPTH = 20;            // binary-tree search depth for ship
+        private const int SHIP_TREE_MAX_NODES = 16000;      // cap on total nodes explored in tree search
+        private const int MAX_FRAMES = 60 * 60 * 8; // 8 minutes at 60fps (enough for ~4600-tile levels at 1x speed)
+        private const int MAX_BACKTRACK_ATTEMPTS = 200; // max backtrack retries PER death point (reset after each success)
         private const int MAX_TOTAL_BACKTRACK_ATTEMPTS = 3000; // absolute cap on total backtracks across all deaths
         private const int MAX_TOTAL_ITERATIONS = MAX_FRAMES * 10; // hard cap on total frame iterations (including replays)
         private const int MAX_CHECKPOINT_DEPTH = 120;   // max saved decision checkpoints (deep history for long levels)
         // No rewind limit — backtracker goes as far back as needed
         private const int MIN_CHECKPOINT_SPACING = 8;   // minimum frames between consecutive checkpoints
+        private const int ELEV_THRESHOLD = 12;              // <1 tile — elevation difference to trigger exploration
 
         /// <summary>
         /// Jump timing bias: 0.0 = earliest viable jump, 0.5 = middle (default), 1.0 = latest viable jump.
@@ -47,6 +49,26 @@ namespace FamidashEditor
         /// Optional progress reporter. Reports 0-100 (percentage of level length explored).
         /// </summary>
         public IProgress<int>? Progress { get; set; }
+
+        /// <summary>
+        /// When true, the pathfinder attempts to collect coins along the path.
+        /// </summary>
+        public bool PreferCoins { get; set; } = false;
+
+        /// <summary>
+        /// Number of coins collected by the final path.
+        /// </summary>
+        public int CoinsCollected { get; private set; } = 0;
+
+        /// <summary>
+        /// Indices of coins collected in the final path.
+        /// </summary>
+        public HashSet<int>? FinalCollectedCoinIndices { get; private set; }
+
+        /// <summary>
+        /// Set to true to request cancellation from UI thread.
+        /// </summary>
+        public volatile bool CancelRequested;
 
         public Action<List<(int x, int y)>?, int, int, bool>? OnSpeculativePath { get; set; }
         public int CurrentX_px => _currentX_px;
@@ -276,6 +298,7 @@ namespace FamidashEditor
             public int ShipForceRelease; // _shipForceReleaseFrames at checkpoint
             public int ShipCommitFrames; // _shipCommitFrames at checkpoint
             public bool ShipCommitHold;  // _shipCommitHold at checkpoint
+            public int ForceJumpRemaining; // _btForceJumpFramesRemaining at checkpoint
         }
         private List<BacktrackCheckpoint> _backtrackCheckpoints = new();
         private int _backtrackAttempts;
@@ -285,12 +308,27 @@ namespace FamidashEditor
         private int _btOverrideDistFromDeath; // frames between override checkpoint and death (for adaptive forcing)
         private bool _backtrackActive;      // true while replaying from a checkpoint (suppress new checkpoints)
         private bool _btSuppressJumpUntilAirborne; // stage-1 no-jump persists until cube falls off edge
+        private int _btForceJumpFramesRemaining;  // when >0, force jump at every grounded frame (decrements per landing)
         private int _btDeathFrame;           // frame of the death that triggered backtracking
         private int _shipCorridorBias;       // sustained Y offset for ship corridor target during backtrack
         private int _shipForceHoldFrames;    // when >0, force hold input for this many frames
         private int _shipForceReleaseFrames; // when >0, force release input for this many frames
         private int _shipCommitFrames;       // remaining frames of current hold/release commitment
         private bool _shipCommitHold;        // true = committed to hold, false = committed to release
+
+        // ── Grounded walk counters (for periodic eval triggers) ───────
+        private int _cubeGroundedWalkFrames;  // consecutive grounded frames without jumping (cube)
+        private int _ballGroundedWalkFrames;  // consecutive grounded frames without flipping (ball)
+        private int _lastSpecMinLandY;        // min Y where VelY==0 during last speculative sim (surface elevation)
+
+        // ── Best-so-far path tracking (for partial results on fail/cancel) ──
+        private int _bestPathHighWaterX;      // highest X (pixels) reached by any attempted path
+        private List<(int x, int y)> _bestPathPoints = new();  // snapshot of PathPoints at best X
+        private List<bool> _bestInputs = new();                 // snapshot of Inputs at best X
+
+        // ── Backtrack timing ──
+        private System.Diagnostics.Stopwatch? _backtrackTimer;
+        private const int MAX_BACKTRACK_SECONDS = 60; // hard time limit on backtracking per death point
 
         // ── Speculative depth / frame counter (needed in both debug and release) ───
         private int _speculativeDepth; // >0 means we're inside lookahead — suppress logging
@@ -319,6 +357,50 @@ namespace FamidashEditor
         public string DebugLogPath => string.Empty;
 #endif
 
+        // ── Frame trace for diagnostics ─────────────────────────────────
+        // Writes a CSV to %TEMP%\famidash_pf_trace.csv on every frame of the
+        // main run to enable comparing with NES emulator / simulator output.
+#if !DISABLE_DEBUG_LOGGING
+        private readonly string _frameTracePath = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "famidash_pf_trace.csv");
+        private System.IO.StreamWriter? _traceWriter;
+
+        private void TraceFrameOpen()
+        {
+            try
+            {
+                _traceWriter = new System.IO.StreamWriter(_frameTracePath, false);
+                _traceWriter.WriteLine("frame,X_fixed,Y_fixed,VelY_fixed,input,alive,X_px,Y_px,onGround");
+            }
+            catch { _traceWriter = null; }
+        }
+
+        private void TraceFrame(int frame, ref SimState s, bool input, bool alive)
+        {
+            if (_traceWriter == null || _speculativeDepth > 0) return;
+            try
+            {
+                _traceWriter.WriteLine($"{frame},0x{s.X_fixed:X},0x{s.Y_fixed:X},0x{s.VelY_fixed:X},{(input ? 1 : 0)},{(alive ? 1 : 0)},{s.X_fixed >> 8},{s.Y_fixed >> 8},{(s.OnGround ? 1 : 0)}");
+            }
+            catch { }
+        }
+
+        private void TraceFrameClose()
+        {
+            try { _traceWriter?.Flush(); _traceWriter?.Dispose(); _traceWriter = null; }
+            catch { }
+        }
+
+        /// <summary>Path to the per-frame trace CSV.</summary>
+        public string FrameTracePath => _frameTracePath;
+#else
+        // Trace disabled in production builds — no-op stubs
+        private void TraceFrameOpen() { }
+        private void TraceFrame(int frame, ref SimState s, bool input, bool alive) { }
+        private void TraceFrameClose() { }
+        public string FrameTracePath => string.Empty;
+#endif
+
         // ── Input data (immutable after construction) ──────────────────────
         private readonly int[] tiles;       // SANITIZED: negatives → 0, matching simulator
         private readonly int[] sprites;
@@ -331,11 +413,9 @@ namespace FamidashEditor
         // Pre-sorted sprite list for efficient processing
         private readonly List<SpriteEntry> allSprites;
 
-#if !DISABLE_DEBUG_LOGGING
-        // Death reason tracking for speculative logging
+        // Death reason tracking (used by backtracker and result messages)
         private string _lastDeathReason = "";
         private int _lastDeathX, _lastDeathY;
-#endif
 
         private struct SpriteEntry
         {
@@ -675,6 +755,183 @@ namespace FamidashEditor
 #endif
         }
 
+        /// <summary>
+        /// Replay the level with a given input sequence and return whether it completes.
+        /// Used for click optimization — verify modified inputs still work.
+        /// </summary>
+        private bool ReplayInputs(List<bool> inputs, int startX_px, int startY_px,
+            int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini,
+            out List<(int x, int y)> pathPoints)
+        {
+            pathPoints = new List<(int x, int y)>();
+            var state = new SimState
+            {
+                X_fixed = startX_px << 8,
+                Y_fixed = startY_px << 8,
+                VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex),
+                VelY_fixed = 0,
+                GameMode = startGameMode,
+                GravFlipped = startGravFlipped,
+                Mini = startMini,
+                GravMul = startGravFlipped ? -1 : 1,
+                WasZeroedByCollision = true,
+                OnGround = true,
+                ProcessedSprites = new HashSet<int>(),
+                PendingOrbIndex = -1,
+                PendingOrbSpriteId = -1
+            };
+            ApplyPortalsUpTo(ref state, startX_px);
+
+            for (int f = 0; f < inputs.Count; f++)
+            {
+                bool alive = StepFrame(ref state, inputs[f], out bool endLevel);
+                int pathMiniOffY = (state.Mini && !state.GravFlipped) ? 4 : 0;
+                pathPoints.Add(((state.X_fixed >> 8) + 8, (state.Y_fixed >> 8) + pathMiniOffY + 8));
+                if (!alive) return false;
+                if (endLevel) return true;
+            }
+            return false; // ran out of inputs without ending level
+        }
+
+        /// <summary>
+        /// Optimize the input sequence after a successful pathfinder run.
+        /// mode: 1 = least clicks, 2 = most clicks, 3 = just the clicks needed.
+        /// </summary>
+        public void OptimizeClicks(int mode, int startX_px, int startY_px,
+            int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
+        {
+            if (!Success || Inputs == null || Inputs.Count == 0) return;
+            var originalInputs = new List<bool>(Inputs);
+            int originalClicks = CountClicks(originalInputs);
+
+            if (mode == 1) // Least clicks — remove unnecessary presses
+            {
+                // Try removing each press-on event and see if the path still completes.
+                // Work backwards so removing early inputs doesn't shift indices.
+                var candidate = new List<bool>(originalInputs);
+                bool improved = true;
+                while (improved)
+                {
+                    improved = false;
+                    for (int i = candidate.Count - 1; i >= 0; i--)
+                    {
+                        if (!candidate[i]) continue; // already false
+                        candidate[i] = false;
+                        if (ReplayInputs(candidate, startX_px, startY_px, startSpeedUiIndex,
+                            startGameMode, startGravFlipped, startMini, out var newPath))
+                        {
+                            improved = true; // successfully removed a press
+                        }
+                        else
+                        {
+                            candidate[i] = true; // restore — this press was needed
+                        }
+                    }
+                }
+                int newClicks = CountClicks(candidate);
+                if (newClicks < originalClicks)
+                {
+                    Inputs = candidate;
+                    ReplayInputs(Inputs, startX_px, startY_px, startSpeedUiIndex,
+                        startGameMode, startGravFlipped, startMini, out var finalPath);
+                    PathPoints = finalPath;
+                    ResultMessage += $" [optimized: {originalClicks}→{newClicks} clicks]";
+                }
+            }
+            else if (mode == 2) // Most clicks — add presses where safe
+            {
+                var candidate = new List<bool>(originalInputs);
+                for (int i = 0; i < candidate.Count; i++)
+                {
+                    if (candidate[i]) continue; // already pressing
+                    candidate[i] = true;
+                    if (!ReplayInputs(candidate, startX_px, startY_px, startSpeedUiIndex,
+                        startGameMode, startGravFlipped, startMini, out _))
+                    {
+                        candidate[i] = false; // revert — this press broke the path
+                    }
+                }
+                int newClicks = CountClicks(candidate);
+                if (newClicks > originalClicks)
+                {
+                    Inputs = candidate;
+                    ReplayInputs(Inputs, startX_px, startY_px, startSpeedUiIndex,
+                        startGameMode, startGravFlipped, startMini, out var finalPath);
+                    PathPoints = finalPath;
+                    ResultMessage += $" [swag: {originalClicks}→{newClicks} clicks]";
+                }
+            }
+            else if (mode == 3) // Just the clicks needed — remove unnecessary, keep essential
+            {
+                // Same as least clicks but also try converting held presses to single taps.
+                // First pass: remove unnecessary presses (same as mode 1)
+                var candidate = new List<bool>(originalInputs);
+                bool improved = true;
+                while (improved)
+                {
+                    improved = false;
+                    for (int i = candidate.Count - 1; i >= 0; i--)
+                    {
+                        if (!candidate[i]) continue;
+                        candidate[i] = false;
+                        if (ReplayInputs(candidate, startX_px, startY_px, startSpeedUiIndex,
+                            startGameMode, startGravFlipped, startMini, out _))
+                        {
+                            improved = true;
+                        }
+                        else
+                        {
+                            candidate[i] = true;
+                        }
+                    }
+                }
+                // Second pass: for sequences of consecutive true frames,
+                // try keeping only the first frame true (single tap).
+                int idx = 0;
+                while (idx < candidate.Count)
+                {
+                    if (!candidate[idx]) { idx++; continue; }
+                    int runStart = idx;
+                    while (idx < candidate.Count && candidate[idx]) idx++;
+                    int runEnd = idx; // exclusive
+                    if (runEnd - runStart <= 1) continue; // already a single tap
+                    // Try converting to single tap
+                    var backup = new List<bool>();
+                    for (int j = runStart + 1; j < runEnd; j++)
+                    {
+                        backup.Add(candidate[j]);
+                        candidate[j] = false;
+                    }
+                    if (!ReplayInputs(candidate, startX_px, startY_px, startSpeedUiIndex,
+                        startGameMode, startGravFlipped, startMini, out _))
+                    {
+                        // Revert
+                        for (int j = runStart + 1; j < runEnd; j++)
+                            candidate[j] = backup[j - runStart - 1];
+                    }
+                }
+                int newClicks = CountClicks(candidate);
+                Inputs = candidate;
+                ReplayInputs(Inputs, startX_px, startY_px, startSpeedUiIndex,
+                    startGameMode, startGravFlipped, startMini, out var finalPath);
+                PathPoints = finalPath;
+                ResultMessage += $" [essential: {originalClicks}→{newClicks} clicks]";
+            }
+        }
+
+        /// <summary>Count the number of press-on transitions (false→true).</summary>
+        private static int CountClicks(List<bool> inputs)
+        {
+            int count = 0;
+            bool prev = false;
+            foreach (bool b in inputs)
+            {
+                if (b && !prev) count++;
+                prev = b;
+            }
+            return count;
+        }
+
         private void RunSingleAttempt(int startX_px, int startY_px, int startSpeedUiIndex,
                                        int startGameMode, bool startGravFlipped, bool startMini)
         {
@@ -715,9 +972,15 @@ namespace FamidashEditor
             _shipForceReleaseFrames = 0;
             _shipCommitFrames = 0;
             _shipCommitHold = false;
+            _cubeGroundedWalkFrames = 0;
+            _ballGroundedWalkFrames = 0;
+            _bestPathHighWaterX = startX_px;
+            _bestPathPoints.Clear();
+            _bestInputs.Clear();
 
             _frameCounter = 0;
             _speculativeDepth = 0;
+            TraceFrameOpen();
 #if !DISABLE_DEBUG_LOGGING
             PfLog($"[RUN_START] startX={startX_px} startY={startY_px} speed={startSpeedUiIndex} mode={startGameMode} gravFlipped={startGravFlipped} mini={startMini}");
             PfLog($"[RUN_STATE] X_fixed=0x{state.X_fixed:X} Y_fixed=0x{state.Y_fixed:X} VelX=0x{state.VelX_fixed:X} VelY=0x{state.VelY_fixed:X} gravMul={state.GravMul} onGround={state.OnGround}");
@@ -732,6 +995,11 @@ namespace FamidashEditor
             }
 #endif
 
+            // ── DIAGNOSTIC: collision map for the stuck region ── (disabled for perf)
+            // {
+            //     ... collision map diagnostic removed ...
+            // }
+
             // Report progress based on X position relative to level length
             int levelLengthPx = mapWidth * TILE;
             int highWaterX_px = startX_px; // track furthest X reached for progress
@@ -741,10 +1009,26 @@ namespace FamidashEditor
             for (int frame = 0; frame < MAX_FRAMES; frame++)
             {
                 totalIterations++;
+                if (CancelRequested)
+                {
+                    SnapshotBestPath();
+                    UseBestPathIfBetter();
+                    Success = false;
+                    int bestX = PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
+                    int bestPct = levelLengthPx > 0 ? bestX * 100 / levelLengthPx : 0;
+                    ResultMessage = $"Cancelled — partial path to X={bestX}px ({bestPct}%, {PathPoints.Count} points)";
+                    TraceFrameClose();
+                    return;
+                }
                 if (totalIterations > MAX_TOTAL_ITERATIONS)
                 {
+                    SnapshotBestPath();
+                    UseBestPathIfBetter();
                     Success = false;
-                    ResultMessage = $"Aborted: exceeded {MAX_TOTAL_ITERATIONS} total iterations (frame={frame}, attempts={_backtrackAttempts})";
+                    int bestXA = PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
+                    int bestPctA = levelLengthPx > 0 ? bestXA * 100 / levelLengthPx : 0;
+                    ResultMessage = $"Aborted — partial path to X={bestXA}px ({bestPctA}%) exceeded {MAX_TOTAL_ITERATIONS} iterations";
+                    TraceFrameClose();
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[ABORT] total iterations {totalIterations} exceeded cap");
 #endif
@@ -768,11 +1052,22 @@ namespace FamidashEditor
                 int prePathCount = PathPoints.Count;
                 int preInputCount = Inputs.Count;
                 bool isShipMode = (state.GameMode == 1);
-                SimState preDecisionState = (wasGrounded || _cubeHoldJump || isShipMode) ? state.Clone() : default;
+                SimState preDecisionState = (wasGrounded || isShipMode) ? state.Clone() : default;
                 bool isBacktrackFrame = (_btOverrideFrame == frame);
 
                 bool input = DecideInput(state);
                 Inputs.Add(input);
+
+                // Track consecutive grounded walk frames (for periodic eval)
+                if (state.GameMode == 0 && wasGrounded && !input && _committedJumpDelay < 0)
+                    _cubeGroundedWalkFrames++;
+                else if (state.GameMode == 0)
+                    _cubeGroundedWalkFrames = 0;
+
+                if (state.GameMode == 2 && wasGrounded && !input && _committedJumpDelay < 0)
+                    _ballGroundedWalkFrames++;
+                else if (state.GameMode == 2)
+                    _ballGroundedWalkFrames = 0;
 
                 // Once the replay path advances past the frame where the
                 // original death occurred, the backtrack has "succeeded"
@@ -790,6 +1085,7 @@ namespace FamidashEditor
                     // obstacles shouldn't deplete the budget for harder
                     // sections ahead.
                     _backtrackAttempts = 0;
+                    _backtrackTimer = null; // reset timer for next death point
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[BACKTRACK_DONE] advanced past death frame {_btDeathFrame}, resuming normal checkpointing (attempts={_backtrackAttempts}/{MAX_BACKTRACK_ATTEMPTS})");
 #endif
@@ -800,29 +1096,7 @@ namespace FamidashEditor
                 // decision points — choosing delay=17 vs delay=0 matters).
                 // Don't create new checkpoints during backtrack replays — the
                 // original checkpoints are the only ones we want to revisit.
-                // Also save periodic checkpoints during hold-jump mode,
-                // because hold-jump keeps the cube permanently airborne
-                // (lands and immediately jumps in one frame), so the normal
-                // wasGrounded && input condition never fires on stair landings.
-                // Save roughly one checkpoint per jump arc (~24 frames).
                 bool shouldCheckpoint = wasGrounded && (input || _committedJumpDelay > 0);
-                if (!shouldCheckpoint && preHoldJump && input && !wasGrounded
-                    && frame % 24 == 0)
-                {
-                    shouldCheckpoint = true;
-                }
-
-                // Periodic "approach" checkpoints: when the cube is grounded and
-                // NOT jumping (decided "no danger"), save a checkpoint every 30
-                // frames.  This lets the backtracker try forcing a jump at
-                // positions the cube originally walked past — essential for
-                // multi-platform sections where the cube must jump ONTO blocks
-                // long before danger is detected.
-                if (!shouldCheckpoint && wasGrounded && !input && !preHoldJump
-                    && _committedJumpDelay < 0 && frame % 30 == 0)
-                {
-                    shouldCheckpoint = true;
-                }
 
                 // Ship/UFO mode periodic checkpoints: always airborne,
                 // so the grounded-based checkpoint logic never fires.
@@ -830,6 +1104,17 @@ namespace FamidashEditor
                 // has fine-grained control points for maneuvers.
                 bool isUfoMode = state.GameMode == 3;
                 if (!shouldCheckpoint && (isShipMode || isUfoMode) && frame % 12 == 0)
+                {
+                    shouldCheckpoint = true;
+                }
+                // Cube mode: periodic checkpoints during long grounded walks.
+                // When the cube walks without jumping, no checkpoints are created
+                // (shouldCheckpoint requires input=true or committedDelay>0).
+                // Without these, the backtracker has no rewind points when a
+                // long walk leads to a dead end. Save a checkpoint every 24
+                // walk frames so the backtracker can try jumping from mid-walk.
+                if (!shouldCheckpoint && state.GameMode == 0
+                    && _cubeGroundedWalkFrames > 0 && _cubeGroundedWalkFrames % 24 == 0)
                 {
                     shouldCheckpoint = true;
                 }
@@ -843,6 +1128,17 @@ namespace FamidashEditor
                     if (frame - lastCpFrame < MIN_CHECKPOINT_SPACING)
                         shouldCheckpoint = false;
                 }
+                // Cube mode: skip checkpoint creation.  In the working
+                // 8ff7eb4 release build, _frameCounter was debug-only so the
+                // backtrack override check (_btOverrideFrame == _frameCounter)
+                // always compared against 0 — effectively disabling all cube
+                // backtracking.  The cube's forward lookahead decisions were
+                // sufficient; forced backtrack alternatives (no-jump, toggle-
+                // hold, opposite-bias) consistently produced WORSE paths.
+                // Ship/ball/UFO still benefit from backtracking.
+                // UPDATE: Cube backtracking re-enabled — the forward-only
+                // approach fails at obstacles like triple spikes where the
+                // cube needs to try different approaches from nearby checkpoints.
                 if (shouldCheckpoint && !isBacktrackFrame && !_backtrackActive)
                 {
                     if (_backtrackCheckpoints.Count >= MAX_CHECKPOINT_DEPTH)
@@ -866,7 +1162,8 @@ namespace FamidashEditor
                         ShipForceHold = _shipForceHoldFrames,
                         ShipForceRelease = _shipForceReleaseFrames,
                         ShipCommitFrames = _shipCommitFrames,
-                        ShipCommitHold = _shipCommitHold
+                        ShipCommitHold = _shipCommitHold,
+                        ForceJumpRemaining = _btForceJumpFramesRemaining
                     });
                 }
 
@@ -875,6 +1172,7 @@ namespace FamidashEditor
 #endif
 
                 bool alive = StepFrame(ref state, input, out bool endLevel);
+                TraceFrame(frame, ref state, input, alive);
 
                 // Record path at visual center AFTER physics+eject (matching sim's
                 // recording inside UfoShipEject_Fresh / CubePhysics_Fresh which uses
@@ -889,15 +1187,24 @@ namespace FamidashEditor
                 if (!alive)
                 {
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DEATH] frame={frame} X={state.X_fixed >> 8}px Y={state.Y_fixed >> 8}px VelY=0x{state.VelY_fixed:X} gravFlipped={state.GravFlipped}");
+                    int deathPct = levelLengthPx > 0 ? (state.X_fixed >> 8) * 100 / levelLengthPx : 0;
+                    PfLog($"[DEATH] frame={frame} X={state.X_fixed >> 8}px Y={state.Y_fixed >> 8}px pct={deathPct}% reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY} VelY=0x{state.VelY_fixed:X} gravFlipped={state.GravFlipped}");
 #endif
+                    // Snapshot the current full path if it reached further than any previous attempt
+                    SnapshotBestPath();
+
                     // Try backtracking to a previous decision point
                     if (TryBacktrack(ref state, ref frame))
                         continue;
 
-                    // All backtracks exhausted — die permanently
+                    // All backtracks exhausted — use the best path we found
+                    UseBestPathIfBetter();
                     Success = false;
-                    ResultMessage = $"Died at frame {frame}, X={state.X_fixed >> 8}px";
+                    int bestX = PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
+                    int bestPct = levelLengthPx > 0 ? bestX * 100 / levelLengthPx : 0;
+                    ResultMessage = $"Died — partial path to X={bestX}px ({bestPct}%) reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY}";
+                    System.Console.Error.WriteLine($"[PERM_DEATH] frame={frame} X={state.X_fixed >> 8} Y={state.Y_fixed >> 8} reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY}");
+                    TraceFrameClose();
                     return;
                 }
                 if (endLevel)
@@ -905,6 +1212,7 @@ namespace FamidashEditor
                     // Path point already recorded above after StepFrame
                     Success = true;
                     ResultMessage = $"Completed in {frame} frames ({PathPoints.Count} path points)";
+                    TraceFrameClose();
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[END_LEVEL] frame={frame}");
 #endif
@@ -912,11 +1220,59 @@ namespace FamidashEditor
                 }
             }
 
+            SnapshotBestPath();
+            UseBestPathIfBetter();
             Success = false;
-            ResultMessage = $"Timeout after {MAX_FRAMES} frames";
+            {
+                int bestXT = PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
+                int bestPctT = levelLengthPx > 0 ? bestXT * 100 / levelLengthPx : 0;
+                ResultMessage = $"Timeout — partial path to X={bestXT}px ({bestPctT}%)";
+            }
+            TraceFrameClose();
 #if !DISABLE_DEBUG_LOGGING
             PfLog($"[TIMEOUT]");
 #endif
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  BEST-PATH TRACKING (for partial results on fail/cancel/timeout)
+        // ═══════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// If the current PathPoints extends further (higher X) than the
+        /// previous best, save a copy. Called before every backtrack rewind
+        /// and before giving up.
+        /// </summary>
+        private void SnapshotBestPath()
+        {
+            if (_speculativeDepth > 0) return;
+            if (PathPoints.Count == 0) return;
+            var last = PathPoints[PathPoints.Count - 1];
+            if (last.x > _bestPathHighWaterX)
+            {
+                _bestPathHighWaterX = last.x;
+                _bestPathPoints = new List<(int x, int y)>(PathPoints);
+                _bestInputs = new List<bool>(Inputs);
+            }
+        }
+
+        /// <summary>
+        /// Replace PathPoints/Inputs with the best-so-far snapshot if it
+        /// reached further than the current (post-backtrack / post-death)
+        /// path. This ensures that fail/cancel/timeout always returns the
+        /// path that got the furthest.
+        /// </summary>
+        private void UseBestPathIfBetter()
+        {
+            if (_bestPathPoints.Count == 0) return;
+            int currentMaxX = PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
+            if (_bestPathHighWaterX > currentMaxX)
+            {
+                PathPoints.Clear();
+                PathPoints.AddRange(_bestPathPoints);
+                Inputs.Clear();
+                Inputs.AddRange(_bestInputs);
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -939,32 +1295,67 @@ namespace FamidashEditor
             {
                 // First backtrack from this death — record the death frame
                 _btDeathFrame = frame;
+                _backtrackTimer = System.Diagnostics.Stopwatch.StartNew();
             }
             _backtrackActive = true;
             int deathGameMode = state.GameMode; // capture death mode before any restoration
 
             while (_backtrackCheckpoints.Count > 0 &&
                    _backtrackAttempts < MAX_BACKTRACK_ATTEMPTS &&
-                   _totalBacktrackAttempts < MAX_TOTAL_BACKTRACK_ATTEMPTS)
+                   _totalBacktrackAttempts < MAX_TOTAL_BACKTRACK_ATTEMPTS &&
+                   (_backtrackTimer == null || _backtrackTimer.Elapsed.TotalSeconds < MAX_BACKTRACK_SECONDS))
             {
                 int last = _backtrackCheckpoints.Count - 1;
                 var cp = _backtrackCheckpoints[last];
 
-                // Don't backtrack across game mode boundaries — earlier
-                // sections already passed, replaying them is wasteful.
+                // Allow cross-mode backtracking when the checkpoint is
+                // close to the death (within 500 frames) — mode transitions
+                // often need the player to undo the last few decisions from
+                // the prior mode.  Far-away cross-mode checkpoints are still
+                // discarded to avoid replaying already-cleared sections.
                 if (cp.GameMode != deathGameMode)
                 {
-                    _backtrackCheckpoints.RemoveAt(last);
-                    continue;
+                    int frameDist = _btDeathFrame - cp.Frame;
+                    if (frameDist > 500)
+                    {
+                        _backtrackCheckpoints.RemoveAt(last);
+                        continue;
+                    }
                 }
 
                 cp.RetryStage++;
 
-                // Ship mode gets 4 stages per checkpoint (bias ±, force hold,
-                // force release) so it quickly cycles through earlier checkpoints
-                // to try preemptive trajectory changes, not just near-obstacle fixes.
-                // Other modes get 3 stages (no-jump, toggle-hold, flip-bias).
-                int maxStages = (cp.GameMode == 1 || cp.GameMode == 3) ? 4 : 3;
+                // Ship/UFO get 4 stages (bias ±, force hold, force release).
+                // Cube gets 10 stages (no-jump, toggle-hold, opposite-bias, force-jump, delays).
+                // Ball gets 10 stages for deeper exploration.
+                //
+                // ADAPTIVE: For distant checkpoints (far from death), use fewer
+                // stages so the backtracker reaches earlier checkpoints faster.
+                // Only the most impactful stages (suppress, force-jump, bias-flip)
+                // are tried for distant checkpoints; delays are skipped.
+                //
+                // ELEVATION-AWARE: When the death was a forward wall (FWD_DEATH)
+                // and the checkpoint is at a similar Y to the death Y (both at
+                // floor level), cap stages to 1.  Changing the input at floor
+                // level won't help clear a wall above — the backtracker must
+                // reach elevated checkpoints where height matters.
+                int maxStages;
+                if (cp.GameMode == 1 || cp.GameMode == 3)
+                    maxStages = 4;
+                else if (cp.GameMode == 2)
+                    maxStages = 10;
+                else
+                {
+                    int frameDist2 = _btDeathFrame - cp.Frame;
+                    int cpY = cp.State.Y_fixed >> 8;
+                    bool floorLevel = _lastDeathReason == "FWD_DEATH"
+                        && Math.Abs(cpY - _lastDeathY) < 48; // within 3 tiles of death Y = same floor
+
+                    if (floorLevel)
+                        maxStages = 1;   // floor-level near wall: skip fast
+                    else
+                        maxStages = 12;  // elevated: full exploration including force-jump windows
+                }
                 if (cp.RetryStage > maxStages)
                 {
                     _backtrackCheckpoints.RemoveAt(last);
@@ -983,9 +1374,10 @@ namespace FamidashEditor
                 _shipForceReleaseFrames = cp.ShipForceRelease;
                 _shipCommitFrames = cp.ShipCommitFrames;
                 _shipCommitHold = cp.ShipCommitHold;
+                _btForceJumpFramesRemaining = cp.ForceJumpRemaining;
 
-                // Snapshot the failed path segment before truncating
-                if (PathPoints.Count > cp.PathPointCount)
+                // Snapshot the failed path segment before truncating (cap to prevent memory bloat)
+                if (PathPoints.Count > cp.PathPointCount && AttemptedPaths.Count < 200)
                 {
                     var failedSegment = PathPoints.GetRange(cp.PathPointCount,
                         PathPoints.Count - cp.PathPointCount);
@@ -1078,7 +1470,73 @@ namespace FamidashEditor
                     return DecideShipInput(state);
                 }
 
-                // Cube/other mode overrides (original logic)
+                // Ball mode overrides (10 stages)
+                // Ball alternates between flipping and not flipping, with various biases.
+                //   1: suppress flip (walk past, no gravity flip)
+                //   2: force flip immediately
+                //   3: flip bias to opposite
+                //   4: suppress flip + opposite bias
+                //   5: force flip + opposite bias
+                //   6: force flip after delay=5
+                //   7: force flip after delay=10
+                //   8: force flip after delay=15
+                //   9: force flip after delay=20
+                //  10: force flip after delay=25
+                if (state.GameMode == 2)
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE_BALL] stage={stage}");
+#endif
+                    switch (stage)
+                    {
+                        case 1: // suppress flip
+                            _btSuppressJumpUntilAirborne = true;
+                            return false;
+                        case 2: // force flip now
+                            return true;
+                        case 3: // opposite bias, fall through
+                            JumpTimingBias = 1.0 - JumpTimingBias;
+                            break;
+                        case 4: // suppress + opposite bias
+                            JumpTimingBias = 1.0 - JumpTimingBias;
+                            _btSuppressJumpUntilAirborne = true;
+                            return false;
+                        case 5: // force flip + opposite bias
+                            JumpTimingBias = 1.0 - JumpTimingBias;
+                            return true;
+                        case 6: // force flip after delay 5
+                            _committedJumpDelay = 5;
+                            return false;
+                        case 7: // force flip after delay 10
+                            _committedJumpDelay = 10;
+                            return false;
+                        case 8: // force flip after delay 15
+                            _committedJumpDelay = 15;
+                            return false;
+                        case 9: // force flip after delay 20
+                            _committedJumpDelay = 20;
+                            return false;
+                        case 10: // force flip after delay 25
+                            _committedJumpDelay = 25;
+                            return false;
+                    }
+                    // Fall through to normal DecideBallInput
+                    return DecideBallInput(state, true);
+                }
+
+                // Cube mode overrides (12 stages)
+                //   1: suppress jump (walk past)
+                //   2: toggle hold-jump
+                //   3: opposite bias
+                //   4: force jump now
+                //   5: force jump + opposite bias
+                //   6: suppress + opposite bias
+                //   7: force jump after delay=5
+                //   8: force jump after delay=10
+                //   9: force jump after delay=15
+                //  10: force jump after delay=20
+                //  11: force-jump window (jump at every safe landing for next 30 landings)
+                //  12: force-jump window (jump at every safe landing for next 50 landings)
                 if (stage == 1) // No jump: skip this decision, suppress until airborne
                 {
                     _cubeHoldJump = false;
@@ -1089,33 +1547,93 @@ namespace FamidashEditor
 #endif
                     return false;
                 }
-                else if (stage == 2) // Toggle hold: flip hold-jump on/off
+                else if (stage == 2) // Force jump now (alternate)
                 {
-                    if (_cubeHoldJump)
-                    {
-                        _cubeHoldJump = false;
-                        _cubeHoldDelay = 0;
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[BACKTRACK_OVERRIDE] stage=2: released hold, falling through to normal logic");
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=2: force jump now (alternate)");
 #endif
-                    }
-                    else
-                    {
-                        _cubeHoldJump = true;
-                        _cubeHoldDelay = 0;
-#if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[BACKTRACK_OVERRIDE] stage=2: activated hold-jump");
-#endif
-                        return true;
-                    }
+                    return true;
                 }
-                else // stage 3 — opposite bias
+                else if (stage == 3) // Opposite bias
                 {
-                    JumpTimingBias = 1.0 - JumpTimingBias;
+                    double newBias = JumpTimingBias < 0.5 ? 1.0 : 0.0;
+                    JumpTimingBias = newBias;
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[BACKTRACK_OVERRIDE] stage=3: flipped bias to {JumpTimingBias:F2}");
 #endif
                     // Fall through to normal decision with flipped bias
+                }
+                else if (stage == 4) // Force jump now
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=4: force jump now");
+#endif
+                    return true;
+                }
+                else if (stage == 5) // Force jump + opposite bias
+                {
+                    JumpTimingBias = 1.0 - JumpTimingBias;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=5: force jump + flipped bias to {JumpTimingBias:F2}");
+#endif
+                    return true;
+                }
+                else if (stage == 6) // Suppress + opposite bias
+                {
+                    JumpTimingBias = 1.0 - JumpTimingBias;
+                    _btSuppressJumpUntilAirborne = true;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=6: suppress + flipped bias to {JumpTimingBias:F2}");
+#endif
+                    return false;
+                }
+                else if (stage == 7) // Force jump after delay=5
+                {
+                    _committedJumpDelay = 5;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=7: committed delay=5");
+#endif
+                    return false;
+                }
+                else if (stage == 8) // Force jump after delay=10
+                {
+                    _committedJumpDelay = 10;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=8: committed delay=10");
+#endif
+                    return false;
+                }
+                else if (stage == 9) // Force jump after delay=15
+                {
+                    _committedJumpDelay = 15;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=9: committed delay=15");
+#endif
+                    return false;
+                }
+                else if (stage == 10) // Force jump after delay=20
+                {
+                    _committedJumpDelay = 20;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=10: committed delay=20");
+#endif
+                    return false;
+                }
+                else if (stage == 11) // Force-jump window: 30 grounded jumps
+                {
+                    _btForceJumpFramesRemaining = 30;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=11: force-jump window=8 landings");
+#endif
+                    return true; // also jump NOW
+                }
+                else if (stage == 12) // Force-jump window: 50 grounded jumps
+                {
+                    _btForceJumpFramesRemaining = 50;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=12: force-jump window=16 landings");
+#endif
+                    return true; // also jump NOW
                 }
             }
 
@@ -1124,64 +1642,13 @@ namespace FamidashEditor
             if (state.GameMode == 3) return DecideUfoInput(state, isOverrideFrame);
             if (state.GameMode != 0) return false; // only cube/ship/ball/ufo for now
 
-            // ── Orb decision: orbs can be activated while airborne (no
-            //    VelY==0 requirement), so this check must come BEFORE the
-            //    airborne early-return.  Skip on backtrack override frames
-            //    (let the override run instead) and during jump-suppression
-            //    (backtrack wants the cube to walk past, not activate). ──
-            if (!isOverrideFrame && !_btSuppressJumpUntilAirborne)
-            {
-                int orbSid = ScanForOrbOverlap(state, out int orbIndex);
-                if (orbSid >= 0)
-                {
-                    // Speculatively test: activate orb (input=true) vs skip (input=false)
-                    var orbState = state.Clone();
-                    bool orbAlive = StepFrame(ref orbState, true, out bool orbEnd);
-                    if (orbEnd) return true; // orb activation reaches level end
-
-                    int orbSurv = 0;
-                    if (orbAlive)
-                    {
-                        // Test multiple jump timings after orb activation,
-                        // not just 0/-1.  The cube may need to ride the orb
-                        // boost for a few frames before jumping.
-                        int orbMaxDelay = Math.Min(15, LOOKAHEAD_HORIZON);
-                        for (int od = -1; od < orbMaxDelay; od++)
-                        {
-                            int os = 1 + SimulateForwardWithJumpAt(orbState, od);
-                            if (os > orbSurv) orbSurv = os;
-                        }
-                    }
-
-                    // Skip evaluation: step one frame with input=false to
-                    // actually skip the pending orb, then test what the cube
-                    // can do from the post-skip state.  We can't just call
-                    // SimulateForwardWithJumpAt(state, 0) because that still
-                    // activates the pending orb in the initial-jump phase.
-                    var skipState = state.Clone();
-                    bool skipAlive = StepFrame(ref skipState, false, out bool skipEnd);
-                    // Mark the orb as processed in the skip clone so the
-                    // forward simulation can't secretly re-activate it.
-                    skipState.ProcessedSprites.Add(orbIndex);
-                    int skipSurv = 0;
-                    if (skipEnd) skipSurv = LOOKAHEAD_HORIZON;
-                    else if (skipAlive)
-                    {
-                        int skipNoJump = 1 + SimulateForwardWithJumpAt(skipState, -1);
-                        int skipJump   = 1 + SimulateForwardWithJumpAt(skipState, 0);
-                        skipSurv = Math.Max(skipNoJump, skipJump);
-                    }
-
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DECIDE_ORB] sid=0x{orbSid:X2} orbSurv={orbSurv} skipSurv={skipSurv}");
-#endif
-                    if (orbSurv >= skipSurv) return true;  // activate orb
-                    // Decided to skip: mark the orb as processed so it won't
-                    // be re-evaluated on subsequent overlapping frames.
-                    state.ProcessedSprites.Add(orbIndex);
-                    return false; // skip orb
-                }
-            }
+            // NOTE: Orb handling for cube is intentionally omitted here.
+            // In 8ff7eb4, the cube had no orb decision logic — orbs were
+            // handled purely through the speculative simulation's
+            // PendingOrbIndex auto-activation in SimulateForwardWithJumpAt.
+            // Adding explicit orb decision pre-empts normal jump evaluation
+            // and can cause worse outcomes.  Ball/UFO orb handling is in
+            // their respective DecideXxxInput methods.
 
             // ── Stage-2 "no-jump" suppression: persist until cube is airborne
             //    (walked off edge and is now falling). ──
@@ -1196,11 +1663,62 @@ namespace FamidashEditor
                 }
                 else
                 {
+                    // Safety check: if walking forward without jumping leads to
+                    // death within a few frames, abandon the suppression and let
+                    // the cube jump to survive.
+                    if (QuickDangerCheck(state))
+                    {
+                        _btSuppressJumpUntilAirborne = false;
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[BACKTRACK_OVERRIDE] no-jump suppression active (grounded)");
+                        PfLog($"[BACKTRACK_OVERRIDE] no-jump suppression OVERRIDDEN — danger ahead, allowing jump");
 #endif
-                    return false; // don't jump — wait to fall off edge
+                        // Fall through to normal decision logic instead of returning false
+                    }
+                    else
+                    {
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[BACKTRACK_OVERRIDE] no-jump suppression active (grounded)");
+#endif
+                        return false; // don't jump — wait to fall off edge
+                    }
                 }
+            }
+
+            // ── Backtrack force-jump window: when active, jump at every
+            //    grounded opportunity UNLESS jumping would immediately die.
+            //    This overrides the BFS to chain-jump through maze-like
+            //    platforming sections where the BFS can't see far enough
+            //    to plan a global path. ──
+            if (_btForceJumpFramesRemaining > 0 && _speculativeDepth == 0)
+            {
+                bool isGrounded = state.VelY_fixed == 0 && state.OnGround;
+                if (isGrounded)
+                {
+                    // Safety check: will the jump survive at least a few frames?
+                    var testState = state.Clone();
+                    _speculativeDepth++;
+                    bool jumpOk = StepFrame(ref testState, true, out _);
+                    if (jumpOk) jumpOk = StepFrame(ref testState, false, out _);
+                    if (jumpOk) jumpOk = StepFrame(ref testState, false, out _);
+                    _speculativeDepth--;
+
+                    _btForceJumpFramesRemaining--;
+                    if (jumpOk)
+                    {
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[BACKTRACK_FORCE_JUMP] forcing grounded jump, remaining={_btForceJumpFramesRemaining}");
+#endif
+                        return true;
+                    }
+                    else
+                    {
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[BACKTRACK_FORCE_JUMP] jump unsafe, walking instead, remaining={_btForceJumpFramesRemaining}");
+#endif
+                        return false; // walk — jump would die
+                    }
+                }
+                // If airborne, don't decrement — just fall through to normal logic
             }
 
             // ── Backtrack override was already handled at the top of
@@ -1211,365 +1729,407 @@ namespace FamidashEditor
             // Can only jump when velY == 0 (matching real game's jump check)
             if (state.VelY_fixed != 0)
             {
-                if (!_cubeHoldJump)
+                // Airborne: decrement committed delay (backtrack overrides only)
+                if (_committedJumpDelay > 0)
+                    _committedJumpDelay--;
+
+                // ── LANDING-FRAME JUMP (NES MATCH) ──
+                // On the NES, holding A provides input=true EVERY frame,
+                // including the frame the player lands.  In cube_movement:
+                //   common_gravity_routine → cube_eject (VelY→0) → cube_do_jump.
+                // If A is held and VelY==0 after eject, cube_do_jump fires
+                // on the SAME frame as landing — zero wasted frames.
+                //
+                // The PF decides input BEFORE StepFrame runs, so when VelY>0
+                // (falling, pre-eject), it used to return false — causing the
+                // jump to fire 1 frame LATE.  Over many jumps, this ~3px/jump
+                // drift shifts the pixel alignment at tight spike sections.
+                //
+                // Fix: predict whether landing will occur this frame.  If so,
+                // fall through to the hold-jump fast path / BFS to decide
+                // whether an immediate landing-frame jump is beneficial.
+                if (state.GameMode == 0 && CubeWillLandThisFrame(state))
                 {
-                    // Airborne: if we have a committed delay, it's being consumed
-                    // by not being grounded — the delay assumes grounded frames.
+                    // Fall through to BFS / hold-jump evaluation
+                }
+                else
+                {
                     return false;
                 }
+            }
 
-                // In hold-jump mode while airborne: re-evaluate whether
-                // releasing hold actually gives a BETTER outcome.  On stair
-                // sections both paths may die at the same time because the
-                // speculative horizon is finite — releasing there is pointless
-                // and causes the cube to drift toward edges.  Only release
-                // when the release path strictly out-survives the hold path.
-                int holdSurv = SimulateForwardWithJumpAt(state, 0, holdAfterLanding: true);
-                if (holdSurv >= LOOKAHEAD_HORIZON)
+            // Committed jump delay from backtrack overrides: count down, fire when reaching 0.
+            if (_committedJumpDelay > 0)
+            {
+                _committedJumpDelay--;
+                if (_committedJumpDelay == 0)
                 {
-                    // Hold path survives the full horizon — definitely keep
+                    _committedJumpDelay = -1; // consumed
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DECIDE_CUBE] hold-jump continuing (airborne): holdSurv={holdSurv}");
+                    PfLog($"[DECIDE_CUBE] committed delay fired — jumping now");
 #endif
                     return true;
                 }
-                // Hold path dies within horizon — does releasing do better?
-                int releaseSurv = SimulateForwardWithJumpAt(state, -1);
-                if (releaseSurv > holdSurv)
-                {
-                    // Release genuinely survives longer — abandon hold
-                    _cubeHoldJump = false;
-                    _cubeHoldDelay = 0;
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DECIDE_CUBE] hold-jump released (airborne): holdSurv={holdSurv}, releaseSurv={releaseSurv} (release better)");
+                PfLog($"[DECIDE_CUBE] committed delay countdown: {_committedJumpDelay} remaining");
 #endif
-                    return false;
-                }
-                // Release is no better (or worse) — keep holding; the
-                // grounded re-evaluation will get another chance when we land.
+                return false;
+            }
+            if (_committedJumpDelay == 0)
+            {
+                _committedJumpDelay = -1; // consumed (reached 0 while airborne)
 #if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DECIDE_CUBE] hold-jump kept (airborne): holdSurv={holdSurv}, releaseSurv={releaseSurv} (release not better)");
+                PfLog($"[DECIDE_CUBE] committed delay fired (was pending from airborne) — jumping now");
 #endif
                 return true;
             }
 
-            // If we're in hold-jump mode from a previous decision, jump immediately
-            if (_cubeHoldJump && state.OnGround)
-            {
-                // If we had a countdown delay, decrement and fire on reaching 0
-                // (matches SimulateForwardWithJumpAt where jumpFrame=N fires at f==N)
-                if (_cubeHoldDelay > 0)
-                {
-                    _cubeHoldDelay--;
-                    if (_cubeHoldDelay > 0)
-                        return false;
-                    // Delay just hit 0 — fall through to jump
-                    return true;
-                }
-                // Re-evaluate: does continuing to hold still survive?
-                int holdSurvival = SimulateForwardWithJumpAt(state, 0, holdAfterLanding: true);
-                // Also check: is NOT jumping safe?  If no-press survives
-                // beyond the detection horizon, there's no immediate danger
-                // and we should exit hold-jump to let normal logic decide.
-                const int HOLD_EXIT_HORIZON = 20;
-                int noPressHold = SimulateForwardWithJumpAt(state, -1);
-                if (holdSurvival >= LOOKAHEAD_HORIZON && noPressHold < HOLD_EXIT_HORIZON)
-                {
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DECIDE_CUBE] hold-jump continuing: holdSurv={holdSurvival} noPressSurv={noPressHold}");
-#endif
-                    return true;
-                }
-                // Hold mode no longer beneficial (hold dies, OR no-press is
-                // safe enough that we don't need to chain-jump) — exit and
-                // fall through to normal decision logic
-                _cubeHoldJump = false;
-                _cubeHoldDelay = 0;
-#if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DECIDE_CUBE] hold-jump released (grounded): holdSurv={holdSurvival} noPressSurv={noPressHold}");
-#endif
-            }
-
-            // Committed jump delay: count down, fire when reaching 0.
-            // Merging decrement+fire so that delay=N fires after exactly N
-            // frames of waiting, matching SimulateForwardWithJumpAt(jumpFrame=N).
-            // Safety check: if the cube would die before the delay fires,
-            // abort the delay and re-evaluate from scratch instead of
-            // blindly jumping (which often arcs into hazards).
-            if (_committedJumpDelay > 0)
-            {
-                // Abort check: simulate no-press for the remaining delay
-                // frames.  If the cube dies within that window, the delay
-                // is stale — discard it and fall through to fresh evaluation.
-                int remainingDelay = _committedJumpDelay;
-                int noPressSurvival = SimulateForwardWithJumpAt(state, -1);
-                if (noPressSurvival < remainingDelay)
-                {
-                    _committedJumpDelay = -1; // abort stale delay
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DECIDE_CUBE] committed delay ABORTED — no-press dies in {noPressSurvival} frames but delay has {remainingDelay} remaining, re-evaluating");
-#endif
-                    // Fall through to normal decision logic below
-                }
-                else
-                {
-                    _committedJumpDelay--;
-                    if (_committedJumpDelay == 0)
-                    {
-                        _committedJumpDelay = -1; // consumed
-#if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[DECIDE_CUBE] committed delay fired — jumping now");
-#endif
-                        return true;
-                    }
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DECIDE_CUBE] committed delay countdown: {_committedJumpDelay} remaining");
-#endif
-                    return false;
-                }
-            }
+            // Hold-jump continuity removed: the BFS runs at every
+            // grounded frame and makes optimal jump/walk decisions.
+            // Locking into hold-jump prevents the BFS from adjusting
+            // the bounce phase when obstacles come within view.
+            _cubeHoldJump = false;
 
             // Guard against deep recursion from chained jump evaluation
             if (_speculativeDepth >= MAX_SPECULATIVE_DEPTH) return false;
 
-            // How long does the cube survive without ever jumping?
-            _speculativeDepth++;
-            List<(int x, int y)>? noPressPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
-                ? new List<(int x, int y)>() : null;
-#if !DISABLE_DEBUG_LOGGING
-            int noPressFrames = SimulateForwardWithJumpAt(state, -1, out string npDeath, out int npDX, out int npDY,
-                pathPoints: noPressPath);
-#else
-            int noPressFrames = SimulateForwardWithJumpAt(state, -1, pathPoints: noPressPath);
-#endif
-            OnSpeculativePath?.Invoke(noPressPath, -1, noPressFrames, false);
-            _speculativeDepth--;
+            // ═══════════════════════════════════════════════════════════════
+            //  BFS frame-by-frame pathfinding
+            //  Instead of testing 35 pre-set delays and ranking them,
+            //  explore every possible jump/nojump choice at every grounded
+            //  frame.  This naturally finds hold-jump patterns, delayed
+            //  jumps, and any combination thereof without heuristic ranking.
+            // ═══════════════════════════════════════════════════════════════
 
-            // ── Danger detection: only evaluate jumps when no-press
-            //    dies within the lookahead horizon.  The bias does NOT
-            //    change when we detect danger — it only changes which
-            //    delay we PICK once we decide a jump is needed. ──
-            // 50 frames gives room for 2 full jump arcs (~24f each)
-            // before danger — essential for multi-platform sections where
-            // the cube must chain-jump onto higher blocks.
-            const int DETECTION_HORIZON = 50;
+            const int BFS_HORIZON_NORMAL = 120;
+            const int BFS_HORIZON_ELEVATED = 600; // extended horizon to see distant walls when on platforms
+            const int MAX_ALIVE_NORMAL = 256;
+            const int MAX_ALIVE_ELEVATED = 128;   // needs to be large enough to find complex maze paths
 
-            // Always test jumps if a gravity portal is within the lookahead X range.
-            // The portal bonus makes portal-hitting paths score higher, but only if
-            // we actually evaluate them. Without this, the detection horizon skips
-            // jump evaluation entirely, and portal-bonus paths are never discovered.
-            bool gravPortalAhead = false;
-            // Also force jump evaluation when unprocessed pads are ahead.
-            // Pads provide velocity boosts needed for progression — the cube may
-            // need to jump to reach an elevated pad that no-press would miss.
-            bool padAhead = false;
+            int currentYpx = state.Y_fixed >> 8;
+            int floorYpx = (mapHeight - groundRowsToReserve) * 16; // world bottom in pixels
+            // Elevated when player is above the floor level — whether currently
+            // grounded OR about to land (landing-frame prediction fell through).
+            // Threshold is 128px (8 tiles) above floor to avoid triggering
+            // on normal ground-level landings (~Y=840) while still covering
+            // maze platform landings (~Y=689).
+            bool isElevated = currentYpx < floorYpx - 128;
+            int BFS_HORIZON = isElevated ? BFS_HORIZON_ELEVATED : BFS_HORIZON_NORMAL;
+            int MAX_ALIVE = isElevated ? MAX_ALIVE_ELEVATED : MAX_ALIVE_NORMAL;
+
+            // ── HOLD-JUMP FAST PATH ──
+            // Before running the full BFS, quickly simulate a "hold-jump"
+            // path (always jump at every landing).  If this path survives
+            // the full BFS horizon, immediately return jump.
+            //
+            // Rationale: precision spike sections often require the player
+            // to jump at every possible frame.  The BFS re-evaluates from
+            // scratch at each landing and may choose "walk" when it locally
+            // survives longer within the horizon, breaking the always-jump
+            // rhythm needed for frame-perfect sections.  By pre-checking
+            // hold-jump, we skip the BFS entirely when it's safe, matching
+            // NES behavior (player holds jump button continuously).
             {
-                int currentX = state.X_fixed >> 8;
-                int lookaheadX = currentX + ((state.VelX_fixed >> 8) + 1) * LOOKAHEAD_HORIZON;
-                foreach (var sp in allSprites)
+                _speculativeDepth++;
+                var holdState = state.Clone();
+                int holdSurv = 0;
+                bool holdAlive = true;
+                string holdDeathReason = null;
+                for (int f = 0; f < BFS_HORIZON && holdAlive; f++)
                 {
-                    if (sp.AnchorX_px < currentX) continue;
-                    if (sp.AnchorX_px > lookaheadX) break; // sorted by X
-                    if (!state.ProcessedSprites.Contains(sp.Index))
+                    // Simulate holding A continuously (NES behavior).
+                    // The jump check in StepFrame requires VelY==0, so
+                    // true is harmless while airborne but enables
+                    // landing-frame jumps (matching NES cube_do_jump
+                    // firing on the same frame as cube_eject landing).
+                    bool holdInput = true;
+                    holdAlive = StepFrame(ref holdState, holdInput, out bool holdEnd);
+                    if (holdEnd) { holdSurv = BFS_HORIZON; break; }
+                    if (holdAlive) holdSurv = f + 1;
+                    else holdDeathReason = $"f={f} X={holdState.X_fixed >> 8} Y={holdState.Y_fixed >> 8}";
+                }
+                if (holdAlive) holdSurv = BFS_HORIZON;
+                _speculativeDepth--;
+
+                if (holdSurv >= BFS_HORIZON)
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_CUBE] hold-jump fast path: survived full horizon, jumping immediately");
+#endif
+                    return true;
+                }
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[DECIDE_CUBE] hold-jump fast path: survived {holdSurv} frames (< {BFS_HORIZON}), falling through to BFS");
+#endif
+            }
+
+#if !DISABLE_DEBUG_LOGGING
+            if (isElevated)
+                PfLog($"[DECIDE_CUBE] ELEVATED BFS: horizon={BFS_HORIZON} maxAlive={MAX_ALIVE} Y={currentYpx} floorY={floorYpx}");
+#endif
+
+            // Each BFS node tracks:
+            //   state:          physics snapshot
+            //   jumpedFrame0:   whether this lineage jumped on frame 0 (the output we need)
+            //   landingsJumped: how many landings this path jumped on (for hold-jump detection)
+            //   totalLandings:  how many landing opportunities this path had
+            //   my:             current Y (pixels) at this state — used for terminal Y tracking
+            var alive = new List<(SimState s, bool j0, int lj, int tl, int my)>();
+
+            // Best results per frame-0 choice (survival frames, then X as tiebreaker)
+            int bestF0JumpSurv = -1, bestF0JumpX = int.MinValue;
+            bool bestF0JumpHoldPattern = false;
+            int bestF0JumpMinY = int.MaxValue; // Y of best-scoring terminal in jump lineage
+            int bestF0WalkSurv = -1, bestF0WalkX = int.MinValue;
+            int bestF0WalkMinY = int.MaxValue; // Y of best-scoring terminal in walk lineage
+
+            void RecordTerminal(bool j0, int survFrames, int xPx, int lj, int tl, int minY)
+            {
+                if (j0)
+                {
+                    if (survFrames > bestF0JumpSurv || (survFrames == bestF0JumpSurv && xPx > bestF0JumpX))
                     {
-                        int sid = sp.SpriteId;
-                        if (IsGravityPortal(sid))
-                        {
-                            gravPortalAhead = true;
-                            if (padAhead) break; // found both, stop scanning
-                        }
-                        else if (IsYellowPad(sid) || IsPinkPad(sid) || IsRedPad(sid) ||
-                                 IsBluePad(sid) || IsGreenPad(sid))
-                        {
-                            padAhead = true;
-                            if (gravPortalAhead) break; // found both, stop scanning
-                        }
+                        bestF0JumpSurv = survFrames;
+                        bestF0JumpX = xPx;
+                        bestF0JumpHoldPattern = (tl > 0 && lj == tl);
+                        bestF0JumpMinY = minY;
+                    }
+                }
+                else
+                {
+                    if (survFrames > bestF0WalkSurv || (survFrames == bestF0WalkSurv && xPx > bestF0WalkX))
+                    {
+                        bestF0WalkSurv = survFrames;
+                        bestF0WalkX = xPx;
+                        bestF0WalkMinY = minY;
                     }
                 }
             }
 
-            if (noPressFrames >= DETECTION_HORIZON && !gravPortalAhead && !padAhead)
-            {
-#if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DECIDE_CUBE] noPressFrames={noPressFrames} >= DETECTION_HORIZON={DETECTION_HORIZON}, no danger (noPressDeath={npDeath}@X={npDX},Y={npDY})");
-#endif
-                return false;
-            }
+            // Seed: two branches if on ground (jump now vs wait)
+            alive.Add((state.Clone(), true, 0, 0, state.Y_fixed >> 8));
+            alive.Add((state.Clone(), false, 0, 0, state.Y_fixed >> 8));
 
-#if !DISABLE_DEBUG_LOGGING
-            PfLog($"[DECIDE_CUBE] noPressFrames={noPressFrames} < DETECTION_HORIZON={DETECTION_HORIZON}{(gravPortalAhead ? " (gravPortalAhead)" : "")}{(padAhead ? " (padAhead)" : "")}, testing jumps (noPressDeath={npDeath}@X={npDX},Y={npDY})");
-#endif
-
-            // Test different jump timings: jump at delay 0 (now), 1, 2, ...
-            int bestSurvival = noPressFrames;
-            var viableDelays = new List<(int delay, int survival)>();
-
-            int maxDelay = Math.Min(noPressFrames, 35);
             _speculativeDepth++;
-#if !DISABLE_DEBUG_LOGGING
-            var specDeathDetails = new List<string>();
-            // If reversed gravity and first speculative test, log the full trajectory
-            bool logSpecTrajectory = state.GravFlipped;
-#endif
-            for (int delay = 0; delay < maxDelay; delay++)
-            {
-                List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
-                    ? new List<(int x, int y)>() : null;
-#if !DISABLE_DEBUG_LOGGING
-                int survival = SimulateForwardWithJumpAt(state, delay, out string dr, out int dx, out int dy,
-                    logSpecTrajectory && delay == 0, pathPoints: specPath);
-                if (delay < 5 && survival < LOOKAHEAD_HORIZON)
-                    specDeathDetails.Add($"d{delay}:s{survival}@{dr}(X={dx},Y={dy})");
-#else
-                int survival = SimulateForwardWithJumpAt(state, delay, pathPoints: specPath);
-#endif
-                OnSpeculativePath?.Invoke(specPath, delay, survival, false);
-                if (survival > bestSurvival)
-                    bestSurvival = survival;
-                if (survival > noPressFrames)
-                    viableDelays.Add((delay, survival));
-            }
-            _speculativeDepth--;
 
-            if (viableDelays.Count == 0)
+            for (int f = 0; f < BFS_HORIZON && alive.Count > 0; f++)
             {
-#if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DECIDE_CUBE] no viable delays found, no jump. bestSurvival={bestSurvival} details=[{string.Join(", ", specDeathDetails)}]");
-                // Dump tile area when reversed gravity has no viable path
-                if (state.GravFlipped)
+                var next = new List<(SimState s, bool j0, int lj, int tl, int my)>();
+
+                foreach (var node in alive)
                 {
-                    int startTileX = (state.X_fixed >> 8) / TILE;
-                    int endTileX = startTileX + 10;
-                    var sb = new System.Text.StringBuilder();
-                    sb.Append($"[TILE_AREA] X_tiles={startTileX}-{endTileX} ");
-                    for (int ay = 10; ay < mapHeight; ay++)
+                    bool isGrounded = node.s.VelY_fixed == 0 && node.s.OnGround
+                        && (node.s.GameMode == 0 || node.s.GameMode == 2);
+
+                    if (isGrounded)
                     {
-                        sb.Append($"row{ay}:");
-                        for (int ax = startTileX; ax <= endTileX && ax < mapWidth; ax++)
+                        // Landing frame: branch into "jump" and "don't jump"
+                        int newTl = node.tl + 1;
+
+                        // ── Jump branch ──
                         {
-                            int idx = ay * mapWidth + ax;
-                            if (idx >= 0 && idx < tiles.Length)
+                            var sj = node.s.Clone();
+                            bool orbForce = sj.PendingOrbIndex >= 0;
+                            bool aliveJ = StepFrame(ref sj, true, out bool endJ);
+                            bool j0 = (f == 0) ? true : node.j0;
+                            int newLj = node.lj + 1;
+                            int jMinY = sj.Y_fixed >> 8; // terminal Y = current state Y
+                            if (endJ) RecordTerminal(j0, BFS_HORIZON, sj.X_fixed >> 8, newLj, newTl, jMinY);
+                            else if (aliveJ) next.Add((sj, j0, newLj, newTl, jMinY));
+                            else RecordTerminal(j0, f, sj.X_fixed >> 8, newLj, newTl, jMinY);
+                        }
+
+                        // ── Walk branch ──
+                        {
+                            var sw = node.s.Clone();
+                            bool orbForce = sw.PendingOrbIndex >= 0;
+                            bool aliveW = StepFrame(ref sw, orbForce, out bool endW);
+                            bool j0 = (f == 0) ? false : node.j0;
+                            int wMinY = sw.Y_fixed >> 8; // terminal Y = current state Y
+                            if (endW) RecordTerminal(j0, BFS_HORIZON, sw.X_fixed >> 8, node.lj, newTl, wMinY);
+                            else if (aliveW) next.Add((sw, j0, node.lj, newTl, wMinY));
+                            else RecordTerminal(j0, f, sw.X_fixed >> 8, node.lj, newTl, wMinY);
+                        }
+                    }
+                    else
+                    {
+                        // Airborne: predict whether landing occurs this frame.
+                        // Only dual-expand (jump vs walk on landing) when landing
+                        // is predicted; otherwise single-expand since input has
+                        // no effect on pure airborne physics.  This avoids wasting
+                        // state budget on duplicate states at non-landing frames.
+                        bool predictLanding = (node.s.GameMode == 0) && CubeWillLandThisFrame(node.s);
+                        if (predictLanding)
+                        {
+                            // Landing predicted: branch into "jump on landing" and "walk"
+                            int newTl = node.tl + 1;
+                            for (int bi = 0; bi < 2; bi++)
                             {
-                                int tid = tiles[idx];
-                                if (tid != 0)
-                                    sb.Append($"[{ax},{ay}]=0x{tid:X2}({MetatileCollisionTable.GetCollision((byte)tid)}) ");
+                                bool bfsInput = (bi == 0); // true = jump on landing
+                                if (node.s.PendingOrbIndex >= 0) bfsInput = true;
+                                var sa = node.s.Clone();
+                                bool aliveA = StepFrame(ref sa, bfsInput, out bool endA);
+                                bool j0 = (f == 0) ? bfsInput : node.j0;
+                                int newLj = (bi == 0) ? node.lj + 1 : node.lj;
+                                int aMinY = sa.Y_fixed >> 8; // terminal Y = current state Y
+                                if (endA) RecordTerminal(j0, BFS_HORIZON, sa.X_fixed >> 8, newLj, newTl, aMinY);
+                                else if (aliveA) next.Add((sa, j0, newLj, newTl, aMinY));
+                                else RecordTerminal(j0, f, sa.X_fixed >> 8, newLj, newTl, aMinY);
                             }
                         }
+                        else
+                        {
+                            // Pure airborne: single successor, no choice to make
+                            var sa = node.s.Clone();
+                            bool orbInput = sa.PendingOrbIndex >= 0;
+                            bool aliveA = StepFrame(ref sa, orbInput, out bool endA);
+                            int aMinY = sa.Y_fixed >> 8; // terminal Y = current state Y
+                            if (endA) RecordTerminal(node.j0, BFS_HORIZON, sa.X_fixed >> 8, node.lj, node.tl, aMinY);
+                            else if (aliveA) next.Add((sa, node.j0, node.lj, node.tl, aMinY));
+                            else RecordTerminal(node.j0, f, sa.X_fixed >> 8, node.lj, node.tl, aMinY);
+                        }
                     }
-                    PfLog(sb.ToString());
                 }
-#endif
-                return false;
+
+                alive = next;
+
+                // Cap alive states: keep a balanced mix of both lineages
+                if (alive.Count > MAX_ALIVE)
+                {
+                    // Deduplicate: states with same physics within a lineage are redundant.
+                    // Key: (Y_fixed, VelY_fixed, OnGround, GravFlipped, GameMode, jumpedFrame0)
+                    // Keep the one with highest landingsJumped/totalLandings (most "jump-like")
+                    var deduped = new Dictionary<(int, int, bool, bool, int, bool), (SimState s, bool j0, int lj, int tl, int my)>();
+                    foreach (var n in alive)
+                    {
+                        var key = (n.s.Y_fixed, n.s.VelY_fixed, n.s.OnGround, n.s.GravFlipped, n.s.GameMode, n.j0);
+                        if (!deduped.ContainsKey(key) || n.lj > deduped[key].lj)
+                            deduped[key] = n;
+                    }
+                    alive = deduped.Values.ToList();
+
+                    // If still over cap after dedup, Y-diverse sampling.
+                    // Sort each lineage by Y_fixed and sample evenly so the
+                    // BFS explores states at different altitudes rather than
+                    // concentrating on similar trajectories.
+                    if (alive.Count > MAX_ALIVE)
+                    {
+                        var jumpL = alive.Where(n => n.j0).OrderBy(n => n.s.Y_fixed).ToList();
+                        var walkL = alive.Where(n => !n.j0).OrderBy(n => n.s.Y_fixed).ToList();
+                        int half = MAX_ALIVE / 2;
+                        if (jumpL.Count > half)
+                        {
+                            var sampled = new List<(SimState s, bool j0, int lj, int tl, int my)>(half);
+                            for (int i = 0; i < half; i++)
+                                sampled.Add(jumpL[(int)((long)i * jumpL.Count / half)]);
+                            jumpL = sampled;
+                        }
+                        if (walkL.Count > half)
+                        {
+                            var sampled = new List<(SimState s, bool j0, int lj, int tl, int my)>(half);
+                            for (int i = 0; i < half; i++)
+                                sampled.Add(walkL[(int)((long)i * walkL.Count / half)]);
+                            walkL = sampled;
+                        }
+                        alive = jumpL.Concat(walkL).ToList();
+                    }
+                }
             }
 
-            // ── Also test hold-jump variants ──
-            // For each viable delay, test what happens if we hold jump
-            // (always re-jump on landing) instead of re-evaluating each frame.
-            // This can find paths that require continuous jumping without gaps.
-            int holdBestSurvival = 0;
-            int holdBestDelay = 0;
+            _speculativeDepth--;
+
+            // Any states still alive survived the full BFS horizon
+            foreach (var node in alive)
             {
-                // Test hold for a few key delays (0, and a few others)
-                int holdMaxDelay = Math.Min(maxDelay, 10);
+                RecordTerminal(node.j0, BFS_HORIZON, node.s.X_fixed >> 8, node.lj, node.tl, node.my);
+            }
+
+            // ── Emit speculative paths for visualization ──
+            // BFS doesn't trace individual paths, so reconstruct representative
+            // paths using SimulateForwardWithJumpAt for the two frame-0 choices.
+            if (_speculativeDepth == 0 && OnSpeculativePath != null)
+            {
                 _speculativeDepth++;
-                for (int delay = 0; delay < holdMaxDelay; delay++)
-                {
-                    List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
-                        ? new List<(int x, int y)>() : null;
-                    int holdSurv = SimulateForwardWithJumpAt(state, delay, holdAfterLanding: true, pathPoints: specPath);
-                    OnSpeculativePath?.Invoke(specPath, delay, holdSurv, true);
-                    if (holdSurv > holdBestSurvival)
-                    {
-                        holdBestSurvival = holdSurv;
-                        holdBestDelay = delay;
-                    }
-                }
+
+                // d=0 jump with QDC chain (best single-delay approximation of "jump now")
+                var jumpPath = new List<(int x, int y)>();
+                int jpSurv = SimulateForwardWithJumpAt(state, 0, out _, pathPoints: jumpPath);
+                OnSpeculativePath.Invoke(jumpPath, 0, jpSurv, false);
+
+                // d=0 hold-jump chain
+                var holdPath = new List<(int x, int y)>();
+                int hjSurv = SimulateForwardWithJumpAt(state, 0, out _,
+                    holdAfterLanding: true, pathPoints: holdPath);
+                OnSpeculativePath.Invoke(holdPath, 0, hjSurv, true);
+
+                // no-press (walk)
+                var walkPath = new List<(int x, int y)>();
+                int wpSurv = SimulateForwardWithJumpAt(state, -1, pathPoints: walkPath);
+                OnSpeculativePath.Invoke(walkPath, -1, wpSurv, false);
+
+                // d=1 chain (walk one frame then jump)
+                var d1Path = new List<(int x, int y)>();
+                int d1Surv = SimulateForwardWithJumpAt(state, 1, out _, pathPoints: d1Path);
+                OnSpeculativePath.Invoke(d1Path, 1, d1Surv, false);
+
                 _speculativeDepth--;
             }
 
-            int threshold = bestSurvival - 2;
-            var bestDelays = viableDelays.Where(d => d.survival >= threshold).ToList();
-            if (bestDelays.Count == 0) bestDelays = viableDelays;
-
-            // When all best delays survive the full lookahead horizon,
-            // the jump isn't urgent — any timing clears the obstacle.
-            // Remove premature delays to avoid double-jump patterns where
-            // jumping too early forces another jump right after landing.
-            if (bestSurvival >= LOOKAHEAD_HORIZON && bestDelays.Count >= 2)
+            // Decision: prefer frame-0 choice with best survival, then X as tiebreaker.
+            // When the jump-at-frame-0 lineage's best path jumped at every landing
+            // (holdPattern = true), give it a tiebreaker bonus — this means the BFS found
+            // that a continuous jump rhythm works, and we should prefer it even when
+            // walking has a marginally better survival count.  Precision spike sections
+            // rely on maintaining the jump rhythm; the BFS re-evaluation at each
+            // landing can break this rhythm when walk locally survives a few frames longer.
+            //
+            // ELEVATION BONUS: Convert height advantage to equivalent survival frames.
+            // Each tile (16px) of extra altitude is worth ELEV_FRAMES_PER_TILE bonus
+            // frames.  This causes the BFS to prefer climbing through platforming
+            // sections even when walking survives a few frames longer locally.
+            // Without this, the BFS is blind to distant walls and never climbs.
+            const int ELEV_FRAMES_PER_TILE = 8;
+            int elevBonus = 0;
+            // Only apply elevation bonus when jump lineage SURVIVES the full
+            // BFS horizon.  A terminal that dies at high altitude (e.g. hitting
+            // spikes at Y=497) must NOT receive an elevation bonus — dying at
+            // a high position is not beneficial.
+            if (bestF0JumpSurv >= BFS_HORIZON && bestF0WalkSurv >= 0
+                && bestF0JumpMinY != int.MaxValue && bestF0WalkMinY != int.MaxValue)
             {
-                // 1) Remove d0: jumping immediately is always premature
-                //    when all timings equally survive the full horizon.
-                if (bestDelays[0].delay == 0)
-                    bestDelays.RemoveAt(0);
-
-                // 2) Remove isolated early outliers before a large gap.
-                //    E.g. best=[d1, d16..d28]: d1 clears the spike but
-                //    lands right before the next one (double-jump), while
-                //    d16+ positions the arc to clear both obstacles.
-                //    A gap > 5 between consecutive best delays signals
-                //    two separate obstacle-clearing patterns.
-                //    BUT: only remove the early group if they DON'T survive
-                //    the full horizon.  If they do, the gap just means
-                //    middle delays die during the arc — early delays are
-                //    still excellent paths.
-                if (bestDelays.Count >= 2)
-                {
-                    for (int gi = 1; gi < bestDelays.Count; gi++)
-                    {
-                        if (bestDelays[gi].delay - bestDelays[gi - 1].delay > 5)
-                        {
-                            bool earlyGroupSurvivedFull = true;
-                            for (int ei = 0; ei < gi; ei++)
-                            {
-                                if (bestDelays[ei].survival < LOOKAHEAD_HORIZON)
-                                {
-                                    earlyGroupSurvivedFull = false;
-                                    break;
-                                }
-                            }
-                            if (!earlyGroupSurvivedFull)
-                                bestDelays.RemoveRange(0, gi);
-                            break;
-                        }
-                    }
-                }
+                // positive elevDiff = jump lineage ends higher (lower Y) than walk
+                int elevDiff = bestF0WalkMinY - bestF0JumpMinY;
+                elevBonus = (elevDiff / 16) * ELEV_FRAMES_PER_TILE;
+                if (elevBonus < 0) elevBonus = 0; // only reward climbing, never penalize
             }
 
-            // Use JumpTimingBias to pick from the best delays:
-            // 0.0 = earliest (index 0), 0.5 = middle, 1.0 = latest (last index)
-            int pickIndex = (int)(JumpTimingBias * (bestDelays.Count - 1));
-            pickIndex = Math.Clamp(pickIndex, 0, bestDelays.Count - 1);
-
-            int pickedDelay = bestDelays[pickIndex].delay;
-
-            // Only enter hold-jump when single-jump can't survive the
-            // full horizon but hold-jump can.  This prevents hold-jump from
-            // activating on flat ground where single jumps already work.
-            if (holdBestSurvival > bestSurvival && bestSurvival < LOOKAHEAD_HORIZON)
-            {
-#if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DECIDE_CUBE] HOLD-JUMP wins: holdSurv={holdBestSurvival} > bestSingleSurv={bestSurvival}, delay={holdBestDelay}");
-#endif
-                _cubeHoldJump = true;
-                _cubeHoldDelay = holdBestDelay;
-                return holdBestDelay == 0;
-            }
+            bool shouldJump;
+            int holdBonus = bestF0JumpHoldPattern ? 5 : 0;
+            int jumpScore = bestF0JumpSurv + holdBonus + elevBonus;
+            int walkScore = bestF0WalkSurv;
+            if (jumpScore > walkScore)
+                shouldJump = true;
+            else if (walkScore > jumpScore)
+                shouldJump = false;
+            else if (isElevated && bestF0JumpSurv >= BFS_HORIZON && bestF0WalkSurv >= BFS_HORIZON)
+                shouldJump = false; // elevated tiebreak: stay on platform (walk) to preserve altitude
+            else if (bestF0JumpX >= bestF0WalkX)
+                shouldJump = true;  // tied: prefer jump (maintains momentum)
+            else
+                shouldJump = false;
 
 #if !DISABLE_DEBUG_LOGGING
-            PfLog($"[DECIDE_CUBE] viable={viableDelays.Count} best=[{string.Join(",", bestDelays.Select(d => $"d{d.delay}:s{d.survival}"))}] bestSurvival={bestSurvival} bias={JumpTimingBias:F2} pickIdx={pickIndex} picking delay={pickedDelay}{(holdBestSurvival > 0 ? $" (holdBest=d{holdBestDelay}:s{holdBestSurvival})" : "")}");
+            PfLog($"[DECIDE_CUBE] BFS: jumpSurv={bestF0JumpSurv} jumpX={bestF0JumpX} holdPat={bestF0JumpHoldPattern} jumpMinY={bestF0JumpMinY}, walkSurv={bestF0WalkSurv} walkX={bestF0WalkX} walkMinY={bestF0WalkMinY} elevBonus={elevBonus} → {(shouldJump?"JUMP":"WALK")}");
 #endif
 
-            // Commit to the picked delay: if delay > 0, store it and
-            // return false until the countdown reaches 0.  This prevents
-            // re-evaluation from eroding the "latest" timing back toward
-            // delay=0 on subsequent frames.
-            if (pickedDelay > 0)
+            if (!shouldJump)
             {
-                _committedJumpDelay = pickedDelay;
+                // BFS says don't jump this frame. But don't commit a delay —
+                // next frame BFS re-evaluates from scratch.
                 return false;
             }
 
-            return true;  // delay == 0 → jump now
+            return true;
         }
 
         /// <summary>
@@ -1585,80 +2145,121 @@ namespace FamidashEditor
             if (_shipForceHoldFrames > 0)
             {
                 _shipForceHoldFrames--;
-                _shipCommitFrames = 0; // reset commitment after forced override
                 return true;
             }
             if (_shipForceReleaseFrames > 0)
             {
                 _shipForceReleaseFrames--;
-                _shipCommitFrames = 0;
                 return false;
             }
 
+            // Test 1-frame survival for both options first
             _speculativeDepth++;
-
-            // Quick 1-frame survival check
             var sH = state.Clone();
             var sR = state.Clone();
             bool aliveH = StepFrame(ref sH, true, out bool endH);
             bool aliveR = StepFrame(ref sR, false, out bool endR);
-
-            // Fast exits
-            if (endH) { _speculativeDepth--; _shipCommitFrames = 0; return true; }
-            if (endR) { _speculativeDepth--; _shipCommitFrames = 0; return false; }
-
-            // 1-frame safety override: if only one option survives, take it
-            // regardless of commitment
-            if (aliveH && !aliveR) { _speculativeDepth--; _shipCommitFrames = 0; return true; }
-            if (!aliveH && aliveR) { _speculativeDepth--; _shipCommitFrames = 0; return false; }
-            if (!aliveH && !aliveR) { _speculativeDepth--; _shipCommitFrames = 0; return false; }
-
-            // Honor existing hold/release commitment (creates wider arcs)
-            // Only override commitment for 1-frame safety (handled above)
-            if (_shipCommitFrames > 0)
-            {
-                _shipCommitFrames--;
-                _speculativeDepth--;
-                return _shipCommitHold;
-            }
-
-            // Both survive 1 frame — evaluate with greedy PD-controlled lookahead.
-            List<(int x, int y)>? pathH = (OnSpeculativePath != null && _speculativeDepth == 1)
-                ? new List<(int x, int y)>() : null;
-            List<(int x, int y)>? pathR = (OnSpeculativePath != null && _speculativeDepth == 1)
-                ? new List<(int x, int y)>() : null;
-
-            int survH = 1 + GreedyShipLookahead(sH, SHIP_LOOKAHEAD_HORIZON, pathH);
-            int survR = 1 + GreedyShipLookahead(sR, SHIP_LOOKAHEAD_HORIZON, pathR);
             _speculativeDepth--;
 
-            // Visualize speculative paths
-            OnSpeculativePath?.Invoke(pathH, 0, survH, true);
-            OnSpeculativePath?.Invoke(pathR, 0, survR, false);
+            // If one path reaches end-of-level, take it
+            if (endH) return true;
+            if (endR) return false;
 
-            bool pickHold;
-            if (survH != survR)
-                pickHold = survH > survR;
-            else
+            // If only one survives, pick it regardless
+            if (aliveH && !aliveR) return true;
+            if (!aliveH && aliveR) return false;
+            if (!aliveH && !aliveR) return false; // both die
+
+            // Both survive 1 frame — use binary tree search.
+            // Explore both hold and release branches recursively at each future frame.
+            // Pick whichever initial choice leads to the longest max-survival path.
+            _shipTreeNodesExplored = 0;
+            int survH = 1 + ShipTreeSearch(sH, SHIP_TREE_DEPTH - 1);
+            // Reset node budget so release gets equal exploration opportunity
+            _shipTreeNodesExplored = 0;
+            int survR = 1 + ShipTreeSearch(sR, SHIP_TREE_DEPTH - 1);
+
+            // Emit speculative paths for visualization (hold and release)
+            if (_speculativeDepth == 0 && OnSpeculativePath != null)
             {
-                // Equal survival — PD controller tiebreaker with corridor centering
-                int biasPixels = (int)((JumpTimingBias - 0.5) * 16.0);
-                int targetY = FindCorridorCenter(ref state) + _shipCorridorBias + biasPixels;
-                int currentY = state.Y_fixed >> 8;
-                int velY = state.VelY_fixed;
-
-                int posError = (state.GravMul > 0) ? (currentY - targetY) : (targetY - currentY);
-                int velComponent = -(velY * state.GravMul);
-                int pdSignal = posError - velComponent;
-                pickHold = pdSignal > 0;
+                // Simulate forward with hold-only and release-only for visualization
+                var vizH = state.Clone();
+                var vizR = state.Clone();
+                var holdPath = new List<(int x, int y)>();
+                var relPath = new List<(int x, int y)>();
+                holdPath.Add(((vizH.X_fixed >> 8) + 8, (vizH.Y_fixed >> 8) + 8));
+                relPath.Add(((vizR.X_fixed >> 8) + 8, (vizR.Y_fixed >> 8) + 8));
+                _speculativeDepth++;
+                for (int vf = 0; vf < SHIP_TREE_DEPTH; vf++)
+                {
+                    bool aH = StepFrame(ref vizH, true, out bool eH);
+                    holdPath.Add(((vizH.X_fixed >> 8) + 8, (vizH.Y_fixed >> 8) + 8));
+                    if (!aH || eH) break;
+                }
+                for (int vf = 0; vf < SHIP_TREE_DEPTH; vf++)
+                {
+                    bool aR = StepFrame(ref vizR, false, out bool eR);
+                    relPath.Add(((vizR.X_fixed >> 8) + 8, (vizR.Y_fixed >> 8) + 8));
+                    if (!aR || eR) break;
+                }
+                _speculativeDepth--;
+                OnSpeculativePath.Invoke(holdPath, 0, survH, true);
+                OnSpeculativePath.Invoke(relPath, 1, survR, false);
             }
 
-            // Commit to this decision for SHIP_MIN_COMMIT frames
-            // This creates natural sinusoidal arcs instead of flat micro-oscillation
-            _shipCommitHold = pickHold;
-            _shipCommitFrames = SHIP_MIN_COMMIT - 1; // -1 because this frame counts
+            if (survH != survR)
+                return survH > survR;
 
-            return pickHold;
+            // Equal survival — use velocity-aware corridor tracking as tiebreaker
+            int biasPixels = (int)((JumpTimingBias - 0.5) * 16.0);
+            int targetY = FindCorridorCenter(ref state) + _shipCorridorBias + biasPixels;
+            int currentY = state.Y_fixed >> 8;
+            int velY = state.VelY_fixed;
+
+            int posError = (state.GravMul > 0) ? (currentY - targetY) : (targetY - currentY);
+            int velComponent = -(velY * state.GravMul);
+            int pdSignal = posError - (velComponent * 2);
+
+            return pdSignal > 0;
+        }
+
+        /// <summary>
+        /// Binary tree search for ship: at each depth, try both hold and release,
+        /// recurse, and return the max survival depth achievable.
+        /// </summary>
+        private int _shipTreeNodesExplored;
+        private int ShipTreeSearch(SimState state, int depthRemaining)
+        {
+            if (depthRemaining <= 0 || _shipTreeNodesExplored >= SHIP_TREE_MAX_NODES)
+                return 0;
+
+            _shipTreeNodesExplored++;
+            _speculativeDepth++; // suppress logging during speculative search
+
+            // Try hold
+            var sH = state.Clone();
+            bool aliveH = StepFrame(ref sH, true, out bool endH);
+            int bestH = 0;
+            if (endH) bestH = depthRemaining; // reached end
+            else if (aliveH) bestH = 1 + ShipTreeSearch(sH, depthRemaining - 1);
+
+            // Early exit: if hold already achieves max depth, no need to try release
+            if (bestH >= depthRemaining)
+            {
+                _speculativeDepth--;
+                return bestH;
+            }
+
+            // Try release
+            _shipTreeNodesExplored++;
+            var sR = state.Clone();
+            bool aliveR = StepFrame(ref sR, false, out bool endR);
+            int bestR = 0;
+            if (endR) bestR = depthRemaining;
+            else if (aliveR) bestR = 1 + ShipTreeSearch(sR, depthRemaining - 1);
+
+            _speculativeDepth--;
+            return Math.Max(bestH, bestR);
         }
 
 
@@ -1711,10 +2312,9 @@ namespace FamidashEditor
                             break;
                         }
                         // Death tiles act as obstacles too — tile bottom is obstacle boundary
-                        // Add DEATH_TILE_MARGIN so the corridor center steers away from spikes
                         if (IsDeathCollision(col))
                         {
-                            int thisCeiling = ty * TILE + TILE + DEATH_TILE_MARGIN;
+                            int thisCeiling = ty * TILE + TILE;
                             if (thisCeiling > ceilingY) ceilingY = thisCeiling;
                             break;
                         }
@@ -1735,10 +2335,9 @@ namespace FamidashEditor
                             break;
                         }
                         // Death tiles act as obstacles — tile top is obstacle boundary
-                        // Add DEATH_TILE_MARGIN so the corridor center steers away from spikes
                         if (IsDeathCollision(col))
                         {
-                            int thisFloor = ty * TILE - DEATH_TILE_MARGIN;
+                            int thisFloor = ty * TILE;
                             if (thisFloor < floorY) floorY = thisFloor;
                             break;
                         }
@@ -1779,40 +2378,29 @@ namespace FamidashEditor
                         // Tiles within the hitbox span → route above or below
                         if (ty >= topTile && ty <= botTile)
                         {
-                            int margin = isDeath ? DEATH_TILE_MARGIN : 0;
-                            int effectiveTop = blockTop - margin;
-                            int effectiveBottom = blockBottom + margin;
-                            int spaceAbove = effectiveTop - ceilingY;
-                            int spaceBelow = floorY - effectiveBottom;
+                            int spaceAbove = blockTop - ceilingY;
+                            int spaceBelow = floorY - blockBottom;
 
                             if (spaceAbove >= hbH && (spaceAbove >= spaceBelow || spaceBelow < hbH))
                             {
-                                if (effectiveTop < floorY) floorY = effectiveTop;
+                                if (blockTop < floorY) floorY = blockTop;
                             }
                             else
                             {
-                                if (effectiveBottom > ceilingY) ceilingY = effectiveBottom;
+                                if (blockBottom > ceilingY) ceilingY = blockBottom;
                             }
                         }
                         // Tiles above the hitbox → tighten ceiling
                         else if (ty < topTile)
                         {
                             if (isSolid && blockBottom > ceilingY) ceilingY = blockBottom;
-                            if (isDeath)
-                            {
-                                int marginedBottom = blockBottom + DEATH_TILE_MARGIN;
-                                if (marginedBottom > ceilingY) ceilingY = marginedBottom;
-                            }
+                            if (isDeath && blockBottom > ceilingY) ceilingY = blockBottom;
                         }
                         // Tiles below the hitbox → tighten floor
                         else if (ty > botTile)
                         {
                             if (isSolid && blockTop < floorY) floorY = blockTop;
-                            if (isDeath)
-                            {
-                                int marginedTop = blockTop - DEATH_TILE_MARGIN;
-                                if (marginedTop < floorY) floorY = marginedTop;
-                            }
+                            if (isDeath && blockTop < floorY) floorY = blockTop;
                         }
                     }
                 }
@@ -1856,62 +2444,47 @@ namespace FamidashEditor
         }
 
         /// <summary>
-        /// Greedy lookahead for ship: each frame, pick hold vs release using
-        /// PD-controller corridor centering. 1-frame safety override prevents
-        /// steering into immediate death. Reuses pre-tested states to avoid
-        /// redundant StepFrame calls (2 per frame instead of 3).
+        /// Greedy lookahead for ship: each frame, pick hold vs release based
+        /// on which one-step result survives longer in a secondary lookahead.
         /// Returns number of frames survived (up to horizon).
         /// </summary>
-        private int GreedyShipLookahead(SimState start, int horizon,
-            List<(int x, int y)>? pathPoints = null)
+        private int GreedyShipLookahead(SimState start, int horizon)
         {
             var s = start.Clone();
-            pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + 8));
-
-            int commitLeft = 0;
-            bool commitHold = false;
 
             for (int f = 0; f < horizon; f++)
             {
                 // Detect corridor center at current position
                 int targetY = FindCorridorCenter(ref s) + _shipCorridorBias;
 
-                // Test both options (also acts as 1-frame safety check)
+                // Quick 1-step test for each option
                 var sH = s.Clone();
                 var sR = s.Clone();
                 bool aliveH = StepFrame(ref sH, true, out bool endH);
                 bool aliveR = StepFrame(ref sR, false, out bool endR);
 
                 if (!aliveH && !aliveR) return f; // both die
-                if (endH || endR) return horizon; // reached end
+                if (endH) return horizon; // hold reaches end
+                if (endR) return horizon; // release reaches end
 
                 bool pickHold;
-                if (aliveH && !aliveR) { pickHold = true; commitLeft = 0; }
-                else if (!aliveH && aliveR) { pickHold = false; commitLeft = 0; }
-                else if (commitLeft > 0)
-                {
-                    // Honor existing commitment for wider arcs
-                    pickHold = commitHold;
-                    commitLeft--;
-                }
+                if (aliveH && !aliveR) pickHold = true;
+                else if (!aliveH && aliveR) pickHold = false;
                 else
                 {
-                    // Both survive, no commitment — PD controller decides
+                    // Both survive — PD controller: position + velocity damping
                     int currentY = s.Y_fixed >> 8;
                     int velY = s.VelY_fixed;
                     int posError = (s.GravMul > 0) ? (currentY - targetY) : (targetY - currentY);
                     int velComponent = -(velY * s.GravMul);
-                    int pdSignal = posError - velComponent;
+                    int pdSignal = posError - (velComponent * 2);
                     pickHold = pdSignal > 0;
-
-                    // Commit to this for SHIP_MIN_COMMIT frames
-                    commitHold = pickHold;
-                    commitLeft = SHIP_MIN_COMMIT - 1;
                 }
 
-                // Reuse pre-computed state (avoids a 3rd StepFrame call)
-                s = pickHold ? sH : sR;
-                pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + 8));
+                // Advance with picked input
+                bool alive = StepFrame(ref s, pickHold, out bool end);
+                if (!alive) return f;
+                if (end) return horizon;
             }
             return horizon;
         }
@@ -1925,22 +2498,84 @@ namespace FamidashEditor
         /// ahead (short lookahead) to evaluate multi-jump paths.
         /// </summary>
         private int SimulateForwardWithJumpAt(SimState state, int jumpFrame,
-            bool holdAfterLanding = false, List<(int x, int y)>? pathPoints = null)
+            bool holdAfterLanding = false, List<(int x, int y)>? pathPoints = null,
+            bool singleJumpOnly = false)
         {
             return SimulateForwardWithJumpAt(state, jumpFrame, out _, out _, out _,
-                false, holdAfterLanding, pathPoints);
+                false, holdAfterLanding, pathPoints, singleJumpOnly);
+        }
+
+        /// <summary>
+        /// X-progress aware overload: simulates forward and returns both
+        /// survival frames AND the final X position (in pixels) as an out
+        /// parameter. Allows callers to score paths by X-progress (distance
+        /// covered) in addition to survival time. Supports a horizonOverride
+        /// to extend the simulation beyond the default LOOKAHEAD_HORIZON.
+        /// </summary>
+        private int SimulateForwardWithJumpAt(SimState state, int jumpFrame,
+            out int finalX_px, bool holdAfterLanding = false,
+            int horizonOverride = -1, List<(int x, int y)>? pathPoints = null,
+            bool singleJumpOnly = false)
+        {
+            finalX_px = state.X_fixed >> 8;
+            var s = state.Clone();
+            pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + 8));
+            bool initialJumpDone = (jumpFrame < 0);
+            bool chainJumps = (jumpFrame >= 0) && !singleJumpOnly;
+            int horizon = horizonOverride > 0 ? horizonOverride : LOOKAHEAD_HORIZON;
+            int minLandY = int.MaxValue; // track min Y when on a surface (for elevation exploration)
+
+            // Capture starting surface Y
+            if (s.VelY_fixed == 0)
+                minLandY = s.Y_fixed >> 8;
+
+            for (int f = 0; f < horizon; f++)
+            {
+                bool input = false;
+
+                if (!initialJumpDone)
+                {
+                    input = (f >= jumpFrame && s.VelY_fixed == 0);
+                    if (!input && f >= jumpFrame && jumpFrame >= 0 && s.PendingOrbIndex >= 0)
+                        input = true;
+                    if (input) initialJumpDone = true;
+                }
+                else if (chainJumps && (s.GameMode == 0 || s.GameMode == 2) && s.VelY_fixed == 0 && s.OnGround)
+                {
+                    input = holdAfterLanding || QuickDangerCheck(s);
+                }
+
+                if (jumpFrame >= 0 && initialJumpDone && !input && s.PendingOrbIndex >= 0)
+                    input = true;
+
+                bool alive = StepFrame(ref s, input, out bool endLevel);
+                pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + 8));
+
+                // Track min Y when on a surface (VelY==0) for elevation comparison
+                if (s.VelY_fixed == 0)
+                {
+                    int surfY = s.Y_fixed >> 8;
+                    if (surfY < minLandY) minLandY = surfY;
+                }
+
+                if (!alive) { finalX_px = s.X_fixed >> 8; _lastSpecMinLandY = minLandY; return f; }
+                if (endLevel) { finalX_px = s.X_fixed >> 8; _lastSpecMinLandY = minLandY; return horizon; }
+            }
+            finalX_px = s.X_fixed >> 8;
+            _lastSpecMinLandY = minLandY;
+            return horizon;
         }
 
         private int SimulateForwardWithJumpAt(SimState state, int jumpFrame,
             out string deathReason, out int deathX, out int deathY,
             bool logTrajectory = false, bool holdAfterLanding = false,
-            List<(int x, int y)>? pathPoints = null)
+            List<(int x, int y)>? pathPoints = null, bool singleJumpOnly = false)
         {
             deathReason = ""; deathX = 0; deathY = 0;
             var s = state.Clone();
             pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + 8));
             bool initialJumpDone = (jumpFrame < 0);
-            bool chainJumps = (jumpFrame >= 0); // only chain jumps when an actual jump was requested
+            bool chainJumps = (jumpFrame >= 0) && !singleJumpOnly;
             bool startGravFlipped = s.GravFlipped; // track gravity portal hits
             bool isBallMode = (s.GameMode == 2); // ball flips change GravFlipped — don't confuse with portal hits
 #if !DISABLE_DEBUG_LOGGING
@@ -2031,11 +2666,21 @@ namespace FamidashEditor
         {
             var s = state.Clone();
             const int SHORT_HORIZON = 15;
+            const int ELEV_DROP_THRESHOLD = 16; // 1 tile — detect walking off platform edges
+            int startY = s.Y_fixed >> 8;
             for (int f = 0; f < SHORT_HORIZON; f++)
             {
                 bool alive = StepFrame(ref s, false, out _);
                 if (!alive) return true; // danger ahead, jump now
             }
+            // Elevation guard: if the cube would drop significantly in the
+            // gravity direction (walking off a pillar edge into a gap/pit),
+            // treat as danger even if it wouldn't die within SHORT_HORIZON.
+            // This forces re-jump in the chained pass to maintain elevation
+            // through checkerboard/gap terrain.
+            int endY = s.Y_fixed >> 8;
+            int drop = s.GravFlipped ? (startY - endY) : (endY - startY);
+            if (drop > ELEV_DROP_THRESHOLD) return true;
             return false;
         }
 
@@ -2051,9 +2696,9 @@ namespace FamidashEditor
         ///   3. (ground support check)  — verify floor at new X
         ///   4. REVERT to OLD X
         ///   5. movement()              — Y physics + eject at OLD X
-        ///   6. x_movement_coll()       — forward wall check at OLD X, post-eject Y
+        ///   6. x_movement_coll()       — forward wall check at OLD X, post-eject Y (slope skip)
         ///   7. RESTORE NEW X
-        ///   8. bg_coll_death()         — death check at new X
+        ///   8. death collision          — 5-point death check at NEW X (matching sim)
         /// </summary>
         private bool StepFrame(ref SimState s, bool input, out bool endLevel)
         {
@@ -2091,25 +2736,15 @@ namespace FamidashEditor
                 s.PendingOrbSpriteId = -1;
             }
 
-            // ── STEP 2: X ADVANCE for ground support check ──
+            // ── STEP 2: Compute new X (applied at the end, matching NES
+            //    where x_movement() runs AFTER all collision checks) ──
             int newX_fixed = s.X_fixed + s.VelX_fixed;
-            s.X_fixed = newX_fixed;
 
-            // ── STEP 3: GROUND SUPPORT CHECK at new X ──
-            if (s.OnGround)
-            {
-                if (!VerifyGroundSupport(ref s))
-                {
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[GROUND_LOST] newX={newX_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-#endif
-                    s.OnGround = false;
-                    s.WasZeroedByCollision = false;
-                }
-            }
-
-            // ── STEP 4: REVERT to OLD X for physics ──
-            s.X_fixed = oldX_fixed;
+            // NOTE: The old VerifyGroundSupport check at new-X has been removed.
+            // The NES has no such look-ahead — ground loss is detected naturally
+            // by gravity pulling the player down and CubeEject finding no floor.
+            // With no GRAV_SKIP (matching NES), grounded frames apply gravity
+            // (+0x6B), and CubeEject snaps the player back each frame.
 
             // ── STEP 5: Y PHYSICS + EJECT at OLD X (movement) ──
             if (s.GameMode == 0) // Cube mode
@@ -2143,6 +2778,8 @@ namespace FamidashEditor
                     }
                 }
 
+                // Eject first (matching NES: cube_eject runs inside cube_movement,
+                // bg_coll_death runs later in runthecolls using post-eject Generic.y)
                 bool ejectDied = false;
                 CubeEject(ref s, out ejectDied);
                 if (ejectDied)
@@ -2154,10 +2791,12 @@ namespace FamidashEditor
                     return false;
                 }
 
+                // Center death check at post-eject Y (NES: bg_coll_death in runthecolls
+                // reads Generic.y which was set from currplayer_y after cube_eject)
                 if (CheckCenterPointDeath(ref s))
                 {
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                    PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px (post-eject)");
                     _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
                     return false;
@@ -2181,7 +2820,7 @@ namespace FamidashEditor
                 if (shipDied)
                     return false;
 
-                if (CheckCenterPointDeath(ref s))
+                if (CheckDeathCollision(ref s))
                     return false;
             }
             else if (s.GameMode == 2) // Ball mode
@@ -2258,7 +2897,7 @@ namespace FamidashEditor
                     }
                 }
 
-                if (CheckCenterPointDeath(ref s))
+                if (CheckDeathCollision(ref s))
                 {
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
@@ -2313,7 +2952,7 @@ namespace FamidashEditor
 #endif
                 }
 
-                if (CheckCenterPointDeath(ref s))
+                if (CheckDeathCollision(ref s))
                 {
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
@@ -2327,16 +2966,43 @@ namespace FamidashEditor
             CheckGravityPortalsPostY(ref s, oldX_px);
 
             // ── STEP 7: FORWARD COLLISION at OLD X, post-eject Y ──
+            // NES x_movement_coll runs bg_coll_floor_spikes (4-corner) then bg_coll_R
+            // at the same OLD X, post-eject Y coordinates.
+
+            // ── STEP 7a: 4-CORNER SPIKE CHECK (bg_coll_floor_spikes) ──
+            if (CheckFloorSpikes(ref s))
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[FLOOR_SPIKE] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                return false;
+            }
+
+            // ── STEP 7b: FORWARD COLLISION (bg_coll_R) ──
             if (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 10)
             {
                 if (CheckForwardCollision(ref s))
                 {
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[FWD_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                    _lastDeathReason = "FWD_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                    _lastDeathReason = "FWD_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
                     return false;
                 }
+            }
+
+            // ── STEP 7c: DEATH CHECK at OLD X, post-eject Y (matching NES bg_coll_death) ──
+            // NES bg_coll_death uses Generic.x/y which are set by cube_movement
+            // from post-eject currplayer_y and pre-x_movement currplayer_x (stale).
+            // x_movement() sets Generic.x BEFORE advancing currplayer_x, so
+            // Generic.x is still the OLD X value when bg_coll_death runs.
+            if (CheckDeathCollision(ref s))
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[DEATH_COLL] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                _lastDeathReason = "DEATH_COLL"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
+#endif
+                return false;
             }
 
             // ── STEP 8: RESTORE NEW X ──
@@ -2348,16 +3014,6 @@ namespace FamidashEditor
             // (SimulatorWindow line ~10983).  Uses centered 15×15 hitbox and NES-style
             // (+1) overlap conversion, exactly as SpriteIntersectsPlayer does.
             CheckGameModePortalsAtNewX(ref s);
-
-            // ── STEP 9: DEATH CHECK at new X (bg_coll_death) ──
-            if (CheckDeathCollision(ref s))
-            {
-#if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DEATH_COLL] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                _lastDeathReason = "DEATH_COLL"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
-#endif
-                return false;
-            }
 
             // ── STEP 10: MAP BOUNDS CHECK ──
             int playerY_px = s.Y_fixed >> 8;
@@ -2379,20 +3035,68 @@ namespace FamidashEditor
         // ═══════════════════════════════════════════════════════════════════
 
         /// <summary>
+        /// Predict whether the cube will land on a floor during the current
+        /// StepFrame call.  Used by DecideInput to detect landing frames and
+        /// enable landing-frame jumps (matching NES behavior).
+        /// 
+        /// Simulates one step of gravity + CubeEject floor detection without
+        /// modifying any state.  Returns true if the player would touch a
+        /// solid floor this frame (meaning CubeEject would zero VelY and the
+        /// jump check in StepFrame could fire if input=true).
+        /// </summary>
+        private bool CubeWillLandThisFrame(SimState state)
+        {
+            // ── Gravity prediction ──
+            int gravity = GetGravity(state.Mini);
+            int accel = gravity * state.GravMul;
+
+            // Max fall speed deceleration (matching common_gravity_routine)
+            if (state.GravMul > 0 && state.VelY_fixed > maxFallSpeed)
+                accel = -accel;
+            else if (state.GravMul < 0 && state.VelY_fixed < -maxFallSpeed)
+                accel = -accel;
+
+            int futureVelY = state.VelY_fixed + accel;
+
+            if (!state.GravFlipped)
+            {
+                // Normal gravity: landing = falling (futureVelY >= 0) + floor hit
+                if (futureVelY < 0) return false; // Rising — won't land
+
+                int futureY_fixed = state.Y_fixed + futureVelY;
+                int hbW = GetHitboxW(state.Mini);
+                int hbH = GetHitboxH(state.Mini);
+                int hbOffY = GetHitboxOffsetY(state.Mini, state.GravFlipped);
+                int collY = (futureY_fixed >> 8) + hbOffY;
+                var (floorHit, _, _) = CheckFloor(state.X_fixed >> 8, collY, hbW, hbH);
+                return floorHit;
+            }
+            else
+            {
+                // Flipped gravity: landing = rising toward ceiling (futureVelY <= 0) + ceiling hit
+                if (futureVelY > 0) return false; // Falling away — won't land
+
+                int futureY_fixed = state.Y_fixed + futureVelY;
+                int hbW = GetHitboxW(state.Mini);
+                int hbH = GetHitboxH(state.Mini);
+                int hbOffY = GetHitboxOffsetY(state.Mini, state.GravFlipped);
+                int collY = (futureY_fixed >> 8) + hbOffY;
+                var (ceilHit, _, _) = CheckCeiling(state.X_fixed >> 8, collY, hbW, hbH);
+                return ceilHit;
+            }
+        }
+
+        /// <summary>
         /// CommonGravityRoutine_Fresh — apply gravity and integrate Y.
-        /// Matches simulator's gravity skip: when velocity was zeroed by
-        /// collision (player resting on ground), skip gravity entirely.
+        /// Matches NES common_gravity_routine() which ALWAYS applies gravity,
+        /// even when grounded.  Grounded frames: gravity adds 0x6B to vel,
+        /// shifts Y by a sub-pixel amount, then CubeEject snaps back and zeroes
+        /// velocity — same net result as the NES.
         /// </summary>
         private void CubeGravity(ref SimState s)
         {
-            // GRAV_SKIP: match CommonGravityRoutine_Fresh — skip gravity when
-            // velocity was zeroed by collision and is still 0.
-            if (s.VelY_fixed == 0 && s.WasZeroedByCollision)
-                return;
-
-            // Clear wasZeroed flag when velocity is non-zero (player left ground)
-            if (s.VelY_fixed != 0)
-                s.WasZeroedByCollision = false;
+            // NO GRAV_SKIP — NES common_gravity_routine() always applies gravity.
+            // The simulator's CommonGravityRoutine_Fresh also has no GRAV_SKIP.
 
             // Calculate gravity acceleration
             int gravity = GetGravity(s.Mini);
@@ -2458,26 +3162,37 @@ namespace FamidashEditor
 
             if (!s.GravFlipped) // Normal gravity
             {
-                // Floor collision (landing) — unconditional, matching CheckCollisionDown path
-                var (floorHit, floorTopY, floorSpikeDeath) = CheckFloor(collX, collY, hbW, hbH);
-                if (floorSpikeDeath)
+                // NES bg_coll_D velocity guard: the ENTIRE floor collision
+                // (including spike-death checks) is skipped when vel_y < 0.
+                // This matches: if(!(high_byte(currplayer_vel_y) & 0x80))
+                if (s.VelY_fixed >= 0)
                 {
+                    var (floorHit, floorTopY, floorSpikeDeath) = CheckFloor(collX, collY, hbW, hbH);
+                    if (floorSpikeDeath)
+                    {
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[EJECT] floor spike death at X={playerX_px} Y={playerY_px}");
+                        PfLog($"[EJECT] floor spike death at X={playerX_px} Y={playerY_px}");
 #endif
-                    died = true;
-                    return;
-                }
-                if (floorHit && s.VelY_fixed >= 0)
-                {
-                    int newY = floorTopY - hbH - hbOffY;
+                        died = true;
+                        return;
+                    }
+                    if (floorHit)
+                    {
+                        int newY = floorTopY - hbH - hbOffY;
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[EJECT] floor land Y: {playerY_px} -> {newY} (floorTop={floorTopY})");
+                        PfLog($"[EJECT] floor land Y: {playerY_px} -> {newY} (floorTop={floorTopY})");
 #endif
-                    s.Y_fixed = newY << 8;
-                    s.VelY_fixed = 0;
-                    s.WasZeroedByCollision = true;
-                    s.OnGround = true;
+                        s.Y_fixed = newY << 8;
+                        s.VelY_fixed = 0;
+                        s.WasZeroedByCollision = true;
+                        s.OnGround = true;
+                    }
+                    else
+                    {
+                        // Falling with no floor below → not grounded.
+                        // Replaces the removed VerifyGroundSupport check.
+                        s.OnGround = false;
+                    }
                 }
 
                 // NOTE: Ceiling headbonk (CheckCollisionUp) only fires in the simulator
@@ -2487,9 +3202,10 @@ namespace FamidashEditor
             }
             else // Reversed gravity
             {
-                // Ceiling landing — unconditional when moving toward ceiling (velY <= 0)
-                // Matching CheckCollisionUp path in simulator's reversed gravity branch
-                if (s.VelY_fixed <= 0)
+                // Ceiling landing — NES bg_coll_U only runs when vel < 0
+                // (high_byte(vel_y) & 0x80), i.e. strictly negative.
+                // When vel == 0 (just ejected), NES skips bg_coll_U entirely.
+                if (s.VelY_fixed < 0)
                 {
                     var (ceilHit, ceilBotY, ceilSpikeDeath) = CheckCeiling(collX, collY, hbW, hbH);
                     if (ceilSpikeDeath)
@@ -2533,12 +3249,9 @@ namespace FamidashEditor
         /// </summary>
         private void BallGravityStep(ref SimState s)
         {
-            // GRAV_SKIP: match CommonGravityRoutine_Fresh
-            if (s.VelY_fixed == 0 && s.WasZeroedByCollision)
-                return;
-
-            if (s.VelY_fixed != 0)
-                s.WasZeroedByCollision = false;
+            // NO GRAV_SKIP — NES common_gravity_routine() always applies gravity.
+            // Ball eject does not set WasZeroedByCollision anyway, so this was
+            // always dead code.  Removed for NES 1:1 accuracy.
 
             int gravity = BallGravity(s.Mini);
             int accel = gravity * s.GravMul;
@@ -2844,32 +3557,19 @@ namespace FamidashEditor
             // Committed flip delay: count down, fire when reaching 0.
             if (_committedJumpDelay > 0)
             {
-                int remainingDelay = _committedJumpDelay;
-                int noPressSurvival = SimulateForwardWithJumpAt(state, -1);
-                if (noPressSurvival < remainingDelay)
+                _committedJumpDelay--;
+                if (_committedJumpDelay == 0)
                 {
-                    _committedJumpDelay = -1; // abort stale delay
+                    _committedJumpDelay = -1; // consumed
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DECIDE_BALL] committed delay ABORTED — no-press dies in {noPressSurvival} frames but delay has {remainingDelay} remaining, re-evaluating");
+                    PfLog($"[DECIDE_BALL] committed delay fired — flipping now");
 #endif
-                    // Fall through to normal decision logic below
+                    return true;
                 }
-                else
-                {
-                    _committedJumpDelay--;
-                    if (_committedJumpDelay == 0)
-                    {
-                        _committedJumpDelay = -1; // consumed
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[DECIDE_BALL] committed delay fired — flipping now");
+                PfLog($"[DECIDE_BALL] committed delay countdown: {_committedJumpDelay} remaining");
 #endif
-                        return true;
-                    }
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DECIDE_BALL] committed delay countdown: {_committedJumpDelay} remaining");
-#endif
-                    return false;
-                }
+                return false;
             }
 
             // Ball can only flip when grounded (VelY == 0 and OnGround)
@@ -2887,38 +3587,71 @@ namespace FamidashEditor
 
             OnSpeculativePath?.Invoke(noPressPath, -1, noPressFrames, false);
 
-            const int DETECTION_HORIZON = 50;
+            // Always evaluate all flip timings when the ball is grounded.
+            // Same principle as cube: the pathfinder's core job is to test
+            // every possible flip frame. X-progress comparison handles cases
+            // where both flip and no-flip survive the full horizon.
 
-            if (noPressFrames >= DETECTION_HORIZON)
+#if !DISABLE_DEBUG_LOGGING
+            PfLog($"[DECIDE_BALL] noPressFrames={noPressFrames}, testing flips (walkFrames={_ballGroundedWalkFrames})");
+#endif
+
+            // Get X-progress for no-press path
+            int noPressX = state.X_fixed >> 8;
             {
-#if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DECIDE_BALL] noPressFrames={noPressFrames} >= {DETECTION_HORIZON}, no flip needed");
-#endif
-                return false;
+                _speculativeDepth++;
+                SimulateForwardWithJumpAt(state, -1, out noPressX);
+                _speculativeDepth--;
             }
-
-#if !DISABLE_DEBUG_LOGGING
-            PfLog($"[DECIDE_BALL] noPressFrames={noPressFrames} < {DETECTION_HORIZON}, testing flips");
-#endif
 
             // Test different flip timings
             int bestSurvival = noPressFrames;
-            var viableDelays = new List<(int delay, int survival)>();
+            int bestXProgress = noPressX;
+            var viableDelays = new List<(int delay, int survival, int xProgress)>();
 
-            int maxDelay = Math.Min(noPressFrames, 35);
+            // Always test full range of delays (same reasoning as cube).
+            const int maxDelay = 35;
             _speculativeDepth++;
             for (int delay = 0; delay < maxDelay; delay++)
             {
                 List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
                     ? new List<(int x, int y)>() : null;
-                int survival = SimulateForwardWithJumpAt(state, delay, pathPoints: specPath);
+                int survival;
+                int xProg = state.X_fixed >> 8;
+
+                survival = SimulateForwardWithJumpAt(state, delay, out xProg,
+                    pathPoints: specPath);
 
                 OnSpeculativePath?.Invoke(specPath, delay, survival, false);
 
                 if (survival > bestSurvival)
                     bestSurvival = survival;
-                if (survival > noPressFrames)
-                    viableDelays.Add((delay, survival));
+                if (xProg > bestXProgress)
+                    bestXProgress = xProg;
+
+                // Viability: flipping is viable if it survives longer OR
+                // achieves more X-progress than no-press.
+                if (xProg > noPressX || survival > noPressFrames)
+                    viableDelays.Add((delay, survival, xProg));
+            }
+            _speculativeDepth--;
+
+            // ── Single-jump pass (same rationale as cube) ──
+            _speculativeDepth++;
+            for (int delay = 0; delay < maxDelay; delay++)
+            {
+                List<(int x, int y)>? sjPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                    ? new List<(int x, int y)>() : null;
+                int sjXProg = state.X_fixed >> 8;
+                int sjSurvival = SimulateForwardWithJumpAt(state, delay, out sjXProg,
+                    singleJumpOnly: true, pathPoints: sjPath);
+                OnSpeculativePath?.Invoke(sjPath, delay, sjSurvival, false);
+                if (sjSurvival > bestSurvival)
+                    bestSurvival = sjSurvival;
+                if (sjXProg > bestXProgress)
+                    bestXProgress = sjXProg;
+                if (sjXProg > noPressX || sjSurvival > noPressFrames)
+                    viableDelays.Add((delay, sjSurvival, sjXProg));
             }
             _speculativeDepth--;
 
@@ -2927,12 +3660,49 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[DECIDE_BALL] no viable flip delays found");
 #endif
-                return false;
+
+                // Phase 2: Extended horizon evaluation (same as cube).
+                if (noPressFrames >= LOOKAHEAD_HORIZON)
+                {
+                    const int EXTENDED_HORIZON = 180;
+                    _speculativeDepth++;
+                    int extNpSurv = SimulateForwardWithJumpAt(state, -1, out int extNpX, horizonOverride: EXTENDED_HORIZON);
+                    _speculativeDepth--;
+                    if (extNpSurv < EXTENDED_HORIZON)
+                    {
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[DECIDE_BALL] Phase 2 extended: no-press dies at extSurv={extNpSurv} extX={extNpX}, re-evaluating flips");
+#endif
+                        _speculativeDepth++;
+                        for (int delay = 0; delay < maxDelay; delay++)
+                        {
+                            List<(int x, int y)>? specPath2 = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                                ? new List<(int x, int y)>() : null;
+                            int s2 = SimulateForwardWithJumpAt(state, delay, out int x2,
+                                horizonOverride: EXTENDED_HORIZON, pathPoints: specPath2);
+                            OnSpeculativePath?.Invoke(specPath2, delay, s2, false);
+                            if (x2 > extNpX || s2 > extNpSurv)
+                            {
+                                viableDelays.Add((delay, s2, x2));
+                                if (s2 > bestSurvival) bestSurvival = s2;
+                                if (x2 > bestXProgress) bestXProgress = x2;
+                            }
+                        }
+                        _speculativeDepth--;
+                    }
+                }
+
+                if (viableDelays.Count == 0)
+                    return false;
             }
 
             // Pick timing using bias (same as cube)
-            int threshold = bestSurvival - 2;
-            var bestDelays = viableDelays.Where(d => d.survival >= threshold).ToList();
+            // Rank by X-progress
+            List<(int delay, int survival, int xProgress)> bestDelays;
+            {
+                int xThreshold = bestXProgress - 8; // 8px tolerance
+                bestDelays = viableDelays.Where(d => d.xProgress >= xThreshold).ToList();
+            }
             if (bestDelays.Count == 0) bestDelays = viableDelays;
 
             int pickIndex = (int)(JumpTimingBias * (bestDelays.Count - 1));
@@ -2940,7 +3710,7 @@ namespace FamidashEditor
             int pickedDelay = bestDelays[pickIndex].delay;
 
 #if !DISABLE_DEBUG_LOGGING
-            PfLog($"[DECIDE_BALL] viable={viableDelays.Count} best=[{string.Join(",", bestDelays.Select(d => $"d{d.delay}:s{d.survival}"))}] bestSurvival={bestSurvival} picking delay={pickedDelay}");
+            PfLog($"[DECIDE_BALL] viable={viableDelays.Count} best=[{string.Join(",", bestDelays.Select(d => $"d{d.delay}:s{d.survival}:x{d.xProgress}"))}] bestSurvival={bestSurvival} bestX={bestXProgress} picking delay={pickedDelay}");
 #endif
 
             if (pickedDelay > 0)
@@ -3070,12 +3840,9 @@ namespace FamidashEditor
         /// </summary>
         private void UfoGravityStep(ref SimState s)
         {
-            // GRAV_SKIP: same as cube/ball — skip when velocity was zeroed by collision
-            if (s.VelY_fixed == 0 && s.WasZeroedByCollision)
-                return;
-
-            if (s.VelY_fixed != 0)
-                s.WasZeroedByCollision = false;
+            // NO GRAV_SKIP — NES common_gravity_routine() always applies gravity.
+            // UFO eject does not set WasZeroedByCollision anyway, so this was
+            // always dead code.  Removed for NES 1:1 accuracy.
 
             int gravity = UfoGravity(s.Mini);
             int accel = gravity * s.GravMul;
@@ -3108,15 +3875,9 @@ namespace FamidashEditor
         /// </summary>
         private void ShipGravityAndThrust(ref SimState s, bool holding)
         {
-            // GRAV_SKIP: match CommonGravityRoutine_Fresh — skip gravity when
-            // velocity was zeroed by collision and is still 0.
-            // Ship mode (1) is NOT excluded from this check (only modes 8,9 are).
-            if (s.VelY_fixed == 0 && s.WasZeroedByCollision)
-                return;
-
-            // Clear wasZeroed when velocity is non-zero (player left ground)
-            if (s.VelY_fixed != 0)
-                s.WasZeroedByCollision = false;
+            // NO GRAV_SKIP — NES common_gravity_routine() always applies gravity.
+            // Ship eject does not set WasZeroedByCollision anyway, so this was
+            // always dead code.  Removed for NES 1:1 accuracy.
 
             int gravMul = s.GravMul;
             bool falling = gravMul > 0 ? (s.VelY_fixed > 0) : (s.VelY_fixed < 0);
@@ -3229,19 +3990,29 @@ namespace FamidashEditor
         /// <summary>
         /// Verify that the player still has floor support at the current position.
         /// Called after X advance to detect walking off ledges.
-        /// Matches SimulateNumericStep's ground support check.
+        /// Must exactly match SimulatorWindow / CubePhysics_Fresh ground support:
+        ///   - Center a 15px hitbox on (playerX + TILE/2).
+        ///   - Foot Y = playerY + hitboxOffsetY + hitboxH.
+        ///   - Use ProvidesFloorAtColumn(col, localX) per-column check.
         /// </summary>
         private bool VerifyGroundSupport(ref SimState s)
         {
             int playerX_px = s.X_fixed >> 8;
             int playerY_px = s.Y_fixed >> 8;
-            int hbW = GetHitboxW(s.Mini);
-            int hbH = GetHitboxH(s.Mini);
-            int hbOffY = GetHitboxOffsetY(s.Mini, s.GravFlipped);
 
             if (!s.GravFlipped)
             {
-                // Normal gravity: check below feet
+                // Center the 15px ground-check hitbox on the 16x16 tile center.
+                // Player position always represents the top-left of a 16x16
+                // tile space, so center = playerX + TILE/2 regardless of mini.
+                const int HITBOX_W_LOCAL = 15;
+                int playerCenter_px = playerX_px + (TILE / 2);
+                int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
+                int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
+                // Foot = bottom of actual hitbox (matches CheckCollisionDown's
+                // playerBottom_px = collisionY + hitboxH).
+                int hbH = GetHitboxH(s.Mini);
+                int hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
                 int footY_px = playerY_px + hbOffY + hbH;
                 // Ball mode: BallEject positions the ball 1px higher (ballYOffset=1)
                 // so feet are 1px above the floor tile.  Without compensation,
@@ -3256,35 +4027,21 @@ namespace FamidashEditor
 
                 if (tileArrayY < 0) return false;
 
-                int tileLeftX = playerX_px / TILE;
-                int tileRightX = (playerX_px + hbW - 1) / TILE;
-
-                for (int tx = tileLeftX; tx <= tileRightX; tx++)
+                for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
                 {
                     if (tx < 0 || tx >= mapWidth) continue;
                     int idx = tileArrayY * mapWidth + tx;
                     if (idx < 0 || idx >= tiles.Length) continue;
                     int tid = tiles[idx];
-                    var col = MetatileCollisionTable.GetCollision((byte)tid);
+                    var col = MetatileCollisionTable.GetCollision((byte)MapTileForCollision(tid));
                     if (col == MetatileCollision.COL_NONE) continue;
 
-                    // Check if this tile provides floor support
-                    var (cLeft, cTop, cRight, cBottom) = GetCollisionBounds(col);
-                    if (cRight <= cLeft) continue;
-
-                    int tileWorldX = tx * TILE;
-                    int colLeft_px = tileWorldX + cLeft;
-                    int colRight_px = tileWorldX + cRight;
-
-                    // Check horizontal overlap
-                    if ((playerX_px + hbW - 1) >= colLeft_px && playerX_px < colRight_px)
-                    {
-                        // Check if foot is near the collision top
-                        int tileWorldY = tileBelowY * TILE;
-                        int collisionTop_px = tileWorldY + cTop;
-                        if (footY_px >= collisionTop_px - 1 && footY_px <= tileWorldY + cBottom)
-                            return true;
-                    }
+                    // Match sim: use per-column floor support check with
+                    // localX based on playerCenter (clamped to tile bounds)
+                    int tileStartX = tx * TILE;
+                    int localX = Math.Max(0, Math.Min(TILE - 1, playerCenter_px - tileStartX));
+                    if (ProvidesFloorAtColumn(col, localX))
+                        return true;
                 }
 
                 return false;
@@ -3292,6 +4049,7 @@ namespace FamidashEditor
             else
             {
                 // Reversed gravity: check above head
+                int hbOffY = GetHitboxOffsetY(s.Mini, s.GravFlipped);
                 int headY_px = playerY_px + hbOffY;
                 // Floor division for correct tile lookup at negative values
                 int valGS = headY_px - 1;
@@ -3301,24 +4059,24 @@ namespace FamidashEditor
                 int tileArrayY = tileAboveY + groundRowsToReserve;
                 if (tileArrayY < 0 || tileArrayY >= mapHeight) return false;
 
-                int tileLeftX = playerX_px / TILE;
-                int tileRightX = (playerX_px + hbW - 1) / TILE;
+                // Match sim: centered X range on 16x16 tile space
+                const int HITBOX_W_LOCAL = 15;
+                int playerCenter_px = playerX_px + (TILE / 2);
+                int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
+                int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
 
-                for (int tx = tileLeftX; tx <= tileRightX; tx++)
+                for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
                 {
                     if (tx < 0 || tx >= mapWidth) continue;
                     int idx = tileArrayY * mapWidth + tx;
                     if (idx < 0 || idx >= tiles.Length) continue;
                     int tid = tiles[idx];
-                    var col = MetatileCollisionTable.GetCollision((byte)tid);
+                    var col = MetatileCollisionTable.GetCollision((byte)MapTileForCollision(tid));
                     if (col == MetatileCollision.COL_NONE) continue;
 
-                    var (cLeft, cTop, cRight, cBottom) = GetCollisionBounds(col);
-                    if (cRight <= cLeft) continue;
-                    int tileWorldX = tx * TILE;
-                    int colLeft_px = tileWorldX + cLeft;
-                    int colRight_px = tileWorldX + cRight;
-                    if ((playerX_px + hbW - 1) >= colLeft_px && playerX_px < colRight_px)
+                    int tileStartX = tx * TILE;
+                    int localX = Math.Max(0, Math.Min(TILE - 1, playerCenter_px - tileStartX));
+                    if (ProvidesFloorAtColumn(col, localX))
                         return true;
                 }
 
@@ -3878,6 +4636,299 @@ namespace FamidashEditor
         }
 
         /// <summary>
+        /// Per-column floor support check, matching ProvidesFloorAtColumnStatic
+        /// in SimulatorWindow.  Returns true if the collision type provides a
+        /// floor at the given local X column (0..15) within the tile.
+        /// </summary>
+        private static bool ProvidesFloorAtColumn(MetatileCollision col, int localX)
+        {
+            return ProvidesFloorAtColumn(col, localX, out _);
+        }
+
+        /// <summary>
+        /// Per-column floor support check with floor surface offset,
+        /// matching ProvidesFloorAtColumnStatic in SimulatorWindow.
+        /// topOffsetPx is the first solid pixel row within the tile (0 = top, 8 = bottom half).
+        /// </summary>
+        private static bool ProvidesFloorAtColumn(MetatileCollision col, int localX, out int topOffsetPx)
+        {
+            topOffsetPx = int.MaxValue;
+            bool inLeft = (localX >= 0 && localX <= 7);
+            bool inRight = (localX >= 8 && localX <= 15);
+
+            switch (col)
+            {
+                case MetatileCollision.COL_ALL:
+                case MetatileCollision.COL_FLOOR_CEIL:
+                case MetatileCollision.COL_NO_SIDE:
+                    topOffsetPx = 0; return true;
+                case MetatileCollision.COL_TOP:
+                case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                case MetatileCollision.COL_TOP_CENTER_SPIKE:
+                    topOffsetPx = 0; return true;
+                case MetatileCollision.COL_BOTTOM:
+                case MetatileCollision.COL_BOTTOM_CENTER_SPIKE:
+                case MetatileCollision.COL_BOTTOM_SPIKES:
+                    topOffsetPx = 8; return true;
+                case MetatileCollision.COL_LEFT:
+                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                    if (inLeft) { topOffsetPx = 0; return true; }
+                    break;
+                case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
+                    if (inLeft) { topOffsetPx = 8; return true; }
+                    break;
+                case MetatileCollision.COL_RIGHT:
+                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                    if (inRight) { topOffsetPx = 0; return true; }
+                    break;
+                case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
+                    if (inRight) { topOffsetPx = 8; return true; }
+                    break;
+                case MetatileCollision.COL_UP_LEFT:
+                    if (inLeft) { topOffsetPx = 0; return true; }
+                    break;
+                case MetatileCollision.COL_UP_RIGHT:
+                    if (inRight) { topOffsetPx = 0; return true; }
+                    break;
+                case MetatileCollision.COL_DOWN_LEFT:
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                    if (inLeft) { topOffsetPx = 8; return true; }
+                    break;
+                case MetatileCollision.COL_DOWN_RIGHT:
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                    if (inRight) { topOffsetPx = 8; return true; }
+                    break;
+                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                    if (inLeft) { topOffsetPx = 0; return true; }
+                    if (inRight) { topOffsetPx = 8; return true; }
+                    break;
+                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                    if (inRight) { topOffsetPx = 0; return true; }
+                    if (inLeft) { topOffsetPx = 8; return true; }
+                    break;
+                default:
+                    break;
+            }
+
+            // Additional combined-stair behavior
+            if (col == MetatileCollision.COL_BOTTOM_LEFT_STAIRS)
+            {
+                if (inLeft) { topOffsetPx = 0; return true; }
+                if (inRight) { topOffsetPx = 8; return true; }
+            }
+            if (col == MetatileCollision.COL_BOTTOM_RIGHT_STAIRS)
+            {
+                if (inRight) { topOffsetPx = 0; return true; }
+                if (inLeft) { topOffsetPx = 8; return true; }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Returns true if the collision type is a slope tile.
+        /// Slopes are handled by the dedicated slope collision system, not solid checks.
+        /// </summary>
+        private static bool IsSlopeTile(MetatileCollision col)
+        {
+            return col >= MetatileCollision.COL_SLOPE_RD45 && col <= MetatileCollision.COL_SLOPE_LU66_BOT;
+        }
+
+        /// <summary>
+        /// Returns true for collision types that are quadrant mini-blocks.
+        /// These types require BOTH localX and localY checks (handled by
+        /// IsMiniBlockFloorHit) and must NOT fall through to ProvidesFloorAtColumn.
+        /// </summary>
+        private static bool IsMiniBlockType(MetatileCollision col)
+        {
+            switch (col)
+            {
+                case MetatileCollision.COL_UP_LEFT:
+                case MetatileCollision.COL_UP_RIGHT:
+                case MetatileCollision.COL_DOWN_LEFT:
+                case MetatileCollision.COL_DOWN_RIGHT:
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// NES bg_coll_mini_blocks floor hit check.
+        /// Returns true when (localX, localY) falls inside the solid quadrant of a
+        /// mini-block tile.  This matches the NES code exactly:
+        ///   COL_UP_LEFT:   localY &lt; 8 &amp;&amp; localX &lt; 8
+        ///   COL_UP_RIGHT:  localY &lt; 8 &amp;&amp; localX >= 8
+        ///   COL_DOWN_LEFT: localY >= 8 &amp;&amp; localX &lt; 8
+        ///   COL_DOWN_RIGHT:localY >= 8 &amp;&amp; localX >= 8
+        /// Non-quadrant tiles always return false (handled by ProvidesFloorAtColumn).
+        /// </summary>
+        private static bool IsMiniBlockFloorHit(MetatileCollision col, int localX, int localY)
+        {
+            switch (col)
+            {
+                case MetatileCollision.COL_UP_LEFT:
+                    return (localY < 8) && (localX < 8);
+                case MetatileCollision.COL_UP_RIGHT:
+                    return (localY < 8) && (localX >= 8);
+                case MetatileCollision.COL_DOWN_LEFT:
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                    return (localY >= 8) && (localX < 8);
+                case MetatileCollision.COL_DOWN_RIGHT:
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                    return (localY >= 8) && (localX >= 8);
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Returns the floor surface Y offset (within tile) for a mini-block type.
+        /// UP quadrants start at row 0, DOWN quadrants start at row 8.
+        /// </summary>
+        private static int GetMiniBlockFloorSurface(MetatileCollision col)
+        {
+            switch (col)
+            {
+                case MetatileCollision.COL_UP_LEFT:
+                case MetatileCollision.COL_UP_RIGHT:
+                    return 0;
+                case MetatileCollision.COL_DOWN_LEFT:
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                case MetatileCollision.COL_DOWN_RIGHT:
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                    return 8;
+                default:
+                    return 0;
+            }
+        }
+
+        /// <summary>
+        /// Per-pixel solid occupancy check matching TileOccupiesPixel in SimulatorWindow.
+        /// Returns true when the tile's collision shape occupies the pixel at (localX, localY).
+        /// Used by CheckForwardCollision for accurate wall detection.
+        /// </summary>
+        private static bool TileOccupiesPixel(MetatileCollision col, int localX, int localY)
+        {
+            // Pure death tiles with no solid collision
+            switch (col)
+            {
+                case MetatileCollision.COL_DEATH:
+                case MetatileCollision.COL_DEATH_BOTTOM:
+                case MetatileCollision.COL_DEATH_TOP:
+                case MetatileCollision.COL_DEATH_LEFT:
+                case MetatileCollision.COL_DEATH_RIGHT:
+                case MetatileCollision.COL_DEATH_TOP_RIGHT:
+                case MetatileCollision.COL_DEATH_TOP_LEFT:
+                case MetatileCollision.COL_DEATH_BOTTOM_RIGHT:
+                case MetatileCollision.COL_DEATH_BOTTOM_LEFT:
+                case MetatileCollision.COL_DEATH_TOP_RIGHT_LEFT:
+                case MetatileCollision.COL_DEATH_TOP_BOTTOM:
+                case MetatileCollision.COL_DEATH_LEFT_RIGHT:
+                case MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM:
+                // Pure spike tiles (death only, no solid)
+                case MetatileCollision.COL_UP_LEFT_SPIKE:
+                case MetatileCollision.COL_UP_RIGHT_SPIKE:
+                case MetatileCollision.COL_UP_BOTH_SPIKES:
+                case MetatileCollision.COL_DOWN_LEFT_SPIKE:
+                case MetatileCollision.COL_DOWN_RIGHT_SPIKE:
+                case MetatileCollision.COL_DOWN_BOTH_SPIKES:
+                // Tiles that provide floor/ceiling but NOT side collision.
+                // NES bg_coll_sides() returns 0 for these — the player can
+                // walk/fly through them horizontally.
+                case MetatileCollision.COL_FLOOR_CEIL:
+                case MetatileCollision.COL_NO_SIDE:
+                    return false;
+                default:
+                    break;
+            }
+
+            bool inLeft = (localX >= 0 && localX <= 7);
+            bool inRight = (localX >= 8 && localX <= 15);
+
+            switch (col)
+            {
+                case MetatileCollision.COL_TOP:
+                case MetatileCollision.COL_TOP_CENTER_SPIKE:
+                    return (localY <= 7);
+                case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                    return (localY <= 7) || (localX <= 7);
+                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                    return (localY <= 7) || (localX >= 8);
+                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                    return (localX <= 7) || (localX >= 8 && localY >= 8);
+                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                    return (localX >= 8) || (localX <= 7 && localY >= 8);
+                case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
+                    return (localY >= 8);
+                case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
+                    return (localY >= 8);
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                    return (localX < 8 && localY >= 8);
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                    return (localX >= 8 && localY >= 8);
+                case MetatileCollision.COL_UP_LEFT:
+                    return (inLeft && localY <= 7);
+                case MetatileCollision.COL_UP_RIGHT:
+                    return (inRight && localY <= 7);
+                case MetatileCollision.COL_RIGHT:
+                    return inRight;  // right-half column solid, left half passable
+                case MetatileCollision.COL_LEFT:
+                    return inLeft;   // left-half column solid, right half passable
+                case MetatileCollision.COL_DOWN_LEFT:
+                    return (inLeft && localY >= 8);   // bottom-left quadrant
+                case MetatileCollision.COL_DOWN_RIGHT:
+                    return (inRight && localY >= 8);  // bottom-right quadrant
+                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                    if (inLeft) return (localY <= 7);
+                    if (inRight) return (localY >= 8);
+                    break;
+                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                    if (inRight) return (localY <= 7);
+                    if (inLeft) return (localY >= 8);
+                    break;
+                default:
+                    break;
+            }
+
+            // Use floor offset to determine occupancy
+            if (ProvidesFloorAtColumn(col, localX, out int topOffsetPx))
+            {
+                return (localY >= topOffsetPx);
+            }
+
+            // Slope tiles are NOT solid blocks
+            if (IsSlopeTile(col))
+                return false;
+
+            // Pure death has no solid collision
+            if (col == MetatileCollision.COL_DEATH)
+                return false;
+
+            // Fallback: non-none tiles treated as fully blocking
+            if (col != MetatileCollision.COL_NONE) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Map tile IDs for collision, matching the special remaps from
+        /// MapAnimatedTileIndex in SimulatorWindow.  Certain editor-specific
+        /// tile IDs (saws, etc.) are remapped to empty or other collision types.
+        /// </summary>
+        private static int MapTileForCollision(int tid)
+        {
+            switch (tid)
+            {
+                case 0xFC: case 0xDF: case 0xE3: case 0xFE: case 0xFF: return 0x00;
+                case 0xFD: return 0x26;
+                default: return tid;
+            }
+        }
+
+        /// <summary>
         /// Check floor collision (downward). Matching CheckCollisionDown in CollisionDetection.partial.cs.
         /// Returns (hit, surfaceY, spikeDeath).
         /// 
@@ -3893,95 +4944,101 @@ namespace FamidashEditor
             // which can reach the next tile column. Match NES by using collW not collW-1.
             int playerRight_px = collX + collW;
 
-            // ── SPIKE DEATH PRE-CHECK (3 points at bottom edge) ──
-            // Matches CheckCollisionDown's spike detection
-            {
-                int checkY = playerBottom_px;
-                for (int cpIdx = 0; cpIdx < 3; cpIdx++)
-                {
-                    int px = cpIdx == 0 ? playerLeft_px
-                           : cpIdx == 1 ? playerLeft_px + collW / 2
-                           : playerLeft_px + collW;
-                    int tileX = px / TILE;
-                    int tileY = checkY / TILE;
-
-                    if (tileX < 0 || tileX >= mapWidth || tileY < 0 || tileY >= mapHeight) continue;
-
-                    int tileArrayY = tileY + groundRowsToReserve;
-                    if (tileArrayY < 0 || tileArrayY >= mapHeight) continue;
-
-                    int tileIdx = tileArrayY * mapWidth + tileX;
-                    if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
-
-                    int tileId = tiles[tileIdx];
-                    var collision = MetatileCollisionTable.GetCollision((byte)tileId);
-
-                    int localX = px % TILE;
-                    int localY = checkY % TILE;
-
-                    // Only COL_DEATH_TOP and COL_DEATH_BOTTOM are checked here
-                    // (matching NES bg_coll_D → bg_coll_U_D_checks)
-                    if ((collision == MetatileCollision.COL_DEATH_TOP || collision == MetatileCollision.COL_DEATH_BOTTOM) &&
-                        MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
-                    {
-                        return (false, 0, true); // spike death!
-                    }
-                }
-            }
-
             // ── BOUNDS CHECK ──
             if (tileBelowY < 0 || tileBelowY >= mapHeight) return (false, 0, false);
 
             int tileArrayYFloor = tileBelowY + groundRowsToReserve;
 
-            // Ground layer is always solid
+            // Ground layer is always solid (clears any pending death)
             if (tileArrayYFloor >= mapHeight)
             {
                 int groundTop = tileBelowY * TILE;
                 return (true, groundTop, false);
             }
 
-            // ── TILE SCAN (left to right) ──
-            int tileLeftX = playerLeft_px / TILE;
-            int tileRightX = playerRight_px / TILE;
+            // ── NES-MATCHING 3-POINT INTERLEAVED CHECK ──
+            // NES bg_coll_D checks LEFT, CENTER, RIGHT probes at playerBottom.
+            // At each probe, COLL_CHECK_BOTTOM calls bg_coll_return_D():
+            //   - bg_coll_U_D_checks: COL_DEATH_TOP/BOTTOM → spike death (side-effect),
+            //     COL_ALL/NO_SIDE/FLOOR_CEIL → solid floor (return 1)
+            //   - bg_coll_mini_blocks: sub-tile solid check
+            // If a solid floor is found at ANY probe, the death flag is CLEARED
+            // and eject happens immediately (COLL_CHECK_BOTTOM does cube_data &= ~1).
+            // This means a spike at one probe can be CANCELLED by a floor at another.
+            bool deathPending = false;
 
-            for (int tx = tileLeftX; tx <= tileRightX; tx++)
+            for (int probeIdx = 0; probeIdx < 3; probeIdx++)
             {
-                if (tx < 0 || tx >= mapWidth) continue;
+                int px = probeIdx == 0 ? playerLeft_px
+                       : probeIdx == 1 ? playerLeft_px + collW / 2
+                       : playerRight_px;
+                int tileX = px / TILE;
 
-                int tileIdx = tileArrayYFloor * mapWidth + tx;
+                if (tileX < 0 || tileX >= mapWidth) continue;
+
+                int tileIdx = tileArrayYFloor * mapWidth + tileX;
                 if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
 
                 int tileId = tiles[tileIdx];
                 var collision = MetatileCollisionTable.GetCollision((byte)tileId);
                 if (collision == MetatileCollision.COL_NONE) continue;
 
-                var (cLeft, cTop, cRight, cBottom) = GetCollisionBounds(collision);
-                if (cRight <= cLeft || cBottom <= cTop) continue; // no solid
+                int localX = px % TILE;
+                int localY = playerBottom_px % TILE;
 
-                int tileWorldX = tx * TILE;
-                int tileWorldY = tileBelowY * TILE;
-                int collisionTop_px = tileWorldY + cTop;
-                int collisionBottom_px = tileWorldY + cBottom;
-                int colLeft_px = tileWorldX + cLeft;
-                int colRight_px = tileWorldX + cRight;
-
-                if (playerBottom_px >= collisionTop_px - 1 && playerBottom_px <= collisionBottom_px)
+                // ── SPIKE DEATH CHECK (COL_DEATH_TOP/BOTTOM, matching bg_coll_U_D_checks) ──
+                if (collision == MetatileCollision.COL_DEATH_TOP || collision == MetatileCollision.COL_DEATH_BOTTOM)
                 {
-                    if (playerRight_px >= colLeft_px && playerLeft_px < colRight_px)
+                    if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
                     {
-                        return (true, collisionTop_px, false);
+                        deathPending = true;
+                    }
+                    // Death tiles provide no floor — continue to next probe
+                    continue;
+                }
+
+                // ── SOLID FLOOR CHECK (matching bg_coll_U_D_checks + bg_coll_mini_blocks) ──
+                // NES bg_coll_mini_blocks checks BOTH localX and localY for quadrant
+                // tiles.  E.g. COL_UP_RIGHT only provides floor when localY < 8 AND
+                // localX >= 8.  If the player's bottom has fallen past the quadrant
+                // boundary (localY >= 8 for an UP quadrant), the tile provides no
+                // floor and the player falls through — matching NES 1:1.
+                if (IsMiniBlockFloorHit(collision, localX, localY))
+                {
+                    int tileWorldY = tileBelowY * TILE;
+                    int surfaceY = tileWorldY + GetMiniBlockFloorSurface(collision);
+                    if (playerBottom_px >= surfaceY)
+                    {
+                        // Floor found → clears death (matches COLL_CHECK_BOTTOM: cube_data &= ~1)
+                        return (true, surfaceY, false);
+                    }
+                }
+                else if (!IsMiniBlockType(collision) && ProvidesFloorAtColumn(collision, localX, out int topOffsetPx))
+                {
+                    // Non-mini-block tiles: full/half slabs, stairs, etc.
+                    int tileWorldY = tileBelowY * TILE;
+                    int surfaceY = tileWorldY + topOffsetPx;
+                    if (playerBottom_px >= surfaceY)
+                    {
+                        return (true, surfaceY, false);
                     }
                 }
             }
 
-            // Also check implicit ground floor
+            // Also check implicit ground floor (clears death)
+            // NES: the ground layer acts as a solid tile row.  The player's bottom
+            // must be AT or BELOW the ground surface to land — no -1 tolerance.
+            // Previous code used `>= groundTopWorld_px - 1` which caused the PF
+            // to eject 1 frame earlier than the NES, desynchronising replay.
             if (groundRowsToReserve > 0)
             {
                 int groundTopWorld_px = (mapHeight - groundRowsToReserve) * TILE;
-                if (playerBottom_px >= groundTopWorld_px - 1)
+                if (playerBottom_px >= groundTopWorld_px)
                     return (true, groundTopWorld_px, false);
             }
+
+            // No floor found — if spike death was pending, report it
+            if (deathPending) return (false, 0, true);
 
             return (false, 0, false);
         }
@@ -4103,17 +5160,151 @@ namespace FamidashEditor
             if (tileIdx < 0 || tileIdx >= tiles.Length) return false;
 
             int tileId = tiles[tileIdx];
-            var collision = MetatileCollisionTable.GetCollision((byte)tileId);
+            int mappedTid = MapTileForCollision(tileId);
+            var collision = MetatileCollisionTable.GetCollision((byte)mappedTid);
 
-            int localX = centerX_px % TILE;
-            int localY = centerY_px % TILE;
+            int tileStartX = tileX * TILE;
+            int tileStartY = (tileArrayY - groundRowsToReserve) * TILE;
+            int localX = Math.Max(0, Math.Min(TILE - 1, centerX_px - tileStartX));
+            int localY = Math.Max(0, Math.Min(TILE - 1, centerY_px - tileStartY));
 
             return MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY);
         }
 
         /// <summary>
-        /// CheckDeathCollision — 5-point death check matching SimulatorWindow's CheckDeathCollision.
-        /// Points: 4 hitbox corners (inset 3px sides, 2px top/bottom) + right-center (side spikes).
+        /// Helper: check if a single world-pixel coordinate hits a deadly spike tile.
+        /// Shared by CheckFloorSpikes and other multi-point death checks.
+        /// </summary>
+        private bool PointKillsPlayer(int px, int py
+#if !DISABLE_DEBUG_LOGGING
+            , out int dbg_tid, out int dbg_mappedTid, out MetatileCollision dbg_col, out int dbg_localX, out int dbg_localY
+#endif
+        )
+        {
+#if !DISABLE_DEBUG_LOGGING
+            dbg_tid = 0; dbg_mappedTid = 0; dbg_col = 0; dbg_localX = 0; dbg_localY = 0;
+#endif
+            int tileX = px / TILE;
+            int tileY = py / TILE;
+            int tileArrayY = tileY + groundRowsToReserve;
+
+            if (tileX < 0 || tileX >= mapWidth) return false;
+            if (tileArrayY < 0 || tileArrayY >= mapHeight) return false;
+
+            int tileIdx = tileArrayY * mapWidth + tileX;
+            if (tileIdx < 0 || tileIdx >= tiles.Length) return false;
+
+            int tid = tiles[tileIdx];
+            int mappedTid = MapTileForCollision(tid);
+            var col = MetatileCollisionTable.GetCollision((byte)mappedTid);
+
+            int tileStartX = tileX * TILE;
+            int tileStartY = (tileArrayY - groundRowsToReserve) * TILE;
+            int localX = Math.Max(0, Math.Min(TILE - 1, px - tileStartX));
+            int localY = Math.Max(0, Math.Min(TILE - 1, py - tileStartY));
+
+#if !DISABLE_DEBUG_LOGGING
+            dbg_tid = tid; dbg_mappedTid = mappedTid; dbg_col = col; dbg_localX = localX; dbg_localY = localY;
+#endif
+            return MetatileCollisionTable.TileKillsAtPixel(col, localX, localY);
+        }
+
+        /// <summary>
+        /// 4-corner spike check matching NES bg_coll_floor_spikes (collision.h line 214).
+        /// Checks 4 inset corners of the hitbox for ALL spike types via TileKillsAtPixel.
+        /// NES runs this in x_movement_coll at OLD X, post-eject Y — same timing as
+        /// CheckForwardCollision in The PF.
+        ///
+        /// Normal cube (15×15): corners at (X+3, Y+13), (X+12, Y+13), (X+3, Y+2), (X+12, Y+2)
+        /// Mini cube   (8×7):   corners at (X+3, Y+9),  (X+5, Y+9),  (X+3, Y+4), (X+5, Y+4)
+        ///
+        /// NES Y offsets:
+        ///   "TOP" row (commonly_used_store):    Y = Generic.y + (mini ? (0x10-h)>>1 : 0) + h - 2
+        ///   "BOTTOM" row (commonly_stored_2):   Y = Generic.y + (mini ? (0x10-h)>>1 : 2)
+        /// X offsets: left = X+3, right = X+3+(w-6) = X+w-3
+        /// </summary>
+        private bool CheckFloorSpikes(ref SimState s)
+        {
+            int playerX = s.X_fixed >> 8;
+            int playerY = s.Y_fixed >> 8;
+            int hbW = GetHitboxW(s.Mini);
+            int hbH = GetHitboxH(s.Mini);
+
+            // NES mini centering offset: (0x10 - height) >> 1
+            int miniOffY = s.Mini ? ((0x10 - hbH) >> 1) : 0;
+
+            // "TOP" row in NES — near bottom of hitbox
+            int topRowY = playerY + miniOffY + hbH - 2;
+            // "BOTTOM" row in NES — near top of hitbox
+            int botRowY = playerY + (s.Mini ? miniOffY : 2);
+
+            // X inset: +3 from left, width-3 from left (= +3 + (width-6))
+            int leftX = playerX + 3;
+            int rightX = playerX + hbW - 3;
+
+            // Check all 4 corners — same order as NES bg_coll_floor_spikes
+#if !DISABLE_DEBUG_LOGGING
+            int _tid, _mtid, _lx, _ly; MetatileCollision _col;
+#endif
+            if (PointKillsPlayer(leftX, topRowY
+#if !DISABLE_DEBUG_LOGGING
+                , out _tid, out _mtid, out _col, out _lx, out _ly
+#endif
+            ))
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[FLOOR_SPIKE_DEATH] corner TL ({leftX},{topRowY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} localXY=({_lx},{_ly})");
+                _lastDeathReason = $"FLOOR_SPIKE:TL({leftX},{topRowY})";
+                _lastDeathX = playerX; _lastDeathY = playerY;
+#endif
+                return true;
+            }
+            if (PointKillsPlayer(rightX, topRowY
+#if !DISABLE_DEBUG_LOGGING
+                , out _tid, out _mtid, out _col, out _lx, out _ly
+#endif
+            ))
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[FLOOR_SPIKE_DEATH] corner TR ({rightX},{topRowY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} localXY=({_lx},{_ly})");
+                _lastDeathReason = $"FLOOR_SPIKE:TR({rightX},{topRowY})";
+                _lastDeathX = playerX; _lastDeathY = playerY;
+#endif
+                return true;
+            }
+            if (PointKillsPlayer(leftX, botRowY
+#if !DISABLE_DEBUG_LOGGING
+                , out _tid, out _mtid, out _col, out _lx, out _ly
+#endif
+            ))
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[FLOOR_SPIKE_DEATH] corner BL ({leftX},{botRowY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} localXY=({_lx},{_ly})");
+                _lastDeathReason = $"FLOOR_SPIKE:BL({leftX},{botRowY})";
+                _lastDeathX = playerX; _lastDeathY = playerY;
+#endif
+                return true;
+            }
+            if (PointKillsPlayer(rightX, botRowY
+#if !DISABLE_DEBUG_LOGGING
+                , out _tid, out _mtid, out _col, out _lx, out _ly
+#endif
+            ))
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[FLOOR_SPIKE_DEATH] corner BR ({rightX},{botRowY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} localXY=({_lx},{_ly})");
+                _lastDeathReason = $"FLOOR_SPIKE:BR({rightX},{botRowY})";
+                _lastDeathX = playerX; _lastDeathY = playerY;
+#endif
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// CheckDeathCollision — center-point death check matching NES bg_coll_death.
+        /// Only checks the center probe: (x + (width>>1) - 1, y + (height>>1)).
         /// </summary>
         private bool CheckDeathCollision(ref SimState s)
         {
@@ -4123,56 +5314,37 @@ namespace FamidashEditor
             int hbH = GetHitboxH(s.Mini);
             int hbOffY = GetHitboxOffsetY(s.Mini, s.GravFlipped);
 
-            // 5 check points matching CheckDeathCollision in SimulatorWindow:
-            int leftX = playerX_px + 3;
-            int rightX = playerX_px + hbW - 3;
-            int rightEdgeX = playerX_px + hbW - 1;
-            int topY = playerY_px + hbH - 2 + hbOffY;      // near bottom of hitbox
-            int bottomY = playerY_px + (s.Mini ? 0 : 2) + hbOffY; // near top of hitbox
+            // Center probe only — matches NES bg_coll_death
+            int centerX = playerX_px + (hbW >> 1) - 1;
             int centerY = playerY_px + (hbH / 2) + hbOffY;
 
-            // Point 0: (leftX, topY) — bottom-left
-            // Point 1: (rightX, topY) — bottom-right
-            // Point 2: (leftX, bottomY) — top-left
-            // Point 3: (rightX, bottomY) — top-right
-            // Point 4: (rightEdgeX, centerY) — right-center (side spikes)
-            int px, py;
-            for (int i = 0; i < 5; i++)
+            int tileX = centerX / TILE;
+            int tileY = centerY / TILE;
+            int tileArrayY = tileY + groundRowsToReserve;
+
+            if (tileX < 0 || tileX >= mapWidth) return false;
+            if (tileArrayY < 0 || tileArrayY >= mapHeight) return false;
+
+            int tileIdx = tileArrayY * mapWidth + tileX;
+            if (tileIdx < 0 || tileIdx >= tiles.Length) return false;
+
+            int tid = tiles[tileIdx];
+            int mappedTid = MapTileForCollision(tid);
+            var col = MetatileCollisionTable.GetCollision((byte)mappedTid);
+
+            int tileStartX = tileX * TILE;
+            int tileStartY = (tileArrayY - groundRowsToReserve) * TILE;
+            int localX = Math.Max(0, Math.Min(TILE - 1, centerX - tileStartX));
+            int localY = Math.Max(0, Math.Min(TILE - 1, centerY - tileStartY));
+
+            if (MetatileCollisionTable.TileKillsAtPixel(col, localX, localY))
             {
-                switch (i)
-                {
-                    case 0: px = leftX; py = topY; break;
-                    case 1: px = rightX; py = topY; break;
-                    case 2: px = leftX; py = bottomY; break;
-                    case 3: px = rightX; py = bottomY; break;
-                    default: px = rightEdgeX; py = centerY; break;
-                }
-
-                int tileX = px / TILE;
-                int tileY = py / TILE;
-                int tileArrayY = tileY + groundRowsToReserve;
-
-                if (tileX < 0 || tileX >= mapWidth) continue;
-                if (tileArrayY < 0 || tileArrayY >= mapHeight) continue;
-
-                int tileIdx = tileArrayY * mapWidth + tileX;
-                if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
-
-                int tid = tiles[tileIdx];
-                var col = MetatileCollisionTable.GetCollision((byte)tid);
-
-                int localX = px % TILE;
-                int localY = py % TILE;
-
-                if (MetatileCollisionTable.TileKillsAtPixel(col, localX, localY))
-                {
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[DEATH_POINT] point{i} ({px},{py}) tile=({tileX},{tileArrayY}) tid=0x{tid:X2} col={col}");
-                    _lastDeathReason = $"DEATH_COLL:pt{i}({px},{py})tile({tileX},{tileArrayY})tid=0x{tid:X2}col={col}";
-                    _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
+                PfLog($"[DEATH_POINT] center ({centerX},{centerY}) tile=({tileX},{tileArrayY}) tid=0x{tid:X2} col={col}");
+                _lastDeathReason = $"DEATH_COLL:center({centerX},{centerY})tile({tileX},{tileArrayY})tid=0x{tid:X2}col={col}";
+                _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
-                    return true;
-                }
+                return true;
             }
 
             return false;
@@ -4185,6 +5357,13 @@ namespace FamidashEditor
         /// </summary>
         private bool CheckForwardCollision(ref SimState s)
         {
+            // NES and sim skip bg_coll_R entirely when currplayer_was_on_slope_counter
+            // or currplayer_slope_frames is non-zero (ShouldSkipSideCollisionForSlope).
+            // The PF doesn't track slope state, so use a heuristic: check if any tile
+            // near the player's feet is a slope tile, and if so skip forward collision.
+            if (HasSlopeNearFeet(s))
+                return false;
+
             int playerX_px = s.X_fixed >> 8;
             int playerY_px = s.Y_fixed >> 8;
             int hbW = GetHitboxW(s.Mini);
@@ -4220,19 +5399,16 @@ namespace FamidashEditor
             if (tileIdx < 0 || tileIdx >= tiles.Length) return false;
 
             int tileId = tiles[tileIdx];
-            var collision = MetatileCollisionTable.GetCollision((byte)tileId);
-
-            // Check if the collision type is solid (provides a wall)
-            var (cLeft, cTop, cRight, cBottom) = GetCollisionBounds(collision);
-            if (cRight <= cLeft) return false; // not solid
+            int mappedTid = MapTileForCollision(tileId);
+            var collision = MetatileCollisionTable.GetCollision((byte)mappedTid);
 
             int tileWorldX = tileX * TILE;
             int tileWorldY = tileY * TILE;
-            int localX = rightEdge_px - tileWorldX;
-            int localY = centerY_px - tileWorldY;
+            int localX = Math.Max(0, Math.Min(TILE - 1, rightEdge_px - tileWorldX));
+            int localY = Math.Max(0, Math.Min(TILE - 1, centerY_px - tileWorldY));
 
-            // Check if the right edge pixel is inside the solid region
-            if (localX >= cLeft && localX < cRight && localY >= cTop && localY < cBottom)
+            // Per-pixel solid occupancy check matching sim's TileOccupiesPixel
+            if (TileOccupiesPixel(collision, localX, localY))
             {
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[FWD_COLL] probe=({rightEdge_px},{centerY_px}) tile=({tileX},{tileY}) tid=0x{tileId:X2} col={collision} oldX={playerX_px} newX={(s.X_fixed + s.VelX_fixed) >> 8}");
@@ -4240,6 +5416,57 @@ namespace FamidashEditor
                 return true; // blocked → death
             }
 
+            // NES bg_side_coll_common: if bg_coll_spikes() is true at the forward
+            // probe, it returns 0 (NO collision) — spikes are filtered out so the
+            // player passes through them. Only solid walls (bg_coll_sides /
+            // bg_coll_mini_blocks) count as forward collisions.
+            // So do NOT kill the player here for spikes — only the center-point
+            // death check (bg_coll_death / CheckDeathCollision) handles spike kills.
+
+            return false;
+        }
+
+        /// <summary>
+        /// Heuristic slope proximity check: scan tiles at and below the player's
+        /// feet for slope tiles. The NES/sim skip side collision for several frames
+        /// after the player was on a slope (currplayer_was_on_slope_counter |
+        /// currplayer_slope_frames). Since the PF doesn't track slope state,
+        /// this approximation checks the current floor region for slopes.
+        /// </summary>
+        private bool HasSlopeNearFeet(SimState s)
+        {
+            int playerX_px = s.X_fixed >> 8;
+            int playerY_px = s.Y_fixed >> 8;
+            int hbW = GetHitboxW(s.Mini);
+            int hbH = GetHitboxH(s.Mini);
+            int hbOffY = GetHitboxOffsetY(s.Mini, s.GravFlipped);
+
+            // Check tiles at and below the player's bottom edge
+            int bottomY_px = playerY_px + hbOffY + hbH;
+            int leftX_px = playerX_px;
+            int rightX_px = playerX_px + hbW;
+
+            int tileLeft = leftX_px / TILE;
+            int tileRight = rightX_px / TILE;
+            int tileYBase = bottomY_px / TILE;
+
+            // Scan 2 rows (at feet and one below) and all columns under the player
+            for (int dy = 0; dy <= 1; dy++)
+            {
+                int ty = tileYBase + dy;
+                int tileArrayY = ty + groundRowsToReserve;
+                if (tileArrayY < 0 || tileArrayY >= mapHeight) continue;
+                for (int tx = tileLeft; tx <= tileRight; tx++)
+                {
+                    if (tx < 0 || tx >= mapWidth) continue;
+                    int idx = tileArrayY * mapWidth + tx;
+                    if (idx < 0 || idx >= tiles.Length) continue;
+                    int tid = tiles[idx];
+                    int mapped = MapTileForCollision(tid);
+                    var col = MetatileCollisionTable.GetCollision((byte)mapped);
+                    if (IsSlopeTile(col)) return true;
+                }
+            }
             return false;
         }
     }

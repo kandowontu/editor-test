@@ -29,6 +29,11 @@
     <!-- Debug logging enabled: remove DISABLE_DEBUG_LOGGING to generate PF logs in %TEMP% -->
   </PropertyGroup>
 
+  <!-- NoDebugLogging config: suppress ALL sim debug logging (file I/O + string allocs) -->
+  <PropertyGroup Condition="'$(Configuration)' == 'NoDebugLogging'">
+    <DefineConstants>$(DefineConstants);DISABLE_DEBUG_LOGGING</DefineConstants>
+  </PropertyGroup>
+
   <!-- Removed .fms from project: we now work exclusively with the FamiStudio text export (the album.txt) -->
   
 

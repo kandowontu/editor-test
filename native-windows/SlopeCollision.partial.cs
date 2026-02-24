@@ -107,6 +107,20 @@ namespace FamidashEditor
         }
         
         /// <summary>
+        /// clear_slope_stuff() from sprite_loading.h line 194
+        /// Called by pad_stuff() and sprite_gamemode_main() before applying pad/orb velocity.
+        /// Clears slope state for the CURRENT player only so residual slope exit velocity
+        /// doesn't corrupt the pad/orb velocity in UpdateSlopeCounters_Fresh.
+        /// </summary>
+        private void ClearSlopeStuff()
+        {
+            currplayer_was_on_slope_counter = 0;
+            currplayer_slope_frames = 0;
+            currplayer_slope_type = 0;
+            currplayer_last_slope_type = 0;
+        }
+
+        /// <summary>
         /// Reset all slope state variables (called on level restart)
         /// Matches reset_level.h slope section
         /// </summary>

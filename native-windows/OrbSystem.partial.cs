@@ -168,9 +168,9 @@ namespace FamidashEditor
             int playerBottom_px = playerY_px + playerH - 1;
 
             // Scan all sprites for orb collisions
-            for (int idx = 0; idx < sprites.Length; idx++)
+            for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
             {
-                int spriteType = sprites[idx];
+                int idx = nonEmptySpriteIndices[_si]; int spriteType = sprites[idx];
                 if (spriteType == -1) continue; // Empty
                 // NES only checks anchor sprites — skip sub-tiles of multi-tile sprites
                 if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
@@ -229,6 +229,10 @@ namespace FamidashEditor
                 if (shouldActivate)
                 {
                     try { AppendSimDebug($"[ORB] ACTIVATING orb 0x{spriteType:X2}!"); } catch { }
+                    
+                    // NES sprite_gamemode_main() calls clear_slope_stuff() before orb activation
+                    // This prevents residual slope exit velocity from corrupting the orb velocity
+                    ClearSlopeStuff();
                     
                     // Activate the orb!
                     ActivateOrb(spriteType, gamemode, gravityInverted, mini, ref velocityY);
@@ -362,9 +366,9 @@ namespace FamidashEditor
                     
                     // Search for exit orb (0x5A) on visible screen
                     // If multiple exits are visible, the last one loaded will be used
-                    for (int idx = 0; idx < sprites.Length; idx++)
+                    for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                     {
-                        if (sprites[idx] == TELEPORT_ORB_EXIT)
+                        int idx = nonEmptySpriteIndices[_si]; if (sprites[idx] == TELEPORT_ORB_EXIT)
                         {
                             // Get exit orb world position
                             int exitTileX = idx % mapWidth;
@@ -558,9 +562,9 @@ namespace FamidashEditor
             int playerTop_px = playerY_px;
             int playerBottom_px = playerY_px + hitboxH - 1;
 
-            for (int idx = 0; idx < sprites.Length; idx++)
+            for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
             {
-                int spriteType = sprites[idx];
+                int idx = nonEmptySpriteIndices[_si]; int spriteType = sprites[idx];
                 if (spriteType == -1) continue;
                 if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
 
@@ -617,6 +621,9 @@ namespace FamidashEditor
                 }
                 
                 if (!shouldActivate) continue;
+                
+                // NES sprite_gamemode_main() calls clear_slope_stuff() before orb activation
+                ClearSlopeStuff();
                 
                 // Mark as activated (but not in dual mode - each player can activate independently)
                 if (!dual)

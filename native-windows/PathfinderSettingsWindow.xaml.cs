@@ -15,6 +15,31 @@ namespace FamidashEditor
         /// </summary>
         public bool Confirmed { get; private set; } = false;
 
+        /// <summary>
+        /// True if the user wants the pathfinder to prefer collecting coins.
+        /// </summary>
+        public bool PreferCoins { get; private set; } = false;
+
+        /// <summary>
+        /// True if the path line should be drawn on the map when calculation completes.
+        /// </summary>
+        public bool DrawPathLine { get; private set; } = true;
+
+        /// <summary>
+        /// True if speculative paths should be shown in real-time during calculation.
+        /// </summary>
+        public bool ShowPathfinderLive { get; private set; } = true;
+
+        /// <summary>
+        /// True if attempted/backtracked paths should be shown after calculation.
+        /// </summary>
+        public bool ShowProspectivePaths { get; private set; } = false;
+
+        /// <summary>
+        /// Click optimization mode: 0 = none, 1 = least clicks, 2 = most clicks, 3 = just the clicks needed.
+        /// </summary>
+        public int ClickOptimization { get; private set; } = 0;
+
         public PathfinderSettingsWindow()
         {
             InitializeComponent();
@@ -49,6 +74,16 @@ namespace FamidashEditor
             else if (OptLatest.IsChecked == true) JumpTimingBias = 1.0;
 
             Confirmed = true;
+            PreferCoins = (ChkPreferCoins.IsChecked == true);
+            DrawPathLine = (ChkDrawPathLine.IsChecked == true);
+            ShowPathfinderLive = (ChkShowLive.IsChecked == true);
+            ShowProspectivePaths = (ChkShowProspective.IsChecked == true);
+
+            if (OptClicksLeast.IsChecked == true) ClickOptimization = 1;
+            else if (OptClicksMost.IsChecked == true) ClickOptimization = 2;
+            else if (OptClicksNeeded.IsChecked == true) ClickOptimization = 3;
+            else ClickOptimization = 0;
+
             DialogResult = true;
             Close();
         }

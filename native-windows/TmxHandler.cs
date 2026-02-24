@@ -12,6 +12,60 @@ namespace FamidashEditor
         private const int SpriteFirstGid = 257; // TMX GID for first sprite tile
         private const int TilesCount = 256;     // Number of tiles/sprites per tileset
 
+        /// <summary>
+        /// Returns true for sprite IDs that have real collision geometry
+        /// (pads, orbs, portals, coins, etc.).  Used during TMX loading to
+        /// prevent deco/color/outline sprites from overwriting interactive
+        /// sprites that happen to share a tile position.
+        /// </summary>
+        private static bool IsInteractiveSprite(int sid)
+        {
+            if (sid < 0 || sid > 0xFF) return false;
+            // Deco (height=0xFE): 0x2A-0x43, 0x49-0x4A
+            // COLR (height=0xFD): 0x80-0x8D,0x8F-0x9D,0x9F-0xAD,0xAE-0xAF, 0xC0-0xEF range
+            // OUTL (height=0xFC): 0xAF-0xBF
+            // SPBH (height=0xFF): sub-parts / hidden / trigger positions
+            // Anything that is NOT in one of these categories is interactive.
+            // Use the same height table sentinel values as SimulatorWindow.
+            int[] heights = {
+                0x34,0x34,0x34,0x34,0x34,0x12,0x12,0xFF, // 00-07
+                0x28,0x28,0x03,0x12,0x03,0x03,0x03,0xFF, // 08-0F
+                0x0e,0x0e,0x0e,0x0e,0x24,0x24,0x24,0x34, // 10-17
+                0x34,0x34,0xFF,0xFF,0xFF,0xFF,0xFF,0x12, // 18-1F
+                0x24,0x24,0x34,0x34,0x34,0x03,0x03,0x12, // 20-27
+                0x12,0x12,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE, // 28-2F
+                0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE, // 30-37
+                0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE, // 38-3F
+                0xFE,0xFE,0xFE,0xFE,0x12,0x12,0x12,0x28, // 40-47
+                0x28,0xFE,0xFE,0x34,0x12,0x12,0x30,0xFF, // 48-4F
+                0x12,0x12,0x03,0x03,0x12,0x12,0x03,0x03, // 50-57
+                0x34,0x10,0xFF,0x12,0x12,0x12,0x12,0x34, // 58-5F
+                0x34,0x34,0x34,0x34,0x34,0x02,0x10,0xFF, // 60-67
+                0x10,0xFF,0x34,0x34,0x34,0x20,0x08,0xFF, // 68-6F
+                0xFF,0xFF,0xFF,0xFF,0xFF,0x10,0xFF,0x10, // 70-77
+                0xFF,0x12,0x12,0x12,0x12,0xFF,0xFF,0xFF, // 78-7F
+                0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // 80-87
+                0xFD,0xFD,0xFD,0xFD,0xFD,0x00,0xFF,0xFD, // 88-8F
+                0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // 90-97
+                0xFD,0xFD,0xFD,0xFD,0xFD,0x00,0xFF,0xFD, // 98-9F
+                0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // A0-A7
+                0xFD,0xFD,0xFD,0xFD,0xFD,0x00,0xFD,0xFC, // A8-AF
+                0xFC,0xFC,0xFC,0xFC,0xFC,0xFC,0xFC,0xFC, // B0-B7
+                0xFC,0xFC,0xFC,0xFC,0xFC,0xFC,0xFC,0xFC, // B8-BF
+                0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // C0-C7
+                0xFD,0xFD,0xFD,0xFD,0xFD,0x00,0x00,0xFD, // C8-CF
+                0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // D0-D7
+                0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0xFF,0x00, // D8-DF
+                0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // E0-E7
+                0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0x00,0x00, // E8-EF
+                0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x10,0x10, // F0-F7
+                0x10,0x10,0x1F,0x10,0x10,0x03,0x03,0x00  // F8-FF
+            };
+            int h = heights[sid];
+            // Interactive = height < 0xFC (real collision geometry)
+            return h < 0xFC;
+        }
+
         // Check if a sprite index is a trigger sprite that needs position offsetting
         private static bool IsTriggerSprite(int spriteIdx)
         {
@@ -181,7 +235,10 @@ namespace FamidashEditor
                 return a.y.CompareTo(b.y);
             });
             
-            // First pass: place all normal sprites (they can overwrite anything)
+            // First pass: place all normal sprites.
+            // If a non-interactive sprite (deco/color/outline) would overwrite
+            // an interactive sprite (pad/orb/portal/coin), skip the overwrite
+            // so interactive sprites always take priority.
             foreach (var (spriteIdx, x, y, originalX, originalY, isTrigger) in normalSprites)
             {
                 int newIdx = y * width + x;
@@ -191,6 +248,16 @@ namespace FamidashEditor
                     if (sprites[newIdx] != -1)
                     {
                         int existingSprite = sprites[newIdx];
+                        bool existingIsInteractive = IsInteractiveSprite(existingSprite);
+                        bool newIsInteractive = IsInteractiveSprite(spriteIdx);
+
+                        // Don't let a non-interactive sprite overwrite an interactive one
+                        if (existingIsInteractive && !newIsInteractive)
+                        {
+                            collisionMessages.Add($"NORMAL Sprite 0x{spriteIdx:X2} (deco) at TMX({originalX},{originalY}) SKIPPED — would overwrite interactive sprite 0x{existingSprite:X2} at ({x},{y})");
+                            continue;
+                        }
+
                         collisionMessages.Add($"NORMAL Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) OVERWRITES existing sprite 0x{existingSprite:X2} at ({x},{y})");
                     }
                     
@@ -340,7 +407,9 @@ namespace FamidashEditor
                     }
                 }
 
-                pushVisited.Remove(visitKey);
+                // Do NOT remove visitKey on failure — acts as memoization to prevent
+                // factorial-time re-exploration of cells that already proved unpushable.
+                // pushVisited.Remove(visitKey);  // intentionally removed to fix O(H!) freeze
                 return -1;
             };
 
@@ -379,27 +448,33 @@ namespace FamidashEditor
                     }
                     if (!found)
                     {
-                        // Very last fallback: place anywhere empty in map but avoid ground row when possible
+                        // Could not place in the target column. Do NOT scatter triggers
+                        // to arbitrary map positions — placing an end-level trigger (0x0F)
+                        // at (0,0) would make the pathfinder think the level ends immediately.
+                        // Instead, try the adjacent column (col ± 1) as a last resort.
                         bool found2 = false;
-                        for (int r = 0; r <= maxPlayableRow && !found2; r++)
+                        for (int dc = 1; dc <= 2 && !found2; dc++)
                         {
-                            for (int c = 0; c < width && !found2; c++)
+                            foreach (int tryCol in new[] { col + dc, col - dc })
                             {
-                                int tidx = r * width + c;
-                                if (sprites[tidx] == -1)
+                                if (tryCol < 0 || tryCol >= width) continue;
+                                for (int r = 0; r <= maxPlayableRow; r++)
                                 {
-                                    sprites[tidx] = spriteIdx; collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Placed at ({c},{r}) [global fallback]"); found2 = true; break;
+                                    int tidx = r * width + tryCol;
+                                    if (sprites[tidx] == -1)
+                                    {
+                                        sprites[tidx] = spriteIdx;
+                                        collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Placed at ({tryCol},{r}) [adjacent col fallback]");
+                                        found2 = true; break;
+                                    }
                                 }
+                                if (found2) break;
                             }
                         }
                         if (!found2)
                         {
-                            // Map completely full: overwrite nearest playable cell (not ground) or force at target
-                            int forceIdx = Math.Max(0, Math.Min(totalTiles - 1, y * width + col));
-                            // prefer to clamp to a playable row in same column
-                            int forceRow = Math.Max(0, Math.Min(maxPlayableRow, y));
-                            int targetIdx = forceRow * width + col;
-                            sprites[targetIdx] = spriteIdx; collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → Forced overwrite at ({col},{forceRow})");
+                            // Drop the trigger entirely rather than placing at an unrelated position
+                            collisionMessages.Add($"TRIGGER Sprite 0x{spriteIdx:X2} at TMX({originalX},{originalY}) → DROPPED (column {col} full, no adjacent space)");
                         }
                     }
                 }

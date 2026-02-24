@@ -116,6 +116,9 @@
                         <!-- Recent files will be populated dynamically -->
                     </MenuItem>
                     <Separator />
+                    <MenuItem x:Name="MenuFileSavePF" Header="Save _Pathfinder Data..." />
+                    <MenuItem x:Name="MenuFileLoadPF" Header="Load P_athfinder Data..." />
+                    <Separator />
                     <MenuItem x:Name="MenuFileClose" Header="Close _Tab" InputGestureText="Ctrl+W" />
                     <MenuItem x:Name="MenuFileExit" Header="E_xit Editor" InputGestureText="Alt+F4" />
                     <Separator />
@@ -362,8 +365,9 @@
             <Button x:Name="LoadButton" Content="Open" Margin="2" ToolTip="Open TMX (Ctrl+O)" />
             <Button x:Name="SetOptionsButton" Content="Set Options" Margin="8,2" ToolTip="Level options (deco set)" />
             <Button x:Name="CalculatePathButton" Content="Calculate Path" Margin="8,2" ToolTip="Pre-calculate pathfinder AI path" Click="CalculatePathButton_Click" />
+            <Button x:Name="StopPathfinderButton" Content="Stop" Margin="2" Visibility="Collapsed" Click="StopPathfinderButton_Click" ToolTip="Cancel current pathfinder calculation" Background="#AA3333" Foreground="White" FontWeight="Bold" />
             <ProgressBar x:Name="PathfinderProgressBar" Width="120" Height="16" Margin="4,2" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed" />
-            <Button x:Name="PathfinderJumpToButton" Content="Jump To" Margin="2" Visibility="Collapsed" Click="PathfinderJumpToButton_Click" ToolTip="Scroll map to current pathfinder position" />
+            <Button x:Name="PathfinderJumpToButton" Content="Follow" Margin="2" Visibility="Collapsed" Click="PathfinderJumpToButton_Click" ToolTip="Toggle auto-follow to track pathfinder progress" />
             <TextBlock Text="Width (X):" VerticalAlignment="Center" Margin="6,0,2,0" />
             <TextBox x:Name="WidthBox" Width="60" Margin="2" />
             <TextBlock Text="Height (Y):" VerticalAlignment="Center" Margin="8,0,2,0" />

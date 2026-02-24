@@ -52,9 +52,9 @@ namespace FamidashEditor
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 // Iterate through ALL sprites and check for blue pads
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
                     
                     // Check if this sprite is a blue pad
@@ -90,6 +90,9 @@ namespace FamidashEditor
                         // Mark as activated (can only activate once)
                         bluePadActivated[idx] = true;
                         
+                        // NES spcl_gvdn_pd/spcl_gvup_pd calls clear_slope_stuff() before applying velocity
+                        ClearSlopeStuff();
+                        
                         // Reverse gravity state
                         gravityInverted = !gravityInverted;
                         gravityFlipped = gravityInverted;
@@ -109,6 +112,7 @@ namespace FamidashEditor
                         int newVel = gravityInverted ? baseVel : -baseVel;
                         
                         playerVelY_fixed = newVel;
+                        orbhitonthisframe[currplayer] = true;
                     }
                 }
             }

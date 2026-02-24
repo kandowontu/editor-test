@@ -59,9 +59,9 @@ namespace FamidashEditor
                 AppendSimDebug($"[TELEPORT_PORTAL] Checking collision: player ({playerLeft_px},{playerTop_px})-({playerRight_px},{playerBottom_px}) size={hitboxW}x{hitboxH}");
 
                 // Iterate through ALL sprites and check for entrance portals
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     
                     // Check if this is any type of entrance portal
                     bool isVerticalEnter = (sid == TELEPORT_PORTAL_VERTICAL_ENTER);

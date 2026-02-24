@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>false</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Link to the real source files so changes propagate automatically -->
+    <Compile Include="..\native-windows\PathfinderEngine.cs" Link="PathfinderEngine.cs" />
+    <Compile Include="..\native-windows\TmxHandler.cs" Link="TmxHandler.cs" />
+    <Compile Include="..\native-windows\MetatileCollision.cs" Link="MetatileCollision.cs" />
+  </ItemGroup>
+</Project>

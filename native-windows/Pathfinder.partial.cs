@@ -14,7 +14,13 @@ namespace FamidashEditor
         private List<bool>? pfInputSequence = null;
         private int pfFrameIndex = 0;
         private int pfHoldCounter = 0; // Extra frames to keep X held after a jump press
+        private bool pfBallHoldContinuation = false; // True when ball hold is continuing (not fresh press)
+        private const int PF_BALL_HOLD_FRAMES = 8; // Ball hold duration to bridge PF/sim timing divergence
         private const int PF_FRAME_DELAY = 0; // Delay pathfinder inputs by N frames to compensate for sim timing
+        // Guard: each timer tick increments pfTickGeneration; PF_GetInput only advances pfFrameIndex
+        // once per generation to prevent double-stepping even if SimulateNumericStep runs twice.
+        private long pfTickGeneration = 0;
+        private long pfLastAdvancedTick = -1;
 
         /// <summary>
         /// Called from SimulateNumericStep each frame when pathfinder is active.
@@ -25,12 +31,39 @@ namespace FamidashEditor
         /// </summary>
         private bool PF_GetInput()
         {
+            pfBallHoldContinuation = false;
+
+            // Double-step guard: if this tick already advanced pfFrameIndex, replay last input
+            if (pfLastAdvancedTick == pfTickGeneration)
+            {
+                // Return same result as last call without advancing index
+                if (pfHoldCounter > 0) return true;
+                if (pfInputSequence == null) return false;
+                int prevReadIndex = (pfFrameIndex - 1) - PF_FRAME_DELAY;
+                return prevReadIndex >= 0 && prevReadIndex < pfInputSequence.Count && pfInputSequence[prevReadIndex];
+            }
+            pfLastAdvancedTick = pfTickGeneration;
+
             // If we're in the middle of holding from a previous jump press, keep holding
             if (pfHoldCounter > 0)
             {
-                pfHoldCounter--;
-                pfFrameIndex++; // Still advance so the delay doesn't accumulate
-                return true;
+                // Ball mode: stop holding early if the ball already flipped.
+                // ballFlipCooldown > 0 means a flip just fired in BallPhysics_Fresh.
+                // Releasing the hold lets ballSwitched clear and allows the next
+                // PF true in the sequence to start a fresh press for the next flip.
+                if (currentGameMode == 2 && ballFlipCooldown > 0)
+                {
+                    pfHoldCounter = 0;
+                    // Fall through to read next sequence value normally
+                }
+                else
+                {
+                    pfHoldCounter--;
+                    pfFrameIndex++; // Still advance so the delay doesn't accumulate
+                    if (currentGameMode == 2)
+                        pfBallHoldContinuation = true;
+                    return true;
+                }
             }
 
             if (pfInputSequence == null)
@@ -49,11 +82,19 @@ namespace FamidashEditor
                 // Ship and UFO use per-frame inputs — don't stretch to 2 frames.
                 // Cube mode uses direct input — the pathfinder's internal sim applies
                 // input for exactly 1 frame, so playback must match.
-                // Robot/ninja/etc still need 2-frame hold for velY oscillation.
+                // Ball mode: extended hold to bridge PF/sim timing divergence.
+                // The NES ball uses hold (not press) so the button must stay held
+                // across the airborne-to-landing gap for the buffered flip to fire.
+                // Early termination (ballFlipCooldown check above) prevents consuming
+                // subsequent true values needed for staircase multi-flips.
                 bool isContinuousThrust = (currentGameMode == 1 || currentGameMode == 3); // Ship or UFO
                 bool isCube = (currentGameMode == 0);
-                bool isBall = (currentGameMode == 2); // Ball needs 1-frame press — 2-frame hold causes double gravity flip
-                if (!isContinuousThrust && !isCube && !isBall)
+                bool isBall = (currentGameMode == 2);
+                if (isBall)
+                {
+                    pfHoldCounter = PF_BALL_HOLD_FRAMES; // Hold for N extra frames after press
+                }
+                else if (!isContinuousThrust && !isCube)
                 {
                     pfHoldCounter = 1; // Hold for 1 extra frame after this one
                 }
@@ -68,6 +109,18 @@ namespace FamidashEditor
         {
             if (press)
             {
+                // Ball hold continuation: only maintain keyXHeld (hold state),
+                // do NOT generate a fresh press or toggle request.
+                // This gives the sim holdJump=true,pressJump=false on hold frames
+                // so the hold-buffer path fires on the landing frame.
+                if (pfBallHoldContinuation)
+                {
+                    keyXHeld = true;
+                    // Keep prevKeyXDown true so the sim sees continuous hold
+                    prevKeyXDown = true;
+                    return;
+                }
+
                 Interlocked.Exchange(ref keyXPressedCount, 1);
                 keyXHeld = true;
                 prevKeyXDown = true;
@@ -106,6 +159,8 @@ namespace FamidashEditor
         {
             pfFrameIndex = 0;
             pfHoldCounter = 0;
+            pfBallHoldContinuation = false;
+            pfLastAdvancedTick = -1;
             pfInputSequence = null;
 
             try
@@ -113,6 +168,26 @@ namespace FamidashEditor
                 if (this.Owner is MainWindow mw && mw.PrecomputedPathfinderInputs != null)
                 {
                     pfInputSequence = new List<bool>(mw.PrecomputedPathfinderInputs);
+
+                    // Pre-seed collected coins from pathfinder so they
+                    // visually disappear and show on the level complete screen.
+                    if (mw.PrecomputedCollectedCoins != null && mw.PrecomputedCollectedCoins.Count > 0)
+                    {
+                        foreach (int idx in mw.PrecomputedCollectedCoins)
+                        {
+                            if (idx >= 0 && idx < sprites.Length && !collectedCoins.Contains(idx))
+                            {
+                                int sid = sprites[idx];
+                                if (sid >= 0 && IsCoinSprite(sid))
+                                {
+                                    collectedCoins.Add(idx);
+                                    collectedCoinInfo.Add((idx, sid));
+                                    sprites[idx] = -1; // make coin disappear
+                                    AppendSimDebug($"[COIN_PRESEED] Preseeded coin 0x{sid:X2} at sprite index {idx}");
+                                }
+                            }
+                        }
+                    }
                 }
             }
             catch { }

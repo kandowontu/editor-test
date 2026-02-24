@@ -18,6 +18,29 @@ namespace FamidashEditor
         private static System.Collections.Generic.Dictionary<string, BitmapImage?>? s_resourceImageCache;
         private static string[]? s_resourceNames;
 
+        // Static arrays to avoid per-frame allocation in animation/render loops
+        private static readonly string[] s_cubeFrameNames = new string[]
+        {
+            "cube_00_frame_0_upright.png",
+            "cube_01_frame_1_45cw.png",
+            "cube_02_frame_2_90cw_side.png",
+            "cube_03_frame_3_135cw.png",
+            "cube_04_frame_4_180_upside.png",
+            "cube_05_frame_5_225cw.png",
+            "cube_06_frame_6_270cw_opposite.png"
+        };
+        private static readonly string[] s_ninjaFrameNames = new string[]
+        {
+            "ninja_00_frame_0.png",
+            "ninja_01_frame_1.png",
+            "ninja_02_frame_2.png",
+            "ninja_03_frame_3.png",
+            "ninja_04_frame_4.png",
+            "ninja_05_frame_5.png",
+            "ninja_06_frame_6.png"
+        };
+        private static readonly System.Collections.Generic.HashSet<int> s_padDownIds = new System.Collections.Generic.HashSet<int> { 0x52, 0x0A, 0x0D, 0x25, 0xFD };
+
         /// <summary>
         /// Load an embedded resource image by filename suffix, using a static cache so each
         /// image is decoded from the assembly at most once across all SimulatorWindow instances.
@@ -1256,6 +1279,7 @@ namespace FamidashEditor
 
         private readonly int[] tiles;
         private readonly int[] sprites;
+        private readonly int[] nonEmptySpriteIndices; // Pre-filtered: only indices where sprites[idx] >= 0
         private readonly int mapWidth;
         private readonly int mapHeight;
         private readonly ImageSource?[]? tileImages;
@@ -1458,11 +1482,17 @@ namespace FamidashEditor
                     // Bottom-right quadrant only
                     return (localX >= 8 && localY >= 8);
                 case MetatileCollision.COL_UP_LEFT:
-                    if (inLeft) return (localY <= 7);
-                    break;
+                    return (inLeft && localY <= 7);
                 case MetatileCollision.COL_UP_RIGHT:
-                    if (inRight) return (localY <= 7);
-                    break;
+                    return (inRight && localY <= 7);
+                case MetatileCollision.COL_RIGHT:
+                    return inRight;  // right-half column solid, left half passable
+                case MetatileCollision.COL_LEFT:
+                    return inLeft;   // left-half column solid, right half passable
+                case MetatileCollision.COL_DOWN_LEFT:
+                    return (inLeft && localY >= 8);   // bottom-left quadrant
+                case MetatileCollision.COL_DOWN_RIGHT:
+                    return (inRight && localY >= 8);  // bottom-right quadrant
                 case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
                     if (inLeft) return (localY <= 7);
                     if (inRight) return (localY >= 8);
@@ -1631,6 +1661,112 @@ namespace FamidashEditor
         }
 
         /// <summary>
+        /// Helper: check if a single world-pixel coordinate hits a deadly spike tile.
+        /// Handles animated tile mapping (saws, etc.) consistently with CheckDeathCollision.
+        /// </summary>
+        private bool PointHitsSpikeFloor(int px, int py, int groundRowsReserve)
+        {
+            int tileX = px / TILE;
+            int tileY = py / TILE;
+            int tileArrayY = tileY + groundRowsReserve;
+
+            if (tileX < 0 || tileX >= mapWidth || tileArrayY < 0 || tileArrayY >= mapHeight) return false;
+            int tileIdx = tileArrayY * mapWidth + tileX;
+            if (tileIdx < 0 || tileIdx >= tiles.Length) return false;
+
+            int tid = tiles[tileIdx];
+            int useTidForAnim = MapAnimatedTileIndex(tid);
+            int collisionTid = useTidForAnim;
+
+            if (useTidForAnim >= 1000)
+            {
+                if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
+                    collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
+                else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
+                {
+                    int group = (useTidForAnim - 1010) % 3;
+                    collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
+                }
+                else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
+                    collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
+                else
+                    collisionTid = tid;
+            }
+
+            var collision = MetatileCollisionTable.GetCollision((byte)collisionTid);
+            if (collision == MetatileCollision.COL_NONE) return false;
+
+            int tileStartX = tileX * TILE;
+            int localX = Math.Max(0, Math.Min(TILE - 1, px - tileStartX));
+            int tileStartY = tileY * TILE;
+            int localY = Math.Max(0, Math.Min(TILE - 1, py - tileStartY));
+
+            return MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY);
+        }
+
+        /// <summary>
+        /// 4-corner spike check matching NES bg_coll_floor_spikes (collision.h line 214).
+        /// Checks 4 inset corners of the hitbox for ALL spike types via TileKillsAtPixel.
+        /// NES runs this every frame in x_movement_coll at OLD X, post-eject Y.
+        ///
+        /// Normal cube (15×15): corners at (X+3, Y+13), (X+12, Y+13), (X+3, Y+2), (X+12, Y+2)
+        /// Mini cube   (8×7):   corners at (X+3, Y+9),  (X+5, Y+9),  (X+3, Y+4), (X+5, Y+4)
+        ///
+        /// NES Y offsets:
+        ///   commonly_used_store (bottom):    Y = playerY + (mini ? (0x10-h)>>1 : 0) + h - 2
+        ///   commonly_stored_routine_2 (top): Y = playerY + (mini ? (0x10-h)>>1 : 2)
+        /// X offsets: left = X+3, right = X+width-3
+        /// </summary>
+        private bool CheckFloorSpikes(int playerX_px, int playerY_px, out int deathX, out int deathY)
+        {
+            deathX = 0;
+            deathY = 0;
+
+            bool isMini = (currplayer_mini != 0);
+            int hitboxW = isMini ? 8 : 15;
+            int hitboxH = isMini ? 7 : 15;
+
+            // NES mini centering offset: (0x10 - height) >> 1
+            int miniOffY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
+
+            // commonly_used_store — near bottom of hitbox
+            int rowBottomY = playerY_px + miniOffY + hitboxH - 2;
+            // commonly_stored_routine_2 — near top of hitbox
+            int rowTopY = playerY_px + (isMini ? miniOffY : 2);
+
+            // X inset: +3 from left, width-3 from left
+            int leftX = playerX_px + 3;
+            int rightX = playerX_px + hitboxW - 3;
+
+            int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+
+            // Check all 4 corners — same order as NES bg_coll_floor_spikes:
+            // 1. Bottom-left, 2. Bottom-right, 3. Top-left, 4. Top-right
+            if (PointHitsSpikeFloor(leftX, rowBottomY, groundRowsLocal))
+            {
+                AppendSimDebug($"[FLOOR_SPIKE] Death at bottom-left corner ({leftX},{rowBottomY})");
+                deathX = leftX; deathY = rowBottomY; return true;
+            }
+            if (PointHitsSpikeFloor(rightX, rowBottomY, groundRowsLocal))
+            {
+                AppendSimDebug($"[FLOOR_SPIKE] Death at bottom-right corner ({rightX},{rowBottomY})");
+                deathX = rightX; deathY = rowBottomY; return true;
+            }
+            if (PointHitsSpikeFloor(leftX, rowTopY, groundRowsLocal))
+            {
+                AppendSimDebug($"[FLOOR_SPIKE] Death at top-left corner ({leftX},{rowTopY})");
+                deathX = leftX; deathY = rowTopY; return true;
+            }
+            if (PointHitsSpikeFloor(rightX, rowTopY, groundRowsLocal))
+            {
+                AppendSimDebug($"[FLOOR_SPIKE] Death at top-right corner ({rightX},{rowTopY})");
+                deathX = rightX; deathY = rowTopY; return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Check if the player's hitbox overlaps with any death tiles.
         /// Returns true if death collision is detected and NO DEATH mode is OFF.
         /// Returns false otherwise (safe or NO DEATH mode is ON).
@@ -1670,84 +1806,60 @@ namespace FamidashEditor
             
             int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             
-            // Famidash checks 4 points with insets (bg_coll_floor_spikes):
-            // - X: +3 pixels inset on left, +3 pixels inset on right (checks from X+3 to X+width-3)
-            // - Y centering: mini mode applies (16 - height) / 2 offset
-            // - Top Y: Generic.y + (mini ? (16-height)/2 : 0) + height - 2
-            // - Bottom Y: Generic.y + (mini ? (16-height)/2 : 2)
+            // Center-point only death check — matches NES bg_coll_death.
+            // The NES 4-corner check (bg_coll_floor_spikes) now runs separately
+            // via CheckFloorSpikes in the forward collision section of SimulateNumericStep.
+            // This method covers the center-point check at post-eject Y.
+            int centerX = playerX_px + (width >> 1) - 1;
+            int centerY = playerY_px + (height / 2);
             
-            int leftX = playerX_px + 3;
-            int rightX = playerX_px + width - 3;
-            int rightEdgeX = playerX_px + width - 1;  // Absolute right edge (no inset) for side collision
+            int sampleTileX = centerX / TILE;
+            int sampleTileY = centerY / TILE;
+            int tileIndexY = sampleTileY + groundRowsToReserve_local;
+
+            if (tileIndexY < 0 || tileIndexY >= mapHeight || sampleTileX < 0 || sampleTileX >= mapWidth)
+                return false;
+
+            int tid = tiles[tileIndexY * mapWidth + sampleTileX];
+            int useTidForAnim = MapAnimatedTileIndex(tid);
+            int collisionTid = useTidForAnim;
             
-            // NOTE: playerY_px already includes the mini mode offset (4 pixels for 8x7 hitbox)
-            // Don't add yMiniOffset again - it would double-offset!
-            int yMiniOffset = isMini ? ((16 - height) / 2) : 0;  // For reference: would be 4 for mini
-            int topY = playerY_px + height - 2;          // commonly_used_store (no extra offset needed)
-            int bottomY = playerY_px + (isMini ? 0 : 2); // commonly_stored_routine_2 (no yMiniOffset, already in playerY_px)
-            int centerY = playerY_px + (height / 2);     // bg_side_coll_common middle (no extra offset)
-            
-            // Check the 4 corner points + right-center for side spikes
-            // Inline loop to avoid per-frame tuple array allocation
-            for (int cpIdx = 0; cpIdx < 5; cpIdx++)
+            // Debug: log what we're checking
+            try { AppendSimDebug($"[DEATH_CHECK] Point ({centerX},{centerY}) -> Tile({sampleTileX},{sampleTileY}) TID={tid}"); } catch { }
+
+            if (useTidForAnim >= 1000)
             {
-                int px, py;
-                switch (cpIdx)
+                if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
                 {
-                    case 0: px = leftX; py = topY; break;
-                    case 1: px = rightX; py = topY; break;
-                    case 2: px = leftX; py = bottomY; break;
-                    case 3: px = rightX; py = bottomY; break;
-                    default: px = rightEdgeX; py = centerY; break;
+                    collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
                 }
-                int sampleTileX = px / TILE;
-                int sampleTileY = py / TILE;
-                int tileIndexY = sampleTileY + groundRowsToReserve_local;
-
-                if (tileIndexY < 0 || tileIndexY >= mapHeight || sampleTileX < 0 || sampleTileX >= mapWidth)
-                    continue;
-
-                int tid = tiles[tileIndexY * mapWidth + sampleTileX];
-                int useTidForAnim = MapAnimatedTileIndex(tid);
-                int collisionTid = useTidForAnim;
-                
-                // Debug: log what we're checking
-                try { AppendSimDebug($"[DEATH_CHECK] Point ({px},{py}) -> Tile({sampleTileX},{sampleTileY}) TID={tid}"); } catch { }
-
-                if (useTidForAnim >= 1000)
+                else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
                 {
-                    if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
-                    {
-                        collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
-                    }
-                    else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
-                    {
-                        int group = (useTidForAnim - 1010) % 3;
-                        collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
-                    }
-                    else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
-                    {
-                        collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
-                    }
-                    else
-                    {
-                        collisionTid = tid;
-                    }
+                    int group = (useTidForAnim - 1010) % 3;
+                    collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
                 }
-
-                var collision = MetatileCollisionTable.GetCollision((byte)collisionTid);
-                int tileStartX = sampleTileX * TILE;
-                int localX = Math.Max(0, Math.Min(TILE - 1, px - tileStartX));
-                int tileStartY = sampleTileY * TILE;
-                int localY = Math.Max(0, Math.Min(TILE - 1, py - tileStartY));
-
-                // Check if this pixel causes death
-                if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
+                else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
                 {
-                    deathX_px = px;
-                    deathY_px = py;
-                    return true;
+                    collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
                 }
+                else
+                {
+                    collisionTid = tid;
+                }
+            }
+
+            var collision = MetatileCollisionTable.GetCollision((byte)collisionTid);
+            int tileStartX = sampleTileX * TILE;
+            int localX = Math.Max(0, Math.Min(TILE - 1, centerX - tileStartX));
+            int tileStartY = sampleTileY * TILE;
+            int localY = Math.Max(0, Math.Min(TILE - 1, centerY - tileStartY));
+
+            // Check if this pixel causes death
+            if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
+            {
+                deathX_px = centerX;
+                deathY_px = centerY;
+                return true;
             }
 
             return false;
@@ -1802,9 +1914,9 @@ namespace FamidashEditor
                 AppendSimDebug($"[GRAV_PORTAL_CHECK] mini={miniMode} grav={gravityFlipped} playerBox=({playerLeft_px},{playerTop_px})-({playerRight_px},{playerBottom_px}) size={hitboxW}x{hitboxH}");
                 
                 // Iterate through ALL sprites and check for gravity portals
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
                     // NES only checks anchor sprites — skip sub-tiles of multi-tile sprites
                     if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
@@ -1905,9 +2017,9 @@ namespace FamidashEditor
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 // Iterate through sprites and check for gravity mod portals
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
                     if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
@@ -1966,9 +2078,9 @@ namespace FamidashEditor
                 bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
                 
                 // Scan all sprites for gravity mod triggers
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
                     
                     if (!IsGravityModTrigger(sid)) continue;
@@ -2086,9 +2198,9 @@ namespace FamidashEditor
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 // Iterate through ALL sprites and check for mini/growth portals
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
                     if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
@@ -2170,9 +2282,9 @@ namespace FamidashEditor
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     if (sid != 0x22) continue; // Only dual portal
                     
@@ -2243,9 +2355,9 @@ namespace FamidashEditor
                     int playerTop_px = playerY_px;
                     int playerBottom_px = playerY_px + hitboxH - 1;
                     
-                    for (int idx = 0; idx < sprites.Length; idx++)
+                    for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                     {
-                        int sid = sprites[idx];
+                        int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                         if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                         if (sid != 0x23) continue; // Only single portal
                         
@@ -2327,9 +2439,9 @@ namespace FamidashEditor
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
                     if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
@@ -2389,6 +2501,60 @@ namespace FamidashEditor
         }
 
         /// <summary>
+        /// Check if a sprite is a coin (0x07, 0x1A, 0x1B).
+        /// </summary>
+        private static bool IsCoinSprite(int sid)
+        {
+            return sid == 0x07 || sid == 0x1A || sid == 0x1B;
+        }
+
+        /// <summary>
+        /// Check for coin collision. Coins are collected once and disappear.
+        /// </summary>
+        private void CheckCoinCollision()
+        {
+            try
+            {
+                int playerX_px = (playerX_fixed >> 8) + 1;
+                int playerY_px = playerY_fixed >> 8;
+
+                int hitboxW = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH = (currplayer_mini != 0) ? 7 : 15;
+
+                if (currplayer_mini != 0)
+                {
+                    playerY_px += 4;
+                }
+
+                int playerLeft_px = playerX_px;
+                int playerRight_px = playerX_px + hitboxW - 1;
+                int playerTop_px = playerY_px;
+                int playerBottom_px = playerY_px + hitboxH - 1;
+
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                {
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    if (sid < 0) continue;
+                    if (!IsCoinSprite(sid)) continue;
+                    if (collectedCoins.Contains(idx)) continue;
+
+                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                    {
+                        collectedCoins.Add(idx);
+                        collectedCoinInfo.Add((idx, sid));
+                        // Make the coin disappear by zeroing it out
+                        sprites[idx] = -1;
+                        AppendSimDebug($"[COIN] Collected coin 0x{sid:X2} at sprite index {idx}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendSimDebug($"[COIN] Error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Check for pad collision and apply velocity change
         /// Pads: 0x0A/0x0C = yellow pad (down/up), 0x25/0x26 = pink pad (down/up), 0x52/0x53 = red pad (down/up), 0x65 = green pad expanded
         /// </summary>
@@ -2420,9 +2586,9 @@ namespace FamidashEditor
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 // Iterate through ALL sprites and check for pads
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
                     // NES only checks anchor sprites — skip sub-tiles of multi-tile sprites
                     if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
@@ -2483,6 +2649,9 @@ namespace FamidashEditor
                         // Update UI
                         try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
                         
+                        // NES pad_stuff() calls clear_slope_stuff() before applying velocity
+                        ClearSlopeStuff();
+                        
                         // Apply yellow orb velocity (padRow 0)
                         int modeCol = currentGameMode;
                         if (modeCol == 8) modeCol = 0; // Ninja uses cube values
@@ -2523,6 +2692,10 @@ namespace FamidashEditor
                         // In famidash, pad activation tracking (idx8_inc(activesprites_activated, index)) is commented out
                         // This means pads activate EVERY frame while the player is touching them
                         // This is the correct behavior - don't add activation tracking for pads
+                        
+                        // NES pad_stuff() calls clear_slope_stuff() before applying velocity
+                        // This prevents residual slope exit velocity from corrupting the pad velocity
+                        ClearSlopeStuff();
                         
                         // Get pad position for debugging
                         int padTileX = idx % mapWidth;
@@ -2603,9 +2776,9 @@ namespace FamidashEditor
                 int spiderOrbPadCount = 0;
                 
                 // Iterate through ALL sprites and check for spider orbs/pads
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
                     if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
@@ -2658,6 +2831,9 @@ namespace FamidashEditor
                         if (shouldActivate)
                         {
                             AppendSimDebug($"[SPIDER_ORB/PAD] ACTIVATING 0x{sid:X2}");
+                            
+                            // NES sprite_gamemode_main() calls clear_slope_stuff() before spider orb/pad activation
+                            ClearSlopeStuff();
                             
                             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             bool isMini = (currplayer_mini != 0);
@@ -3534,9 +3710,9 @@ namespace FamidashEditor
                 
                 if (sprites != null && spriteAnchors != null)
                 {
-                    for (int idx = 0; idx < sprites.Length; idx++)
+                    for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                     {
-                        int sid = sprites[idx];
+                        int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                         if (sid == -1) continue;
                         if (!speedPortalMap.ContainsKey(sid)) continue;
                         
@@ -3604,9 +3780,9 @@ namespace FamidashEditor
                 int? lastBgSid = null, lastTileSid = null, lastGroundSid = null;
                 
                 // Find the last trigger of each type before target position
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid == -1) continue;
                     
                     // Get anchor position
@@ -3681,9 +3857,9 @@ namespace FamidashEditor
                 int? lastBluePadIdx = null, lastBluePadSid = null, lastBluePadX = null;
                 
                 // Find the last portal of each type before target position (by X coordinate, not array order)
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid == -1) continue;
                     
                     // Get anchor position
@@ -3885,6 +4061,13 @@ namespace FamidashEditor
         private System.Windows.Controls.Image? tileLayerImage = null;
         private System.Windows.Shapes.Rectangle? bgRectPersistent = null;
         private System.Windows.Shapes.Rectangle? groundRectPersistent = null;
+        // Cached parallax brush — reuse per frame, only recreate when source image changes
+        private ImageBrush? _cachedParallaxBrush = null;
+        private TranslateTransform? _cachedParallaxTransform = null;
+        private ImageSource? _cachedParallaxSource = null;
+        // Cached background tint brush — reuse when color hasn't changed
+        private SolidColorBrush? _cachedBgTintBrush = null;
+        private System.Windows.Media.Color _cachedBgTintColor;
         private System.Collections.Generic.List<System.Windows.Controls.Image> spritePool = new System.Collections.Generic.List<System.Windows.Controls.Image>();
         private int spritesInUse = 0;
         private bool lastCacheHadAnimatedTiles = false;
@@ -4077,8 +4260,19 @@ namespace FamidashEditor
                 simAccumulatedMs += delta * simTimeScale;
 
                 // Run one or more fixed 60Hz steps as needed
+                int stepsThisTick = 0;
+                pfTickGeneration++; // Advance PF tick generation so PF_GetInput allows one advance
                 while (simAccumulatedMs >= SIM_STEP_MS)
                 {
+                    stepsThisTick++;
+                    // When pathfinder replay is active, skip catch-up steps to prevent
+                    // consuming multiple PF inputs per timer tick (which desynchronizes replay).
+                    // The sim falls behind by at most 1 frame on lag spikes but stays in sync.
+                    if (pathfinderEnabled && stepsThisTick > 1)
+                    {
+                        simAccumulatedMs = 0;
+                        break;
+                    }
                     try { SimulateNumericStep(); } catch { }
                     simAccumulatedMs -= SIM_STEP_MS;
                 // Path recording now happens in physics routines (SimulateNumericStep)
@@ -4140,6 +4334,10 @@ namespace FamidashEditor
         private bool levelCompleteTriggered = false;
         // Track processed end-level triggers to avoid re-triggering
         private System.Collections.Generic.HashSet<int> processedEndLevelTriggers = new System.Collections.Generic.HashSet<int>();
+        // Track collected coins (sprite indices that have been picked up)
+        private System.Collections.Generic.HashSet<int> collectedCoins = new System.Collections.Generic.HashSet<int>();
+        // Original sprite IDs for collected coins (for rendering on level complete screen)
+        private System.Collections.Generic.List<(int spriteIndex, int spriteId)> collectedCoinInfo = new System.Collections.Generic.List<(int spriteIndex, int spriteId)>();
         // Death location (tile pixel coordinates)
         private int deathTileX = -1;
         private int deathTileY = -1;
@@ -4217,6 +4415,11 @@ namespace FamidashEditor
             try { PauseOverlay.Visibility = paused ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed; } catch { }
             this.tiles = tiles.ToArray();
             this.sprites = sprites.ToArray();
+            // Build non-empty sprite index for O(N_sprites) scanning instead of O(mapW*mapH)
+            var _neList = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < this.sprites.Length; i++)
+                if (this.sprites[i] >= 0) _neList.Add(i);
+            this.nonEmptySpriteIndices = _neList.ToArray();
             this.mapWidth = mapWidth;
             this.mapHeight = mapHeight;
             this.tileImages = tileImages;
@@ -4550,10 +4753,10 @@ namespace FamidashEditor
                 try { PauseOverlay.LayoutTransform = scaleTransform; } catch { }
                 try { LevelCompleteOverlay.LayoutTransform = scaleTransform; } catch { }
 
-                // Adjust window size so the scaled canvas fits comfortably (preserve original chrome padding)
-                // Original XAML used Width=288 Height=320 for 256x240 canvas. Compute padding from that.
-                double widthPadding = 288 - 256; // 32
-                double heightPadding = 320 - 240; // 80
+                // Adjust window size so the scaled canvas fits comfortably.
+                // Account for window chrome (~40px) + SettingsPanel debug bar (~60px).
+                double widthPadding = 32;
+                double heightPadding = 110;
                 try { this.Width = (NES_W * TILE) * simulatorScale + widthPadding; } catch { }
                 try { this.Height = (NES_H * TILE) * simulatorScale + heightPadding; } catch { }
             }
@@ -5494,6 +5697,7 @@ namespace FamidashEditor
                     keyXHeld = false;
                     pfInputSequence = null;
                     pfFrameIndex = 0;
+                    pfLastAdvancedTick = -1;
                 }
             }
         }
@@ -5772,6 +5976,7 @@ namespace FamidashEditor
 
                 // Reset pathfinder frame counter so inputs replay from the beginning
                 pfFrameIndex = 0;
+                pfLastAdvancedTick = -1;
                 if (pathfinderEnabled) PF_LoadPrecomputedInputs();
 
                 // Reset ball/swing state
@@ -5802,6 +6007,8 @@ namespace FamidashEditor
                 // Clear level complete state
                 levelCompleteTriggered = false;
                 processedEndLevelTriggers.Clear();
+                collectedCoins.Clear();
+                collectedCoinInfo.Clear();
                 try { LevelCompleteOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
             }
             catch { }
@@ -6064,10 +6271,16 @@ namespace FamidashEditor
                     else
                     {
                         const int HITBOX_W_LOCAL = 15;
-                        int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                        // Always center on TILE/2 (player pos = 16x16 tile space)
+                        int playerCenter_px = (playerX_fixed >> 8) + (TILE / 2);
                         int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
                         int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
-                        int footWorldY_px = (playerY_fixed >> 8) + playerVisualHeight - 1;
+                        // Foot = bottom of actual hitbox (hitboxOffset + hitboxH)
+                        int hitboxH_gs = miniMode ? 7 : 15;
+                        int hitboxOffY_gs = 0;
+                        if (miniMode)
+                            hitboxOffY_gs = (currentGameMode == 2) ? 4 : 9;
+                        int footWorldY_px = (playerY_fixed >> 8) + hitboxOffY_gs + hitboxH_gs;
                         int tileBelowY_world = footWorldY_px / TILE;
                         int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                         int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
@@ -6867,9 +7080,9 @@ namespace FamidashEditor
                 {
                     // Player crossed the interaction line this step: consider anchors between the
                     // previous player center and the fixed interaction line.
-                    for (int idx = 0; idx < sprites.Length; idx++)
+                    for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                     {
-                        int sid = sprites[idx];
+                        int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                         if (sid < 0) continue;
                         if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                         // Portal handling: All 9 gamemode portals
@@ -7009,9 +7222,9 @@ namespace FamidashEditor
                     // When cam mode is OFF: still use collision detection
                     if (camModeActive)
                     {
-                        for (int idx = 0; idx < sprites.Length; idx++)
+                        for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                         {
-                            int sid = sprites[idx];
+                            int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                             if (sid < 0) continue;
                             if (!speedPortalMap.ContainsKey(sid)) continue;
 
@@ -7046,9 +7259,9 @@ namespace FamidashEditor
                 int bestTile_fixed = int.MaxValue; int? tileIdx = null; int? tileSid = null;
                 int bestGround_fixed = int.MaxValue; int? groundIdx = null; int? groundSid = null;
 
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
 
                     // Check if this sprite is a color trigger we care about
@@ -7566,27 +7779,8 @@ namespace FamidashEditor
                         int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;
                         frameIndex = frameIndex % 7;  // Map to 0-6 (we have 7 base frames)
                         
-                        // Choose frame names based on mode
-                        string[] frameNames = (currentGameMode == 8) ? new string[]
-                        {
-                            "ninja_00_frame_0.png",
-                            "ninja_01_frame_1.png",
-                            "ninja_02_frame_2.png",
-                            "ninja_03_frame_3.png",
-                            "ninja_04_frame_4.png",
-                            "ninja_05_frame_5.png",
-                            "ninja_06_frame_6.png"
-                        }
-                        : new string[]
-                        {
-                            "cube_00_frame_0_upright.png",
-                            "cube_01_frame_1_45cw.png",
-                            "cube_02_frame_2_90cw_side.png",
-                            "cube_03_frame_3_135cw.png",
-                            "cube_04_frame_4_180_upside.png",
-                            "cube_05_frame_5_225cw.png",
-                            "cube_06_frame_6_270cw_opposite.png"
-                        };
+                        // Choose frame names based on mode (static to avoid per-frame allocation)
+                        string[] frameNames = (currentGameMode == 8) ? s_ninjaFrameNames : s_cubeFrameNames;
                         string chosenFrame = frameNames[frameIndex];
                         
                         // Track current image name via a tag property
@@ -8181,14 +8375,33 @@ namespace FamidashEditor
             }
             catch { }
 
+            // Snapshot camera state under lock so tiles and player use the
+            // same camera position.  Without this, a physics step could fire
+            // between the tile-layer render (which reads cameraX_fixed) and
+            // the player-position render, causing the player to appear offset
+            // from tiles by a few pixels — making it look like it penetrates
+            // spikes/blocks.
+            int snapCameraX, snapCameraY, snapPlayerX, snapPlayerY, snapPlayerVelY;
+            bool snapMiniMode, snapGravFlipped;
+            lock (simLock)
+            {
+                snapCameraX = cameraX_fixed;
+                snapCameraY = cameraY_fixed;
+                snapPlayerX = playerX_fixed;
+                snapPlayerY = playerY_fixed;
+                snapPlayerVelY = playerVelY_fixed;
+                snapMiniMode = miniMode;
+                snapGravFlipped = gravityFlipped;
+            }
+
             // Compute pixel offset and starting tile index
-            int pixelX = cameraX_fixed >> 8; // full pixels
-            int subPixelX = cameraX_fixed & 0xFF; // fractional
+            int pixelX = snapCameraX >> 8; // full pixels
+            int subPixelX = snapCameraX & 0xFF; // fractional
             int startTileX = pixelX / TILE;
             int offsetX = pixelX % TILE;
             double subPixelOffsetX = subPixelX / 256.0; // Convert to fractional pixels
-            int pixelY = cameraY_fixed >> 8;
-            int subPixelY = cameraY_fixed & 0xFF; // fractional Y
+            int pixelY = snapCameraY >> 8;
+            int subPixelY = snapCameraY & 0xFF; // fractional Y
             double subPixelOffsetY = subPixelY / 256.0; // Convert to fractional pixels
 
             // If ground is present in the preview, reserve up to three ground rows at the bottom
@@ -8225,24 +8438,34 @@ namespace FamidashEditor
 
                     if (src is BitmapSource pbs)
                     {
-                        double imgW = Math.Max(1.0, pbs.PixelWidth);
-                        double imgH = Math.Max(1.0, pbs.PixelHeight);
-                        var brushImg = App.EnsureUnfrozenForRender(src) ?? src;
-                        var brush = new ImageBrush(brushImg)
-                        {
-                            TileMode = TileMode.Tile,
-                            ViewportUnits = BrushMappingMode.Absolute,
-                            Viewport = new Rect(0, 0, imgW, imgH),
-                            Stretch = Stretch.None
-                        };
-
                         // Parallax translation: background moves slower than camera based on parallaxX/Y.
                         double parallaxOffsetX = -(pixelX) * (1.0 - parallaxX);
                         double parallaxOffsetY = -(cameraY_fixed >> 8) * (1.0 - parallaxY);
 
-                        // Align horizontal scroll to pixel coordinates to avoid shimmering
-                        brush.Transform = new TranslateTransform(parallaxOffsetX, parallaxOffsetY);
-                        bgRectPersistent.Fill = brush;
+                        // Reuse cached parallax brush — only recreate when the source image changes
+                        if (_cachedParallaxBrush == null || _cachedParallaxSource != src)
+                        {
+                            double imgW = Math.Max(1.0, pbs.PixelWidth);
+                            double imgH = Math.Max(1.0, pbs.PixelHeight);
+                            var brushImg = App.EnsureUnfrozenForRender(src) ?? src;
+                            _cachedParallaxTransform = new TranslateTransform(parallaxOffsetX, parallaxOffsetY);
+                            _cachedParallaxBrush = new ImageBrush(brushImg)
+                            {
+                                TileMode = TileMode.Tile,
+                                ViewportUnits = BrushMappingMode.Absolute,
+                                Viewport = new Rect(0, 0, imgW, imgH),
+                                Stretch = Stretch.None,
+                                Transform = _cachedParallaxTransform
+                            };
+                            _cachedParallaxSource = src;
+                            bgRectPersistent.Fill = _cachedParallaxBrush;
+                        }
+                        else
+                        {
+                            // Just update transform offsets — no allocation
+                            _cachedParallaxTransform!.X = parallaxOffsetX;
+                            _cachedParallaxTransform.Y = parallaxOffsetY;
+                        }
                     }
                     else
                     {
@@ -8279,7 +8502,15 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    if (bgRectPersistent != null) bgRectPersistent.Fill = new SolidColorBrush(backgroundTint);
+                    if (bgRectPersistent != null)
+                    {
+                        if (_cachedBgTintBrush == null || _cachedBgTintColor != backgroundTint)
+                        {
+                            _cachedBgTintColor = backgroundTint;
+                            _cachedBgTintBrush = new SolidColorBrush(backgroundTint);
+                            bgRectPersistent.Fill = _cachedBgTintBrush;
+                        }
+                    }
                 }
             }
             catch { }
@@ -9021,41 +9252,19 @@ namespace FamidashEditor
             {
                 if (groundRectPersistent != null)
                 {
+                    // Ground is drawn into the tile-layer cache, so the persistent rect
+                    // is always collapsed. Skip brush creation to avoid wasted allocations.
                     if (hasGroundLayer && groundImages != null && groundImages.Length > 0)
                     {
-                        ImageSource? src = groundTonedImages != null && groundTonedImages.Length == groundImages.Length && groundTonedImages[0] != null ? groundTonedImages[0] : groundImages[0];
-                        if (src is BitmapSource gbs)
-                        {
-                            double tileW = Math.Max(1.0, gbs.PixelWidth);
-                            double tileH = Math.Max(1.0, gbs.PixelHeight);
-                            var brushImg = App.EnsureUnfrozenForRender(src) ?? src;
-                            var brush = new ImageBrush(brushImg)
-                            {
-                                TileMode = TileMode.Tile,
-                                ViewportUnits = BrushMappingMode.Absolute,
-                                Viewport = new Rect(0, 0, tileW, tileH),
-                                Stretch = Stretch.Fill
-                            };
-                            // Sync horizontal scroll with tiles
-                            brush.Transform = new TranslateTransform(-offsetX, 0);
-                            groundRectPersistent.Fill = brush;
-                        }
-                        else
-                        {
-                            groundRectPersistent.Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 };
-                        }
                         int groundHeight = TILE * Math.Min(NES_H, Math.Max(groundTileRows, 2));
                         // Use reserved rows (up to 2) as visual ground height
                         groundHeight = TILE * Math.Min(NES_H, Math.Min(groundTileRows, 2));
                         groundRectPersistent.Height = groundHeight;
                         System.Windows.Controls.Canvas.SetTop(groundRectPersistent, (NES_H * TILE) - groundHeight);
-                        // We draw ground cells directly into the tile-layer cache, so keep the persistent
-                        // ground rect collapsed to avoid covering the tile layer with a single-tile brush.
                         groundRectPersistent.Visibility = Visibility.Collapsed;
                     }
                     else
                     {
-                        groundRectPersistent.Fill = new SolidColorBrush(groundTint) { Opacity = 0.25 };
                         int groundHeight = TILE * Math.Min(NES_H, 2);
                         groundRectPersistent.Height = groundHeight;
                         System.Windows.Controls.Canvas.SetTop(groundRectPersistent, (NES_H * TILE) - groundHeight);
@@ -9366,8 +9575,7 @@ namespace FamidashEditor
                         spritePool.Add(simg);
                         RenderCanvas.Children.Add(simg);
                     }
-                    // Force-refresh the Image control to ensure WPF updates when the source changes
-                    try { simg.Source = null; } catch { }
+                    // Source is set below — no need to null-reset (avoids double WPF invalidation)
                     ImageSource? finalSprite = chosenSprite;
                     try
                     {
@@ -9425,8 +9633,7 @@ namespace FamidashEditor
 
                         double hx_screen = (int)Math.Round(px) + hxoff_o;
                         double hy_screen = (int)Math.Round(py) + hyoff_o;
-                        var padDownIds2 = new System.Collections.Generic.HashSet<int> { 0x52, 0x0A, 0x0D, 0x25, 0xFD };
-                        if (padDownIds2.Contains(id_for_overlay)) hy_screen += 8;
+                        if (s_padDownIds.Contains(id_for_overlay)) hy_screen += 8;
 
                         int pixelX_now2 = cameraX_fixed >> 8;
                         int pixelY_now2 = cameraY_fixed >> 8;
@@ -9529,39 +9736,39 @@ namespace FamidashEditor
             // reset hitbox counter for next frame
             hitboxesInUse = 0;
 
-            // Position the player visual based on world Y (`playerY_fixed`) and camera Y
+            // Position the player visual based on the snapshotted state so
+            // tiles and player are always rendered from the same physics frame.
             try
             {
                 int playerPixelX, playerPixelY;
                 int worldX, worldY;
-                lock (simLock)
                 {
-                    playerPixelX = (playerX_fixed >> 8) - (cameraX_fixed >> 8);
-                    playerPixelY = (playerY_fixed >> 8) - (cameraY_fixed >> 8) + gridRenderShiftYPx;
+                    playerPixelX = (snapPlayerX >> 8) - (snapCameraX >> 8);
+                    playerPixelY = (snapPlayerY >> 8) - (snapCameraY >> 8) + gridRenderShiftYPx;
                     
                     // Record center of player for path (use actual physics position)
-                    worldX = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                    worldX = (snapPlayerX >> 8) + (playerVisualWidth / 2);
                     
                     // For path, use center of collision hitbox
                     // Mini mode: 8x7 hitbox, positioned at Y+9 (normal) or Y+0 (inverted) in 16x16 space
                     // Normal mode: 15x15 hitbox at Y+0
-                    if (miniMode)
+                    if (snapMiniMode)
                     {
-                        if (gravityFlipped)
+                        if (snapGravFlipped)
                         {
                             // Inverted: hitbox at Y+0, center at Y+3.5 → round to Y+4
-                            worldY = (playerY_fixed >> 8) + 4;
+                            worldY = (snapPlayerY >> 8) + 4;
                         }
                         else
                         {
                             // Normal: hitbox at Y+9, center at Y+9+3.5 → round to Y+13
-                            worldY = (playerY_fixed >> 8) + 13;
+                            worldY = (snapPlayerY >> 8) + 13;
                         }
                     }
                     else
                     {
                         // Center of 15x15 normal hitbox (at Y+0)
-                        worldY = (playerY_fixed >> 8) + 8;
+                        worldY = (snapPlayerY >> 8) + 8;
                     }
                 }
 
@@ -9666,7 +9873,16 @@ namespace FamidashEditor
                 fracX = 0.0;
             }
 
-            RenderCanvas.RenderTransform = new TranslateTransform(-fracX, -fracY);
+            // Reuse transform to avoid per-frame allocation
+            if (RenderCanvas.RenderTransform is TranslateTransform existingTT)
+            {
+                existingTT.X = -fracX;
+                existingTT.Y = -fracY;
+            }
+            else
+            {
+                RenderCanvas.RenderTransform = new TranslateTransform(-fracX, -fracY);
+            }
 
             // Update Y-velocity overlay if enabled
             try
@@ -9928,6 +10144,9 @@ namespace FamidashEditor
                         
                         // Check for blue pad collision
                         CheckBluePadCollision();
+
+                        // Check for coin collection
+                        CheckCoinCollision();
                     }
                     catch { }
                 }
@@ -9950,10 +10169,16 @@ namespace FamidashEditor
                         else
                         {
                             const int HITBOX_W_LOCAL = 15;
-                            int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            // Always center on TILE/2 (player pos = 16x16 tile space)
+                            int playerCenter_px = (playerX_fixed >> 8) + (TILE / 2);
                             int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
                             int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
-                            int footWorldY_px = (playerY_fixed >> 8) + playerVisualHeight - 1;
+                            // Foot = bottom of actual hitbox (hitboxOffset + hitboxH)
+                            int hitboxH_gs = miniMode ? 7 : 15;
+                            int hitboxOffY_gs = 0;
+                            if (miniMode)
+                                hitboxOffY_gs = (currentGameMode == 2) ? 4 : 9;
+                            int footWorldY_px = (playerY_fixed >> 8) + hitboxOffY_gs + hitboxH_gs;
                             int tileBelowY_world = footWorldY_px / TILE;
                             int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
@@ -10315,6 +10540,38 @@ namespace FamidashEditor
                         gravityFlipped = (currplayer_gravity != 0);
                         AppendSimDebug($"[GRAV_POST_PHYSICS] currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed} mini={miniMode}");
                         
+                        // === 4-CORNER FLOOR SPIKE CHECK (NES bg_coll_floor_spikes) ===
+                        // NES x_movement_coll runs bg_coll_floor_spikes() BEFORE bg_coll_R().
+                        // Uses OLD X (pre-advance) and post-eject Y. Not gated by slope skip.
+                        if (!MainWindow.Option_NoDeath && !deathTriggered)
+                        {
+                            int floorSpikeX = preAdvancePlayerX_fixed >> 8;
+                            int floorSpikeY = playerY_fixed >> 8;
+                            if (CheckFloorSpikes(floorSpikeX, floorSpikeY, out int fsDeathX, out int fsDeathY))
+                            {
+                                AppendSimDebug($"[DEATH] Floor spike 4-corner death at ({fsDeathX},{fsDeathY})");
+                                deathTriggered = true;
+                                deathTileX = fsDeathX;
+                                deathTileY = fsDeathY;
+                                paused = true;
+                                _ = StopMusicAsync();
+                                
+                                try
+                                {
+                                    Dispatcher.BeginInvoke(new Action(() =>
+                                    {
+                                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                        if (this.Owner is MainWindow mw)
+                                        {
+                                            try { mw.PauseSimulatorPlayback(); } catch { }
+                                            try { mw.AddDeathMarker(fsDeathX, fsDeathY); } catch { }
+                                        }
+                                    }));
+                                }
+                                catch { }
+                            }
+                        }
+                        
                         // === FORWARD COLLISION CHECK (x_movement_coll in famidash) ===
                         // NES x_movement_coll() refreshes Generic.y = high_byte(currplayer_y) AFTER eject,
                         // so bg_coll_R sees post-eject Y. This lets cubes walk onto single blocks.
@@ -10410,7 +10667,33 @@ namespace FamidashEditor
                         }
                         // === END FORWARD COLLISION CHECK ===
                         
-                        // Restore NEW X after physics+forward collision ran at OLD X
+                        // Check for death collision at OLD X (matches NES: bg_coll_death
+                        // reads Generic.x which was set BEFORE x_movement advances currplayer_x)
+                        if (!camModeActive && CheckDeathCollision(out int deathX_px, out int deathY_px))
+                        {
+                            AppendSimDebug($"[DEATH] Death tile collision at ({deathX_px},{deathY_px})");
+                            deathTriggered = true;
+                            deathTileX = deathX_px;
+                            deathTileY = deathY_px;
+                            paused = true;
+                            _ = StopMusicAsync();
+                            
+                            try
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    if (this.Owner is MainWindow mw)
+                                    {
+                                        try { mw.PauseSimulatorPlayback(); } catch { }
+                                        try { mw.AddDeathMarker(deathX_px, deathY_px); } catch { }
+                                    }
+                                }));
+                            }
+                            catch { }
+                        }
+                        
+                        // Restore NEW X after physics+forward collision+death check ran at OLD X
                         playerX_fixed = attemptedPlayerX_fixed;
                         
                         // Reset gravity flip flag now that physics has processed it
@@ -10436,31 +10719,6 @@ namespace FamidashEditor
                         {
                             if (!(IsXDownAsync() || keyXHeld))
                                 orbed[currplayer] = false;
-                        }
-                        
-                        // Check for death collision (skip in cam mode)
-                        if (!camModeActive && CheckDeathCollision(out int deathX_px, out int deathY_px))
-                        {
-                            AppendSimDebug($"[DEATH] Death tile collision at ({deathX_px},{deathY_px})");
-                            deathTriggered = true;
-                            deathTileX = deathX_px;
-                            deathTileY = deathY_px;
-                            paused = true;
-                            _ = StopMusicAsync();
-                            
-                            try
-                            {
-                                Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                    if (this.Owner is MainWindow mw)
-                                    {
-                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(deathX_px, deathY_px); } catch { }
-                                    }
-                                }));
-                            }
-                            catch { }
                         }
                         
                         // === PLAYER 2 PROCESSING IN DUAL MODE ===
@@ -10869,9 +11127,9 @@ namespace FamidashEditor
                                 }
                                 int playerBottom_px_num = playerTop_px_num + hitboxH_num - 1;
 
-                                for (int idx = 0; idx < sprites.Length; idx++)
+                                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                                 {
-                                    int sid = sprites[idx];
+                                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                                     if (sid < 0) continue;
                                     if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                                     // Gravity portals: normal (0x08,0x10,0x11,0xFC) and reverse (0x09,0x12,0x13,0xFB)
@@ -10965,9 +11223,9 @@ namespace FamidashEditor
                 // Detect speed portals between prevCameraCenter_fixed and current center
                 int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
                 int? newSpeed_fixed = null;
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
                     if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
 
@@ -11181,9 +11439,9 @@ namespace FamidashEditor
                 int bestTile_fixed = int.MaxValue; int? tileIdxLocal = null; int? tileSidLocal = null;
                 int bestGround_fixed = int.MaxValue; int? groundIdxLocal = null; int? groundSidLocal = null;
 
-                for (int idx = 0; idx < sprites.Length; idx++)
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
                     if (!IsColorTriggerSprite(sid)) continue;
                     int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a2)) ? a2.anchorTileX : idx % mapWidth;
@@ -11227,9 +11485,9 @@ namespace FamidashEditor
                 // Detect end-level trigger (sprite 0x0F) using the same X position logic as color triggers
                 if (!levelCompleteTriggered && !deathTriggered)
                 {
-                    for (int idx = 0; idx < sprites.Length; idx++)
+                    for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                     {
-                        int sid = sprites[idx];
+                        int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                         if (sid != 0x0F) continue;
                         if (processedEndLevelTriggers.Contains(idx)) continue;
                         int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var aEnd)) ? aEnd.anchorTileX : idx % mapWidth;
@@ -11257,10 +11515,13 @@ namespace FamidashEditor
 
                             try
                             {
+                                // Capture coin info for UI thread
+                                var coinInfoSnapshot = new System.Collections.Generic.List<(int spriteIndex, int spriteId)>(collectedCoinInfo);
                                 Dispatcher?.BeginInvoke(new Action(() =>
                                 {
                                     try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
                                     try { LevelCompleteOverlay.Visibility = System.Windows.Visibility.Visible; } catch { }
+                                    try { PopulateCoinDisplay(coinInfoSnapshot); } catch { }
                                 }));
                             }
                             catch { }
@@ -11281,6 +11542,62 @@ namespace FamidashEditor
             {
                 try { Dispatcher?.BeginInvoke((Action)(() => { try { ApplyPendingTints(); } catch { } })); } catch { }
             }
+        }
+
+        /// <summary>
+        /// Populate the coin display panel on the level complete overlay with sprite anchors
+        /// of collected coins.
+        /// </summary>
+        private void PopulateCoinDisplay(System.Collections.Generic.List<(int spriteIndex, int spriteId)> coinInfo)
+        {
+            try
+            {
+                if (CoinDisplayPanel == null) return;
+                CoinDisplayPanel.Children.Clear();
+
+                if (coinInfo == null || coinInfo.Count == 0) return;
+
+                foreach (var (spriteIndex, spriteId) in coinInfo)
+                {
+                    try
+                    {
+                        // Get the sprite image for this coin
+                        ImageSource? coinImage = null;
+                        if (spriteImages != null && spriteId >= 0 && spriteId < spriteImages.Length)
+                            coinImage = spriteImages[spriteId];
+
+                        if (coinImage != null)
+                        {
+                            var img = new System.Windows.Controls.Image
+                            {
+                                Source = coinImage,
+                                Width = 16,
+                                Height = 16,
+                                Margin = new Thickness(4, 0, 4, 0),
+                                SnapsToDevicePixels = true
+                            };
+                            RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
+                            CoinDisplayPanel.Children.Add(img);
+                        }
+                        else
+                        {
+                            // Fallback: show a text placeholder
+                            var txt = new System.Windows.Controls.TextBlock
+                            {
+                                Text = $"0x{spriteId:X2}",
+                                Foreground = new SolidColorBrush(Colors.Gold),
+                                FontSize = 10,
+                                FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                                Margin = new Thickness(4, 0, 4, 0),
+                                VerticalAlignment = VerticalAlignment.Center
+                            };
+                            CoinDisplayPanel.Children.Add(txt);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
         }
 
         // Apply pending trigger tints on the UI thread and regenerate toned images as necessary

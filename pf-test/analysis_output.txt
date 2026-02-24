@@ -1,0 +1,107 @@
+Trace lines: 180001
+Trace file date: 02/22/2026 15:12:53
+
+Total death entries: 431
+
+First 20 deaths:
+  2464,0x1A9E80,0x2DBDB,0xFFFFFADB,0,0,6814,731,0
+  2464,0x1A9E80,0x2E100,0xFFFFFA70,1,0,6814,737,0
+  2464,0x1A9E80,0x2DBDB,0xFFFFFADB,0,0,6814,731,0
+  2464,0x1A9E80,0x2DBDB,0xFFFFFADB,0,0,6814,731,0
+  2464,0x1A9E80,0x2DBDB,0xFFFFFADB,0,0,6814,731,0
+  2464,0x1A9E80,0x2DBDB,0xFFFFFADB,0,0,6814,731,0
+  2464,0x1A9E80,0x2E100,0xFFFFFA70,1,0,6814,737,0
+  2464,0x1A9E80,0x2E100,0x0,0,0,6814,737,1
+  2464,0x1A9E80,0x2E100,0x0,0,0,6814,737,1
+  2464,0x1A9E80,0x2E100,0x0,0,0,6814,737,1
+  2464,0x1A9E80,0x2E100,0x0,0,0,6814,737,1
+  2435,0x1A4E4C,0x2CBDB,0xFFFFFADB,0,0,6734,715,0
+  2464,0x1A9E80,0x2DBDB,0xFFFFFADB,0,0,6814,731,0
+  2464,0x1A9E80,0x2DBDB,0xFFFFFADB,0,0,6814,731,0
+  2464,0x1A9E80,0x2DBDB,0xFFFFFADB,0,0,6814,731,0
+  2464,0x1A9E80,0x2DBDB,0xFFFFFADB,0,0,6814,731,0
+  2435,0x1A4E4C,0x2CBDB,0xFFFFFADB,0,0,6734,715,0
+  2435,0x1A4E4C,0x2D100,0x0,0,0,6734,721,1
+  2435,0x1A4E4C,0x2D100,0x0,0,0,6734,721,1
+  2435,0x1A4E4C,0x2D100,0x0,0,0,6734,721,1
+
+Death X positions (unique):
+  X=3487px  count=2
+  X=3528px  count=2
+  X=3534px  count=3
+  X=3656px  count=1
+  X=3658px  count=1
+  X=3664px  count=3
+  X=3777px  count=3
+  X=3808px  count=3
+  X=3896px  count=1
+  X=3902px  count=3
+  X=3993px  count=1
+  X=3999px  count=2
+  X=4026px  count=1
+  X=4032px  count=3
+  X=4162px  count=5
+  X=4236px  count=3
+  X=4275px  count=1
+  X=4328px  count=1
+  X=4336px  count=3
+  X=4458px  count=1
+  X=4463px  count=3
+  X=4604px  count=2
+  X=4607px  count=3
+  X=4626px  count=2
+  X=4734px  count=2
+  X=4737px  count=1
+  X=4792px  count=1
+  X=4798px  count=3
+  X=4906px  count=1
+  X=4908px  count=2
+  X=4956px  count=3
+  X=5041px  count=4
+  X=5182px  count=3
+  X=5185px  count=2
+  X=5193px  count=1
+  X=5199px  count=1
+  X=5202px  count=1
+  X=5362px  count=3
+  X=5395px  count=2
+  X=5401px  count=3
+  X=5406px  count=3
+  X=5409px  count=1
+  X=5545px  count=3
+  X=5650px  count=4
+  X=5688px  count=3
+  X=5758px  count=3
+  X=5832px  count=3
+  X=5857px  count=3
+  X=5890px  count=1
+  X=6015px  count=3
+  X=6092px  count=3
+  X=6106px  count=1
+  X=6112px  count=2
+  X=6242px  count=4
+  X=6416px  count=3
+  X=6546px  count=4
+  X=6560px  count=6
+  X=6643px  count=9
+  X=6654px  count=4
+  X=6734px  count=8
+  X=6814px  count=274
+
+Latest debug logs:
+  famidash_pf_debug_20260222_194239.txt  156988265b  02/22/2026 15:13:01
+  famidash_pf_debug_20260222_191105.txt  244713329b  02/22/2026 15:12:53
+  famidash_pf_debug_20260222_161812.txt  3185700b  02/22/2026 11:18:39
+
+Searching newest log: famidash_pf_debug_20260222_194239.txt
+Log total lines: 1633645
+
+=== First death context (line 8690) ===
+  L8685 : [PF f=2464] [STEP_START] X_fixed=0x1A9E80 (6814px) Y_fixed=0x2E100 (737px) VelY=0xFFFFFA70 mode=0 gravFlipped=False gravMul=1 onGround=False wasZeroed=True mini=False
+  L8686 : [PF f=2464] [DECIDE] input=False
+  L8687 : [PF f=2464] [CUBE_GRAV] velY: 0xFFFFFA70 + 0x6B = 0xFFFFFADB, posY: 0x2E100 (737px) -> 0x2DBDB (731px)
+  L8688 : [PF f=2464] [FLOOR_SPIKE_DEATH] corner TR (6826,744) tid=0xD9 mapped=0xD9 col=COL_DOWN_RIGHT_SPIKE localXY=(10,8)
+  L8689 : [PF f=2464] [FLOOR_SPIKE] X=6814px Y=731px
+  L8690 : [PF f=2464] [DEATH] frame=2464 X=6814px Y=731px VelY=0xFFFFFADB gravFlipped=False
+  L8691 : [PF f=2463] [BACKTRACK] attempt=1/600 total=1/3000 rewind to frame=2463 stage=1 remaining_checkpoints=90 holdWas=False
+  L8692 : [PF f=2463] [STEP_START] X_fixed=0x1A9BBC (6811px) Y_fixed=0x2E100 (737px) VelY=0x0 mode=0 gravFlipped=False gravMul=1 onGround=True wasZeroed=True mini=False

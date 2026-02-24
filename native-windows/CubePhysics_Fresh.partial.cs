@@ -124,11 +124,14 @@ namespace FamidashEditor
                 
                 // AppendSimDebug($"[CUBE] After gravity: velY={playerVelY_fixed}, posY={playerY_fixed >> 8}");
                 
-                // Check center-point death (matches bg_coll_death() in collision.h line 1019)
-                CheckCenterPointDeath_Fresh();
-                
                 // STEP 3: cube_eject() - collision detection and ejection
+                // NES order: cube_movement → common_gravity_routine → cube_eject → (return)
+                // then runthecolls → bg_coll_death (uses post-eject Generic.y)
                 CubeEject_Fresh();
+                
+                // Check center-point death AFTER eject (matches NES bg_coll_death() in
+                // runthecolls which reads post-eject currplayer_y via Generic.y)
+                CheckCenterPointDeath_Fresh();
                 
                 // AppendSimDebug($"[CUBE] After collision: velY={playerVelY_fixed}, posY={playerY_fixed >> 8}");
                 
@@ -296,10 +299,14 @@ namespace FamidashEditor
                         if (currplayer_gravity == 0)  // Normal gravity
                         {
                             const int HITBOX_W_LOCAL = 15;
-                            int playerCenter_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                            // Always center on TILE/2 (player pos = 16x16 tile space)
+                            int playerCenter_px = (playerX_fixed >> 8) + (TILE / 2);
                             int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
                             int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
-                            int footWorldY_px = (playerY_fixed >> 8) + playerVisualHeight - 1;
+                            // Foot = bottom of actual hitbox (hitboxOffset + hitboxH)
+                            int hitboxH_gs = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
+                            int hitboxOffY_gs = (currplayer_mini != 0) ? 9 : 0; // cube mode, normal gravity
+                            int footWorldY_px = (playerY_fixed >> 8) + hitboxOffY_gs + hitboxH_gs;
                             int tileBelowY_world = footWorldY_px / TILE;
                             int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
@@ -356,24 +363,15 @@ namespace FamidashEditor
             // From gamemode_cube.h line 249: tmp1 = dashing;
             int tmp1 = dashing[currplayer];
             
-            // CRITICAL FIX: Don't apply gravity if we were just zeroed by collision detection
-            // This prevents oscillation where gravity re-applies to already-grounded players
-            // EXCEPTION: Pogo mode needs gravity even when grounded so it can bounce
-            // Ninja needs gravity when grounded (for ground-cancel jump behavior)
-            // Only reset the flag when velocity becomes non-zero (player leaves ground)
-            if (playerVelY_fixed == 0 && wasZeroedByCollisionLastFrame && currentGameMode != 9 && currentGameMode != 8)
-            {
-                // We're grounded - skip gravity application (but NOT for Pogo or Ninja mode)
-                AppendSimDebug($"[GRAV_SKIP] velY==0 && wasZeroedByCollision=true - skipping gravity, velocity stays at 0");
-                return;
-            }
-            
-            // Reset the flag if velocity is non-zero (means player left the ground)
-            if (playerVelY_fixed != 0)
-            {
-                wasZeroedByCollisionLastFrame = false;
-                AppendSimDebug($"[GRAV_RESET_FLAG] velY is non-zero, resetting collision flag for next frame");
-            }
+            // NO GRAV_SKIP: NES common_gravity_routine() ALWAYS applies gravity,
+            // even when the player is grounded.  Grounded frames: gravity adds
+            // +0x6B to vel, shifts Y by a sub-pixel amount, then cube_eject()
+            // snaps the player back to the floor surface and zeroes velocity.
+            // The old GRAV_SKIP optimisation (skip when vel==0 &&
+            // wasZeroedByCollision) was an approximation that diverged over
+            // 1-tile floor gaps: the PF (matching NES) saw vel=0x6B after
+            // gravity, but the SIM saw vel=0 due to GRAV_SKIP, causing
+            // different jump eligibility.  Removed to match NES 1:1.
             
             if (tmp1 == 0)
             {
