@@ -2426,6 +2426,8 @@ namespace FamidashEditor
     public System.Collections.Generic.List<bool>? PrecomputedPathfinderInputs => precomputedPathfinderInputs;
     private System.Collections.Generic.HashSet<int>? precomputedCollectedCoins = null;
     public System.Collections.Generic.HashSet<int>? PrecomputedCollectedCoins => precomputedCollectedCoins;
+    private System.Collections.Generic.HashSet<int>? precomputedSkippedPads = null;
+    public System.Collections.Generic.HashSet<int>? PrecomputedSkippedPads => precomputedSkippedPads;
     
     // Preview mode for animations (saws, etc.)
     private bool previewMode = false;

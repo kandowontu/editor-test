@@ -10640,9 +10640,17 @@ namespace FamidashEditor
                                 
                                 bool middlePixelBlocked = CheckPixelCollision(playerRightEdge_fwd, playerCenterY_fwd, groundRowsToReserve_fwd);
                                 
+                                // NOTE: NES bg_side_coll_common also calls bg_coll_spikes() which
+                                // can set the death flag (cube_data |= 1).  However, the NES uses
+                                // a DEFERRED death flag that gets CLEARED by floor/ceiling landing
+                                // (COLL_CHECK_BOTTOM/TOP does cube_data &= ~1).  Without that
+                                // cancellation, side-probe spike death is too aggressive.  The
+                                // center-point death check already handles non-cancellable death.
+                                
                                 if (middlePixelBlocked)
                                 {
-                                    AppendSimDebug($"[DEATH] Forward middle pixel collision at ({playerRightEdge_fwd},{playerCenterY_fwd}) - post-eject check at OLD X");
+                                    string reason = "Forward middle pixel collision";
+                                    AppendSimDebug($"[DEATH] {reason} at ({playerRightEdge_fwd},{playerCenterY_fwd}) - post-eject check at OLD X");
                                     deathTriggered = true;
                                     deathTileX = playerRightEdge_fwd;
                                     deathTileY = playerCenterY_fwd;

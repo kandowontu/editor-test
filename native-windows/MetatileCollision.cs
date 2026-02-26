@@ -131,6 +131,25 @@ namespace FamidashEditor
                     return ((localX >= 0x0a) && InRange(localY, 0x06, 0x08)) ||
                            ((localY < 0x06) && InRange(localX, 0x05, 0x07));
 
+                // Combo death tiles (no NES tiles currently mapped, included for completeness)
+                case MetatileCollision.COL_DEATH_TOP_RIGHT_LEFT:
+                    return ((localY < 0x06) && InRange(localX, 0x05, 0x07)) ||
+                           ((localX >= 0x0a) && InRange(localY, 0x06, 0x08)) ||
+                           ((localX < 0x06) && InRange(localY, 0x06, 0x08));
+
+                case MetatileCollision.COL_DEATH_TOP_BOTTOM:
+                    return ((localY < 0x06) && InRange(localX, 0x05, 0x07)) ||
+                           ((localY > 0x0a) && InRange(localX, 0x05, 0x07));
+
+                case MetatileCollision.COL_DEATH_LEFT_RIGHT:
+                    return ((localX < 0x06) && InRange(localY, 0x06, 0x08)) ||
+                           ((localX >= 0x0a) && InRange(localY, 0x06, 0x08));
+
+                case MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM:
+                    return ((localY < 0x06) && InRange(localX, 0x05, 0x07)) ||
+                           ((localX < 0x06) && InRange(localY, 0x06, 0x08)) ||
+                           ((localY > 0x0a) && InRange(localX, 0x05, 0x07));
+
                 // Pure death spike tiles (no solid collision)
                 // UP spikes = spikes pointing up from bottom, death in TOP half
                 case MetatileCollision.COL_UP_LEFT_SPIKE:
