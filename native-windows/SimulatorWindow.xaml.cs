@@ -1147,7 +1147,7 @@ namespace FamidashEditor
                 try
                 {
                     if (hitboxWorldCache != null && hitboxWorldCache.TryGetValue(idx, out var cached) && cached.frame == renderFrameCounter)
-                    {
+    QA                    {
                         int cLeft = cached.left; int cTop = cached.top; int cRight = cached.right; int cBottom = cached.bottom;
                         bool cov = !(playerRight_px < cLeft || playerLeft_px > cRight || playerBottom_px < cTop || playerTop_px > cBottom);
                         return cov;
@@ -5974,6 +5974,16 @@ namespace FamidashEditor
                 wasZeroedByCollisionLastFrame = true;
                 onGround = true;
 
+                // Restore coins before reset so PF_LoadPrecomputedInputs can
+                // re-preseed them from scratch (sprites[idx] must be >= 0).
+                foreach (var (spriteIndex, spriteId) in collectedCoinInfo)
+                {
+                    if (spriteIndex >= 0 && spriteIndex < sprites.Length)
+                        sprites[spriteIndex] = spriteId;
+                }
+                collectedCoins.Clear();
+                collectedCoinInfo.Clear();
+
                 // Reset pathfinder frame counter so inputs replay from the beginning
                 pfFrameIndex = 0;
                 pfLastAdvancedTick = -1;
@@ -6007,8 +6017,6 @@ namespace FamidashEditor
                 // Clear level complete state
                 levelCompleteTriggered = false;
                 processedEndLevelTriggers.Clear();
-                collectedCoins.Clear();
-                collectedCoinInfo.Clear();
                 try { LevelCompleteOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
             }
             catch { }
@@ -8440,7 +8448,7 @@ namespace FamidashEditor
                     {
                         // Parallax translation: background moves slower than camera based on parallaxX/Y.
                         double parallaxOffsetX = -(pixelX) * (1.0 - parallaxX);
-                        double parallaxOffsetY = -(cameraY_fixed >> 8) * (1.0 - parallaxY);
+                        double parallaxOffsetY = -(snapCameraY >> 8) * (1.0 - parallaxY);
 
                         // Reuse cached parallax brush — only recreate when the source image changes
                         if (_cachedParallaxBrush == null || _cachedParallaxSource != src)
@@ -8492,7 +8500,7 @@ namespace FamidashEditor
                                     Stretch = Stretch.None
                                 };
                                 double parallaxOffsetX2 = -(pixelX) * (1.0 - parallaxX);
-                                double parallaxOffsetY2 = -(cameraY_fixed >> 8) * (1.0 - parallaxY);
+                                double parallaxOffsetY2 = -(snapCameraY >> 8) * (1.0 - parallaxY);
                                 brush2.Transform = new TranslateTransform(parallaxOffsetX2, parallaxOffsetY2);
                                 if (bgRectPersistent != null) bgRectPersistent.Fill = brush2;
                             }
@@ -9635,8 +9643,8 @@ namespace FamidashEditor
                         double hy_screen = (int)Math.Round(py) + hyoff_o;
                         if (s_padDownIds.Contains(id_for_overlay)) hy_screen += 8;
 
-                        int pixelX_now2 = cameraX_fixed >> 8;
-                        int pixelY_now2 = cameraY_fixed >> 8;
+                        int pixelX_now2 = snapCameraX >> 8;
+                        int pixelY_now2 = snapCameraY >> 8;
                         int worldLeft2 = (int)Math.Round(hx_screen) + pixelX_now2;
                         int worldTop2 = (int)Math.Round(hy_screen) + pixelY_now2 - gridRenderShiftYPx;
                         int worldRight2 = worldLeft2 + Math.Max(1, hw_o) - 1;
@@ -9777,7 +9785,7 @@ namespace FamidashEditor
                 // Normal gravity: align bottom-left (shift down 8 pixels for visual centering)
                 // Reversed gravity: align top-left (no shift)
                 // NOTE: This is visual offset (8px), collision uses (0x10-0x07)>>1 = 4px
-                if (miniMode && !gravityFlipped)
+                if (snapMiniMode && !snapGravFlipped)
                 {
                     // Shift down by (16 - 8) = 8 pixels to align bottom visually
                     playerPixelY += (TILE - 8);
@@ -9826,8 +9834,8 @@ namespace FamidashEditor
                 else
                 {
                     // Calculate player 2's screen position
-                    int player2PixelX = (player_x_fixed[1] >> 8) - (cameraX_fixed >> 8);
-                    int player2PixelY = (player_y_fixed[1] >> 8) - (cameraY_fixed >> 8);
+                    int player2PixelX = (player_x_fixed[1] >> 8) - (snapCameraX >> 8);
+                    int player2PixelY = (player_y_fixed[1] >> 8) - (snapCameraY >> 8);
 
                     // Apply mini mode visual adjustments for player 2
                     if (player_mini[1] && player_gravity[1] == 0)  // Mini and normal gravity
@@ -9861,11 +9869,11 @@ namespace FamidashEditor
             // Apply sub-pixel smoothing with a translate transform for X and Y
             // Stabilize X fractional translation when the player is anchored at the interaction line
             int centerOffset_fixed_local = (TILE / 2) << 8;
-            int playerCenter_fixed_now_local = playerX_fixed + centerOffset_fixed_local;
+            int playerCenter_fixed_now_local = snapPlayerX + centerOffset_fixed_local;
             bool isAnchoredNow = interactionScreenOffset_px >= 0 && playerCenter_fixed_now_local >= INTERACTION_LINE_FIXED;
 
-            double fracX = (cameraX_fixed & 0xFF) / 256.0;
-            double fracY = (cameraY_fixed & 0xFF) / 256.0;
+            double fracX = (snapCameraX & 0xFF) / 256.0;
+            double fracY = (snapCameraY & 0xFF) / 256.0;
 
             if (isAnchoredNow)
             {
@@ -9902,7 +9910,7 @@ namespace FamidashEditor
                     try
                     {
                         // Show fixed-point Y velocity as hex (and decimal px/frame for convenience)
-                        int v_fixed = playerVelY_fixed; // fixed-point (8 frac bits)
+                        int v_fixed = snapPlayerVelY; // fixed-point (8 frac bits)
                         double vel_px = v_fixed / 256.0;
                         string hex;
                         if (v_fixed < 0) hex = "-0x" + ((-v_fixed) & 0xFFFF).ToString("X4");
@@ -9941,9 +9949,9 @@ namespace FamidashEditor
                     debugWindow.UpdateDebugInfo(
                         currentGameMode,
                         currplayer_mini != 0,
-                        gravityFlipped,
-                        playerX_fixed >> 8,
-                        playerY_fixed >> 8,
+                        snapGravFlipped,
+                        snapPlayerX >> 8,
+                        snapPlayerY >> 8,
                         speedStr,
                         ninjajumps[currplayer],
                         dblocked,
@@ -9954,7 +9962,7 @@ namespace FamidashEditor
                         blackOrbed,
                         dashing[currplayer],
                         robotJumpTime[0],
-                        playerVelY_fixed,
+                        snapPlayerVelY,
                         orbBufferActive[currplayer]
                     );
                 }

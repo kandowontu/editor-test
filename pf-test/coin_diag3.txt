@@ -1,0 +1,6 @@
+[COINS] Found 3 coins:
+  idx=21034 sid=0x07 hitbox=(7192,327)-(7208,343) anchor=(7192,328)
+  idx=18570 sid=0x1A hitbox=(10720,271)-(10736,287) anchor=(10728,280)
+  idx=13407 sid=0x1B hitbox=(14032,175)-(14048,191) anchor=(14040,184)
+[COIN_FORGIVEN] idx=18570 sid=0x1A — coin unreachable, continuing
+[COIN_FORGIVEN] idx=13407 sid=0x1B — coin unreachable, continuing

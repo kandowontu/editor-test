@@ -35,9 +35,9 @@ namespace FamidashEditor
         private const int MAX_BACKTRACK_ATTEMPTS = 500; // max backtrack retries PER death point (reset after each success)
         private const int MAX_TOTAL_BACKTRACK_ATTEMPTS = 5000; // absolute cap on total backtracks across all deaths
         private const int MAX_TOTAL_ITERATIONS = MAX_FRAMES * 10; // hard cap on total frame iterations (including replays)
-        private const int MAX_CHECKPOINT_DEPTH = 120;   // max saved decision checkpoints (deep history for long levels)
+        private const int MAX_CHECKPOINT_DEPTH = 200;   // max saved decision checkpoints (deep history for long levels)
         // No rewind limit — backtracker goes as far back as needed
-        private const int MIN_CHECKPOINT_SPACING = 8;   // minimum frames between consecutive checkpoints
+        private const int MIN_CHECKPOINT_SPACING = 4;   // minimum frames between consecutive checkpoints
         private const int ELEV_THRESHOLD = 12;              // <1 tile — elevation difference to trigger exploration
 
         /// <summary>
@@ -511,6 +511,41 @@ namespace FamidashEditor
         // Pre-sorted sprite list for efficient processing
         private readonly List<SpriteEntry> allSprites;
 
+        // Coin-specific list (subset of allSprites with coin sprite IDs)
+        private readonly List<SpriteEntry> allCoins;
+        // Next coin index to check for collection/miss detection
+        private int _nextCoinCheckIdx;
+        // Coins that were missed and forgiven (backtrack failed, continue without them)
+        private readonly HashSet<int> _forgivenCoins = new HashSet<int>();
+        // Index into allCoins of the most recently missed coin (for forgiveness)
+        private int _missedCoinIdx = -1;
+        // Altitude ceiling penalties for coin retry
+        // Each entry: (startX, endX, ceilingY) — penalize paths above ceilingY in this X range
+        private List<(int startX, int endX, int ceilingY)> _coinAltitudePenalties = new List<(int, int, int)>();
+        // Force-walk zones for coin retry — forces WALK when grounded in this X range
+        // to ensure pad activation (e.g., yellow pad → coin launch, blue pad → gravity flip)
+        // Each entry: (startX, endX)
+        private List<(int startX, int endX)> _coinForceWalkZones = new List<(int, int)>();
+        // Ground-level bias zones for coin retry — strongly prefer WALK (stay at ground
+        // level) but allow jumping when walking would die within 3 frames. This keeps
+        // the player on the ground-level route while still clearing spikes/obstacles.
+        // Each entry: (startX, endX)
+        private List<(int startX, int endX)> _coinGroundBiasZones = new List<(int, int)>();
+        // Mandatory coin indices for retry — coins that MUST be collected.
+        // When a missed coin is in this set, forgiveness is denied and
+        // crossing past the coin's X is treated as a permanent death.
+        private HashSet<int> _retryMandatoryCoins = new HashSet<int>();
+        // Coin input script: a pre-recorded input sequence from Strategy 0's
+        // simulation. When the coin-walk override fires, we record ALL frames'
+        // inputs (not just the first). On subsequent frames, we dequeue from
+        // this script instead of running the BFS, ensuring the actual execution
+        // matches the speculative simulation exactly.
+        private Queue<bool> _coinInputScript = new Queue<bool>();
+        private int _coinInputScriptCoinIdx = -1; // coin index this script targets
+
+        // Coin sprite IDs: 0x07 (secret coin), 0x1A, 0x1B
+        private static bool IsCoinSprite(int sid) => sid == 0x07 || sid == 0x1A || sid == 0x1B;
+
         // Death reason tracking (used by backtracker and result messages)
         private string _lastDeathReason = "";
         private int _lastDeathX, _lastDeathY;
@@ -803,6 +838,9 @@ namespace FamidashEditor
 
             allSprites.Sort((a, b) => a.AnchorX_px.CompareTo(b.AnchorX_px));
 
+            // Build sorted coin list for miss detection and coin-aware pathfinding
+            allCoins = allSprites.Where(sp => IsCoinSprite(sp.SpriteId)).ToList();
+
             PathPoints = new List<(int, int)>();
             Inputs = new List<bool>();
         }
@@ -817,8 +855,230 @@ namespace FamidashEditor
             var sw = System.Diagnostics.Stopwatch.StartNew();
             double originalBias = JumpTimingBias;
 
+            // ── Pre-apply coin zones on the FIRST run ──
+            // Analyze all coins and nearby pads to set up force-walk and
+            // altitude-penalty zones BEFORE the first attempt. This way
+            // the pathfinder collects coins on the first run instead of
+            // requiring an expensive second-pass retry.
+            if (PreferCoins && allCoins.Count > 0)
+            {
+                int groundY_pre = (mapHeight - groundRowsToReserve) * 16 - 15;
+                var preForceWalk = new List<(int startX, int endX)>();
+                var preAltPenalties = new List<(int startX, int endX, int ceilingY)>();
+                foreach (var coin in allCoins)
+                {
+                    int cx = (coin.HitLeft + coin.HitRight) / 2;
+                    foreach (var sp in allSprites)
+                    {
+                        if (!IsAnyPad(sp.SpriteId)) continue;
+                        int padCX = (sp.HitLeft + sp.HitRight) / 2;
+                        if (padCX > cx + 32 || cx - padCX > 500) continue;
+                        int padCY = (sp.HitTop + sp.HitBottom) / 2;
+                        if (padCY < groundY_pre - 40) continue;
+                        bool isGP = (padCY >= groundY_pre - 30);
+                        if (isGP && !IsBluePad(sp.SpriteId))
+                            preForceWalk.Add((sp.HitLeft - 48, sp.HitRight + 16));
+                        if (isGP)
+                            preAltPenalties.Add((sp.HitLeft - 600, sp.HitLeft, groundY_pre - 20));
+                    }
+                }
+                if (preForceWalk.Count > 0 || preAltPenalties.Count > 0)
+                {
+                    Console.Error.WriteLine($"[COIN_PRE_ZONES] forceWalk={preForceWalk.Count} altPenalty={preAltPenalties.Count} — applying on first run");
+                    _coinForceWalkZones = preForceWalk;
+                    _coinAltitudePenalties = preAltPenalties;
+                }
+            }
+
             RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
                              startGameMode, startGravFlipped, startMini);
+
+            // Clear pre-applied zones after first run
+            _coinForceWalkZones.Clear();
+            _coinAltitudePenalties.Clear();
+
+            // ── Coin retry with mandatory coins + ground-bias zones ──
+            // If the first run missed coins despite pre-applied zones,
+            // retry with focused zones. Usually the first run collects
+            // all coins and this section is skipped entirely.
+            if (Success && PreferCoins && _forgivenCoins.Count > 0 && allCoins.Count > 0)
+            {
+                int groundY = (mapHeight - groundRowsToReserve) * 16 - 15;
+                // Snapshot the current best result
+                var overallBestInputs = new List<bool>(Inputs);
+                var overallBestPath = new List<(int x, int y)>(PathPoints);
+                string overallBestMsg = ResultMessage;
+                int overallBestCoins = FinalCollectedCoinIndices != null ? FinalCollectedCoinIndices.Count : 0;
+                var overallBestFinalCoins = FinalCollectedCoinIndices != null
+                    ? new HashSet<int>(FinalCollectedCoinIndices) : null;
+
+                // Build per-coin zones for each forgiven coin
+                var forgivenCoinList = allCoins.Where(c => _forgivenCoins.Contains(c.Index)).ToList();
+
+                // === COMBINED RETRY: try all forgiven coins' zones simultaneously ===
+                // When multiple coins are forgiven, their per-coin zones may not
+                // interfere (at different X positions). Running a single retry with
+                // all zones combined gives the pathfinder the best chance to collect
+                // ALL missed coins in one run.
+                if (forgivenCoinList.Count > 1)
+                {
+                    var combinedForceWalk = new List<(int startX, int endX)>();
+                    var combinedAltPenalties = new List<(int startX, int endX, int ceilingY)>();
+                    bool anyPads = false;
+                    foreach (var c in forgivenCoinList)
+                    {
+                        int cx = (c.HitLeft + c.HitRight) / 2;
+                        foreach (var sp in allSprites)
+                        {
+                            if (!IsAnyPad(sp.SpriteId)) continue;
+                            int padCX = (sp.HitLeft + sp.HitRight) / 2;
+                            if (padCX > cx + 32 || cx - padCX > 500) continue;
+                            int padCY = (sp.HitTop + sp.HitBottom) / 2;
+                            if (padCY < groundY - 40) continue;
+                            anyPads = true;
+                            bool isGP = (padCY >= groundY - 30);
+                            if (isGP && !IsBluePad(sp.SpriteId))
+                                combinedForceWalk.Add((sp.HitLeft - 48, sp.HitRight + 16));
+                            if (isGP)
+                                combinedAltPenalties.Add((sp.HitLeft - 600, sp.HitLeft, groundY - 20));
+                        }
+                    }
+                    if (anyPads)
+                    {
+                        Console.Error.WriteLine($"[COIN_RETRY_COMBINED] Attempting all {forgivenCoinList.Count} forgiven coins, forceWalk={combinedForceWalk.Count} altPenalty={combinedAltPenalties.Count}");
+                        JumpTimingBias = originalBias;
+                        _coinForceWalkZones = combinedForceWalk;
+                        _coinAltitudePenalties = combinedAltPenalties;
+                        _coinGroundBiasZones.Clear();
+                        _retryMandatoryCoins.Clear();
+                        RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
+                                         startGameMode, startGravFlipped, startMini);
+                        if (Success)
+                        {
+                            int retryCoins = FinalCollectedCoinIndices != null ? FinalCollectedCoinIndices.Count : 0;
+                            Console.Error.WriteLine($"[COIN_RETRY_COMBINED] Result: {retryCoins}/{allCoins.Count} coins");
+                            if (retryCoins > overallBestCoins)
+                            {
+                                Console.Error.WriteLine($"[COIN_RETRY_COMBINED] Improved: {retryCoins} vs {overallBestCoins}");
+                                overallBestInputs = new List<bool>(Inputs);
+                                overallBestPath = new List<(int x, int y)>(PathPoints);
+                                overallBestMsg = ResultMessage;
+                                overallBestCoins = retryCoins;
+                                overallBestFinalCoins = FinalCollectedCoinIndices != null
+                                    ? new HashSet<int>(FinalCollectedCoinIndices) : null;
+                            }
+                        }
+                        else
+                        {
+                            Success = true; // keep going
+                        }
+                        JumpTimingBias = originalBias;
+                        _coinForceWalkZones.Clear();
+                        _coinAltitudePenalties.Clear();
+                        _coinGroundBiasZones.Clear();
+                        _retryMandatoryCoins.Clear();
+                    }
+                }
+
+                foreach (var coin in forgivenCoinList)
+                {
+                    // Skip individual retries if combined retry already got all coins
+                    if (overallBestCoins >= allCoins.Count) break;
+
+                    int coinCenterX = (coin.HitLeft + coin.HitRight) / 2;
+                    int coinCenterY = (coin.HitTop + coin.HitBottom) / 2;
+
+                    var thisCoinForceWalk = new List<(int startX, int endX)>();
+                    var thisCoinAltPenalties = new List<(int startX, int endX, int ceilingY)>();
+
+                    // Find pads near this coin (at ground level)
+                    bool hasPads = false;
+                    foreach (var sp in allSprites)
+                    {
+                        if (!IsAnyPad(sp.SpriteId)) continue;
+                        int padCenterX = (sp.HitLeft + sp.HitRight) / 2;
+                        if (padCenterX > coinCenterX + 32) continue;
+                        if (coinCenterX - padCenterX > 500) continue;
+                        int padCenterY = (sp.HitTop + sp.HitBottom) / 2;
+                        if (padCenterY < groundY - 40) continue;
+                        hasPads = true;
+                        Console.Error.WriteLine($"[COIN_RETRY_PAD] coin={coin.Index} pad idx={sp.Index} sid=0x{sp.SpriteId:X2} hit=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom})");
+                        // Force-walk zone: only for pads AT ground level (within 30px
+                        // of groundY). Elevated pads shouldn't have walk forcing.
+                        // Blue pads are EXCLUDED: players typically approach blue pads
+                        // from staircases and need the freedom to jump off them.
+                        // Force-walking on the staircase can cause CENTER_DEATH on
+                        // hazard tiles adjacent to the staircase edge.
+                        bool isGroundPad = (padCenterY >= groundY - 30);
+                        if (isGroundPad && !IsBluePad(sp.SpriteId))
+                        {
+                            thisCoinForceWalk.Add((sp.HitLeft - 48, sp.HitRight + 16));
+                        }
+                        // Altitude penalty zone: only for ground-level pads.
+                        // Gently bias BFS toward ground level in the approach area
+                        // before the pad. Uses ceiling = groundY - 20 so penalty
+                        // applies when player is above ground. ENDS at the pad start
+                        // (HitLeft) — MUST NOT extend past the pad, because post-pad
+                        // the player is launched upward and needs free BFS navigation.
+                        if (isGroundPad)
+                        {
+                            int ceilingY = groundY - 20; // 349 for groundY=369
+                            thisCoinAltPenalties.Add((sp.HitLeft - 600, sp.HitLeft, ceilingY));
+                        }
+                    }
+
+                    if (!hasPads) continue; // no pads → can't change routing
+
+                    // Try with mandatory coin + zones at different biases
+                    double[] retryBiases = new[] { originalBias, 0.0, 1.0 };
+                    foreach (double retryBias in retryBiases)
+                    {
+                        Console.Error.WriteLine($"[COIN_RETRY] Attempting coin idx={coin.Index} sid=0x{coin.SpriteId:X2} bias={retryBias:F2} forceWalk={thisCoinForceWalk.Count} altPenalty={thisCoinAltPenalties.Count}");
+
+                        JumpTimingBias = retryBias;
+                        _coinForceWalkZones = thisCoinForceWalk;
+                        _coinAltitudePenalties = thisCoinAltPenalties;
+                        _coinGroundBiasZones.Clear();
+                        _retryMandatoryCoins.Clear();
+                        RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
+                                         startGameMode, startGravFlipped, startMini);
+
+                        if (Success)
+                        {
+                            int retryCoins = FinalCollectedCoinIndices != null ? FinalCollectedCoinIndices.Count : 0;
+                            Console.Error.WriteLine($"[COIN_RETRY] Retry result: {retryCoins}/{allCoins.Count} coins");
+                            if (retryCoins > overallBestCoins)
+                            {
+                                Console.Error.WriteLine($"[COIN_RETRY] Improved: {retryCoins} vs {overallBestCoins}");
+                                overallBestInputs = new List<bool>(Inputs);
+                                overallBestPath = new List<(int x, int y)>(PathPoints);
+                                overallBestMsg = ResultMessage;
+                                overallBestCoins = retryCoins;
+                                overallBestFinalCoins = FinalCollectedCoinIndices != null
+                                    ? new HashSet<int>(FinalCollectedCoinIndices) : null;
+                                break; // this coin is improved, move to next coin
+                            }
+                        }
+                        else
+                        {
+                            Console.Error.WriteLine($"[COIN_RETRY] Retry for coin {coin.Index} bias={retryBias:F2} FAILED");
+                            Success = true; // keep going
+                        }
+                    }
+
+                    JumpTimingBias = originalBias;
+                    _coinForceWalkZones.Clear();
+                    _coinAltitudePenalties.Clear();
+                    _coinGroundBiasZones.Clear();
+                    _retryMandatoryCoins.Clear();
+                }
+
+                // Restore overall best result
+                Inputs = overallBestInputs;
+                PathPoints = overallBestPath;
+                ResultMessage = overallBestMsg;
+                FinalCollectedCoinIndices = overallBestFinalCoins;
+            }
 
             // If the primary bias failed, retry with intermediate biases.
             // This handles cases where the level geometry forces convergence
@@ -1080,6 +1340,11 @@ namespace FamidashEditor
             _bestPathHighWaterX = startX_px;
             _bestPathPoints.Clear();
             _bestInputs.Clear();
+            _nextCoinCheckIdx = 0;
+            _forgivenCoins.Clear();
+            _missedCoinIdx = -1;
+            _coinInputScript.Clear();
+            _coinInputScriptCoinIdx = -1;
 
             _frameCounter = 0;
             _speculativeDepth = 0;
@@ -1312,6 +1577,72 @@ namespace FamidashEditor
                                     (state.Y_fixed >> 8) + pathMiniOffY + 8));
                 }
 
+                // ── Coin miss detection ──
+                // When PreferCoins is on, check if the player has passed any
+                // uncollected coins.  Trigger a backtrackable death so the
+                // pathfinder retries from an earlier checkpoint.
+                if (alive && PreferCoins && _speculativeDepth == 0 && _nextCoinCheckIdx < allCoins.Count)
+                {
+                    int playerX = state.X_fixed >> 8;
+                    for (int ci = _nextCoinCheckIdx; ci < allCoins.Count; ci++)
+                    {
+                        var coin = allCoins[ci];
+                        if (coin.HitLeft > playerX + 16) break; // far ahead, stop checking
+                        if (state.ProcessedSprites.Contains(coin.Index) || _forgivenCoins.Contains(coin.Index))
+                        {
+                            if (ci == _nextCoinCheckIdx) _nextCoinCheckIdx++;
+                            continue;
+                        }
+                        if (playerX >= coin.HitRight)
+                        {
+                            // Missed this coin — trigger backtrackable death
+                            alive = false;
+                            _lastDeathReason = "MISSED_COIN";
+                            _lastDeathX = coin.HitLeft;
+                            _lastDeathY = coin.HitTop;
+                            _missedCoinIdx = ci;
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[MISSED_COIN] idx={coin.Index} sid=0x{coin.SpriteId:X2} hitbox=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) playerX={playerX}");
+#endif
+                            break;
+                        }
+                        break; // next coin is still ahead — stop checking
+                    }
+                }
+
+                // ── Coin collection detection ──
+                // Check if the player's hitbox overlaps any uncollected coin.
+                // Uses the same overlap logic as ProcessSprites for consistency
+                // (exclusive bounds, NES +1 X offset, 2-arg hitbox offset).
+                if (alive && _nextCoinCheckIdx < allCoins.Count)
+                {
+                    int nesX = (state.X_fixed >> 8) + 1; // NES sprite_collide() offset
+                    int hbW = GetHitboxW(state.Mini);
+                    int hbH = GetHitboxH(state.Mini);
+                    int hbOffY = GetHitboxOffsetY(state.Mini, state.GravFlipped);
+                    int playerTop = (state.Y_fixed >> 8) + hbOffY;
+                    int playerBottom = playerTop + hbH;     // exclusive
+                    int playerRight = nesX + hbW;           // exclusive
+
+                    for (int ci = _nextCoinCheckIdx; ci < allCoins.Count; ci++)
+                    {
+                        var coin = allCoins[ci];
+                        if (coin.HitLeft > playerRight + 16) break;
+                        if (state.ProcessedSprites.Contains(coin.Index) || _forgivenCoins.Contains(coin.Index)) continue;
+
+                        // Overlap check identical to ProcessSprites (exclusive bounds)
+                        bool xOverlap = !(playerRight < coin.HitLeft || coin.HitRight < nesX);
+                        bool yOverlap = !(playerBottom < coin.HitTop || coin.HitBottom < playerTop);
+                        if (xOverlap && yOverlap)
+                        {
+                            state.ProcessedSprites.Add(coin.Index);
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[COIN_COLLECTED] idx={coin.Index} sid=0x{coin.SpriteId:X2} hitbox=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) player=({nesX},{playerTop})-({playerRight},{playerBottom})");
+#endif
+                        }
+                    }
+                }
+
                 if (!alive)
                 {
 #if !DISABLE_DEBUG_LOGGING
@@ -1321,16 +1652,130 @@ namespace FamidashEditor
                     // Snapshot the current full path if it reached further than any previous attempt
                     SnapshotBestPath();
 
+                    // For MISSED_COIN deaths, save fallback state before backtracking.
+                    // If all backtracks fail, we can forgive the coin and continue.
+                    // CRITICAL: also save the backtrack checkpoint list — the backtracking
+                    // process consumes checkpoints trying to reach the coin, and if we
+                    // forgive the coin we need those checkpoints back for the rest of
+                    // the level.
+                    SimState coinFallbackState = default;
+                    int coinFallbackFrame = 0;
+                    int coinFallbackInputCount = 0;
+                    int coinFallbackPathCount = 0;
+                    int coinFallbackNextCheck = 0;
+                    List<BacktrackCheckpoint> coinFallbackCheckpoints = null;
+                    bool isCoinMiss = (_lastDeathReason == "MISSED_COIN" && _missedCoinIdx >= 0);
+                    if (isCoinMiss)
+                    {
+                        coinFallbackState = state.Clone();
+                        coinFallbackFrame = frame;
+                        coinFallbackInputCount = Inputs.Count;
+                        coinFallbackPathCount = PathPoints.Count;
+                        coinFallbackNextCheck = _nextCoinCheckIdx;
+                        // Deep-copy checkpoints (Clone() the SimState inside each)
+                        coinFallbackCheckpoints = _backtrackCheckpoints.Select(cp => new BacktrackCheckpoint
+                        {
+                            Frame = cp.Frame,
+                            State = cp.State.Clone(),
+                            HoldJumpState = cp.HoldJumpState,
+                            HoldDelayState = cp.HoldDelayState,
+                            CommittedDelayState = cp.CommittedDelayState,
+                            PathPointCount = cp.PathPointCount,
+                            InputCount = cp.InputCount,
+                            RetryStage = cp.RetryStage,
+                            UsedBias = cp.UsedBias,
+                            ShipBias = cp.ShipBias,
+                            GameMode = cp.GameMode,
+                            ShipForceHold = cp.ShipForceHold,
+                            ShipForceRelease = cp.ShipForceRelease,
+                            ShipCommitFrames = cp.ShipCommitFrames,
+                            ShipCommitHold = cp.ShipCommitHold,
+                            ForceJumpRemaining = cp.ForceJumpRemaining,
+                            SkipAllOrbs = cp.SkipAllOrbs,
+                            SkipSpecificOrbs = cp.SkipSpecificOrbs != null ? new HashSet<int>(cp.SkipSpecificOrbs) : new HashSet<int>(),
+                            SkipSpecificPads = cp.SkipSpecificPads != null ? new HashSet<int>(cp.SkipSpecificPads) : new HashSet<int>(),
+                            PrevFrameWasGrounded = cp.PrevFrameWasGrounded,
+                        }).ToList();
+                    }
+
                     // Try backtracking to a previous decision point
                     if (TryBacktrack(ref state, ref frame))
                         continue;
 
-                    // All backtracks exhausted — use the best path we found
+                    // All backtracks exhausted.
+                    // If the death was a missed coin, forgive it and continue
+                    // from where we were — the coin is simply unreachable.
+                    // EXCEPT: during retry, mandatory coins cannot be forgiven —
+                    // crossing past them is a permanent death.
+                    if (isCoinMiss)
+                    {
+                        var missedCoin = allCoins[_missedCoinIdx];
+
+                        // Mandatory coins during retry: do NOT forgive — treat as permanent death
+                        if (_retryMandatoryCoins.Contains(missedCoin.Index))
+                        {
+                            Console.Error.WriteLine($"[MANDATORY_COIN_DEATH] idx={missedCoin.Index} sid=0x{missedCoin.SpriteId:X2} — mandatory coin missed, permanent death");
+                            // Use the best path we found
+                            UseBestPathIfBetter();
+                            Success = false;
+                            int bestX2 = PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
+                            int bestPct2 = levelLengthPx > 0 ? bestX2 * 100 / levelLengthPx : 0;
+                            ResultMessage = $"Permanent death at frame {frame} (reason: mandatory coin {missedCoin.Index} missed) — best X {bestX2}px ({bestPct2}%)";
+                            Console.Error.WriteLine($"[PERM_DEATH] frame={frame} X={state.X_fixed >> 8} Y={state.Y_fixed >> 8} reason=MANDATORY_COIN_{missedCoin.Index}");
+                            TraceFrameClose();
+                            return;
+                        }
+
+                        _forgivenCoins.Add(missedCoin.Index);
+                        // Clear coin input script — the coin was forgiven, so the
+                        // script (which aimed to collect it) is no longer valid.
+                        _coinInputScript.Clear();
+                        _coinInputScriptCoinIdx = -1;
+                        state = coinFallbackState;
+                        frame = coinFallbackFrame;
+                        _nextCoinCheckIdx = coinFallbackNextCheck;
+                        // Restore outputs to pre-death state
+                        if (Inputs.Count > coinFallbackInputCount)
+                            Inputs.RemoveRange(coinFallbackInputCount, Inputs.Count - coinFallbackInputCount);
+                        if (PathPoints.Count > coinFallbackPathCount)
+                            PathPoints.RemoveRange(coinFallbackPathCount, PathPoints.Count - coinFallbackPathCount);
+                        // Restore backtrack checkpoints — the backtracking consumed them
+                        // trying to reach the coin, but they're needed for the rest of the level
+                        _backtrackCheckpoints = coinFallbackCheckpoints;
+                        _backtrackActive = false;
+                        _backtrackAttempts = 0;
+                        _btOverrideFrame = -1;
+                        _btOverrideStage = 0;
+                        _btSuppressJumpUntilAirborne = false;
+                        _btSkipAllOrbs = false;
+                        _btSkipSpecificOrbs.Clear();
+                        _btSkipSpecificPads.Clear();
+                        _btForceJumpFramesRemaining = 0;
+                        _shipCorridorBias = 0;
+                        _shipForceHoldFrames = 0;
+                        _shipForceReleaseFrames = 0;
+                        _shipCommitFrames = 0;
+                        _missedCoinIdx = -1;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[COIN_FORGIVEN] idx={missedCoin.Index} sid=0x{missedCoin.SpriteId:X2} hitbox=({missedCoin.HitLeft},{missedCoin.HitTop})-({missedCoin.HitRight},{missedCoin.HitBottom}) forgiven={_forgivenCoins.Count}");
+#endif
+                        System.Console.Error.WriteLine($"[COIN_FORGIVEN] idx={missedCoin.Index} sid=0x{missedCoin.SpriteId:X2} — coin unreachable, continuing");
+                        continue;
+                    }
+
+                    // Use the best path we found
                     UseBestPathIfBetter();
                     Success = false;
                     int bestX = PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
                     int bestPct = levelLengthPx > 0 ? bestX * 100 / levelLengthPx : 0;
-                    ResultMessage = $"Died — partial path to X={bestX}px ({bestPct}%) reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY}";
+                    string deathMsg = $"Died — partial path to X={bestX}px ({bestPct}%) reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY}";
+                    if (PreferCoins && allCoins.Count > 0)
+                    {
+                        int collected = state.ProcessedSprites.Count(idx => allCoins.Any(c => c.Index == idx));
+                        deathMsg += $" [{collected}/{allCoins.Count} coins]";
+                        if (_forgivenCoins.Count > 0) deathMsg += $" ({_forgivenCoins.Count} unreachable)";
+                    }
+                    ResultMessage = deathMsg;
                     System.Console.Error.WriteLine($"[PERM_DEATH] frame={frame} X={state.X_fixed >> 8} Y={state.Y_fixed >> 8} reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY}");
                     TraceFrameClose();
                     return;
@@ -1339,7 +1784,21 @@ namespace FamidashEditor
                 {
                     // Path point already recorded above after StepFrame
                     Success = true;
-                    ResultMessage = $"Completed in {frame} frames ({PathPoints.Count} path points)";
+                    string successMsg = $"Completed in {frame} frames ({PathPoints.Count} path points)";
+                    if (PreferCoins && allCoins.Count > 0)
+                    {
+                        // Gather collected coin indices for downstream use
+                        var collectedCoinIndices = new HashSet<int>();
+                        foreach (var coin in allCoins)
+                        {
+                            if (state.ProcessedSprites.Contains(coin.Index))
+                                collectedCoinIndices.Add(coin.Index);
+                        }
+                        FinalCollectedCoinIndices = collectedCoinIndices;
+                        successMsg += $" [{collectedCoinIndices.Count}/{allCoins.Count} coins]";
+                        if (_forgivenCoins.Count > 0) successMsg += $" ({_forgivenCoins.Count} unreachable)";
+                    }
+                    ResultMessage = successMsg;
                     ExtractSkippedPads(state);
                     TraceFrameClose();
 #if !DISABLE_DEBUG_LOGGING
@@ -1485,11 +1944,23 @@ namespace FamidashEditor
                 else
                 {
                     int frameDist2 = _btDeathFrame - cp.Frame;
+                    // ELEVATION-AWARE FAST SKIP: When death was FWD_DEATH and
+                    // checkpoint is at the same floor level as death, trying
+                    // different inputs won't help — the player needs to be
+                    // HIGHER to clear the wall.  Skip to earlier checkpoints
+                    // where route changes can gain elevation.
+                    int cpY = cp.State.Y_fixed >> 8;
+                    if (_btOrigDeathReason == "FWD_DEATH"
+                        && Math.Abs(cpY - _btOrigDeathY) < ELEV_THRESHOLD
+                        && frameDist2 > 30)
+                    {
+                        maxStages = 1; // just try suppress, then move on
+                    }
                     // Adaptive staging: nearby checkpoints get full exploration
                     // (fine delays, orb-skip, etc). Distant checkpoints get only
                     // aggressive strategies (suppress/force/bias) so the backtracker
                     // can quickly reach earlier forks and route divergences.
-                    if (frameDist2 <= 60)
+                    else if (frameDist2 <= 60)
                         maxStages = 19;  // within ~1 second: full exploration
                     else if (frameDist2 <= 240)
                         maxStages = 8;   // within ~4 seconds: core strategies
@@ -1519,6 +1990,8 @@ namespace FamidashEditor
                 _btSkipSpecificOrbs = new HashSet<int>(cp.SkipSpecificOrbs ?? new());
                 _btSkipSpecificPads = new HashSet<int>(cp.SkipSpecificPads ?? new());
                 _prevFrameWasGrounded = cp.PrevFrameWasGrounded;
+                _coinInputScript.Clear();
+                _coinInputScriptCoinIdx = -1;
 
                 // Snapshot the failed path segment before truncating (cap to prevent memory bloat)
                 if (PathPoints.Count > cp.PathPointCount && AttemptedPaths.Count < 200)
@@ -1857,6 +2330,22 @@ namespace FamidashEditor
             if (state.GameMode == 3) return DecideUfoInput(state, isOverrideFrame);
             if (state.GameMode != 0) return false; // only cube/ship/ball/ufo for now
 
+            // ═══════════════════════════════════════════════════════════════
+            //  Coin input script playback (coin retry only)
+            //  When the COIN_WALK_S0 override recorded a multi-frame script,
+            //  play it back verbatim instead of running the BFS. This ensures
+            //  the actual execution matches Strategy 0's simulation exactly
+            //  (especially for orb activations after gravity flips).
+            // ═══════════════════════════════════════════════════════════════
+            if (_coinInputScript.Count > 0 && _speculativeDepth == 0)
+            {
+                bool scriptInput = _coinInputScript.Dequeue();
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[COIN_SCRIPT] frame={_frameCounter} remaining={_coinInputScript.Count} input={scriptInput}");
+#endif
+                return scriptInput;
+            }
+
             // Pads fire on collision — no skip/decide logic needed.
             // The PF cannot suppress pad activation; if the player overlaps
             // a pad, it MUST activate (matching NES/sim behavior).
@@ -1870,6 +2359,24 @@ namespace FamidashEditor
                 int cubeOrbSid = ScanForOrbOverlap(state, out int cubeOrbIndex);
                 if (cubeOrbSid >= 0)
                 {
+                    // ── Coin-retry orb deferral: when altitude penalties are active
+                    // and the player is rapidly rising (from a pad bounce), defer
+                    // orb activation until near the peak of the arc.  This ensures
+                    // the orb launches from maximum altitude, giving the best
+                    // trajectory to clear post-coin obstacles (walls, etc.).
+                    // Without deferral the orb fires too early (while still rising
+                    // fast), producing a lower peak that can't clear the wall.
+                    if (_coinAltitudePenalties.Count > 0
+                        && !state.GravFlipped
+                        && state.VelY_fixed < -100   // still rising rapidly
+                        && _speculativeDepth == 0)   // only real (non-speculative) decisions
+                    {
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[ORB_DEFER_PEAK] deferring orb 0x{cubeOrbSid:X2} idx={cubeOrbIndex} velY=0x{state.VelY_fixed:X} Y={state.Y_fixed >> 8} — waiting for peak");
+#endif
+                        return false; // defer: don't activate, don't skip permanently
+                    }
+
                     // Backtrack "skip all orbs" mode: unconditionally skip
                     if (_btSkipAllOrbs)
                     {
@@ -2101,6 +2608,379 @@ namespace FamidashEditor
 
             // Guard against deep recursion from chained jump evaluation
             if (_speculativeDepth >= MAX_SPECULATIVE_DEPTH) return false;
+
+            // ═══════════════════════════════════════════════════════════════
+            //  Force-walk zone override (coin retry only)
+            //  When retrying for coins, force WALK when grounded near a pad
+            //  that leads to a coin. Prevents the BFS from jumping over
+            //  yellow pads (coin launch) or blue pads (gravity flip).
+            //  ALSO prevents jump buffering when airborne and falling near
+            //  the pad — ensures the player descends to the pad's Y level
+            //  instead of bouncing off intermediate platforms.
+            //  Highest priority — overrides coin-jump and BFS decisions.
+            // ═══════════════════════════════════════════════════════════════
+            if (_coinForceWalkZones.Count > 0)
+            {
+                int playerX_fw = state.X_fixed >> 8;
+                foreach (var (fwStart, fwEnd) in _coinForceWalkZones)
+                {
+                    if (playerX_fw >= fwStart && playerX_fw <= fwEnd)
+                    {
+                        // On ground: force walk to activate pad
+                        if (state.OnGround && state.VelY_fixed == 0)
+                        {
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[FORCE_WALK] Player at X={playerX_fw} in force-walk zone ({fwStart},{fwEnd}) — forcing WALK");
+#endif
+                            return false;
+                        }
+                        // Airborne and falling: suppress jump buffer to let
+                        // the player fall to the pad's level
+                        bool isFalling = !state.OnGround &&
+                            ((state.GravMul > 0 && state.VelY_fixed > 0) ||
+                             (state.GravMul < 0 && state.VelY_fixed < 0));
+                        if (isFalling)
+                        {
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[FORCE_WALK] Player at X={playerX_fw} Y={state.Y_fixed >> 8} FALLING in force-walk zone — suppressing jump buffer");
+#endif
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            //  Ground-level bias zone (coin retry only)
+            //  When retrying for coins, keep the player at ground level by
+            //  preferring WALK. Only allows jumping when walking would die
+            //  within 3 frames (spike ahead). This forces the BFS to take
+            //  ground-level routes instead of climbing staircases/platforms.
+            //  Still allows jumping over spikes/obstacles at ground level.
+            // ═══════════════════════════════════════════════════════════════
+            if (_coinGroundBiasZones.Count > 0 && state.OnGround && state.VelY_fixed == 0
+                && state.GameMode == 0 && _speculativeDepth == 0)
+            {
+                int playerX_gb = state.X_fixed >> 8;
+                foreach (var (gbStart, gbEnd) in _coinGroundBiasZones)
+                {
+                    if (playerX_gb >= gbStart && playerX_gb <= gbEnd)
+                    {
+                        // Check if walking would die within 3 frames
+                        bool walkDiesSoon = false;
+                        _speculativeDepth++;
+                        var testWalk = state.Clone();
+                        for (int t = 0; t < 3; t++)
+                        {
+                            bool testAlive = StepFrame(ref testWalk, false, out _);
+                            if (!testAlive) { walkDiesSoon = true; break; }
+                            if (!testWalk.OnGround) break; // walked off edge → stop
+                        }
+                        _speculativeDepth--;
+
+                        if (!walkDiesSoon)
+                        {
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[GROUND_BIAS] X={playerX_gb} in bias zone → WALK (safe)");
+#endif
+                            return false; // WALK — stay at ground level
+                        }
+                        // Walk would die → let BFS/coin-override decide (may jump)
+                        break;
+                    }
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            //  Coin-jump override (cube mode only)
+            //  When PreferCoins is active, check if jumping NOW would
+            //  collect an uncollected coin ahead.  Simulate a jump
+            //  trajectory and check for hitbox overlap with each nearby
+            //  coin.  If the jump collects a coin AND survives the BFS
+            //  horizon, force the jump — don't bother with the full BFS.
+            // ═══════════════════════════════════════════════════════════════
+            if (PreferCoins && allCoins.Count > 0 && state.OnGround && state.VelY_fixed == 0
+                && state.GameMode == 0 && _speculativeDepth == 0)
+            {
+                int playerX = state.X_fixed >> 8;
+                // Find the next uncollected coin within jump-arc range (~160px)
+                for (int ci = _nextCoinCheckIdx; ci < allCoins.Count; ci++)
+                {
+                    var coin = allCoins[ci];
+                    if (state.ProcessedSprites.Contains(coin.Index) || _forgivenCoins.Contains(coin.Index))
+                        continue;
+                    if (coin.HitLeft > playerX + 500) break; // beyond walk-to-pad range
+                    if (coin.HitRight < playerX) continue;   // already passed
+
+                    // Simulate jump trajectory and check for coin collection.
+                    // Try THREE strategies (in priority order):
+                    // 0. "Walk only" — pads auto-activate and can launch through coin
+                    // 1. "Always jump + activate orbs" — for coins above (pad→orb chains)
+                    // 2. "Single jump + fall freely" — for coins below (arc descent)
+                    _speculativeDepth++;
+                    var jumpSim = state.Clone();
+                    bool coinCollected = false;
+                    int jumpSurvival = 0;
+                    int coinCollFrame = -1;
+                    const int COIN_JUMP_HORIZON = 120;
+
+                    // Strategy 0: walk only (no jumping) — pads launch player through coins.
+                    // This is the most reliable path for ground-level coins with
+                    // pads underneath. Walking straight to the pad is deterministic.
+                    // Uses extended horizon (200) to reach distant pads.
+                    // Strategy 0: walk-preferred with obstacle jumping at ground level.
+                    // Walks by default. When grounded at ground level and walking
+                    // would die (death tile ahead), jumps instead. This handles
+                    // the pattern: descend from staircase → jump over ground
+                    // obstacle → arc passes through coin (or land on pad → launch).
+                    // Pads auto-activate by StepFrame when the player overlaps.
+                    // Uses extended horizon (200) to reach distant scenarios.
+                    {
+                        var walkSim0 = state.Clone();
+                        bool walkCoinColl = false;
+                        int walkSurv0 = 0;
+                        int walkCoinFrame0 = -1;
+                        bool firstFrameInput = false;
+                        var s0Inputs = new List<bool>(); // record ALL inputs for script replay
+                        const int WALK_PAD_HORIZON = 200;
+                        int simGroundY = (mapHeight - groundRowsToReserve) * 16 - 15;
+                        for (int f = 0; f < WALK_PAD_HORIZON; f++)
+                        {
+                            bool input;
+                            if (walkSim0.PendingOrbIndex >= 0)
+                                input = true; // activate pending orb
+                            else if (walkSim0.OnGround && walkSim0.VelY_fixed == 0
+                                     && (walkSim0.Y_fixed >> 8) >= simGroundY - 5)
+                            {
+                                // At ground level — check if walking (no jump) would die
+                                var testState = walkSim0.Clone();
+                                bool testAlive = StepFrame(ref testState, false, out _);
+                                input = !testAlive; // jump if walk dies
+                            }
+                            else
+                                input = false; // elevated or airborne → just walk/fall
+
+                            s0Inputs.Add(input); // record for script replay
+                            if (f == 0) firstFrameInput = input;
+
+                            bool walkAlive0 = StepFrame(ref walkSim0, input, out bool end0);
+                            if (!walkAlive0) break;
+                            walkSurv0 = f + 1;
+                            if (end0) { walkSurv0 = COIN_JUMP_HORIZON; break; }
+
+                            if (!walkCoinColl)
+                            {
+                                int nesX = (walkSim0.X_fixed >> 8) + 1;
+                                int hbW = GetHitboxW(walkSim0.Mini);
+                                int hbH = GetHitboxH(walkSim0.Mini);
+                                int hbOffY = GetHitboxOffsetY(walkSim0.Mini, walkSim0.GravFlipped);
+                                int pTop = (walkSim0.Y_fixed >> 8) + hbOffY;
+                                int pBot = pTop + hbH;
+                                int pRight = nesX + hbW;
+                                bool xOv = !(pRight < coin.HitLeft || coin.HitRight < nesX);
+                                bool yOv = !(pBot < coin.HitTop || coin.HitBottom < pTop);
+                                if (xOv && yOv) { walkCoinColl = true; walkCoinFrame0 = f; }
+                            }
+                        }
+                        if (walkCoinColl && walkSurv0 >= 30)
+                        {
+                            _speculativeDepth--;
+                            // Load the remaining inputs (frames 1+) into the coin
+                            // input script queue so subsequent frames replay exactly
+                            // what Strategy 0 simulated, instead of the BFS diverging.
+                            _coinInputScript.Clear();
+                            _coinInputScriptCoinIdx = coin.Index;
+                            for (int si = 1; si < s0Inputs.Count; si++)
+                                _coinInputScript.Enqueue(s0Inputs[si]);
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[COIN_WALK_S0] Forcing {(firstFrameInput?"JUMP":"WALK")}: walk→pad→coin idx={coin.Index} sid=0x{coin.SpriteId:X2} at ({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) walkSurv={walkSurv0}");
+#endif
+                            return firstFrameInput; // first frame's decision
+                        }
+                    }
+
+                    // Strategy 1: always jump when grounded + activate orbs
+                    List<bool> coinJumpWinningInputs = null;
+                    bool coinJumpHadOrbs = false;
+                    var s1Inputs = new List<bool>();
+                    bool s1HadOrb = false;
+                    for (int f = 0; f < COIN_JUMP_HORIZON; f++)
+                    {
+                        if (jumpSim.PendingOrbIndex >= 0) s1HadOrb = true;
+                        bool input = (jumpSim.VelY_fixed == 0 && jumpSim.OnGround)
+                                  || (jumpSim.PendingOrbIndex >= 0);
+                        s1Inputs.Add(input);
+                        bool coinJumpAlive = StepFrame(ref jumpSim, input, out bool end);
+                        if (!coinJumpAlive) break;
+                        jumpSurvival = f + 1;
+                        if (end) { jumpSurvival = COIN_JUMP_HORIZON; break; }
+
+                        if (!coinCollected)
+                        {
+                            int nesX = (jumpSim.X_fixed >> 8) + 1;
+                            int hbW = GetHitboxW(jumpSim.Mini);
+                            int hbH = GetHitboxH(jumpSim.Mini);
+                            int hbOffY = GetHitboxOffsetY(jumpSim.Mini, jumpSim.GravFlipped);
+                            int pTop = (jumpSim.Y_fixed >> 8) + hbOffY;
+                            int pBot = pTop + hbH;
+                            int pRight = nesX + hbW;
+                            bool xOv = !(pRight < coin.HitLeft || coin.HitRight < nesX);
+                            bool yOv = !(pBot < coin.HitTop || coin.HitBottom < pTop);
+                            if (xOv && yOv) { coinCollected = true; coinCollFrame = f; }
+                        }
+                    }
+                    if (coinCollected) { coinJumpWinningInputs = s1Inputs; coinJumpHadOrbs = s1HadOrb; }
+
+                    // Strategy 2: single jump + fall freely (no subsequent jumps)
+                    // This handles coins below the player: the jump arc clears
+                    // obstacles, then free-fall intersects the coin.
+                    if (!coinCollected)
+                    {
+                        jumpSim = state.Clone();
+                        jumpSurvival = 0;
+                        bool hasJumped = false;
+                        var s2Inputs = new List<bool>();
+                        bool s2HadOrb = false;
+                        for (int f = 0; f < COIN_JUMP_HORIZON; f++)
+                        {
+                            // Jump ONLY on first grounded frame, then fall freely
+                            // Activate orbs mid-air (for pad→orb chains after landing)
+                            if (jumpSim.PendingOrbIndex >= 0) s2HadOrb = true;
+                            bool input = false;
+                            if (!hasJumped && jumpSim.VelY_fixed == 0 && jumpSim.OnGround)
+                            {
+                                input = true;
+                                hasJumped = true;
+                            }
+                            else if (jumpSim.PendingOrbIndex >= 0)
+                            {
+                                input = true; // activate orbs
+                            }
+                            s2Inputs.Add(input);
+                            bool coinJumpAlive = StepFrame(ref jumpSim, input, out bool end2);
+                            if (!coinJumpAlive) break;
+                            jumpSurvival = f + 1;
+                            if (end2) { jumpSurvival = COIN_JUMP_HORIZON; break; }
+
+                            if (!coinCollected)
+                            {
+                                int nesX = (jumpSim.X_fixed >> 8) + 1;
+                                int hbW = GetHitboxW(jumpSim.Mini);
+                                int hbH = GetHitboxH(jumpSim.Mini);
+                                int hbOffY = GetHitboxOffsetY(jumpSim.Mini, jumpSim.GravFlipped);
+                                int pTop = (jumpSim.Y_fixed >> 8) + hbOffY;
+                                int pBot = pTop + hbH;
+                                int pRight = nesX + hbW;
+                                bool xOv = !(pRight < coin.HitLeft || coin.HitRight < nesX);
+                                bool yOv = !(pBot < coin.HitTop || coin.HitBottom < pTop);
+                                if (xOv && yOv) { coinCollected = true; coinCollFrame = f; }
+                            }
+                        }
+                        if (coinCollected) { coinJumpWinningInputs = s2Inputs; coinJumpHadOrbs = s2HadOrb; }
+                    }
+                    _speculativeDepth--;
+
+                    // Only require survival for 10 frames AFTER coin collection.
+                    if (coinCollected && jumpSurvival >= coinCollFrame + 10)
+                    {
+                        // Load the winning strategy's full input sequence (frames 1+)
+                        // into the coin input script so ALL subsequent frames replay
+                        // exactly what the simulation found, preventing BFS divergence.
+                        if (coinJumpWinningInputs != null && coinJumpWinningInputs.Count > 1 && !coinJumpHadOrbs)
+                        {
+                            _coinInputScript.Clear();
+                            _coinInputScriptCoinIdx = coin.Index;
+                            for (int si = 1; si < coinJumpWinningInputs.Count; si++)
+                                _coinInputScript.Enqueue(coinJumpWinningInputs[si]);
+                        }
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[COIN_JUMP] Forcing jump to collect coin idx={coin.Index} sid=0x{coin.SpriteId:X2} at ({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) jumpSurv={jumpSurvival} scriptLen={_coinInputScript.Count}");
+#endif
+                        return true;
+                    }
+                    break; // only check the nearest coin
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            //  Coin-walk override (cube mode only)
+            //  When PreferCoins is active and a coin is BELOW the player,
+            //  simulate walking off the current platform (never jumping)
+            //  and check if the falling trajectory passes through the coin.
+            //  This handles the common pattern of descending from an
+            //  elevated position to collect a coin mid-fall.
+            //  Pads are auto-activated by StepFrame, so pad→coin paths work.
+            // ═══════════════════════════════════════════════════════════════
+            if (PreferCoins && allCoins.Count > 0 && state.OnGround && state.VelY_fixed == 0
+                && state.GameMode == 0 && _speculativeDepth == 0)
+            {
+                int playerX = state.X_fixed >> 8;
+                int playerY = state.Y_fixed >> 8;
+                for (int ci = _nextCoinCheckIdx; ci < allCoins.Count; ci++)
+                {
+                    var coin = allCoins[ci];
+                    if (state.ProcessedSprites.Contains(coin.Index) || _forgivenCoins.Contains(coin.Index))
+                        continue;
+                    if (coin.HitLeft > playerX + 300) break;
+                    if (coin.HitRight < playerX) continue;
+
+                    int coinCenterY = (coin.HitTop + coin.HitBottom) / 2;
+                    if (coinCenterY <= playerY) break; // coin is above or level — skip
+
+                    // Coin is BELOW player. Simulate walk-only trajectory.
+                    _speculativeDepth++;
+                    var walkSim = state.Clone();
+                    bool coinCollected = false;
+                    int walkSurvival = 0;
+                    int coinCollectedFrame = -1;
+                    const int COIN_WALK_HORIZON = 120;
+                    int dbgMinY = playerY, dbgMaxY = playerY;
+                    int dbgEndX = playerX, dbgEndY = playerY;
+                    for (int f = 0; f < COIN_WALK_HORIZON; f++)
+                    {
+                        // Never jump — just walk/fall. Activate orbs if pending
+                        // (orb chains after pad bounces may be needed).
+                        bool input = (walkSim.PendingOrbIndex >= 0);
+                        bool walkAlive2 = StepFrame(ref walkSim, input, out bool end);
+                        if (!walkAlive2) break;
+                        walkSurvival = f + 1;
+                        int simY = walkSim.Y_fixed >> 8;
+                        int simX = walkSim.X_fixed >> 8;
+                        dbgEndX = simX; dbgEndY = simY;
+                        if (simY < dbgMinY) dbgMinY = simY;
+                        if (simY > dbgMaxY) dbgMaxY = simY;
+                        if (end) { walkSurvival = COIN_WALK_HORIZON; break; }
+
+                        if (!coinCollected)
+                        {
+                            int nesX = (walkSim.X_fixed >> 8) + 1;
+                            int hbW = GetHitboxW(walkSim.Mini);
+                            int hbH = GetHitboxH(walkSim.Mini);
+                            int hbOffY = GetHitboxOffsetY(walkSim.Mini, walkSim.GravFlipped);
+                            int pTop = (walkSim.Y_fixed >> 8) + hbOffY;
+                            int pBot = pTop + hbH;
+                            int pRight = nesX + hbW;
+                            bool xOv = !(pRight < coin.HitLeft || coin.HitRight < nesX);
+                            bool yOv = !(pBot < coin.HitTop || coin.HitBottom < pTop);
+                            if (xOv && yOv) { coinCollected = true; coinCollectedFrame = f; }
+                        }
+                    }
+                    _speculativeDepth--;
+                    Console.Error.WriteLine($"[COIN_WALK_DBG] idx={coin.Index} playerXY=({playerX},{playerY}) coinXY=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) collected={coinCollected} collFrame={coinCollectedFrame} walkSurv={walkSurvival} minY={dbgMinY} maxY={dbgMaxY} endXY=({dbgEndX},{dbgEndY})");
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[COIN_WALK_DBG] idx={coin.Index} playerXY=({playerX},{playerY}) coinXY=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) coinCenterY={coinCenterY} collected={coinCollected} collFrame={coinCollectedFrame} walkSurv={walkSurvival}");
+#endif
+
+                    if (coinCollected && walkSurvival >= 30)
+                    {
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[COIN_WALK] Forcing WALK to descend toward coin idx={coin.Index} sid=0x{coin.SpriteId:X2} at ({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) walkSurv={walkSurvival}");
+#endif
+                        return false; // force WALK (don't jump)
+                    }
+                    break;
+                }
+            }
 
             // ═══════════════════════════════════════════════════════════════
             //  BFS frame-by-frame pathfinding
@@ -2451,6 +3331,75 @@ namespace FamidashEditor
                 if (elevBonus < 0) elevBonus = 0; // only reward climbing, never penalize
             }
 
+            // Suppress elevation bonus when coin-seeking toward a coin that is
+            // BELOW the current position — climbing is counterproductive.
+            if (PreferCoins && elevBonus > 0)
+            {
+                int playerX2 = state.X_fixed >> 8;
+                int playerY2 = state.Y_fixed >> 8;
+                for (int ci2 = _nextCoinCheckIdx; ci2 < allCoins.Count; ci2++)
+                {
+                    var coin2 = allCoins[ci2];
+                    if (state.ProcessedSprites.Contains(coin2.Index) || _forgivenCoins.Contains(coin2.Index))
+                        continue;
+                    if (coin2.HitLeft > playerX2 + 2000) break;
+                    if (coin2.HitRight < playerX2) continue;
+                    int coinCenterY2 = (coin2.HitTop + coin2.HitBottom) / 2;
+                    if (coinCenterY2 > playerY2) // coin is below player
+                        elevBonus = 0; // don't reward climbing away from the coin
+                    break;
+                }
+            }
+
+            // ── Coin proximity bonus ──
+            // When PreferCoins is active and an uncollected coin is ahead,
+            // reward the lineage whose terminal Y is closer to the coin's
+            // center Y.  The bonus scales with proximity (stronger when
+            // closer) AND with survival ratio (weaker when the favored
+            // path has much worse survival than the other).
+            // Range: 2000px lookahead so routing decisions start early
+            // enough to reach coins that require different altitude paths.
+            // NOT gated on both-paths-surviving: we want to bias routing
+            // even when one path is riskier, as long as that path still
+            // survives enough frames to be viable.
+            int coinBonusJump = 0, coinBonusWalk = 0;
+            int cubeCoinTargetY = -1; // for elevation bonus suppression
+            if (PreferCoins && allCoins.Count > 0
+                && bestF0JumpMinY != int.MaxValue && bestF0WalkMinY != int.MaxValue
+                && bestF0JumpSurv > 0 && bestF0WalkSurv > 0)
+            {
+                int playerX = state.X_fixed >> 8;
+                for (int ci = _nextCoinCheckIdx; ci < allCoins.Count; ci++)
+                {
+                    var coin = allCoins[ci];
+                    if (state.ProcessedSprites.Contains(coin.Index) || _forgivenCoins.Contains(coin.Index))
+                        continue;
+                    if (coin.HitLeft > playerX + 4000) break; // 4000px lookahead
+                    if (coin.HitRight < playerX) continue;    // already passed
+                    cubeCoinTargetY = (coin.HitTop + coin.HitBottom) / 2;
+                    int coinXDist = Math.Max(0, coin.HitLeft - playerX);
+                    double proximityScale = Math.Max(0.1, 1.0 - (double)coinXDist / 4000.0);
+                    int jumpDistToCoin = Math.Abs(bestF0JumpMinY - cubeCoinTargetY);
+                    int walkDistToCoin = Math.Abs(bestF0WalkMinY - cubeCoinTargetY);
+                    int rawDiff = walkDistToCoin - jumpDistToCoin;
+                    // Scale bonus up to BFS_HORIZON — makes coin proximity a
+                    // dominant factor when both paths survive equally.
+                    // Use a threshold: if the favored path survives at least
+                    // MIN_COIN_SURV frames, apply the full bonus. Below that,
+                    // scale linearly. This allows the BFS to choose riskier
+                    // paths toward coins as long as they're minimally viable.
+                    const int MIN_COIN_SURV = 30;
+                    int scaledBonus = (int)(Math.Abs(rawDiff) * proximityScale);
+                    int favoredSurv = rawDiff > 0 ? bestF0JumpSurv : bestF0WalkSurv;
+                    if (favoredSurv < MIN_COIN_SURV)
+                        scaledBonus = scaledBonus * favoredSurv / MIN_COIN_SURV;
+                    scaledBonus = Math.Min(scaledBonus, BFS_HORIZON);
+                    if (rawDiff > 0) coinBonusJump = scaledBonus;
+                    else if (rawDiff < 0) coinBonusWalk = scaledBonus;
+                    break; // only target the first uncollected coin
+                }
+            }
+
             bool shouldJump;
             // Only give hold-pattern bonus when jump lineage survives the full
             // BFS horizon.  A jump that dies in 8 frames shouldn't get +5 just
@@ -2462,8 +3411,62 @@ namespace FamidashEditor
                 && bestF0JumpMinY != int.MaxValue
                 && bestF0WalkMinY > bestF0JumpMinY;
             int holdBonus = (bestF0JumpHoldPattern && bestF0JumpSurv >= BFS_HORIZON && !walkStaysLower) ? 5 : 0;
-            int jumpScore = bestF0JumpSurv + holdBonus + elevBonus;
-            int walkScore = bestF0WalkSurv;
+
+            // ── Altitude ceiling penalty (coin retry) ──
+            // When retrying after forgiven coins, penalize JUMP when the
+            // player is already above the coin's altitude ceiling. This
+            // gently biases the BFS toward walking (descending staircases)
+            // when ground-level routing is needed to reach a pad/coin.
+            // Uses 1 frame per pixel above ceiling — soft enough that the
+            // BFS can still jump for survival (e.g. over spikes) when walk
+            // dies quickly, but strong enough to prefer walk when both paths
+            // survive similarly.
+            int altPenaltyJump = 0;
+            if (_coinAltitudePenalties.Count > 0)
+            {
+                int playerX_ap = state.X_fixed >> 8;
+                int playerY_ap = state.Y_fixed >> 8;
+                foreach (var (apStartX, apEndX, apCeilingY) in _coinAltitudePenalties)
+                {
+                    if (playerX_ap < apStartX || playerX_ap > apEndX) continue;
+                    // Apply a FLAT minimum penalty within the zone to always
+                    // prefer walking over jumping.  Without this, players at
+                    // ground level (below the ceiling) see zero penalty and
+                    // happily jump onto staircases, defeating the purpose of
+                    // the altitude bias.  The flat penalty is large enough to
+                    // dominate tiebreakers (both paths survive full BFS) but
+                    // small enough that survival-critical jumps still win
+                    // (e.g. jump survives 60 frames vs walk dies at 5 frames:
+                    // 60-30 = 30 > 5 → jump wins).
+                    altPenaltyJump = 30;
+                    if (playerY_ap < apCeilingY)
+                    {
+                        // Player is above the ceiling — penalize jumping (going higher)
+                        // 1 frame per pixel above ceiling = moderate bias toward walk
+                        altPenaltyJump = Math.Max(altPenaltyJump, apCeilingY - playerY_ap);
+                    }
+                    break;
+                }
+            }
+
+            // Suppress elevation bonus when altitude penalty zones are active.
+            // The altitude penalty steers the player toward ground level for
+            // coin collection via pads; the elevation bonus would counteract
+            // this by rewarding the exact climbing behavior we're trying to prevent.
+            if (altPenaltyJump > 0 && elevBonus > 0)
+                elevBonus = 0;
+
+            // Suppress coin proximity bonus (jump) when altitude penalty is active.
+            // Without this, a high coin (e.g. Y=183 for blue-pad gravity-flip coin)
+            // biases the BFS toward jumping (climbing closer to the coin), which
+            // counteracts the altitude penalty's ground-level descent bias.
+            // The player needs to descend to the pad first; the pad provides the
+            // lift to the coin, not direct jumping.
+            if (altPenaltyJump > 0 && coinBonusJump > 0)
+                coinBonusJump = 0;
+
+            int jumpScore = bestF0JumpSurv + holdBonus + elevBonus + coinBonusJump - altPenaltyJump;
+            int walkScore = bestF0WalkSurv + coinBonusWalk;
             if (jumpScore > walkScore)
                 shouldJump = true;
             else if (walkScore > jumpScore)
@@ -2484,7 +3487,7 @@ namespace FamidashEditor
                 shouldJump = false;
 
 #if !DISABLE_DEBUG_LOGGING
-            PfLog($"[DECIDE_CUBE] BFS: jumpSurv={bestF0JumpSurv} jumpX={bestF0JumpX} holdPat={bestF0JumpHoldPattern} jumpMinY={bestF0JumpMinY}, walkSurv={bestF0WalkSurv} walkX={bestF0WalkX} walkMinY={bestF0WalkMinY} elevBonus={elevBonus} → {(shouldJump?"JUMP":"WALK")}");
+            PfLog($"[DECIDE_CUBE] BFS: jumpSurv={bestF0JumpSurv} jumpX={bestF0JumpX} holdPat={bestF0JumpHoldPattern} jumpMinY={bestF0JumpMinY}, walkSurv={bestF0WalkSurv} walkX={bestF0WalkX} walkMinY={bestF0WalkMinY} elevBonus={elevBonus} coinBonusJ={coinBonusJump} coinBonusW={coinBonusWalk} → {(shouldJump?"JUMP":"WALK")}");
 #endif
 
             if (!shouldJump)
@@ -2503,6 +3506,10 @@ namespace FamidashEditor
         /// Uses 1-frame safety check: if the chosen action causes death, flip.
         /// This replaces the previous greedy lookahead which had subtle bugs causing
         /// the ship to stay at ground level and never climb.
+        ///
+        /// When PreferCoins is enabled, the tree search adds a leaf proximity bonus
+        /// that biases the ship toward the next uncollected coin, while still
+        /// prioritizing survival (scaled by SURV_SCALE=1000 per frame).
         /// </summary>
         private bool DecideShipInput(SimState state)
         {
@@ -2516,6 +3523,23 @@ namespace FamidashEditor
             {
                 _shipForceReleaseFrames--;
                 return false;
+            }
+
+            // ── Coin-aware: find next coin target Y for PD tiebreaker ──
+            int coinTargetY = -1; // -1 = no coin target
+            if (PreferCoins && allCoins.Count > 0)
+            {
+                int playerX = state.X_fixed >> 8;
+                for (int ci = _nextCoinCheckIdx; ci < allCoins.Count; ci++)
+                {
+                    var coin = allCoins[ci];
+                    if (state.ProcessedSprites.Contains(coin.Index) || _forgivenCoins.Contains(coin.Index))
+                        continue;
+                    if (coin.HitLeft > playerX + 1000) break; // too far ahead
+                    if (coin.HitRight < playerX) continue; // already passed
+                    coinTargetY = (coin.HitTop + coin.HitBottom) / 2;
+                    break;
+                }
             }
 
             // Test 1-frame survival for both options first
@@ -2573,11 +3597,38 @@ namespace FamidashEditor
             }
 
             if (survH != survR)
-                return survH > survR;
+            {
+                // When coin-seeking and both options survive reasonably well,
+                // allow the PD coin-steering to override small survival differences.
+                // A 1-3 frame difference in a 20-frame tree search is noise; the
+                // coin direction is more valuable than marginal local survival.
+                if (coinTargetY >= 0 && survH >= SHIP_TREE_DEPTH / 2 && survR >= SHIP_TREE_DEPTH / 2
+                    && Math.Abs(survH - survR) <= 3)
+                {
+                    // Fall through to PD coin-steering below
+                }
+                else
+                {
+                    return survH > survR;
+                }
+            }
 
-            // Equal survival — use velocity-aware corridor tracking as tiebreaker
+            // Equal survival (or small difference with coin target) — use velocity-aware
+            // corridor tracking as tiebreaker.  When coins are active, steer fully
+            // toward the coin Y (not blended) for stronger coin-seeking.
             int biasPixels = (int)((JumpTimingBias - 0.5) * 16.0);
-            int targetY = FindCorridorCenter(ref state) + _shipCorridorBias + biasPixels;
+            int targetY;
+            if (coinTargetY >= 0)
+            {
+                // Use coin Y as the full target — the tree search already
+                // verified that both choices survive, so steer aggressively
+                // toward the coin
+                targetY = coinTargetY;
+            }
+            else
+            {
+                targetY = FindCorridorCenter(ref state) + _shipCorridorBias + biasPixels;
+            }
             int currentY = state.Y_fixed >> 8;
             int velY = state.VelY_fixed;
 
@@ -3267,9 +4318,6 @@ namespace FamidashEditor
             if (endLevel) return true;
 
             // ── STEP 1b: ORB ACTIVATION at OLD X ──
-            // NES sprite_collide detects orbs at OLD X; cube_movement's Step 0
-            // (orb_check) then activates them before gravity.  This must happen
-            // BEFORE X advance to match NES/simulator timing.
             if (s.PendingOrbIndex >= 0 && input)
             {
 #if !DISABLE_DEBUG_LOGGING

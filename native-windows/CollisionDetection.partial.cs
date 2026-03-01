@@ -327,14 +327,23 @@ namespace FamidashEditor
                     int collisionLeft_px = tileWorldX + colLeft;
                     int collisionRight_px = tileWorldX + colRight;
                     
-                    // Check if player bottom overlaps with collision region.
-                    // NES bg_coll_U_D_checks: for non-mini-block slab types (COL_TOP,
-                    // COL_BOTTOM, COL_ALL, etc.), returns "solid" unconditionally
-                    // without checking localY. Only mini-block quadrant tiles
-                    // (bg_coll_mini_blocks) check localY. So for non-mini-block
-                    // types, use a one-sided check: playerBottom >= surface top.
-                    // Mini-block types keep the strict two-sided range.
-                    bool isMiniBlock = IsMiniBlockCollisionType(collision);
+                    // NES bg_coll_D behaviour:
+                    //   bg_coll_U_D_checks handles slab types (COL_ALL, COL_TOP, COL_BOTTOM,
+                    //   COL_LEFT, COL_RIGHT, etc.) and returns "solid" unconditionally — it
+                    //   does NOT check whether the probe Y is inside the solid sub-region.
+                    //   Only bg_coll_mini_blocks (quadrant tiles) gates on localY.
+                    //
+                    // Mini-block quadrant types need both X and Y range checks to match
+                    // NES bg_coll_mini_blocks. All other types use a one-sided check:
+                    // "has playerBottom reached the floor surface?" without an upper bound,
+                    // so fast-falling objects can't tunnel through half-height slabs.
+                    bool isMiniBlock = collision == MetatileCollision.COL_UP_LEFT ||
+                                       collision == MetatileCollision.COL_UP_RIGHT ||
+                                       collision == MetatileCollision.COL_DOWN_LEFT ||
+                                       collision == MetatileCollision.COL_DOWN_RIGHT ||
+                                       collision == MetatileCollision.COL_LEFT_SPIKE_BLOCK ||
+                                       collision == MetatileCollision.COL_RIGHT_SPIKE_BLOCK;
+                    
                     bool yHit = isMiniBlock
                         ? (playerBottom_px >= collisionTop_px - 1 && playerBottom_px <= collisionBottom_px)
                         : (playerBottom_px >= collisionTop_px - 1);
@@ -505,11 +514,22 @@ namespace FamidashEditor
                     int collisionLeft_px = tileWorldX + colLeft;
                     int collisionRight_px = tileWorldX + colRight;
                     
-                    // Check if player top overlaps with collision region.
-                    // NES bg_coll_U_D_checks: for non-mini-block slab types,
-                    // returns "solid" unconditionally without checking localY.
-                    // Only mini-block quadrant tiles need strict two-sided range.
-                    bool isMiniBlock = IsMiniBlockCollisionType(collision);
+                    // NES bg_coll_U behaviour:
+                    //   bg_coll_U_D_checks handles slab types unconditionally — it does
+                    //   NOT check whether the probe Y is inside the solid sub-region.
+                    //   Only bg_coll_mini_blocks (quadrant tiles) gates on localY.
+                    //
+                    // Mini-block quadrant types need both X and Y range checks.
+                    // All other types use a one-sided check: "has playerTop reached
+                    // the ceiling surface?" so fast-rising objects can't tunnel through
+                    // half-height slabs (e.g. COL_BOTTOM used as ceiling).
+                    bool isMiniBlock = collision == MetatileCollision.COL_UP_LEFT ||
+                                       collision == MetatileCollision.COL_UP_RIGHT ||
+                                       collision == MetatileCollision.COL_DOWN_LEFT ||
+                                       collision == MetatileCollision.COL_DOWN_RIGHT ||
+                                       collision == MetatileCollision.COL_LEFT_SPIKE_BLOCK ||
+                                       collision == MetatileCollision.COL_RIGHT_SPIKE_BLOCK;
+                    
                     bool yHit = isMiniBlock
                         ? (playerTop_px >= collisionTop_px && playerTop_px < collisionBottom_px)
                         : (playerTop_px < collisionBottom_px);
@@ -722,28 +742,6 @@ namespace FamidashEditor
             }
             
             return (false, 0);
-        }
-        
-        /// <summary>
-        /// Returns true for mini-block quadrant collision types.
-        /// NES bg_coll_mini_blocks checks BOTH localX and localY for these types.
-        /// Non-mini-block slab types (COL_TOP, COL_ALL, etc.) use bg_coll_U_D_checks
-        /// which returns "solid" unconditionally without checking localY.
-        /// </summary>
-        private static bool IsMiniBlockCollisionType(MetatileCollision col)
-        {
-            switch (col)
-            {
-                case MetatileCollision.COL_UP_LEFT:
-                case MetatileCollision.COL_UP_RIGHT:
-                case MetatileCollision.COL_DOWN_LEFT:
-                case MetatileCollision.COL_DOWN_RIGHT:
-                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
-                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
-                    return true;
-                default:
-                    return false;
-            }
         }
     }
 }

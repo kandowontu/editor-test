@@ -6,17 +6,23 @@ using System.Text.RegularExpressions;
 using FamidashEditor;
 
 // Quick console harness to run PathfinderEngine on a TMX file.
-// Usage: dotnet run -- <path-to-tmx> [maxFallSpeed] [startingSpeed] [jumpTimingBias]
+// Usage: dotnet run -- <path-to-tmx> [maxFallSpeed] [startingSpeed] [jumpTimingBias] [--coins]
 //   jumpTimingBias: 0.0=earliest, 0.25=early, 0.5=middle, 0.75=late, 1.0=latest
+//   --coins: enable coin collection mode (pathfinder seeks coins)
 //
 // Sprite offsets are loaded from (in priority order):
 //   1. Per-level editor config: Documents/Famidash Editor/<level>.tmx.cfg
 //   2. lvlset_HUGE_metadata.json5 (searched in workspace root and parent dirs)
 
-string tmxPath = args.Length > 0 ? args[0] : @"..\famidash\EXPORTS\everyend.tmx";
-int maxFallSpeed = args.Length > 1 ? int.Parse(args[1]) : 0x06;
-int startSpeedUiIndex = args.Length > 2 ? int.Parse(args[2]) : 1; // 1 = 1x speed
-double jumpTimingBias = args.Length > 3 ? double.Parse(args[3]) : 0.5; // default middle
+// Parse --coins flag (can appear anywhere in args)
+bool preferCoins = args.Any(a => a.Equals("--coins", StringComparison.OrdinalIgnoreCase));
+// Filter out named flags before positional parsing
+var positionalArgs = args.Where(a => !a.StartsWith("--")).ToArray();
+
+string tmxPath = positionalArgs.Length > 0 ? positionalArgs[0] : @"..\famidash\LEVELS\LEVEL DATA\lvlset_HUGE\everyend.tmx";
+int maxFallSpeed = positionalArgs.Length > 1 ? int.Parse(positionalArgs[1]) : 0x06;
+int startSpeedUiIndex = positionalArgs.Length > 2 ? int.Parse(positionalArgs[2]) : 1; // 1 = 1x speed
+double jumpTimingBias = positionalArgs.Length > 3 ? double.Parse(positionalArgs[3]) : 0.5; // default middle
 
 if (!File.Exists(tmxPath))
 {
@@ -82,7 +88,7 @@ if (File.Exists(cfgPath))
         }
 
         // Load MaxFallSpeed from config if not explicitly provided on command line
-        if (args.Length <= 1 && root.TryGetProperty("MaxFallSpeed", out var mfsProp) && mfsProp.ValueKind == JsonValueKind.Number)
+        if (positionalArgs.Length <= 1 && root.TryGetProperty("MaxFallSpeed", out var mfsProp) && mfsProp.ValueKind == JsonValueKind.Number)
             maxFallSpeed = mfsProp.GetInt32();
 
         Console.WriteLine($"Config: {cfgPath} ({spritePixelOffsets.Count} offsets, {spriteAnchors.Count} anchors)");
@@ -147,6 +153,10 @@ var engine = new PathfinderEngine(
     maxFallSpeed,
     spritePixelOffsets);
 engine.JumpTimingBias = jumpTimingBias;
+engine.PreferCoins = preferCoins;
+
+if (preferCoins)
+    Console.WriteLine("Coin collection mode ENABLED");
 
 engine.Progress = new Progress<int>(pct =>
 {
