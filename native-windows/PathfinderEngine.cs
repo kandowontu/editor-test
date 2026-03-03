@@ -555,6 +555,11 @@ namespace FamidashEditor
         private int _coinInputScriptCoinIdx = -1; // coin index this script targets
         private int _beamSearchAttemptedCoinIdx = -1; // coin index last beam-searched (avoid re-running)
         private int _cubeBeamSearchAttemptedCoinIdx = -1; // coin index last cube-beam-searched (avoid re-running)
+        // Cross-corridor coins: coins behind a game-mode portal, pre-forgiven
+        // at init so the ship PD doesn't steer toward them. Maps coin index
+        // to the game mode active at the coin's position (for un-forgiving
+        // when the pathfinder reaches that mode).
+        private readonly Dictionary<int, int> _crossCorrForgivenCoins = new Dictionary<int, int>();
 
         // Coin sprite IDs: 0x07 (secret coin), 0x1A, 0x1B
         private static bool IsCoinSprite(int sid) => sid == 0x07 || sid == 0x1A || sid == 0x1B;
@@ -1382,6 +1387,8 @@ namespace FamidashEditor
             _coinInputScriptCoinIdx = -1;
             _beamSearchAttemptedCoinIdx = -1;
             _cubeBeamSearchAttemptedCoinIdx = -1;
+            _crossCorrForgivenCoins.Clear();
+            PreForgiveCrossCorridorCoins(startGameMode);
 
             _frameCounter = 0;
             _speculativeDepth = 0;
@@ -3817,6 +3824,81 @@ namespace FamidashEditor
             }
 
             return true;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        //  Cross-corridor coin pre-forgiveness
+        //  Scans portals left-to-right to determine the game mode at each
+        //  coin's position. Coins that are in a different mode section than
+        //  their preceding mode boundary are pre-forgiven so the ship PD
+        //  doesn't steer toward unreachable coins.
+        // ═══════════════════════════════════════════════════════════════
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private void PreForgiveCrossCorridorCoins(int startGameMode)
+        {
+            if (!PreferCoins || allCoins.Count == 0) return;
+
+            // Build a sorted list of mode transitions: (X position, new mode)
+            var modeTransitions = new List<(int x, int mode)>();
+            modeTransitions.Add((0, startGameMode)); // level starts in this mode
+            foreach (var sp in allSprites)
+            {
+                if (!IsGameModePortal(sp.SpriteId)) continue;
+                int portalMode = SpriteIdToGameMode(sp.SpriteId);
+                if (portalMode < 0) continue;
+                modeTransitions.Add((sp.AnchorX_px, portalMode));
+            }
+            // allSprites is already sorted by AnchorX_px, so modeTransitions is sorted
+
+            // For each coin, determine what mode is active at the coin's X
+            // and what mode the PREVIOUS section was in.
+            foreach (var coin in allCoins)
+            {
+                int coinX = coin.HitLeft;
+                // Scan transitions to find the mode at the coin and the
+                // mode of the section immediately before it.
+                int prevSectionMode = startGameMode;
+                int modeAtCoin = startGameMode;
+                int lastTransitionX = 0;
+                for (int t = 0; t < modeTransitions.Count; t++)
+                {
+                    if (modeTransitions[t].x > coinX) break;
+                    prevSectionMode = modeAtCoin;
+                    modeAtCoin = modeTransitions[t].mode;
+                    lastTransitionX = modeTransitions[t].x;
+                }
+
+                // Pre-forgive coins where the previous section is ship (mode=1)
+                // and the coin is in a different (non-ship) section.
+                // Only ships have the PD drift problem.
+                // Only forgive coins within 2500px of the portal boundary —
+                // the ship PD scans ~2000px ahead, so coins further out
+                // can't be reached by ship drift.
+                int distFromBoundary = coinX - lastTransitionX;
+                if (modeAtCoin != 1 && prevSectionMode == 1 && distFromBoundary <= 2000)
+                {
+                    _forgivenCoins.Add(coin.Index);
+                    _crossCorrForgivenCoins[coin.Index] = modeAtCoin;
+                    System.Console.Error.WriteLine($"[CC_PREFORGIVE2] idx={coin.Index} coinX={coinX} mode={modeAtCoin} prev={prevSectionMode} dist={distFromBoundary}");
+                }
+            }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private void UnforgiveCrossCorridorCoins(int newMode)
+        {
+            if (_crossCorrForgivenCoins.Count == 0) return;
+            var toRemove = new List<int>();
+            foreach (var kvp in _crossCorrForgivenCoins)
+            {
+                if (kvp.Value == newMode)
+                {
+                    _forgivenCoins.Remove(kvp.Key);
+                    toRemove.Add(kvp.Key);
+                }
+            }
+            foreach (var idx in toRemove)
+                _crossCorrForgivenCoins.Remove(idx);
         }
 
         /// <summary>
@@ -6640,6 +6722,10 @@ namespace FamidashEditor
 #endif
                     s.GameMode = mode;
                     s.VelY_fixed /= 2;
+                    // Un-forgive cross-corridor coins whose section mode
+                    // matches the new mode so they can now be collected.
+                    UnforgiveCrossCorridorCoins(mode);
+                    System.Console.Error.WriteLine($"[PORTAL_MODE_CHANGE] {s.GameMode} unforgived crosscorr for mode={mode}");
                 }
                 return true;
             }
