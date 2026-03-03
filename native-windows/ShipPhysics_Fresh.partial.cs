@@ -88,11 +88,15 @@ namespace FamidashEditor
                 int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
                 int collisionX = (playerX_fixed >> 8);
                 int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
-                var (collided, _) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
+                var (collided, collisionBottomY_prox) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
                 
                 if (collided && playerVelY_fixed < 0) {
+                    // Snap Y to ceiling surface (same formula as UfoShipEject_Fresh)
+                    // Prevents sub-pixel drift at exact boundary conditions.
+                    int newY_prox = collisionBottomY_prox - hitboxOffsetY;
+                    playerY_fixed = newY_prox << 8;
                     playerVelY_fixed = 0;
-                    AppendSimDebug($"[SHIP] Ceiling grounded - zeroed velocity");
+                    AppendSimDebug($"[SHIP] Ceiling grounded - snapped Y to {newY_prox}");
                 }
             }
             

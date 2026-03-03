@@ -114,11 +114,16 @@ namespace FamidashEditor
                     int hitboxOffsetY_check = isMini_check ? ((0x10 - hitboxH_check) >> 1) : 0;
                     int collisionX_check = (playerX_fixed >> 8);
                     int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
-                    var (collided_check, _) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
+                    var (collided_check, collisionBottomY_check) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
                     
                     if (collided_check && playerVelY_fixed < 0) {
+                        // Snap Y to ceiling surface (same formula as CubeEject reversed gravity)
+                        // This prevents sub-pixel drift when playerTop == ceilBottom,
+                        // where CheckCollisionUp's strict < comparison would miss the eject.
+                        int newY_prox = collisionBottomY_check - hitboxOffsetY_check - 1;
+                        playerY_fixed = newY_prox << 8;
                         playerVelY_fixed = 0;
-                        // AppendSimDebug($"[CUBE] Ceiling grounded - zeroed velocity");
+                        // AppendSimDebug($"[CUBE] Ceiling grounded - snapped Y to {newY_prox}");
                     }
                 }
                 

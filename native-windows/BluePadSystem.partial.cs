@@ -36,14 +36,13 @@ namespace FamidashEditor
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 
-                // playerY_fixed is the visual sprite top-left position
-                // Need to calculate actual hitbox position based on mode and gravity
-                // From rendering code: normal hitbox is at Y+0, mini at Y+9 (normal gravity) or Y+0 (inverted)
-                if (isMini && !gravityInverted)
+                // NES sprite_collide centers the mini hitbox in the 16px cell:
+                // Generic.y = high_byte(currplayer_y) + (0x10 - height) >> 1 = +4
+                // Applied unconditionally regardless of gravity.
+                if (isMini)
                 {
-                    playerY_px += 9;  // Mini normal gravity: hitbox at bottom of 16x16 visual
+                    playerY_px += 4;  // (0x10 - 7) >> 1 = 4
                 }
-                // For all other cases (normal cube, or mini inverted), hitbox starts at visual Y
                 
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;

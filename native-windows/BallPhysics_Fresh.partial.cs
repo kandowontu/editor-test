@@ -202,11 +202,14 @@ namespace FamidashEditor
                     // CheckCollisionUp may have spike death side-effects.
                     if (playerVelY_fixed < 0) {
                         int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
-                        var (collided, _) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
+                        var (collided, collisionBottomY_prox) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
                         
                         if (collided) {
+                            // Snap Y to ceiling surface (prevents sub-pixel drift)
+                            int newY_prox = collisionBottomY_prox - hitboxOffsetY;
+                            playerY_fixed = newY_prox << 8;
                             playerVelY_fixed = 0;
-                            AppendSimDebug($"[BALL] Ceiling grounded - zeroed upward velocity");
+                            AppendSimDebug($"[BALL] Ceiling grounded - snapped Y to {newY_prox}");
                         }
                     }
                 } else {

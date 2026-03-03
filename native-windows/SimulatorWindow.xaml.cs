@@ -1791,17 +1791,14 @@ namespace FamidashEditor
             int width = isMini ? 8 : 15;
             int height = isMini ? 7 : 15;
             
-            // Apply mini mode offset:
-            // Mini cube is 8x7 pixels in a 16x16 space
-            // Normal gravity: bottom-left aligned (offset = 16 - 7 = 9)
-            // Inverted gravity: top-left aligned (offset = 0)
+            // Apply mini mode centering offset to match NES bg_coll_death:
+            // NES computes center as Y + (height>>1) + (mini ? (0x10-height)>>1 : 0)
+            // The centering offset (0x10-7)>>1 = 4 is applied unconditionally
+            // (not gravity-dependent) because Generic.y already reflects the
+            // ejected position.
             if (miniMode)
             {
-                if (!gravityFlipped)
-                {
-                    playerY_px += 9; // Bottom-left alignment
-                }
-                // else: top-left alignment, no offset needed
+                playerY_px += (0x10 - height) >> 1;  // +4 for mini (height=7)
             }
             
             int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
@@ -2074,7 +2071,6 @@ namespace FamidashEditor
             {
                 // Calculate interaction line and player center positions
                 int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
-                int centerOffset_fixed = (TILE / 2) << 8;
                 bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
                 
                 // Scan all sprites for gravity mod triggers
@@ -2531,6 +2527,8 @@ namespace FamidashEditor
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
 
+                int groundRowsToReserve_coin = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+
                 for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
@@ -2538,7 +2536,33 @@ namespace FamidashEditor
                     if (!IsCoinSprite(sid)) continue;
                     if (collectedCoins.Contains(idx)) continue;
 
-                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                    // Coins use a simple 16×16 hitbox (NES sprite_load_special_behavior returns
+                    // 0x10 for coins) with zero x/y offset. Don't use SpriteIntersectsPlayer
+                    // because coins have SPBH sentinel (0xFF) in sprite_heights which causes
+                    // the hh >= 0xFC gate to early-return false.
+                    int storageTileX_c = idx % mapWidth;
+                    int storageTileY_c = idx / mapWidth;
+
+                    // Apply per-position pixel offset if present
+                    int pxOff_c = 0, pyOff_c = 0;
+                    int anchorKey_c = -1;
+                    if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anch_c))
+                        anchorKey_c = anch_c.anchorTileY * mapWidth + anch_c.anchorTileX;
+                    if (anchorKey_c >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey_c, out var aoffsc))
+                    { pxOff_c = aoffsc.offsetX; pyOff_c = aoffsc.offsetY; }
+                    else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offsc))
+                    { pxOff_c = offsc.offsetX; pyOff_c = offsc.offsetY; }
+
+                    int coinLeft = storageTileX_c * TILE + pxOff_c;
+                    int coinTop  = (storageTileY_c - groundRowsToReserve_coin) * TILE + pyOff_c;
+                    // NES uses exclusive bounds (edge-touching = collision): x1+w1 >= x2
+                    int coinRight  = coinLeft + 0x10; // exclusive
+                    int coinBottom = coinTop  + 0x10; // exclusive
+
+                    bool xOv = !((playerRight_px + 1) < coinLeft || coinRight < playerLeft_px);
+                    bool yOv = !((playerBottom_px + 1) < coinTop || coinBottom < playerTop_px);
+
+                    if (xOv && yOv)
                     {
                         collectedCoins.Add(idx);
                         collectedCoinInfo.Add((idx, sid));
@@ -3190,8 +3214,10 @@ namespace FamidashEditor
         // is computed as `gravityReversed || effectiveInvertedByW`.
         private bool effectiveInvertedByW = false;
         
+#pragma warning disable CS0414
         // Track if gravity was flipped THIS frame by W key (for unsticking Robot/Ninja from ground)
         private bool gravityFlippedThisFrame = false;
+#pragma warning restore CS0414
         
         // Track gravity portals we've already activated this pass so each
         // portal activates only once per crossing.
@@ -3300,7 +3326,9 @@ namespace FamidashEditor
         private int[] chargepower = new int[2];  // Football charge accumulation
 #pragma warning restore CS0414
         private bool robotJumpPressed = false;
+#pragma warning disable CS0414
         private int ninjaJumps = 3;
+#pragma warning restore CS0414
         private bool ninjaJumpedThisFrame = false;
 #pragma warning disable CS0414
         private bool swingSwitched = false;
@@ -10094,6 +10122,14 @@ namespace FamidashEditor
                 if (pathfinderEnabled)
                 {
                     bool pfInput = PF_GetInput();
+                    // CRITICAL: If PF_GetInput detected a phantom double-step (same tick
+                    // generation), skip the ENTIRE physics frame. Running gravity/physics
+                    // twice in one tick causes position divergence from the PF path.
+                    if (pfWasPhantomStep)
+                    {
+                        AppendSimDebug($"[PF_PHANTOM] Skipping phantom double-step (tick={pfTickGeneration}, frame={pfFrameIndex})");
+                        return;
+                    }
                     PF_InjectInput(pfInput);
                     if (pfInput)
                         AppendSimDebug($"[PF] Frame {pfFrameIndex - 1}: JUMP INPUT injected (keyXHeld={keyXHeld}, pressCount={keyXPressedCount}, velY=0x{playerVelY_fixed:X4}, wasZeroed={wasZeroedByCollisionLastFrame})");
@@ -10591,6 +10627,8 @@ namespace FamidashEditor
                         {
                             bool needsForwardCheck = currentGameMode == 0 || // Cube
                                                     currentGameMode == 1 || // Ship
+                                                    currentGameMode == 2 || // Ball (NES x_movement_coll runs unconditionally)
+                                                    currentGameMode == 3 || // UFO (NES x_movement_coll runs unconditionally)
                                                     currentGameMode == 4 || // Robot
                                                     currentGameMode == 8 || // Ninja
                                                     currentGameMode == 10;  // Football

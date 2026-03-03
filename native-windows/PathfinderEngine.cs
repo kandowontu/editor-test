@@ -146,6 +146,7 @@ namespace FamidashEditor
         private static int BallGravity(bool mini) => mini ? 0x57 : 0x47;
         private static int BallSwitchVel(bool mini) => mini ? 0x120 : 0x200;
         private static int BallMaxFallSpeed(bool mini) => 0x600; // BALL_MAX_FALLSPEED — always 0x600 regardless of level maxFallSpeed
+        private const int BALL_INPUT_BUFFER_FRAMES = 8; // Must match PF_BALL_HOLD_FRAMES in Pathfinder.partial.cs
 
         // Ship physics constants (from GameModePhysics.cs, 60fps values)
         private static int ShipGravityBase(bool mini) => mini ? 0x31 : 0x2A;
@@ -389,8 +390,8 @@ namespace FamidashEditor
             public bool ShipCommitHold;  // _shipCommitHold at checkpoint
             public int ForceJumpRemaining; // _btForceJumpFramesRemaining at checkpoint
             public bool SkipAllOrbs;       // _btSkipAllOrbs at checkpoint
-            public HashSet<int> SkipSpecificOrbs; // _btSkipSpecificOrbs at checkpoint
-            public HashSet<int> SkipSpecificPads; // _btSkipSpecificPads at checkpoint
+            public HashSet<int> SkipSpecificOrbs = new(); // _btSkipSpecificOrbs at checkpoint
+            public HashSet<int> SkipSpecificPads = new(); // _btSkipSpecificPads at checkpoint
             public bool PrevFrameWasGrounded; // _prevFrameWasGrounded at checkpoint
         }
         private List<BacktrackCheckpoint> _backtrackCheckpoints = new();
@@ -733,6 +734,7 @@ namespace FamidashEditor
             public bool WasZeroedByCollision;   // set by eject when landing
             public bool OnGround;               // separate from wasZeroed (cleared by jump)
             public int BallFlipCooldown;         // frames to skip eject after ball gravity flip
+            public int BallInputBuffer;          // remaining frames to try buffered flip (0 = inactive)
             public HashSet<int> ProcessedSprites;
 
             // Orb system: pending orb that overlaps the player (activation requires input)
@@ -1425,7 +1427,7 @@ namespace FamidashEditor
             int coinFallbackInputCount = 0;
             int coinFallbackPathCount = 0;
             int coinFallbackNextCheck = 0;
-            List<BacktrackCheckpoint> coinFallbackCheckpoints = null;
+            List<BacktrackCheckpoint>? coinFallbackCheckpoints = null;
 
             for (int frame = 0; frame < MAX_FRAMES; frame++)
             {
@@ -1565,7 +1567,7 @@ namespace FamidashEditor
                 // wasting slots on consecutive frames (e.g., hold-jump landing
                 // every frame).  This ensures the checkpoint buffer covers a
                 // wider time window for deeper backtracking.
-                if (shouldCheckpoint && _backtrackCheckpoints.Count > 0)
+                if (shouldCheckpoint && _backtrackCheckpoints!.Count > 0)
                 {
                     int lastCpFrame = _backtrackCheckpoints[_backtrackCheckpoints.Count - 1].Frame;
                     if (frame - lastCpFrame < MIN_CHECKPOINT_SPACING)
@@ -1584,7 +1586,7 @@ namespace FamidashEditor
                 // cube needs to try different approaches from nearby checkpoints.
                 if (shouldCheckpoint && !isBacktrackFrame && !_backtrackActive)
                 {
-                    if (_backtrackCheckpoints.Count >= MAX_CHECKPOINT_DEPTH)
+                    if (_backtrackCheckpoints!.Count >= MAX_CHECKPOINT_DEPTH)
                         _backtrackCheckpoints.RemoveAt(0);
                     // Use pre-decision state if captured, otherwise snapshot now
                     var cpState = preDecisionState.ProcessedSprites != null
@@ -1655,7 +1657,6 @@ namespace FamidashEditor
                             _lastDeathX = coin.HitLeft;
                             _lastDeathY = coin.HitTop;
                             _missedCoinIdx = ci;
-                            System.Console.Error.WriteLine($"[MISSED_COIN] idx={coin.Index} sid=0x{coin.SpriteId:X2} gameMode={state.GameMode} hitbox=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) playerX={playerX} playerY={state.Y_fixed >> 8}");
 #if !DISABLE_DEBUG_LOGGING
                             PfLog($"[MISSED_COIN] idx={coin.Index} sid=0x{coin.SpriteId:X2} hitbox=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) playerX={playerX}");
 #endif
@@ -1674,7 +1675,9 @@ namespace FamidashEditor
                     int nesX = (state.X_fixed >> 8) + 1; // NES sprite_collide() offset
                     int hbW = GetHitboxW(state.Mini);
                     int hbH = GetHitboxH(state.Mini);
-                    int hbOffY = GetHitboxOffsetY(state.Mini, state.GravFlipped);
+                    // NES sprite_collide uses (0x10-h)>>1 for the Y offset unconditionally
+                    // (centers the hitbox in the 16px cell), regardless of gravity state.
+                    int hbOffY = state.Mini ? 4 : 0; // (0x10 - 7) >> 1 = 4 for mini, 0 for normal
                     int playerTop = (state.Y_fixed >> 8) + hbOffY;
                     int playerBottom = playerTop + hbH;     // exclusive
                     int playerRight = nesX + hbW;           // exclusive
@@ -1724,7 +1727,7 @@ namespace FamidashEditor
                         coinFallbackPathCount = PathPoints.Count;
                         coinFallbackNextCheck = _nextCoinCheckIdx;
                         // Deep-copy checkpoints (Clone() the SimState inside each)
-                        coinFallbackCheckpoints = _backtrackCheckpoints.Select(cp => new BacktrackCheckpoint
+                        coinFallbackCheckpoints = _backtrackCheckpoints!.Select(cp => new BacktrackCheckpoint
                         {
                             Frame = cp.Frame,
                             State = cp.State.Clone(),
@@ -1793,7 +1796,7 @@ namespace FamidashEditor
                             PathPoints.RemoveRange(coinFallbackPathCount, PathPoints.Count - coinFallbackPathCount);
                         // Restore backtrack checkpoints — the backtracking consumed them
                         // trying to reach the coin, but they're needed for the rest of the level
-                        _backtrackCheckpoints = coinFallbackCheckpoints;
+                        _backtrackCheckpoints = coinFallbackCheckpoints!;
                         _backtrackActive = false;
                         _backtrackAttempts = 0;
                         _btOverrideFrame = -1;
@@ -1812,7 +1815,6 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[COIN_FORGIVEN] idx={missedCoin.Index} sid=0x{missedCoin.SpriteId:X2} hitbox=({missedCoin.HitLeft},{missedCoin.HitTop})-({missedCoin.HitRight},{missedCoin.HitBottom}) forgiven={_forgivenCoins.Count}");
 #endif
-                        System.Console.Error.WriteLine($"[COIN_FORGIVEN] idx={missedCoin.Index} sid=0x{missedCoin.SpriteId:X2} gameMode={state.GameMode} — coin unreachable, continuing");
                         continue;
                     }
 
@@ -1853,7 +1855,6 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[COIN_FORGIVEN_ALT] idx={missedCoin2.Index} sid=0x{missedCoin2.SpriteId:X2} — coin retry caused death elsewhere, forgiving");
 #endif
-                        System.Console.Error.WriteLine($"[COIN_FORGIVEN] idx={missedCoin2.Index} sid=0x{missedCoin2.SpriteId:X2} gameMode={state.GameMode} — coin retry caused death elsewhere, forgiving");
                         continue;
                     }
 
@@ -1870,7 +1871,6 @@ namespace FamidashEditor
                         if (_forgivenCoins.Count > 0) deathMsg += $" ({_forgivenCoins.Count} unreachable)";
                     }
                     ResultMessage = deathMsg;
-                    System.Console.Error.WriteLine($"[PERM_DEATH] frame={frame} X={state.X_fixed >> 8} Y={state.Y_fixed >> 8} reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY}");
                     TraceFrameClose();
                     return;
                 }
@@ -2908,8 +2908,6 @@ namespace FamidashEditor
                     bool cubeBeamFound = false;
                     var cubeBeamScript = new List<bool>();
 
-                    System.Console.Error.WriteLine($"[CUBE_COIN_BEAM_START] idx={coin.Index} distX={coinDistX} playerY={playerY_cb} coinY={coinCenterY} horizon={beamHorizon}");
-
                     for (int step = 0; step < beamHorizon && cbeam.Count > 0; step++)
                     {
                         var nextBeam = new List<(SimState st, List<bool> inputs, int coinDist)>();
@@ -2994,8 +2992,7 @@ namespace FamidashEditor
                         for (int i = 0; i < keep; i++)
                             cbeam.Add((nextBeam[i].st, nextBeam[i].inputs));
 
-                        if (step < 5 || step % 10 == 0 || keep < 50)
-                            System.Console.Error.WriteLine($"[CUBE_COIN_BEAM_STEP] step={step} alive={keep} bestDist={(nextBeam.Count > 0 ? nextBeam[0].coinDist : -1)} bestY={(nextBeam.Count > 0 ? nextBeam[0].st.Y_fixed >> 8 : -1)} bestX={(nextBeam.Count > 0 ? nextBeam[0].st.X_fixed >> 8 : -1)}");
+
                     }
 
                     _speculativeDepth--;
@@ -3006,13 +3003,9 @@ namespace FamidashEditor
                         _coinInputScriptCoinIdx = coin.Index;
                         for (int si = 1; si < cubeBeamScript.Count; si++)
                             _coinInputScript.Enqueue(cubeBeamScript[si]);
-                        System.Console.Error.WriteLine($"[CUBE_COIN_BEAM] Found trajectory for coin idx={coin.Index}, scriptLen={cubeBeamScript.Count}");
                         return cubeBeamScript[0];
                     }
-                    else
-                    {
-                        System.Console.Error.WriteLine($"[CUBE_COIN_BEAM_FAIL] idx={coin.Index} remaining={cbeam.Count}");
-                    }
+
                     break; // only try one coin per frame
                 }
             }
@@ -3126,7 +3119,7 @@ namespace FamidashEditor
                     }
 
                     // Strategy 1: always jump when grounded + activate orbs
-                    List<bool> coinJumpWinningInputs = null;
+                    List<bool>? coinJumpWinningInputs = null;
                     bool coinJumpHadOrbs = false;
                     var s1Inputs = new List<bool>();
                     bool s1HadOrb = false;
@@ -3879,7 +3872,6 @@ namespace FamidashEditor
                 {
                     _forgivenCoins.Add(coin.Index);
                     _crossCorrForgivenCoins[coin.Index] = modeAtCoin;
-                    System.Console.Error.WriteLine($"[CC_PREFORGIVE2] idx={coin.Index} coinX={coinX} mode={modeAtCoin} prev={prevSectionMode} dist={distFromBoundary}");
                 }
             }
         }
@@ -4024,7 +4016,6 @@ namespace FamidashEditor
 
                 bool foundTrajectory = false;
                 var bestScript = new List<bool>();
-                System.Console.Error.WriteLine($"[SHIP_COIN_BEAM_START] idx={coinEntry.Index} distX={coinDistX} playerY={state.Y_fixed >> 8} coinY={coinTargetY}");
 
                 for (int step = 0; step < beamHorizon && beam.Count > 0; step++)
                 {
@@ -4091,15 +4082,11 @@ namespace FamidashEditor
                     int keep = Math.Min(BEAM_WIDTH, nextBeam.Count);
                     for (int i = 0; i < keep; i++)
                         beam.Add((nextBeam[i].st, nextBeam[i].inputs));
-                    if (step < 5 || step % 10 == 0)
-                        System.Console.Error.WriteLine($"[SHIP_COIN_BEAM_STEP] step={step} alive={keep} bestDist={(nextBeam.Count > 0 ? nextBeam[0].coinDist : -1)} bestY={(nextBeam.Count > 0 ? nextBeam[0].st.Y_fixed >> 8 : -1)} bestX={(nextBeam.Count > 0 ? nextBeam[0].st.X_fixed >> 8 : -1)}");
+
                 }
 
                 _speculativeDepth--;
                 _beamSearchAttemptedCoinIdx = coinTargetIdx; // don't re-run for this coin
-
-                if (!foundTrajectory)
-                    System.Console.Error.WriteLine($"[SHIP_COIN_BEAM_FAIL] idx={coinEntry.Index} remaining={beam.Count}");
 
                 if (foundTrajectory)
                 {
@@ -4110,7 +4097,6 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[SHIP_COIN_BEAM] Found trajectory for coin idx={coinEntry.Index}, scriptLen={bestScript.Count}");
 #endif
-                    System.Console.Error.WriteLine($"[SHIP_COIN_BEAM] Found trajectory for coin idx={coinEntry.Index}, scriptLen={bestScript.Count}");
                     return bestScript[0];
                 }
             }
@@ -5056,8 +5042,29 @@ namespace FamidashEditor
                 // the ball can slide past the edge of a platform between frames,
                 // making OnGround stale while the sim correctly detects no surface.
                 // NOTE: SIM does NOT require VelY==0 for ball flip — only grounded + input.
+                //
+                // INPUT BUFFER: The SIM has a multi-frame input buffer mechanism.
+                // When the player presses while airborne, the SIM buffers the press
+                // and waits up to PF_BALL_HOLD_FRAMES for the ball to become grounded,
+                // then executes the flip.  The PF must model this to stay in sync:
+                // input=True starts/refreshes the buffer even if not grounded;
+                // subsequent frames check buffer + grounded to fire the flip.
                 bool ballGrounded = (s.BallFlipCooldown > 0) || BallIsGrounded(ref s);
-                if (input && ballGrounded)
+                bool shouldFlip = false;
+                if (input)
+                {
+                    s.BallInputBuffer = BALL_INPUT_BUFFER_FRAMES;
+                    if (ballGrounded)
+                        shouldFlip = true;
+                }
+                else if (s.BallInputBuffer > 0)
+                {
+                    if (ballGrounded)
+                        shouldFlip = true;
+                    else
+                        s.BallInputBuffer--;
+                }
+                if (shouldFlip)
                 {
                     // Flip gravity
                     s.GravFlipped = !s.GravFlipped;
@@ -5070,6 +5077,7 @@ namespace FamidashEditor
                     s.OnGround = false;
                     s.WasZeroedByCollision = false;
                     s.BallFlipCooldown = 2;
+                    s.BallInputBuffer = 0; // Consume buffer
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[BALL_FLIP] gravFlipped={s.GravFlipped} gravMul={s.GravMul} VelY=0x{s.VelY_fixed:X} mini={s.Mini}");
 #endif
@@ -6240,6 +6248,21 @@ namespace FamidashEditor
             if (holding)
                 gravity = -gravity;
 
+            // Check past max fall speed → decelerate (NES common_gravity_routine)
+            // Ship uses SHIP_MAX_FALLSPEED_HOLD as tmpfallspeed in CommonGravityRoutine_Fresh.
+            // Matches CubeGravity/BallGravityStep/UfoGravityStep pattern.
+            int shipMaxFS = ShipMaxFallSpeedHold(s.Mini);
+            if (gravMul > 0)
+            {
+                if (s.VelY_fixed > shipMaxFS)
+                    gravity = -gravity;
+            }
+            else
+            {
+                if (s.VelY_fixed < -shipMaxFS)
+                    gravity = -gravity;
+            }
+
             s.VelY_fixed += gravity;
             s.Y_fixed += s.VelY_fixed;
 
@@ -6494,7 +6517,9 @@ namespace FamidashEditor
             int playerY_px = s.Y_fixed >> 8;
             int hbW = GetHitboxW(s.Mini);
             int hbH = GetHitboxH(s.Mini);
-            int hbOffY = GetHitboxOffsetY(s.Mini, s.GravFlipped);
+            // NES sprite_collide uses (0x10-h)>>1 unconditionally (centers hitbox in cell).
+            // No gravity dependence for sprite collision.
+            int hbOffY = s.Mini ? 4 : 0; // (0x10 - 7) >> 1 = 4 for mini
             int playerTop = playerY_px + hbOffY;
             int playerBottom = playerTop + hbH;
             // NES sprite_collide() uses Generic.x = high_byte(currplayer_x) + 1
@@ -6725,7 +6750,6 @@ namespace FamidashEditor
                     // Un-forgive cross-corridor coins whose section mode
                     // matches the new mode so they can now be collected.
                     UnforgiveCrossCorridorCoins(mode);
-                    System.Console.Error.WriteLine($"[PORTAL_MODE_CHANGE] {s.GameMode} unforgived crosscorr for mode={mode}");
                 }
                 return true;
             }

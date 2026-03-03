@@ -21,6 +21,10 @@ namespace FamidashEditor
         // once per generation to prevent double-stepping even if SimulateNumericStep runs twice.
         private long pfTickGeneration = 0;
         private long pfLastAdvancedTick = -1;
+        // Set to true by PF_GetInput when a phantom double-step is detected.
+        // SimulateNumericStep checks this and skips the entire physics frame
+        // to prevent position divergence from running gravity twice in one tick.
+        private bool pfWasPhantomStep = false;
 
         /// <summary>
         /// Called from SimulateNumericStep each frame when pathfinder is active.
@@ -32,10 +36,12 @@ namespace FamidashEditor
         private bool PF_GetInput()
         {
             pfBallHoldContinuation = false;
+            pfWasPhantomStep = false;
 
             // Double-step guard: if this tick already advanced pfFrameIndex, replay last input
             if (pfLastAdvancedTick == pfTickGeneration)
             {
+                pfWasPhantomStep = true;
                 // Return same result as last call without advancing index
                 if (pfHoldCounter > 0) return true;
                 if (pfInputSequence == null) return false;
@@ -169,25 +175,9 @@ namespace FamidashEditor
                 {
                     pfInputSequence = new List<bool>(mw.PrecomputedPathfinderInputs);
 
-                    // Pre-seed collected coins from pathfinder so they
-                    // visually disappear and show on the level complete screen.
-                    if (mw.PrecomputedCollectedCoins != null && mw.PrecomputedCollectedCoins.Count > 0)
-                    {
-                        foreach (int idx in mw.PrecomputedCollectedCoins)
-                        {
-                            if (idx >= 0 && idx < sprites.Length && !collectedCoins.Contains(idx))
-                            {
-                                int sid = sprites[idx];
-                                if (sid >= 0 && IsCoinSprite(sid))
-                                {
-                                    collectedCoins.Add(idx);
-                                    collectedCoinInfo.Add((idx, sid));
-                                    sprites[idx] = -1; // make coin disappear
-                                    AppendSimDebug($"[COIN_PRESEED] Preseeded coin 0x{sid:X2} at sprite index {idx}");
-                                }
-                            }
-                        }
-                    }
+                    // NOTE: Previously pre-seeded coins here (set sprites[idx]=-1)
+                    // so they'd vanish before playback. Removed so coins are visible
+                    // during replay and collected naturally via CheckCoinCollision.
                 }
             }
             catch { }

@@ -45,10 +45,12 @@ namespace FamidashEditor
                 int hitboxW = (currplayer_mini != 0) ? 8 : 15;
                 int hitboxH = (currplayer_mini != 0) ? 7 : 15;
 
-                // Apply mini mode offset: bottom-left for normal, top-left for inverted
-                if (currplayer_mini != 0 && currplayer_gravity == 0)
+                // NES sprite_collide centers the mini hitbox in the 16px cell:
+                // Generic.y = high_byte(currplayer_y) + (0x10 - height) >> 1 = +4
+                // Applied unconditionally regardless of gravity.
+                if (currplayer_mini != 0)
                 {
-                    playerY_px += 9; // Normal gravity: 16 - 7 = 9
+                    playerY_px += 4; // (0x10 - 7) >> 1 = 4
                 }
 
                 int playerLeft_px = playerX_px;
