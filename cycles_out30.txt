@@ -1,0 +1,6 @@
+Loading cycles.tmx...
+Map: 822x27  tiles=22194  sprites=22194
+Metadata: C:\Editor Test\lvlset_HUGE_metadata.json5 (41 offsets for 'cycles')
+Start: (0, 369)  speed=1  maxFall=0x6  bias=0.50
+Coin collection mode ENABLED
+  Progress: 0%     Progress: 3%     Progress: 6%     Progress: 9%     Progress: 12%     Progress: 15%     Progress: 18%     Progress: 21%     Progress: 24%     Progress: 27%     Progress: 30%     Progress: 33%     Progress: 36%     Progress: 39%     Progress: 42%     Progress: 45%     Progress: 48%     Progress: 51%     Progress: 54%     Progress: 57%     Progress: 57%     Progress: 57%     Progress: 57%     Progress: 57%     Progress: 57%     Progress: 57%     Progress: 57%     Progress: 57%     Progress: 57%   

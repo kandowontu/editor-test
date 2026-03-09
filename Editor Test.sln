@@ -1,0 +1,74 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "native-windows", "native-windows", "{140720FB-6C1D-DFDD-F6B2-B1D3A604B5F2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pf-test", "pf-test", "{F6F57AA6-1BB4-E143-68DC-E1A95E34280D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{07C2787E-EAC7-C090-1BA3-A61EC2A24D84}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FamidashEditor", "native-windows\FamidashEditor.csproj", "{FF567742-ECB2-FD25-C627-E7D6120A8E3C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PfTest", "pf-test\PfTest.csproj", "{581A1AB0-E8C0-B22A-2027-7BA2867EE281}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "collision_test", "collision_test", "{A4B3A5A9-EE23-3F68-2000-E128513029F4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CollisionTest", "tools\collision_test\CollisionTest.csproj", "{88355DBC-ED67-30D2-7733-788F4B371890}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "hsl-test", "hsl-test", "{FE25B8FD-B46E-D520-028B-896D55C1C66E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HslTest", "tools\hsl-test\HslTest.csproj", "{43AC5777-E9CE-9ED4-09E0-8209DBB4D418}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "inspect-resources", "tools\inspect-resources\inspect-resources.csproj", "{DF6DCE5B-6C17-5A36-B18F-B83CE58DB676}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TransformTest", "tools\TransformTest\TransformTest.csproj", "{72667DDB-AE7C-99E1-4E29-049813FA7961}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FF567742-ECB2-FD25-C627-E7D6120A8E3C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FF567742-ECB2-FD25-C627-E7D6120A8E3C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FF567742-ECB2-FD25-C627-E7D6120A8E3C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FF567742-ECB2-FD25-C627-E7D6120A8E3C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{581A1AB0-E8C0-B22A-2027-7BA2867EE281}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{581A1AB0-E8C0-B22A-2027-7BA2867EE281}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{581A1AB0-E8C0-B22A-2027-7BA2867EE281}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{581A1AB0-E8C0-B22A-2027-7BA2867EE281}.Release|Any CPU.Build.0 = Release|Any CPU
+		{88355DBC-ED67-30D2-7733-788F4B371890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{88355DBC-ED67-30D2-7733-788F4B371890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{88355DBC-ED67-30D2-7733-788F4B371890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{88355DBC-ED67-30D2-7733-788F4B371890}.Release|Any CPU.Build.0 = Release|Any CPU
+		{43AC5777-E9CE-9ED4-09E0-8209DBB4D418}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{43AC5777-E9CE-9ED4-09E0-8209DBB4D418}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{43AC5777-E9CE-9ED4-09E0-8209DBB4D418}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{43AC5777-E9CE-9ED4-09E0-8209DBB4D418}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DF6DCE5B-6C17-5A36-B18F-B83CE58DB676}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DF6DCE5B-6C17-5A36-B18F-B83CE58DB676}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DF6DCE5B-6C17-5A36-B18F-B83CE58DB676}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DF6DCE5B-6C17-5A36-B18F-B83CE58DB676}.Release|Any CPU.Build.0 = Release|Any CPU
+		{72667DDB-AE7C-99E1-4E29-049813FA7961}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{72667DDB-AE7C-99E1-4E29-049813FA7961}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{72667DDB-AE7C-99E1-4E29-049813FA7961}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{72667DDB-AE7C-99E1-4E29-049813FA7961}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FF567742-ECB2-FD25-C627-E7D6120A8E3C} = {140720FB-6C1D-DFDD-F6B2-B1D3A604B5F2}
+		{581A1AB0-E8C0-B22A-2027-7BA2867EE281} = {F6F57AA6-1BB4-E143-68DC-E1A95E34280D}
+		{A4B3A5A9-EE23-3F68-2000-E128513029F4} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
+		{88355DBC-ED67-30D2-7733-788F4B371890} = {A4B3A5A9-EE23-3F68-2000-E128513029F4}
+		{FE25B8FD-B46E-D520-028B-896D55C1C66E} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
+		{43AC5777-E9CE-9ED4-09E0-8209DBB4D418} = {FE25B8FD-B46E-D520-028B-896D55C1C66E}
+		{DF6DCE5B-6C17-5A36-B18F-B83CE58DB676} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
+		{72667DDB-AE7C-99E1-4E29-049813FA7961} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1C59C814-7DFF-49E5-85E6-20ECDAB725F3}
+	EndGlobalSection
+EndGlobal

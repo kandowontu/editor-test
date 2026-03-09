@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using System.Collections.Concurrent;
 
 namespace FamidashEditor
 {
@@ -75,6 +77,12 @@ namespace FamidashEditor
         /// Set to true to request cancellation from UI thread.
         /// </summary>
         public volatile bool CancelRequested;
+
+        /// <summary>
+        /// When true, uses exhaustive BFS exploration instead of heuristic PD controller.
+        /// Explores all possible input sequences with state deduplication.
+        /// </summary>
+        public bool UseBFS { get; set; } = false;
 
         public Action<List<(int x, int y)>?, int, int, bool>? OnSpeculativePath { get; set; }
         public int CurrentX_px => _currentX_px;
@@ -287,7 +295,7 @@ namespace FamidashEditor
             foreach (var sp in allSprites)
             {
                 if (state.ProcessedSprites.Contains(sp.Index)) continue;
-                if (sp.HitRight <= currentX_px) continue;
+                if (sp.HitRight < currentX_px) continue;
                 if (sp.AnchorX_px - TILE > playerRight + TILE) break;
 
                 int sid = sp.SpriteId;
@@ -324,7 +332,7 @@ namespace FamidashEditor
             foreach (var sp in allSprites)
             {
                 if (state.ProcessedSprites.Contains(sp.Index)) continue;
-                if (sp.HitRight <= currentX_px) continue;
+                if (sp.HitRight < currentX_px) continue;
                 int nesX = currentX_px + 1;
                 int farRight = nesX + hbW;
                 if (sp.AnchorX_px - TILE > farRight + TILE) break;
@@ -393,8 +401,13 @@ namespace FamidashEditor
             public HashSet<int> SkipSpecificOrbs = new(); // _btSkipSpecificOrbs at checkpoint
             public HashSet<int> SkipSpecificPads = new(); // _btSkipSpecificPads at checkpoint
             public bool PrevFrameWasGrounded; // _prevFrameWasGrounded at checkpoint
+            public int NextCoinCheckIdx; // _nextCoinCheckIdx at checkpoint
         }
         private List<BacktrackCheckpoint> _backtrackCheckpoints = new();
+        // Saved cube checkpoint at the last cube→ship game mode transition.
+        // Used during cross-mode escalation to change the ship entry altitude
+        // when the normal checkpoint list has been evicted of cube checkpoints.
+        private BacktrackCheckpoint? _lastCubeToShipCheckpoint;
         private int _backtrackAttempts;
         private int _totalBacktrackAttempts;
         private int _btOverrideFrame = -1;  // frame at which to apply override
@@ -410,6 +423,7 @@ namespace FamidashEditor
         private int _btForceJumpFramesRemaining;  // when >0, force jump at every grounded frame (decrements per landing)
         private int _btDeathFrame;           // frame of the death that triggered backtracking
         private int _shipCorridorBias;       // sustained Y offset for ship corridor target during backtrack
+        private int _shipForceReleaseFirstFrames; // when >0, force release BEFORE hold (for dip-first sine waves)
         private int _shipForceHoldFrames;    // when >0, force hold input for this many frames
         private int _shipForceReleaseFrames; // when >0, force release input for this many frames
         private int _shipCommitFrames;       // remaining frames of current hold/release commitment
@@ -519,12 +533,26 @@ namespace FamidashEditor
         private int _nextCoinCheckIdx;
         // Coins that were missed and forgiven (backtrack failed, continue without them)
         private readonly HashSet<int> _forgivenCoins = new HashSet<int>();
+        // Track how many times MISSED_COIN has triggered for each coin index.
+        // After a threshold (3), auto-forgive — the coin is collectable but not survivable.
+        private readonly Dictionary<int, int> _coinMissRetryCount = new Dictionary<int, int>();
+        private const int MAX_COIN_MISS_RETRIES = 5;
+        // Coins auto-forgiven due to MAX_COIN_MISS_RETRIES being exceeded.
+        // This set PERSISTS across RunSingleAttempt calls so the retry logic
+        // can skip coins that were proven unsurviable.
+        private readonly HashSet<int> _autoForgivenCoins = new HashSet<int>();
+        // Track how many times a coin was collected then invalidated by
+        // backtrack (collect-then-lose cycling).  After threshold, auto-forgive.
+        private readonly Dictionary<int, int> _coinCollectThenLoseCount = new Dictionary<int, int>();
+        private const int MAX_COIN_COLLECT_LOSE = 5;
         // Game mode at the time each coin was forgiven (0=cube,1=ship,2=ball,3=ufo,etc.)
         private readonly Dictionary<int, int> _forgivenCoinGameModes = new Dictionary<int, int>();
         // Permanently collected coins — persists across backtracks so that undoing
         // a path segment doesn't lose a coin that was already collected.  After
         // restoring from a checkpoint, these indices are re-added to ProcessedSprites.
-        private readonly HashSet<int> _permanentlyCollectedCoins = new HashSet<int>();
+        // Maps coin index → frame at which it was collected, so we can invalidate
+        // coins that were collected on paths that got truncated by a later rewind.
+        private readonly Dictionary<int, int> _permanentlyCollectedCoins = new Dictionary<int, int>();
         // Index into allCoins of the most recently missed coin (for forgiveness)
         private int _missedCoinIdx = -1;
         // Altitude ceiling penalties for coin retry
@@ -547,6 +575,10 @@ namespace FamidashEditor
         // allows larger survival differences to be overridden by coin steering.
         // Also used during coin retry to force the ship toward a specific Y.
         private int _shipCoinAggressiveThreshold = 3; // default: 3 frames tolerance
+        // After a game mode transition, suppress coin-seeking for this many
+        // frames so the ship/UFO can stabilize in the new corridor via pure
+        // tree search before the PD controller starts pulling toward a coin.
+        private int _modeTransitionStabilizeFrames = 0;
         // Coin input script: a pre-recorded input sequence from Strategy 0's
         // simulation. When the coin-walk override fires, we record ALL frames'
         // inputs (not just the first). On subsequent frames, we dequeue from
@@ -555,6 +587,7 @@ namespace FamidashEditor
         private Queue<bool> _coinInputScript = new Queue<bool>();
         private int _coinInputScriptCoinIdx = -1; // coin index this script targets
         private int _beamSearchAttemptedCoinIdx = -1; // coin index last beam-searched (avoid re-running)
+        private int _beamSearchLastDistX = int.MaxValue; // distX of last beam-search attempt for re-try at closer range
         private int _cubeBeamSearchAttemptedCoinIdx = -1; // coin index last cube-beam-searched (avoid re-running)
         // Cross-corridor coins: coins behind a game-mode portal, pre-forgiven
         // at init so the ship PD doesn't steer toward them. Maps coin index
@@ -874,13 +907,14 @@ namespace FamidashEditor
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             double originalBias = JumpTimingBias;
+            _autoForgivenCoins.Clear();
 
             // ── Pre-apply coin zones on the FIRST run ──
             // Analyze all coins and nearby pads to set up force-walk and
             // altitude-penalty zones BEFORE the first attempt. This way
             // the pathfinder collects coins on the first run instead of
             // requiring an expensive second-pass retry.
-            if (PreferCoins && allCoins.Count > 0)
+            if (false && PreferCoins && allCoins.Count > 0) // TEMPORARILY DISABLED
             {
                 int groundY_pre = (mapHeight - groundRowsToReserve) * 16 - 15;
                 var preForceWalk = new List<(int startX, int endX)>();
@@ -892,22 +926,39 @@ namespace FamidashEditor
                     {
                         if (!IsAnyPad(sp.SpriteId)) continue;
                         int padCX = (sp.HitLeft + sp.HitRight) / 2;
-                        if (padCX > cx + 32 || cx - padCX > 500) continue;
+                        if (padCX > cx + 32 || cx - padCX > 200) continue;
                         int padCY = (sp.HitTop + sp.HitBottom) / 2;
                         if (padCY < groundY_pre - 40) continue;
                         bool isGP = (padCY >= groundY_pre - 30);
                         if (isGP && !IsBluePad(sp.SpriteId))
-                            preForceWalk.Add((sp.HitLeft - 48, sp.HitRight + 16));
+                            preForceWalk.Add((sp.HitLeft - 16, sp.HitRight + 16));
                         if (isGP)
-                            preAltPenalties.Add((sp.HitLeft - 600, sp.HitLeft, groundY_pre - 20));
+                            preAltPenalties.Add((sp.HitLeft - 150, sp.HitLeft, groundY_pre - 20));
                     }
                 }
                 if (preForceWalk.Count > 0 || preAltPenalties.Count > 0)
                 {
                     Console.Error.WriteLine($"[COIN_PRE_ZONES] forceWalk={preForceWalk.Count} altPenalty={preAltPenalties.Count} — applying on first run");
+                    foreach (var fw in preForceWalk)
+                        Console.Error.WriteLine($"  forceWalk: X=[{fw.startX},{fw.endX}]");
+                    foreach (var ap in preAltPenalties)
+                        Console.Error.WriteLine($"  altPenalty: X=[{ap.startX},{ap.endX}] ceilY={ap.ceilingY}");
                     _coinForceWalkZones = preForceWalk;
                     _coinAltitudePenalties = preAltPenalties;
                 }
+            }
+
+            // ── BFS MODE ──
+            // When UseBFS is enabled, bypass ALL heuristic logic (PD controller,
+            // backtracking, coin retry, beam search) and run exhaustive BFS instead.
+            if (UseBFS)
+            {
+                RunBFS(startX_px, startY_px, startSpeedUiIndex,
+                       startGameMode, startGravFlipped, startMini);
+                sw.Stop();
+                if (!string.IsNullOrEmpty(ResultMessage))
+                    ResultMessage += $" [{sw.Elapsed.TotalSeconds:F1}s]";
+                return;
             }
 
             RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
@@ -960,15 +1011,15 @@ namespace FamidashEditor
                         {
                             if (!IsAnyPad(sp.SpriteId)) continue;
                             int padCX = (sp.HitLeft + sp.HitRight) / 2;
-                            if (padCX > cx + 32 || cx - padCX > 500) continue;
+                            if (padCX > cx + 32 || cx - padCX > 200) continue;
                             int padCY = (sp.HitTop + sp.HitBottom) / 2;
                             if (padCY < groundY - 40) continue;
                             anyPads = true;
                             bool isGP = (padCY >= groundY - 30);
                             if (isGP && !IsBluePad(sp.SpriteId))
-                                combinedForceWalk.Add((sp.HitLeft - 48, sp.HitRight + 16));
+                                combinedForceWalk.Add((sp.HitLeft - 100, sp.HitRight + 16));
                             if (isGP)
-                                combinedAltPenalties.Add((sp.HitLeft - 600, sp.HitLeft, groundY - 20));
+                                combinedAltPenalties.Add((sp.HitLeft - 150, sp.HitLeft, groundY - 20));
                         }
                     }
                     if (anyPads)
@@ -1013,9 +1064,10 @@ namespace FamidashEditor
                     // Skip individual retries if combined retry already got all coins
                     if (overallBestCoins >= allCoins.Count) break;
 
-                    // Skip non-cube-mode coins — force-walk and altitude zones
-                    // only affect cube BFS and can disrupt other sections.
-                    if (_forgivenCoinGameModes.TryGetValue(coin.Index, out int coinGm) && coinGm != 0)
+                    // Skip ship/UFO-mode coins — handled by ship retry below.
+                    // Ball coins (gameMode=2) are allowed: force-walk zones are
+                    // harmless in ball mode, and the bias change can help.
+                    if (_forgivenCoinGameModes.TryGetValue(coin.Index, out int coinGm) && (coinGm == 1 || coinGm == 3))
                     {
                         Console.Error.WriteLine($"[COIN_RETRY_SKIP] coin idx={coin.Index} sid=0x{coin.SpriteId:X2} gameMode={coinGm} — skip non-cube retry");
                         continue;
@@ -1034,7 +1086,7 @@ namespace FamidashEditor
                         if (!IsAnyPad(sp.SpriteId)) continue;
                         int padCenterX = (sp.HitLeft + sp.HitRight) / 2;
                         if (padCenterX > coinCenterX + 32) continue;
-                        if (coinCenterX - padCenterX > 500) continue;
+                        if (coinCenterX - padCenterX > 200) continue;
                         int padCenterY = (sp.HitTop + sp.HitBottom) / 2;
                         if (padCenterY < groundY - 40) continue;
                         hasPads = true;
@@ -1048,7 +1100,7 @@ namespace FamidashEditor
                         bool isGroundPad = (padCenterY >= groundY - 30);
                         if (isGroundPad && !IsBluePad(sp.SpriteId))
                         {
-                            thisCoinForceWalk.Add((sp.HitLeft - 48, sp.HitRight + 16));
+                            thisCoinForceWalk.Add((sp.HitLeft - 100, sp.HitRight + 16));
                         }
                         // Altitude penalty zone: only for ground-level pads.
                         // Gently bias BFS toward ground level in the approach area
@@ -1059,7 +1111,7 @@ namespace FamidashEditor
                         if (isGroundPad)
                         {
                             int ceilingY = groundY - 20; // 349 for groundY=369
-                            thisCoinAltPenalties.Add((sp.HitLeft - 600, sp.HitLeft, ceilingY));
+                            thisCoinAltPenalties.Add((sp.HitLeft - 150, sp.HitLeft, ceilingY));
                         }
                     }
 
@@ -1112,11 +1164,136 @@ namespace FamidashEditor
                     _retryMandatoryCoins.Clear();
                 }
 
+                // === SHIP-MODE COIN RETRY ===
+                // Ship/ball/UFO coins can't use force-walk zones, but we can
+                // retry with a much higher aggressive threshold so the beam
+                // search and PD tiebreaker steer harder toward the coin.
+                // This re-run gives the improved beam search (wider range,
+                // re-attempts at closer distances) a fresh start.
+                // Try multiple biases to maximize chances of finding a path
+                // that can collect the ship-mode coin.
+                var shipForgiven = forgivenCoinList.Where(c =>
+                    _forgivenCoinGameModes.TryGetValue(c.Index, out int gm) && gm == 1).ToList();
+                // Skip ship retry if all ship-forgiven coins were MISSED-type
+                // auto-forgiven (proven unreachable). Don't skip for coins that
+                // were collect-lose forgiven — they ARE reachable but need a
+                // different trajectory to survive after collection.
+                bool allShipAutoForgiven = shipForgiven.All(c => {
+                    // Collect-lose coins are reachable — always retry them
+                    if (_coinCollectThenLoseCount.TryGetValue(c.Index, out int lc) && lc > 0)
+                        return false;
+                    if (_autoForgivenCoins.Contains(c.Index)) return true;
+                    _coinMissRetryCount.TryGetValue(c.Index, out int mc);
+                    return mc >= 3;
+                });
+                if (shipForgiven.Count > 0 && allShipAutoForgiven)
+                    Console.Error.WriteLine($"[SHIP_RETRY_SKIP] All {shipForgiven.Count} ship coins have high miss counts — skipping ship retry");
+                if (shipForgiven.Count > 0 && !allShipAutoForgiven && overallBestCoins < allCoins.Count)
+                {
+                    double[] shipRetryBiases = new[] { originalBias, 0.3 };
+                    foreach (double shipBias in shipRetryBiases)
+                    {
+                        if (overallBestCoins >= allCoins.Count) break;
+                        Console.Error.WriteLine($"[COIN_RETRY_SHIP] Attempting {shipForgiven.Count} ship-mode forgiven coins bias={shipBias:F2} with aggressive threshold");
+                        JumpTimingBias = shipBias;
+                        _coinForceWalkZones.Clear();
+                        _coinAltitudePenalties.Clear();
+                        _coinGroundBiasZones.Clear();
+                        _retryMandatoryCoins.Clear();
+                        // Boost aggressive threshold so the beam search and PD
+                        // tiebreaker steer harder toward the coin on re-runs.
+                        _shipCoinAggressiveThreshold = 20;
+                        RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
+                                         startGameMode, startGravFlipped, startMini);
+                        if (Success)
+                        {
+                            int retryCoins = FinalCollectedCoinIndices != null ? FinalCollectedCoinIndices.Count : 0;
+                            Console.Error.WriteLine($"[COIN_RETRY_SHIP] Result: {retryCoins}/{allCoins.Count} coins (bias={shipBias:F2})");
+                            if (retryCoins > overallBestCoins)
+                            {
+                                Console.Error.WriteLine($"[COIN_RETRY_SHIP] Improved: {retryCoins} vs {overallBestCoins}");
+                                overallBestInputs = new List<bool>(Inputs);
+                                overallBestPath = new List<(int x, int y)>(PathPoints);
+                                overallBestMsg = ResultMessage;
+                                overallBestCoins = retryCoins;
+                                overallBestFinalCoins = FinalCollectedCoinIndices != null
+                                    ? new HashSet<int>(FinalCollectedCoinIndices) : null;
+                                break; // this bias worked, stop trying
+                            }
+                        }
+                        else
+                        {
+                            Console.Error.WriteLine($"[COIN_RETRY_SHIP] Retry bias={shipBias:F2} FAILED");
+                            Success = true; // keep going
+                        }
+                    }
+                    JumpTimingBias = originalBias;
+                }
+
+                // === BALL-MODE COIN RETRY ===
+                // Ball coins can't use force-walk zones (cube-specific), but
+                // different biases change ball flip timings throughout the level,
+                // potentially routing the ball to a different surface/corridor
+                // where the coin is reachable. Also re-routes the ship section,
+                // potentially keeping coins in ship mode that shifted to ball.
+                var ballForgiven = forgivenCoinList.Where(c =>
+                    _forgivenCoinGameModes.TryGetValue(c.Index, out int gm) && gm == 2).ToList();
+                if (ballForgiven.Count > 0 && overallBestCoins < allCoins.Count)
+                {
+                    double[] ballRetryBiases = new[] { 0.0, 1.0 };
+                    foreach (double ballBias in ballRetryBiases)
+                    {
+                        if (overallBestCoins >= allCoins.Count) break;
+                        if (Math.Abs(ballBias - originalBias) < 0.05) continue;
+                        Console.Error.WriteLine($"[COIN_RETRY_BALL] Attempting {ballForgiven.Count} ball-mode forgiven coins bias={ballBias:F2}");
+                        JumpTimingBias = ballBias;
+                        _coinForceWalkZones.Clear();
+                        _coinAltitudePenalties.Clear();
+                        _coinGroundBiasZones.Clear();
+                        _retryMandatoryCoins.Clear();
+                        RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
+                                         startGameMode, startGravFlipped, startMini);
+                        if (Success)
+                        {
+                            int retryCoins = FinalCollectedCoinIndices != null ? FinalCollectedCoinIndices.Count : 0;
+                            Console.Error.WriteLine($"[COIN_RETRY_BALL] Result: {retryCoins}/{allCoins.Count} coins (bias={ballBias:F2})");
+                            if (retryCoins > overallBestCoins)
+                            {
+                                Console.Error.WriteLine($"[COIN_RETRY_BALL] Improved: {retryCoins} vs {overallBestCoins}");
+                                overallBestInputs = new List<bool>(Inputs);
+                                overallBestPath = new List<(int x, int y)>(PathPoints);
+                                overallBestMsg = ResultMessage;
+                                overallBestCoins = retryCoins;
+                                overallBestFinalCoins = FinalCollectedCoinIndices != null
+                                    ? new HashSet<int>(FinalCollectedCoinIndices) : null;
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            Console.Error.WriteLine($"[COIN_RETRY_BALL] Retry bias={ballBias:F2} FAILED");
+                            Success = true;
+                        }
+                    }
+                    JumpTimingBias = originalBias;
+                }
+
                 // Restore overall best result
                 Inputs = overallBestInputs;
                 PathPoints = overallBestPath;
-                ResultMessage = overallBestMsg;
                 FinalCollectedCoinIndices = overallBestFinalCoins;
+
+                // Rebuild result message with accurate coin counts —
+                // the stored message may contain stale "unreachable" text
+                // from a run where more coins were forgiven than are
+                // actually missing from the best result.
+                int actualCollected = overallBestFinalCoins != null ? overallBestFinalCoins.Count : 0;
+                int actualMissing = allCoins.Count - actualCollected;
+                // Extract frame/path info from original message prefix
+                int bracketIdx = overallBestMsg.IndexOf('[');
+                string msgPrefix = bracketIdx > 0 ? overallBestMsg.Substring(0, bracketIdx).TrimEnd() : overallBestMsg;
+                ResultMessage = $"{msgPrefix} [{actualCollected}/{allCoins.Count} coins]";
+                if (actualMissing > 0) ResultMessage += $" ({actualMissing} unreachable)";
             }
 
             // If the primary bias failed, retry with intermediate biases.
@@ -1357,6 +1534,7 @@ namespace FamidashEditor
             _cubeHoldDelay = 0;
             _committedJumpDelay = -1;
             _backtrackCheckpoints = new List<BacktrackCheckpoint>();
+            _lastCubeToShipCheckpoint = null;
             _backtrackAttempts = 0;
             _totalBacktrackAttempts = 0;
             _btOverrideFrame = -1;
@@ -1370,7 +1548,9 @@ namespace FamidashEditor
             _hitPadHistory.Clear();
             _btDeathFrame = 0;
             _shipCorridorBias = 0;
-            _shipCoinAggressiveThreshold = PreferCoins ? 8 : 3;
+            _shipCoinAggressiveThreshold = 3; // gentle PD; beam search handles coin collection
+            _modeTransitionStabilizeFrames = 0;
+            _shipForceReleaseFirstFrames = 0;
             _shipForceHoldFrames = 0;
             _shipForceReleaseFrames = 0;
             _shipCommitFrames = 0;
@@ -1383,11 +1563,14 @@ namespace FamidashEditor
             _nextCoinCheckIdx = 0;
             _forgivenCoins.Clear();
             _forgivenCoinGameModes.Clear();
+            _coinMissRetryCount.Clear();
+            _coinCollectThenLoseCount.Clear();
             _permanentlyCollectedCoins.Clear();
             _missedCoinIdx = -1;
             _coinInputScript.Clear();
             _coinInputScriptCoinIdx = -1;
             _beamSearchAttemptedCoinIdx = -1;
+            _beamSearchLastDistX = int.MaxValue;
             _cubeBeamSearchAttemptedCoinIdx = -1;
             _crossCorrForgivenCoins.Clear();
             PreForgiveCrossCorridorCoins(startGameMode);
@@ -1526,7 +1709,7 @@ namespace FamidashEditor
                     _backtrackAttempts = 0;
                     _backtrackTimer = null; // reset timer for next death point
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[BACKTRACK_DONE] advanced past death frame {_btDeathFrame}, resuming normal checkpointing (attempts={_backtrackAttempts}/{MAX_BACKTRACK_ATTEMPTS})");
+                    PfLog($"[BACKTRACK_DONE] advanced past death frame {_btDeathFrame}, resuming normal checkpointing (attempts={_backtrackAttempts}/{MAX_BACKTRACK_ATTEMPTS}) coinRetry={_missedCoinIdx >= 0}");
 #endif
                 }
 
@@ -1612,7 +1795,8 @@ namespace FamidashEditor
                         SkipAllOrbs = _btSkipAllOrbs,
                         SkipSpecificOrbs = new HashSet<int>(_btSkipSpecificOrbs),
                         SkipSpecificPads = new HashSet<int>(_btSkipSpecificPads),
-                        PrevFrameWasGrounded = _prevFrameWasGrounded
+                        PrevFrameWasGrounded = _prevFrameWasGrounded,
+                        NextCoinCheckIdx = _nextCoinCheckIdx
                     });
                 }
 
@@ -1651,14 +1835,50 @@ namespace FamidashEditor
                         }
                         if (playerX >= coin.HitRight)
                         {
+                            // Track how many times this coin has triggered MISSED_COIN.
+                            // After the miss limit, auto-forgive: the coin may be
+                            // physically reachable but not survivable.
+                            _coinMissRetryCount.TryGetValue(coin.Index, out int missCount);
+                            missCount++;
+                            _coinMissRetryCount[coin.Index] = missCount;
+                            int missLimit = (state.GameMode == 1 || state.GameMode == 3)
+                                ? 4 : MAX_COIN_MISS_RETRIES;
+                            if (missCount > missLimit)
+                            {
+                                _forgivenCoins.Add(coin.Index);
+                                _forgivenCoinGameModes[coin.Index] = state.GameMode;
+                                _autoForgivenCoins.Add(coin.Index);
+                                if (ci == _nextCoinCheckIdx) _nextCoinCheckIdx++;
+                                Console.Error.WriteLine($"[COIN_AUTO_FORGIVEN] idx={coin.Index} gm={state.GameMode} missCount={missCount} playerX={state.X_fixed >> 8}");
+#if !DISABLE_DEBUG_LOGGING
+                                PfLog($"[COIN_AUTO_FORGIVEN] idx={coin.Index} sid=0x{coin.SpriteId:X2} missCount={missCount} — auto-forgiven after {MAX_COIN_MISS_RETRIES} retries");
+#endif
+                                continue;
+                            }
                             // Missed this coin — trigger backtrackable death
                             alive = false;
                             _lastDeathReason = "MISSED_COIN";
                             _lastDeathX = coin.HitLeft;
                             _lastDeathY = coin.HitTop;
                             _missedCoinIdx = ci;
+                            // Ship coin trajectory diagnostic
+                            if (state.GameMode == 1 || state.GameMode == 3)
+                            {
+                                int playerY = state.Y_fixed >> 8;
+                                int coinCY = (coin.HitTop + coin.HitBottom) / 2;
+                                int yOff = playerY - coinCY;
+                                Console.Error.WriteLine($"[SHIP_COIN_MISS] idx={coin.Index} playerY={playerY} coinY={coinCY} yOff={yOff} missCount={missCount}");
+                            }
+                            if (state.GameMode == 2)
+                            {
+                                int playerY = state.Y_fixed >> 8;
+                                int coinCY = (coin.HitTop + coin.HitBottom) / 2;
+                                int coinCX = (coin.HitLeft + coin.HitRight) / 2;
+                                int yOff = playerY - coinCY;
+                                Console.Error.WriteLine($"[BALL_COIN_MISS] idx={coin.Index} playerX={state.X_fixed >> 8} playerY={playerY} coinX={coinCX} coinY={coinCY} yOff={yOff} onGround={state.OnGround} gravFlip={state.GravFlipped} missCount={missCount}");
+                            }
 #if !DISABLE_DEBUG_LOGGING
-                            PfLog($"[MISSED_COIN] idx={coin.Index} sid=0x{coin.SpriteId:X2} hitbox=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) playerX={playerX}");
+                            PfLog($"[MISSED_COIN] idx={coin.Index} sid=0x{coin.SpriteId:X2} hitbox=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) playerX={playerX} retryCount={missCount}");
 #endif
                             break;
                         }
@@ -1695,7 +1915,10 @@ namespace FamidashEditor
                         {
                             state.ProcessedSprites.Add(coin.Index);
                             if (_speculativeDepth == 0)
-                                _permanentlyCollectedCoins.Add(coin.Index);
+                            {
+                                _permanentlyCollectedCoins[coin.Index] = frame;
+                                Console.Error.WriteLine($"[COIN_COLLECTED] idx={coin.Index} sid=0x{coin.SpriteId:X2} gm={state.GameMode} playerX={nesX} playerY={playerTop} coinHit=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom})");
+                            }
 #if !DISABLE_DEBUG_LOGGING
                             PfLog($"[COIN_COLLECTED] idx={coin.Index} sid=0x{coin.SpriteId:X2} hitbox=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) player=({nesX},{playerTop})-({playerRight},{playerBottom})");
 #endif
@@ -1709,6 +1932,8 @@ namespace FamidashEditor
                     int deathPct = levelLengthPx > 0 ? (state.X_fixed >> 8) * 100 / levelLengthPx : 0;
                     PfLog($"[DEATH] frame={frame} X={state.X_fixed >> 8}px Y={state.Y_fixed >> 8}px pct={deathPct}% reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY} VelY=0x{state.VelY_fixed:X} gravFlipped={state.GravFlipped}");
 #endif
+                    if (_speculativeDepth == 0)
+                        Console.Error.WriteLine($"[DEATH_DBG] frame={frame} X={state.X_fixed >> 8} Y={state.Y_fixed >> 8} gm={state.GameMode} reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY} totalBT={_totalBacktrackAttempts}");
                     // Snapshot the current full path if it reached further than any previous attempt
                     SnapshotBestPath();
 
@@ -1719,7 +1944,12 @@ namespace FamidashEditor
                     // forgive the coin we need those checkpoints back for the rest of
                     // the level.
                     bool isCoinMiss = (_lastDeathReason == "MISSED_COIN" && _missedCoinIdx >= 0);
-                    if (isCoinMiss)
+                    // Only save fallback state on the FIRST miss of this coin.
+                    // Subsequent misses (after backtrack replays) may have
+                    // degraded ProcessedSprites (earlier coins lost due to
+                    // alternative paths). Preserving the original fallback
+                    // ensures all previously collected coins are retained.
+                    if (isCoinMiss && coinFallbackCheckpoints == null)
                     {
                         coinFallbackState = state.Clone();
                         coinFallbackFrame = frame;
@@ -1812,6 +2042,14 @@ namespace FamidashEditor
                         _shipForceReleaseFrames = 0;
                         _shipCommitFrames = 0;
                         _missedCoinIdx = -1;
+                        // Re-populate _permanentlyCollectedCoins from restored state.
+                        // Backtracking during the coin-miss retry may have invalidated
+                        // coins that are still present in coinFallbackState.ProcessedSprites.
+                        foreach (var coin in allCoins)
+                        {
+                            if (state.ProcessedSprites.Contains(coin.Index) && !_permanentlyCollectedCoins.ContainsKey(coin.Index))
+                                _permanentlyCollectedCoins[coin.Index] = coinFallbackFrame;
+                        }
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[COIN_FORGIVEN] idx={missedCoin.Index} sid=0x{missedCoin.SpriteId:X2} hitbox=({missedCoin.HitLeft},{missedCoin.HitTop})-({missedCoin.HitRight},{missedCoin.HitBottom}) forgiven={_forgivenCoins.Count}");
 #endif
@@ -1852,6 +2090,12 @@ namespace FamidashEditor
                         _shipForceReleaseFrames = 0;
                         _shipCommitFrames = 0;
                         _missedCoinIdx = -1;
+                        // Re-populate _permanentlyCollectedCoins from restored state.
+                        foreach (var coin in allCoins)
+                        {
+                            if (state.ProcessedSprites.Contains(coin.Index) && !_permanentlyCollectedCoins.ContainsKey(coin.Index))
+                                _permanentlyCollectedCoins[coin.Index] = coinFallbackFrame;
+                        }
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[COIN_FORGIVEN_ALT] idx={missedCoin2.Index} sid=0x{missedCoin2.SpriteId:X2} — coin retry caused death elsewhere, forgiving");
 #endif
@@ -1889,6 +2133,7 @@ namespace FamidashEditor
                                 collectedCoinIndices.Add(coin.Index);
                         }
                         FinalCollectedCoinIndices = collectedCoinIndices;
+                        Console.Error.WriteLine($"[RUN_COMPLETE] coins={collectedCoinIndices.Count}/{allCoins.Count} forgiven={_forgivenCoins.Count} collected=[{string.Join(",", collectedCoinIndices)}]");
                         successMsg += $" [{collectedCoinIndices.Count}/{allCoins.Count} coins]";
                         if (_forgivenCoins.Count > 0) successMsg += $" ({_forgivenCoins.Count} unreachable)";
                     }
@@ -1915,6 +2160,526 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
             PfLog($"[TIMEOUT]");
 #endif
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        //  BFS PATHFINDER — exhaustive exploration of all input sequences
+        //  Uses frame-indexed parent tracking for path reconstruction
+        //  instead of linked-list chains (much less GC pressure).
+        // ═══════════════════════════════════════════════════════════════════
+
+        /// <summary>Maximum frontier size for BFS exploration.</summary>
+        private const int BFS_MAX_FRONTIER = 15000;
+
+        /// <summary>
+        /// Quantize a SimState into a 64-bit key for deduplication.
+        /// Two states with the same key are considered equivalent —
+        /// keeping only the one with the better score.
+        /// </summary>
+        private long BfsQuantizeKey(ref SimState s)
+        {
+            // Ship/UFO modes have continuous Y/VelY — quantize more aggressively
+            // Cube/ball modes have discrete Y from terrain — finer quantization OK
+            bool continuous = (s.GameMode == 1 || s.GameMode == 3); // ship, UFO
+            
+            // Quantize Y: ship/UFO at 2px resolution, cube/ball at 1/4px
+            int yq = continuous ? ((s.Y_fixed >> 9) & 0xFFF) 
+                                : ((s.Y_fixed >> 2) & 0xFFFF);
+            // Quantize VelY: ship/UFO at 64-unit buckets, cube/ball at 32-unit
+            int vq = continuous ? (((s.VelY_fixed + 0x8000) >> 6) & 0x7FF)
+                                : (((s.VelY_fixed + 0x8000) >> 5) & 0x7FF);
+            // Pack game mode (3 bits), gravity (1 bit), mini (1 bit), onGround (1 bit)
+            int flags = (s.GameMode & 0x7) | ((s.GravFlipped ? 1 : 0) << 3)
+                      | ((s.Mini ? 1 : 0) << 4) | ((s.OnGround ? 1 : 0) << 5);
+            // ProcessedSprites hash — captures which orbs/pads/coins have been hit
+            int sprHash = 0;
+            if (s.ProcessedSprites.Count > 0)
+            {
+                foreach (int idx in s.ProcessedSprites)
+                    sprHash = sprHash * 31 + idx;
+            }
+            // Pack into 64 bits
+            return ((long)(sprHash & 0x3FFFFF) << 42)
+                 | ((long)(flags & 0x3F) << 36)
+                 | ((long)(vq & 0x7FF) << 25)
+                 | ((long)(yq & 0xFFFF) << 9);
+        }
+
+        /// <summary>
+        /// Score a BFS state. Lower is better. Heavily rewards coin collection.
+        /// </summary>
+        private int BfsScore(ref SimState s, int coinsCollected)
+        {
+            int y = s.Y_fixed >> 8;
+            int corridorY = FindCorridorCenter(ref s);
+            int dyCorridor = Math.Abs(y - corridorY);
+            int velMag = Math.Abs(s.VelY_fixed) >> 7;
+
+            // Coin bonus: each coin subtracts 1,000,000 from score
+            // This ensures coin-collecting paths always rank above non-collecting ones
+            int coinBonus = -coinsCollected * 1_000_000;
+
+            // Safety: prefer states near corridor center with low velocity
+            int safety = dyCorridor * 3 + velMag;
+
+            // Coin proximity bonus: attract states toward upcoming uncollected coins
+            // This prevents the frontier from narrowing around the corridor center
+            // and losing trajectories needed to reach coins.
+            int coinProximity = 0;
+            if (PreferCoins && allCoins.Count > 0)
+            {
+                int xPixel = s.X_fixed >> 8;
+                foreach (var coin in allCoins)
+                {
+                    // Skip coins already collected in this state
+                    if (s.ProcessedSprites.Contains(coin.Index)) continue;
+
+                    int coinCenterX = (coin.HitLeft + coin.HitRight) / 2;
+                    int coinCenterY = (coin.HitTop + coin.HitBottom) / 2;
+                    int dx = coinCenterX - xPixel;
+
+                    // Only consider coins 10-800px ahead
+                    if (dx > 10 && dx < 800)
+                    {
+                        int dy = Math.Abs(y - coinCenterY);
+                        // Base bonus: up to 200,000 when at exact coin Y, effective up to 200px away
+                        // This is less than 1M (collected coin) but very significant vs safety (~100)
+                        int baseBonus = Math.Max(0, 200_000 - dy * 1000);
+                        // Scale by proximity in X (closer to coin = stronger pull)
+                        // At dx=10: full bonus. At dx=800: ~1% bonus.
+                        int scaledBonus = baseBonus * (800 - dx) / 790;
+                        coinProximity = Math.Max(coinProximity, scaledBonus);
+                    }
+                }
+            }
+
+            return coinBonus - coinProximity + safety;
+        }
+
+        /// <summary>
+        /// Run a full BFS exploration over the entire level, trying both
+        /// press and release on every frame. States are deduplicated by
+        /// quantized physics signature to keep the frontier manageable.
+        /// Uses frame-indexed parent arrays for path reconstruction
+        /// (very low GC pressure compared to linked-list chains).
+        /// </summary>
+        private void RunBFS(int startX_px, int startY_px, int startSpeedUiIndex,
+                            int startGameMode, bool startGravFlipped, bool startMini)
+        {
+            var bfsSw = System.Diagnostics.Stopwatch.StartNew();
+            Console.Error.WriteLine($"[BFS] Starting exhaustive BFS exploration (frontier cap={BFS_MAX_FRONTIER})");
+
+            try
+            {
+                // Initialize starting state
+                var initialState = new SimState
+                {
+                    X_fixed = startX_px << 8,
+                    Y_fixed = startY_px << 8,
+                    VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex),
+                    VelY_fixed = 0,
+                    GameMode = startGameMode,
+                    GravFlipped = startGravFlipped,
+                    Mini = startMini,
+                    GravMul = startGravFlipped ? -1 : 1,
+                    WasZeroedByCollision = true,
+                    OnGround = true,
+                    ProcessedSprites = new HashSet<int>(),
+                    PendingOrbIndex = -1,
+                    PendingOrbSpriteId = -1
+                };
+                ApplyPortalsUpTo(ref initialState, startX_px);
+
+                // Reset engine state for speculative execution
+                _btSkipAllOrbs = false;
+                _btSkipSpecificOrbs.Clear();
+                _btSkipSpecificPads.Clear();
+                _speculativeDepth = 1;
+
+                int levelLengthPx = mapWidth * TILE;
+                int highWaterX = startX_px;
+                int lastProgressPct = -1;
+
+                // Current frontier — flat arrays for cache friendliness
+                var frontier = new List<SimState> { initialState };
+
+                // Frame-indexed path reconstruction (compact, no GC pressure)
+                // histParent[f][i] = parent index in previous frontier
+                // histInput[f][i]  = input applied at frame f
+                var histParent = new List<int[]>();
+                var histInput = new List<bool[]>();
+
+                // Winner tracking
+                int winFrame = -1, winParentIdx = -1, winCoins = -1;
+                bool winInputVal = false;
+                SimState winState = default;
+
+                // Best partial tracking (for incomplete runs)
+                int bestFrame = -1, bestIdx = -1, bestX = startX_px;
+
+                for (int frame = 0; frame < MAX_FRAMES && frontier.Count > 0; frame++)
+                {
+                    if (CancelRequested) break;
+
+                    // Progress reporting
+                    int curX = frontier[0].X_fixed >> 8;
+                    if (curX > highWaterX) highWaterX = curX;
+                    int pct = levelLengthPx > 0 ? highWaterX * 100 / levelLengthPx : 0;
+                    if (pct != lastProgressPct && Progress != null)
+                    {
+                        Progress.Report(pct);
+                        lastProgressPct = pct;
+                    }
+
+                    // ── Expand all frontier states with both inputs (PARALLEL) ──
+                    int expandCount = frontier.Count * 2;
+                    // Pre-allocate flat arrays — each slot is independent, no locking needed
+                    var rState = new SimState[expandCount];
+                    var rAlive = new bool[expandCount];
+                    var rEnd   = new bool[expandCount];
+
+                    Parallel.For(0, expandCount, k =>
+                    {
+                        int pi = k >> 1;        // parent index
+                        bool inp = (k & 1) == 1; // input: 0=release, 1=press
+                        var sim = frontier[pi].Clone();
+                        bool alive = StepFrame(ref sim, inp, out bool endLevel);
+                        rState[k] = sim;
+                        rAlive[k] = alive;
+                        rEnd[k]   = endLevel;
+                    });
+
+                    // Sequential post-processing of parallel results
+                    var candState  = new List<SimState>(expandCount);
+                    var candParent = new List<int>(expandCount);
+                    var candInput  = new List<bool>(expandCount);
+                    var candCoins  = new List<int>(expandCount);
+                    var candScore  = new List<int>(expandCount);
+                    int deathCount = 0;
+
+                    for (int k = 0; k < expandCount; k++)
+                    {
+                        int pi = k >> 1;
+                        bool inp = (k & 1) == 1;
+
+                        if (rEnd[k])
+                        {
+                            var sim = rState[k];
+                            int coins = CountBfsCoins(ref sim);
+                            if (winFrame < 0 || coins > winCoins)
+                            {
+                                winFrame = frame;
+                                winParentIdx = pi;
+                                winInputVal = inp;
+                                winCoins = coins;
+                                winState = sim;
+                                Console.Error.WriteLine($"[BFS] Level complete at frame {frame}! coins={coins} X≈{sim.X_fixed >> 8}px");
+                            }
+                            continue;
+                        }
+
+                        if (!rAlive[k]) { deathCount++; continue; }
+
+                        var st = rState[k];
+                        int nc = CountBfsCoins(ref st);
+                        int sc = BfsScore(ref st, nc);
+                        candState.Add(st);
+                        candParent.Add(pi);
+                        candInput.Add(inp);
+                        candCoins.Add(nc);
+                        candScore.Add(sc);
+                    }
+
+                    if (candState.Count == 0)
+                    {
+                        Console.Error.WriteLine($"[BFS] ALL DEAD at frame {frame} (X≈{highWaterX}px pct={pct}% expanded={frontier.Count * 2} deaths={deathCount})");
+                        // Log last known frontier stats
+                        if (frontier.Count > 0)
+                        {
+                            int minY = int.MaxValue, maxY = int.MinValue;
+                            foreach (var s in frontier)
+                            {
+                                int y = s.Y_fixed >> 8;
+                                if (y < minY) minY = y;
+                                if (y > maxY) maxY = y;
+                            }
+                            Console.Error.WriteLine($"[BFS] Last frontier: size={frontier.Count} Y=[{minY}..{maxY}] mode={frontier[0].GameMode} grav={frontier[0].GravFlipped}");
+                        }
+                        break;
+                    }
+
+                    // Early exit if we found a complete path and nothing can beat it
+                    if (winFrame >= 0)
+                    {
+                        bool anyBetter = false;
+                        for (int i = 0; i < candCoins.Count; i++)
+                        {
+                            if (candCoins[i] > winCoins) { anyBetter = true; break; }
+                        }
+                        if (!anyBetter)
+                        {
+                            Console.Error.WriteLine($"[BFS] Optimal — winning path at frame {winFrame} with {winCoins} coins, no better candidates");
+                            break;
+                        }
+                    }
+
+                    // ── Deduplicate by quantized key ──
+                    var deduped = new Dictionary<long, int>(candState.Count);
+                    for (int i = 0; i < candState.Count; i++)
+                    {
+                        var s = candState[i];
+                        long key = BfsQuantizeKey(ref s);
+                        if (!deduped.TryGetValue(key, out int ex) || candScore[i] < candScore[ex])
+                            deduped[key] = i;
+                    }
+
+                    // ── Sort by score, prune to cap with diversity ──
+                    var sortedIdx = new List<int>(deduped.Values);
+                    sortedIdx.Sort((a, b) => candScore[a].CompareTo(candScore[b]));
+
+                    var nextFrontier = new List<SimState>();
+                    var frameP = new List<int>();
+                    var frameI = new List<bool>();
+
+                    // Main slots: 90% by score
+                    int mainSlots = BFS_MAX_FRONTIER * 9 / 10;
+                    int mainKeep = Math.Min(mainSlots, sortedIdx.Count);
+                    for (int i = 0; i < mainKeep; i++)
+                    {
+                        int ci = sortedIdx[i];
+                        nextFrontier.Add(candState[ci]);
+                        frameP.Add(candParent[ci]);
+                        frameI.Add(candInput[ci]);
+                    }
+
+                    // Diversity slots: 10% from underrepresented Y bins
+                    if (sortedIdx.Count > mainKeep)
+                    {
+                        const int Y_BIN_SIZE = 16;
+                        var yBinCounts = new Dictionary<int, int>();
+                        foreach (var s in nextFrontier)
+                        {
+                            int yBin = (s.Y_fixed >> 8) / Y_BIN_SIZE;
+                            yBinCounts.TryGetValue(yBin, out int c);
+                            yBinCounts[yBin] = c + 1;
+                        }
+                        int avgPerBin = nextFrontier.Count / Math.Max(1, yBinCounts.Count);
+
+                        for (int i = mainKeep; i < sortedIdx.Count && nextFrontier.Count < BFS_MAX_FRONTIER; i++)
+                        {
+                            int ci = sortedIdx[i];
+                            int yBin = (candState[ci].Y_fixed >> 8) / Y_BIN_SIZE;
+                            yBinCounts.TryGetValue(yBin, out int cnt);
+                            if (cnt < avgPerBin * 2)
+                            {
+                                nextFrontier.Add(candState[ci]);
+                                frameP.Add(candParent[ci]);
+                                frameI.Add(candInput[ci]);
+                                yBinCounts[yBin] = cnt + 1;
+                            }
+                        }
+                    }
+
+                    // Store history for path reconstruction
+                    histParent.Add(frameP.ToArray());
+                    histInput.Add(frameI.ToArray());
+
+                    // Track best partial result
+                    for (int i = 0; i < nextFrontier.Count; i++)
+                    {
+                        int sx = nextFrontier[i].X_fixed >> 8;
+                        if (sx > bestX)
+                        {
+                            bestFrame = histParent.Count - 1;
+                            bestIdx = i;
+                            bestX = sx;
+                        }
+                    }
+
+                    frontier = nextFrontier;
+
+                    // ── Periodic logging + speculative path visualization ──
+                    bool shouldLog = (frame % 100 == 0) || (frontier.Count < 100);
+                    if (shouldLog)
+                    {
+                        int minY = int.MaxValue, maxY = int.MinValue;
+                        foreach (var s in frontier)
+                        {
+                            int y = s.Y_fixed >> 8;
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
+                        }
+                        double ms = bfsSw.Elapsed.TotalMilliseconds / Math.Max(1, frame + 1);
+                        Console.Error.WriteLine(
+                            $"[BFS] f={frame} front={frontier.Count} dedup={deduped.Count} " +
+                            $"deaths={deathCount} Y=[{minY}..{maxY}] " +
+                            $"mode={frontier[0].GameMode} grav={(frontier[0].GravFlipped ? 'F' : 'N')} " +
+                            $"X≈{highWaterX}px pct={pct}% ms/f={ms:F1}");
+
+                        // Emit speculative paths for live visualization
+                        // Sample a few frontier states across the Y range
+                        if (OnSpeculativePath != null && frontier.Count > 0 && frame % 100 == 0)
+                        {
+                            int sampleCount = Math.Min(5, frontier.Count);
+                            int step = Math.Max(1, frontier.Count / sampleCount);
+                            for (int si = 0; si < frontier.Count && si / step < sampleCount; si += step)
+                            {
+                                var fs = frontier[si];
+                                int fx = fs.X_fixed >> 8;
+                                int fy = fs.Y_fixed >> 8;
+                                int miniOff = (fs.Mini && !fs.GravFlipped) ? 4 : 0;
+                                var pathPts = new List<(int x, int y)> { (fx + 8, fy + miniOff + 8) };
+                                OnSpeculativePath(pathPts, 90, 90, false);
+                            }
+                        }
+                    }
+                }
+
+                _speculativeDepth = 0;
+
+                // ═══ Process results ═══
+                if (winFrame >= 0)
+                {
+                    // Reconstruct the input sequence by walking the parent chain backward
+                    var inputs = new List<bool>();
+                    int idx = winParentIdx; // index in frontier at start of winFrame
+                    // Walk history backward: winFrame-1 down to 0
+                    for (int f = winFrame - 1; f >= 0; f--)
+                    {
+                        inputs.Add(histInput[f][idx]);
+                        idx = histParent[f][idx];
+                    }
+                    inputs.Reverse();
+                    inputs.Add(winInputVal); // the winning frame's input
+
+                    Console.Error.WriteLine($"[BFS] Replaying winning path ({inputs.Count} frames)...");
+                    ReplayBfsPath(inputs, startX_px, startY_px, startSpeedUiIndex,
+                                  startGameMode, startGravFlipped, startMini);
+
+                    int coinTotal = allCoins.Count;
+                    double elapsed = bfsSw.Elapsed.TotalSeconds;
+                    string msg = $"Completed in {inputs.Count} frames ({PathPoints.Count} path points)";
+                    if (PreferCoins && coinTotal > 0) msg += $" [{winCoins}/{coinTotal} coins]";
+                    msg += $" [{elapsed:F1}s BFS]";
+                    ResultMessage = msg;
+                    Success = true;
+                    Console.Error.WriteLine($"[BFS] {msg}");
+                }
+                else
+                {
+                    _speculativeDepth = 0; // ensure reset even on partial
+
+                    // Replay best partial path
+                    if (bestIdx >= 0 && histParent.Count > 0)
+                    {
+                        var inputs = new List<bool>();
+                        int idx = bestIdx;
+                        for (int f = bestFrame; f >= 0; f--)
+                        {
+                            inputs.Add(histInput[f][idx]);
+                            idx = histParent[f][idx];
+                        }
+                        inputs.Reverse();
+                        ReplayBfsPath(inputs, startX_px, startY_px, startSpeedUiIndex,
+                                      startGameMode, startGravFlipped, startMini);
+                    }
+                    int bx = PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
+                    int bp = levelLengthPx > 0 ? bx * 100 / levelLengthPx : 0;
+                    ResultMessage = $"BFS failed — best path to X={bx}px ({bp}%)";
+                    Success = false;
+                    Console.Error.WriteLine($"[BFS] {ResultMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _speculativeDepth = 0;
+                Console.Error.WriteLine($"[BFS] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+                Console.Error.WriteLine(ex.StackTrace);
+                ResultMessage = $"BFS crashed: {ex.GetType().Name}";
+                Success = false;
+            }
+
+            bfsSw.Stop();
+        }
+
+        /// <summary>
+        /// Count coins collected in a SimState by checking ProcessedSprites
+        /// against the allCoins list.
+        /// </summary>
+        private int CountBfsCoins(ref SimState s)
+        {
+            if (allCoins.Count == 0) return 0;
+            int count = 0;
+            foreach (var coin in allCoins)
+            {
+                if (s.ProcessedSprites.Contains(coin.Index))
+                    count++;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Replay a BFS-found input sequence through the real (non-speculative)
+        /// simulation to generate PathPoints, Inputs, and collect final results.
+        /// </summary>
+        private void ReplayBfsPath(List<bool> inputSequence, int startX_px, int startY_px,
+                                    int startSpeedUiIndex, int startGameMode,
+                                    bool startGravFlipped, bool startMini)
+        {
+            var state = new SimState
+            {
+                X_fixed = startX_px << 8,
+                Y_fixed = startY_px << 8,
+                VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex),
+                VelY_fixed = 0,
+                GameMode = startGameMode,
+                GravFlipped = startGravFlipped,
+                Mini = startMini,
+                GravMul = startGravFlipped ? -1 : 1,
+                WasZeroedByCollision = true,
+                OnGround = true,
+                ProcessedSprites = new HashSet<int>(),
+                PendingOrbIndex = -1,
+                PendingOrbSpriteId = -1
+            };
+            ApplyPortalsUpTo(ref state, startX_px);
+
+            PathPoints.Clear();
+            Inputs.Clear();
+            _speculativeDepth = 0;
+            _frameCounter = 0;
+            TraceFrameOpen();
+
+            for (int f = 0; f < inputSequence.Count; f++)
+            {
+                _frameCounter = f;
+                bool inp = inputSequence[f];
+                Inputs.Add(inp);
+
+                bool alive = StepFrame(ref state, inp, out bool endLevel);
+                TraceFrame(f, ref state, inp, alive);
+
+                int pathMiniOffY = (state.Mini && !state.GravFlipped) ? 4 : 0;
+                PathPoints.Add(((state.X_fixed >> 8) + 8,
+                                (state.Y_fixed >> 8) + pathMiniOffY + 8));
+
+                if (endLevel || !alive) break;
+            }
+
+            // Gather collected coins
+            if (PreferCoins && allCoins.Count > 0)
+            {
+                var collected = new HashSet<int>();
+                foreach (var coin in allCoins)
+                {
+                    if (state.ProcessedSprites.Contains(coin.Index))
+                        collected.Add(coin.Index);
+                }
+                FinalCollectedCoinIndices = collected;
+            }
+
+            ExtractSkippedPads(state);
+            TraceFrameClose();
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -1990,27 +2755,58 @@ namespace FamidashEditor
             }
             _backtrackActive = true;
             int deathGameMode = state.GameMode; // capture death mode before any restoration
+            // Only expand limits when the CURRENT death is a coin miss,
+            // not when _missedCoinIdx is stale from a prior section.
+            bool isCoinRetryDeath = (_missedCoinIdx >= 0 && _lastDeathReason == "MISSED_COIN");
 
             while (_backtrackCheckpoints.Count > 0 &&
-                   _backtrackAttempts < MAX_BACKTRACK_ATTEMPTS &&
+                   _backtrackAttempts < (isCoinRetryDeath ? 1500 : MAX_BACKTRACK_ATTEMPTS) &&
                    _totalBacktrackAttempts < MAX_TOTAL_BACKTRACK_ATTEMPTS &&
-                   (_backtrackTimer == null || _backtrackTimer.Elapsed.TotalSeconds < (_missedCoinIdx >= 0 ? MAX_BACKTRACK_SECONDS_COIN : MAX_BACKTRACK_SECONDS)))
+                   (_backtrackTimer == null || _backtrackTimer.Elapsed.TotalSeconds < (isCoinRetryDeath ? MAX_BACKTRACK_SECONDS_COIN : MAX_BACKTRACK_SECONDS)))
             {
                 int last = _backtrackCheckpoints.Count - 1;
                 var cp = _backtrackCheckpoints[last];
 
                 // Allow cross-mode backtracking when the checkpoint is
-                // close to the death (within 500 frames) — mode transitions
-                // often need the player to undo the last few decisions from
-                // the prior mode.  Far-away cross-mode checkpoints are still
-                // discarded to avoid replaying already-cleared sections.
+                // close to the death.  Mode transitions often need the player
+                // to undo the last few decisions from the prior mode.
+                // COIN RETRY: use a much larger limit (2000 frames) because
+                // ship-mode coins may be far from the cube→ship portal —
+                // the backtracker needs to reach cube checkpoints to change
+                // the ship entry altitude.
                 if (cp.GameMode != deathGameMode)
                 {
                     int frameDist = _btDeathFrame - cp.Frame;
-                    if (frameDist > 500)
+                    int crossModeLimit = isCoinRetryDeath ? 2000 : 500;
+                    if (frameDist > crossModeLimit)
                     {
                         _backtrackCheckpoints.RemoveAt(last);
                         continue;
+                    }
+                    if (isCoinRetryDeath && cp.RetryStage == 0)
+                        Console.Error.WriteLine($"[CROSSMODE_BT] cpMode={cp.GameMode} deathMode={deathGameMode} frameDist={frameDist} attempts={_backtrackAttempts}");
+                }
+
+                // SHIP COIN ESCALATION: After 3 failed attempts to collect a
+                // ship-mode coin, skip NEARBY same-mode checkpoints (within 200
+                // frames of death) — those are past the fork and minor tweaks
+                // won't help.  Keep DISTANT ship checkpoints (near the fork
+                // entrance) where trajectory changes can route the ship to the
+                // coin's corridor.
+                if (isCoinRetryDeath && cp.GameMode == deathGameMode
+                    && (deathGameMode == 1 || deathGameMode == 3))
+                {
+                    _coinMissRetryCount.TryGetValue(allCoins[_missedCoinIdx].Index, out int mc);
+                    if (mc >= 3)
+                    {
+                        int frameDist3 = _btDeathFrame - cp.Frame;
+                        if (frameDist3 < 200)
+                        {
+                            // Near death — past the fork, skip quickly
+                            _backtrackCheckpoints.RemoveAt(last);
+                            continue;
+                        }
+                        // Keep fork-area and earlier checkpoints
                     }
                 }
 
@@ -2032,7 +2828,29 @@ namespace FamidashEditor
                 // reach elevated checkpoints where height matters.
                 int maxStages;
                 if (cp.GameMode == 1 || cp.GameMode == 3)
-                    maxStages = (_missedCoinIdx >= 0) ? 8 : 4;
+                {
+                    if (isCoinRetryDeath)
+                    {
+                        // Ship/UFO coin retry: distance-adaptive staging.
+                        // The coin's path typically branches off well before
+                        // the coin itself.  Checkpoints near the fork entrance
+                        // (300-700 frames from death) get full 16-stage
+                        // exploration; nearby ones (minor tweaks) get few.
+                        int frameDist4 = _btDeathFrame - cp.Frame;
+                        if (frameDist4 < 150)
+                            maxStages = 2;   // near death: suppress only
+                        else if (frameDist4 < 300)
+                            maxStages = 4;   // moderate: bias ± and force
+                        else if (frameDist4 < 700)
+                            maxStages = 16;  // fork area: full exploration
+                        else
+                            maxStages = 4;   // before fork: moderate
+                    }
+                    else
+                    {
+                        maxStages = 4;
+                    }
+                }
                 else if (cp.GameMode == 2)
                     maxStages = 10;
                 else
@@ -2060,7 +2878,7 @@ namespace FamidashEditor
                     // ABOVE the player (>40px), nearby checkpoints at similar altitude
                     // won't help — we need to reach distant checkpoints where the
                     // player can take a different (higher) route. Cap nearby stages.
-                    else if (_missedCoinIdx >= 0)
+                    else if (isCoinRetryDeath)
                     {
                         var mc = allCoins[_missedCoinIdx];
                         int coinCenterY = (mc.HitTop + mc.HitBottom) / 2;
@@ -2088,13 +2906,52 @@ namespace FamidashEditor
 
                 // Restore state to before the decision at this checkpoint
                 state = cp.State.Clone();
-                // Re-add permanently collected coins — backtracking should not
-                // undo coin collection.  Coins are non-physical collectibles so
-                // having them in ProcessedSprites merely prevents re-collection.
+                // Invalidate permanently collected coins that were collected
+                // AFTER this checkpoint — those coins were on the now-truncated
+                // path and the new path may not reach them.  Always invalidate
+                // regardless of whether this is a coin retry or regular death,
+                // because the PATH is being rewritten and must honestly reflect
+                // which coins are actually collected on it.
                 if (PreferCoins && _permanentlyCollectedCoins.Count > 0)
                 {
-                    foreach (int coinIdx in _permanentlyCollectedCoins)
-                        state.ProcessedSprites.Add(coinIdx);
+                    var staleCoins = new List<int>();
+                    foreach (var kv in _permanentlyCollectedCoins)
+                    {
+                        if (kv.Value >= cp.Frame)
+                            staleCoins.Add(kv.Key);
+                    }
+                    foreach (int stale in staleCoins)
+                    {
+                        _permanentlyCollectedCoins.Remove(stale);
+                        // Track collect-then-lose: coin was collected but the
+                        // path died, forcing backtrack to invalidate it.
+                        _coinCollectThenLoseCount.TryGetValue(stale, out int loseCount);
+                        loseCount++;
+                        _coinCollectThenLoseCount[stale] = loseCount;
+                        if (loseCount >= MAX_COIN_COLLECT_LOSE && !_forgivenCoins.Contains(stale))
+                        {
+                            // Auto-forgive: coin is physically reachable but
+                            // the ship can't survive afterward.
+                            _forgivenCoins.Add(stale);
+                            _autoForgivenCoins.Add(stale);
+                            // Determine the game mode from the coin's allCoins entry
+                            for (int ci2 = 0; ci2 < allCoins.Count; ci2++)
+                            {
+                                if (allCoins[ci2].Index == stale)
+                                {
+                                    _forgivenCoinGameModes[stale] = state.GameMode;
+                                    break;
+                                }
+                            }
+                            Console.Error.WriteLine($"[COIN_COLLECT_LOSE_FORGIVEN] idx={stale} gm={state.GameMode} loseCount={loseCount}");
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[COIN_COLLECT_LOSE_FORGIVEN] idx={stale} loseCount={loseCount} — collected {MAX_COIN_COLLECT_LOSE}x but path always dies");
+#endif
+                        }
+                    }
+                    // Re-add coins collected BEFORE the checkpoint
+                    foreach (var kv in _permanentlyCollectedCoins)
+                        state.ProcessedSprites.Add(kv.Key);
                 }
                 _cubeHoldJump = cp.HoldJumpState;
                 _cubeHoldDelay = cp.HoldDelayState;
@@ -2110,8 +2967,15 @@ namespace FamidashEditor
                 _btSkipSpecificOrbs = new HashSet<int>(cp.SkipSpecificOrbs ?? new());
                 _btSkipSpecificPads = new HashSet<int>(cp.SkipSpecificPads ?? new());
                 _prevFrameWasGrounded = cp.PrevFrameWasGrounded;
+                _nextCoinCheckIdx = cp.NextCoinCheckIdx;
                 _coinInputScript.Clear();
                 _coinInputScriptCoinIdx = -1;
+                // Reset beam search tracking on backtrack — different backtrack
+                // stages change ship altitude/velocity, leading to different beam
+                // trajectories. Without this, the beam only gets one shot from
+                // the initial forward pass.
+                _beamSearchAttemptedCoinIdx = -1;
+                _beamSearchLastDistX = int.MaxValue;
 
                 // Snapshot the failed path segment before truncating (cap to prevent memory bloat)
                 if (PathPoints.Count > cp.PathPointCount && AttemptedPaths.Count < 200)
@@ -2157,6 +3021,30 @@ namespace FamidashEditor
                 return true;
             }
 
+            // CROSS-MODE INJECTION: If all checkpoints are exhausted or the
+            // attempt limit was hit, inject the saved pre-ship transition checkpoint.
+            // This checkpoint survives FIFO eviction and gives the backtracker access
+            // to the last cube/ball decision point before the ship portal.
+            // Only triggers when the CURRENT death is MISSED_COIN — NOT stale
+            // _missedCoinIdx from a previous section.  Without the death-reason
+            // check, a terrain death in ship mode (while _missedCoinIdx is still
+            // set from a ball-section miss) would trigger injection, creating an
+            // infinite loop that prevents the COIN_FORGIVEN_ALT recovery path.
+            if (_lastCubeToShipCheckpoint != null
+                && isCoinRetryDeath)
+            {
+                var injected = _lastCubeToShipCheckpoint;
+                _lastCubeToShipCheckpoint = null; // consume — prevents infinite recursion
+                injected.RetryStage = 0;
+                // Clear remaining checkpoints and reset attempt counter so the
+                // injected checkpoint gets a full budget of retries.
+                _backtrackCheckpoints.Clear();
+                _backtrackCheckpoints.Add(injected);
+                _backtrackAttempts = 0;
+                Console.Error.WriteLine($"[CROSSMODE_INJECT] frame={injected.Frame} mode={injected.GameMode} attempts={_backtrackAttempts}");
+                return TryBacktrack(ref state, ref frame);
+            }
+
             _backtrackActive = false;
             return false;
         }
@@ -2179,16 +3067,18 @@ namespace FamidashEditor
 
                 if (state.GameMode == 1) // Ship mode overrides
                 {
-                    // Ship backtrack: 8 stages per checkpoint when retrying for
-                    // a missed coin, 4 otherwise.  Coin retries apply much larger
-                    // corridor biases to navigate through alternate corridors.
+                    // Ship backtrack: 16 stages per checkpoint when retrying for
+                    // a missed coin, 4 otherwise.  Coin retries use corridor
+                    // biases, force inputs, and sine-wave patterns to navigate
+                    // through alternate corridors and exploit ship velocity arcs.
                     int dist = _btOverrideDistFromDeath;
                     int forceDuration = Math.Max(4, dist / 3);
                     int biasAmount = Math.Max(24, Math.Min(72, dist));
+                    _shipForceReleaseFirstFrames = 0;
                     _shipForceHoldFrames = 0;
                     _shipForceReleaseFrames = 0;
                     
-                    if (_missedCoinIdx >= 0 && _missedCoinIdx < allCoins.Count)
+                    if (_missedCoinIdx >= 0 && _btOrigDeathReason == "MISSED_COIN" && _missedCoinIdx < allCoins.Count)
                     {
                         // Coin-aware stages: use large biases toward the coin Y.
                         // Also increase aggressive threshold so PD overrides tree
@@ -2200,9 +3090,12 @@ namespace FamidashEditor
                         int corr = FindCorridorCenter(ref state);
                         int coinBias = coinCenterY - corr; // bias to steer toward coin
                         int coinDir = (coinBias < 0) ? -1 : 1; // direction to coin
-                        // Mix corridor bias and force-hold/release stages.
-                        // Force inputs physically commit the ship to a different
-                        // altitude, bypassing the corridor finder's geometry clamping.
+                        // Mix corridor bias, force-hold/release, and sine-wave
+                        // stages. Force inputs physically commit the ship to a
+                        // different altitude, bypassing corridor geometry clamping.
+                        // Sine-wave stages (9-16) use release-first to dip toward
+                        // the coin, then hold to recover — exploiting the ship's
+                        // velocity-based arc capabilities.
                         // coinDir > 0 means coin is below (need to release/fall).
                         // coinDir < 0 means coin is above (need to hold/thrust).
                         int forceDur = Math.Max(6, dist / 2);
@@ -2236,6 +3129,57 @@ namespace FamidashEditor
                                 _shipCorridorBias = coinDir * 250;
                                 break;
                             case 8: _shipCorridorBias = coinDir * 300; break;
+                            // ── Sine-wave stages: dip toward coin then recover ──
+                            // These create hold→release or release→hold sequences
+                            // that exploit the ship's velocity for wide arcs.
+                            case 9:
+                                // Short sine wave toward coin
+                                if (coinDir > 0) { _shipForceReleaseFirstFrames = forceDur; _shipForceHoldFrames = forceDur; }
+                                else { _shipForceHoldFrames = forceDur; _shipForceReleaseFrames = forceDur; }
+                                _shipCorridorBias = coinDir * 100;
+                                break;
+                            case 10:
+                                // Medium sine wave toward coin
+                                if (coinDir > 0) { _shipForceReleaseFirstFrames = forceDur * 2; _shipForceHoldFrames = forceDur; }
+                                else { _shipForceHoldFrames = forceDur * 2; _shipForceReleaseFrames = forceDur; }
+                                _shipCorridorBias = coinDir * 150;
+                                break;
+                            case 11:
+                                // Long sine wave toward coin
+                                if (coinDir > 0) { _shipForceReleaseFirstFrames = forceDur * 2; _shipForceHoldFrames = forceDur * 2; }
+                                else { _shipForceHoldFrames = forceDur * 2; _shipForceReleaseFrames = forceDur * 2; }
+                                _shipCorridorBias = coinDir * 200;
+                                break;
+                            case 12:
+                                // Deep dip: long toward, short recover
+                                if (coinDir > 0) { _shipForceReleaseFirstFrames = forceDur * 3; _shipForceHoldFrames = forceDur; }
+                                else { _shipForceHoldFrames = forceDur * 3; _shipForceReleaseFrames = forceDur; }
+                                _shipCorridorBias = coinDir * 250;
+                                break;
+                            case 13:
+                                // Very deep dip with strong recovery
+                                if (coinDir > 0) { _shipForceReleaseFirstFrames = forceDur * 3; _shipForceHoldFrames = forceDur * 3; }
+                                else { _shipForceHoldFrames = forceDur * 3; _shipForceReleaseFrames = forceDur * 3; }
+                                _shipCorridorBias = coinDir * 300;
+                                break;
+                            case 14:
+                                // Quick dip: short toward, long recover
+                                if (coinDir > 0) { _shipForceReleaseFirstFrames = forceDur; _shipForceHoldFrames = forceDur * 2; }
+                                else { _shipForceHoldFrames = forceDur; _shipForceReleaseFrames = forceDur * 2; }
+                                _shipCorridorBias = coinDir * 80;
+                                break;
+                            case 15:
+                                // Maximum force: very long dip
+                                if (coinDir > 0) { _shipForceReleaseFirstFrames = forceDur * 4; _shipForceHoldFrames = forceDur * 2; }
+                                else { _shipForceHoldFrames = forceDur * 4; _shipForceReleaseFrames = forceDur * 2; }
+                                _shipCorridorBias = coinDir * 350;
+                                break;
+                            case 16:
+                                // Opposite sine wave (some coins need to go around)
+                                if (coinDir > 0) { _shipForceHoldFrames = forceDur * 2; _shipForceReleaseFrames = forceDur * 2; }
+                                else { _shipForceReleaseFirstFrames = forceDur * 2; _shipForceHoldFrames = forceDur * 2; }
+                                _shipCorridorBias = -coinDir * 200;
+                                break;
                         }
                     }
                     else
@@ -2250,7 +3194,7 @@ namespace FamidashEditor
                         }
                     }
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[BACKTRACK_OVERRIDE_SHIP] stage={stage} dist={dist}: bias={_shipCorridorBias} forceHold={_shipForceHoldFrames} forceRel={_shipForceReleaseFrames} coinRetry={_missedCoinIdx >= 0}");
+                    PfLog($"[BACKTRACK_OVERRIDE_SHIP] stage={stage} dist={dist}: bias={_shipCorridorBias} forceRelFirst={_shipForceReleaseFirstFrames} forceHold={_shipForceHoldFrames} forceRel={_shipForceReleaseFrames} coinRetry={_missedCoinIdx >= 0}");
 #endif
                     // Fall through to normal DecideShipInput with new bias/force active
                     return DecideShipInput(state);
@@ -3285,7 +4229,6 @@ namespace FamidashEditor
                         }
                     }
                     _speculativeDepth--;
-                    Console.Error.WriteLine($"[COIN_WALK_DBG] idx={coin.Index} playerXY=({playerX},{playerY}) coinXY=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) collected={coinCollected} collFrame={coinCollectedFrame} walkSurv={walkSurvival} minY={dbgMinY} maxY={dbgMaxY} endXY=({dbgEndX},{dbgEndY})");
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[COIN_WALK_DBG] idx={coin.Index} playerXY=({playerX},{playerY}) coinXY=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) coinCenterY={coinCenterY} collected={coinCollected} collFrame={coinCollectedFrame} walkSurv={walkSurvival}");
 #endif
@@ -3661,7 +4604,7 @@ namespace FamidashEditor
                     var coin2 = allCoins[ci2];
                     if (state.ProcessedSprites.Contains(coin2.Index) || _forgivenCoins.Contains(coin2.Index))
                         continue;
-                    if (coin2.HitLeft > playerX2 + 2000) break;
+                    if (coin2.HitLeft > playerX2 + 1500) break;
                     if (coin2.HitRight < playerX2) continue;
                     int coinCenterY2 = (coin2.HitTop + coin2.HitBottom) / 2;
                     if (coinCenterY2 > playerY2) // coin is below player
@@ -3693,13 +4636,26 @@ namespace FamidashEditor
                     var coin = allCoins[ci];
                     if (state.ProcessedSprites.Contains(coin.Index) || _forgivenCoins.Contains(coin.Index))
                         continue;
-                    if (coin.HitLeft > playerX + 4000) break; // 4000px lookahead
+                    if (coin.HitLeft > playerX + 1500) break; // 1500px lookahead
                     if (coin.HitRight < playerX) continue;    // already passed
                     cubeCoinTargetY = (coin.HitTop + coin.HitBottom) / 2;
                     int coinXDist = Math.Max(0, coin.HitLeft - playerX);
-                    double proximityScale = Math.Max(0.1, 1.0 - (double)coinXDist / 4000.0);
-                    int jumpDistToCoin = Math.Abs(bestF0JumpMinY - cubeCoinTargetY);
-                    int walkDistToCoin = Math.Abs(bestF0WalkMinY - cubeCoinTargetY);
+                    double proximityScale = Math.Max(0.1, 1.0 - (double)coinXDist / 1500.0);
+                    // For coins ABOVE the player (lower Y): if a path overshoots
+                    // past the coin (minY < coinY), it passed through the coin's
+                    // Y level, so distance = 0. This prevents penalizing pad-
+                    // launched paths that overshoot the coin altitude.
+                    int jumpDistToCoin, walkDistToCoin;
+                    if (cubeCoinTargetY < (state.Y_fixed >> 8))
+                    {
+                        jumpDistToCoin = bestF0JumpMinY <= cubeCoinTargetY ? 0 : bestF0JumpMinY - cubeCoinTargetY;
+                        walkDistToCoin = bestF0WalkMinY <= cubeCoinTargetY ? 0 : bestF0WalkMinY - cubeCoinTargetY;
+                    }
+                    else
+                    {
+                        jumpDistToCoin = Math.Abs(bestF0JumpMinY - cubeCoinTargetY);
+                        walkDistToCoin = Math.Abs(bestF0WalkMinY - cubeCoinTargetY);
+                    }
                     int rawDiff = walkDistToCoin - jumpDistToCoin;
                     // Scale bonus up to BFS_HORIZON — makes coin proximity a
                     // dominant factor when both paths survive equally.
@@ -3726,6 +4682,9 @@ namespace FamidashEditor
             // ALSO suppress holdBonus when the walk path stays lower (closer to
             // ground) — this indicates the cube should walk under an obstacle
             // rather than jumping into it (e.g. COL_TOP platforms).
+            // ALSO suppress when walk ALSO survives the full horizon — in that
+            // case both paths are equally good and holdBonus would arbitrarily
+            // prefer jump, potentially sending the cube to an elevated dead end.
             bool walkStaysLower = bestF0WalkMinY != int.MaxValue
                 && bestF0JumpMinY != int.MaxValue
                 && bestF0WalkMinY > bestF0JumpMinY;
@@ -3786,24 +4745,69 @@ namespace FamidashEditor
 
             int jumpScore = bestF0JumpSurv + holdBonus + elevBonus + coinBonusJump - altPenaltyJump;
             int walkScore = bestF0WalkSurv + coinBonusWalk;
+#if !DISABLE_DEBUG_LOGGING
+            string _tbPath = "";
+#endif
             if (jumpScore > walkScore)
-                shouldJump = true;
+            { shouldJump = true;
+#if !DISABLE_DEBUG_LOGGING
+              _tbPath = "JSCORE";
+#endif
+            }
             else if (walkScore > jumpScore)
-                shouldJump = false;
+            { shouldJump = false;
+#if !DISABLE_DEBUG_LOGGING
+              _tbPath = "WSCORE";
+#endif
+            }
             else if (isElevated && bestF0JumpSurv >= BFS_HORIZON && bestF0WalkSurv >= BFS_HORIZON
                      && bestF0JumpMinY > bestF0WalkMinY) // walk genuinely stays higher
-                shouldJump = false; // elevated tiebreak: walk preserves altitude better
+            { shouldJump = false;
+#if !DISABLE_DEBUG_LOGGING
+              _tbPath = "ELEV_ALT";
+#endif
+            }
             else if (isElevated && bestF0JumpSurv >= BFS_HORIZON && bestF0WalkSurv >= BFS_HORIZON)
-                shouldJump = false; // elevated generic: walk maintains the trajectory the
-                                    // elevated BFS internally found viable; jumping changes
-                                    // the arc phase and can miss the wall gap
+            { shouldJump = false;
+#if !DISABLE_DEBUG_LOGGING
+              _tbPath = "ELEV_GEN";
+#endif
+            }
             else if (bestF0JumpSurv >= BFS_HORIZON && bestF0WalkSurv >= BFS_HORIZON
                      && bestF0WalkMinY > bestF0JumpMinY) // walk genuinely stays lower (closer to ground)
-                shouldJump = false; // floor-level tiebreak: walk avoids overhead obstacles
+            { shouldJump = false;
+#if !DISABLE_DEBUG_LOGGING
+              _tbPath = "FLOOR_TB";
+#endif
+            }
+            // When an uncollected coin is nearby and scores are tied,
+            // prefer WALK to stay grounded for pad-based coin collection.
+            // Without this, DEFJ launches the cube off course right when
+            // the coin proximity bonus equalizes between paths.
+            else if (cubeCoinTargetY >= 0 && bestF0JumpX >= bestF0WalkX)
+            { shouldJump = false;
+#if !DISABLE_DEBUG_LOGGING
+              _tbPath = "COIN_WALK";
+#endif
+            }
             else if (bestF0JumpX >= bestF0WalkX)
-                shouldJump = true;  // tied: prefer jump (maintains momentum)
+            { shouldJump = true;
+#if !DISABLE_DEBUG_LOGGING
+              _tbPath = "DEFJ";
+#endif
+            }
             else
-                shouldJump = false;
+            { shouldJump = false;
+#if !DISABLE_DEBUG_LOGGING
+              _tbPath = "DEFW";
+#endif
+            }
+#if !DISABLE_DEBUG_LOGGING
+            if (_speculativeDepth == 0)
+            {
+                PfLog($"[CUBE_DBG] X={state.X_fixed >> 8} Y={state.Y_fixed >> 8} jS={bestF0JumpSurv} wS={bestF0WalkSurv} jSc={jumpScore} wSc={walkScore} hB={holdBonus} jMY={bestF0JumpMinY} wMY={bestF0WalkMinY} tb={_tbPath}");
+            }
+#endif
 
 #if !DISABLE_DEBUG_LOGGING
             PfLog($"[DECIDE_CUBE] BFS: jumpSurv={bestF0JumpSurv} jumpX={bestF0JumpX} holdPat={bestF0JumpHoldPattern} jumpMinY={bestF0JumpMinY}, walkSurv={bestF0WalkSurv} walkX={bestF0WalkX} walkMinY={bestF0WalkMinY} elevBonus={elevBonus} coinBonusJ={coinBonusJump} coinBonusW={coinBonusWalk} → {(shouldJump?"JUMP":"WALK")}");
@@ -3880,6 +4884,7 @@ namespace FamidashEditor
         private void UnforgiveCrossCorridorCoins(int newMode)
         {
             if (_crossCorrForgivenCoins.Count == 0) return;
+            if (_speculativeDepth > 0) return; // Skip during BFS (thread safety)
             var toRemove = new List<int>();
             foreach (var kvp in _crossCorrForgivenCoins)
             {
@@ -3907,6 +4912,12 @@ namespace FamidashEditor
         private bool DecideShipInput(SimState state)
         {
             // Forced input overrides from backtrack (hold/release for N frames)
+            // Release-first fires before hold, enabling dip-then-recover sine waves.
+            if (_shipForceReleaseFirstFrames > 0)
+            {
+                _shipForceReleaseFirstFrames--;
+                return false;
+            }
             if (_shipForceHoldFrames > 0)
             {
                 _shipForceHoldFrames--;
@@ -3924,7 +4935,10 @@ namespace FamidashEditor
             int coinDistX = 0; // horizontal distance to coin
             SpriteEntry coinEntry = default;
             bool hasCoinEntry = false;
-            if (PreferCoins && allCoins.Count > 0)
+            // Suppress coin-seeking during mode transition stabilization
+            if (_speculativeDepth == 0 && _modeTransitionStabilizeFrames > 0)
+                _modeTransitionStabilizeFrames--;
+            if (PreferCoins && allCoins.Count > 0 && _modeTransitionStabilizeFrames == 0)
             {
                 int playerX = state.X_fixed >> 8;
                 for (int ci = _nextCoinCheckIdx; ci < allCoins.Count; ci++)
@@ -4002,26 +5016,69 @@ namespace FamidashEditor
             // Runs INDEPENDENTLY of survival difference (survH vs survR).
             // At large distances, both hold/release may survive equally well,
             // but we need to start descending early to reach the coin.
-            // Only run once per approach: when distX is in the sweet spot (40-200px).
-            if (coinTargetY >= 0 && hasCoinEntry && _coinInputScript.Count == 0
-                && coinDistX >= 40 && coinDistX <= 200
-                && _beamSearchAttemptedCoinIdx != coinTargetIdx)
+            //
+            // The search plans a full dive-collect-recover trajectory:
+            //   1. Approach: steer toward coin Y while surviving
+            //   2. Collect: overlap coin hitbox
+            //   3. Recover: pull up and return to corridor center
+            //
+            // Triggers at distX 20-600px (extended from 300 to plan earlier
+            // descents for deep coins). Re-attempts every 30px closer.
+            // For coins far off-corridor, extend the beam range so it fires
+            // at the fork entrance where the ship can still change corridors.
+            // Only extend when the coin is reasonably close (within 1200px) to
+            // avoid triggering expensive long-range beams for coins in a
+            // different game mode section far ahead.
+            int beamMaxRange = 600;
+            bool isExtendedBeam = false;
+            if (coinTargetY >= 0 && hasCoinEntry && coinDistX <= 1200)
             {
-                const int BEAM_WIDTH = 128;
-                int beamHorizon = Math.Min(80, coinDistX + 10); // enough to reach coin
+                int corridorY = FindCorridorCenter(ref state);
+                int yOff = Math.Abs(coinTargetY - corridorY);
+                if (yOff > 40)
+                {
+                    beamMaxRange = Math.Min(1200, Math.Max(600, yOff * 10));
+                    isExtendedBeam = coinDistX > 600;
+                }
+            }
+            // Extended-range beams re-fire less frequently (every 60px) to
+            // limit the performance cost of long-horizon searches.
+            int beamReFireDist = isExtendedBeam ? 60 : 30;
+            bool beamSearchAllowed = coinTargetY >= 0 && hasCoinEntry && _coinInputScript.Count == 0
+                && coinDistX >= 20 && coinDistX <= beamMaxRange
+                && (_beamSearchAttemptedCoinIdx != coinTargetIdx
+                    || coinDistX <= _beamSearchLastDistX - beamReFireDist);
+            if (beamSearchAllowed)
+            {
+                // Extended-range beams use a narrower beam to limit compute cost.
+                int BEAM_WIDTH = isExtendedBeam ? 128 : 512;
+                // After coin collection, continue beam for RECOVERY_FRAMES more
+                // frames to navigate obstacles beyond the coin. This is critical
+                // because PD-based recovery can fly into death tiles that the
+                // beam search can avoid by exploring both hold/release at each step.
+                const int RECOVERY_FRAMES = 120;
+                // Horizon: enough to reach and collect coin, plus recovery.
+                // For extended-range beams (off-corridor coins), allow a larger
+                // horizon so the beam can plan through the gap and reach the coin.
+                int beamHorizon = isExtendedBeam
+                    ? Math.Max(450, coinDistX / 2 + 60 + RECOVERY_FRAMES)
+                    : Math.Min(450, coinDistX * 3 / 4 + 60 + RECOVERY_FRAMES);
                 _speculativeDepth++;
 
-                var beam = new List<(SimState st, List<bool> inputs)>();
-                beam.Add((state.Clone(), new List<bool>()));
+                // Each beam state tracks whether the coin has been collected
+                // and how many frames ago. collected=-1 means not yet.
+                var beam = new List<(SimState st, List<bool> inputs, int collected)>();
+                beam.Add((state.Clone(), new List<bool>(), -1));
 
                 bool foundTrajectory = false;
                 var bestScript = new List<bool>();
+                int bestPostCollectSurvival = 0;
 
                 for (int step = 0; step < beamHorizon && beam.Count > 0; step++)
                 {
-                    var nextBeam = new List<(SimState st, List<bool> inputs, int coinDist)>();
+                    var nextBeam = new List<(SimState st, List<bool> inputs, int collected, int score)>();
 
-                    foreach (var (bs, bInputs) in beam)
+                    foreach (var (bs, bInputs, bCollected) in beam)
                     {
                         for (int tryHold = 0; tryHold <= 1; tryHold++)
                         {
@@ -4030,88 +5087,398 @@ namespace FamidashEditor
                             if (!StepFrame(ref sim, inp, out _)) continue; // died
 
                             var newInputs = new List<bool>(bInputs) { inp };
+                            int newCollected = bCollected;
 
-                            // Check coin overlap
-                            int nx = (sim.X_fixed >> 8) + 1;
-                            int hbW_s = GetHitboxW(sim.Mini);
-                            int hbH_s = GetHitboxH(sim.Mini);
-                            int hbOff_s = GetHitboxOffsetY(sim.Mini, sim.GravFlipped);
-                            int pT = (sim.Y_fixed >> 8) + hbOff_s;
-                            if (!(nx + hbW_s < coinEntry.HitLeft || coinEntry.HitRight < nx) &&
-                                !(pT + hbH_s < coinEntry.HitTop || coinEntry.HitBottom < pT))
+                            // Check coin overlap if not yet collected
+                            if (newCollected < 0)
                             {
-                                // Coin collected! But verify the ship can survive
-                                // by simulating PD steering for 40 more frames.
-                                int corridorY = FindCorridorCenter(ref sim);
-                                bool survives = true;
-                                var postSim = sim.Clone();
-                                for (int pf = 0; pf < 40; pf++)
+                                int nx = (sim.X_fixed >> 8) + 1;
+                                int hbW_s = GetHitboxW(sim.Mini);
+                                int hbH_s = GetHitboxH(sim.Mini);
+                                int hbOff_s = GetHitboxOffsetY(sim.Mini, sim.GravFlipped);
+                                int pT = (sim.Y_fixed >> 8) + hbOff_s;
+                                if (!(nx + hbW_s < coinEntry.HitLeft || coinEntry.HitRight < nx) &&
+                                    !(pT + hbH_s < coinEntry.HitTop || coinEntry.HitBottom < pT))
                                 {
-                                    int psy = postSim.Y_fixed >> 8;
-                                    int psVel = postSim.VelY_fixed;
-                                    int ppErr = (postSim.GravMul > 0) ? (psy - corridorY) : (corridorY - psy);
-                                    int pvComp = -(psVel * postSim.GravMul);
-                                    bool pInp = (ppErr - pvComp * 2) > 0;
-                                    if (!StepFrame(ref postSim, pInp, out _)) { survives = false; break; }
+                                    newCollected = 0; // just collected
                                 }
-                                if (survives)
-                                {
-                                    foundTrajectory = true;
-                                    bestScript = newInputs;
-                                    break;
-                                }
-                                // else: would die after collecting, keep searching
                             }
 
-                            // Eliminate states past the coin
-                            int sx = sim.X_fixed >> 8;
-                            if (sx > coinEntry.HitRight + 4) continue;
+                            if (newCollected >= 0)
+                            {
+                                // Post-collection phase: count survival frames
+                                newCollected++;
 
-                            int sy = sim.Y_fixed >> 8;
-                            int dy = Math.Abs(sy - coinTargetY);
-                            int dx = Math.Max(0, coinEntry.HitLeft - sx);
-                            int dist = dy + dx / 4;
-                            nextBeam.Add((sim, newInputs, dist));
+                                if (newCollected >= RECOVERY_FRAMES)
+                                {
+                                    // Survived long enough after collection — accept!
+                                    foundTrajectory = true;
+                                    bestScript = newInputs;
+                                    bestPostCollectSurvival = newCollected;
+                                    break;
+                                }
+
+                                // Track best trajectory so far
+                                if (newCollected > bestPostCollectSurvival)
+                                {
+                                    bestPostCollectSurvival = newCollected;
+                                    bestScript = new List<bool>(newInputs);
+                                }
+
+                                // Score for post-collection: favor states near corridor
+                                // center with low velocity (stable flight). This steers
+                                // around upcoming obstacles because the beam explores
+                                // both hold/release, keeping alive only paths that
+                                // survive the terrain ahead.
+                                int sy = sim.Y_fixed >> 8;
+                                int corridorY = FindCorridorCenter(ref sim);
+                                int dyCorridor = Math.Abs(sy - corridorY);
+                                int velYMag = Math.Abs(sim.VelY_fixed) >> 6;
+                                // Strongly prefer collected states (score offset -10000)
+                                // so they aren't pruned by uncollected states
+                                int score = -10000 + dyCorridor * 3 + velYMag;
+                                nextBeam.Add((sim, newInputs, newCollected, score));
+                            }
+                            else
+                            {
+                                // Pre-collection phase: steer toward coin
+                                int sx = sim.X_fixed >> 8;
+                                // Eliminate states past the coin that didn't collect it
+                                if (sx > coinEntry.HitRight + 4) continue;
+
+                                int sy = sim.Y_fixed >> 8;
+                                int dy = Math.Abs(sy - coinTargetY);
+                                int dx = Math.Max(0, coinEntry.HitLeft - sx);
+                                int score;
+
+                                // Scoring: balance X distance with Y proximity.
+                                // All states advance at the same X speed, so dx
+                                // differences are small — give meaningful Y weight
+                                // at ALL distances so the beam preserves dive
+                                // trajectories heading toward the coin.
+                                if (dx > 120)
+                                    score = dx + dy;          // equal weight (was dx*2 + dy/4)
+                                else if (dx > 50)
+                                    score = dx / 2 + dy * 2;  // favor Y more
+                                else if (dx > 15)
+                                    score = dx / 4 + dy * 4;  // strongly favor Y
+                                else
+                                    score = dy * 6 + dx / 4;  // almost pure Y
+
+                                // Velocity bonus for diving toward coin
+                                int velY_s = sim.VelY_fixed;
+                                int yDiff = coinTargetY - sy;
+                                bool velToward = (yDiff > 0) == (velY_s * sim.GravMul > 0);
+                                if (velToward && dy > 4)
+                                {
+                                    int velMag = Math.Abs(velY_s) >> 7;
+                                    score -= Math.Min(dy / 2, velMag);
+                                }
+
+                                bool pastCoinY = (sim.GravMul > 0) ? (sy > coinTargetY + 20) : (sy < coinTargetY - 20);
+                                bool velAway = !velToward && Math.Abs(velY_s) > 0x200;
+                                if (pastCoinY && velAway)
+                                    score += 200;
+
+                                nextBeam.Add((sim, newInputs, newCollected, score));
+                            }
                         }
                         if (foundTrajectory) break;
                     }
                     if (foundTrajectory) break;
 
-                    nextBeam.Sort((a, b) => a.coinDist.CompareTo(b.coinDist));
-                    beam.Clear();
-                    int keep = Math.Min(BEAM_WIDTH, nextBeam.Count);
-                    for (int i = 0; i < keep; i++)
-                        beam.Add((nextBeam[i].st, nextBeam[i].inputs));
+                    // Accept best trajectory if beam exhausted and recovery is full
+                    if (bestPostCollectSurvival >= RECOVERY_FRAMES && nextBeam.Count == 0)
+                    {
+                        foundTrajectory = true;
+                        break;
+                    }
 
+                    // === DIVERSITY-PRESERVING BEAM PRUNING ===
+                    // Standard beam search prunes purely by coin-proximity score,
+                    // which kills off "safe but far from coin" states. These safe
+                    // states are essential: they survive obstacles that diving states
+                    // hit, and may find later openings to dive. Reserve 25% of the
+                    // beam for survival-scored states (regardless of coin proximity).
+                    //
+                    // Split nextBeam into:
+                    //   - collected: states that already have the coin (priority)
+                    //   - coinSeeking: states scored by coin proximity
+                    //   - safeReserve: states scored by survival (corridor proximity)
+                    int SAFE_RESERVE = BEAM_WIDTH / 4;
+                    int COIN_SEEKING = BEAM_WIDTH - SAFE_RESERVE;
+
+                    var collectedStates = new List<(SimState st, List<bool> inputs, int collected, int score)>();
+                    var uncollectedStates = new List<(SimState st, List<bool> inputs, int collected, int score)>();
+                    foreach (var ns in nextBeam)
+                    {
+                        if (ns.collected >= 0)
+                            collectedStates.Add(ns);
+                        else
+                            uncollectedStates.Add(ns);
+                    }
+
+                    beam.Clear();
+
+                    // All collected states get priority (they share the -10000 offset)
+                    collectedStates.Sort((a, b) => a.score.CompareTo(b.score));
+                    int collectedKeep = Math.Min(BEAM_WIDTH, collectedStates.Count);
+                    for (int i = 0; i < collectedKeep; i++)
+                        beam.Add((collectedStates[i].st, collectedStates[i].inputs, collectedStates[i].collected));
+
+                    int remaining = BEAM_WIDTH - beam.Count;
+                    if (remaining > 0 && uncollectedStates.Count > 0)
+                    {
+                        // Sort uncollected by coin-proximity score
+                        uncollectedStates.Sort((a, b) => a.score.CompareTo(b.score));
+
+                        // Take top COIN_SEEKING states by coin score
+                        int coinKeep = Math.Min(Math.Min(COIN_SEEKING, remaining), uncollectedStates.Count);
+                        var selectedIndices = new HashSet<int>();
+                        for (int i = 0; i < coinKeep; i++)
+                        {
+                            beam.Add((uncollectedStates[i].st, uncollectedStates[i].inputs, uncollectedStates[i].collected));
+                            selectedIndices.Add(i);
+                        }
+
+                        // Fill SAFE_RESERVE slots with states sorted by survival
+                        // (distance from corridor center + low velocity magnitude)
+                        remaining = BEAM_WIDTH - beam.Count;
+                        if (remaining > 0)
+                        {
+                            // Compute corridor center once (all states at ~same X)
+                            var refState = uncollectedStates[0].st;
+                            int safeCorridorY = FindCorridorCenter(ref refState);
+
+                            // Re-score uncollected states by survival quality
+                            var safeScored = new List<(int origIdx, int safeScore)>();
+                            for (int i = 0; i < uncollectedStates.Count; i++)
+                            {
+                                if (selectedIndices.Contains(i)) continue;
+                                var ns = uncollectedStates[i];
+                                int sy = ns.st.Y_fixed >> 8;
+                                int dyCorridor = Math.Abs(sy - safeCorridorY);
+                                int velMag = Math.Abs(ns.st.VelY_fixed) >> 6;
+                                safeScored.Add((i, dyCorridor * 2 + velMag));
+                            }
+                            safeScored.Sort((a, b) => a.safeScore.CompareTo(b.safeScore));
+                            int safeKeep = Math.Min(remaining, safeScored.Count);
+                            for (int i = 0; i < safeKeep; i++)
+                            {
+                                var ns = uncollectedStates[safeScored[i].origIdx];
+                                beam.Add((ns.st, ns.inputs, ns.collected));
+                            }
+                        }
+                    }
+                }
+
+                // Accept if recovery survived at least 15 frames.
+                // With death reason fixes (EJECT_DEATH properly labeled),
+                // partial recovery no longer causes MISSED_COIN cycling.
+                // Use a low threshold (15) because the auto-forgive counter
+                // prevents infinite cycling even if the trajectory fails.
+                if (!foundTrajectory && bestPostCollectSurvival >= 15)
+                {
+                    foundTrajectory = true;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[SHIP_COIN_BEAM_PARTIAL] Accepting partial recovery={bestPostCollectSurvival} for coin idx={coinEntry.Index} distX={coinDistX}");
+#endif
                 }
 
                 _speculativeDepth--;
-                _beamSearchAttemptedCoinIdx = coinTargetIdx; // don't re-run for this coin
+                _beamSearchAttemptedCoinIdx = coinTargetIdx;
+                _beamSearchLastDistX = coinDistX; // track distance for re-try
 
-                if (foundTrajectory)
+                if (foundTrajectory && bestScript.Count > 0)
                 {
                     _coinInputScript.Clear();
                     _coinInputScriptCoinIdx = coinTargetIdx;
                     for (int si = 1; si < bestScript.Count; si++)
                         _coinInputScript.Enqueue(bestScript[si]);
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[SHIP_COIN_BEAM] Found trajectory for coin idx={coinEntry.Index}, scriptLen={bestScript.Count}");
+                    PfLog($"[SHIP_COIN_BEAM] Found trajectory for coin idx={coinEntry.Index}, scriptLen={bestScript.Count}, distX={coinDistX}, recovery={bestPostCollectSurvival}");
 #endif
                     return bestScript[0];
+                }
+#if !DISABLE_DEBUG_LOGGING
+                else
+                {
+                    PfLog($"[SHIP_COIN_BEAM_FAIL] coin idx={coinEntry.Index} distX={coinDistX} horizon={beamHorizon} beamEnd={beam.Count} bestRecovery={bestPostCollectSurvival} found={foundTrajectory} scriptLen={bestScript.Count} lastDeath={_lastDeathReason} lastDeathX={_lastDeathX} lastDeathY={_lastDeathY}");
+                }
+#endif
+
+                // === SURVIVAL BEAM RETRY ===
+                // When ALL beam states died with no coin collection, the coin may
+                // be behind terrain obstacles (e.g., floor gaps between pillars)
+                // that coin-proximity scoring can't navigate because it drives
+                // states into walls. Retry with SEGMENT-based scoring: any Y
+                // between corridor center and coin Y scores equally well, so the
+                // beam maintains diversity across the entire descent band. States
+                // at the right Y naturally find gaps in the terrain.
+                if (beam.Count == 0 && bestPostCollectSurvival == 0)
+                {
+                    _speculativeDepth++;
+                    int retryCorridorY = FindCorridorCenter(ref state);
+                    const int RETRY_BEAM_WIDTH = 1024;
+                    int retryHorizon = Math.Min(600, coinDistX + 60 + RECOVERY_FRAMES);
+                    int segTop = Math.Min(retryCorridorY, coinTargetY);
+                    int segBot = Math.Max(retryCorridorY, coinTargetY);
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[SHIP_COIN_BEAM_SURVIVAL_RETRY] coin idx={coinEntry.Index} distX={coinDistX} corridorY={retryCorridorY} coinY={coinTargetY} segY=[{segTop},{segBot}] horizon={retryHorizon}");
+#endif
+                    beam.Clear();
+                    beam.Add((state.Clone(), new List<bool>(), -1));
+                    foundTrajectory = false;
+                    bestScript.Clear();
+                    bestPostCollectSurvival = 0;
+
+                    for (int step = 0; step < retryHorizon && beam.Count > 0; step++)
+                    {
+                        var nextBeam2 = new List<(SimState st, List<bool> inputs, int collected, int score)>();
+
+                        foreach (var (bs2, bInputs2, bCollected2) in beam)
+                        {
+                            for (int tryHold = 0; tryHold <= 1; tryHold++)
+                            {
+                                bool inp = (tryHold == 1);
+                                var sim = bs2.Clone();
+                                if (!StepFrame(ref sim, inp, out _)) continue;
+
+                                var newInputs = new List<bool>(bInputs2) { inp };
+                                int newCollected = bCollected2;
+
+                                // Check coin overlap
+                                if (newCollected < 0)
+                                {
+                                    int nx = (sim.X_fixed >> 8) + 1;
+                                    int hbW_s = GetHitboxW(sim.Mini);
+                                    int hbH_s = GetHitboxH(sim.Mini);
+                                    int hbOff_s = GetHitboxOffsetY(sim.Mini, sim.GravFlipped);
+                                    int pT = (sim.Y_fixed >> 8) + hbOff_s;
+                                    if (!(nx + hbW_s < coinEntry.HitLeft || coinEntry.HitRight < nx) &&
+                                        !(pT + hbH_s < coinEntry.HitTop || coinEntry.HitBottom < pT))
+                                    {
+                                        newCollected = 0;
+                                    }
+                                }
+
+                                int score;
+                                if (newCollected >= 0)
+                                {
+                                    // Post-collection: count recovery frames
+                                    newCollected++;
+                                    if (newCollected >= RECOVERY_FRAMES)
+                                    {
+                                        foundTrajectory = true;
+                                        bestScript = newInputs;
+                                        bestPostCollectSurvival = newCollected;
+                                        break;
+                                    }
+                                    if (newCollected > bestPostCollectSurvival)
+                                    {
+                                        bestPostCollectSurvival = newCollected;
+                                        bestScript = new List<bool>(newInputs);
+                                    }
+                                    int sy_rc = sim.Y_fixed >> 8;
+                                    int corridorY_rc = FindCorridorCenter(ref sim);
+                                    int dyCorridor_rc = Math.Abs(sy_rc - corridorY_rc);
+                                    int velYMag_rc = Math.Abs(sim.VelY_fixed) >> 6;
+                                    score = -10000 + dyCorridor_rc * 3 + velYMag_rc;
+                                }
+                                else
+                                {
+                                    // Pre-collection: SEGMENT scoring
+                                    // Any Y between corridor center and coin Y is equally
+                                    // good (dySegment=0). Penalize states outside this band.
+                                    int sx = sim.X_fixed >> 8;
+                                    if (sx > coinEntry.HitRight + 32) continue;
+
+                                    int sy = sim.Y_fixed >> 8;
+                                    int dySegment;
+                                    if (sy < segTop) dySegment = segTop - sy;
+                                    else if (sy > segBot) dySegment = sy - segBot;
+                                    else dySegment = 0;
+
+                                    int velMag = Math.Abs(sim.VelY_fixed) >> 7;
+                                    score = dySegment * 3 + velMag;
+                                }
+                                nextBeam2.Add((sim, newInputs, newCollected, score));
+                            }
+                            if (foundTrajectory) break;
+                        }
+                        if (foundTrajectory) break;
+
+                        if (bestPostCollectSurvival >= RECOVERY_FRAMES && nextBeam2.Count == 0)
+                        {
+                            foundTrajectory = true;
+                            break;
+                        }
+
+                        // Simple sort-and-prune (segment scoring preserves Y diversity)
+                        nextBeam2.Sort((a, b) => a.score.CompareTo(b.score));
+                        beam.Clear();
+                        int keep = Math.Min(RETRY_BEAM_WIDTH, nextBeam2.Count);
+                        for (int i = 0; i < keep; i++)
+                            beam.Add((nextBeam2[i].st, nextBeam2[i].inputs, nextBeam2[i].collected));
+                    }
+
+                    if (!foundTrajectory && bestPostCollectSurvival >= 15)
+                    {
+                        foundTrajectory = true;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[SHIP_COIN_BEAM_SURVIVAL_PARTIAL] recovery={bestPostCollectSurvival} coin idx={coinEntry.Index}");
+#endif
+                    }
+
+                    _speculativeDepth--;
+
+                    if (foundTrajectory && bestScript.Count > 0)
+                    {
+                        _coinInputScript.Clear();
+                        _coinInputScriptCoinIdx = coinTargetIdx;
+                        for (int si = 1; si < bestScript.Count; si++)
+                            _coinInputScript.Enqueue(bestScript[si]);
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[SHIP_COIN_BEAM_SURVIVAL_OK] coin idx={coinEntry.Index} scriptLen={bestScript.Count} distX={coinDistX} recovery={bestPostCollectSurvival}");
+#endif
+                        return bestScript[0];
+                    }
+#if !DISABLE_DEBUG_LOGGING
+                    else
+                    {
+                        PfLog($"[SHIP_COIN_BEAM_SURVIVAL_FAIL] coin idx={coinEntry.Index} distX={coinDistX} horizon={retryHorizon} beamEnd={beam.Count} bestRecovery={bestPostCollectSurvival} lastDeath={_lastDeathReason} lastDeathX={_lastDeathX} lastDeathY={_lastDeathY}");
+                    }
+#endif
                 }
             }
 
             if (survH != survR)
             {
-                if (coinTargetY >= 0 && hasCoinEntry
-                    && Math.Min(survH, survR) >= SHIP_TREE_DEPTH / 2)
+                // Pre-compute off-corridor flag to adjust survival gate.
+                // For coins far from the corridor center (>40px offset) and
+                // within 1200px, the ship MUST deviate from the safe path.
+                // Lower the minimum survival requirement so the coin-aware
+                // code runs even when one option barely survives (near ceiling).
+                int preGateCoinYOff = 0;
+                bool preGateOffCorridor = false;
+                if (coinTargetY >= 0 && hasCoinEntry && coinDistX <= 1200)
                 {
-                    // Coin nearby and both paths survive well — check which initial
-                    // input (hold vs release) leads to collecting the coin within
-                    // SHIP_COIN_HORIZON frames of PD steering.
-                    // No survival-difference threshold: always simulate when both
-                    // paths have decent survival. Only force the coin-collecting
-                    // path if it survives at least SHIP_TREE_DEPTH/2 frames.
+                    int corridorCenterRaw = FindCorridorCenter(ref state);
+                    preGateCoinYOff = Math.Abs(coinTargetY - corridorCenterRaw);
+                    preGateOffCorridor = preGateCoinYOff > 40;
+                }
+                int minSurvGate = preGateOffCorridor ? SHIP_TREE_DEPTH / 4 : SHIP_TREE_DEPTH / 2;
+
+                if (coinTargetY >= 0 && hasCoinEntry
+                    && Math.Min(survH, survR) >= minSurvGate
+                    && (coinDistX <= 600 || preGateOffCorridor))
+                {
+                    // Coin within beam-search range (or off-corridor needing early
+                    // positioning) and both paths survive well — check which initial
+                    // input leads to collecting the coin within SHIP_COIN_HORIZON
+                    // frames.  Beyond beam range, skip coin logic entirely and use
+                    // pure survival (survH > survR) to avoid interfering with
+                    // obstacle navigation.
                     const int SHIP_COIN_HORIZON = 120;
                     _speculativeDepth++;
 
@@ -4170,14 +5537,15 @@ namespace FamidashEditor
                         PfLog($"[SHIP_COIN_SIM] idx={coinEntry.Index} playerX={state.X_fixed >> 8} distX={coinDistX} holdCol={holdCollects} holdDied={holdDiedAtFrame} relCol={releaseCollects} relDied={relDiedAtFrame} survH={survH} survR={survR} threshold={_shipCoinAggressiveThreshold}");
 #endif
 
-                    if (holdCollects && !releaseCollects && survH >= SHIP_TREE_DEPTH / 2)
+                    int coinCollectMinSurv = preGateOffCorridor ? 1 : SHIP_TREE_DEPTH / 2;
+                    if (holdCollects && !releaseCollects && survH >= coinCollectMinSurv)
                     {
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[SHIP_COIN] Hold collects coin idx={coinEntry.Index} — forcing hold (survH={survH} survR={survR})");
 #endif
                         return true;
                     }
-                    if (releaseCollects && !holdCollects && survR >= SHIP_TREE_DEPTH / 2)
+                    if (releaseCollects && !holdCollects && survR >= coinCollectMinSurv)
                     {
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[SHIP_COIN] Release collects coin idx={coinEntry.Index} — forcing release (survH={survH} survR={survR})");
@@ -4185,9 +5553,47 @@ namespace FamidashEditor
                         return false;
                     }
 
-                    // Fall through — if survival diff is small,
-                    // use PD tiebreaker for gradual coin steering
-                    if (Math.Abs(survH - survR) <= _shipCoinAggressiveThreshold)
+                    // Fall through — if survival diff is small enough,
+                    // use PD tiebreaker for coin steering.
+                    // Use a DISTANCE-ADAPTIVE threshold: closer to the coin,
+                    // sacrifice more survival frames to steer toward it.
+                    //
+                    // For coins far off-corridor (>40px), the threshold is
+                    // much higher — the ship must accept survival risk to
+                    // deviate from the safe corridor toward the coin's corridor.
+                    int coinThreshold = _shipCoinAggressiveThreshold;
+                    // Reuse the pre-computed off-corridor flag (with ceiling guard)
+                    if (preGateOffCorridor)
+                    {
+                        // Off-corridor: the ship must deviate from the safe path
+                        // to reach the coin, but only when close enough that
+                        // obstacle navigation isn't compromised.
+                        // At longer range (>400px), keep a moderate threshold
+                        // so the ship prioritizes survival over coin-seeking.
+                        if (coinDistX > 400)
+                            coinThreshold = Math.Max(coinThreshold, 4);                   // mild bias
+                        else if (coinDistX > 200)
+                            coinThreshold = Math.Max(coinThreshold, SHIP_TREE_DEPTH / 2); // 10
+                        else
+                            coinThreshold = Math.Max(coinThreshold, SHIP_TREE_DEPTH);     // 20
+                    }
+                    else
+                    {
+                        if (coinDistX > 600)
+                        {
+                            // Beyond beam search range: keep base threshold.
+                            // Avoid risking survival for distant coins.
+                        }
+                        else if (coinDistX > 300)
+                            coinThreshold = Math.Max(coinThreshold, 4);
+                        else if (coinDistX > 200)
+                            coinThreshold = Math.Max(coinThreshold, 6);
+                        else if (coinDistX > 100)
+                            coinThreshold = Math.Max(coinThreshold, SHIP_TREE_DEPTH / 2);
+                        else
+                            coinThreshold = Math.Max(coinThreshold, SHIP_TREE_DEPTH);
+                    }
+                    if (Math.Abs(survH - survR) <= coinThreshold)
                     {
                         // fall through to PD tiebreaker below
                     }
@@ -4204,13 +5610,87 @@ namespace FamidashEditor
             }
 
             // Equal survival (or small difference with coin target) — use velocity-aware
-            // corridor tracking as tiebreaker.  When coins are active, steer fully
-            // toward the coin Y (not blended) for stronger coin-seeking.
+            // corridor tracking as tiebreaker.  When coins are active, BLEND the target
+            // between corridor center and coin Y based on distance.  Start a gentle
+            // descent from 400px out, ramping up to 100% coin Y at close range.
+            // This gives the ship time to descend gradually (avoiding obstacles)
+            // and provides the beam search a better starting altitude.
+            //
+            // For coins far off-corridor (>40px offset), the blend starts much
+            // earlier (up to yOff*16 px ahead) so the ship drifts toward the
+            // corridor fork entrance in time.  The early zone uses a very
+            // gentle blend (5-15%) to avoid aggressive pulls toward coins
+            // in other game mode sections.
             int biasPixels = (int)((JumpTimingBias - 0.5) * 16.0);
             int targetY;
+            bool offCorridorCoin = false;
             if (coinTargetY >= 0)
             {
-                targetY = coinTargetY;
+                // Compute basic corridor center to determine if coin is off-corridor
+                int basicCorridorCenter = FindCorridorCenter(ref state) + _shipCorridorBias + biasPixels;
+                int basicYOff = Math.Abs(coinTargetY - basicCorridorCenter);
+                offCorridorCoin = basicYOff > 40 && coinDistX <= 2000;
+
+                if (offCorridorCoin)
+                {
+                    // For off-corridor ceiling coins, compute corridor center from the
+                    // COIN's Y perspective with limited look-ahead. This lets the
+                    // scanner "see" the corridor the coin is in (above the dividing
+                    // wall) rather than the corridor the ship is currently in.
+                    // The blend then pulls the ship toward the upper corridor center,
+                    // positioning it at the ceiling of the lower corridor, ready to
+                    // fly through any gap in the dividing wall.
+                    int upperCorr = FindCorridorCenter(ref state, 2, coinTargetY) + _shipCorridorBias + biasPixels;
+                    int localCorr = FindCorridorCenter(ref state, 0) + _shipCorridorBias + biasPixels;
+                    int upperYOff = Math.Abs(coinTargetY - upperCorr);
+                    int localYOff = Math.Abs(coinTargetY - localCorr);
+                    bool hasLocalGap = upperYOff < localYOff - 20;
+                    int corridorCenter = hasLocalGap ? upperCorr : localCorr;
+
+                    int coinYOff = Math.Abs(coinTargetY - corridorCenter);
+                    int blendStartDist = (coinYOff > 40 && coinYOff <= 120 && coinDistX <= 2000)
+                        ? Math.Min(2000, Math.Max(400, coinYOff * 16))
+                        : 400;
+
+                    if (coinDistX > blendStartDist)
+                    {
+                        int pct = 80;
+                        targetY = corridorCenter + (coinTargetY - corridorCenter) * pct / 100;
+                    }
+                    else if (coinDistX > 400)
+                    {
+                        int range = blendStartDist - 400;
+                        int pct = hasLocalGap
+                            ? (range > 0 ? 70 + (blendStartDist - coinDistX) * 25 / range : 95)
+                            : (range > 0 ? 80 + (blendStartDist - coinDistX) * 10 / range : 90);
+                        targetY = corridorCenter + (coinTargetY - corridorCenter) * pct / 100;
+                    }
+                    else if (coinDistX > 300)
+                    {
+                        int pct = hasLocalGap ? 90 : 85;
+                        targetY = corridorCenter + (coinTargetY - corridorCenter) * pct / 100;
+                    }
+                    else if (coinDistX > 200)
+                    {
+                        int pct = hasLocalGap ? 95 : 90;
+                        targetY = corridorCenter + (coinTargetY - corridorCenter) * pct / 100;
+                    }
+                    else if (coinDistX > 120)
+                    {
+                        int pct = hasLocalGap ? 100 : 95;
+                        targetY = corridorCenter + (coinTargetY - corridorCenter) * pct / 100;
+                    }
+                    else
+                    {
+                        targetY = coinTargetY;
+                    }
+                }
+                else
+                {
+                    // Normal coin (near corridor center): target coin Y directly
+                    // for strongest coin-seeking, matching original behavior.
+                    targetY = coinTargetY;
+                }
             }
             else
             {
@@ -4221,8 +5701,8 @@ namespace FamidashEditor
 
             int posError = (state.GravMul > 0) ? (currentY - targetY) : (targetY - currentY);
             int velComponent = -(velY * state.GravMul);
-            // Use D-gain=1 when coin-seeking for faster convergence (less damping),
-            // D-gain=2 normally for smoother corridor tracking
+            // D-gain=1 when coin-seeking for faster convergence toward coin Y.
+            // D-gain=2 otherwise for smooth corridor tracking (more damping).
             int dGain = (coinTargetY >= 0) ? 1 : 2;
             int pdSignal = posError - (velComponent * dGain);
 
@@ -4268,6 +5748,150 @@ namespace FamidashEditor
             return Math.Max(bestH, bestR);
         }
 
+        /// <summary>
+        /// After collecting a coin mid-flight, try multiple recovery strategies
+        /// to bring the ship back to safe corridor flight. Returns the number
+        /// of frames the best strategy survives (higher = better).
+        /// 
+        /// Strategies tested:
+        ///   1. Immediate max-hold (arrest downward velocity), then PD corridor
+        ///   2. Pure PD corridor steering from current state
+        ///   3. Aggressive hold for 8 frames, then PD corridor
+        ///   4. Tree-search guided recovery (best local survival each step)
+        /// </summary>
+        private int ShipCoinRecovery(SimState postCollect, int gravMul)
+        {
+            const int RECOVERY_HORIZON = 120;
+            int bestSurvival = 0;
+
+            // Strategy 1: Immediate hold burst (6 frames) then PD
+            {
+                var sim = postCollect.Clone();
+                int survived = 0;
+                bool alive = true;
+                // Hold for 6 frames to arrest downward velocity
+                for (int f = 0; f < 6 && alive; f++)
+                {
+                    bool inp = (gravMul > 0); // hold = true for normal gravity
+                    alive = StepFrame(ref sim, inp, out _);
+                    if (alive) survived++;
+                }
+                // Then PD corridor steering
+                if (alive)
+                {
+                    int corridorY = FindCorridorCenter(ref sim);
+                    for (int f = 0; f < RECOVERY_HORIZON - 6 && alive; f++)
+                    {
+                        if (f > 0 && (f & 3) == 0)
+                            corridorY = FindCorridorCenter(ref sim);
+                        int sy = sim.Y_fixed >> 8;
+                        int vel = sim.VelY_fixed;
+                        int err = (sim.GravMul > 0) ? (sy - corridorY) : (corridorY - sy);
+                        int vComp = -(vel * sim.GravMul);
+                        bool inp = (err - vComp * 2) > 0;
+                        alive = StepFrame(ref sim, inp, out _);
+                        if (alive) survived++;
+                    }
+                }
+                bestSurvival = Math.Max(bestSurvival, survived);
+            }
+
+            // Strategy 2: Pure PD corridor steering from start
+            {
+                var sim = postCollect.Clone();
+                int survived = 0;
+                bool alive = true;
+                int corridorY = FindCorridorCenter(ref sim);
+                for (int f = 0; f < RECOVERY_HORIZON && alive; f++)
+                {
+                    if (f > 0 && (f & 3) == 0)
+                        corridorY = FindCorridorCenter(ref sim);
+                    int sy = sim.Y_fixed >> 8;
+                    int vel = sim.VelY_fixed;
+                    int err = (sim.GravMul > 0) ? (sy - corridorY) : (corridorY - sy);
+                    int vComp = -(vel * sim.GravMul);
+                    bool inp = (err - vComp * 2) > 0;
+                    alive = StepFrame(ref sim, inp, out _);
+                    if (alive) survived++;
+                }
+                bestSurvival = Math.Max(bestSurvival, survived);
+            }
+
+            // Strategy 3: Extended hold burst (12 frames) then PD
+            {
+                var sim = postCollect.Clone();
+                int survived = 0;
+                bool alive = true;
+                for (int f = 0; f < 12 && alive; f++)
+                {
+                    bool inp = (gravMul > 0);
+                    alive = StepFrame(ref sim, inp, out _);
+                    if (alive) survived++;
+                }
+                if (alive)
+                {
+                    int corridorY = FindCorridorCenter(ref sim);
+                    for (int f = 0; f < RECOVERY_HORIZON - 12 && alive; f++)
+                    {
+                        if (f > 0 && (f & 3) == 0)
+                            corridorY = FindCorridorCenter(ref sim);
+                        int sy = sim.Y_fixed >> 8;
+                        int vel = sim.VelY_fixed;
+                        int err = (sim.GravMul > 0) ? (sy - corridorY) : (corridorY - sy);
+                        int vComp = -(vel * sim.GravMul);
+                        bool inp = (err - vComp * 2) > 0;
+                        alive = StepFrame(ref sim, inp, out _);
+                        if (alive) survived++;
+                    }
+                }
+                bestSurvival = Math.Max(bestSurvival, survived);
+            }
+
+            // Strategy 4: Tree-search guided (pick best survival at each step)
+            {
+                var sim = postCollect.Clone();
+                int survived = 0;
+                bool alive = true;
+                for (int f = 0; f < RECOVERY_HORIZON && alive; f++)
+                {
+                    // Pick the input that maximizes short-term survival
+                    var sH = sim.Clone();
+                    var sR = sim.Clone();
+                    bool aliveH = StepFrame(ref sH, true, out _);
+                    bool aliveR = StepFrame(ref sR, false, out _);
+                    if (!aliveH && !aliveR) break;
+                    if (!aliveH) { sim = sR; survived++; continue; }
+                    if (!aliveR) { sim = sH; survived++; continue; }
+
+                    // Both survive — use 6-deep tree search to pick
+                    _shipTreeNodesExplored = 0;
+                    int survHDeep = 1 + ShipTreeSearch(sH, Math.Min(6, RECOVERY_HORIZON - f - 1));
+                    _shipTreeNodesExplored = 0;
+                    int survRDeep = 1 + ShipTreeSearch(sR, Math.Min(6, RECOVERY_HORIZON - f - 1));
+                    
+                    if (survHDeep >= survRDeep)
+                    {
+                        sim = sH;
+                        // Also consider corridor center steering as tiebreaker
+                        if (survHDeep == survRDeep)
+                        {
+                            int corridorY = FindCorridorCenter(ref sim);
+                            int sy = sim.Y_fixed >> 8;
+                            int err = (sim.GravMul > 0) ? (sy - corridorY) : (corridorY - sy);
+                            if (err < 0) sim = sR; // prefer getting closer to center
+                        }
+                    }
+                    else
+                    {
+                        sim = sR;
+                    }
+                    survived++;
+                }
+                bestSurvival = Math.Max(bestSurvival, survived);
+            }
+
+            return bestSurvival;
+        }
 
 
         /// <summary>
@@ -4281,8 +5905,23 @@ namespace FamidashEditor
         /// </summary>
         private int FindCorridorCenter(ref SimState s)
         {
+            return FindCorridorCenter(ref s, CORRIDOR_LOOK_AHEAD_TILES, -1);
+        }
+
+        private int FindCorridorCenter(ref SimState s, int lookAhead)
+        {
+            return FindCorridorCenter(ref s, lookAhead, -1);
+        }
+
+        /// <summary>
+        /// When overrideY >= 0, scan vertically from that Y instead of the
+        /// ship's actual Y. This lets the PD controller discover corridors
+        /// that are separated from the ship by a dividing wall.
+        /// </summary>
+        private int FindCorridorCenter(ref SimState s, int lookAhead, int overrideY)
+        {
             int playerX_px = s.X_fixed >> 8;
-            int playerY_px = s.Y_fixed >> 8;
+            int playerY_px = overrideY >= 0 ? overrideY : (s.Y_fixed >> 8);
             int hbW = GetHitboxW(s.Mini);
             int hbH = GetHitboxH(s.Mini);
             int centerX_px = playerX_px + hbW / 2;
@@ -4297,9 +5936,9 @@ namespace FamidashEditor
             int topTile = playerY_px / TILE;
             int botTile = (playerY_px + hbH - 1) / TILE;
 
-            // Scan vertically at current X AND ahead (CORRIDOR_LOOK_AHEAD_TILES columns)
+            // Scan vertically at current X AND ahead (lookAhead columns)
             int startTileX = centerX_px / TILE;
-            int endTileX = Math.Min(startTileX + CORRIDOR_LOOK_AHEAD_TILES, mapWidth - 1);
+            int endTileX = Math.Min(startTileX + lookAhead, mapWidth - 1);
 
             for (int tx = startTileX; tx <= endTileX; tx++)
             {
@@ -4317,7 +5956,7 @@ namespace FamidashEditor
                             if (thisCeiling > ceilingY) ceilingY = thisCeiling;
                             break;
                         }
-                        // Death tiles act as obstacles too — tile bottom is obstacle boundary
+                        // Death tiles act as obstacles too — tile bottom is obstacle boundary.
                         if (IsDeathCollision(col))
                         {
                             int thisCeiling = ty * TILE + TILE;
@@ -4340,7 +5979,6 @@ namespace FamidashEditor
                             if (thisFloor < floorY) floorY = thisFloor;
                             break;
                         }
-                        // Death tiles act as obstacles — tile top is obstacle boundary
                         if (IsDeathCollision(col))
                         {
                             int thisFloor = ty * TILE;
@@ -4904,7 +6542,8 @@ namespace FamidashEditor
             // → x_movement() (X advance).  Orbs, pads, gravity/speed/mini portals
             // detected at OLD X.  Game mode portals are detected AFTER Y physics
             // at NEW X (matching sim's post-physics portal loop).
-            endLevel = ProcessSprites(ref s, oldX_px);
+            bool orbHitThisFrame = false;
+            endLevel = ProcessSprites(ref s, oldX_px, out orbHitThisFrame);
             if (endLevel) return true;
 
             // ── STEP 1b: ORB ACTIVATION at OLD X ──
@@ -4922,6 +6561,7 @@ namespace FamidashEditor
                     s.ProcessedSprites.Add(s.PendingOrbIndex);
                 s.PendingOrbIndex = -1;
                 s.PendingOrbSpriteId = -1;
+                orbHitThisFrame = true;
             }
 
             // ── STEP 2: Compute new X (applied at the end, matching NES
@@ -4956,8 +6596,8 @@ namespace FamidashEditor
                     {
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[CEIL_SPIKE_DEATH] cube prox check X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                        _lastDeathReason = "CEIL_SPIKE_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                        if (_speculativeDepth == 0) { _lastDeathReason = "CEIL_SPIKE_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                         return false;
                     }
                     if (ceilHit && s.VelY_fixed < 0)
@@ -4980,8 +6620,8 @@ namespace FamidashEditor
                 {
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[EJECT_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                    _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                     return false;
                 }
 
@@ -4991,8 +6631,8 @@ namespace FamidashEditor
                 {
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px (post-eject)");
-                    _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                     return false;
                 }
 
@@ -5012,10 +6652,22 @@ namespace FamidashEditor
 
                 ShipEject(ref s, out bool shipDied);
                 if (shipDied)
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[EJECT_DEATH] ship X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                     return false;
+                }
 
                 if (CheckDeathCollision(ref s))
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[CENTER_DEATH] ship X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                     return false;
+                }
             }
             else if (s.GameMode == 2) // Ball mode
             {
@@ -5049,21 +6701,39 @@ namespace FamidashEditor
                 // then executes the flip.  The PF must model this to stay in sync:
                 // input=True starts/refreshes the buffer even if not grounded;
                 // subsequent frames check buffer + grounded to fire the flip.
-                bool ballGrounded = (s.BallFlipCooldown > 0) || BallIsGrounded(ref s);
+                //
+                // COOLDOWN GATE: During BallFlipCooldown (2 frames after a flip),
+                // the ball is airborne post-launch and must NOT be allowed to re-flip.
+                // The cooldown prevents oscillation; eject is also skipped during it.
+                bool ballGrounded = BallIsGrounded(ref s);
                 bool shouldFlip = false;
-                if (input)
+                if (s.BallFlipCooldown == 0)
                 {
-                    s.BallInputBuffer = BALL_INPUT_BUFFER_FRAMES;
-                    if (ballGrounded)
-                        shouldFlip = true;
+                    if (input)
+                    {
+                        s.BallInputBuffer = BALL_INPUT_BUFFER_FRAMES;
+                        if (ballGrounded)
+                            shouldFlip = true;
+                    }
+                    else if (s.BallInputBuffer > 0)
+                    {
+                        if (ballGrounded)
+                            shouldFlip = true;
+                        else
+                            s.BallInputBuffer--;
+                    }
                 }
-                else if (s.BallInputBuffer > 0)
+                else
                 {
-                    if (ballGrounded)
-                        shouldFlip = true;
-                    else
+                    // During cooldown: track input buffer but don't allow flip
+                    if (input)
+                        s.BallInputBuffer = BALL_INPUT_BUFFER_FRAMES;
+                    else if (s.BallInputBuffer > 0)
                         s.BallInputBuffer--;
                 }
+                // NOTE: orbHitThisFrame gate removed — it was incorrectly
+                // suppressing input-driven flips. In the sim, orbhitonthisframe
+                // only suppresses eject pogo, not the pathfinder's flip decision.
                 if (shouldFlip)
                 {
                     // Flip gravity
@@ -5161,7 +6831,13 @@ namespace FamidashEditor
                 // ── UFO EJECT (shared with Ship: ceiling + floor, no velocity guard) ──
                 ShipEject(ref s, out bool ufoDied);
                 if (ufoDied)
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[EJECT_DEATH] ufo X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                     return false;
+                }
 
                 // ── UFO JUMP (tap-to-jump, can jump mid-air) ──
                 if (input)
@@ -5196,6 +6872,7 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[FLOOR_SPIKE] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
+                if (_speculativeDepth == 0) { _lastDeathReason = "FLOOR_SPIKE"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                 return false;
             }
 
@@ -5207,7 +6884,7 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[FWD_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
-                    _lastDeathReason = "FWD_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
+                    if (_speculativeDepth == 0) { _lastDeathReason = "FWD_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                     return false;
                 }
             }
@@ -5221,8 +6898,8 @@ namespace FamidashEditor
             {
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[DEATH_COLL] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                _lastDeathReason = "DEATH_COLL"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                if (_speculativeDepth == 0) { _lastDeathReason = "DEATH_COLL"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                 return false;
             }
 
@@ -5243,8 +6920,8 @@ namespace FamidashEditor
             {
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[BOUNDS_DEATH] Y={playerY_px}px worldBottom={worldBottom}");
-                _lastDeathReason = "BOUNDS_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = playerY_px;
 #endif
+                if (_speculativeDepth == 0) { _lastDeathReason = "BOUNDS_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = playerY_px; }
                 return false;
             }
 
@@ -5974,21 +7651,74 @@ namespace FamidashEditor
                     if (coin.HitLeft > playerX_sc + 800) break;
                     if (coin.HitRight < playerX_sc) continue;
 
-                    // Found a nearby coin — test which delays collect it
-                    const int BALL_COIN_HORIZON = 120;
+                    // Found a nearby coin — test ALL delays for coin collection,
+                    // not just viable ones.  A coin-collecting delay that has
+                    // lower survival is still worth choosing over a non-collecting
+                    // delay with better survival.
+                    const int BALL_COIN_HORIZON = 200;
                     var coinDelays = new List<(int delay, int survival, int xProgress)>();
 
-                    _speculativeDepth++;
-                    foreach (var (delay, survival, xProgress) in viableDelays)
+                    // Build lookup for viable delay survival/xProgress
+                    var viableLookup = new Dictionary<int, (int survival, int xProgress)>();
+                    foreach (var (d, s, xp) in viableDelays)
+                        viableLookup[d] = (s, xp);
+
+                    // Distance gate: skip expensive coin-seeking entirely when
+                    // the coin is too far to reach within the horizon.
+                    int maxReachPx = BALL_COIN_HORIZON * state.VelX_fixed / 256;
+                    int coinCX_sc = (coin.HitLeft + coin.HitRight) / 2;
+                    int coinDistX_sc = coinCX_sc - playerX_sc;
+                    int coinSeekMax = Math.Max(maxDelay, BALL_COIN_HORIZON);
+
+                    if (coinDistX_sc <= maxReachPx)
                     {
-                        // Simulate this delay path and check for coin overlap
+                    _speculativeDepth++;
+                    int dbgClosestXDist = int.MaxValue;
+                    int dbgClosestYDist = int.MaxValue;
+                    int dbgClosestDelay = -1;
+                    int dbgClosestFrame = -1;
+                    int dbgDiedCount = 0;
+                    int dbgMaxFrame = 0;
+                    int dbgDeathX = 0;
+                    int dbgDeathY = 0;
+                    int dbgBestDeathDelay = -1;
+                    int dbgBestDeathFrame = 0;
+                    for (int delay = 0; delay < coinSeekMax; delay++)
+                    {
+                        // Simulate this delay path with multi-flip
                         var sim = state.Clone();
                         bool collected = false;
+                        bool initialFlipDone = false;
+                        int simSurvival = 0;
+                        int collectFrame = -1;
                         for (int f = 0; f < BALL_COIN_HORIZON; f++)
                         {
-                            bool inp = (f == delay); // flip at the delay frame
-                            if (!StepFrame(ref sim, inp, out bool eol)) break;
-                            if (eol) break;
+                            bool inp = false;
+                            if (!initialFlipDone)
+                            {
+                                if (f == delay)
+                                {
+                                    inp = true;
+                                    initialFlipDone = true;
+                                }
+                            }
+                            else if (sim.VelY_fixed == 0 && sim.OnGround)
+                            {
+                                inp = QuickDangerCheck(sim);
+                            }
+                            // Auto-activate orbs encountered after initial flip
+                            // (matches SimulateForwardWithJumpAt chainJumps behavior)
+                            if (initialFlipDone && !inp && sim.PendingOrbIndex >= 0)
+                                inp = true;
+                            if (!StepFrame(ref sim, inp, out bool eol))
+                            {
+                                simSurvival = f;
+                                if (f > dbgBestDeathFrame) { dbgBestDeathFrame = f; dbgDeathX = sim.X_fixed >> 8; dbgDeathY = sim.Y_fixed >> 8; dbgBestDeathDelay = delay; }
+                                if (collected && (f - collectFrame) < 10)
+                                    collected = false; // dies too soon after collecting — backtracking would undo
+                                break;
+                            }
+                            if (eol) { simSurvival = BALL_COIN_HORIZON; break; }
 
                             // Check coin hitbox overlap
                             int nx = (sim.X_fixed >> 8) + 1;
@@ -5996,21 +7726,52 @@ namespace FamidashEditor
                             int hbH_b = GetHitboxH(sim.Mini);
                             int hbOff_b = GetHitboxOffsetY(sim.Mini, sim.GravFlipped);
                             int pT = (sim.Y_fixed >> 8) + hbOff_b;
-                            if (!(nx + hbW_b < coin.HitLeft || coin.HitRight < nx) &&
+                            if (!collected &&
+                                !(nx + hbW_b < coin.HitLeft || coin.HitRight < nx) &&
                                 !(pT + hbH_b < coin.HitTop || coin.HitBottom < pT))
-                            { collected = true; break; }
+                            { collected = true; collectFrame = f; }
+                            // Track closest approach for diagnostics
+                            int xDist = Math.Max(coin.HitLeft - (nx + hbW_b), nx - coin.HitRight);
+                            int yDist = Math.Max(coin.HitTop - (pT + hbH_b), pT - coin.HitBottom);
+                            int combinedDist = Math.Max(xDist, 0) + Math.Max(yDist, 0);
+                            long prevBest = (long)dbgClosestXDist + dbgClosestYDist;
+                            if (combinedDist < prevBest || (combinedDist == prevBest && f < dbgClosestFrame))
+                            {
+                                dbgClosestXDist = Math.Max(xDist, 0);
+                                dbgClosestYDist = Math.Max(yDist, 0);
+                                dbgClosestDelay = delay;
+                                dbgClosestFrame = f;
+                            }
+                            if (f + 1 > dbgMaxFrame) { dbgMaxFrame = f + 1; }
+                            simSurvival = f + 1;
                         }
+                        if (!collected && simSurvival < BALL_COIN_HORIZON) dbgDiedCount++;
 
                         if (collected)
-                            coinDelays.Add((delay, survival, xProgress));
+                        {
+                            // Use survival/xProgress from viable lookup if available
+                            if (viableLookup.TryGetValue(delay, out var vd))
+                                coinDelays.Add((delay, vd.survival, vd.xProgress));
+                            else
+                                coinDelays.Add((delay, simSurvival, sim.X_fixed >> 8));
+                        }
                     }
                     _speculativeDepth--;
 
+                    if (coinDelays.Count == 0 && coinDistX_sc <= maxReachPx)
+                    {
+                        Console.Error.WriteLine($"[BALL_COIN_MISS_DETAIL] idx={coin.Index} playerX={playerX_sc} playerY={state.Y_fixed >> 8} gravFlip={state.GravFlipped} coinHit=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) closestXDist={dbgClosestXDist} closestYDist={dbgClosestYDist} closestDelay={dbgClosestDelay} closestFrame={dbgClosestFrame} diedCount={dbgDiedCount}/{coinSeekMax} maxFrame={dbgMaxFrame} deathX={dbgDeathX} deathY={dbgDeathY} deathDelay={dbgBestDeathDelay}");
+                    }
+                    } // end distance gate
+
                     if (coinDelays.Count > 0)
                     {
+                        // Check how many are also normally viable
+                        int alsoViable = coinDelays.Count(cd => viableLookup.ContainsKey(cd.delay));
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[BALL_COIN] {coinDelays.Count}/{viableDelays.Count} delays collect coin idx={coin.Index} — preferring coin delays");
+                        PfLog($"[BALL_COIN] {coinDelays.Count}/{coinSeekMax} delays collect coin idx={coin.Index} ({alsoViable} also viable) — preferring coin delays");
 #endif
+                        Console.Error.WriteLine($"[BALL_COIN_FOUND] idx={coin.Index} {coinDelays.Count}/{coinSeekMax} delays collect coin ({alsoViable} viable) at playerX={playerX_sc} playerY={state.Y_fixed >> 8} gravFlip={state.GravFlipped} delays=[{string.Join(",", coinDelays.Select(cd => cd.delay).Take(10))}]");
                         viableDelays = coinDelays;
                     }
 
@@ -6042,6 +7803,77 @@ namespace FamidashEditor
 #endif
                             return false; // Don't flip, let no-press collect the coin
                         }
+                    }
+
+                    // Ball coin approach suppression: no delay collects the coin
+                    // from the current position. If the ball is on a surface from
+                    // which a FUTURE flip could reach the coin, suppress flipping
+                    // to stay grounded and walk forward to the optimal flip point.
+                    if (coinDelays.Count == 0 && coin.HitLeft > playerX_sc + 20)
+                    {
+                        int coinCY = (coin.HitTop + coin.HitBottom) / 2;
+                        int playerY = state.Y_fixed >> 8;
+                        bool coinAbove = (coinCY < playerY); // coin above ball (lower Y)
+                        bool ballOnFloor = !state.GravFlipped;
+                        // Floor ball with coin above: check if the floor path can
+                        // reach the coin's X.  If the ball dies on the floor before
+                        // reaching the coin (e.g. due to death tiles), flip to
+                        // ceiling immediately instead of suppressing.
+                        if (coinAbove && ballOnFloor)
+                        {
+                            int coinCX = (coin.HitLeft + coin.HitRight) / 2;
+                            int framesNeeded = (coinCX - playerX_sc) * 256 / Math.Max(state.VelX_fixed, 1);
+                            if (noPressFrames >= framesNeeded)
+                            {
+                                // Floor path reaches coin → suppress and walk forward
+                                Console.Error.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} suppress flip, walk forward playerX={playerX_sc} coinX={coinCX} dist={coinCX-playerX_sc} noPressFrames={noPressFrames}");
+                                return false;
+                            }
+                            else
+                            {
+                                // Floor path dies before coin → check ceiling path too
+                                // Simulate an actual flip (delay=0) to see if ceiling survives
+                                _speculativeDepth++;
+                                int ceilSurv = SimulateForwardWithJumpAt(state, 0);
+                                _speculativeDepth--;
+                                if (ceilSurv >= framesNeeded)
+                                {
+                                    Console.Error.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} FLIP to ceiling (floor dies at {noPressFrames}, ceiling survives {ceilSurv}, need {framesNeeded}) playerX={playerX_sc}");
+                                    return true;
+                                }
+                                else if (ceilSurv >= noPressFrames)
+                                {
+                                    // Ceiling survives at least as long as floor — floor is dying
+                                    // anyway, so flip to ceiling and let the full pathfinder navigate.
+                                    Console.Error.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} FLIP to ceiling (floor dies at {noPressFrames}, ceiling dies at {ceilSurv}, need {framesNeeded} — ceiling at least as good) playerX={playerX_sc}");
+                                    return true;
+                                }
+                                else
+                                {
+                                    // Ceiling dies sooner than floor → stay on floor (pads/orbs may help)
+                                    Console.Error.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} suppress flip (ceiling dies at {ceilSurv} < floor {noPressFrames}, need {framesNeeded}) playerX={playerX_sc}");
+                                    return false;
+                                }
+                            }
+                        }
+                        // Ceiling ball can flip downward to reach coins below
+                        bool coinBelow = (coinCY > playerY);
+                        bool ballOnCeiling = state.GravFlipped;
+                        if (coinBelow && ballOnCeiling)
+                        {
+                            int coinCX_c = (coin.HitLeft + coin.HitRight) / 2;
+                            int framesNeeded_c = (coinCX_c - playerX_sc) * 256 / Math.Max(state.VelX_fixed, 1);
+                            if (noPressFrames >= framesNeeded_c)
+                            {
+                                // Ceiling path survives to coin → stay on ceiling
+                                Console.Error.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} suppress flip (ceiling), walk forward playerX={playerX_sc} coinX={coinCX_c} dist={coinCX_c-playerX_sc} noPressFrames={noPressFrames}");
+                                return false;
+                            }
+                            // else: ceiling can't reach coin — fall through to
+                            // default decision (don't force a flip; the coin may
+                            // be across a mode boundary or far away).
+                        }
+
                     }
 
                     break; // Only check the nearest coin
@@ -6512,8 +8344,9 @@ namespace FamidashEditor
             }
         }
 
-        private bool ProcessSprites(ref SimState s, int currentX_px)
+        private bool ProcessSprites(ref SimState s, int currentX_px, out bool orbHitThisFrame)
         {
+            orbHitThisFrame = false;
             int playerY_px = s.Y_fixed >> 8;
             int hbW = GetHitboxW(s.Mini);
             int hbH = GetHitboxH(s.Mini);
@@ -6529,7 +8362,11 @@ namespace FamidashEditor
             foreach (var sp in allSprites)
             {
                 if (s.ProcessedSprites.Contains(sp.Index)) continue;
-                if (sp.HitRight <= currentX_px) continue;
+                // Use strict < (not <=) because blue pads use padLeft = currentX_px
+                // (no +1 offset). NES check_collision treats exclusive-bound == start
+                // as overlapping (bcc = branch if less-than), so hitRight == currentX_px
+                // is a valid overlap for blue pads and must not be skipped.
+                if (sp.HitRight < currentX_px) continue;
                 if (sp.AnchorX_px - TILE > playerRight + TILE) break;
 
                 int sid = sp.SpriteId;
@@ -6595,6 +8432,7 @@ namespace FamidashEditor
                     if (xOverlap && yOverlap)
                     {
                         ApplyPadSprite(ref s, sid);
+                        orbHitThisFrame = true;
                     }
                     continue;
                 }
@@ -6615,6 +8453,16 @@ namespace FamidashEditor
                         PfLog($"[ORB_PENDING] sid=0x{sid:X2} idx={sp.Index} playerBox=({currentX_px},{playerTop})-({playerRight},{playerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom})");
 #endif
                     }
+                    continue;
+                }
+
+                // Coin collection (during BFS / speculative execution)
+                if (IsCoinSprite(sid))
+                {
+                    bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < nesX);
+                    bool yOverlap = !((playerBottom) < sp.HitTop || sp.HitBottom < playerTop);
+                    if (xOverlap && yOverlap)
+                        s.ProcessedSprites.Add(sp.Index);
                     continue;
                 }
             }
@@ -6745,8 +8593,78 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[PORTAL_GAMEMODE] sid=0x{sid:X2} mode {s.GameMode} -> {mode} VelY halved: 0x{s.VelY_fixed:X} -> 0x{s.VelY_fixed / 2:X}");
 #endif
+                    if (_speculativeDepth == 0 && false) // DEBUG: mode transition logging
+                        Console.Error.WriteLine($"[MODE_TRANSITION] {s.GameMode}->{mode} Y={s.Y_fixed >> 8} VelY=0x{s.VelY_fixed:X} X={s.X_fixed >> 8} GravMul={s.GravMul} GravFlip={s.GravFlipped} Processed={s.ProcessedSprites.Count}");
+                    // Save last cube/ball checkpoint before entering ship/UFO so
+                    // cross-mode backtracking can reach it even after FIFO eviction.
+                    if ((s.GameMode == 0 || s.GameMode == 2) && (mode == 1 || mode == 3) && _backtrackCheckpoints != null)
+                    {
+                        for (int ci = _backtrackCheckpoints.Count - 1; ci >= 0; ci--)
+                        {
+                            if (_backtrackCheckpoints[ci].GameMode == s.GameMode)
+                            {
+                                var src = _backtrackCheckpoints[ci];
+                                _lastCubeToShipCheckpoint = new BacktrackCheckpoint
+                                {
+                                    Frame = src.Frame,
+                                    State = src.State.Clone(),
+                                    HoldJumpState = src.HoldJumpState,
+                                    HoldDelayState = src.HoldDelayState,
+                                    CommittedDelayState = src.CommittedDelayState,
+                                    PathPointCount = src.PathPointCount,
+                                    InputCount = src.InputCount,
+                                    RetryStage = 0,
+                                    UsedBias = src.UsedBias,
+                                    ShipBias = src.ShipBias,
+                                    GameMode = src.GameMode,
+                                    ShipForceHold = src.ShipForceHold,
+                                    ShipForceRelease = src.ShipForceRelease,
+                                    ShipCommitFrames = src.ShipCommitFrames,
+                                    ShipCommitHold = src.ShipCommitHold,
+                                    ForceJumpRemaining = src.ForceJumpRemaining,
+                                    SkipAllOrbs = src.SkipAllOrbs,
+                                    SkipSpecificOrbs = new HashSet<int>(src.SkipSpecificOrbs ?? new()),
+                                    SkipSpecificPads = new HashSet<int>(src.SkipSpecificPads ?? new()),
+                                    PrevFrameWasGrounded = src.PrevFrameWasGrounded,
+                                    NextCoinCheckIdx = src.NextCoinCheckIdx,
+                                };
+                                break;
+                            }
+                        }
+                    }
+                    int prevMode = s.GameMode;
                     s.GameMode = mode;
                     s.VelY_fixed /= 2;
+                    // Ball→ship/UFO stabilization: suppress coin-seeking for
+                    // a limited window so the ship navigates initial obstacles with
+                    // pure survival + corridorCenter PD (matching no-coin
+                    // behavior).  Cube→ship/UFO gets no stabilization since
+                    // those transitions are typically obstacle-free.
+                    // If there's a coin near the transition, reduce stabilization
+                    // so the ship can target it in time.
+                    if (_speculativeDepth == 0 && (mode == 1 || mode == 3))
+                    {
+                        int baseStab = (prevMode == 2) ? 200 : 0;
+                        if (baseStab > 0 && PreferCoins && allCoins.Count > 0)
+                        {
+                            int shipX = s.X_fixed >> 8;
+                            for (int ci = _nextCoinCheckIdx; ci < allCoins.Count; ci++)
+                            {
+                                var coin = allCoins[ci];
+                                if (s.ProcessedSprites.Contains(coin.Index) || _forgivenCoins.Contains(coin.Index))
+                                    continue;
+                                if (coin.HitLeft > shipX + 600) break;
+                                if (coin.HitRight < shipX) continue;
+                                // Coin is within 600px of the transition — reduce stabilization
+                                // drastically. The ship needs nearly the full distance to
+                                // descend/ascend to the coin's altitude.
+                                baseStab = 20; // minimal stabilization for initial obstacle avoidance
+                                break;
+                            }
+                        }
+                        _modeTransitionStabilizeFrames = baseStab;
+                        Console.Error.WriteLine($"[STAB_SET] prevMode={prevMode} mode={mode} stab={_modeTransitionStabilizeFrames}");
+                    }
                     // Un-forgive cross-corridor coins whose section mode
                     // matches the new mode so they can now be collected.
                     UnforgiveCrossCorridorCoins(mode);
@@ -7722,9 +9640,12 @@ namespace FamidashEditor
             {
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[DEATH_POINT] center ({centerX},{centerY}) tile=({tileX},{tileArrayY}) tid=0x{tid:X2} col={col}");
-                _lastDeathReason = $"DEATH_COLL:center({centerX},{centerY})tile({tileX},{tileArrayY})tid=0x{tid:X2}col={col}";
-                _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                if (_speculativeDepth == 0)
+                {
+                    _lastDeathReason = $"DEATH_COLL:tid=0x{tid:X2}col={col}";
+                    _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
+                }
                 return true;
             }
 
@@ -7797,16 +9718,20 @@ namespace FamidashEditor
                 return true; // blocked → death
             }
 
-            // NOTE: NES bg_side_coll_common also calls bg_coll_spikes() which can
-            // set the death flag (cube_data |= 1).  However, the NES uses a
-            // DEFERRED death flag that gets CLEARED by floor/ceiling landing
-            // (COLL_CHECK_BOTTOM/TOP does cube_data &= ~1).  Without that
-            // cancellation mechanism, firing death here is too aggressive —
-            // the player would die when running past upward spikes at ground
-            // level, which the NES does not.  The center-point death check
-            // (CheckDeathCollision) already handles the final, non-cancellable
-            // death.  Side-probe spike death is omitted until a full deferred
-            // death-flag system is implemented.
+            // NES bg_side_coll_common calls bg_coll_spikes() at the forward probe,
+            // setting cube_data |= 1 for spike death.  The death is checked at the
+            // END of the same frame (cube_data & 1 → death, else cube_data = 0).
+            // COLL_CHECK_BOTTOM/TOP clears cube_data in the eject step, but eject
+            // runs BEFORE bg_coll_R within the same frame, so it only clears
+            // cube_data from the PREVIOUS frame (which was already 0 from the
+            // else-branch).  Forward-probe spike death is therefore immediate.
+            if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[FWD_SPIKE] probe=({rightEdge_px},{centerY_px}) tile=({tileX},{tileY}) tid=0x{tileId:X2} col={collision} local=({localX},{localY})");
+#endif
+                return true; // spike death at forward edge
+            }
 
             return false;
         }

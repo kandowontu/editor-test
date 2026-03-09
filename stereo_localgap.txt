@@ -1,0 +1,6 @@
+Loading ..\stereomadness.tmx...
+Map: 895x27  tiles=24165  sprites=24165
+Config: C:\Users\kando\Documents\Famidash Editor\stereomadness.tmx.cfg (24 offsets, 0 anchors)
+Start: (0, 369)  speed=1  maxFall=0x7  bias=0.50
+Coin collection mode ENABLED
+  Progress: 0%     Progress: 2%     Progress: 5%     Progress: 8%     Progress: 11%     Progress: 13%     Progress: 16%     Progress: 19%     Progress: 22%     Progress: 25%     Progress: 27%   

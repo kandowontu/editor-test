@@ -1,0 +1,639 @@
+[BALL_COIN_APPROACH] idx=17610 FLIP to ceiling (floor dies at 63 frames, need 258) playerX=4861
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4925 coinX=5576 dist=651 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4928 coinX=5576 dist=648 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4931 coinX=5576 dist=645 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4933 coinX=5576 dist=643 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4936 coinX=5576 dist=640 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4939 coinX=5576 dist=637 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4942 coinX=5576 dist=634 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4944 coinX=5576 dist=632 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4947 coinX=5576 dist=629 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4950 coinX=5576 dist=626 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4953 coinX=5576 dist=623 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4956 coinX=5576 dist=620 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4958 coinX=5576 dist=618 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4961 coinX=5576 dist=615 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4964 coinX=5576 dist=612 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4967 coinX=5576 dist=609 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4969 coinX=5576 dist=607 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4972 coinX=5576 dist=604 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4975 coinX=5576 dist=601 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4978 coinX=5576 dist=598 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4980 coinX=5576 dist=596 noPressFrames=89
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4983 coinX=5576 dist=593 noPressFrames=88
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4986 coinX=5576 dist=590 noPressFrames=87
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4989 coinX=5576 dist=587 noPressFrames=86
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4991 coinX=5576 dist=585 noPressFrames=85
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4994 coinX=5576 dist=582 noPressFrames=84
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4997 coinX=5576 dist=579 noPressFrames=83
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5000 coinX=5576 dist=576 noPressFrames=82
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5003 coinX=5576 dist=573 noPressFrames=81
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5005 coinX=5576 dist=571 noPressFrames=80
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5008 coinX=5576 dist=568 noPressFrames=79
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5011 coinX=5576 dist=565 noPressFrames=78
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5014 coinX=5576 dist=562 noPressFrames=77
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5016 coinX=5576 dist=560 noPressFrames=76
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5019 coinX=5576 dist=557 noPressFrames=75
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5022 coinX=5576 dist=554 noPressFrames=74
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5025 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=185 deathX=5536 deathY=260 deathDelay=4
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5025 coinX=5576 dist=551 noPressFrames=73
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5027 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=184 deathX=5536 deathY=260 deathDelay=3
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5027 coinX=5576 dist=549 noPressFrames=72
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5030 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=183 deathX=5536 deathY=260 deathDelay=2
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5030 coinX=5576 dist=546 noPressFrames=71
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5033 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=182 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5033 coinX=5576 dist=543 noPressFrames=70
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5036 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=181 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5036 coinX=5576 dist=540 noPressFrames=69
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5038 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=180 deathX=5536 deathY=260 deathDelay=5
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5038 coinX=5576 dist=538 noPressFrames=68
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5041 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=179 deathX=5536 deathY=260 deathDelay=4
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5041 coinX=5576 dist=535 noPressFrames=67
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5044 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=178 deathX=5536 deathY=260 deathDelay=3
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5044 coinX=5576 dist=532 noPressFrames=66
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5047 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=177 deathX=5536 deathY=260 deathDelay=2
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5047 coinX=5576 dist=529 noPressFrames=65
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5050 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=176 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5050 coinX=5576 dist=526 noPressFrames=64
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5052 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=175 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5052 coinX=5576 dist=524 noPressFrames=63
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5055 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=174 deathX=5536 deathY=260 deathDelay=10
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5055 coinX=5576 dist=521 noPressFrames=62
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5058 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=173 deathX=5536 deathY=260 deathDelay=9
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5058 coinX=5576 dist=518 noPressFrames=61
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5061 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=172 deathX=5536 deathY=260 deathDelay=8
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5061 coinX=5576 dist=515 noPressFrames=60
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5063 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=171 deathX=5536 deathY=260 deathDelay=7
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5063 coinX=5576 dist=513 noPressFrames=59
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5066 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=170 deathX=5536 deathY=260 deathDelay=6
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5066 coinX=5576 dist=510 noPressFrames=58
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5069 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=169 deathX=5536 deathY=260 deathDelay=5
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5069 coinX=5576 dist=507 noPressFrames=57
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5072 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=168 deathX=5536 deathY=260 deathDelay=4
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5072 coinX=5576 dist=504 noPressFrames=56
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5074 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=167 deathX=5536 deathY=260 deathDelay=3
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5074 coinX=5576 dist=502 noPressFrames=55
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5077 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=166 deathX=5536 deathY=260 deathDelay=2
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5077 coinX=5576 dist=499 noPressFrames=54
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5080 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=165 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5080 coinX=5576 dist=496 noPressFrames=53
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5083 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=164 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5083 coinX=5576 dist=493 noPressFrames=52
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5085 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=163 deathX=5536 deathY=260 deathDelay=5
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5085 coinX=5576 dist=491 noPressFrames=51
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5088 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=162 deathX=5536 deathY=260 deathDelay=4
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5088 coinX=5576 dist=488 noPressFrames=50
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5091 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=161 deathX=5536 deathY=260 deathDelay=3
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5091 coinX=5576 dist=485 noPressFrames=49
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5094 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=160 deathX=5536 deathY=260 deathDelay=2
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5094 coinX=5576 dist=482 noPressFrames=48
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5097 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=159 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5097 coinX=5576 dist=479 noPressFrames=47
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5099 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=158 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5099 coinX=5576 dist=477 noPressFrames=46
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5102 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=157 deathX=5536 deathY=260 deathDelay=4
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5102 coinX=5576 dist=474 noPressFrames=45
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5105 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=156 deathX=5536 deathY=260 deathDelay=3
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5105 coinX=5576 dist=471 noPressFrames=44
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5108 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=155 deathX=5536 deathY=260 deathDelay=2
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5108 coinX=5576 dist=468 noPressFrames=43
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5110 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=154 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5110 coinX=5576 dist=466 noPressFrames=42
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5113 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=153 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5113 coinX=5576 dist=463 noPressFrames=41
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5116 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=152 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5116 coinX=5576 dist=460 noPressFrames=40
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5119 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=151 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5119 coinX=5576 dist=457 noPressFrames=39
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5121 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=150 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5121 coinX=5576 dist=455 noPressFrames=38
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5124 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=149 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5124 coinX=5576 dist=452 noPressFrames=37
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5127 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=148 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5127 coinX=5576 dist=449 noPressFrames=36
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5130 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=147 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5130 coinX=5576 dist=446 noPressFrames=35
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5133 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=146 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5133 coinX=5576 dist=443 noPressFrames=34
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5135 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=145 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5135 coinX=5576 dist=441 noPressFrames=33
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5138 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=144 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5138 coinX=5576 dist=438 noPressFrames=32
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5141 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=143 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5141 coinX=5576 dist=435 noPressFrames=31
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5144 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=142 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5144 coinX=5576 dist=432 noPressFrames=30
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5146 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=141 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5146 coinX=5576 dist=430 noPressFrames=29
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5149 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=140 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5149 coinX=5576 dist=427 noPressFrames=28
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5152 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=139 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5152 coinX=5576 dist=424 noPressFrames=27
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5155 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=138 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5155 coinX=5576 dist=421 noPressFrames=26
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5157 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5157 coinX=5576 dist=419 noPressFrames=25
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5160 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=136 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5160 coinX=5576 dist=416 noPressFrames=24
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5163 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=135 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5163 coinX=5576 dist=413 noPressFrames=23
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5166 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=134 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5166 coinX=5576 dist=410 noPressFrames=22
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5168 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=133 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5168 coinX=5576 dist=408 noPressFrames=21
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5171 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=132 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5171 coinX=5576 dist=405 noPressFrames=20
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5174 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=131 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5174 coinX=5576 dist=402 noPressFrames=19
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5177 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=130 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5177 coinX=5576 dist=399 noPressFrames=18
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5180 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=129 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5180 coinX=5576 dist=396 noPressFrames=17
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5182 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=128 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5182 coinX=5576 dist=394 noPressFrames=16
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5185 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=127 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5185 coinX=5576 dist=391 noPressFrames=15
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5188 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=126 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5257 playerY=368 gravFlip=False coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=101 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 FLIP to ceiling (floor dies at 36 frames, need 115) playerX=5257
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5260 playerY=368 gravFlip=False coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=100 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 FLIP to ceiling (floor dies at 35 frames, need 114) playerX=5260
+[BALL_COIN_FOUND] idx=17610 7/200 delays collect coin (0 viable) at playerX=5296 playerY=320 gravFlip=True delays=[88,89,90,91,92,93,94]
+[COIN_COLLECTED] idx=17610 sid=0x07 gm=2 playerX=5557 playerY=263 coinHit=(5568,277)-(5584,293)
+[STAB_SET] prevMode=2 mode=1 stab=200
+[COIN_COLLECTED] idx=16135 sid=0x1A gm=1 playerX=8259 playerY=241 coinHit=(8272,247)-(8288,263)
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 57 frames, need 250) playerX=10755
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 249) playerX=10758
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 57 frames, need 250) playerX=10755
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 249) playerX=10758
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 9 frames, need 202) playerX=10888
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10924 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=147 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10949 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=138 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 34 frames, need 180) playerX=10949
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10951 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 33 frames, need 179) playerX=10951
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10949 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=138 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 34 frames, need 180) playerX=10949
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10951 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 33 frames, need 179) playerX=10951
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10998 playerY=288 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=120 deathX=11330 deathY=291 deathDelay=5
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11068 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=95 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 137) playerX=11068
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11070 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=94 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 55 frames, need 136) playerX=11070
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11068 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=95 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 137) playerX=11068
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11070 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=94 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 55 frames, need 136) playerX=11070
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11151 playerY=256 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=23 deathX=11214 deathY=367 deathDelay=1
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11153 playerY=256 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=22 deathX=11214 deathY=367 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11151 playerY=256 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=23 deathX=11214 deathY=367 deathDelay=1
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11153 playerY=256 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=22 deathX=11214 deathY=367 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11151 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=65 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 26 frames, need 107) playerX=11151
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11192 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=181/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=21
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11192 coinX=11448 dist=256 noPressFrames=50
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11195 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=181/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=20
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11195 coinX=11448 dist=253 noPressFrames=49
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11198 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=182/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=19
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11198 coinX=11448 dist=250 noPressFrames=48
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11200 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=183/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=18
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11200 coinX=11448 dist=248 noPressFrames=47
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11203 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=184/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=17
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11203 coinX=11448 dist=245 noPressFrames=46
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11206 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=185/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=16
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11206 coinX=11448 dist=242 noPressFrames=45
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11209 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=186/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=15
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11209 coinX=11448 dist=239 noPressFrames=44
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11211 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=187/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=14
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11211 coinX=11448 dist=237 noPressFrames=43
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11214 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=188/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=13
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11214 coinX=11448 dist=234 noPressFrames=42
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11217 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=189/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=12
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11217 coinX=11448 dist=231 noPressFrames=41
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11220 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=190/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=11
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11220 coinX=11448 dist=228 noPressFrames=40
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11222 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=191/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=10
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11222 coinX=11448 dist=226 noPressFrames=39
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11225 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=192/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=9
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11225 coinX=11448 dist=223 noPressFrames=38
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11228 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=193/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=8
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11228 coinX=11448 dist=220 noPressFrames=37
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11231 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=194/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=7
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11231 coinX=11448 dist=217 noPressFrames=36
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11233 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=195/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=6
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11233 coinX=11448 dist=215 noPressFrames=35
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11236 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=196/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=5
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11236 coinX=11448 dist=212 noPressFrames=34
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11239 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=197/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11239 coinX=11448 dist=209 noPressFrames=33
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11242 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=198/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11242 coinX=11448 dist=206 noPressFrames=32
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11245 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=199/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11245 coinX=11448 dist=203 noPressFrames=31
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11189 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=181/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=22
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11189 coinX=11448 dist=259 noPressFrames=51
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11192 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=181/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=21
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11192 coinX=11448 dist=256 noPressFrames=50
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11195 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=181/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=20
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11195 coinX=11448 dist=253 noPressFrames=49
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11198 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=182/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=19
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11198 coinX=11448 dist=250 noPressFrames=48
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11200 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=183/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=18
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11200 coinX=11448 dist=248 noPressFrames=47
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11203 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=184/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=17
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11203 coinX=11448 dist=245 noPressFrames=46
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11206 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=185/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=16
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11206 coinX=11448 dist=242 noPressFrames=45
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11209 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=186/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=15
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11209 coinX=11448 dist=239 noPressFrames=44
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11211 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=187/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=14
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11211 coinX=11448 dist=237 noPressFrames=43
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11214 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=188/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=13
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11214 coinX=11448 dist=234 noPressFrames=42
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11217 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=189/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=12
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11217 coinX=11448 dist=231 noPressFrames=41
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11220 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=190/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=11
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11220 coinX=11448 dist=228 noPressFrames=40
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11222 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=191/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=10
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11222 coinX=11448 dist=226 noPressFrames=39
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11225 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=192/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=9
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11225 coinX=11448 dist=223 noPressFrames=38
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11228 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=193/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=8
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11228 coinX=11448 dist=220 noPressFrames=37
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11231 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=194/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=7
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11231 coinX=11448 dist=217 noPressFrames=36
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11233 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=195/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=6
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11233 coinX=11448 dist=215 noPressFrames=35
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11236 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=196/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=5
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11236 coinX=11448 dist=212 noPressFrames=34
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11239 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=197/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11239 coinX=11448 dist=209 noPressFrames=33
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11242 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=198/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11242 coinX=11448 dist=206 noPressFrames=32
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11245 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=199/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11245 coinX=11448 dist=203 noPressFrames=31
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11070 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=94 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 55 frames, need 136) playerX=11070
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11068 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=95 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 137) playerX=11068
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11070 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=94 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 55 frames, need 136) playerX=11070
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11073 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=93 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 54 frames, need 135) playerX=11073
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11087 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=88 deathX=11330 deathY=291 deathDelay=12
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 49 frames, need 130) playerX=11087
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11070 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=94 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 55 frames, need 136) playerX=11070
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11068 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=95 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 137) playerX=11068
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11070 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=94 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 55 frames, need 136) playerX=11070
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11062 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=97 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 58 frames, need 139) playerX=11062
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11103 playerY=256 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=82 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11153 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=64 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 25 frames, need 106) playerX=11153
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11195 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=181/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=20
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11195 coinX=11448 dist=253 noPressFrames=49
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11198 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=182/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=19
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11198 coinX=11448 dist=250 noPressFrames=48
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11200 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=183/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=18
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11200 coinX=11448 dist=248 noPressFrames=47
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11203 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=184/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=17
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11203 coinX=11448 dist=245 noPressFrames=46
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11206 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=185/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=16
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11206 coinX=11448 dist=242 noPressFrames=45
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11209 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=186/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=15
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11209 coinX=11448 dist=239 noPressFrames=44
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11211 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=187/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=14
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11211 coinX=11448 dist=237 noPressFrames=43
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11214 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=188/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=13
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11214 coinX=11448 dist=234 noPressFrames=42
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11217 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=189/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=12
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11217 coinX=11448 dist=231 noPressFrames=41
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11220 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=190/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=11
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11220 coinX=11448 dist=228 noPressFrames=40
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11222 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=191/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=10
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11222 coinX=11448 dist=226 noPressFrames=39
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11225 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=192/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=9
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11225 coinX=11448 dist=223 noPressFrames=38
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11228 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=193/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=8
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11228 coinX=11448 dist=220 noPressFrames=37
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11231 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=194/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=7
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11231 coinX=11448 dist=217 noPressFrames=36
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11233 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=195/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=6
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11233 coinX=11448 dist=215 noPressFrames=35
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11236 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=196/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=5
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11236 coinX=11448 dist=212 noPressFrames=34
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11239 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=197/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11239 coinX=11448 dist=209 noPressFrames=33
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11242 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=198/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11242 coinX=11448 dist=206 noPressFrames=32
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11245 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=199/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11245 coinX=11448 dist=203 noPressFrames=31
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11076 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=92 deathX=11330 deathY=291 deathDelay=1
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 53 frames, need 134) playerX=11076
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11090 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=87 deathX=11330 deathY=291 deathDelay=11
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 48 frames, need 129) playerX=11090
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11070 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=94 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 55 frames, need 136) playerX=11070
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11068 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=95 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 137) playerX=11068
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11070 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=94 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 55 frames, need 136) playerX=11070
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11051 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=101 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 62 frames, need 143) playerX=11051
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11065 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=96 deathX=11330 deathY=291 deathDelay=5
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 57 frames, need 138) playerX=11065
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11079 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=91 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 52 frames, need 133) playerX=11079
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11120 playerY=256 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=76 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11170 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=58 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 19 frames, need 100) playerX=11170
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11211 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=187/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=14
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11211 coinX=11448 dist=237 noPressFrames=43
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11214 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=188/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=13
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11214 coinX=11448 dist=234 noPressFrames=42
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11217 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=189/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=12
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11217 coinX=11448 dist=231 noPressFrames=41
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11220 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=190/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=11
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11220 coinX=11448 dist=228 noPressFrames=40
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11222 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=191/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=10
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11222 coinX=11448 dist=226 noPressFrames=39
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11225 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=192/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=9
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11225 coinX=11448 dist=223 noPressFrames=38
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11228 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=193/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=8
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11228 coinX=11448 dist=220 noPressFrames=37
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11231 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=194/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=7
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11231 coinX=11448 dist=217 noPressFrames=36
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11233 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=195/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=6
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11233 coinX=11448 dist=215 noPressFrames=35
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11236 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=196/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=5
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11236 coinX=11448 dist=212 noPressFrames=34
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11239 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=197/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11239 coinX=11448 dist=209 noPressFrames=33
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11242 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=198/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11242 coinX=11448 dist=206 noPressFrames=32
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11245 playerY=272 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=199/200 maxFrame=200 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 suppress flip (ceiling), walk forward playerX=11245 coinX=11448 dist=203 noPressFrames=31
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11092 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=86 deathX=11330 deathY=291 deathDelay=10
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 47 frames, need 128) playerX=11092
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11001 playerY=288 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=119 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11068 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=95 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 137) playerX=11068
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10998 playerY=288 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=120 deathX=11330 deathY=291 deathDelay=5
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11068 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=95 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 137) playerX=11068
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11001 playerY=288 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=119 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11068 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=95 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 137) playerX=11068
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11045 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=103 deathX=11330 deathY=291 deathDelay=6
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 64 frames, need 145) playerX=11045
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11054 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=100 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 61 frames, need 142) playerX=11054
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11068 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=95 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 137) playerX=11068
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11081 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=90 deathX=11330 deathY=291 deathDelay=14
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 51 frames, need 132) playerX=11081
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11095 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=85 deathX=11330 deathY=291 deathDelay=9
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 46 frames, need 127) playerX=11095
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11012 playerY=288 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=115 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11068 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=95 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 56 frames, need 137) playerX=11068
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11026 playerY=288 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=110 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11076 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=92 deathX=11330 deathY=291 deathDelay=1
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 53 frames, need 134) playerX=11076
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11040 playerY=288 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=105 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=11081 playerY=320 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=90 deathX=11330 deathY=291 deathDelay=14
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 51 frames, need 132) playerX=11081
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10926 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=146 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10951 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 33 frames, need 179) playerX=10951
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10940 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=141 deathX=11330 deathY=291 deathDelay=6
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 37 frames, need 183) playerX=10940
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10924 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=147 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10949 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=138 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 34 frames, need 180) playerX=10949
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10926 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=146 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10951 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 33 frames, need 179) playerX=10951
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10940 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=141 deathX=11330 deathY=291 deathDelay=6
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 37 frames, need 183) playerX=10940
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10954 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=136 deathX=11330 deathY=291 deathDelay=1
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 32 frames, need 178) playerX=10954
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 8 frames, need 201) playerX=10891
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10926 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=146 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10951 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 33 frames, need 179) playerX=10951
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10924 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=147 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10949 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=138 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 34 frames, need 180) playerX=10949
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 9 frames, need 202) playerX=10888
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10924 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=147 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10949 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=138 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 34 frames, need 180) playerX=10949
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 8 frames, need 201) playerX=10891
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10926 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=146 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10951 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 33 frames, need 179) playerX=10951
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10924 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=147 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10949 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=138 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 34 frames, need 180) playerX=10949
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 8 frames, need 201) playerX=10891
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10926 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=146 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10951 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 33 frames, need 179) playerX=10951
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 12 frames, need 205) playerX=10879
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10915 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=150 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10946 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=139 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 35 frames, need 181) playerX=10946
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 9 frames, need 202) playerX=10888
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10924 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=147 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10949 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=138 deathX=11330 deathY=291 deathDelay=3
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 34 frames, need 180) playerX=10949
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 8 frames, need 201) playerX=10891
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10926 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=146 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10951 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 33 frames, need 179) playerX=10951
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 12 frames, need 205) playerX=10879
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10915 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=150 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10946 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=139 deathX=11330 deathY=291 deathDelay=4
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 35 frames, need 181) playerX=10946
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 7 frames, need 200) playerX=10893
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10929 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=145 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10951 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=11330 deathY=291 deathDelay=2
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 33 frames, need 179) playerX=10951
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10915 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=150 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 46 frames, need 192) playerX=10915
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10932 playerY=320 gravFlip=True coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=144 deathX=11330 deathY=291 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17155 playerX=10954 playerY=336 gravFlip=False coinHit=(11440,271)-(11456,287) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=136 deathX=11330 deathY=291 deathDelay=1
+[BALL_COIN_APPROACH] idx=17155 FLIP to ceiling (floor dies at 32 frames, need 178) playerX=10954
+[BALL_COIN_APPROACH] idx=17610 FLIP to ceiling (floor dies at 63 frames, need 258) playerX=4861
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4925 coinX=5576 dist=651 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4928 coinX=5576 dist=648 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4931 coinX=5576 dist=645 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4933 coinX=5576 dist=643 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4936 coinX=5576 dist=640 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4939 coinX=5576 dist=637 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4942 coinX=5576 dist=634 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4944 coinX=5576 dist=632 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4947 coinX=5576 dist=629 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4950 coinX=5576 dist=626 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4953 coinX=5576 dist=623 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4956 coinX=5576 dist=620 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4958 coinX=5576 dist=618 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4961 coinX=5576 dist=615 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4964 coinX=5576 dist=612 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4967 coinX=5576 dist=609 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4969 coinX=5576 dist=607 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4972 coinX=5576 dist=604 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4975 coinX=5576 dist=601 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4978 coinX=5576 dist=598 noPressFrames=90
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4980 coinX=5576 dist=596 noPressFrames=89
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4983 coinX=5576 dist=593 noPressFrames=88
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4986 coinX=5576 dist=590 noPressFrames=87
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4989 coinX=5576 dist=587 noPressFrames=86
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4991 coinX=5576 dist=585 noPressFrames=85
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4994 coinX=5576 dist=582 noPressFrames=84
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=4997 coinX=5576 dist=579 noPressFrames=83
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5000 coinX=5576 dist=576 noPressFrames=82
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5003 coinX=5576 dist=573 noPressFrames=81
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5005 coinX=5576 dist=571 noPressFrames=80
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5008 coinX=5576 dist=568 noPressFrames=79
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5011 coinX=5576 dist=565 noPressFrames=78
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5014 coinX=5576 dist=562 noPressFrames=77
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5016 coinX=5576 dist=560 noPressFrames=76
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5019 coinX=5576 dist=557 noPressFrames=75
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5022 coinX=5576 dist=554 noPressFrames=74
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5025 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=185 deathX=5536 deathY=260 deathDelay=4
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5025 coinX=5576 dist=551 noPressFrames=73
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5027 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=184 deathX=5536 deathY=260 deathDelay=3
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5027 coinX=5576 dist=549 noPressFrames=72
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5030 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=183 deathX=5536 deathY=260 deathDelay=2
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5030 coinX=5576 dist=546 noPressFrames=71
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5033 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=182 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5033 coinX=5576 dist=543 noPressFrames=70
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5036 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=181 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5036 coinX=5576 dist=540 noPressFrames=69
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5038 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=180 deathX=5536 deathY=260 deathDelay=5
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5038 coinX=5576 dist=538 noPressFrames=68
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5041 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=179 deathX=5536 deathY=260 deathDelay=4
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5041 coinX=5576 dist=535 noPressFrames=67
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5044 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=178 deathX=5536 deathY=260 deathDelay=3
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5044 coinX=5576 dist=532 noPressFrames=66
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5047 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=177 deathX=5536 deathY=260 deathDelay=2
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5047 coinX=5576 dist=529 noPressFrames=65
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5050 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=176 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5050 coinX=5576 dist=526 noPressFrames=64
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5052 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=175 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5052 coinX=5576 dist=524 noPressFrames=63
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5055 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=174 deathX=5536 deathY=260 deathDelay=10
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5055 coinX=5576 dist=521 noPressFrames=62
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5058 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=173 deathX=5536 deathY=260 deathDelay=9
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5058 coinX=5576 dist=518 noPressFrames=61
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5061 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=172 deathX=5536 deathY=260 deathDelay=8
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5061 coinX=5576 dist=515 noPressFrames=60
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5063 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=171 deathX=5536 deathY=260 deathDelay=7
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5063 coinX=5576 dist=513 noPressFrames=59
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5066 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=170 deathX=5536 deathY=260 deathDelay=6
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5066 coinX=5576 dist=510 noPressFrames=58
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5069 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=169 deathX=5536 deathY=260 deathDelay=5
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5069 coinX=5576 dist=507 noPressFrames=57
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5072 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=168 deathX=5536 deathY=260 deathDelay=4
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5072 coinX=5576 dist=504 noPressFrames=56
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5074 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=167 deathX=5536 deathY=260 deathDelay=3
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5074 coinX=5576 dist=502 noPressFrames=55
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5077 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=166 deathX=5536 deathY=260 deathDelay=2
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5077 coinX=5576 dist=499 noPressFrames=54
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5080 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=165 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5080 coinX=5576 dist=496 noPressFrames=53
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5083 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=164 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5083 coinX=5576 dist=493 noPressFrames=52
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5085 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=163 deathX=5536 deathY=260 deathDelay=5
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5085 coinX=5576 dist=491 noPressFrames=51
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5088 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=162 deathX=5536 deathY=260 deathDelay=4
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5088 coinX=5576 dist=488 noPressFrames=50
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5091 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=161 deathX=5536 deathY=260 deathDelay=3
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5091 coinX=5576 dist=485 noPressFrames=49
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5094 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=160 deathX=5536 deathY=260 deathDelay=2
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5094 coinX=5576 dist=482 noPressFrames=48
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5097 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=159 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5097 coinX=5576 dist=479 noPressFrames=47
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5099 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=158 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5099 coinX=5576 dist=477 noPressFrames=46
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5102 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=157 deathX=5536 deathY=260 deathDelay=4
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5102 coinX=5576 dist=474 noPressFrames=45
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5105 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=156 deathX=5536 deathY=260 deathDelay=3
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5105 coinX=5576 dist=471 noPressFrames=44
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5108 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=155 deathX=5536 deathY=260 deathDelay=2
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5108 coinX=5576 dist=468 noPressFrames=43
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5110 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=154 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5110 coinX=5576 dist=466 noPressFrames=42
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5113 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=153 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5113 coinX=5576 dist=463 noPressFrames=41
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5116 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=152 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5116 coinX=5576 dist=460 noPressFrames=40
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5119 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=151 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5119 coinX=5576 dist=457 noPressFrames=39
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5121 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=150 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5121 coinX=5576 dist=455 noPressFrames=38
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5124 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=149 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5124 coinX=5576 dist=452 noPressFrames=37
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5127 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=148 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5127 coinX=5576 dist=449 noPressFrames=36
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5130 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=147 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5130 coinX=5576 dist=446 noPressFrames=35
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5133 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=146 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5133 coinX=5576 dist=443 noPressFrames=34
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5135 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=145 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5135 coinX=5576 dist=441 noPressFrames=33
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5138 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=144 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5138 coinX=5576 dist=438 noPressFrames=32
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5141 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=143 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5141 coinX=5576 dist=435 noPressFrames=31
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5144 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=142 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5144 coinX=5576 dist=432 noPressFrames=30
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5146 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=141 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5146 coinX=5576 dist=430 noPressFrames=29
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5149 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=140 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5149 coinX=5576 dist=427 noPressFrames=28
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5152 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=139 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5152 coinX=5576 dist=424 noPressFrames=27
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5155 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=138 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5155 coinX=5576 dist=421 noPressFrames=26
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5157 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=137 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5157 coinX=5576 dist=419 noPressFrames=25
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5160 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=136 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5160 coinX=5576 dist=416 noPressFrames=24
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5163 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=135 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5163 coinX=5576 dist=413 noPressFrames=23
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5166 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=134 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5166 coinX=5576 dist=410 noPressFrames=22
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5168 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=133 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5168 coinX=5576 dist=408 noPressFrames=21
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5171 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=132 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5171 coinX=5576 dist=405 noPressFrames=20
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5174 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=131 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5174 coinX=5576 dist=402 noPressFrames=19
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5177 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=130 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5177 coinX=5576 dist=399 noPressFrames=18
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5180 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=129 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5180 coinX=5576 dist=396 noPressFrames=17
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5182 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=128 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5182 coinX=5576 dist=394 noPressFrames=16
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5185 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=127 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 suppress flip (ceiling), walk forward playerX=5185 coinX=5576 dist=391 noPressFrames=15
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5188 playerY=256 gravFlip=True coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=126 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5257 playerY=368 gravFlip=False coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=101 deathX=5536 deathY=260 deathDelay=1
+[BALL_COIN_APPROACH] idx=17610 FLIP to ceiling (floor dies at 36 frames, need 115) playerX=5257
+[BALL_COIN_MISS_DETAIL] idx=17610 playerX=5260 playerY=368 gravFlip=False coinHit=(5568,277)-(5584,293) closestXDist=2147483647 closestYDist=2147483647 closestDelay=-1 closestFrame=-1 diedCount=200/200 maxFrame=100 deathX=5536 deathY=260 deathDelay=0
+[BALL_COIN_APPROACH] idx=17610 FLIP to ceiling (floor dies at 35 frames, need 114) playerX=5260
+[BALL_COIN_FOUND] idx=17610 7/200 delays collect coin (0 viable) at playerX=5296 playerY=320 gravFlip=True delays=[88,89,90,91,92,93,94]
+[COIN_COLLECTED] idx=17610 sid=0x07 gm=2 playerX=5559 playerY=263 coinHit=(5568,277)-(5584,293)
+[STAB_SET] prevMode=2 mode=1 stab=200
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=1
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=2
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=3
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=4
+[COIN_AUTO_FORGIVEN] idx=16135 gm=1 missCount=5 playerX=8288

@@ -1,0 +1,6 @@
+﻿[CUBE_DBG] X=8031 Y=353 jumpSurv=67 walkSurv=67 elevB=0 holdB=0 coinBJ=0 
+[CUBE_DBG] X=8031 Y=353 jumpSurv=67 walkSurv=67 elevB=0 holdB=0 coinBJ=0 
+[CUBE_DBG] X=8031 Y=353 jumpSurv=67 walkSurv=67 elevB=0 holdB=0 coinBJ=0 
+[CUBE_DBG] X=8031 Y=353 jumpSurv=67 walkSurv=67 elevB=0 holdB=0 coinBJ=0 
+[CUBE_DBG] X=8031 Y=353 jumpSurv=67 walkSurv=67 elevB=0 holdB=0 coinBJ=0 
+[CUBE_DBG] X=8031 Y=353 jumpSurv=67 walkSurv=67 elevB=0 holdB=0 coinBJ=0 

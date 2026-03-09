@@ -1,0 +1,34 @@
+[STAB_SET] prevMode=2 mode=1 stab=200
+[CROSSMODE_BT] cpMode=2 deathMode=1 frameDist=136 attempts=0
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[CROSSMODE_BT] cpMode=2 deathMode=1 frameDist=164 attempts=70
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[CROSSMODE_BT] cpMode=2 deathMode=1 frameDist=168 attempts=80
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=2 mode=1 stab=200

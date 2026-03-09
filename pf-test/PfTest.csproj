@@ -10,6 +10,9 @@
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DefineConstants>$(DefineConstants);DISABLE_DEBUG_LOGGING</DefineConstants>
+  </PropertyGroup>
   <PropertyGroup>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>

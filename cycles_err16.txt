@@ -1,0 +1,38 @@
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=304 coinX=5576 coinY=285 yOff=19 onGround=True gravFlip=True missCount=1
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=304 coinX=5576 coinY=285 yOff=19 onGround=True gravFlip=True missCount=2
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=311 coinX=5576 coinY=285 yOff=26 onGround=False gravFlip=False missCount=3
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=304 coinX=5576 coinY=285 yOff=19 onGround=True gravFlip=True missCount=4
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=304 coinX=5576 coinY=285 yOff=19 onGround=True gravFlip=True missCount=5
+[STAB_SET] prevMode=2 mode=1 stab=200
+[BALL_COIN_MISS] idx=17155 playerX=11457 playerY=333 coinX=11448 coinY=279 yOff=54 onGround=False gravFlip=True missCount=1
+[BALL_COIN_MISS] idx=17155 playerX=11457 playerY=336 coinX=11448 coinY=279 yOff=57 onGround=True gravFlip=False missCount=2
+[BALL_COIN_MISS] idx=17155 playerX=11457 playerY=328 coinX=11448 coinY=279 yOff=49 onGround=False gravFlip=True missCount=3
+[BALL_COIN_MISS] idx=17155 playerX=11457 playerY=333 coinX=11448 coinY=279 yOff=54 onGround=False gravFlip=True missCount=4
+[BALL_COIN_MISS] idx=17155 playerX=11457 playerY=336 coinX=11448 coinY=279 yOff=57 onGround=True gravFlip=False missCount=5
+[COIN_RETRY_BALL] Attempting 2 ball-mode forgiven coins bias=0.00
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=329 coinX=5576 coinY=285 yOff=44 onGround=False gravFlip=False missCount=1
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=325 coinX=5576 coinY=285 yOff=40 onGround=False gravFlip=False missCount=2
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=344 coinX=5576 coinY=285 yOff=59 onGround=False gravFlip=False missCount=3
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=329 coinX=5576 coinY=285 yOff=44 onGround=False gravFlip=False missCount=4
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=325 coinX=5576 coinY=285 yOff=40 onGround=False gravFlip=False missCount=5
+[STAB_SET] prevMode=2 mode=1 stab=200
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=1
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=2
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=3
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=4
+[SHIP_COIN_MISS] idx=17155 playerY=129 coinY=279 yOff=-150 missCount=1
+[SHIP_COIN_MISS] idx=17155 playerY=129 coinY=279 yOff=-150 missCount=2
+[SHIP_COIN_MISS] idx=17155 playerY=129 coinY=279 yOff=-150 missCount=3
+[SHIP_COIN_MISS] idx=17155 playerY=129 coinY=279 yOff=-150 missCount=4
+[COIN_RETRY_BALL] Result: 0/3 coins (bias=0.00)
+[COIN_RETRY_BALL] Attempting 2 ball-mode forgiven coins bias=1.00
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=304 coinX=5576 coinY=285 yOff=19 onGround=True gravFlip=True missCount=1
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=304 coinX=5576 coinY=285 yOff=19 onGround=True gravFlip=True missCount=2
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=308 coinX=5576 coinY=285 yOff=23 onGround=False gravFlip=False missCount=3
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=304 coinX=5576 coinY=285 yOff=19 onGround=True gravFlip=True missCount=4
+[BALL_COIN_MISS] idx=17610 playerX=5586 playerY=304 coinX=5576 coinY=285 yOff=19 onGround=True gravFlip=True missCount=5
+[STAB_SET] prevMode=2 mode=1 stab=200
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=1
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=2
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=3
+[SHIP_COIN_MISS] idx=16135 playerY=193 coinY=255 yOff=-62 missCount=4

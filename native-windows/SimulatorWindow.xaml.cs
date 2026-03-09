@@ -2554,7 +2554,10 @@ namespace FamidashEditor
                     { pxOff_c = offsc.offsetX; pyOff_c = offsc.offsetY; }
 
                     int coinLeft = storageTileX_c * TILE + pxOff_c;
-                    int coinTop  = (storageTileY_c - groundRowsToReserve_coin) * TILE + pyOff_c;
+                    // NES check_spr_objects applies -1 to ALL sprite Y positions
+                    // (clc;sbc intentionally subtracts 1 extra). Coins go through
+                    // check_spr_objects like all sprites, so the -1 applies here too.
+                    int coinTop  = (storageTileY_c - groundRowsToReserve_coin) * TILE + pyOff_c - 1;
                     // NES uses exclusive bounds (edge-touching = collision): x1+w1 >= x2
                     int coinRight  = coinLeft + 0x10; // exclusive
                     int coinBottom = coinTop  + 0x10; // exclusive
@@ -10686,16 +10689,16 @@ namespace FamidashEditor
                                 
                                 bool middlePixelBlocked = CheckPixelCollision(playerRightEdge_fwd, playerCenterY_fwd, groundRowsToReserve_fwd);
                                 
-                                // NOTE: NES bg_side_coll_common also calls bg_coll_spikes() which
-                                // can set the death flag (cube_data |= 1).  However, the NES uses
-                                // a DEFERRED death flag that gets CLEARED by floor/ceiling landing
-                                // (COLL_CHECK_BOTTOM/TOP does cube_data &= ~1).  Without that
-                                // cancellation, side-probe spike death is too aggressive.  The
-                                // center-point death check already handles non-cancellable death.
+                                // NES bg_side_coll_common calls bg_coll_spikes() at the forward
+                                // probe, setting cube_data |= 1 for spike death.  The death is
+                                // checked at the END of the same frame (cube_data & 1 → death,
+                                // else cube_data = 0).  Eject clears cube_data BEFORE bg_coll_R,
+                                // so forward-probe spike death is immediate.
+                                bool middlePixelDeath = PointHitsSpikeFloor(playerRightEdge_fwd, playerCenterY_fwd, groundRowsToReserve_fwd);
                                 
-                                if (middlePixelBlocked)
+                                if (middlePixelBlocked || middlePixelDeath)
                                 {
-                                    string reason = "Forward middle pixel collision";
+                                    string reason = middlePixelBlocked ? "Forward middle pixel collision" : "Forward spike death";
                                     AppendSimDebug($"[DEATH] {reason} at ({playerRightEdge_fwd},{playerCenterY_fwd}) - post-eject check at OLD X");
                                     deathTriggered = true;
                                     deathTileX = playerRightEdge_fwd;

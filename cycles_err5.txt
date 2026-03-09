@@ -1,0 +1,3 @@
+[STAB_SET] prevMode=2 mode=1 stab=200
+[COIN_RETRY_SKIP] coin idx=17610 sid=0x07 gameMode=2 — skip non-cube retry
+[COIN_RETRY_SKIP] coin idx=17155 sid=0x1B gameMode=2 — skip non-cube retry

@@ -26,11 +26,12 @@
   </PropertyGroup>
   <PropertyGroup>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
-    <!-- Debug logging enabled: remove DISABLE_DEBUG_LOGGING to generate PF logs in %TEMP% -->
+    <!-- Debug logging disabled in Release for BFS thread safety (Parallel.For) and performance.
+         Use Debug config or remove DISABLE_DEBUG_LOGGING to generate PF logs in %TEMP%. -->
   </PropertyGroup>
 
-  <!-- NoDebugLogging config: suppress ALL sim debug logging (file I/O + string allocs) -->
-  <PropertyGroup Condition="'$(Configuration)' == 'NoDebugLogging'">
+  <!-- Release + NoDebugLogging: suppress ALL sim debug logging (file I/O + string allocs) -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' Or '$(Configuration)' == 'NoDebugLogging'">
     <DefineConstants>$(DefineConstants);DISABLE_DEBUG_LOGGING</DefineConstants>
   </PropertyGroup>
 

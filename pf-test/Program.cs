@@ -16,6 +16,7 @@ using FamidashEditor;
 
 // Parse --coins flag (can appear anywhere in args)
 bool preferCoins = args.Any(a => a.Equals("--coins", StringComparison.OrdinalIgnoreCase));
+bool useBfs = args.Any(a => a.Equals("--bfs", StringComparison.OrdinalIgnoreCase));
 // Filter out named flags before positional parsing
 var positionalArgs = args.Where(a => !a.StartsWith("--")).ToArray();
 
@@ -154,9 +155,12 @@ var engine = new PathfinderEngine(
     spritePixelOffsets);
 engine.JumpTimingBias = jumpTimingBias;
 engine.PreferCoins = preferCoins;
+engine.UseBFS = useBfs;
 
 if (preferCoins)
     Console.WriteLine("Coin collection mode ENABLED");
+if (useBfs)
+    Console.WriteLine("BFS exploration mode ENABLED");
 
 engine.Progress = new Progress<int>(pct =>
 {
