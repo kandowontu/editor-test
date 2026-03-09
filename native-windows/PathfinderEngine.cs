@@ -408,6 +408,9 @@ namespace FamidashEditor
         // Used during cross-mode escalation to change the ship entry altitude
         // when the normal checkpoint list has been evicted of cube checkpoints.
         private BacktrackCheckpoint? _lastCubeToShipCheckpoint;
+        // Persistent copy of ship entry checkpoint for coin collect-lose
+        // deep recovery (not consumed on use, unlike _lastCubeToShipCheckpoint).
+        private BacktrackCheckpoint? _shipEntryRecoveryCheckpoint;
         private int _backtrackAttempts;
         private int _totalBacktrackAttempts;
         private int _btOverrideFrame = -1;  // frame at which to apply override
@@ -1535,6 +1538,7 @@ namespace FamidashEditor
             _committedJumpDelay = -1;
             _backtrackCheckpoints = new List<BacktrackCheckpoint>();
             _lastCubeToShipCheckpoint = null;
+            _shipEntryRecoveryCheckpoint = null;
             _backtrackAttempts = 0;
             _totalBacktrackAttempts = 0;
             _btOverrideFrame = -1;
@@ -2947,6 +2951,60 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                             PfLog($"[COIN_COLLECT_LOSE_FORGIVEN] idx={stale} loseCount={loseCount} — collected {MAX_COIN_COLLECT_LOSE}x but path always dies");
 #endif
+                        }
+                    }
+                    // DEEP RECOVERY: On first collect-lose for a non-forgiven
+                    // ship-mode coin, inject the ship entry checkpoint for a
+                    // deep backtrack.  This gives 700+ px of biased flight
+                    // (via _coinCollectThenLoseCount → biasPixels shift in
+                    // DecideShipInput) to diverge the trajectory, avoiding the
+                    // need for a full COIN_RETRY_SHIP level replay.
+                    if (deathGameMode == 1 && _shipEntryRecoveryCheckpoint != null)
+                    {
+                        bool needDeep = false;
+                        foreach (int stale in staleCoins)
+                        {
+                            if (!_forgivenCoins.Contains(stale)
+                                && _coinCollectThenLoseCount.TryGetValue(stale, out int cl2)
+                                && cl2 > 0
+                                && _shipEntryRecoveryCheckpoint.Frame < cp.Frame - 50)
+                            {
+                                needDeep = true;
+                                break;
+                            }
+                        }
+                        if (needDeep)
+                        {
+                            var src = _shipEntryRecoveryCheckpoint;
+                            var recovery = new BacktrackCheckpoint
+                            {
+                                Frame = src.Frame,
+                                State = src.State.Clone(),
+                                HoldJumpState = src.HoldJumpState,
+                                HoldDelayState = src.HoldDelayState,
+                                CommittedDelayState = src.CommittedDelayState,
+                                PathPointCount = src.PathPointCount,
+                                InputCount = src.InputCount,
+                                RetryStage = 0,
+                                UsedBias = src.UsedBias,
+                                ShipBias = src.ShipBias,
+                                GameMode = src.GameMode,
+                                ShipForceHold = src.ShipForceHold,
+                                ShipForceRelease = src.ShipForceRelease,
+                                ShipCommitFrames = src.ShipCommitFrames,
+                                ShipCommitHold = src.ShipCommitHold,
+                                ForceJumpRemaining = src.ForceJumpRemaining,
+                                SkipAllOrbs = src.SkipAllOrbs,
+                                SkipSpecificOrbs = new HashSet<int>(src.SkipSpecificOrbs ?? new()),
+                                SkipSpecificPads = new HashSet<int>(src.SkipSpecificPads ?? new()),
+                                PrevFrameWasGrounded = src.PrevFrameWasGrounded,
+                                NextCoinCheckIdx = src.NextCoinCheckIdx,
+                            };
+                            _backtrackCheckpoints.Clear();
+                            _backtrackCheckpoints.Add(recovery);
+                            _backtrackAttempts = 0;
+                            Console.Error.WriteLine($"[COIN_DEEP_RECOVERY] injecting ship entry frame={recovery.Frame} mode={recovery.GameMode}");
+                            return TryBacktrack(ref state, ref frame);
                         }
                     }
                     // Re-add coins collected BEFORE the checkpoint
@@ -5622,6 +5680,14 @@ namespace FamidashEditor
             // gentle blend (5-15%) to avoid aggressive pulls toward coins
             // in other game mode sections.
             int biasPixels = (int)((JumpTimingBias - 0.5) * 16.0);
+            // Learned bias from coin collect-lose history: shift corridor
+            // so subsequent approaches from the ship entry diverge enough
+            // to survive past obstacles that killed previous attempts.
+            foreach (var kvp in _coinCollectThenLoseCount)
+            {
+                if (!_forgivenCoins.Contains(kvp.Key))
+                    biasPixels -= 3 * kvp.Value;
+            }
             int targetY;
             bool offCorridorCoin = false;
             if (coinTargetY >= 0)
@@ -8605,6 +8671,31 @@ namespace FamidashEditor
                             {
                                 var src = _backtrackCheckpoints[ci];
                                 _lastCubeToShipCheckpoint = new BacktrackCheckpoint
+                                {
+                                    Frame = src.Frame,
+                                    State = src.State.Clone(),
+                                    HoldJumpState = src.HoldJumpState,
+                                    HoldDelayState = src.HoldDelayState,
+                                    CommittedDelayState = src.CommittedDelayState,
+                                    PathPointCount = src.PathPointCount,
+                                    InputCount = src.InputCount,
+                                    RetryStage = 0,
+                                    UsedBias = src.UsedBias,
+                                    ShipBias = src.ShipBias,
+                                    GameMode = src.GameMode,
+                                    ShipForceHold = src.ShipForceHold,
+                                    ShipForceRelease = src.ShipForceRelease,
+                                    ShipCommitFrames = src.ShipCommitFrames,
+                                    ShipCommitHold = src.ShipCommitHold,
+                                    ForceJumpRemaining = src.ForceJumpRemaining,
+                                    SkipAllOrbs = src.SkipAllOrbs,
+                                    SkipSpecificOrbs = new HashSet<int>(src.SkipSpecificOrbs ?? new()),
+                                    SkipSpecificPads = new HashSet<int>(src.SkipSpecificPads ?? new()),
+                                    PrevFrameWasGrounded = src.PrevFrameWasGrounded,
+                                    NextCoinCheckIdx = src.NextCoinCheckIdx,
+                                };
+                                // Also save a persistent copy for coin collect-lose recovery
+                                _shipEntryRecoveryCheckpoint = new BacktrackCheckpoint
                                 {
                                     Frame = src.Frame,
                                     State = src.State.Clone(),
