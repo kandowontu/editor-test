@@ -138,16 +138,14 @@ namespace FamidashEditor
         private static int GetHitboxW(bool mini) => mini ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
         private static int GetHitboxH(bool mini) => mini ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
         private static int GetHitboxOffsetY(bool mini, bool gravFlipped) =>
-            (mini && !gravFlipped) ? 9 : 0;
+            mini ? ((0x10 - MINI_CUBE_HITBOX_H) >> 1) : 0; // NES: (0x10 - height) >> 1 = 4 for mini, always
         /// <summary>
-        /// Mode-aware hitbox Y offset.  Cube mini=9, Ball mini=4, others=0.
+        /// Mode-aware hitbox Y offset.  Always 4 for mini (NES centering), 0 for normal.
         /// </summary>
         private static int GetHitboxOffsetY(int gameMode, bool mini, bool gravFlipped)
         {
             if (!mini) return 0;
-            if (gameMode == 2) // Ball: (0x10 - 7) >> 1 = 4
-                return gravFlipped ? 0 : 4;
-            return gravFlipped ? 0 : 9; // Cube/Robot/etc. mini offset
+            return (0x10 - MINI_CUBE_HITBOX_H) >> 1; // = 4, matches NES centering for all modes
         }
 
         // Ball physics constants (from GameModePhysics.cs, 60fps values)
@@ -777,6 +775,9 @@ namespace FamidashEditor
             public int PendingOrbIndex;         // -1 = no pending orb
             public int PendingOrbSpriteId;      // sprite ID of pending orb
 
+            // BFS death diagnostics (set by StepFrame when returning false)
+            public byte DeathType; // 0=none,1=CEIL_SPIKE,2=EJECT,3=CENTER,4=BALL_PROBE,5=BALL_VELZERO,6=BALL_EJECT,7=FLOOR_SPIKE,8=FWD,9=DEATH_COLL,10=BOUNDS
+
             public SimState Clone()
             {
                 var c = this;
@@ -951,21 +952,57 @@ namespace FamidashEditor
                 }
             }
 
-            // ── BFS MODE ──
-            // When UseBFS is enabled, bypass ALL heuristic logic (PD controller,
-            // backtracking, coin retry, beam search) and run exhaustive BFS instead.
-            if (UseBFS)
+            // ── BFS FIRST ──
+            // Always try BFS first — it's fast (a few seconds) and handles
+            // complex gravity/portal sections that the greedy heuristic can't
+            // navigate. If BFS succeeds or UseBFS is set, we're done.
+            // If BFS fails, fall back to the heuristic only if BFS made
+            // very little progress (< 5%) — otherwise the heuristic is
+            // unlikely to do better and takes a very long time.
+            RunBFS(startX_px, startY_px, startSpeedUiIndex,
+                   startGameMode, startGravFlipped, startMini);
+
+            if (Success || UseBFS)
             {
-                RunBFS(startX_px, startY_px, startSpeedUiIndex,
-                       startGameMode, startGravFlipped, startMini);
+                // BFS completed the level, or explicit BFS-only mode — done
                 sw.Stop();
                 if (!string.IsNullOrEmpty(ResultMessage))
                     ResultMessage += $" [{sw.Elapsed.TotalSeconds:F1}s]";
                 return;
             }
 
-            RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
-                             startGameMode, startGravFlipped, startMini);
+            // BFS failed — save its partial result
+            var bfsInputs = Inputs != null ? new List<bool>(Inputs) : null;
+            var bfsPath = PathPoints != null ? new List<(int x, int y)>(PathPoints) : null;
+            string bfsMsg = ResultMessage;
+            int bfsBestX = PathPoints != null && PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
+            int bfsLevelLen = mapWidth * TILE;
+            int bfsPct = bfsLevelLen > 0 ? bfsBestX * 100 / bfsLevelLen : 0;
+
+            // Only fall back to heuristic if BFS made very little progress
+            if (bfsPct < 5)
+            {
+                Console.Error.WriteLine($"[BFS→HEURISTIC] BFS only reached {bfsPct}%, trying heuristic...");
+                RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
+                                 startGameMode, startGravFlipped, startMini);
+
+                // Keep whichever result went further
+                if (!Success)
+                {
+                    int heuristicBestX = PathPoints != null && PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
+                    if (bfsBestX > heuristicBestX)
+                    {
+                        Inputs = bfsInputs;
+                        PathPoints = bfsPath;
+                        ResultMessage = bfsMsg;
+                        Console.Error.WriteLine($"[BFS→HEURISTIC] Heuristic worse ({heuristicBestX}px vs BFS {bfsBestX}px), keeping BFS result");
+                    }
+                }
+            }
+            else
+            {
+                Console.Error.WriteLine($"[BFS] BFS reached {bfsPct}% — skipping slow heuristic fallback");
+            }
 
             // Clear pre-applied zones after first run
             _coinForceWalkZones.Clear();
@@ -1299,10 +1336,9 @@ namespace FamidashEditor
                 if (actualMissing > 0) ResultMessage += $" ({actualMissing} unreachable)";
             }
 
-            // If the primary bias failed, retry with intermediate biases.
-            // This handles cases where the level geometry forces convergence
-            // and the original bias+backtracking can't find a viable path.
-            if (!Success)
+            // If heuristic also failed, retry with intermediate biases as last resort.
+            // Skip this if BFS already made good progress (heuristic won't beat it).
+            if (!Success && bfsPct < 5)
             {
                 double[] fallbacks;
                 if (originalBias >= 0.5)
@@ -1314,7 +1350,7 @@ namespace FamidashEditor
                 {
                     if (Math.Abs(fb - originalBias) < 0.01) continue;
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[RETRY] primary bias {originalBias:F2} failed, retrying with bias {fb:F2}");
+                    PfLog($"[RETRY] BFS + primary bias failed, retrying with bias {fb:F2}");
 #endif
                     JumpTimingBias = fb;
                     RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
@@ -1324,6 +1360,7 @@ namespace FamidashEditor
             }
 
             JumpTimingBias = originalBias; // restore original bias
+
             sw.Stop();
             double elapsedSec = sw.Elapsed.TotalSeconds;
             ResultMessage += $" [{elapsedSec:F1}s]";
@@ -2242,16 +2279,15 @@ namespace FamidashEditor
                     int coinCenterY = (coin.HitTop + coin.HitBottom) / 2;
                     int dx = coinCenterX - xPixel;
 
-                    // Only consider coins 10-800px ahead
-                    if (dx > 10 && dx < 800)
+                    // Only consider coins 10-400px ahead
+                    if (dx > 10 && dx < 400)
                     {
                         int dy = Math.Abs(y - coinCenterY);
-                        // Base bonus: up to 200,000 when at exact coin Y, effective up to 200px away
-                        // This is less than 1M (collected coin) but very significant vs safety (~100)
-                        int baseBonus = Math.Max(0, 200_000 - dy * 1000);
-                        // Scale by proximity in X (closer to coin = stronger pull)
-                        // At dx=10: full bonus. At dx=800: ~1% bonus.
-                        int scaledBonus = baseBonus * (800 - dx) / 790;
+                        // Base bonus: up to 2,000 when at exact coin Y, effective up to 200px away
+                        // Gentle hint (~20x safety) — enough to guide, not enough to kill diversity
+                        int baseBonus = Math.Max(0, 2_000 - dy * 10);
+                        // Scale by proximity in X (closer = stronger)
+                        int scaledBonus = baseBonus * (400 - dx) / 390;
                         coinProximity = Math.Max(coinProximity, scaledBonus);
                     }
                 }
@@ -2397,17 +2433,29 @@ namespace FamidashEditor
                     if (candState.Count == 0)
                     {
                         Console.Error.WriteLine($"[BFS] ALL DEAD at frame {frame} (X≈{highWaterX}px pct={pct}% expanded={frontier.Count * 2} deaths={deathCount})");
-                        // Log last known frontier stats
+                        // Death type distribution
+                        var dtCounts = new int[13];
+                        for (int k = 0; k < expandCount; k++)
+                            if (!rAlive[k] && !rEnd[k]) dtCounts[rState[k].DeathType]++;
+                        var dtNames = new[]{"UNK","CEIL_SPIKE","EJECT","CENTER","BALL_PROBE","BALL_VELZERO","BALL_EJECT","FLOOR_SPIKE","FWD","DEATH_COLL","BOUNDS","BALL_EJECT_CEIL","BALL_EJECT_FLOOR"};
+                        var dtParts = new System.Collections.Generic.List<string>();
+                        for (int d = 0; d < dtCounts.Length; d++)
+                            if (dtCounts[d] > 0) dtParts.Add($"{dtNames[d]}={dtCounts[d]}");
+                        Console.Error.WriteLine($"[BFS] Death types: {string.Join(" ", dtParts)}");
+                        // Log last known frontier stats + velocity info
                         if (frontier.Count > 0)
                         {
                             int minY = int.MaxValue, maxY = int.MinValue;
+                            int minVelY = int.MaxValue, maxVelY = int.MinValue;
                             foreach (var s in frontier)
                             {
                                 int y = s.Y_fixed >> 8;
                                 if (y < minY) minY = y;
                                 if (y > maxY) maxY = y;
+                                if (s.VelY_fixed < minVelY) minVelY = s.VelY_fixed;
+                                if (s.VelY_fixed > maxVelY) maxVelY = s.VelY_fixed;
                             }
-                            Console.Error.WriteLine($"[BFS] Last frontier: size={frontier.Count} Y=[{minY}..{maxY}] mode={frontier[0].GameMode} grav={frontier[0].GravFlipped}");
+                            Console.Error.WriteLine($"[BFS] Last frontier: size={frontier.Count} Y=[{minY}..{maxY}] mode={frontier[0].GameMode} grav={frontier[0].GravFlipped} mini={frontier[0].Mini} VelY=[0x{minVelY:X}..0x{maxVelY:X}]");
                         }
                         break;
                     }
@@ -2445,8 +2493,8 @@ namespace FamidashEditor
                     var frameP = new List<int>();
                     var frameI = new List<bool>();
 
-                    // Main slots: 90% by score
-                    int mainSlots = BFS_MAX_FRONTIER * 9 / 10;
+                    // Main slots: 75% by score
+                    int mainSlots = BFS_MAX_FRONTIER * 3 / 4;
                     int mainKeep = Math.Min(mainSlots, sortedIdx.Count);
                     for (int i = 0; i < mainKeep; i++)
                     {
@@ -2456,7 +2504,7 @@ namespace FamidashEditor
                         frameI.Add(candInput[ci]);
                     }
 
-                    // Diversity slots: 10% from underrepresented Y bins
+                    // Diversity slots: 25% from underrepresented Y bins
                     if (sortedIdx.Count > mainKeep)
                     {
                         const int Y_BIN_SIZE = 16;
@@ -2487,6 +2535,7 @@ namespace FamidashEditor
                     // Store history for path reconstruction
                     histParent.Add(frameP.ToArray());
                     histInput.Add(frameI.ToArray());
+
 
                     // Track best partial result
                     for (int i = 0; i < nextFrontier.Count; i++)
@@ -2520,21 +2569,39 @@ namespace FamidashEditor
                             $"mode={frontier[0].GameMode} grav={(frontier[0].GravFlipped ? 'F' : 'N')} " +
                             $"X≈{highWaterX}px pct={pct}% ms/f={ms:F1}");
 
-                        // Emit speculative paths for live visualization
-                        // Sample a few frontier states across the Y range
-                        if (OnSpeculativePath != null && frontier.Count > 0 && frame % 100 == 0)
+                        // Emit live pathline by reconstructing the best path's input
+                        // sequence via parent chain, then replaying with StepFrame to
+                        // get positions. Avoids storing per-frame per-state positions
+                        // which would consume ~600 MB of RAM on long levels.
+                        if (OnSpeculativePath != null && frontier.Count > 0 && frame % 100 == 0
+                            && bestIdx >= 0 && bestFrame >= 0 && bestFrame < histParent.Count)
                         {
-                            int sampleCount = Math.Min(5, frontier.Count);
-                            int step = Math.Max(1, frontier.Count / sampleCount);
-                            for (int si = 0; si < frontier.Count && si / step < sampleCount; si += step)
+                            // Walk backward through history to collect input sequence
+                            var replayInputs = new List<bool>(bestFrame + 1);
+                            int traceIdx = bestIdx;
+                            for (int hf = bestFrame; hf >= 0; hf--)
                             {
-                                var fs = frontier[si];
-                                int fx = fs.X_fixed >> 8;
-                                int fy = fs.Y_fixed >> 8;
-                                int miniOff = (fs.Mini && !fs.GravFlipped) ? 4 : 0;
-                                var pathPts = new List<(int x, int y)> { (fx + 8, fy + miniOff + 8) };
-                                OnSpeculativePath(pathPts, 90, 90, false);
+                                if (traceIdx < histInput[hf].Length)
+                                    replayInputs.Add(histInput[hf][traceIdx]);
+                                if (hf > 0 && traceIdx < histParent[hf].Length)
+                                    traceIdx = histParent[hf][traceIdx];
                             }
+                            replayInputs.Reverse();
+                            // Replay from initial state to get positions
+                            var pathPts = new List<(int x, int y)>(replayInputs.Count + 1);
+                            int startMiniOff = (startMini && !startGravFlipped) ? 4 : 0;
+                            pathPts.Add((startX_px + 8, startY_px + startMiniOff + 8));
+                            var replaySim = initialState.Clone();
+                            for (int ri = 0; ri < replayInputs.Count; ri++)
+                            {
+                                if (!StepFrame(ref replaySim, replayInputs[ri], out _)) break;
+                                int rpx = replaySim.X_fixed >> 8;
+                                int rpy = replaySim.Y_fixed >> 8;
+                                int rmo = (replaySim.Mini && !replaySim.GravFlipped) ? 4 : 0;
+                                pathPts.Add((rpx + 8, rpy + rmo + 8));
+                            }
+                            if (pathPts.Count > 1)
+                                OnSpeculativePath(pathPts, 0, pathPts.Count, false);
                         }
                     }
                 }
@@ -6664,6 +6731,7 @@ namespace FamidashEditor
                         PfLog($"[CEIL_SPIKE_DEATH] cube prox check X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                         if (_speculativeDepth == 0) { _lastDeathReason = "CEIL_SPIKE_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                        s.DeathType = 1;
                         return false;
                     }
                     if (ceilHit && s.VelY_fixed < 0)
@@ -6688,6 +6756,7 @@ namespace FamidashEditor
                     PfLog($"[EJECT_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                     if (_speculativeDepth == 0) { _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 2;
                     return false;
                 }
 
@@ -6699,6 +6768,7 @@ namespace FamidashEditor
                     PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px (post-eject)");
 #endif
                     if (_speculativeDepth == 0) { _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 3;
                     return false;
                 }
 
@@ -6723,6 +6793,7 @@ namespace FamidashEditor
                     PfLog($"[EJECT_DEATH] ship X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                     if (_speculativeDepth == 0) { _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 2;
                     return false;
                 }
 
@@ -6732,134 +6803,91 @@ namespace FamidashEditor
                     PfLog($"[CENTER_DEATH] ship X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                     if (_speculativeDepth == 0) { _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 3;
                     return false;
                 }
             }
             else if (s.GameMode == 2) // Ball mode
             {
-                // ── BALL GROUNDED PROBE SPIKE CHECK (before gravity) ──
-                // Sim's ball grounded check calls CheckCollisionDown/Up which have
-                // spike-death side-effects (COL_DEATH_TOP / COL_DEATH_BOTTOM).
-                // This fires EVERY frame in ball mode, BEFORE gravity, but only
-                // outside flip cooldown (sim uses cached grounded state during cooldown).
-                if (s.BallFlipCooldown == 0)
-                {
-                    if (BallGroundedProbeSpikeDeath(ref s))
-                    {
-#if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[BALL_GROUND_PROBE_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                        _lastDeathReason = "BALL_GROUND_PROBE_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
-#endif
-                        return false;
-                    }
-                }
+                // ── NES ORDER: gravity → eject → flip ──
+                // NES ball_movement(): common_gravity_routine → ball_eject → flip check
 
-                // Ball input: flip gravity when grounded
-                // Must happen BEFORE gravity application (matching sim)
-                // Use fresh grounded probe (like sim) instead of stale OnGround flag —
-                // the ball can slide past the edge of a platform between frames,
-                // making OnGround stale while the sim correctly detects no surface.
-                // NOTE: SIM does NOT require VelY==0 for ball flip — only grounded + input.
-                //
-                // INPUT BUFFER: The SIM has a multi-frame input buffer mechanism.
-                // When the player presses while airborne, the SIM buffers the press
-                // and waits up to PF_BALL_HOLD_FRAMES for the ball to become grounded,
-                // then executes the flip.  The PF must model this to stay in sync:
-                // input=True starts/refreshes the buffer even if not grounded;
-                // subsequent frames check buffer + grounded to fire the flip.
-                //
-                // COOLDOWN GATE: During BallFlipCooldown (2 frames after a flip),
-                // the ball is airborne post-launch and must NOT be allowed to re-flip.
-                // The cooldown prevents oscillation; eject is also skipped during it.
-                bool ballGrounded = BallIsGrounded(ref s);
-                bool shouldFlip = false;
-                if (s.BallFlipCooldown == 0)
-                {
-                    if (input)
-                    {
-                        s.BallInputBuffer = BALL_INPUT_BUFFER_FRAMES;
-                        if (ballGrounded)
-                            shouldFlip = true;
-                    }
-                    else if (s.BallInputBuffer > 0)
-                    {
-                        if (ballGrounded)
-                            shouldFlip = true;
-                        else
-                            s.BallInputBuffer--;
-                    }
-                }
-                else
-                {
-                    // During cooldown: track input buffer but don't allow flip
-                    if (input)
-                        s.BallInputBuffer = BALL_INPUT_BUFFER_FRAMES;
-                    else if (s.BallInputBuffer > 0)
-                        s.BallInputBuffer--;
-                }
-                // NOTE: orbHitThisFrame gate removed — it was incorrectly
-                // suppressing input-driven flips. In the sim, orbhitonthisframe
-                // only suppresses eject pogo, not the pathfinder's flip decision.
-                if (shouldFlip)
-                {
-                    // Flip gravity
-                    s.GravFlipped = !s.GravFlipped;
-                    s.GravMul = s.GravFlipped ? -1 : 1;
-                    // Apply switch velocity (direction based on NEW gravity)
-                    // NES table_idx bit 0 = 1 means normal (down) gravity post-flip
-                    // normalGravity (bit0=1) → positive vel (launch down)
-                    // invertedGravity (bit0=0) → negative vel (launch up)
-                    s.VelY_fixed = BallSwitchVel(s.Mini) * s.GravMul;
-                    s.OnGround = false;
-                    s.WasZeroedByCollision = false;
-                    s.BallFlipCooldown = 2;
-                    s.BallInputBuffer = 0; // Consume buffer
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[BALL_FLIP] gravFlipped={s.GravFlipped} gravMul={s.GravMul} VelY=0x{s.VelY_fixed:X} mini={s.Mini}");
-#endif
-                }
-
-                // Ball gravity (same structure as cube but different constants)
+                // 1. Gravity
                 BallGravityStep(ref s);
 
-                // Skip eject during flip cooldown (prevents oscillation)
-                if (s.BallFlipCooldown > 0)
+                // 2. Velocity zeroing (prevents accumulation when grounded)
                 {
-                    s.BallFlipCooldown--;
-                }
-                else
-                {
-                    // Ball velocity zeroing when grounded (prevents accumulation)
-                    bool ballVelZeroDied = false;
-                    BallVelocityZeroing(ref s, out ballVelZeroDied);
-                    if (ballVelZeroDied)
+                    bool died = false;
+                    BallVelocityZeroing(ref s, out died);
+                    if (died)
                     {
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[BALL_VELZERO_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
                         _lastDeathReason = "BALL_VELZERO_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                        s.DeathType = 5;
                         return false;
                     }
+                }
 
-                    // Ball eject (with 1px Y offset)
-                    bool ballEjectDied = false;
-                    BallEject(ref s, out ballEjectDied);
-                    if (ballEjectDied)
+                // 3. Eject (always runs — NES never skips eject after flip)
+                {
+                    bool died = false;
+                    BallEject(ref s, out died);
+                    if (died)
                     {
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[BALL_EJECT_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
                         _lastDeathReason = "BALL_EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                        s.DeathType = s.DeathType >= 11 ? s.DeathType : (byte)6;
                         return false;
+                    }
+                }
+
+                // 4. Flip check AFTER eject (NES: if hold && !switched && vel==0)
+                if (s.BallFlipCooldown > 0)
+                {
+                    s.BallFlipCooldown--;
+                    if (input) s.BallInputBuffer = BALL_INPUT_BUFFER_FRAMES;
+                    else if (s.BallInputBuffer > 0) s.BallInputBuffer--;
+                }
+                else
+                {
+                    bool canFlip = s.VelY_fixed == 0; // NES uses vel==0, not grounded probe
+                    bool shouldFlip = false;
+                    if (input)
+                    {
+                        s.BallInputBuffer = BALL_INPUT_BUFFER_FRAMES;
+                        if (canFlip) shouldFlip = true;
+                    }
+                    else if (s.BallInputBuffer > 0)
+                    {
+                        if (canFlip) shouldFlip = true;
+                        else s.BallInputBuffer--;
+                    }
+                    if (shouldFlip)
+                    {
+                        s.GravFlipped = !s.GravFlipped;
+                        s.GravMul = s.GravFlipped ? -1 : 1;
+                        s.VelY_fixed = BallSwitchVel(s.Mini) * s.GravMul;
+                        s.OnGround = false;
+                        s.WasZeroedByCollision = false;
+                        s.BallFlipCooldown = 2;
+                        s.BallInputBuffer = 0;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[BALL_FLIP] gravFlipped={s.GravFlipped} gravMul={s.GravMul} VelY=0x{s.VelY_fixed:X} mini={s.Mini}");
+#endif
                     }
                 }
 
                 if (CheckDeathCollision(ref s))
                 {
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                    PfLog($"[CENTER_DEATH] ball X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
                     _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                    s.DeathType = 3;
                     return false;
                 }
             }
@@ -6886,6 +6914,7 @@ namespace FamidashEditor
                         PfLog($"[CEIL_SPIKE_DEATH] ufo prox check X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
                         _lastDeathReason = "CEIL_SPIKE_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                        s.DeathType = 1;
                         return false;
                     }
                     if (ceilHit && s.VelY_fixed < 0)
@@ -6902,6 +6931,7 @@ namespace FamidashEditor
                     PfLog($"[EJECT_DEATH] ufo X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                     if (_speculativeDepth == 0) { _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 2;
                     return false;
                 }
 
@@ -6921,6 +6951,7 @@ namespace FamidashEditor
                     PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
                     _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
+                    s.DeathType = 3;
                     return false;
                 }
             }
@@ -6939,6 +6970,7 @@ namespace FamidashEditor
                 PfLog($"[FLOOR_SPIKE] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                 if (_speculativeDepth == 0) { _lastDeathReason = "FLOOR_SPIKE"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                s.DeathType = 7;
                 return false;
             }
 
@@ -6951,6 +6983,7 @@ namespace FamidashEditor
                     PfLog($"[FWD_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                     if (_speculativeDepth == 0) { _lastDeathReason = "FWD_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 8;
                     return false;
                 }
             }
@@ -6966,6 +6999,7 @@ namespace FamidashEditor
                 PfLog($"[DEATH_COLL] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                 if (_speculativeDepth == 0) { _lastDeathReason = "DEATH_COLL"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                s.DeathType = 9;
                 return false;
             }
 
@@ -6988,6 +7022,7 @@ namespace FamidashEditor
                 PfLog($"[BOUNDS_DEATH] Y={playerY_px}px worldBottom={worldBottom}");
 #endif
                 if (_speculativeDepth == 0) { _lastDeathReason = "BOUNDS_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = playerY_px; }
+                s.DeathType = 10;
                 return false;
             }
 
@@ -7339,66 +7374,65 @@ namespace FamidashEditor
             int collX = playerX_px;
 
             // Ball-specific: 1px Y offset prevents oscillation
+            // NES: Generic.y = high_byte(currplayer_y) + 1 (normal) or -1 (inverted)
             int ballYOffset = s.GravFlipped ? -1 : 1;
             int collY = playerY_px + hbOffY + ballYOffset;
 
-            if (!s.GravFlipped) // Normal gravity
+            // NES bg_coll_U/bg_coll_D have INTERNAL velocity gates:
+            // bg_coll_U only checks COLL_CHECK_TOP when VelY < 0 (moving up)
+            // bg_coll_D only checks COLL_CHECK_BOTTOM when VelY >= 0 (moving down)
+            // ball_eject() velocity guards are commented out, but internal gates
+            // in bg_coll_U/D effectively make it single-directional per frame.
+
+            // Ceiling check (only when moving up, matching NES bg_coll_U internal gate)
+            if (s.VelY_fixed < 0)
             {
-                // Floor collision (landing) — only when moving down
-                if (s.VelY_fixed >= 0)
+                var (ceilHit, ceilBotY, ceilSpikeDeath) = CheckCeiling(collX, collY, hbW, hbH);
+                if (ceilSpikeDeath)
                 {
-                    var (floorHit, floorTopY, floorSpikeDeath) = CheckFloor(collX, collY, hbW, hbH);
-                    if (floorSpikeDeath)
-                    {
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[BALL_EJECT] floor spike death at X={playerX_px} Y={playerY_px}");
+                    PfLog($"[CEIL_SPIKE_DEATH] ball eject X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
-                        died = true;
-                        return;
-                    }
-                    if (floorHit)
-                    {
-                        int newY = floorTopY - hbH - hbOffY - ballYOffset;
+                    s.DeathType = 11; // BALL_EJECT_CEIL
+                    died = true;
+                    return;
+                }
+                if (ceilHit)
+                {
+                    int newY = ceilBotY - hbOffY;
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[BALL_EJECT] floor land Y: {playerY_px} -> {newY} (floorTop={floorTopY})");
+                    PfLog($"[BALL_EJECT] ceiling land Y: {playerY_px} -> {newY} (ceilBot={ceilBotY})");
 #endif
-                        s.Y_fixed = newY << 8;
-                        s.VelY_fixed = 0;
-                        // NOTE: Do NOT set WasZeroedByCollision here.
-                        // SIM's BALL_EJECT_D does not set wasZeroedByCollisionLastFrame.
-                        // Setting it causes divergence at ball→ship transitions (ship
-                        // gets GRAV_SKIP and stays grounded, while SIM applies gravity).
-                        s.OnGround = true;
-                    }
+                    s.Y_fixed = newY << 8;
+                    s.VelY_fixed = 0;
+                    s.OnGround = s.GravFlipped;
+                    // Update collY for subsequent floor check
+                    collY = newY + hbOffY + ballYOffset;
                 }
             }
-            else // Inverted gravity
+
+            // Floor check (only when moving down or stationary, matching NES bg_coll_D internal gate)
+            if (s.VelY_fixed >= 0)
             {
-                // Ceiling collision (landing) — only when moving up
-                if (s.VelY_fixed <= 0)
+                var (floorHit, floorTopY, floorSpikeDeath) = CheckFloor(collX, collY, hbW, hbH);
+                if (floorSpikeDeath)
                 {
-                    var (ceilHit, ceilBotY, ceilSpikeDeath) = CheckCeiling(collX, collY, hbW, hbH);
-                    if (ceilSpikeDeath)
-                    {
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[CEIL_SPIKE_DEATH] ball eject X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                    PfLog($"[BALL_EJECT] floor spike death at X={playerX_px} Y={playerY_px}");
 #endif
-                        died = true;
-                        return;
-                    }
-                    if (ceilHit)
-                    {
-                        int newY = ceilBotY - hbOffY;
+                    s.DeathType = 12; // BALL_EJECT_FLOOR
+                    died = true;
+                    return;
+                }
+                if (floorHit)
+                {
+                    int newY = floorTopY - hbH - hbOffY - ballYOffset;
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[BALL_EJECT] ceiling land (inverted) Y: {playerY_px} -> {newY} (ceilBot={ceilBotY})");
+                    PfLog($"[BALL_EJECT] floor land Y: {playerY_px} -> {newY} (floorTop={floorTopY})");
 #endif
-                        s.Y_fixed = newY << 8;
-                        s.VelY_fixed = 0;
-                        // NOTE: Do NOT set WasZeroedByCollision here.
-                        // SIM's BALL_EJECT_U does not set wasZeroedByCollisionLastFrame.
-                        // Setting it causes divergence at ball→ship transitions.
-                        s.OnGround = true;
-                    }
+                    s.Y_fixed = newY << 8;
+                    s.VelY_fixed = 0;
+                    s.OnGround = !s.GravFlipped;
                 }
             }
         }
@@ -8972,7 +9006,7 @@ namespace FamidashEditor
             if (tileArrayY >= mapHeight) return MetatileCollision.COL_ALL; // ground layer = solid
             int idx = tileArrayY * mapWidth + tileX;
             if (idx < 0 || idx >= tiles.Length) return MetatileCollision.COL_NONE;
-            int tid = tiles[idx];
+            int tid = MapTileForCollision(tiles[idx]);
             return MetatileCollisionTable.GetCollision((byte)tid);
         }
 
@@ -9369,7 +9403,7 @@ namespace FamidashEditor
                 int tileIdx = tileArrayYFloor * mapWidth + tileX;
                 if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
 
-                int tileId = tiles[tileIdx];
+                int tileId = MapTileForCollision(tiles[tileIdx]);
                 var collision = MetatileCollisionTable.GetCollision((byte)tileId);
                 if (collision == MetatileCollision.COL_NONE) continue;
 
@@ -9463,7 +9497,7 @@ namespace FamidashEditor
                     int tileIdx = tileArrayY_chk * mapWidth + tileX;
                     if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
 
-                    int tileId = tiles[tileIdx];
+                    int tileId = MapTileForCollision(tiles[tileIdx]);
                     var collision = MetatileCollisionTable.GetCollision((byte)tileId);
 
                     int localX = px % TILE;
@@ -9495,7 +9529,7 @@ namespace FamidashEditor
                 int tileIdx = tileArrayY * mapWidth + tx;
                 if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
 
-                int tileId = tiles[tileIdx];
+                int tileId = MapTileForCollision(tiles[tileIdx]);
                 var collision = MetatileCollisionTable.GetCollision((byte)tileId);
                 if (collision == MetatileCollision.COL_NONE) continue;
 

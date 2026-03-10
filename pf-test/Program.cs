@@ -155,7 +155,7 @@ var engine = new PathfinderEngine(
     spritePixelOffsets);
 engine.JumpTimingBias = jumpTimingBias;
 engine.PreferCoins = preferCoins;
-engine.UseBFS = useBfs;
+engine.UseBFS = useBfs || preferCoins; // Editor: UseBFS = preferCoins (BFS collects all coins in a single pass)
 
 if (preferCoins)
     Console.WriteLine("Coin collection mode ENABLED");
