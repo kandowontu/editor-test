@@ -1909,7 +1909,6 @@ namespace FamidashEditor
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 AppendSimDebug($"[GRAV_PORTAL_CHECK] mini={miniMode} grav={gravityFlipped} playerBox=({playerLeft_px},{playerTop_px})-({playerRight_px},{playerBottom_px}) size={hitboxW}x{hitboxH}");
-
                 
                 // Iterate through ALL sprites and check for gravity portals
                 for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
@@ -5432,12 +5431,7 @@ namespace FamidashEditor
                         try
                         {
                             try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
-                            // NOTE: Do NOT call SimulateNumericStep() here when pathfinder
-                            // is active — the timer loop handles all fixed-step simulation.
-                            // Calling it here consumes an extra PF input, putting the SIM
-                            // 1 frame ahead and causing trajectory divergence.
-                            if (!pathfinderEnabled)
-                                try { SimulateNumericStep(); } catch { }
+                            try { SimulateNumericStep(); } catch { }
                             try { RenderFrame(); } catch { }
                         }
                         finally
@@ -5637,12 +5631,7 @@ namespace FamidashEditor
                                 AppendSimDebug($"[UNPAUSE] Music already playing, no action needed");
                             }
                         }
-                        // NOTE: Do NOT call SimulateNumericStep() here when pathfinder
-                        // is active — the timer loop handles all fixed-step simulation.
-                        // Calling it here consumes an extra PF input, putting the SIM
-                        // 1 frame ahead and causing trajectory divergence.
-                        if (!pathfinderEnabled)
-                            try { SimulateNumericStep(); } catch { }
+                        try { SimulateNumericStep(); } catch { }
                         try { RenderFrame(); } catch { }
                     }
                     finally

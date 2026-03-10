@@ -2279,15 +2279,16 @@ namespace FamidashEditor
                     int coinCenterY = (coin.HitTop + coin.HitBottom) / 2;
                     int dx = coinCenterX - xPixel;
 
-                    // Only consider coins 10-400px ahead
-                    if (dx > 10 && dx < 400)
+                    // Only consider coins 10-800px ahead
+                    if (dx > 10 && dx < 800)
                     {
                         int dy = Math.Abs(y - coinCenterY);
-                        // Base bonus: up to 2,000 when at exact coin Y, effective up to 200px away
-                        // Gentle hint (~20x safety) — enough to guide, not enough to kill diversity
-                        int baseBonus = Math.Max(0, 2_000 - dy * 10);
-                        // Scale by proximity in X (closer = stronger)
-                        int scaledBonus = baseBonus * (400 - dx) / 390;
+                        // Base bonus: up to 200,000 when at exact coin Y, effective up to 200px away
+                        // This is less than 1M (collected coin) but very significant vs safety (~100)
+                        int baseBonus = Math.Max(0, 200_000 - dy * 1000);
+                        // Scale by proximity in X (closer to coin = stronger pull)
+                        // At dx=10: full bonus. At dx=800: ~1% bonus.
+                        int scaledBonus = baseBonus * (800 - dx) / 790;
                         coinProximity = Math.Max(coinProximity, scaledBonus);
                     }
                 }
@@ -2493,8 +2494,8 @@ namespace FamidashEditor
                     var frameP = new List<int>();
                     var frameI = new List<bool>();
 
-                    // Main slots: 75% by score
-                    int mainSlots = BFS_MAX_FRONTIER * 3 / 4;
+                    // Main slots: 90% by score
+                    int mainSlots = BFS_MAX_FRONTIER * 9 / 10;
                     int mainKeep = Math.Min(mainSlots, sortedIdx.Count);
                     for (int i = 0; i < mainKeep; i++)
                     {
@@ -2504,7 +2505,7 @@ namespace FamidashEditor
                         frameI.Add(candInput[ci]);
                     }
 
-                    // Diversity slots: 25% from underrepresented Y bins
+                    // Diversity slots: 10% from underrepresented Y bins
                     if (sortedIdx.Count > mainKeep)
                     {
                         const int Y_BIN_SIZE = 16;
@@ -2535,7 +2536,6 @@ namespace FamidashEditor
                     // Store history for path reconstruction
                     histParent.Add(frameP.ToArray());
                     histInput.Add(frameI.ToArray());
-
 
                     // Track best partial result
                     for (int i = 0; i < nextFrontier.Count; i++)
@@ -2569,39 +2569,21 @@ namespace FamidashEditor
                             $"mode={frontier[0].GameMode} grav={(frontier[0].GravFlipped ? 'F' : 'N')} " +
                             $"X≈{highWaterX}px pct={pct}% ms/f={ms:F1}");
 
-                        // Emit live pathline by reconstructing the best path's input
-                        // sequence via parent chain, then replaying with StepFrame to
-                        // get positions. Avoids storing per-frame per-state positions
-                        // which would consume ~600 MB of RAM on long levels.
-                        if (OnSpeculativePath != null && frontier.Count > 0 && frame % 100 == 0
-                            && bestIdx >= 0 && bestFrame >= 0 && bestFrame < histParent.Count)
+                        // Emit speculative paths for live visualization
+                        // Sample a few frontier states across the Y range
+                        if (OnSpeculativePath != null && frontier.Count > 0 && frame % 100 == 0)
                         {
-                            // Walk backward through history to collect input sequence
-                            var replayInputs = new List<bool>(bestFrame + 1);
-                            int traceIdx = bestIdx;
-                            for (int hf = bestFrame; hf >= 0; hf--)
+                            int sampleCount = Math.Min(5, frontier.Count);
+                            int step = Math.Max(1, frontier.Count / sampleCount);
+                            for (int si = 0; si < frontier.Count && si / step < sampleCount; si += step)
                             {
-                                if (traceIdx < histInput[hf].Length)
-                                    replayInputs.Add(histInput[hf][traceIdx]);
-                                if (hf > 0 && traceIdx < histParent[hf].Length)
-                                    traceIdx = histParent[hf][traceIdx];
+                                var fs = frontier[si];
+                                int fx = fs.X_fixed >> 8;
+                                int fy = fs.Y_fixed >> 8;
+                                int miniOff = (fs.Mini && !fs.GravFlipped) ? 4 : 0;
+                                var pathPts = new List<(int x, int y)> { (fx + 8, fy + miniOff + 8) };
+                                OnSpeculativePath(pathPts, 90, 90, false);
                             }
-                            replayInputs.Reverse();
-                            // Replay from initial state to get positions
-                            var pathPts = new List<(int x, int y)>(replayInputs.Count + 1);
-                            int startMiniOff = (startMini && !startGravFlipped) ? 4 : 0;
-                            pathPts.Add((startX_px + 8, startY_px + startMiniOff + 8));
-                            var replaySim = initialState.Clone();
-                            for (int ri = 0; ri < replayInputs.Count; ri++)
-                            {
-                                if (!StepFrame(ref replaySim, replayInputs[ri], out _)) break;
-                                int rpx = replaySim.X_fixed >> 8;
-                                int rpy = replaySim.Y_fixed >> 8;
-                                int rmo = (replaySim.Mini && !replaySim.GravFlipped) ? 4 : 0;
-                                pathPts.Add((rpx + 8, rpy + rmo + 8));
-                            }
-                            if (pathPts.Count > 1)
-                                OnSpeculativePath(pathPts, 0, pathPts.Count, false);
                         }
                     }
                 }
@@ -9006,7 +8988,7 @@ namespace FamidashEditor
             if (tileArrayY >= mapHeight) return MetatileCollision.COL_ALL; // ground layer = solid
             int idx = tileArrayY * mapWidth + tileX;
             if (idx < 0 || idx >= tiles.Length) return MetatileCollision.COL_NONE;
-            int tid = MapTileForCollision(tiles[idx]);
+            int tid = tiles[idx];
             return MetatileCollisionTable.GetCollision((byte)tid);
         }
 
@@ -9403,7 +9385,7 @@ namespace FamidashEditor
                 int tileIdx = tileArrayYFloor * mapWidth + tileX;
                 if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
 
-                int tileId = MapTileForCollision(tiles[tileIdx]);
+                int tileId = tiles[tileIdx];
                 var collision = MetatileCollisionTable.GetCollision((byte)tileId);
                 if (collision == MetatileCollision.COL_NONE) continue;
 
@@ -9497,7 +9479,7 @@ namespace FamidashEditor
                     int tileIdx = tileArrayY_chk * mapWidth + tileX;
                     if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
 
-                    int tileId = MapTileForCollision(tiles[tileIdx]);
+                    int tileId = tiles[tileIdx];
                     var collision = MetatileCollisionTable.GetCollision((byte)tileId);
 
                     int localX = px % TILE;
@@ -9529,7 +9511,7 @@ namespace FamidashEditor
                 int tileIdx = tileArrayY * mapWidth + tx;
                 if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
 
-                int tileId = MapTileForCollision(tiles[tileIdx]);
+                int tileId = tiles[tileIdx];
                 var collision = MetatileCollisionTable.GetCollision((byte)tileId);
                 if (collision == MetatileCollision.COL_NONE) continue;
 
