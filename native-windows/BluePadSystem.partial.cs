@@ -36,13 +36,8 @@ namespace FamidashEditor
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 
-                // NES sprite_collide centers the mini hitbox in the 16px cell:
-                // Generic.y = high_byte(currplayer_y) + (0x10 - height) >> 1 = +4
-                // Applied unconditionally regardless of gravity.
-                if (isMini)
-                {
-                    playerY_px += 4;  // (0x10 - 7) >> 1 = 4
-                }
+                // Apply mini mode offset matching terrain collision conventions
+                playerY_px += GetMiniSpriteOffsetY();
                 
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;

@@ -9,20 +9,19 @@ namespace FamidashEditor
         // CUBE PHYSICS - Fresh 1:1 Port from cleaned gamemode_cube.h
         // ========================================================================
 
-        // Physics constants from physics_table_defines.cmp.h
-        // Table index 4 = normal size (mini=0), normal gravity (gravity=0), framerate=0
-        private const int CUBE_GRAVITY_NORMAL = 0x6B;
-        private const int CUBE_GRAVITY_MINI = 0x6F;
-        private const int CUBE_MAX_FALLSPEED_NORMAL = 0x0600;
-        private const int CUBE_MAX_FALLSPEED_MINI = 0x0600;
-        private const int JUMP_VEL_NORMAL = -0x590;  // 0xFA70 as signed 16-bit
-        private const int JUMP_VEL_MINI = -0x4D0;    // 0xFB30 as signed 16-bit
+        // Physics constants — delegate to SharedPhysics to prevent drift
+        private const int CUBE_GRAVITY_NORMAL = SharedPhysics.CUBE_GRAVITY_NORMAL;
+        private const int CUBE_GRAVITY_MINI = SharedPhysics.CUBE_GRAVITY_MINI;
+        private const int CUBE_MAX_FALLSPEED_NORMAL = SharedPhysics.CUBE_MAX_FALLSPEED;
+        private const int CUBE_MAX_FALLSPEED_MINI = SharedPhysics.CUBE_MAX_FALLSPEED;
+        private const int JUMP_VEL_NORMAL = SharedPhysics.JUMP_VEL_NORMAL;
+        private const int JUMP_VEL_MINI = SharedPhysics.JUMP_VEL_MINI;
         
-        // Cube hitbox dimensions (from physics_defines.h)
-        private const int CUBE_HITBOX_W = 15;
-        private const int CUBE_HITBOX_H = 15;
-        private const int MINI_CUBE_HITBOX_W = 8;
-        private const int MINI_CUBE_HITBOX_H = 7;  // Correct: 8x7 for mini mode
+        // Cube hitbox dimensions — delegate to SharedPhysics
+        private const int CUBE_HITBOX_W = SharedPhysics.CUBE_HITBOX_W;
+        private const int CUBE_HITBOX_H = SharedPhysics.CUBE_HITBOX_H;
+        private const int MINI_CUBE_HITBOX_W = SharedPhysics.MINI_CUBE_HITBOX_W;
+        private const int MINI_CUBE_HITBOX_H = SharedPhysics.MINI_CUBE_HITBOX_H;
         
         // State variables from famidash.h
         private byte currplayer_mini = 0;      // 0 = normal, 1 = mini
@@ -111,7 +110,7 @@ namespace FamidashEditor
                     bool isMini_check = (currplayer_mini != 0);
                     int hitboxW_check = isMini_check ? 8 : 15;
                     int hitboxH_check = isMini_check ? 7 : 15;
-                    int hitboxOffsetY_check = isMini_check ? ((0x10 - hitboxH_check) >> 1) : 0;
+                    int hitboxOffsetY_check = SharedPhysics.GetMiniCenterOffsetY(isMini_check);
                     int collisionX_check = (playerX_fixed >> 8);
                     int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
                     var (collided_check, collisionBottomY_check) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
@@ -356,115 +355,31 @@ namespace FamidashEditor
         
         /// <summary>
         /// common_gravity_routine() from gamemode_cube.h lines 177-206
-        /// Applies gravity and integrates velocity into position
+        /// Delegates to SharedPhysics.CommonGravityRoutine so PF and SIM use identical logic.
         /// </summary>
         private void CommonGravityRoutine_Fresh()
         {
-            // From gamemode_cube.h line 247: register int16_t tmpaccel;
-            int tmpaccel;
-            
             AppendSimDebug($"[GRAV_START] velY=0x{playerVelY_fixed:X4}, posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), dashing={dashing[currplayer]}, wasZeroedByCollision={wasZeroedByCollisionLastFrame}, mode={currentGameMode}");
-            
-            // From gamemode_cube.h line 249: tmp1 = dashing;
-            int tmp1 = dashing[currplayer];
-            
-            // NO GRAV_SKIP: NES common_gravity_routine() ALWAYS applies gravity,
-            // even when the player is grounded.  Grounded frames: gravity adds
-            // +0x6B to vel, shifts Y by a sub-pixel amount, then cube_eject()
-            // snaps the player back to the floor surface and zeroes velocity.
-            // The old GRAV_SKIP optimisation (skip when vel==0 &&
-            // wasZeroedByCollision) was an approximation that diverged over
-            // 1-tile floor gaps: the PF (matching NES) saw vel=0x6B after
-            // gravity, but the SIM saw vel=0 due to GRAV_SKIP, causing
-            // different jump eligibility.  Removed to match NES 1:1.
-            
-            if (tmp1 == 0)
-            {
-                // Not dashing: apply normal gravity normally
-                // From gamemode_cube.h line 251: tmpaccel = tmpgravity;
-                tmpaccel = tmpgravity;
-                
-                // From gamemode_cube.h line 252-254: check if at max fall speed
-                // if((!currplayer_gravity ? currplayer_vel_y > tmpfallspeed : currplayer_vel_y < tmpfallspeed))
-                bool atMaxFallSpeed;
-                if (currplayer_gravity == 0)
-                {
-                    // Normal gravity: check if positive velocity exceeds negative fallspeed
-                    atMaxFallSpeed = (playerVelY_fixed > tmpfallspeed);
-                }
-                else
-                {
-                    // Inverted gravity: check if negative velocity exceeds positive fallspeed
-                    atMaxFallSpeed = (playerVelY_fixed < tmpfallspeed);
-                }
-                
-                AppendSimDebug($"[GRAV_CHECK] atMaxFallSpeed={atMaxFallSpeed}, velY=0x{playerVelY_fixed:X4}, fallspeed=0x{tmpfallspeed:X4}");
-                
-                if (atMaxFallSpeed)
-                {
-                    // From gamemode_cube.h line 255: tmpaccel = -tmpaccel;
-                    tmpaccel = -tmpaccel;
-                    AppendSimDebug($"[GRAV_REVERSE] tmpaccel reversed to 0x{tmpaccel:X}");
-                }
-                
-                // gravity_mod handling (lines 256-262) - apply gravity multiplier
-                tmpaccel = (int)(tmpaccel * gravityMultiplier);
-                
-                // From gamemode_cube.h line 264: currplayer_vel_y += tmpaccel;
-                int velY_before = playerVelY_fixed;
-                if (isFullSpeed)
-                    playerVelY_fixed += tmpaccel;
-                else
-                    playerVelY_fixed += (int)Math.Round(tmpaccel * simTimeScale);
-                AppendSimDebug($"[GRAV_APPLY] velY: 0x{velY_before:X4} + (0x{tmpaccel:X} * {simTimeScale:F2}) = 0x{playerVelY_fixed:X4}");
-            }
-            else if (tmp1 == 2)
-            {
-                // 45deg up dash: vel_y = -vel_x
-                playerVelY_fixed = -velocityX;
-            }
-            else if (tmp1 == 3)
-            {
-                // 45deg down dash: vel_y = vel_x
-                playerVelY_fixed = velocityX;
-            }
-            else if (tmp1 == 4)
-            {
-                // Upward dash: vel_y = vel_x * 2, then subtract from position and return early
-                playerVelY_fixed = velocityX * 2;
-                if (isFullSpeed)
-                    playerY_fixed -= playerVelY_fixed;
-                else
-                    playerY_fixed -= (int)Math.Round(playerVelY_fixed * simTimeScale);
-                return;
-            }
-            else if (tmp1 == 5)
-            {
-                // Downward dash: vel_y = vel_x * 2
-                playerVelY_fixed = velocityX * 2;
-            }
-            else
-            {
-                // Horizontal dash (tmp1 == 1): vel_y = gravity ? -1 : 1, then return early
-                playerVelY_fixed = (currplayer_gravity != 0) ? -1 : 1;
-                if (isFullSpeed)
-                    playerY_fixed += playerVelY_fixed;
-                else
-                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
-                return;
-            }
-            
-            // From gamemode_cube.h line 278: currplayer_y += currplayer_vel_y;
-            int posY_before = playerY_fixed;
-            if (isFullSpeed)
-                playerY_fixed += playerVelY_fixed;
-            else
-                playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
-            AppendSimDebug($"[GRAV_POS] posY: 0x{posY_before:X4} ({posY_before >> 8}px) + (0x{playerVelY_fixed:X4} * {simTimeScale:F2}) = 0x{playerY_fixed:X4} ({playerY_fixed >> 8}px)");
-            
-            // Clamp to world bounds (allow negative Y to reach top tiles)
-            int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
-            if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+
+            int velBefore = playerVelY_fixed;
+            int posBefore = playerY_fixed;
+
+            int clampMaxY = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+
+            SharedPhysics.CommonGravityRoutine(
+                ref playerVelY_fixed,
+                ref playerY_fixed,
+                tmpgravity,
+                tmpfallspeed,
+                currplayer_gravity,
+                dashing[currplayer],
+                gravityMultiplier,
+                simTimeScale,
+                isFullSpeed,
+                velocityX,
+                clampMaxY);
+
+            AppendSimDebug($"[GRAV_POS] posY: 0x{posBefore:X4} ({posBefore >> 8}px) -> 0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), velY: 0x{velBefore:X4} -> 0x{playerVelY_fixed:X4}");
         }
         
         /// <summary>
@@ -481,11 +396,8 @@ namespace FamidashEditor
             int hitboxW = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
             int hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
             
-            // For mini mode, position hitbox based on gravity direction
-            // Normal gravity: bottom-left quadrant (9 pixels down to align 7px hitbox at bottom)
-            // Flipped gravity: top-left quadrant (no offset)
-            int hitboxOffsetX = 0;  // No X offset, left-aligned
-            int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 9 : 0;
+            int hitboxOffsetX = 0;
+            int hitboxOffsetY = SharedPhysics.GetCubeHitboxOffsetY(currplayer_mini != 0, currplayer_gravity != 0);
             
             int collisionX = playerX_px + hitboxOffsetX;
             int collisionY = playerY_px + hitboxOffsetY;
@@ -496,6 +408,11 @@ namespace FamidashEditor
             // Cube collision detection based on gravity direction
             if (currplayer_gravity == 0)
             {
+                // NES bg_coll_D velocity guard: the ENTIRE floor collision
+                // (slopes + flat + spike-death) is skipped when vel_y < 0.
+                // Matches NES: if(!(high_byte(currplayer_vel_y) & 0x80))
+                if (playerVelY_fixed >= 0)
+                {
                 // Normal gravity: check slopes first (from collision.h line 920)
                 bool slopeHit = bg_coll_D_slopes();
                 // AppendSimDebug($"[CUBE]   Slope check result: slopeHit={slopeHit}, eject_D={eject_D}, counter={currplayer_was_on_slope_counter}");
@@ -571,6 +488,7 @@ namespace FamidashEditor
                         // AppendSimDebug($"[CUBE]     NO COLLISION - falling! Y={playerY_px}");
                     }
                 }
+                } // end velocity guard (playerVelY_fixed >= 0)
                 
                 // Normal gravity: Check TOP collision for hblocked/fblocked eject
                 if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (hblocked || fblocked))
@@ -687,8 +605,7 @@ namespace FamidashEditor
             int hitboxW = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
             int hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
             
-            // Apply mini mode offset for positioning
-            int hitboxOffsetY = (currplayer_mini != 0 && currplayer_gravity == 0) ? 9 : 0;
+            int hitboxOffsetY = SharedPhysics.GetCubeHitboxOffsetY(currplayer_mini != 0, currplayer_gravity != 0);
             
             // From collision.h: center X = Generic.x + (Generic.width >> 1) - 1
             // From collision.h: center Y = Generic.y + (Generic.height >> 1) + mini_offset

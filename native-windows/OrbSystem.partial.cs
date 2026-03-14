@@ -40,10 +40,10 @@ namespace FamidashEditor
         private const byte GREEN_ORB_MULTI = 0x7C;
 
         // Blue orb special constants
-        private const short PAD_HEIGHT_BLUE_normal = -0x3A0;
-        private const short PAD_HEIGHT_BLUE_mini = -0x160;
-        private const short ORB_BALL_HEIGHT_BLUE_normal = -0x1A0;
-        private const short ORB_BALL_HEIGHT_BLUE_mini = -0x60;
+        private const short PAD_HEIGHT_BLUE_normal = -(short)SharedPhysics.PAD_HEIGHT_BLUE_NORMAL;
+        private const short PAD_HEIGHT_BLUE_mini = -(short)SharedPhysics.PAD_HEIGHT_BLUE_MINI;
+        private const short ORB_BALL_HEIGHT_BLUE_normal = -(short)SharedPhysics.ORB_BALL_HEIGHT_BLUE_NORMAL;
+        private const short ORB_BALL_HEIGHT_BLUE_mini = -(short)SharedPhysics.ORB_BALL_HEIGHT_BLUE_MINI;
 
         // Orb activation state tracking
         // Note: orbBufferActive, orbHoldConsumedKeyStillDown, orbHoldSuppressing
@@ -551,12 +551,8 @@ namespace FamidashEditor
             int hitboxW = miniMode ? 8 : 15;
             int hitboxH = miniMode ? 7 : 15;
             
-            // Apply mini mode offset: NES sprite_collide centers hitbox
-            // in the 16px cell with (0x10-h)>>1 = 4, unconditionally.
-            if (miniMode)
-            {
-                playerY_px += 4;
-            }
+            // Apply mini mode offset matching terrain collision conventions
+            playerY_px += GetMiniSpriteOffsetY();
 
             int playerLeft_px = playerX_px;
             int playerRight_px = playerX_px + hitboxW - 1;

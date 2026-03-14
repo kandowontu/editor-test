@@ -798,20 +798,22 @@ namespace FamidashEditor
                 int hitboxW_local = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
                 hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
                 
-                // Mini mode: use mode-specific Y offset matching each eject function
-                // Cube/Robot/Ninja/Football use offset 9 (bottom-aligned)
-                // Ship/Ball/UFO/Spider/Swing/Pogo use offset 4 (center-aligned, matching NES)
                 int hitboxOffsetY;
                 if (currplayer_mini != 0 && currplayer_gravity == 0)
                 {
-                    if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 11)
-                        hitboxOffsetY = 9;  // Cube, Robot, Ninja, Football
+                    // Normal gravity mini: bottom-align hitbox within 16px sprite
+                    if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8)
+                        hitboxOffsetY = 9;  // cube/robot/ninja
                     else
-                        hitboxOffsetY = (0x10 - hitboxH) >> 1;  // Ship, Ball, UFO, Spider, Swing, Pogo = 4
+                        hitboxOffsetY = 4;  // ball/ship/ufo/spider/wave
+                }
+                else if (currplayer_mini != 0 && currplayer_gravity != 0)
+                {
+                    hitboxOffsetY = 0;  // reversed gravity mini
                 }
                 else
                 {
-                    hitboxOffsetY = 0;
+                    hitboxOffsetY = 0;  // not mini
                 }
                 int adjustedPlayerY = playerY_px + hitboxOffsetY;
                 

@@ -1,0 +1,112 @@
+Map dimensions: 906 x 40
+
+================================================================================
+TERRAIN MAP: Clubstep columns 400-465, TMX rows 20-38
+groundRowsToReserve = 3, so worldTileY = tmxRow - 3
+================================================================================
+
+         4         4         4         4         4         4         4       (hundreds)
+         0         1         2         3         4         5         6       (tens)
+tmxR wY  012345678901234567890123456789012345678901234567890123456789012345  (ones)
+---- --  |----+----|----+----|----+----|----+----|----+----|----+----|----+
+  20 17  ................................................................A.
+  21 18  ................................................................A.
+  22 19  ................................................................A.
+  23 20  ................................................................A.
+  24 21  ................................................................A.
+  25 22  ................................................................A.
+  26 23  ................................................................A.
+  27 24  ................................................................A.
+  28 25  AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD
+  29 26  DDDDDDDDDDADDDDDDDDDDDDDA...AAAAAAA...AAAA........AAAAAADDDDDDDDA.
+  30 27  ..D.....D.A.............A..AAD...DAA.AAD....DA....D...DD.......DA.
+  31 28  ..........A.............A.AAD.....DA.AD.....DAA................DA.
+  32 29  ..........AA...AAA......AAAD.......DAD.......DAA....D..........DA.
+  33 30  s..............D..sDs..........D....D....D....DAAAAAAAAA.......DA.
+  34 31  D....D.....D...DDDD.D.........DAD.......DAD....DDDDDDDDD..........
+  35 32  s.....AAAAAA....AAsDs........DA.AD.....DA.AD....DD........sDs.....
+  36 33  DDDDDDA...A......ADDDDDDDDAAAAA.AAAAAAAAA.AA....AADDDDDDDDD.DAAAAA
+  37 34  AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  38 35  ..................................................................
+
+LEGEND:
+  . = empty/COL_NONE    A = COL_ALL (solid)     D = death (COL_DEATH*)
+  T = COL_TOP            B = COL_BOTTOM          s = spike collision
+  F = COL_FLOOR_CEIL     / = slope               X = other
+
+================================================================================
+TILE INDEX DETAILS (non-COL_NONE terrain tiles in view):
+================================================================================
+  Tile  12: COL_DEATH_BOTTOM               'D' x22
+  Tile  13: COL_DEATH_TOP                  'D' x24
+  Tile  17: COL_DEATH                      'D' x4
+  Tile  18: COL_DEATH_BOTTOM               'D' x5
+  Tile  22: COL_ALL                        'A' x5
+  Tile  23: COL_DEATH_TOP                  'D' x8
+  Tile  27: COL_DEATH                      'D' x4
+  Tile  30: COL_DEATH_TOP                  'D' x10
+  Tile  31: COL_DEATH_RIGHT                'D' x5
+  Tile  33: COL_ALL                        'A' x66
+  Tile  35: COL_ALL                        'A' x64
+  Tile  65: COL_ALL                        'A' x17
+  Tile  66: COL_ALL                        'A' x1
+  Tile  67: COL_ALL                        'A' x23
+  Tile  68: COL_ALL                        'A' x9
+  Tile  69: COL_ALL                        'A' x5
+  Tile  70: COL_ALL                        'A' x4
+  Tile  71: COL_ALL                        'A' x8
+  Tile  72: COL_ALL                        'A' x8
+  Tile  73: COL_ALL                        'A' x2
+  Tile  74: COL_ALL                        'A' x2
+  Tile  75: COL_ALL                        'A' x5
+  Tile  76: COL_ALL                        'A' x4
+  Tile  77: COL_ALL                        'A' x13
+  Tile  80: COL_ALL                        'A' x2
+  Tile  82: COL_ALL                        'A' x2
+  Tile 116: COL_DOWN_RIGHT_SPIKE           's' x2
+  Tile 117: COL_DEATH_BOTTOM               'D' x2
+  Tile 118: COL_DOWN_LEFT_SPIKE            's' x3
+  Tile 119: COL_DEATH_RIGHT                'D' x2
+  Tile 121: COL_DEATH_LEFT                 'D' x3
+  Tile 122: COL_UP_RIGHT_SPIKE             's' x1
+  Tile 123: COL_DEATH_TOP                  'D' x1
+  Tile 124: COL_UP_LEFT_SPIKE              's' x2
+  Tile 125: COL_DEATH                      'D' x3
+  Tile 193: COL_DEATH_TOP_RIGHT            'D' x6
+  Tile 194: COL_DEATH_TOP_LEFT             'D' x6
+  Tile 195: COL_DEATH_BOTTOM_RIGHT         'D' x4
+  Tile 196: COL_DEATH_BOTTOM_LEFT          'D' x4
+
+================================================================================
+SPRITE LAYER: Non-empty entries in columns 400-465 (all rows)
+(-1 = empty in sprite CSV)
+================================================================================
+Found 25 sprite entries:
+  tmxRow worldY   col spriteIdx
+      30     27   405         5
+      30     27   412         5
+      30     27   414         5
+      30     27   431        61
+      30     27   441        61
+      31     28   417        37
+      31     28   425         5
+      32     29   400        11
+      32     29   465        16
+      33     30   431        45
+      33     30   436        61
+      33     30   441        45
+      33     30   446        61
+      34     31   453        61
+      34     31   455        61
+      34     31   457         6
+      34     31   461        11
+      35     32   402         5
+      35     32   422        11
+      35     32   436        45
+      35     32   446        45
+      39     36   418       145
+      39     36   431       165
+      39     36   454       145
+      39     36   464       129
+
+Done.

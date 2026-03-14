@@ -8,6 +8,20 @@ namespace FamidashEditor
         // NES COLLISION SYSTEM - Direct 1:1 Port from collision.h
         // ========================================================================
         
+        /// <summary>
+        /// Returns the mini-mode Y offset for sprite collision (pads, orbs, portals).
+        /// Must match the terrain collision offset so eject positioning and sprite overlap
+        /// are consistent.  Cube/robot/ninja use bottom-aligned (9) for normal gravity
+        /// and top-aligned (0) for reversed; all other modes center (4).
+        /// </summary>
+        private int GetMiniSpriteOffsetY()
+        {
+            if (currplayer_mini == 0) return 0;
+            if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8)
+                return (currplayer_gravity == 0) ? 9 : 0;
+            return 4; // ball, ship, UFO, spider, wave, etc.
+        }
+        
         // Generic collision variables (like NES Generic struct)
         private int Generic_x = 0;
         private int Generic_y = 0;

@@ -1,0 +1,948 @@
+﻿Loading C:\Editor Test\famidash\LEVELS\LEVEL DATA\lvlset_HUGE\clubstep.tmx...
+Map: 906x40  tiles=36240  sprites=36240
+Config: C:\Users\kando\Documents\Famidash Editor\clubstep.tmx.cfg (46 offsets, 0 anchors)
+Start: (0, 577)  speed=1  maxFall=0x7  bias=0.50
+[BFS] Starting exhaustive BFS exploration (frontier cap=30000)
+
+[BFS] f=0 front=2 dedup=2 deaths=0 Y=[577..577] mode=0 grav=N XΓëê0px pct=0% ms/f=64.0
+[BFS] f=1 front=3 dedup=3 deaths=0 Y=[571..577] mode=0 grav=N XΓëê2px pct=0% ms/f=32.6
+[BFS] f=2 front=4 dedup=4 deaths=0 Y=[567..577] mode=0 grav=N XΓëê5px pct=0% ms/f=21.9
+[BFS] f=3 front=5 dedup=5 deaths=0 Y=[562..577] mode=0 grav=N XΓëê8px pct=0% ms/f=16.4
+[BFS] f=4 front=6 dedup=6 deaths=0 Y=[558..577] mode=0 grav=N XΓëê11px pct=0% ms/f=13.2
+[BFS] f=5 front=7 dedup=7 deaths=0 Y=[555..577] mode=0 grav=N XΓëê13px pct=0% ms/f=11.0
+[BFS] f=6 front=8 dedup=8 deaths=0 Y=[552..577] mode=0 grav=N XΓëê16px pct=0% ms/f=9.4
+[BFS] f=7 front=9 dedup=9 deaths=0 Y=[549..577] mode=0 grav=N XΓëê19px pct=0% ms/f=8.2
+[BFS] f=8 front=10 dedup=10 deaths=0 Y=[547..577] mode=0 grav=N XΓëê22px pct=0% ms/f=7.3
+[BFS] f=9 front=11 dedup=11 deaths=0 Y=[545..577] mode=0 grav=N XΓëê24px pct=0% ms/f=6.6
+[BFS] f=10 front=12 dedup=12 deaths=0 Y=[544..577] mode=0 grav=N XΓëê27px pct=0% ms/f=6.0
+[BFS] f=11 front=13 dedup=13 deaths=0 Y=[543..577] mode=0 grav=N XΓëê30px pct=0% ms/f=5.5
+[BFS] f=12 front=14 dedup=14 deaths=0 Y=[542..577] mode=0 grav=N XΓëê33px pct=0% ms/f=5.1
+[BFS] f=13 front=14 dedup=14 deaths=0 Y=[542..577] mode=0 grav=N XΓëê35px pct=0% ms/f=4.7
+[BFS] f=14 front=15 dedup=15 deaths=0 Y=[542..577] mode=0 grav=N XΓëê38px pct=0% ms/f=4.4
+[BFS] f=15 front=15 dedup=15 deaths=0 Y=[542..577] mode=0 grav=N XΓëê41px pct=0% ms/f=4.1
+[BFS] f=16 front=16 dedup=16 deaths=0 Y=[542..577] mode=0 grav=N XΓëê44px pct=0% ms/f=3.9
+[BFS] f=17 front=16 dedup=16 deaths=0 Y=[542..577] mode=0 grav=N XΓëê47px pct=0% ms/f=3.7
+[BFS] f=18 front=17 dedup=17 deaths=0 Y=[542..577] mode=0 grav=N XΓëê49px pct=0% ms/f=3.5
+[BFS] f=19 front=17 dedup=17 deaths=0 Y=[542..577] mode=0 grav=N XΓëê52px pct=0% ms/f=3.3
+[BFS] f=20 front=18 dedup=18 deaths=0 Y=[542..577] mode=0 grav=N XΓëê55px pct=0% ms/f=3.2
+[BFS] f=21 front=18 dedup=18 deaths=0 Y=[542..577] mode=0 grav=N XΓëê58px pct=0% ms/f=3.0
+[BFS] f=22 front=19 dedup=19 deaths=0 Y=[542..577] mode=0 grav=N XΓëê60px pct=0% ms/f=2.9
+[BFS] f=23 front=19 dedup=19 deaths=0 Y=[542..577] mode=0 grav=N XΓëê63px pct=0% ms/f=2.8
+[BFS] f=24 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê66px pct=0% ms/f=2.7
+[BFS] f=25 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê69px pct=0% ms/f=2.6
+[BFS] f=26 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê71px pct=0% ms/f=2.5
+[BFS] f=27 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê74px pct=0% ms/f=2.5
+[BFS] f=28 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê77px pct=0% ms/f=2.4
+[BFS] f=29 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê80px pct=0% ms/f=2.3
+[BFS] f=30 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê82px pct=0% ms/f=2.2
+[BFS] f=31 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê85px pct=0% ms/f=2.2
+[BFS] f=32 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê88px pct=0% ms/f=2.1
+[BFS] f=33 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê91px pct=0% ms/f=2.0
+[BFS] f=34 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê94px pct=0% ms/f=2.0
+[BFS] f=35 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê96px pct=0% ms/f=1.9
+[BFS] f=36 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê99px pct=0% ms/f=1.9
+[BFS] f=37 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê102px pct=0% ms/f=1.8
+[BFS] f=38 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê105px pct=0% ms/f=1.8
+[BFS] f=39 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê107px pct=0% ms/f=1.8
+[BFS] f=40 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê110px pct=0% ms/f=1.7
+[BFS] f=41 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê113px pct=0% ms/f=1.7
+[BFS] f=42 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê116px pct=0% ms/f=1.6
+[BFS] f=43 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê118px pct=0% ms/f=1.6
+[BFS] f=44 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê121px pct=0% ms/f=1.6
+[BFS] f=45 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê124px pct=0% ms/f=1.5
+[BFS] f=46 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê127px pct=0% ms/f=1.5
+[BFS] f=47 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê129px pct=0% ms/f=1.5
+[BFS] f=48 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê132px pct=0% ms/f=1.4
+[BFS] f=49 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê135px pct=0% ms/f=1.4
+[BFS] f=50 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê138px pct=0% ms/f=1.4
+[BFS] f=51 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê141px pct=0% ms/f=1.4
+[BFS] f=52 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê143px pct=0% ms/f=1.3
+  Progress: 0%   
+[BFS] f=53 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê146px pct=1% ms/f=1.3
+[BFS] f=54 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê149px pct=1% ms/f=1.3
+[BFS] f=55 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê152px pct=1% ms/f=1.3
+[BFS] f=56 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 grav=N XΓëê154px pct=1% ms/f=1.3
+[BFS] f=57 front=18 dedup=18 deaths=2 Y=[542..573] mode=0 grav=N XΓëê157px pct=1% ms/f=1.2
+[BFS] f=58 front=17 dedup=17 deaths=2 Y=[542..568] mode=0 grav=N XΓëê160px pct=1% ms/f=1.2
+[BFS] f=59 front=16 dedup=16 deaths=0 Y=[542..573] mode=0 grav=N XΓëê163px pct=1% ms/f=1.2
+[BFS] f=60 front=15 dedup=15 deaths=2 Y=[542..568] mode=0 grav=N XΓëê165px pct=1% ms/f=1.2
+[BFS] f=61 front=13 dedup=13 deaths=2 Y=[542..564] mode=0 grav=N XΓëê168px pct=1% ms/f=1.2
+[BFS] f=62 front=12 dedup=12 deaths=2 Y=[542..560] mode=0 grav=N XΓëê171px pct=1% ms/f=1.1
+[BFS] f=63 front=11 dedup=11 deaths=0 Y=[542..564] mode=0 grav=N XΓëê174px pct=1% ms/f=1.1
+[BFS] f=64 front=10 dedup=10 deaths=2 Y=[542..560] mode=0 grav=N XΓëê177px pct=1% ms/f=1.1
+[BFS] f=65 front=9 dedup=9 deaths=0 Y=[542..564] mode=0 grav=N XΓëê179px pct=1% ms/f=1.1
+[BFS] f=66 front=9 dedup=9 deaths=0 Y=[542..568] mode=0 grav=N XΓëê182px pct=1% ms/f=1.1
+[BFS] f=67 front=7 dedup=7 deaths=2 Y=[542..564] mode=0 grav=N XΓëê185px pct=1% ms/f=1.1
+[BFS] f=68 front=7 dedup=7 deaths=0 Y=[542..568] mode=0 grav=N XΓëê188px pct=1% ms/f=1.1
+[BFS] f=69 front=7 dedup=7 deaths=0 Y=[542..573] mode=0 grav=N XΓëê190px pct=1% ms/f=1.0
+[BFS] f=70 front=6 dedup=6 deaths=2 Y=[543..568] mode=0 grav=N XΓëê193px pct=1% ms/f=1.0
+[BFS] f=71 front=6 dedup=6 deaths=0 Y=[543..573] mode=0 grav=N XΓëê196px pct=1% ms/f=1.0
+[BFS] f=72 front=7 dedup=7 deaths=0 Y=[544..577] mode=0 grav=N XΓëê199px pct=1% ms/f=1.0
+[BFS] f=73 front=8 dedup=8 deaths=0 Y=[546..577] mode=0 grav=N XΓëê201px pct=1% ms/f=1.0
+[BFS] f=74 front=8 dedup=8 deaths=0 Y=[548..577] mode=0 grav=N XΓëê204px pct=1% ms/f=1.0
+[BFS] f=75 front=9 dedup=9 deaths=0 Y=[550..577] mode=0 grav=N XΓëê207px pct=1% ms/f=1.0
+[BFS] f=76 front=9 dedup=9 deaths=0 Y=[553..577] mode=0 grav=N XΓëê210px pct=1% ms/f=1.0
+[BFS] f=77 front=10 dedup=10 deaths=0 Y=[555..577] mode=0 grav=N XΓëê212px pct=1% ms/f=0.9
+[BFS] f=78 front=10 dedup=10 deaths=0 Y=[552..577] mode=0 grav=N XΓëê215px pct=1% ms/f=0.9
+[BFS] f=79 front=11 dedup=11 deaths=0 Y=[549..577] mode=0 grav=N XΓëê218px pct=1% ms/f=0.9
+[BFS] f=80 front=11 dedup=11 deaths=0 Y=[547..577] mode=0 grav=N XΓëê221px pct=1% ms/f=0.9
+[BFS] f=81 front=12 dedup=12 deaths=0 Y=[545..577] mode=0 grav=N XΓëê224px pct=1% ms/f=0.9
+[BFS] f=82 front=12 dedup=12 deaths=0 Y=[544..577] mode=0 grav=N XΓëê226px pct=1% ms/f=0.9
+[BFS] f=83 front=13 dedup=13 deaths=0 Y=[543..577] mode=0 grav=N XΓëê229px pct=1% ms/f=0.9
+[BFS] f=84 front=14 dedup=14 deaths=0 Y=[542..577] mode=0 grav=N XΓëê232px pct=1% ms/f=0.9
+[BFS] f=85 front=14 dedup=14 deaths=0 Y=[542..577] mode=0 grav=N XΓëê235px pct=1% ms/f=0.9
+[BFS] f=86 front=15 dedup=15 deaths=0 Y=[542..577] mode=0 grav=N XΓëê237px pct=1% ms/f=0.8
+[BFS] f=87 front=13 dedup=13 deaths=0 Y=[542..569] mode=0 grav=N XΓëê240px pct=1% ms/f=0.8
+[BFS] f=88 front=13 dedup=13 deaths=0 Y=[542..562] mode=0 grav=N XΓëê243px pct=1% ms/f=0.8
+[BFS] f=89 front=12 dedup=12 deaths=0 Y=[542..558] mode=0 grav=N XΓëê246px pct=1% ms/f=0.8
+[BFS] f=90 front=12 dedup=12 deaths=0 Y=[542..555] mode=0 grav=N XΓëê248px pct=1% ms/f=0.8
+[BFS] f=91 front=11 dedup=11 deaths=0 Y=[542..552] mode=0 grav=N XΓëê251px pct=1% ms/f=0.8
+[BFS] f=92 front=11 dedup=11 deaths=0 Y=[539..553] mode=0 grav=N XΓëê254px pct=1% ms/f=0.8
+[BFS] f=93 front=10 dedup=10 deaths=0 Y=[534..556] mode=0 grav=N XΓëê257px pct=1% ms/f=0.8
+[BFS] f=94 front=10 dedup=10 deaths=0 Y=[530..560] mode=0 grav=N XΓëê259px pct=1% ms/f=0.8
+[BFS] f=95 front=9 dedup=9 deaths=0 Y=[526..564] mode=0 grav=N XΓëê262px pct=1% ms/f=0.8
+[BFS] f=96 front=9 dedup=9 deaths=0 Y=[522..568] mode=0 grav=N XΓëê265px pct=1% ms/f=0.8
+[BFS] f=97 front=8 dedup=8 deaths=0 Y=[519..573] mode=0 grav=N XΓëê268px pct=1% ms/f=0.8
+[BFS] f=98 front=7 dedup=7 deaths=2 Y=[516..568] mode=0 grav=N XΓëê271px pct=1% ms/f=0.8
+[BFS] f=99 front=7 dedup=7 deaths=0 Y=[514..561] mode=0 grav=N XΓëê273px pct=1% ms/f=0.8
+[BFS] f=100 front=8 dedup=8 deaths=0 Y=[512..561] mode=0 grav=N XΓëê276px pct=1% ms/f=0.7
+[BFS] f=101 front=8 dedup=8 deaths=0 Y=[510..561] mode=0 grav=N XΓëê279px pct=1% ms/f=0.7
+[BFS] f=102 front=6 dedup=6 deaths=4 Y=[509..555] mode=0 grav=N XΓëê282px pct=1% ms/f=0.7
+[BFS] f=103 front=6 dedup=6 deaths=0 Y=[509..556] mode=0 grav=N XΓëê284px pct=1% ms/f=0.7
+[BFS] f=104 front=6 dedup=6 deaths=0 Y=[508..560] mode=0 grav=N XΓëê287px pct=1% ms/f=0.7
+  Progress: 1%   
+[BFS] f=105 front=6 dedup=6 deaths=2 Y=[503..556] mode=0 grav=N XΓëê290px pct=2% ms/f=0.7
+[BFS] f=106 front=8 dedup=8 deaths=0 Y=[499..560] mode=0 grav=N XΓëê293px pct=2% ms/f=0.7
+[BFS] f=107 front=12 dedup=12 deaths=0 Y=[494..561] mode=0 grav=N XΓëê295px pct=2% ms/f=0.7
+[BFS] f=108 front=17 dedup=17 deaths=0 Y=[490..561] mode=0 grav=N XΓëê298px pct=2% ms/f=0.7
+[BFS] f=109 front=22 dedup=22 deaths=0 Y=[487..561] mode=0 grav=N XΓëê301px pct=2% ms/f=0.7
+[BFS] f=110 front=25 dedup=25 deaths=0 Y=[484..561] mode=0 grav=N XΓëê304px pct=2% ms/f=0.7
+[BFS] f=111 front=28 dedup=28 deaths=0 Y=[481..562] mode=0 grav=N XΓëê306px pct=2% ms/f=0.7
+[BFS] f=112 front=30 dedup=30 deaths=0 Y=[479..563] mode=0 grav=N XΓëê309px pct=2% ms/f=0.7
+[BFS] f=113 front=31 dedup=31 deaths=0 Y=[477..565] mode=0 grav=N XΓëê312px pct=2% ms/f=0.7
+[BFS] f=114 front=31 dedup=31 deaths=0 Y=[476..567] mode=0 grav=N XΓëê315px pct=2% ms/f=0.7
+[BFS] f=115 front=34 dedup=34 deaths=0 Y=[475..569] mode=0 grav=N XΓëê318px pct=2% ms/f=0.7
+[BFS] f=116 front=36 dedup=36 deaths=0 Y=[471..572] mode=0 grav=N XΓëê320px pct=2% ms/f=0.7
+[BFS] f=117 front=36 dedup=36 deaths=2 Y=[469..544] mode=0 grav=N XΓëê323px pct=2% ms/f=0.7
+[BFS] f=118 front=38 dedup=38 deaths=0 Y=[466..549] mode=0 grav=N XΓëê326px pct=2% ms/f=0.7
+[BFS] f=119 front=38 dedup=38 deaths=0 Y=[464..555] mode=0 grav=N XΓëê329px pct=2% ms/f=0.7
+[BFS] f=120 front=36 dedup=36 deaths=2 Y=[462..562] mode=0 grav=N XΓëê331px pct=2% ms/f=0.7
+[BFS] f=121 front=31 dedup=31 deaths=6 Y=[461..569] mode=0 grav=N XΓëê334px pct=2% ms/f=0.6
+[BFS] f=122 front=31 dedup=31 deaths=0 Y=[460..576] mode=0 grav=N XΓëê337px pct=2% ms/f=0.6
+[BFS] f=123 front=29 dedup=29 deaths=2 Y=[459..507] mode=0 grav=N XΓëê340px pct=2% ms/f=0.6
+[BFS] f=124 front=26 dedup=26 deaths=0 Y=[459..510] mode=0 grav=N XΓëê342px pct=2% ms/f=0.6
+[BFS] f=125 front=25 dedup=25 deaths=0 Y=[460..512] mode=0 grav=N XΓëê345px pct=2% ms/f=0.6
+[BFS] f=126 front=24 dedup=24 deaths=0 Y=[461..516] mode=0 grav=N XΓëê348px pct=2% ms/f=0.6
+[BFS] f=127 front=20 dedup=20 deaths=0 Y=[461..519] mode=0 grav=N XΓëê351px pct=2% ms/f=0.6
+[BFS] f=128 front=20 dedup=20 deaths=0 Y=[462..523] mode=0 grav=N XΓëê354px pct=2% ms/f=0.6
+[BFS] f=129 front=18 dedup=18 deaths=2 Y=[462..514] mode=0 grav=N XΓëê356px pct=2% ms/f=0.6
+[BFS] f=130 front=17 dedup=17 deaths=0 Y=[463..518] mode=0 grav=N XΓëê359px pct=2% ms/f=0.6
+[BFS] f=131 front=15 dedup=15 deaths=0 Y=[463..523] mode=0 grav=N XΓëê362px pct=2% ms/f=0.6
+[BFS] f=132 front=14 dedup=14 deaths=0 Y=[463..528] mode=0 grav=N XΓëê365px pct=2% ms/f=0.6
+[BFS] f=133 front=13 dedup=13 deaths=2 Y=[463..512] mode=0 grav=N XΓëê367px pct=2% ms/f=0.6
+[BFS] f=134 front=6 dedup=6 deaths=12 Y=[464..480] mode=0 grav=N XΓëê370px pct=2% ms/f=0.6
+[BFS] f=135 front=6 dedup=6 deaths=0 Y=[465..475] mode=0 grav=N XΓëê373px pct=2% ms/f=0.6
+[BFS] f=136 front=5 dedup=5 deaths=0 Y=[466..476] mode=0 grav=N XΓëê376px pct=2% ms/f=0.6
+[BFS] f=137 front=5 dedup=5 deaths=0 Y=[463..479] mode=0 grav=N XΓëê378px pct=2% ms/f=0.6
+[BFS] f=138 front=5 dedup=5 deaths=0 Y=[460..479] mode=0 grav=N XΓëê381px pct=2% ms/f=0.6
+[BFS] f=139 front=5 dedup=5 deaths=0 Y=[457..474] mode=0 grav=N XΓëê384px pct=2% ms/f=0.6
+[BFS] f=140 front=5 dedup=5 deaths=0 Y=[455..476] mode=0 grav=N XΓëê387px pct=2% ms/f=0.6
+[BFS] f=141 front=5 dedup=5 deaths=0 Y=[453..479] mode=0 grav=N XΓëê389px pct=2% ms/f=0.6
+[BFS] f=142 front=5 dedup=5 deaths=0 Y=[452..475] mode=0 grav=N XΓëê392px pct=2% ms/f=0.6
+[BFS] f=143 front=5 dedup=5 deaths=0 Y=[451..471] mode=0 grav=N XΓëê395px pct=2% ms/f=0.6
+[BFS] f=144 front=5 dedup=5 deaths=0 Y=[451..467] mode=0 grav=N XΓëê398px pct=2% ms/f=0.6
+[BFS] f=145 front=5 dedup=5 deaths=0 Y=[451..463] mode=0 grav=N XΓëê401px pct=2% ms/f=0.6
+[BFS] f=146 front=5 dedup=5 deaths=0 Y=[451..460] mode=0 grav=N XΓëê403px pct=2% ms/f=0.5
+[BFS] f=147 front=4 dedup=4 deaths=0 Y=[452..458] mode=0 grav=N XΓëê406px pct=2% ms/f=0.5
+[BFS] f=148 front=3 dedup=3 deaths=0 Y=[451..456] mode=0 grav=N XΓëê409px pct=2% ms/f=0.5
+[BFS] f=149 front=3 dedup=3 deaths=0 Y=[451..454] mode=0 grav=N XΓëê412px pct=2% ms/f=0.5
+[BFS] f=150 front=3 dedup=3 deaths=0 Y=[451..455] mode=0 grav=N XΓëê414px pct=2% ms/f=0.5
+[BFS] f=151 front=6 dedup=6 deaths=0 Y=[447..458] mode=0 grav=N XΓëê417px pct=2% ms/f=0.5
+[BFS] f=152 front=8 dedup=8 deaths=0 Y=[443..460] mode=0 grav=N XΓëê420px pct=2% ms/f=0.5
+[BFS] f=153 front=10 dedup=10 deaths=0 Y=[438..463] mode=0 grav=N XΓëê423px pct=2% ms/f=0.5
+[BFS] f=154 front=12 dedup=12 deaths=0 Y=[433..466] mode=0 grav=N XΓëê425px pct=2% ms/f=0.5
+[BFS] f=155 front=15 dedup=15 deaths=0 Y=[427..470] mode=0 grav=N XΓëê428px pct=2% ms/f=0.5
+[BFS] f=156 front=17 dedup=17 deaths=0 Y=[421..474] mode=0 grav=N XΓëê431px pct=2% ms/f=0.5
+[BFS] f=157 front=19 dedup=19 deaths=0 Y=[414..479] mode=0 grav=N XΓëê434px pct=2% ms/f=0.5
+  Progress: 2%   
+[BFS] f=158 front=22 dedup=22 deaths=0 Y=[407..484] mode=0 grav=N XΓëê436px pct=3% ms/f=0.5
+[BFS] f=159 front=24 dedup=24 deaths=0 Y=[400..489] mode=0 grav=N XΓëê439px pct=3% ms/f=0.5
+[BFS] f=160 front=25 dedup=25 deaths=0 Y=[393..495] mode=0 grav=N XΓëê442px pct=3% ms/f=0.5
+[BFS] f=161 front=27 dedup=27 deaths=0 Y=[386..501] mode=0 grav=N XΓëê445px pct=3% ms/f=0.5
+[BFS] f=162 front=36 dedup=36 deaths=0 Y=[379..508] mode=0 grav=N XΓëê448px pct=3% ms/f=0.5
+[BFS] f=163 front=40 dedup=40 deaths=2 Y=[373..515] mode=0 grav=N XΓëê450px pct=3% ms/f=0.5
+[BFS] f=164 front=43 dedup=43 deaths=4 Y=[372..521] mode=0 grav=N XΓëê453px pct=3% ms/f=0.5
+[BFS] f=165 front=45 dedup=45 deaths=4 Y=[365..528] mode=0 grav=N XΓëê456px pct=3% ms/f=0.5
+[BFS] f=166 front=47 dedup=47 deaths=0 Y=[358..535] mode=0 grav=N XΓëê459px pct=3% ms/f=0.5
+[BFS] f=167 front=48 dedup=48 deaths=6 Y=[372..542] mode=0 grav=N XΓëê461px pct=3% ms/f=0.5
+[BFS] f=168 front=51 dedup=51 deaths=2 Y=[365..549] mode=0 grav=N XΓëê464px pct=3% ms/f=0.5
+[BFS] f=169 front=54 dedup=54 deaths=0 Y=[357..556] mode=0 grav=N XΓëê467px pct=3% ms/f=0.5
+[BFS] f=170 front=56 dedup=56 deaths=0 Y=[350..562] mode=0 grav=N XΓëê470px pct=3% ms/f=0.5
+[BFS] f=171 front=59 dedup=59 deaths=0 Y=[343..569] mode=0 grav=N XΓëê472px pct=3% ms/f=0.5
+[BFS] f=172 front=55 dedup=55 deaths=6 Y=[336..555] mode=0 grav=N XΓëê475px pct=3% ms/f=0.5
+[BFS] f=173 front=53 dedup=53 deaths=4 Y=[328..562] mode=0 grav=N XΓëê478px pct=3% ms/f=0.5
+[BFS] f=174 front=56 dedup=56 deaths=6 Y=[322..569] mode=0 grav=F XΓëê481px pct=3% ms/f=0.5
+[BFS] f=175 front=63 dedup=63 deaths=2 Y=[314..549] mode=0 grav=F XΓëê483px pct=3% ms/f=0.5
+[BFS] f=176 front=68 dedup=68 deaths=4 Y=[307..556] mode=0 grav=F XΓëê486px pct=3% ms/f=0.5
+[BFS] f=177 front=71 dedup=71 deaths=6 Y=[300..562] mode=0 grav=F XΓëê489px pct=3% ms/f=0.5
+[BFS] f=178 front=72 dedup=72 deaths=0 Y=[293..569] mode=0 grav=F XΓëê492px pct=3% ms/f=0.5
+[BFS] f=179 front=78 dedup=78 deaths=0 Y=[285..576] mode=0 grav=F XΓëê495px pct=3% ms/f=0.5
+[BFS] f=180 front=83 dedup=83 deaths=0 Y=[278..577] mode=0 grav=N XΓëê497px pct=3% ms/f=0.5
+[BFS] f=181 front=85 dedup=85 deaths=2 Y=[271..571] mode=0 grav=F XΓëê500px pct=3% ms/f=0.6
+[BFS] f=182 front=88 dedup=88 deaths=0 Y=[264..567] mode=0 grav=F XΓëê503px pct=3% ms/f=0.6
+[BFS] f=183 front=93 dedup=93 deaths=0 Y=[257..562] mode=0 grav=F XΓëê506px pct=3% ms/f=0.6
+[BFS] f=184 front=92 dedup=92 deaths=0 Y=[250..567] mode=0 grav=N XΓëê508px pct=3% ms/f=0.6
+[BFS] f=185 front=93 dedup=93 deaths=0 Y=[242..574] mode=0 grav=N XΓëê511px pct=3% ms/f=0.6
+[BFS] f=186 front=99 dedup=99 deaths=10 Y=[235..567] mode=0 grav=N XΓëê514px pct=3% ms/f=0.6
+[BFS] f=200 front=146 dedup=146 deaths=8 Y=[135..572] mode=0 grav=N XΓëê553px pct=3% ms/f=0.6
+  Progress: 3%   
+[BFS] f=212 front=99 dedup=99 deaths=0 Y=[49..538] mode=0 grav=N XΓëê586px pct=4% ms/f=0.8
+[BFS] f=213 front=91 dedup=91 deaths=8 Y=[41..527] mode=0 grav=N XΓëê589px pct=4% ms/f=0.8
+[BFS] f=214 front=81 dedup=81 deaths=8 Y=[34..520] mode=0 grav=N XΓëê591px pct=4% ms/f=0.9
+[BFS] f=215 front=41 dedup=41 deaths=68 Y=[442..513] mode=0 grav=N XΓëê594px pct=4% ms/f=0.9
+[BFS] f=216 front=41 dedup=41 deaths=0 Y=[446..513] mode=0 grav=N XΓëê597px pct=4% ms/f=0.9
+[BFS] f=217 front=43 dedup=43 deaths=0 Y=[447..513] mode=0 grav=N XΓëê600px pct=4% ms/f=0.9
+[BFS] f=218 front=43 dedup=43 deaths=0 Y=[447..513] mode=0 grav=N XΓëê602px pct=4% ms/f=0.9
+[BFS] f=219 front=45 dedup=45 deaths=0 Y=[447..513] mode=0 grav=N XΓëê605px pct=4% ms/f=0.9
+[BFS] f=220 front=45 dedup=45 deaths=0 Y=[447..513] mode=0 grav=N XΓëê608px pct=4% ms/f=0.9
+[BFS] f=221 front=44 dedup=44 deaths=0 Y=[447..513] mode=0 grav=N XΓëê611px pct=4% ms/f=0.9
+[BFS] f=222 front=44 dedup=44 deaths=0 Y=[447..513] mode=0 grav=N XΓëê613px pct=4% ms/f=0.9
+[BFS] f=223 front=45 dedup=45 deaths=0 Y=[447..513] mode=0 grav=N XΓëê616px pct=4% ms/f=0.9
+[BFS] f=224 front=45 dedup=45 deaths=0 Y=[447..513] mode=0 grav=N XΓëê619px pct=4% ms/f=0.9
+[BFS] f=225 front=46 dedup=46 deaths=0 Y=[447..513] mode=0 grav=N XΓëê622px pct=4% ms/f=0.9
+[BFS] f=226 front=48 dedup=48 deaths=0 Y=[447..513] mode=0 grav=N XΓëê625px pct=4% ms/f=0.8
+[BFS] f=227 front=50 dedup=50 deaths=0 Y=[447..513] mode=0 grav=N XΓëê627px pct=4% ms/f=0.8
+[BFS] f=228 front=49 dedup=49 deaths=0 Y=[447..513] mode=0 grav=N XΓëê630px pct=4% ms/f=0.8
+[BFS] f=229 front=54 dedup=54 deaths=0 Y=[447..513] mode=0 grav=N XΓëê633px pct=4% ms/f=0.8
+[BFS] f=230 front=56 dedup=56 deaths=0 Y=[447..513] mode=0 grav=N XΓëê636px pct=4% ms/f=0.8
+[BFS] f=231 front=60 dedup=60 deaths=0 Y=[447..513] mode=0 grav=N XΓëê638px pct=4% ms/f=0.8
+[BFS] f=232 front=62 dedup=62 deaths=0 Y=[447..513] mode=0 grav=N XΓëê641px pct=4% ms/f=0.8
+[BFS] f=233 front=67 dedup=67 deaths=0 Y=[447..513] mode=0 grav=N XΓëê644px pct=4% ms/f=0.8
+[BFS] f=234 front=69 dedup=69 deaths=0 Y=[447..513] mode=0 grav=N XΓëê647px pct=4% ms/f=0.9
+[BFS] f=235 front=74 dedup=74 deaths=0 Y=[447..513] mode=0 grav=N XΓëê649px pct=4% ms/f=0.9
+[BFS] f=236 front=70 dedup=70 deaths=6 Y=[447..507] mode=0 grav=F XΓëê652px pct=4% ms/f=0.9
+[BFS] f=237 front=71 dedup=71 deaths=0 Y=[447..503] mode=0 grav=F XΓëê655px pct=4% ms/f=0.9
+[BFS] f=238 front=70 dedup=70 deaths=0 Y=[447..500] mode=0 grav=F XΓëê658px pct=4% ms/f=0.9
+[BFS] f=239 front=71 dedup=71 deaths=0 Y=[447..504] mode=0 grav=F XΓëê660px pct=4% ms/f=0.9
+[BFS] f=240 front=69 dedup=69 deaths=2 Y=[447..500] mode=0 grav=F XΓëê663px pct=4% ms/f=0.9
+[BFS] f=241 front=68 dedup=68 deaths=0 Y=[447..504] mode=0 grav=F XΓëê666px pct=4% ms/f=0.9
+[BFS] f=242 front=67 dedup=67 deaths=0 Y=[447..509] mode=0 grav=F XΓëê669px pct=4% ms/f=0.9
+[BFS] f=243 front=66 dedup=66 deaths=0 Y=[447..515] mode=0 grav=F XΓëê672px pct=4% ms/f=0.9
+[BFS] f=244 front=64 dedup=64 deaths=2 Y=[447..509] mode=0 grav=F XΓëê674px pct=4% ms/f=0.9
+[BFS] f=245 front=63 dedup=63 deaths=0 Y=[447..515] mode=0 grav=F XΓëê677px pct=4% ms/f=0.9
+[BFS] f=246 front=62 dedup=62 deaths=0 Y=[447..520] mode=0 grav=F XΓëê680px pct=4% ms/f=0.9
+[BFS] f=247 front=61 dedup=61 deaths=0 Y=[447..526] mode=0 grav=F XΓëê683px pct=4% ms/f=0.9
+[BFS] f=248 front=64 dedup=64 deaths=0 Y=[447..529] mode=0 grav=F XΓëê685px pct=4% ms/f=0.9
+[BFS] f=249 front=66 dedup=66 deaths=0 Y=[447..529] mode=0 grav=F XΓëê688px pct=4% ms/f=0.9
+[BFS] f=250 front=58 dedup=58 deaths=14 Y=[461..529] mode=0 grav=N XΓëê691px pct=4% ms/f=0.9
+[BFS] f=251 front=60 dedup=60 deaths=0 Y=[463..529] mode=0 grav=N XΓëê694px pct=4% ms/f=0.9
+[BFS] f=252 front=60 dedup=60 deaths=0 Y=[463..529] mode=0 grav=N XΓëê696px pct=4% ms/f=0.9
+[BFS] f=253 front=62 dedup=62 deaths=0 Y=[463..529] mode=0 grav=N XΓëê699px pct=4% ms/f=0.9
+[BFS] f=254 front=62 dedup=62 deaths=0 Y=[463..529] mode=0 grav=N XΓëê702px pct=4% ms/f=0.9
+[BFS] f=255 front=64 dedup=64 deaths=0 Y=[463..529] mode=0 grav=N XΓëê705px pct=4% ms/f=0.9
+[BFS] f=256 front=64 dedup=64 deaths=0 Y=[463..529] mode=0 grav=N XΓëê708px pct=4% ms/f=0.9
+[BFS] f=257 front=67 dedup=67 deaths=0 Y=[463..529] mode=0 grav=N XΓëê710px pct=4% ms/f=0.9
+[BFS] f=258 front=68 dedup=68 deaths=0 Y=[463..529] mode=0 grav=N XΓëê713px pct=4% ms/f=0.9
+[BFS] f=259 front=70 dedup=70 deaths=0 Y=[463..529] mode=0 grav=N XΓëê716px pct=4% ms/f=0.9
+[BFS] f=260 front=72 dedup=72 deaths=0 Y=[463..529] mode=0 grav=N XΓëê719px pct=4% ms/f=0.9
+[BFS] f=261 front=73 dedup=73 deaths=0 Y=[463..529] mode=0 grav=N XΓëê721px pct=4% ms/f=0.9
+[BFS] f=262 front=75 dedup=75 deaths=0 Y=[463..529] mode=0 grav=N XΓëê724px pct=4% ms/f=0.9
+  Progress: 4%   
+[BFS] f=263 front=74 dedup=74 deaths=0 Y=[463..529] mode=0 grav=N XΓëê727px pct=5% ms/f=0.9
+[BFS] f=264 front=76 dedup=76 deaths=0 Y=[463..529] mode=0 grav=N XΓëê730px pct=5% ms/f=0.9
+[BFS] f=265 front=48 dedup=48 deaths=60 Y=[463..529] mode=0 grav=N XΓëê732px pct=5% ms/f=0.9
+[BFS] f=266 front=25 dedup=25 deaths=54 Y=[463..529] mode=0 grav=N XΓëê735px pct=5% ms/f=0.9
+[BFS] f=267 front=26 dedup=26 deaths=0 Y=[463..529] mode=0 grav=N XΓëê738px pct=5% ms/f=0.9
+[BFS] f=268 front=20 dedup=20 deaths=14 Y=[463..530] mode=0 grav=F XΓëê741px pct=5% ms/f=0.9
+[BFS] f=269 front=11 dedup=11 deaths=20 Y=[463..531] mode=0 grav=F XΓëê743px pct=5% ms/f=0.9
+[BFS] f=270 front=13 dedup=13 deaths=0 Y=[463..533] mode=0 grav=F XΓëê746px pct=5% ms/f=0.9
+[BFS] f=271 front=15 dedup=15 deaths=0 Y=[463..535] mode=0 grav=F XΓëê749px pct=5% ms/f=0.9
+[BFS] f=272 front=15 dedup=15 deaths=4 Y=[463..537] mode=0 grav=F XΓëê752px pct=5% ms/f=0.9
+[BFS] f=273 front=13 dedup=13 deaths=8 Y=[463..540] mode=0 grav=F XΓëê755px pct=5% ms/f=0.9
+[BFS] f=274 front=13 dedup=13 deaths=4 Y=[463..544] mode=0 grav=F XΓëê757px pct=5% ms/f=0.9
+[BFS] f=275 front=14 dedup=14 deaths=8 Y=[463..545] mode=0 grav=F XΓëê760px pct=5% ms/f=0.9
+[BFS] f=276 front=19 dedup=19 deaths=0 Y=[463..545] mode=0 grav=F XΓëê763px pct=5% ms/f=0.9
+[BFS] f=277 front=22 dedup=22 deaths=4 Y=[463..545] mode=0 grav=F XΓëê766px pct=5% ms/f=0.9
+[BFS] f=278 front=20 dedup=20 deaths=8 Y=[463..545] mode=0 grav=F XΓëê768px pct=5% ms/f=0.9
+[BFS] f=279 front=22 dedup=22 deaths=0 Y=[463..546] mode=0 grav=F XΓëê771px pct=5% ms/f=0.9
+[BFS] f=280 front=24 dedup=24 deaths=0 Y=[463..547] mode=0 grav=F XΓëê774px pct=5% ms/f=0.9
+[BFS] f=281 front=26 dedup=26 deaths=0 Y=[463..549] mode=0 grav=F XΓëê777px pct=5% ms/f=0.8
+[BFS] f=282 front=28 dedup=28 deaths=0 Y=[463..551] mode=0 grav=F XΓëê779px pct=5% ms/f=0.8
+[BFS] f=283 front=30 dedup=30 deaths=0 Y=[463..553] mode=0 grav=F XΓëê782px pct=5% ms/f=0.8
+[BFS] f=284 front=32 dedup=32 deaths=0 Y=[463..556] mode=0 grav=F XΓëê785px pct=5% ms/f=0.8
+[BFS] f=285 front=34 dedup=34 deaths=0 Y=[463..560] mode=0 grav=F XΓëê788px pct=5% ms/f=0.8
+[BFS] f=286 front=36 dedup=36 deaths=0 Y=[463..563] mode=0 grav=F XΓëê790px pct=5% ms/f=0.8
+[BFS] f=287 front=38 dedup=38 deaths=0 Y=[463..567] mode=0 grav=F XΓëê793px pct=5% ms/f=0.8
+[BFS] f=288 front=40 dedup=40 deaths=0 Y=[463..572] mode=0 grav=F XΓëê796px pct=5% ms/f=0.8
+[BFS] f=289 front=43 dedup=43 deaths=0 Y=[463..577] mode=0 grav=F XΓëê799px pct=5% ms/f=0.8
+[BFS] f=290 front=34 dedup=34 deaths=18 Y=[477..571] mode=0 grav=F XΓëê802px pct=5% ms/f=0.8
+[BFS] f=291 front=32 dedup=32 deaths=0 Y=[479..567] mode=0 grav=F XΓëê804px pct=5% ms/f=0.8
+[BFS] f=292 front=35 dedup=35 deaths=0 Y=[479..562] mode=0 grav=F XΓëê807px pct=5% ms/f=0.8
+[BFS] f=293 front=36 dedup=36 deaths=0 Y=[479..558] mode=0 grav=F XΓëê810px pct=5% ms/f=0.8
+[BFS] f=294 front=39 dedup=39 deaths=0 Y=[479..555] mode=0 grav=F XΓëê813px pct=5% ms/f=0.8
+[BFS] f=295 front=40 dedup=40 deaths=0 Y=[479..552] mode=0 grav=F XΓëê815px pct=5% ms/f=0.8
+[BFS] f=296 front=43 dedup=43 deaths=0 Y=[479..549] mode=0 grav=F XΓëê818px pct=5% ms/f=0.8
+[BFS] f=297 front=44 dedup=44 deaths=0 Y=[479..547] mode=0 grav=F XΓëê821px pct=5% ms/f=0.8
+[BFS] f=298 front=49 dedup=49 deaths=0 Y=[479..545] mode=0 grav=F XΓëê824px pct=5% ms/f=0.8
+[BFS] f=299 front=52 dedup=52 deaths=0 Y=[479..544] mode=0 grav=F XΓëê826px pct=5% ms/f=0.8
+[BFS] f=300 front=55 dedup=55 deaths=0 Y=[479..543] mode=0 grav=F XΓëê829px pct=5% ms/f=0.8
+[BFS] f=301 front=60 dedup=60 deaths=0 Y=[479..542] mode=0 grav=F XΓëê832px pct=5% ms/f=0.8
+[BFS] f=302 front=63 dedup=63 deaths=0 Y=[479..542] mode=0 grav=F XΓëê835px pct=5% ms/f=0.8
+[BFS] f=303 front=65 dedup=65 deaths=0 Y=[479..543] mode=0 grav=F XΓëê837px pct=5% ms/f=0.8
+[BFS] f=304 front=68 dedup=68 deaths=0 Y=[479..543] mode=0 grav=F XΓëê840px pct=5% ms/f=0.8
+[BFS] f=305 front=70 dedup=70 deaths=0 Y=[479..544] mode=0 grav=F XΓëê843px pct=5% ms/f=0.8
+[BFS] f=306 front=73 dedup=73 deaths=0 Y=[479..546] mode=0 grav=F XΓëê846px pct=5% ms/f=0.8
+[BFS] f=307 front=70 dedup=70 deaths=0 Y=[478..548] mode=0 grav=F XΓëê849px pct=5% ms/f=0.8
+[BFS] f=308 front=70 dedup=70 deaths=0 Y=[477..550] mode=0 grav=F XΓëê851px pct=5% ms/f=0.8
+[BFS] f=309 front=67 dedup=67 deaths=0 Y=[475..553] mode=0 grav=F XΓëê854px pct=5% ms/f=0.8
+[BFS] f=310 front=67 dedup=67 deaths=0 Y=[471..556] mode=0 grav=F XΓëê857px pct=5% ms/f=0.8
+[BFS] f=311 front=62 dedup=62 deaths=0 Y=[466..560] mode=0 grav=F XΓëê860px pct=5% ms/f=0.8
+[BFS] f=312 front=62 dedup=62 deaths=0 Y=[460..564] mode=0 grav=F XΓëê862px pct=5% ms/f=0.8
+[BFS] f=313 front=50 dedup=50 deaths=6 Y=[455..568] mode=0 grav=F XΓëê865px pct=5% ms/f=0.8
+[BFS] f=314 front=43 dedup=43 deaths=14 Y=[508..573] mode=0 grav=F XΓëê868px pct=5% ms/f=0.8
+  Progress: 5%   
+[BFS] f=315 front=46 dedup=46 deaths=0 Y=[510..577] mode=0 grav=F XΓëê871px pct=6% ms/f=0.8
+[BFS] f=316 front=43 dedup=43 deaths=6 Y=[511..571] mode=0 grav=F XΓëê873px pct=6% ms/f=0.8
+[BFS] f=317 front=43 dedup=43 deaths=0 Y=[511..567] mode=0 grav=F XΓëê876px pct=6% ms/f=0.8
+[BFS] f=318 front=43 dedup=43 deaths=0 Y=[511..562] mode=0 grav=F XΓëê879px pct=6% ms/f=0.8
+[BFS] f=319 front=48 dedup=48 deaths=0 Y=[511..558] mode=0 grav=F XΓëê882px pct=6% ms/f=0.8
+[BFS] f=320 front=48 dedup=48 deaths=0 Y=[511..555] mode=0 grav=F XΓëê885px pct=6% ms/f=0.8
+[BFS] f=321 front=43 dedup=43 deaths=10 Y=[516..552] mode=0 grav=F XΓëê887px pct=6% ms/f=0.8
+[BFS] f=322 front=43 dedup=43 deaths=0 Y=[520..549] mode=0 grav=F XΓëê890px pct=6% ms/f=0.8
+[BFS] f=323 front=43 dedup=43 deaths=0 Y=[525..547] mode=0 grav=F XΓëê893px pct=6% ms/f=0.8
+[BFS] f=324 front=81 dedup=81 deaths=0 Y=[529..548] mode=0 grav=F XΓëê896px pct=6% ms/f=0.8
+[BFS] f=353 front=90 dedup=90 deaths=30 Y=[475..565] mode=0 grav=N XΓëê976px pct=6% ms/f=0.8
+[BFS] f=354 front=90 dedup=90 deaths=0 Y=[468..572] mode=0 grav=N XΓëê979px pct=6% ms/f=0.8
+[BFS] f=355 front=95 dedup=95 deaths=0 Y=[460..577] mode=0 grav=N XΓëê981px pct=6% ms/f=0.8
+[BFS] f=357 front=89 dedup=89 deaths=28 Y=[446..577] mode=0 grav=N XΓëê987px pct=6% ms/f=0.8
+[BFS] f=358 front=66 dedup=66 deaths=46 Y=[490..571] mode=0 grav=N XΓëê990px pct=6% ms/f=0.8
+[BFS] f=359 front=58 dedup=58 deaths=16 Y=[490..558] mode=0 grav=N XΓëê992px pct=6% ms/f=0.8
+[BFS] f=360 front=53 dedup=53 deaths=10 Y=[490..531] mode=0 grav=N XΓëê995px pct=6% ms/f=0.8
+[BFS] f=361 front=48 dedup=48 deaths=0 Y=[490..529] mode=0 grav=N XΓëê998px pct=6% ms/f=0.8
+[BFS] f=362 front=48 dedup=48 deaths=0 Y=[490..528] mode=0 grav=N XΓëê1001px pct=6% ms/f=0.8
+[BFS] f=363 front=48 dedup=48 deaths=0 Y=[490..527] mode=0 grav=N XΓëê1003px pct=6% ms/f=0.8
+[BFS] f=364 front=48 dedup=48 deaths=0 Y=[490..526] mode=0 grav=N XΓëê1006px pct=6% ms/f=0.8
+[BFS] f=365 front=48 dedup=48 deaths=0 Y=[490..526] mode=0 grav=N XΓëê1009px pct=6% ms/f=0.8
+[BFS] f=366 front=48 dedup=48 deaths=0 Y=[491..527] mode=0 grav=N XΓëê1012px pct=6% ms/f=0.8
+[BFS] f=367 front=48 dedup=48 deaths=0 Y=[492..527] mode=0 grav=N XΓëê1014px pct=6% ms/f=0.8
+  Progress: 6%   
+[BFS] f=368 front=48 dedup=48 deaths=0 Y=[492..528] mode=0 grav=N XΓëê1017px pct=7% ms/f=0.8
+[BFS] f=369 front=43 dedup=43 deaths=0 Y=[492..530] mode=0 grav=N XΓëê1020px pct=7% ms/f=0.9
+[BFS] f=370 front=38 dedup=38 deaths=0 Y=[493..532] mode=0 grav=N XΓëê1023px pct=7% ms/f=0.9
+[BFS] f=371 front=38 dedup=38 deaths=0 Y=[493..534] mode=0 grav=N XΓëê1026px pct=7% ms/f=0.9
+[BFS] f=372 front=38 dedup=38 deaths=0 Y=[494..537] mode=0 grav=N XΓëê1028px pct=7% ms/f=0.9
+[BFS] f=373 front=38 dedup=38 deaths=0 Y=[496..540] mode=0 grav=N XΓëê1031px pct=7% ms/f=0.9
+[BFS] f=374 front=38 dedup=38 deaths=0 Y=[498..544] mode=0 grav=N XΓëê1034px pct=7% ms/f=0.9
+[BFS] f=375 front=38 dedup=38 deaths=0 Y=[500..548] mode=0 grav=N XΓëê1037px pct=7% ms/f=0.9
+[BFS] f=376 front=38 dedup=38 deaths=0 Y=[503..552] mode=0 grav=N XΓëê1039px pct=7% ms/f=0.9
+[BFS] f=377 front=48 dedup=48 deaths=0 Y=[506..557] mode=0 grav=N XΓëê1042px pct=7% ms/f=0.9
+[BFS] f=378 front=58 dedup=58 deaths=0 Y=[509..564] mode=0 grav=N XΓëê1045px pct=7% ms/f=0.9
+[BFS] f=379 front=73 dedup=73 deaths=0 Y=[513..571] mode=0 grav=N XΓëê1048px pct=7% ms/f=0.9
+[BFS] f=380 front=88 dedup=88 deaths=10 Y=[518..566] mode=0 grav=N XΓëê1050px pct=7% ms/f=0.9
+[BFS] f=381 front=98 dedup=98 deaths=0 Y=[522..571] mode=0 grav=N XΓëê1053px pct=7% ms/f=0.9
+[BFS] f=400 front=310 dedup=310 deaths=74 Y=[487..551] mode=0 grav=N XΓëê1106px pct=7% ms/f=1.0
+  Progress: 7%   
+  Progress: 8%   
+[BFS] f=500 front=1644 dedup=1644 deaths=96 Y=[411..536] mode=0 grav=F XΓëê1382px pct=9% ms/f=2.4
+  Progress: 9%   
+  Progress: 10%   
+[BFS] f=600 front=957 dedup=957 deaths=0 Y=[3..545] mode=0 grav=N XΓëê1659px pct=11% ms/f=4.0
+  Progress: 11%   
+  Progress: 12%   
+[BFS] f=700 front=6006 dedup=6006 deaths=0 Y=[396..561] mode=0 grav=N XΓëê1935px pct=13% ms/f=5.5
+  Progress: 13%   
+  Progress: 14%   
+[BFS] f=800 front=936 dedup=936 deaths=0 Y=[483..497] mode=0 grav=N XΓëê2212px pct=15% ms/f=7.4
+  Progress: 15%   
+  Progress: 16%   
+[BFS] f=900 front=1638 dedup=1638 deaths=0 Y=[497..533] mode=0 grav=N XΓëê2489px pct=17% ms/f=8.2
+  Progress: 17%   
+  Progress: 18%   
+[BFS] f=1000 front=1404 dedup=1404 deaths=0 Y=[495..513] mode=0 grav=F XΓëê2765px pct=19% ms/f=8.3
+  Progress: 19%   
+[BFS] f=1100 front=936 dedup=936 deaths=0 Y=[431..496] mode=0 grav=F XΓëê3042px pct=20% ms/f=8.4
+  Progress: 20%   
+  Progress: 21%   
+[BFS] f=1200 front=2808 dedup=2808 deaths=0 Y=[104..528] mode=0 grav=F XΓëê3318px pct=22% ms/f=9.1
+  Progress: 22%   
+  Progress: 23%   
+[BFS] f=1300 front=1405 dedup=1405 deaths=0 Y=[223..271] mode=0 grav=F XΓëê3595px pct=24% ms/f=9.0
+  Progress: 24%   
+  Progress: 25%   
+[BFS] f=1400 front=30000 dedup=32174 deaths=0 Y=[224..257] mode=1 grav=F XΓëê3871px pct=26% ms/f=16.6
+  Progress: 26%   
+  Progress: 27%   
+[BFS] f=1500 front=30000 dedup=32043 deaths=2969 Y=[251..317] mode=1 grav=F XΓëê4148px pct=28% ms/f=26.6
+  Progress: 28%   
+  Progress: 29%   
+[BFS] f=1600 front=7113 dedup=7113 deaths=0 Y=[224..233] mode=1 grav=N XΓëê4425px pct=30% ms/f=35.0
+  Progress: 30%   
+  Progress: 31%   
+[BFS] f=1700 front=30000 dedup=32006 deaths=0 Y=[240..273] mode=1 grav=F XΓëê4701px pct=32% ms/f=42.7
+  Progress: 32%   
+  Progress: 33%   
+[BFS] f=1800 front=2678 dedup=2678 deaths=0 Y=[212..273] mode=0 grav=N XΓëê4978px pct=34% ms/f=48.3
+  Progress: 34%   
+  Progress: 35%   
+[BFS] f=1900 front=19105 dedup=19105 deaths=0 Y=[251..368] mode=0 grav=N XΓëê5254px pct=36% ms/f=52.5
+  Progress: 36%   
+  Progress: 37%   
+[BFS] f=2000 front=20307 dedup=20307 deaths=0 Y=[272..391] mode=0 grav=N XΓëê5531px pct=38% ms/f=59.4
+  Progress: 38%   
+  Progress: 39%   
+[BFS] f=2100 front=30000 dedup=36540 deaths=0 Y=[335..441] mode=0 grav=F XΓëê5807px pct=40% ms/f=66.2
+  Progress: 40%   
+[BFS] f=2200 front=28045 dedup=28045 deaths=418 Y=[509..571] mode=0 grav=N XΓëê6084px pct=41% ms/f=73.4
+  Progress: 41%   
+  Progress: 42%   
+[BFS] f=2300 front=30000 dedup=41425 deaths=0 Y=[447..507] mode=2 grav=N XΓëê6360px pct=43% ms/f=80.0
+  Progress: 43%   
+  Progress: 44%   
+[BFS] f=2400 front=29711 dedup=30119 deaths=0 Y=[438..532] mode=2 grav=N XΓëê6637px pct=45% ms/f=86.4
+  Progress: 45%   
+  Progress: 46%   
+[BFS] f=2500 front=30000 dedup=34117 deaths=0 Y=[428..441] mode=2 grav=F XΓëê6914px pct=47% ms/f=91.2
+  Progress: 47%   
+  Progress: 48%   
+[BFS] f=2600 front=30000 dedup=34117 deaths=0 Y=[412..425] mode=2 grav=F XΓëê7190px pct=49% ms/f=96.3
+[BFS] ALL DEAD at frame 2604 (XΓëê7201px pct=49% expanded=16468 deaths=16468)
+[BFS] Death types: CENTER=8234 FLOOR_SPIKE=8234
+[BFS] Last frontier: size=8234 Y=[428..428] mode=2 grav=True mini=True VelY=[0x0..0x120]
+[STAB_SET] prevMode=0 mode=1 stab=0
+[BFS] BFS failed ΓÇö best path to X=7209px (49%)
+[BFSΓåÆHEURISTIC] BFS reached 49%, trying heuristic...
+  Progress: 49%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=0
+  Progress: 0%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=1
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=2
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=3
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=4
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=5
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=6
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=7
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=8
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=9
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=10
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=11
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=12
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=13
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=14
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=15
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=16
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=17
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=18
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=19
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=20
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=21
+  Progress: 2%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=22
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=23
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=24
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=25
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=26
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=27
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=28
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=29
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=30
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=31
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=32
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=33
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=34
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=35
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=36
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=37
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=38
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=39
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=40
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=41
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=42
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=43
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=44
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=45
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=46
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=47
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=48
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=49
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=50
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=51
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=52
+[DEATH_DBG] frame=134 X=370 Y=513 gm=0 reason=FWD_DEATH dX=370 dY=513 totalBT=53
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=54
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=55
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=56
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=57
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=58
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=59
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=60
+[DEATH_DBG] frame=57 X=157 Y=577 gm=0 reason=FWD_DEATH dX=157 dY=577 totalBT=61
+[DEATH_DBG] frame=57 X=157 Y=577 gm=0 reason=FWD_DEATH dX=157 dY=577 totalBT=62
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=63
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=64
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=65
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=66
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=67
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=68
+[DEATH_DBG] frame=58 X=160 Y=577 gm=0 reason=FLOOR_SPIKE dX=160 dY=577 totalBT=69
+[DEATH_DBG] frame=61 X=168 Y=568 gm=0 reason=FLOOR_SPIKE dX=168 dY=568 totalBT=70
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=71
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=72
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=73
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=74
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=75
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=76
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=77
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=78
+[BFSΓåÆHEURISTIC] Heuristic worse (483px vs BFS 7209px), keeping BFS result
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=0
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=1
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=2
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=3
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=4
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=5
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=6
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=7
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=8
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=9
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=10
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=11
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=12
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=13
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=14
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=15
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=16
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=17
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=18
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=19
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=20
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=21
+  Progress: 0%   
+  Progress: 2%   
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=22
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=23
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=24
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=25
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=26
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=27
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=28
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=29
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=30
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=31
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=32
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=33
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=34
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=35
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=36
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=37
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=38
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=39
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=40
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=41
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=42
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=43
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=44
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=45
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=46
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=47
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=48
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=49
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=50
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=51
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=52
+  Progress: 3%   
+[DEATH_DBG] frame=134 X=370 Y=513 gm=0 reason=FWD_DEATH dX=370 dY=513 totalBT=53
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=54
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=55
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=56
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=57
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=58
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=59
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=60
+[DEATH_DBG] frame=57 X=157 Y=577 gm=0 reason=FWD_DEATH dX=157 dY=577 totalBT=61
+[DEATH_DBG] frame=57 X=157 Y=577 gm=0 reason=FWD_DEATH dX=157 dY=577 totalBT=62
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=63
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=64
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=65
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=66
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=67
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=68
+[DEATH_DBG] frame=58 X=160 Y=577 gm=0 reason=FLOOR_SPIKE dX=160 dY=577 totalBT=69
+[DEATH_DBG] frame=61 X=168 Y=568 gm=0 reason=FLOOR_SPIKE dX=168 dY=568 totalBT=70
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=71
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=72
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=73
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=74
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=75
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=76
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=77
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=78
+  Progress: 3%   
+  Progress: 0%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=0
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=1
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=2
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=3
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=4
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=5
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=6
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=7
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=8
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=9
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=10
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=11
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=12
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=13
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=14
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=15
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=16
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=17
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=18
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=19
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=20
+  Progress: 2%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=21
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=22
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=23
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=24
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=25
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=26
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=27
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=28
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=29
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=30
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=31
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=32
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=33
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=34
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=35
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=36
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=37
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=38
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=39
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=40
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=41
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=42
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=43
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=44
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=45
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=46
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=47
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=48
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=49
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=50
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=51
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=52
+[DEATH_DBG] frame=134 X=370 Y=513 gm=0 reason=FWD_DEATH dX=370 dY=513 totalBT=53
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=54
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=55
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=56
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=57
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=58
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=59
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=60
+[DEATH_DBG] frame=57 X=157 Y=577 gm=0 reason=FWD_DEATH dX=157 dY=577 totalBT=61
+[DEATH_DBG] frame=57 X=157 Y=577 gm=0 reason=FWD_DEATH dX=157 dY=577 totalBT=62
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=63
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=64
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=65
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=66
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=67
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=68
+[DEATH_DBG] frame=58 X=160 Y=577 gm=0 reason=FLOOR_SPIKE dX=160 dY=577 totalBT=69
+[DEATH_DBG] frame=61 X=168 Y=568 gm=0 reason=FLOOR_SPIKE dX=168 dY=568 totalBT=70
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=71
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=72
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=73
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=74
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=75
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=76
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=77
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=78
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=0
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=1
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=2
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=3
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=4
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=5
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=6
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=7
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=8
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=9
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=10
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=11
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=12
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=13
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=14
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=15
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=16
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=17
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=18
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=19
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=20
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=21
+  Progress: 0%   
+  Progress: 2%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=22
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=23
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=24
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=25
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=26
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=27
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=28
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=29
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=30
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=31
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=32
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=33
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=34
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=35
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=36
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=37
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=38
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=39
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=40
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=41
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=42
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=43
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=44
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=45
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=46
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=47
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=48
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=49
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=50
+[DEATH_DBG] frame=102 X=282 Y=561 gm=0 reason=FLOOR_SPIKE dX=282 dY=561 totalBT=51
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=52
+[DEATH_DBG] frame=134 X=370 Y=513 gm=0 reason=FWD_DEATH dX=370 dY=513 totalBT=53
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=54
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=55
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=56
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=57
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=58
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=59
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=60
+[DEATH_DBG] frame=57 X=157 Y=577 gm=0 reason=FWD_DEATH dX=157 dY=577 totalBT=61
+[DEATH_DBG] frame=57 X=157 Y=577 gm=0 reason=FWD_DEATH dX=157 dY=577 totalBT=62
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=63
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=64
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=65
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=66
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=67
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=68
+[DEATH_DBG] frame=58 X=160 Y=577 gm=0 reason=FLOOR_SPIKE dX=160 dY=577 totalBT=69
+[DEATH_DBG] frame=61 X=168 Y=568 gm=0 reason=FLOOR_SPIKE dX=168 dY=568 totalBT=70
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=71
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=72
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=73
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=74
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=75
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=76
+  Progress: 3%   
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=77
+  Progress: 3%   
+[DEATH_DBG] frame=172 X=475 Y=577 gm=0 reason=FLOOR_SPIKE dX=475 dY=577 totalBT=78
+  Progress: 3%   
+Result: FAILED
+Message: Died ΓÇö partial path to X=483px (3%) reason=FLOOR_SPIKE dX=475 dY=577 [282.6s]
+Time: 282.6s
+Path points: 173
+Trace: 

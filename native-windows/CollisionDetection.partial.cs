@@ -15,537 +15,97 @@ namespace FamidashEditor
         /// </summary>
         private bool CheckComplexCollision(MetatileCollision collision, int localX, int localY)
         {
-            switch (collision)
-            {
-                // L-shaped stairs
-                case MetatileCollision.COL_TOP_LEFT_STAIRS:
-                    // Top 8 pixels + left 8 pixels (bottom-right quadrant empty)
-                    return (localY < 8) || (localX < 8);
-                
-                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
-                    // Top 8 pixels + right 8 pixels (bottom-left quadrant empty)
-                    return (localY < 8) || (localX >= 8);
-                
-                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
-                    // Full left + bottom-right quadrant
-                    return (localX < 8) || (localX >= 8 && localY >= 8);
-                
-                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
-                    // Full right + bottom-left quadrant
-                    return (localX >= 8) || (localX < 8 && localY >= 8);
-                
-                // Diagonal blocks
-                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
-                    // Top-left 8x8 + bottom-right 8x8
-                    return (localX < 8 && localY < 8) || (localX >= 8 && localY >= 8);
-                
-                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
-                    // Top-right 8x8 + bottom-left 8x8
-                    return (localX >= 8 && localY < 8) || (localX < 8 && localY >= 8);
-                
-                default:
-                    return false;
-            }
+            return SharedPhysics.CheckComplexCollision(collision, localX, localY);
         }
         
         /// <summary>
         /// Collision bounds for a metatile (offsets within the 16x16 tile)
         /// Format: (left, top, right, bottom) in pixels from tile origin (0-16)
+        /// Delegates to SharedPhysics for the common cases;
+        /// adds SIM-specific spike-quadrant bounds that the PF doesn't need.
         /// </summary>
         private (int left, int top, int right, int bottom) GetCollisionBounds(MetatileCollision collision)
         {
             switch (collision)
             {
-                // Full tile
-                case MetatileCollision.COL_ALL:
-                case MetatileCollision.COL_FLOOR_CEIL:
-                case MetatileCollision.COL_NO_SIDE:
-                    return (0, 0, 16, 16);
-                
-                // Half slabs
-                case MetatileCollision.COL_TOP:
-                case MetatileCollision.COL_TOP_CENTER_SPIKE:
-                    return (0, 0, 16, 8);  // Top half only
-                
-                case MetatileCollision.COL_BOTTOM:
-                case MetatileCollision.COL_BOTTOM_CENTER_SPIKE:
-                case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
-                case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
-                case MetatileCollision.COL_BOTTOM_SPIKES:
-                    return (0, 8, 16, 16); // Bottom half only
-                
-                case MetatileCollision.COL_LEFT:
-                    return (0, 0, 8, 16);  // Left half only
-                
-                case MetatileCollision.COL_RIGHT:
-                    return (8, 0, 16, 16); // Right half only
-                
-                // Quadrant blocks (8x8)
-                case MetatileCollision.COL_UP_LEFT:
-                    return (0, 0, 8, 8);   // Top-left quadrant
-                
-                case MetatileCollision.COL_UP_RIGHT:
-                    return (8, 0, 16, 8);  // Top-right quadrant
-                
-                case MetatileCollision.COL_DOWN_LEFT:
-                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
-                    return (0, 8, 8, 16);  // Bottom-left quadrant
-                
-                case MetatileCollision.COL_DOWN_RIGHT:
-                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
-                    return (8, 8, 16, 16); // Bottom-right quadrant
-                
-                // Top quadrant spikes (top half solid)
+                // SIM-specific: treat UP spike-quadrants as solid-bounded
                 case MetatileCollision.COL_UP_LEFT_SPIKE:
-                    return (0, 0, 8, 8);   // Top-left quadrant
-                
+                    return (0, 0, 8, 8);
                 case MetatileCollision.COL_UP_RIGHT_SPIKE:
-                    return (8, 0, 16, 8);  // Top-right quadrant
-                
+                    return (8, 0, 16, 8);
                 // Pure death spike tiles (NO solid collision, only death)
                 case MetatileCollision.COL_DOWN_LEFT_SPIKE:
                 case MetatileCollision.COL_DOWN_RIGHT_SPIKE:
                 case MetatileCollision.COL_DOWN_BOTH_SPIKES:
                 case MetatileCollision.COL_UP_BOTH_SPIKES:
-                    return (0, 0, 0, 0);   // No solid collision
-                
-                // Pure death tiles (NO solid collision, only death detection)
-                case MetatileCollision.COL_DEATH:
-                case MetatileCollision.COL_DEATH_TOP:
-                case MetatileCollision.COL_DEATH_BOTTOM:
-                case MetatileCollision.COL_DEATH_LEFT:
-                case MetatileCollision.COL_DEATH_RIGHT:
-                case MetatileCollision.COL_DEATH_TOP_RIGHT:
-                case MetatileCollision.COL_DEATH_TOP_LEFT:
-                case MetatileCollision.COL_DEATH_BOTTOM_RIGHT:
-                case MetatileCollision.COL_DEATH_BOTTOM_LEFT:
-                case MetatileCollision.COL_DEATH_TOP_RIGHT_LEFT:
-                case MetatileCollision.COL_DEATH_TOP_BOTTOM:
-                case MetatileCollision.COL_DEATH_LEFT_RIGHT:
-                case MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM:
-                    return (16, 16, 0, 0); // Invalid bounds = no solid collision, death handled separately
-                
-                // Complex shapes (L-shaped, diagonals) - return primary bounds, handle specially in Check functions
-                case MetatileCollision.COL_TOP_LEFT_STAIRS:
-                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
-                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
-                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
-                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
-                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
-                    return (0, 0, 16, 16); // Use full tile for initial bounds, check regions specially
-                
-                // Slope tiles - return EMPTY bounds so CheckCollisionDown/Up does NOT
-                // treat them as full 16x16 solid blocks. Slope collision is handled entirely
-                // by the dedicated bg_coll_D_slopes() / bg_coll_U_slopes() system which
-                // correctly computes per-pixel slope height and ejection.
-                case MetatileCollision.COL_SLOPE_RD45:
-                case MetatileCollision.COL_SLOPE_RD22_RIGHT:
-                case MetatileCollision.COL_SLOPE_RD22_LEFT:
-                case MetatileCollision.COL_SLOPE_RD66_TOP:
-                case MetatileCollision.COL_SLOPE_RD66_BOT:
-                case MetatileCollision.COL_SLOPE_RU45:
-                case MetatileCollision.COL_SLOPE_RU22_RIGHT:
-                case MetatileCollision.COL_SLOPE_RU22_LEFT:
-                case MetatileCollision.COL_SLOPE_RU66_TOP:
-                case MetatileCollision.COL_SLOPE_RU66_BOT:
-                case MetatileCollision.COL_SLOPE_LD45:
-                case MetatileCollision.COL_SLOPE_LD22_RIGHT:
-                case MetatileCollision.COL_SLOPE_LD22_LEFT:
-                case MetatileCollision.COL_SLOPE_LD66_BOT:
-                case MetatileCollision.COL_SLOPE_LD66_TOP:
-                case MetatileCollision.COL_SLOPE_LU45:
-                case MetatileCollision.COL_SLOPE_LU22_RIGHT:
-                case MetatileCollision.COL_SLOPE_LU22_LEFT:
-                case MetatileCollision.COL_SLOPE_LU66_BOT:
-                case MetatileCollision.COL_SLOPE_LU66_TOP:
-                    return (16, 16, 0, 0); // Invalid bounds = no solid collision (handled by slope system)
-                
-                // No collision
-                case MetatileCollision.COL_NONE:
+                    return (0, 0, 0, 0);
                 default:
-                    return (16, 16, 0, 0); // Invalid bounds (right < left) = no collision
+                    return SharedPhysics.GetCollisionBounds(collision);
             }
         }
         
         /// <summary>
         /// Check collision in downward direction (normal gravity floor detection)
-        /// Returns: (collided, collisionTopY) where collisionTopY is the Y position of the collision surface
+        /// Thin wrapper over SharedPhysics.CheckFloor — adds SIM-specific death UI.
         /// </summary>
         private (bool collided, int collisionTopY) CheckCollisionDown(int playerX_px, int playerY_px, int width, int height)
         {
-            int playerBottom_px = playerY_px + height;
-            int tileBelowY = playerBottom_px / TILE;
-            
-            // Calculate ground layer offset
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-            
-            int playerLeft_px = playerX_px;
-            // NES bg_coll_D checks 3 X-points: playerX, playerX+width/2, playerX+width.
-            // The rightmost check is at playerX+width (one pixel PAST the inclusive right
-            // edge), which can land in the next tile column. Using width instead of
-            // width-1 ensures the tile scan includes that boundary tile, matching NES.
-            int playerRight_px = playerX_px + width;
-            
-            // CRITICAL FIX: Check for spike death BEFORE processing any collision
-            // NES bg_coll_D checks 3 X-points at Y = bottom edge (Generic.y + height):
-            //   left edge, left + width/2, left + width
-            if (!MainWindow.Option_NoDeath)
+            var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
+
+            var (hit, surfaceY, spikeDeath) = SharedPhysics.CheckFloor(in map, playerX_px, playerY_px, width, height);
+
+            if (spikeDeath && !MainWindow.Option_NoDeath)
             {
-                // Match NES bg_coll_D: 3 check points at Y = playerBottom (exclusive bottom pixel)
-                int checkY = playerBottom_px;
-                // Inline 3 check points to avoid per-frame array allocation
-                for (int cpIdx = 0; cpIdx < 3; cpIdx++)
+                AppendSimDebug($"[DEATH] Floor spike detected (SharedPhysics.CheckFloor)");
+                deathTriggered = true;
+                deathTileX = playerX_px;
+                deathTileY = playerY_px + height;
+                paused = true;
+                _ = StopMusicAsync();
+
+                try
                 {
-                    int px = cpIdx == 0 ? playerLeft_px : cpIdx == 1 ? playerLeft_px + width / 2 : playerLeft_px + width;
-                    int tileX = px / TILE;
-                    int tileY = checkY / TILE;
-                    
-                    if (tileX < 0 || tileX >= mapWidth || tileY < 0 || tileY >= mapHeight) continue;
-                    
-                    int checkTileArrayY = tileY + groundRowsToReserve;
-                    if (checkTileArrayY >= mapHeight) continue;
-                    
-                    int checkTileIdx = checkTileArrayY * mapWidth + tileX;
-                    if (checkTileIdx < 0 || checkTileIdx >= tiles.Length) continue;
-                    
-                    int checkTileId = tiles[checkTileIdx];
-                    var checkCollision = MetatileCollisionTable.GetCollision((byte)checkTileId);
-                    
-                    int localX = px % TILE;
-                    int localY = checkY % TILE;
-                    
-                    // NES bg_coll_D → bg_coll_return_D → bg_coll_U_D_checks only handles:
-                    //   0x03 (COL_DEATH_TOP) → col_death_top_routine()
-                    //   0x04 (COL_DEATH_BOTTOM) → col_death_bottom_routine()
-                    // All other spike types (COL_DEATH, COL_DEATH_LEFT/RIGHT, etc.) are handled
-                    // by bg_coll_death() (the center-point check = CheckDeathCollision)
-                    if ((checkCollision == MetatileCollision.COL_DEATH_TOP || checkCollision == MetatileCollision.COL_DEATH_BOTTOM) &&
-                        MetatileCollisionTable.TileKillsAtPixel(checkCollision, localX, localY))
+                    Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        // SPIKE DEATH DETECTED - trigger death immediately and return
-                        AppendSimDebug($"[DEATH] Floor spike detected at ({px},{checkY}) tile={checkTileId:X2}");
-                        deathTriggered = true;
-                        deathTileX = px;
-                        deathTileY = checkY;
-                        paused = true;
-                        _ = StopMusicAsync();
-                        
-                        try
+                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                        if (this.Owner is MainWindow mw)
                         {
-                            Dispatcher.BeginInvoke(new Action(() =>
-                            {
-                                try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                if (this.Owner is MainWindow mw)
-                                {
-                                    try { mw.PauseSimulatorPlayback(); } catch { }
-                                    try { mw.AddDeathMarker(px, checkY); } catch { }
-                                }
-                            }));
+                            try { mw.PauseSimulatorPlayback(); } catch { }
+                            try { mw.AddDeathMarker(deathTileX, deathTileY); } catch { }
                         }
-                        catch { }
-                        
-                        // Return no collision so position doesn't snap
-                        return (false, 0);
-                    }
+                    }));
                 }
+                catch { }
+
+                return (false, 0);
             }
-            
-            if (tileBelowY < 0 || tileBelowY >= mapHeight) return (false, 0);
-            
-            // Adjust for ground layer rendering offset
-            int tileArrayY = tileBelowY + groundRowsToReserve;
-            
-            // Ground layer is always solid
-            if (tileArrayY >= mapHeight)
+
+            if (hit)
             {
-                int groundTop = tileBelowY * TILE;
-                return (true, groundTop);
+                AppendSimDebug($"[COLL_DOWN] Hit! collisionTop_px={surfaceY}, playerBottom={playerY_px + height}");
             }
-            
-            int tileLeftX = playerLeft_px / TILE;
-            int tileRightX = playerRight_px / TILE;
-            
-            for (int tx = tileLeftX; tx <= tileRightX; tx++)
-            {
-                if (tx < 0 || tx >= mapWidth) continue;
-                
-                int tileIdx = tileArrayY * mapWidth + tx;
-                if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
-                
-                int tileId = tiles[tileIdx];
-                var collision = MetatileCollisionTable.GetCollision((byte)tileId);
-                
-                if (collision == MetatileCollision.COL_NONE) continue;
-                
-                // Check for complex collision types (L-shapes, diagonals)
-                bool isComplex = collision == MetatileCollision.COL_TOP_LEFT_STAIRS ||
-                                collision == MetatileCollision.COL_TOP_RIGHT_STAIRS ||
-                                collision == MetatileCollision.COL_BOTTOM_LEFT_STAIRS ||
-                                collision == MetatileCollision.COL_BOTTOM_RIGHT_STAIRS ||
-                                collision == MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT ||
-                                collision == MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT;
-                
-                if (isComplex)
-                {
-                    // For complex shapes, check each pixel of player's bottom row
-                    int tileWorldX = tx * TILE;
-                    int tileWorldY = tileBelowY * TILE;
-                    
-                    for (int px = Math.Max(playerLeft_px, tileWorldX); px <= Math.Min(playerRight_px, tileWorldX + 15); px++)
-                    {
-                        int localX = px - tileWorldX;
-                        int localY = playerBottom_px - tileWorldY;
-                        
-                        // Check if player's bottom is at or below the tile top (allow localY >= 0 OR at tile boundary)
-                        if (localY >= -1 && localY < 16 && CheckComplexCollision(collision, localX, Math.Max(0, localY)))
-                        {
-                            // Find the top of the solid region at this X position
-                            int collisionTop = tileWorldY;
-                            for (int y = 0; y < 16; y++)
-                            {
-                                if (CheckComplexCollision(collision, localX, y))
-                                {
-                                    collisionTop = tileWorldY + y;
-                                    break;
-                                }
-                            }
-                            return (true, collisionTop);
-                        }
-                    }
-                }
-                else
-                {
-                    // Simple rectangular collision
-                    var (colLeft, colTop, colRight, colBottom) = GetCollisionBounds(collision);
-                    if (colRight <= colLeft || colBottom <= colTop) continue; // Invalid bounds
-                    
-                    // Calculate world position of collision region
-                    int tileWorldX = tx * TILE;
-                    int tileWorldY = tileBelowY * TILE;
-                    int collisionTop_px = tileWorldY + colTop;
-                    int collisionBottom_px = tileWorldY + colBottom;
-                    int collisionLeft_px = tileWorldX + colLeft;
-                    int collisionRight_px = tileWorldX + colRight;
-                    
-                    // NES bg_coll_D behaviour:
-                    //   bg_coll_U_D_checks handles slab types (COL_ALL, COL_TOP, COL_BOTTOM,
-                    //   COL_LEFT, COL_RIGHT, etc.) and returns "solid" unconditionally — it
-                    //   does NOT check whether the probe Y is inside the solid sub-region.
-                    //   Only bg_coll_mini_blocks (quadrant tiles) gates on localY.
-                    //
-                    // Mini-block quadrant types need both X and Y range checks to match
-                    // NES bg_coll_mini_blocks. All other types use a one-sided check:
-                    // "has playerBottom reached the floor surface?" without an upper bound,
-                    // so fast-falling objects can't tunnel through half-height slabs.
-                    bool isMiniBlock = collision == MetatileCollision.COL_UP_LEFT ||
-                                       collision == MetatileCollision.COL_UP_RIGHT ||
-                                       collision == MetatileCollision.COL_DOWN_LEFT ||
-                                       collision == MetatileCollision.COL_DOWN_RIGHT ||
-                                       collision == MetatileCollision.COL_LEFT_SPIKE_BLOCK ||
-                                       collision == MetatileCollision.COL_RIGHT_SPIKE_BLOCK;
-                    
-                    bool yHit = isMiniBlock
-                        ? (playerBottom_px >= collisionTop_px - 1 && playerBottom_px <= collisionBottom_px)
-                        : (playerBottom_px >= collisionTop_px - 1);
-                    
-                    if (yHit)
-                    {
-                        // Check horizontal overlap
-                        if (playerRight_px >= collisionLeft_px && playerLeft_px < collisionRight_px)
-                        {
-                            AppendSimDebug($"[COLL_DOWN] Hit! tileY={tileBelowY}, collision={collision}, colTop={colTop}, collisionTop_px={collisionTop_px}, playerBottom={playerBottom_px}");
-                            return (true, collisionTop_px);
-                        }
-                    }
-                }
-            }
-            
-            return (false, 0);
+
+            return (hit, surfaceY);
         }
         
         /// <summary>
         /// Check collision in upward direction (reversed gravity ceiling detection)
-        /// Returns: (collided, collisionBottomY) where collisionBottomY is the Y position of the collision surface
+        /// Thin wrapper over SharedPhysics.CheckCeiling.
+        /// NES bg_coll_U does NOT cause spike death — spikes are detected separately
+        /// by bg_coll_floor_spikes (4-corner check) at the post-eject position.
+        /// The spikeDeath flag from CheckCeiling is intentionally ignored here so
+        /// that the solid ceiling surface is still found and the player can be
+        /// snapped to it before the floor-spike check runs.
         /// </summary>
         private (bool collided, int collisionBottomY) CheckCollisionUp(int playerX_px, int playerY_px, int width, int height)
         {
-            int playerTop_px = playerY_px;
-            int tileAboveY = (playerTop_px - 1) / TILE;
-            
-            // Calculate ground layer offset
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-            
-            int playerLeft_px = playerX_px;
-            // NES bg_coll_U also checks at playerX+width (one pixel past inclusive right
-            // edge), matching bg_coll_D. Use width not width-1 for consistency.
-            int playerRight_px = playerX_px + width;
-            
-            // CRITICAL FIX: Check for spike death BEFORE processing any collision
-            // NES bg_coll_U checks 3 X-points at Y = top + 1:
-            //   left edge, left + width/2, left + width
-            if (!MainWindow.Option_NoDeath)
-            {
-                // Match NES bg_coll_U: 3 check points at Y = playerTop + 1
-                int checkY = playerTop_px + 1;
-                // Inline 3 check points to avoid per-frame array allocation
-                for (int cpIdx = 0; cpIdx < 3; cpIdx++)
-                {
-                    int px = cpIdx == 0 ? playerLeft_px : cpIdx == 1 ? playerLeft_px + width / 2 : playerLeft_px + width;
-                    int py = checkY;
-                    int tileX = px / TILE;
-                    int tileY = py / TILE;
-                    
-                    if (tileX < 0 || tileX >= mapWidth || tileY < 0 || tileY >= mapHeight) continue;
-                    
-                    int checkTileArrayY = tileY + groundRowsToReserve;
-                    if (checkTileArrayY >= mapHeight) continue;
-                    
-                    int checkTileIdx = checkTileArrayY * mapWidth + tileX;
-                    if (checkTileIdx < 0 || checkTileIdx >= tiles.Length) continue;
-                    
-                    int checkTileId = tiles[checkTileIdx];
-                    var checkCollision = MetatileCollisionTable.GetCollision((byte)checkTileId);
-                    
-                    int localX = px % TILE;
-                    int localY = py % TILE;
-                    
-                    // NES bg_coll_U → bg_coll_return_U → bg_coll_U_D_checks only handles:
-                    //   0x03 (COL_DEATH_TOP) → col_death_top_routine()
-                    //   0x04 (COL_DEATH_BOTTOM) → col_death_bottom_routine()
-                    // All other spike types (COL_DEATH, COL_DEATH_LEFT/RIGHT, etc.) are handled
-                    // by bg_coll_death() (the center-point check = CheckDeathCollision)
-                    if ((checkCollision == MetatileCollision.COL_DEATH_TOP || checkCollision == MetatileCollision.COL_DEATH_BOTTOM) &&
-                        MetatileCollisionTable.TileKillsAtPixel(checkCollision, localX, localY))
-                    {
-                        // SPIKE DEATH DETECTED - trigger death immediately and return
-                        AppendSimDebug($"[DEATH] Ceiling spike detected at ({px},{py}) tile={checkTileId:X2} BEFORE collision check");
-                        deathTriggered = true;
-                        deathTileX = px;
-                        deathTileY = py;
-                        paused = true;
-                        _ = StopMusicAsync();
-                        
-                        try
-                        {
-                            Dispatcher.BeginInvoke(new Action(() =>
-                            {
-                                try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                if (this.Owner is MainWindow mw)
-                                {
-                                    try { mw.PauseSimulatorPlayback(); } catch { }
-                                    try { mw.AddDeathMarker(px, py); } catch { }
-                                }
-                            }));
-                        }
-                        catch { }
-                        
-                        // Return no collision so position doesn't snap
-                        return (false, 0);
-                    }
-                }
-            }
-            
-            if (tileAboveY < 0 || tileAboveY >= mapHeight) return (false, 0);
-            
-            // Adjust for ground layer rendering offset
-            int tileArrayY = tileAboveY + groundRowsToReserve;
-            
-            int tileLeftX = playerLeft_px / TILE;
-            int tileRightX = playerRight_px / TILE;
-            
-            for (int tx = tileLeftX; tx <= tileRightX; tx++)
-            {
-                if (tx < 0 || tx >= mapWidth) continue;
-                
-                int tileIdx = tileArrayY * mapWidth + tx;
-                if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
-                
-                int tileId = tiles[tileIdx];
-                var collision = MetatileCollisionTable.GetCollision((byte)tileId);
-                
-                if (collision == MetatileCollision.COL_NONE) continue;
-                
-                // Check for complex collision types
-                bool isComplex = collision == MetatileCollision.COL_TOP_LEFT_STAIRS ||
-                                collision == MetatileCollision.COL_TOP_RIGHT_STAIRS ||
-                                collision == MetatileCollision.COL_BOTTOM_LEFT_STAIRS ||
-                                collision == MetatileCollision.COL_BOTTOM_RIGHT_STAIRS ||
-                                collision == MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT ||
-                                collision == MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT;
-                
-                if (isComplex)
-                {
-                    // For complex shapes, check each pixel of player's top row
-                    int tileWorldX = tx * TILE;
-                    int tileWorldY = tileAboveY * TILE;
-                    
-                    for (int px = Math.Max(playerLeft_px, tileWorldX); px <= Math.Min(playerRight_px, tileWorldX + 15); px++)
-                    {
-                        int localX = px - tileWorldX;
-                        int localY = playerTop_px - tileWorldY;
-                        
-                        if (localY >= 0 && localY < 16 && CheckComplexCollision(collision, localX, localY))
-                        {
-                            // Find the bottom of the solid region at this X position
-                            int collisionBottom = tileWorldY + 15;
-                            for (int y = 15; y >= 0; y--)
-                            {
-                                if (CheckComplexCollision(collision, localX, y))
-                                {
-                                    collisionBottom = tileWorldY + y + 1;
-                                    break;
-                                }
-                            }
-                            return (true, collisionBottom);
-                        }
-                    }
-                }
-                else
-                {
-                    // Simple rectangular collision
-                    var (colLeft, colTop, colRight, colBottom) = GetCollisionBounds(collision);
-                    if (colRight <= colLeft || colBottom <= colTop) continue; // Invalid bounds
-                    
-                    // Calculate world position of collision region
-                    int tileWorldX = tx * TILE;
-                    int tileWorldY = tileAboveY * TILE;
-                    int collisionTop_px = tileWorldY + colTop;
-                    int collisionBottom_px = tileWorldY + colBottom;
-                    int collisionLeft_px = tileWorldX + colLeft;
-                    int collisionRight_px = tileWorldX + colRight;
-                    
-                    // NES bg_coll_U behaviour:
-                    //   bg_coll_U_D_checks handles slab types unconditionally — it does
-                    //   NOT check whether the probe Y is inside the solid sub-region.
-                    //   Only bg_coll_mini_blocks (quadrant tiles) gates on localY.
-                    //
-                    // Mini-block quadrant types need both X and Y range checks.
-                    // All other types use a one-sided check: "has playerTop reached
-                    // the ceiling surface?" so fast-rising objects can't tunnel through
-                    // half-height slabs (e.g. COL_BOTTOM used as ceiling).
-                    bool isMiniBlock = collision == MetatileCollision.COL_UP_LEFT ||
-                                       collision == MetatileCollision.COL_UP_RIGHT ||
-                                       collision == MetatileCollision.COL_DOWN_LEFT ||
-                                       collision == MetatileCollision.COL_DOWN_RIGHT ||
-                                       collision == MetatileCollision.COL_LEFT_SPIKE_BLOCK ||
-                                       collision == MetatileCollision.COL_RIGHT_SPIKE_BLOCK;
-                    
-                    bool yHit = isMiniBlock
-                        ? (playerTop_px >= collisionTop_px && playerTop_px < collisionBottom_px)
-                        : (playerTop_px < collisionBottom_px);
-                    
-                    if (yHit)
-                    {
-                        // Check horizontal overlap
-                        if (playerRight_px >= collisionLeft_px && playerLeft_px < collisionRight_px)
-                        {
-                            return (true, collisionBottom_px);
-                        }
-                    }
-                }
-            }
-            
-            return (false, 0);
+            var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
+
+            var (hit, ceilingBottomY, _) = SharedPhysics.CheckCeiling(in map, playerX_px, playerY_px, width, height);
+
+            return (hit, ceilingBottomY);
         }
         
         /// <summary>

@@ -934,29 +934,8 @@ namespace FamidashEditor
         // 6: black orb
         // 7: yellow orb smaller
         // 8: red pad
-        private static readonly int[][] PadOrbHeights = new int[][] {
-            new int[] { 0x590, 0x450, 0x410, 0x3B0, 0x590, 0x440, 0x000, 0x3A0 }, // 0 yellow orb
-            new int[] { 0x7C0, 0x3C0, 0x4F0, 0x330, 0x8B0, 0x500, 0x000, 0x450 }, // 1 yellow pad
-            new int[] { 0x3D0, 0x200, 0x330, 0x220, 0x450, 0x350, 0x000, 0x2D0 }, // 2 pink orb
-            new int[] { 0x510, 0x270, 0x360, 0x250, 0x550, 0x350, 0x000, 0x360 }, // 3 pink pad
-            new int[] { 0x750, 0x5D0, 0x550, 0x510, 0x750, 0x500, 0x000, 0x4D0 }, // 4 red orb
-            new int[] { 0x590, 0x590, 0x5D0, 0x590, 0x590, 0x590, 0x000, 0x5D0 }, // 5 yellow orb bigger
-            new int[] { -0x990, -0x990, -0x970, -0x990, -0x990, -0x990, 0x000, -0x970 }, // 6 black orb
-            new int[] { 0x540, 0x540, 0x472, 0x4B0, 0x770, 0x4B0, 0x000, 0x472 }, // 7 yellow orb smaller
-            new int[] { 0x9F0, 0x620, 0x630, 0x400, 0xA50, 0x690, 0x000, 0x660 }  // 8 red pad
-        };
-
-        private static readonly int[][] PadOrbHeights_Mini = new int[][] {
-            new int[] { 0x4D0, 0x4A0, 0x450, 0x3D0, 0x470, 0x350, 0x000, 0x2A0 }, // 0 yellow orb
-            new int[] { 0x680, 0x430, 0x4D0, 0x3A0, 0x730, 0x400, 0x000, 0x340 }, // 1 yellow pad
-            new int[] { 0x350, 0x1E0, 0x350, 0x1B0, 0x370, 0x230, 0x000, 0x1F0 }, // 2 pink orb
-            new int[] { 0x3F0, 0x1E0, 0x390, 0x150, 0x350, 0x350, 0x000, 0x220 }, // 3 pink pad
-            new int[] { 0x650, 0x670, 0x500, 0x550, 0x650, 0x470, 0x000, 0x350 }, // 4 red orb
-            new int[] { 0x590, 0x590, 0x560, 0x590, 0x590, 0x590, 0x000, 0x560 }, // 5 yellow orb bigger
-            new int[] { -0x990, -0x990, -0x970, -0x990, -0x990, -0x990, 0x000, -0x970 }, // 6 black orb
-            new int[] { 0x540, 0x540, 0x472, 0x4B0, 0x770, 0x4B0, 0x000, 0x472 }, // 7 yellow orb smaller
-            new int[] { 0x830, 0x6C0, 0x5B0, 0x550, 0x8D0, 0x550, 0x000, 0x3A0 }  // 8 red pad
-        };
+        private static readonly int[][] PadOrbHeights = SharedPhysics.PadOrbHeights;
+        private static readonly int[][] PadOrbHeights_Mini = SharedPhysics.PadOrbHeights_Mini;
 
         // Returns true when the sprite at storage index `idx` (with sprite id `sid`) overlaps
         // the player's axis-aligned hitbox in world pixel coordinates. This uses the
@@ -1538,10 +1517,7 @@ namespace FamidashEditor
         /// <summary>
         /// Check if collision type is a slope
         /// </summary>
-        private static bool IsSlopeTile(MetatileCollision col)
-        {
-            return col >= MetatileCollision.COL_SLOPE_RD45 && col <= MetatileCollision.COL_SLOPE_LU66_BOT;
-        }
+        private static bool IsSlopeTile(MetatileCollision col) => SharedPhysics.IsSlopeTile(col);
         
         /// <summary>
         /// Get the floor Y position for a slope tile at a given local X coordinate
@@ -1726,8 +1702,8 @@ namespace FamidashEditor
             int hitboxW = isMini ? 8 : 15;
             int hitboxH = isMini ? 7 : 15;
 
-            // NES mini centering offset: (0x10 - height) >> 1
-            int miniOffY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
+            // NES mini centering offset
+            int miniOffY = SharedPhysics.GetMiniCenterOffsetY(isMini);
 
             // commonly_used_store — near bottom of hitbox
             int rowBottomY = playerY_px + miniOffY + hitboxH - 2;
@@ -1895,12 +1871,8 @@ namespace FamidashEditor
                 int hitboxW = miniMode ? 8 : 15;
                 int hitboxH = miniMode ? 7 : 15;
                 
-                // NES: Generic.y = high_byte(currplayer_y) + ((0x10 - height) >> 1)
-                // Normal: +0, Mini: +4
-                if (miniMode)
-                {
-                    playerY_px += 4;
-                }
+                // Apply mini mode offset matching terrain collision conventions
+                playerY_px += GetMiniSpriteOffsetY();
                 
                 // Player bounding box for collision using actual hitbox size
                 int playerLeft_px = playerX_px;
@@ -2000,12 +1972,8 @@ namespace FamidashEditor
                 int hitboxW = miniMode ? 8 : 15;
                 int hitboxH = miniMode ? 7 : 15;
                 
-                // NES: Generic.y = high_byte(currplayer_y) + ((0x10 - height) >> 1)
-                // Normal: +0, Mini: +4
-                if (miniMode)
-                {
-                    playerY_px += 4;
-                }
+                // Apply mini mode offset matching terrain collision conventions
+                playerY_px += GetMiniSpriteOffsetY();
                 
                 // Player bounding box
                 int playerLeft_px = playerX_px;
@@ -2180,12 +2148,8 @@ namespace FamidashEditor
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 
-                // NES: Generic.y = high_byte(currplayer_y) + ((0x10 - height) >> 1)
-                // Normal: +0, Mini: +4
-                if (isMini)
-                {
-                    playerY_px += 4;
-                }
+                // Apply mini mode offset matching terrain collision conventions
+                playerY_px += GetMiniSpriteOffsetY();
                 
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;
@@ -2270,7 +2234,7 @@ namespace FamidashEditor
                 // NES hitbox: CUBE_WIDTH x CUBE_HEIGHT
                 int hitboxW = miniMode ? 8 : 15;
                 int hitboxH = miniMode ? 7 : 15;
-                if (miniMode) playerY_px += 4;
+                playerY_px += GetMiniSpriteOffsetY();
                 
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;
@@ -2343,7 +2307,7 @@ namespace FamidashEditor
                     // NES hitbox: CUBE_WIDTH x CUBE_HEIGHT
                     int hitboxW = miniMode ? 8 : 15;
                     int hitboxH = miniMode ? 7 : 15;
-                    if (miniMode) playerY_px += 4;
+                    playerY_px += GetMiniSpriteOffsetY();
                     
                     // Player bounding box for collision
                     int playerLeft_px = playerX_px;
@@ -2427,7 +2391,7 @@ namespace FamidashEditor
                 // NES hitbox: CUBE_WIDTH x CUBE_HEIGHT
                 int hitboxW = miniMode ? 8 : 15;
                 int hitboxH = miniMode ? 7 : 15;
-                if (miniMode) playerY_px += 4;
+                playerY_px += GetMiniSpriteOffsetY();
                 
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;
@@ -2499,10 +2463,7 @@ namespace FamidashEditor
         /// <summary>
         /// Check if a sprite is a coin (0x07, 0x1A, 0x1B).
         /// </summary>
-        private static bool IsCoinSprite(int sid)
-        {
-            return sid == 0x07 || sid == 0x1A || sid == 0x1B;
-        }
+        private static bool IsCoinSprite(int sid) => SharedPhysics.IsCoinSprite(sid);
 
         /// <summary>
         /// Check for coin collision. Coins are collected once and disappear.
@@ -2517,10 +2478,8 @@ namespace FamidashEditor
                 int hitboxW = (currplayer_mini != 0) ? 8 : 15;
                 int hitboxH = (currplayer_mini != 0) ? 7 : 15;
 
-                if (currplayer_mini != 0)
-                {
-                    playerY_px += 4;
-                }
+                // Apply mini mode offset matching terrain collision conventions
+                playerY_px += GetMiniSpriteOffsetY();
 
                 int playerLeft_px = playerX_px;
                 int playerRight_px = playerX_px + hitboxW - 1;
@@ -2599,12 +2558,7 @@ namespace FamidashEditor
                 int hitboxW = (currplayer_mini != 0) ? 8 : 15;
                 int hitboxH = (currplayer_mini != 0) ? 7 : 15;
                 
-                // NES: Generic.y = high_byte(currplayer_y) + ((0x10 - height) >> 1)
-                // Normal: +0, Mini: +4
-                if (currplayer_mini != 0)
-                {
-                    playerY_px += 4;
-                }
+                playerY_px += GetMiniSpriteOffsetY();
                 
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;
@@ -2783,12 +2737,7 @@ namespace FamidashEditor
                 int hitboxWidth = miniMode ? 8 : 15;
                 int hitboxHeight = miniMode ? 7 : 15;
                 
-                // NES: Generic.y = high_byte(currplayer_y) + ((0x10 - height) >> 1)
-                // Normal: +0, Mini: +4
-                if (miniMode)
-                {
-                    playerY_px += 4;
-                }
+                playerY_px += GetMiniSpriteOffsetY();
                 
                 // Player bounding box for collision
                 int playerLeft_px = playerX_px;
@@ -7135,11 +7084,7 @@ namespace FamidashEditor
                                 int playerLeft_px_now = (playerX_fixed >> 8) + 1;
                                 int playerRight_px_now = playerLeft_px_now + hitboxW - 1;
                                 int playerTop_px_now = (playerY_fixed >> 8);
-                                // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
-                                if (miniMode)
-                                {
-                                    playerTop_px_now += 4;
-                                }
+                                playerTop_px_now += GetMiniSpriteOffsetY();
                                 int playerBottom_px_now = playerTop_px_now + hitboxH - 1;
 
                                 if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_now, playerRight_px_now, playerTop_px_now, playerBottom_px_now))
@@ -7193,7 +7138,7 @@ namespace FamidashEditor
                             int playerLeft_px_speed = (playerX_fixed >> 8) + 1;
                             int playerRight_px_speed = playerLeft_px_speed + hitboxW_speed - 1;
                             int playerTop_px_speed = (playerY_fixed >> 8);
-                            if (miniMode) playerTop_px_speed += 4;
+                            playerTop_px_speed += GetMiniSpriteOffsetY();
                             int playerBottom_px_speed = playerTop_px_speed + hitboxH_speed - 1;
                             
                             if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_speed, playerRight_px_speed, playerTop_px_speed, playerBottom_px_speed))
@@ -7276,7 +7221,7 @@ namespace FamidashEditor
                             int playerLeft_px_local = (playerX_fixed >> 8) + 1;
                             int playerRight_px_local = playerLeft_px_local + hitboxW_local - 1;
                             int playerTop_px_local = (playerY_fixed >> 8);
-                            if (miniMode) playerTop_px_local += 4;
+                            playerTop_px_local += GetMiniSpriteOffsetY();
                             int playerBottom_px_local = playerTop_px_local + hitboxH_local - 1;
 
                             if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_local, playerRight_px_local, playerTop_px_local, playerBottom_px_local))
@@ -11177,11 +11122,7 @@ namespace FamidashEditor
                                 int playerLeft_px_num = (playerX_fixed >> 8) + 1;
                                 int playerRight_px_num = playerLeft_px_num + hitboxW_num - 1;
                                 int playerTop_px_num = (playerY_fixed >> 8);
-                                // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
-                                if (miniMode)
-                                {
-                                    playerTop_px_num += 4;
-                                }
+                                playerTop_px_num += GetMiniSpriteOffsetY();
                                 int playerBottom_px_num = playerTop_px_num + hitboxH_num - 1;
 
                                 for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
@@ -11298,7 +11239,7 @@ namespace FamidashEditor
                             int playerLeft_px_ui = (playerX_fixed >> 8) + 1;
                             int playerRight_px_ui = playerLeft_px_ui + hitboxW_ui - 1;
                             int playerTop_px_ui = (playerY_fixed >> 8);
-                            if (miniMode) playerTop_px_ui += 4;
+                            playerTop_px_ui += GetMiniSpriteOffsetY();
                             int playerBottom_px_ui = playerTop_px_ui + hitboxH_ui - 1;
 
                             if (processedGravityPortals.Contains(idx)) { /* wait until portal moves past interaction line */ }
@@ -11344,7 +11285,7 @@ namespace FamidashEditor
                             int playerLeft_px_local = (playerX_fixed >> 8) + 1;
                             int playerRight_px_local = playerLeft_px_local + hitboxW_local - 1;
                             int playerTop_px_local = (playerY_fixed >> 8);
-                            if (miniMode) playerTop_px_local += 4;
+                            playerTop_px_local += GetMiniSpriteOffsetY();
                             int playerBottom_px_local = playerTop_px_local + hitboxH_local - 1;
 
                             if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_local, playerRight_px_local, playerTop_px_local, playerBottom_px_local))
@@ -11388,7 +11329,7 @@ namespace FamidashEditor
                             int playerLeft_px_rand = (playerX_fixed >> 8) + 1;
                             int playerRight_px_rand = playerLeft_px_rand + hitboxW_rand - 1;
                             int playerTop_px_rand = (playerY_fixed >> 8);
-                            if (miniMode) playerTop_px_rand += 4;
+                            playerTop_px_rand += GetMiniSpriteOffsetY();
                             int playerBottom_px_rand = playerTop_px_rand + hitboxH_rand - 1;
 
                             if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_rand, playerRight_px_rand, playerTop_px_rand, playerBottom_px_rand))

@@ -20,7 +20,7 @@ namespace FamidashEditor
         public static int JUMP_VEL(int table_idx)
         {
             bool mini = (table_idx & 4) != 0;
-            return mini ? -0x4D0 : -0x590;
+            return SharedPhysics.GetCubeJumpVel(mini);
         }
 
         // CUBE_MAX_FALLSPEED
@@ -35,7 +35,7 @@ namespace FamidashEditor
         public static int CUBE_GRAVITY(int table_idx)
         {
             bool mini = (table_idx & 4) != 0;
-            return mini ? 0x6F : 0x6B;
+            return SharedPhysics.GetCubeGravity(mini);
         }
         #endregion
 
@@ -103,13 +103,14 @@ namespace FamidashEditor
         public static int BALL_GRAVITY(int table_idx)
         {
             bool mini = (table_idx & 4) != 0;
-            return mini ? 0x57 : 0x47;
+            return SharedPhysics.BallGravity(mini);
         }
 
         // BALL_MAX_FALLSPEED
         public static int BALL_MAX_FALLSPEED(int table_idx)
         {
-            return 0x600; // Same for normal and mini
+            bool mini = (table_idx & 4) != 0;
+            return SharedPhysics.BallMaxFallSpeed(mini);
         }
 
         // BALL_SWITCH_VEL - Velocity when switching gravity
@@ -117,9 +118,9 @@ namespace FamidashEditor
         public static int BALL_SWITCH_VEL(int table_idx)
         {
             bool mini = (table_idx & 4) != 0;
-            bool normalGravity = (table_idx & 1) != 0;  // bit 0 = 1 means normal (down) gravity
-            int baseVel = mini ? 0x120 : 0x200;
-            return normalGravity ? baseVel : -baseVel;  // Normal gravity: launch down (positive), Inverted: launch up (negative)
+            bool normalGravity = (table_idx & 1) != 0;
+            int baseVel = SharedPhysics.BallSwitchVel(mini);
+            return normalGravity ? baseVel : -baseVel;
         }
         #endregion
 
@@ -128,20 +129,21 @@ namespace FamidashEditor
         public static int UFO_JUMP_VEL(int table_idx)
         {
             bool mini = (table_idx & 4) != 0;
-            return mini ? -0x2D0 : -0x330;
+            return -(int)SharedPhysics.UfoJumpVel(mini);
         }
 
         // UFO_GRAVITY
         public static int UFO_GRAVITY(int table_idx)
         {
-            return 0x32; // Same for normal and mini
+            bool mini = (table_idx & 4) != 0;
+            return SharedPhysics.UfoGravity(mini);
         }
 
         // UFO_MAX_FALLSPEED
         public static int UFO_MAX_FALLSPEED(int table_idx)
         {
             bool mini = (table_idx & 4) != 0;
-            return mini ? 0x350 : 0x320;
+            return SharedPhysics.UfoMaxFallSpeed(mini);
         }
         #endregion
 
