@@ -141,7 +141,9 @@ namespace FamidashEditor
         // By default we write debug output to a timestamped temp file so you can
         // open it after reproducing the issue. Change to false to disable file
         // writes.
+#pragma warning disable CS0414 // assigned but never used (consumed inside DISABLE_DEBUG_LOGGING guard)
         private readonly bool simDebugWriteToFile = true;
+#pragma warning restore CS0414
         private readonly string simDebugLogPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"famidash_sim_debug_{System.DateTime.UtcNow:yyyyMMdd_HHmmss}.txt");
 
         private void AppendSimDebug(string msg)

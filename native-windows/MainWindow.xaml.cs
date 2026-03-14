@@ -21244,7 +21244,6 @@ namespace FamidashEditor
                 bool drawPathLine = settingsWin.DrawPathLine;
                 bool showPathfinderLive = settingsWin.ShowPathfinderLive;
                 bool showProspectivePaths = settingsWin.ShowProspectivePaths;
-                int clickOptimization = settingsWin.ClickOptimization;
 
                 // Determine starting position
                 int startX_px = 0;
@@ -21416,12 +21415,6 @@ namespace FamidashEditor
                         engine.OnSpeculativePath = null;
 
                         // Click optimization (runs on background thread before UI update)
-                        if (clickOptimization > 0 && engine.Success)
-                        {
-                            engine.OptimizeClicks(clickOptimization, startX_px, startY_px,
-                                startSpeedUiIndex, startGameMode, false, false);
-                        }
-
                         // Use Send priority so this executes BEFORE any remaining
                         // speculative path dispatches still in the queue.
                         Dispatcher.Invoke(System.Windows.Threading.DispatcherPriority.Send, new Action(() =>

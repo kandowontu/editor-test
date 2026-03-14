@@ -103,31 +103,30 @@ namespace FamidashEditor
 
         /// <summary>
         /// Cube hitbox Y-offset for collision.
-        /// Mini + normal gravity → 9 (centres the 7px hitbox within 16px tile from below).
-        /// All other combos → 0.
+        /// NES uses byte(0x10 - Generic.height) >> 1 = 4 for ALL mini modes,
+        /// regardless of game mode or gravity direction.  This centres the 7px
+        /// hitbox vertically within the 16px sprite tile — matching the NES
+        /// miniOffset used in bg_coll_D, bg_coll_U, bg_coll_death, etc.
         /// </summary>
         internal static int GetCubeHitboxOffsetY(bool mini, bool gravityUp)
-            => (mini && !gravityUp) ? 9 : 0;
+            => GetMiniCenterOffsetY(mini);
 
         /// <summary>
         /// Generic mini centering offset — centres the mini hitbox vertically within the 16px tile.
-        /// Used by NES bg_coll_floor_spikes and the cube ceiling proximity check.
-        /// Distinct from GetCubeHitboxOffsetY (which uses 9 for normal-gravity cube).
-        /// Returns (0x10 - hitboxH) >> 1 = 4 when mini, 0 when normal.
+        /// Matches NES: byte(0x10 - Generic.height) >> 1 = 4 when mini, 0 when normal.
+        /// Used consistently by ALL collision functions (floor, ceiling, death, floor spikes, forward).
         /// </summary>
         internal static int GetMiniCenterOffsetY(bool mini)
             => mini ? ((0x10 - GetCubeHitboxH(true)) >> 1) : 0;
 
         /// <summary>
         /// General hitbox Y-offset for any game mode.
-        /// Cube/Robot/Ninja (modes 0,4,8): uses GetCubeHitboxOffsetY (9 for mini+normal grav).
-        /// All other modes (Ball,Ship,UFO,Spider,Wave,etc.): GetMiniCenterOffsetY (4 when mini).
+        /// All modes use GetMiniCenterOffsetY (4 when mini, 0 when normal),
+        /// matching the NES miniOffset = byte(0x10 - Generic.height) >> 1.
         /// </summary>
         internal static int GetHitboxOffsetY(int gameMode, bool mini, bool gravFlipped)
         {
             if (!mini) return 0;
-            if (gameMode == 0 || gameMode == 4 || gameMode == 8) // cube, robot, ninja
-                return GetCubeHitboxOffsetY(true, gravFlipped);
             return GetMiniCenterOffsetY(true);
         }
 

@@ -101,6 +101,8 @@ namespace FamidashEditor
 
         private static int GetGravity(bool mini) => SharedPhysics.GetCubeGravity(mini);
         private static int GetJumpVel(bool mini) => SharedPhysics.GetCubeJumpVel(mini);
+        private const int ROBOT_JUMP_VEL = -0x2B0;   // Robot jump velocity (reapplied each held frame)
+        private const int ROBOT_JUMP_TIME = 19;       // Max hold frames for robot jump
         private static int GetHitboxW(bool mini) => SharedPhysics.GetCubeHitboxW(mini);
         private static int GetHitboxH(bool mini) => SharedPhysics.GetCubeHitboxH(mini);
         /// <summary>
@@ -285,6 +287,7 @@ namespace FamidashEditor
         private bool _cubeHoldJump = false; // when true, keep jumping every landing
         private int _cubeHoldDelay = 0;    // frames to wait before first jump in hold mode
         private int _committedJumpDelay = -1; // when >= 0, counting down to a committed single-jump
+        private int _committedRobotHold = 0; // remaining frames to hold robot jump button
         private bool _prevFrameWasGrounded = true; // tracks whether PREVIOUS frame started grounded; used to gate hold-jump fast path
 
         // -- Backtracking state -------------------------------------------
@@ -552,6 +555,7 @@ namespace FamidashEditor
             public int BallFlipCooldown;         // ball_switched flag (0=can flip, 1=switched)
             public int BallInputBuffer;          // remaining frames to try buffered flip (0 = inactive)
             public int BallCooldownFrames;       // 2-frame cooldown after flip: skip velocity zeroing and eject
+            public int RobotJumpTime;            // remaining frames robot can hold jump (0 = not jumping, max 19)
             public SpriteSet ProcessedSprites;
 
             // Orb system: pending orb that overlaps the player (activation requires input)
@@ -651,8 +655,8 @@ namespace FamidashEditor
         private SpriteSet NewSpriteSet() => new SpriteSet(_spriteCompactMap, _spriteCompactCount);
 
         // -- Output ---------------------------------------------------------
-        public List<(int x, int y)> PathPoints { get; private set; }
-        public List<bool> Inputs { get; private set; }
+        public List<(int x, int y)> PathPoints { get; private set; } = null!;
+        public List<bool> Inputs { get; private set; } = null!;
         public bool Success { get; private set; }
         public string ResultMessage { get; private set; } = "";
 
@@ -867,8 +871,8 @@ namespace FamidashEditor
                     int heuristicBestX = PathPoints != null && PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
                     if (bfsBestX > heuristicBestX)
                     {
-                        Inputs = bfsInputs;
-                        PathPoints = bfsPath;
+                        Inputs = bfsInputs!;
+                        PathPoints = bfsPath!;
                         ResultMessage = bfsMsg;
                         Console.Error.WriteLine($"[BFS?HEURISTIC] Heuristic worse ({heuristicBestX}px vs BFS {bfsBestX}px), keeping BFS result");
                     }
@@ -887,8 +891,8 @@ namespace FamidashEditor
             {
                 int groundY = (mapHeight - groundRowsToReserve) * 16 - 15;
                 // Snapshot the current best result
-                var overallBestInputs = new List<bool>(Inputs);
-                var overallBestPath = new List<(int x, int y)>(PathPoints);
+                var overallBestInputs = new List<bool>(Inputs!);
+                var overallBestPath = new List<(int x, int y)>(PathPoints!);
                 string overallBestMsg = ResultMessage;
                 int overallBestCoins = FinalCollectedCoinIndices != null ? FinalCollectedCoinIndices.Count : 0;
                 var overallBestFinalCoins = FinalCollectedCoinIndices != null
@@ -950,8 +954,8 @@ namespace FamidashEditor
                             if (retryCoins > overallBestCoins)
                             {
                                 Console.Error.WriteLine($"[COIN_RETRY_COMBINED] Improved: {retryCoins} vs {overallBestCoins}");
-                                overallBestInputs = new List<bool>(Inputs);
-                                overallBestPath = new List<(int x, int y)>(PathPoints);
+                                overallBestInputs = new List<bool>(Inputs!);
+                                overallBestPath = new List<(int x, int y)>(PathPoints!);
                                 overallBestMsg = ResultMessage;
                                 overallBestCoins = retryCoins;
                                 overallBestFinalCoins = FinalCollectedCoinIndices != null
@@ -1052,8 +1056,8 @@ namespace FamidashEditor
                             if (retryCoins > overallBestCoins)
                             {
                                 Console.Error.WriteLine($"[COIN_RETRY] Improved: {retryCoins} vs {overallBestCoins}");
-                                overallBestInputs = new List<bool>(Inputs);
-                                overallBestPath = new List<(int x, int y)>(PathPoints);
+                                overallBestInputs = new List<bool>(Inputs!);
+                                overallBestPath = new List<(int x, int y)>(PathPoints!);
                                 overallBestMsg = ResultMessage;
                                 overallBestCoins = retryCoins;
                                 overallBestFinalCoins = FinalCollectedCoinIndices != null
@@ -1123,8 +1127,8 @@ namespace FamidashEditor
                             if (retryCoins > overallBestCoins)
                             {
                                 Console.Error.WriteLine($"[COIN_RETRY_SHIP] Improved: {retryCoins} vs {overallBestCoins}");
-                                overallBestInputs = new List<bool>(Inputs);
-                                overallBestPath = new List<(int x, int y)>(PathPoints);
+                                overallBestInputs = new List<bool>(Inputs!);
+                                overallBestPath = new List<(int x, int y)>(PathPoints!);
                                 overallBestMsg = ResultMessage;
                                 overallBestCoins = retryCoins;
                                 overallBestFinalCoins = FinalCollectedCoinIndices != null
@@ -1171,8 +1175,8 @@ namespace FamidashEditor
                             if (retryCoins > overallBestCoins)
                             {
                                 Console.Error.WriteLine($"[COIN_RETRY_BALL] Improved: {retryCoins} vs {overallBestCoins}");
-                                overallBestInputs = new List<bool>(Inputs);
-                                overallBestPath = new List<(int x, int y)>(PathPoints);
+                                overallBestInputs = new List<bool>(Inputs!);
+                                overallBestPath = new List<(int x, int y)>(PathPoints!);
                                 overallBestMsg = ResultMessage;
                                 overallBestCoins = retryCoins;
                                 overallBestFinalCoins = FinalCollectedCoinIndices != null
@@ -1443,6 +1447,7 @@ namespace FamidashEditor
             _cubeHoldJump = false;
             _cubeHoldDelay = 0;
             _committedJumpDelay = -1;
+            _committedRobotHold = 0;
             _backtrackCheckpoints = new List<BacktrackCheckpoint>();
             _lastCubeToShipCheckpoint = null;
             _shipEntryRecoveryCheckpoint = null;
@@ -1958,7 +1963,7 @@ namespace FamidashEditor
                         // coins that are still present in coinFallbackState.ProcessedSprites.
                         foreach (var coin in allCoins)
                         {
-                            if (state.ProcessedSprites.Contains(coin.Index) && !_permanentlyCollectedCoins.ContainsKey(coin.Index))
+                            if (state.ProcessedSprites?.Contains(coin.Index) == true && !_permanentlyCollectedCoins.ContainsKey(coin.Index))
                                 _permanentlyCollectedCoins[coin.Index] = coinFallbackFrame;
                         }
 #if !DISABLE_DEBUG_LOGGING
@@ -2004,7 +2009,7 @@ namespace FamidashEditor
                         // Re-populate _permanentlyCollectedCoins from restored state.
                         foreach (var coin in allCoins)
                         {
-                            if (state.ProcessedSprites.Contains(coin.Index) && !_permanentlyCollectedCoins.ContainsKey(coin.Index))
+                            if (state.ProcessedSprites?.Contains(coin.Index) == true && !_permanentlyCollectedCoins.ContainsKey(coin.Index))
                                 _permanentlyCollectedCoins[coin.Index] = coinFallbackFrame;
                         }
 #if !DISABLE_DEBUG_LOGGING
@@ -2107,8 +2112,10 @@ namespace FamidashEditor
             // Pack game mode (3 bits), gravity (1 bit), mini (1 bit), onGround (1 bit)
             int flags = (s.GameMode & 0x7) | ((s.GravFlipped ? 1 : 0) << 3)
                       | ((s.Mini ? 1 : 0) << 4) | ((s.OnGround ? 1 : 0) << 5);
-            // ProcessedSprites hash
+            // ProcessedSprites hash (include RobotJumpTime for robot mode dedup)
             int sprHash = s.ProcessedSprites.GetBitsHash();
+            if (s.RobotJumpTime > 0)
+                sprHash = sprHash * 31 + s.RobotJumpTime;
             // Pack into 64 bits
             return ((long)(sprHash & 0x3FFFFF) << 42)
                  | ((long)(flags & 0x3F) << 36)
@@ -2124,10 +2131,25 @@ namespace FamidashEditor
             // Coin bonus: each coin subtracts 1,000,000 from score
             int coinBonus = -coinsCollected * 1_000_000;
 
-            // Don't penalize velocity � it prunes states that are mid-jump or
-            // mid-flight, which are critical for navigating obstacles.
-            // Y-diversity is handled by the diversity slots in frontier pruning.
-            return coinBonus;
+            // Jump timing bias: nudge frontier pruning to prefer different altitudes.
+            // Earliest (0.0) → prefer lower Y (higher in screen = jumped earlier).
+            // Latest  (1.0) → prefer higher Y (lower in screen = walking/grounded).
+            // Middle  (0.5) → no altitude preference.
+            // Scale is small (±Y/4) so it only breaks ties among states with
+            // the same coin count, never overriding coin collection.
+            int yBias = 0;
+            if (JumpTimingBias < 0.45)
+            {
+                // Prefer states with lower Y (jumped → higher altitude)
+                yBias = (s.Y_fixed >> 8) / 4;  // positive = worse score for low-altitude
+            }
+            else if (JumpTimingBias > 0.55)
+            {
+                // Prefer states with higher Y (walked → lower altitude)
+                yBias = -(s.Y_fixed >> 8) / 4; // negative = better score for low-altitude
+            }
+
+            return coinBonus + yBias;
         }
 
         /// <summary>
@@ -2195,9 +2217,10 @@ namespace FamidashEditor
                 {
                     if (CancelRequested) break;
 
-                    // Progress reporting
+                    // Progress reporting + Follow support
                     int curX = frontier[0].X_fixed >> 8;
                     if (curX > highWaterX) highWaterX = curX;
+                    _currentX_px = highWaterX; // Update for Follow button
                     int pct = levelLengthPx > 0 ? highWaterX * 100 / levelLengthPx : 0;
                     if (pct != lastProgressPct && Progress != null)
                     {
@@ -2455,20 +2478,51 @@ namespace FamidashEditor
                         Console.Error.Flush();
 
                         // Emit speculative paths for live visualization
-                        // Sample a few frontier states across the Y range
-                        if (OnSpeculativePath != null && frontier.Count > 0 && frame % 100 == 0)
+                        // Forward-simulate a sample of frontier states for ~30 frames
+                        // to produce multi-point trajectory lines (matching heuristic behavior)
+                        if (OnSpeculativePath != null && frontier.Count > 0 && frame % 20 == 0)
                         {
-                            int sampleCount = Math.Min(5, frontier.Count);
+                            int sampleCount = Math.Min(8, frontier.Count);
                             int step = Math.Max(1, frontier.Count / sampleCount);
+                            _speculativeDepth++;
                             for (int si = 0; si < frontier.Count && si / step < sampleCount; si += step)
                             {
                                 var fs = frontier[si];
-                                int fx = fs.X_fixed >> 8;
-                                int fy = fs.Y_fixed >> 8;
-                                int miniOff = (fs.Mini && !fs.GravFlipped) ? 4 : 0;
-                                var pathPts = new List<(int x, int y)> { (fx + 8, fy + miniOff + 8) };
-                                OnSpeculativePath(pathPts, 90, 90, false);
+                                int hbW = GetHitboxW(fs.Mini);
+                                // Forward-simulate with no press to trace trajectory
+                                var traceSim = fs.Clone();
+                                var tracePath = new List<(int x, int y)>();
+                                int traceSurv = 0;
+                                for (int tf = 0; tf < 30; tf++)
+                                {
+                                    int tx = traceSim.X_fixed >> 8;
+                                    int ty = traceSim.Y_fixed >> 8;
+                                    tracePath.Add((tx + hbW / 2, ty + 8));
+                                    if (!StepFrame(ref traceSim, false, out bool endT) || endT) break;
+                                    traceSurv = tf + 1;
+                                }
+                                traceSim.ProcessedSprites.Return();
+                                if (tracePath.Count >= 2)
+                                    OnSpeculativePath(tracePath, 0, traceSurv, false);
+
+                                // Also emit a "press" trajectory for diversity
+                                var traceSimJ = fs.Clone();
+                                var tracePathJ = new List<(int x, int y)>();
+                                int traceSurvJ = 0;
+                                for (int tf = 0; tf < 30; tf++)
+                                {
+                                    int tx = traceSimJ.X_fixed >> 8;
+                                    int ty = traceSimJ.Y_fixed >> 8;
+                                    tracePathJ.Add((tx + hbW / 2, ty + 8));
+                                    bool inp = (tf == 0); // press on first frame, release after
+                                    if (!StepFrame(ref traceSimJ, inp, out bool endTJ) || endTJ) break;
+                                    traceSurvJ = tf + 1;
+                                }
+                                traceSimJ.ProcessedSprites.Return();
+                                if (tracePathJ.Count >= 2)
+                                    OnSpeculativePath(tracePathJ, 0, traceSurvJ, true);
                             }
+                            _speculativeDepth--;
                         }
                     }
                 }
@@ -2948,6 +3002,7 @@ namespace FamidashEditor
                 _cubeHoldJump = cp.HoldJumpState;
                 _cubeHoldDelay = cp.HoldDelayState;
                 _committedJumpDelay = cp.CommittedDelayState; // restore committed delay state
+                _committedRobotHold = 0; // reset robot hold on backtrack
                 JumpTimingBias = cp.UsedBias; // restore bias so stage-3 flip doesn't permanently mutate it
                 _shipCorridorBias = cp.ShipBias; // restore ship bias
                 _shipForceHoldFrames = cp.ShipForceHold;
@@ -3447,7 +3502,9 @@ namespace FamidashEditor
             if (state.GameMode == 1) return DecideShipInput(state);
             if (state.GameMode == 2) return DecideBallInput(state, isOverrideFrame);
             if (state.GameMode == 3) return DecideUfoInput(state, isOverrideFrame);
-            if (state.GameMode != 0) return false; // only cube/ship/ball/ufo for now
+            if (state.GameMode == 4) return DecideRobotInput(state, isOverrideFrame);
+            if (state.GameMode == 6) return DecideWaveInput(state, isOverrideFrame);
+            if (state.GameMode != 0) return false; // only cube/ship/ball/ufo/robot/wave for now
 
             // ---------------------------------------------------------------
             //  Coin input script playback (cube/legacy � handled above for all modes)
@@ -4737,6 +4794,24 @@ namespace FamidashEditor
 
             int jumpScore = bestF0JumpSurv + holdBonus + elevBonus + coinBonusJump - altPenaltyJump;
             int walkScore = bestF0WalkSurv + coinBonusWalk;
+
+            // -- Jump Timing Bias --
+            // When bias != 0.5 (non-default), add a small tiebreaker term.
+            // Earliest (0.0) → +3 to jumpScore (prefer jumping sooner).
+            // Latest  (1.0) → +3 to walkScore (prefer delaying jumps).
+            // Middle  (0.5) → no change (default behavior).
+            // The ±3 magnitude is enough to break ties when both paths
+            // survive equally, but never overrides a genuine survival difference.
+            if (JumpTimingBias < 0.45)
+            {
+                int jBias = (int)((0.5 - JumpTimingBias) * 6.0 + 0.5); // 0.0→3, 0.25→2
+                jumpScore += jBias;
+            }
+            else if (JumpTimingBias > 0.55)
+            {
+                int wBias = (int)((JumpTimingBias - 0.5) * 6.0 + 0.5); // 1.0→3, 0.75→2
+                walkScore += wBias;
+            }
 #if !DISABLE_DEBUG_LOGGING
             string _tbPath = "";
 #endif
@@ -6315,11 +6390,20 @@ namespace FamidashEditor
                         input = true;
                     if (input) initialJumpDone = true;
                 }
-                else if (chainJumps && (s.GameMode == 0 || s.GameMode == 2) && s.VelY_fixed == 0 && s.OnGround)
+                else if (chainJumps && (s.GameMode == 0 || s.GameMode == 2 || s.GameMode == 4) && s.VelY_fixed == 0 && s.OnGround)
                 {
                     input = holdAfterLanding || QuickDangerCheck(s);
                 }
-
+                else if (chainJumps && s.GameMode == 4 && s.RobotJumpTime > 0)
+                {
+                    // Robot mid-jump: continue holding if holdAfterLanding
+                    input = holdAfterLanding;
+                }
+                else if (chainJumps && s.GameMode == 6)
+                {
+                    // Wave: continuous hold/release each frame
+                    input = holdAfterLanding;
+                }
                 // Auto-activate orbs encountered after the initial action.
                 // Gated on chainJumps so that singleJumpOnly callers (orb/pad
                 // evaluations) test only the direct physical consequence.
@@ -6406,6 +6490,21 @@ namespace FamidashEditor
                     // Ball mode: after the initial flip has landed, evaluate
                     // whether to flip again (danger check).
                     input = holdAfterLanding || QuickDangerCheck(s);
+                }
+                else if (chainJumps && s.GameMode == 4 && s.VelY_fixed == 0 && s.OnGround)
+                {
+                    // Robot: after landing, decide whether to jump again
+                    input = holdAfterLanding || QuickDangerCheck(s);
+                }
+                else if (chainJumps && s.GameMode == 4 && s.RobotJumpTime > 0)
+                {
+                    // Robot mid-jump: continue holding if holdAfterLanding
+                    input = holdAfterLanding;
+                }
+                else if (chainJumps && s.GameMode == 6)
+                {
+                    // Wave: continuous hold/release each frame
+                    input = holdAfterLanding;
                 }
 
                 // Auto-activate orbs encountered after the initial action.
@@ -6848,6 +6947,137 @@ namespace FamidashEditor
                     return false;
                 }
             }
+            else if (s.GameMode == 4) // Robot mode
+            {
+                // Robot uses cube gravity/eject but with hold-to-jump mechanics.
+                // NES order (gamemode_cube.h): jump-continue → gravity → eject → jump-start
+                
+                // 1. Continue jump if timer active and holding
+                if (s.RobotJumpTime > 0)
+                {
+                    s.RobotJumpTime--;
+                    if (input)
+                    {
+                        // Reapply jump velocity every frame while holding
+                        s.VelY_fixed = ROBOT_JUMP_VEL * s.GravMul;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[ROBOT_HOLD] VelY=0x{s.VelY_fixed:X} time={s.RobotJumpTime}");
+#endif
+                    }
+                    else
+                    {
+                        // Released button — stop jump immediately
+                        s.RobotJumpTime = 0;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[ROBOT_RELEASE] jump cancelled");
+#endif
+                    }
+                }
+                
+                // 2. Gravity (same as cube)
+                CubeGravity(ref s);
+
+                // 3. Ceiling proximity check (same as cube — needed for flipped gravity)
+                if (s.GravFlipped)
+                {
+                    int hbW_chk = GetHitboxW(s.Mini);
+                    int hbH_chk = GetHitboxH(s.Mini);
+                    int hbOffY_chk = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
+                    int collX_chk = s.X_fixed >> 8;
+                    int testY_chk = (s.Y_fixed >> 8) + hbOffY_chk - 1;
+                    var (ceilHit, ceilBotY_prox, _) = CheckCeiling(collX_chk, testY_chk, hbW_chk, hbH_chk);
+                    if (ceilHit && s.VelY_fixed < 0)
+                    {
+                        int newY_prox = ceilBotY_prox - hbOffY_chk - 1;
+                        s.Y_fixed = newY_prox << 8;
+                        s.VelY_fixed = 0;
+                        s.OnGround = true;
+                        s.WasZeroedByCollision = true;
+                    }
+                }
+
+                // 4. Eject (same as cube)
+                bool robotEjectDied = false;
+                CubeEject(ref s, out robotEjectDied);
+                if (robotEjectDied)
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[EJECT_DEATH] robot X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 2;
+                    return false;
+                }
+
+                // 5. Center death check (same as cube)
+                if (CheckCenterPointDeath(ref s))
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[CENTER_DEATH] robot X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 3;
+                    return false;
+                }
+
+                // 6. Jump start — only when grounded (velY == 0) and pressing
+                if (input && s.VelY_fixed == 0)
+                {
+                    s.VelY_fixed = ROBOT_JUMP_VEL * s.GravMul;
+                    s.RobotJumpTime = ROBOT_JUMP_TIME;
+                    s.OnGround = false;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[ROBOT_JUMP] VelY=0x{s.VelY_fixed:X} time={s.RobotJumpTime} gravMul={s.GravMul}");
+#endif
+                }
+            }
+            else if (s.GameMode == 6) // Wave mode
+            {
+                // Wave has no gravity — velocity is derived from VelX.
+                // Normal: VelY = ±VelX; Mini: VelY = ±(VelX << 1).
+                // Gravity-flipped inverts the default direction.
+                // Holding input negates velocity (changes diagonal direction).
+                
+                // Calculate base velocity from horizontal speed
+                int baseVelY = s.Mini ? (s.VelX_fixed << 1) : s.VelX_fixed;
+                if (s.GravFlipped) baseVelY = -baseVelY;
+                
+                // Only recalculate velocity if not on a surface (wasZeroed means walking on surface)
+                if (!s.WasZeroedByCollision)
+                    s.VelY_fixed = baseVelY;
+                s.WasZeroedByCollision = false;
+                
+                // Input inverts direction
+                if (input) s.VelY_fixed = -s.VelY_fixed;
+                
+                // Apply movement
+                s.Y_fixed += s.VelY_fixed;
+                
+                // Wave eject: check collision based on velocity direction
+                // Wave uses special X offsets: +10 when moving up, +4 when moving down
+                // Hitbox is 8 wide for collision; height depends on mini
+                bool waveDied = false;
+                WaveEject(ref s, out waveDied);
+                if (waveDied)
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[WAVE_EJECT_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px vel=0x{s.VelY_fixed:X}");
+#endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "WAVE_EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 2;
+                    return false;
+                }
+                
+                if (CheckDeathCollision(ref s))
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[CENTER_DEATH] wave X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                    _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
+#endif
+                    s.DeathType = 3;
+                    return false;
+                }
+            }
 
             // -- STEP 6: (removed � SIM has no post-Y gravity portal check at OLD X;
             //    gravity portals after physics are detected at NEW X in Step 8b) --
@@ -6868,7 +7098,7 @@ namespace FamidashEditor
             }
 
             // -- STEP 7b: FORWARD COLLISION (bg_coll_R) --
-            if (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 10)
+            if (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 6 || s.GameMode == 8 || s.GameMode == 10)
             {
                 if (CheckForwardCollision(ref s))
                 {
@@ -7956,6 +8186,331 @@ namespace FamidashEditor
             {
                 _committedJumpDelay--;
                 return false;
+            }
+        }
+
+        // -------------------------------------------------------------------
+        //  ROBOT INPUT DECISION (heuristic mode)
+        // -------------------------------------------------------------------
+
+        /// <summary>
+        /// Robot decision logic: decide when to jump and how long to hold.
+        /// Robot has variable-height jumps — holding the button reapplies
+        /// jump velocity each frame for up to 19 frames.
+        /// Uses speculative forward-simulation to evaluate different hold durations.
+        /// </summary>
+        private bool DecideRobotInput(SimState state, bool isOverrideFrame)
+        {
+            // -- Orb decision (same as cube — orbs apply to all modes) --
+            if (!isOverrideFrame && !_btSuppressJumpUntilAirborne)
+            {
+                int orbSid = ScanForOrbOverlap(state, out int orbIndex);
+                if (orbSid >= 0)
+                {
+                    var orbState = state.Clone();
+                    bool orbAlive = StepFrame(ref orbState, true, out bool orbEnd);
+                    if (orbEnd) return true;
+
+                    int orbSurv = 0;
+                    if (orbAlive)
+                        orbSurv = 1 + SimulateRobotForward(orbState, 0); // min hold after orb
+
+                    var skipState = state.Clone();
+                    skipState.ProcessedSprites.Add(orbIndex);
+                    bool skipAlive = StepFrame(ref skipState, false, out bool skipEnd);
+                    if (skipEnd) return false;
+
+                    int skipSurv = 0;
+                    if (skipAlive)
+                        skipSurv = 1 + SimulateRobotForward(skipState, 0);
+
+                    bool useOrb = orbSurv >= skipSurv;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_ROBOT_ORB] orbSurv={orbSurv} skipSurv={skipSurv} → {(useOrb ? "ACTIVATE" : "SKIP")}");
+#endif
+                    return useOrb;
+                }
+            }
+
+            // If we're mid-hold from a previous decision, keep holding
+            if (_committedRobotHold > 0)
+            {
+                _committedRobotHold--;
+                return true;
+            }
+
+            // If airborne (not grounded), don't start a new jump
+            if (state.VelY_fixed != 0)
+                return false;
+
+            if (_speculativeDepth >= MAX_SPECULATIVE_DEPTH) return false;
+
+            // -- Evaluate: no-jump vs various hold durations --
+            _speculativeDepth++;
+            int noJumpSurv = SimulateRobotForward(state, 0);
+            _speculativeDepth--;
+
+            int bestSurv = noJumpSurv;
+            int bestHold = 0; // 0 = don't jump
+
+            // Test hold durations: 1 (tap), then increasing up to ROBOT_JUMP_TIME
+            _speculativeDepth++;
+            int[] holdDurations = { 1, 3, 5, 8, 11, 14, 17, ROBOT_JUMP_TIME };
+            for (int hi = 0; hi < holdDurations.Length; hi++)
+            {
+                int holdFrames = holdDurations[hi];
+                int survival = SimulateRobotForward(state, holdFrames);
+
+                if (survival > bestSurv)
+                {
+                    bestSurv = survival;
+                    bestHold = holdFrames;
+                }
+            }
+            _speculativeDepth--;
+
+            // If no improvement with any jump, don't jump
+            if (bestHold == 0)
+                return false;
+
+            // Apply jump timing bias to hold duration
+            // Earliest → shorter holds (quicker, lower jumps)
+            // Latest → longer holds (higher jumps)
+            if (JumpTimingBias < 0.45)
+            {
+                // Find shortest hold that still survives well
+                _speculativeDepth++;
+                for (int h = 1; h < bestHold; h++)
+                {
+                    int s = SimulateRobotForward(state, h);
+                    if (s >= bestSurv - 2) { bestHold = h; break; }
+                }
+                _speculativeDepth--;
+            }
+            else if (JumpTimingBias > 0.55)
+            {
+                // Find longest hold that still survives well
+                _speculativeDepth++;
+                for (int h = ROBOT_JUMP_TIME; h > bestHold; h--)
+                {
+                    int s = SimulateRobotForward(state, h);
+                    if (s >= bestSurv - 2) { bestHold = h; break; }
+                }
+                _speculativeDepth--;
+            }
+
+            // Commit: hold for bestHold frames
+            _committedRobotHold = bestHold - 1; // -1 because this frame's return true counts as frame 1
+#if !DISABLE_DEBUG_LOGGING
+            PfLog($"[ROBOT_DECIDE] noJumpSurv={noJumpSurv} bestHold={bestHold} bestSurv={bestSurv} bias={JumpTimingBias}");
+#endif
+            return true;
+        }
+
+        /// <summary>
+        /// Simulate robot forward with a specific hold duration.
+        /// holdFrames=0 means no jump (just walk forward).
+        /// holdFrames=N means press for N consecutive frames then release.
+        /// </summary>
+        private int SimulateRobotForward(SimState state, int holdFrames)
+        {
+            var s = state.Clone();
+            for (int f = 0; f < LOOKAHEAD_HORIZON; f++)
+            {
+                bool input;
+                if (holdFrames > 0 && f < holdFrames)
+                {
+                    // Holding jump button — first frame starts the jump,
+                    // subsequent frames continue it (StepFrame handles timer)
+                    input = true;
+                }
+                else if (f >= holdFrames && s.VelY_fixed == 0 && s.OnGround)
+                {
+                    // After landing from the initial jump, check for danger
+                    input = QuickDangerCheck(s);
+                }
+                else
+                {
+                    input = false;
+                }
+
+                // Auto-activate orbs encountered during simulation
+                if (!input && s.PendingOrbIndex >= 0
+                    && !_btSkipSpecificOrbs.Contains(s.PendingOrbIndex))
+                {
+                    input = true;
+                }
+
+                bool alive = StepFrame(ref s, input, out bool endLevel);
+                if (!alive) return f;
+                if (endLevel) return LOOKAHEAD_HORIZON;
+            }
+            return LOOKAHEAD_HORIZON;
+        }
+
+        // -------------------------------------------------------------------
+        //  WAVE INPUT DECISION (heuristic mode)
+        // -------------------------------------------------------------------
+
+        /// <summary>
+        /// Wave decision logic: hold or release to control diagonal direction.
+        /// Wave moves diagonally — holding input reverses vertical direction.
+        /// Uses speculative forward-simulation to compare hold vs release.
+        /// </summary>
+        private bool DecideWaveInput(SimState state, bool isOverrideFrame)
+        {
+            // -- Orb decision --
+            if (!isOverrideFrame && !_btSuppressJumpUntilAirborne)
+            {
+                int orbSid = ScanForOrbOverlap(state, out int orbIndex);
+                if (orbSid >= 0)
+                {
+                    var orbState = state.Clone();
+                    bool orbAlive = StepFrame(ref orbState, true, out bool orbEnd);
+                    if (orbEnd) return true;
+                    int orbSurv = orbAlive ? 1 + SimulateWaveForward(orbState, true) : 0;
+
+                    var skipState = state.Clone();
+                    skipState.ProcessedSprites.Add(orbIndex);
+                    bool skipAlive = StepFrame(ref skipState, false, out bool skipEnd);
+                    if (skipEnd) return false;
+                    int skipSurv = skipAlive ? 1 + SimulateWaveForward(skipState, false) : 0;
+
+                    return orbSurv >= skipSurv;
+                }
+            }
+
+            if (_speculativeDepth >= MAX_SPECULATIVE_DEPTH) return false;
+
+            // Compare hold vs release survival
+            _speculativeDepth++;
+            int holdSurv = SimulateWaveForward(state, true);
+            int releaseSurv = SimulateWaveForward(state, false);
+            _speculativeDepth--;
+
+            // Prefer the direction that survives longer
+            if (holdSurv > releaseSurv) return true;
+            if (releaseSurv > holdSurv) return false;
+            
+            // Tied — prefer release (default direction)
+            return false;
+        }
+
+        /// <summary>
+        /// Simulate wave forward with a fixed input (hold or release).
+        /// Returns number of frames survived.
+        /// </summary>
+        private int SimulateWaveForward(SimState state, bool hold)
+        {
+            var s = state.Clone();
+            for (int f = 0; f < LOOKAHEAD_HORIZON; f++)
+            {
+                bool input = hold;
+
+                // Auto-activate orbs
+                if (!input && s.PendingOrbIndex >= 0
+                    && !_btSkipSpecificOrbs.Contains(s.PendingOrbIndex))
+                    input = true;
+
+                bool alive = StepFrame(ref s, input, out bool endLevel);
+                if (!alive) return f;
+                if (endLevel) return LOOKAHEAD_HORIZON;
+            }
+            return LOOKAHEAD_HORIZON;
+        }
+
+        // -------------------------------------------------------------------
+        //  WAVE PHYSICS (wave eject)
+        // -------------------------------------------------------------------
+
+        /// <summary>
+        /// Wave eject — check collision based on velocity direction.
+        /// Uses 8-wide hitbox with X-offset +10 (moving up) or +4 (moving down).
+        /// COL_FLOOR_CEIL/COL_ALL tiles eject the wave; other solid tiles kill.
+        /// </summary>
+        private void WaveEject(ref SimState s, out bool died)
+        {
+            died = false;
+            int playerX_px = s.X_fixed >> 8;
+            int playerY_px = s.Y_fixed >> 8;
+            
+            // Wave X-offset based on velocity direction
+            int xOffset = (s.VelY_fixed < 0) ? 10 : 4;
+            int collX = playerX_px + xOffset;
+            
+            // Mini wave: use top 8×8 when moving up, bottom 8×8 when moving down
+            int miniOffset = 0;
+            if (s.Mini)
+            {
+                bool isMovingUp = s.GravFlipped ? (s.VelY_fixed > 0) : (s.VelY_fixed < 0);
+                miniOffset = isMovingUp ? 0 : 8;
+            }
+            int collY = playerY_px + miniOffset;
+            
+            const int waveW = 8;
+            int waveH = s.Mini ? 8 : 16;
+            
+            if (s.VelY_fixed < 0) // Moving UP — check ceiling
+            {
+                var (ceilHit, ceilBotY, ceilSpike) = CheckCeiling(collX, collY, waveW, waveH);
+                if (ceilSpike)
+                {
+                    died = true;
+                    return;
+                }
+                if (ceilHit)
+                {
+                    // Check if the tile is COL_FLOOR_CEIL or COL_ALL (wave can walk on these)
+                    int tileX = collX / TILE;
+                    int tileY = (collY - 1) / TILE;
+                    var col = GetTileCollision(tileX, tileY);
+                    if (col == MetatileCollision.COL_FLOOR_CEIL || col == MetatileCollision.COL_ALL
+                        || col == MetatileCollision.COL_TOP || col == MetatileCollision.COL_NO_SIDE)
+                    {
+                        // Eject: snap to ceiling surface
+                        int newY = ceilBotY - miniOffset;
+                        s.Y_fixed = newY << 8;
+                        s.VelY_fixed = 0;
+                        s.WasZeroedByCollision = true;
+                    }
+                    else
+                    {
+                        // Non-walkable solid — death
+                        died = true;
+                        return;
+                    }
+                }
+            }
+            else if (s.VelY_fixed > 0) // Moving DOWN — check floor
+            {
+                var (floorHit, floorTopY, floorSpike) = CheckFloor(collX, collY, waveW, waveH);
+                if (floorSpike)
+                {
+                    died = true;
+                    return;
+                }
+                if (floorHit)
+                {
+                    // Check tile type for walkability
+                    int tileX = collX / TILE;
+                    int tileY = (collY + waveH) / TILE;
+                    var col = GetTileCollision(tileX, tileY);
+                    if (col == MetatileCollision.COL_FLOOR_CEIL || col == MetatileCollision.COL_ALL
+                        || col == MetatileCollision.COL_BOTTOM || col == MetatileCollision.COL_NO_SIDE)
+                    {
+                        // Eject: snap to floor surface
+                        int newY = floorTopY - waveH - miniOffset;
+                        s.Y_fixed = newY << 8;
+                        s.VelY_fixed = 0;
+                        s.WasZeroedByCollision = true;
+                    }
+                    else
+                    {
+                        // Non-walkable solid — death
+                        died = true;
+                        return;
+                    }
+                }
             }
         }
 

@@ -35,10 +35,7 @@ namespace FamidashEditor
         /// </summary>
         public bool ShowProspectivePaths { get; private set; } = false;
 
-        /// <summary>
-        /// Click optimization mode: 0 = none, 1 = least clicks, 2 = most clicks, 3 = just the clicks needed.
-        /// </summary>
-        public int ClickOptimization { get; private set; } = 0;
+
 
         public PathfinderSettingsWindow()
         {
@@ -78,11 +75,6 @@ namespace FamidashEditor
             DrawPathLine = (ChkDrawPathLine.IsChecked == true);
             ShowPathfinderLive = (ChkShowLive.IsChecked == true);
             ShowProspectivePaths = (ChkShowProspective.IsChecked == true);
-
-            if (OptClicksLeast.IsChecked == true) ClickOptimization = 1;
-            else if (OptClicksMost.IsChecked == true) ClickOptimization = 2;
-            else if (OptClicksNeeded.IsChecked == true) ClickOptimization = 3;
-            else ClickOptimization = 0;
 
             DialogResult = true;
             Close();
