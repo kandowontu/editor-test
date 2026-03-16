@@ -1138,6 +1138,10 @@ namespace FamidashEditor
             int playerLeft_px = collX;
             int playerRight_px = collX + collW;
 
+            // NES bg_coll_U probes at Generic_y - 1 (one pixel above hitbox top).
+            // Use probeY for overlap checks so an exact-touch case (playerTop == tileBottom) is detected.
+            int probeY = playerTop_px - 1;
+
             // --- Spike death pre-check: 3 X-points at Y = top + 1 ---
             // NES bg_coll_U checks left, left+width/2, left+width.
             // Important: do NOT return early here — the solid ceiling detection
@@ -1214,7 +1218,7 @@ namespace FamidashEditor
                     for (int px = Math.Max(playerLeft_px, tileWorldX); px <= Math.Min(playerRight_px, tileWorldX + 15); px++)
                     {
                         int localX = px - tileWorldX;
-                        int localY = playerTop_px - tileWorldY;
+                        int localY = probeY - tileWorldY;
 
                         if (localY >= 0 && localY < 16 && CheckComplexCollision(collision, localX, localY))
                         {
@@ -1254,8 +1258,8 @@ namespace FamidashEditor
                                        collision == MetatileCollision.COL_RIGHT_SPIKE_BLOCK;
 
                     bool yHit = isMiniBlock
-                        ? (playerTop_px >= collisionTop_px && playerTop_px < collisionBottom_px)
-                        : (playerTop_px < collisionBottom_px);
+                        ? (probeY >= collisionTop_px && probeY < collisionBottom_px)
+                        : (probeY < collisionBottom_px);
 
                     if (yHit)
                     {
@@ -1360,9 +1364,10 @@ namespace FamidashEditor
         /// </summary>
         internal static bool CheckForwardCollision(
             in CollisionMap map, int playerX_px, int playerY_px,
-            int hbW, int hbH, int hbOffY, int gameMode, bool mini, bool gravFlipped)
+            int hbW, int hbH, int hbOffY, int gameMode, bool mini, bool gravFlipped,
+            bool skipSlopeCheck = false)
         {
-            if (HasSlopeNearFeet(map, playerX_px, playerY_px, hbW, hbH, hbOffY))
+            if (!skipSlopeCheck && HasSlopeNearFeet(map, playerX_px, playerY_px, hbW, hbH, hbOffY))
                 return false;
 
             int rightEdge_px = playerX_px + hbW;

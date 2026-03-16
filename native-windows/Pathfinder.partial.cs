@@ -88,6 +88,9 @@ namespace FamidashEditor
                 // Ship and UFO use per-frame inputs — don't stretch to 2 frames.
                 // Cube mode uses direct input — the pathfinder's internal sim applies
                 // input for exactly 1 frame, so playback must match.
+                // Robot and wave modes also use per-frame inputs — the PF stores
+                // true for every frame of the hold, so stretching would double
+                // the hold duration and skip release boundaries.
                 // Ball mode: extended hold to bridge PF/sim timing divergence.
                 // The NES ball uses hold (not press) so the button must stay held
                 // across the airborne-to-landing gap for the buffered flip to fire.
@@ -96,11 +99,13 @@ namespace FamidashEditor
                 bool isContinuousThrust = (currentGameMode == 1 || currentGameMode == 3); // Ship or UFO
                 bool isCube = (currentGameMode == 0);
                 bool isBall = (currentGameMode == 2);
+                bool isRobot = (currentGameMode == 4);
+                bool isWave = (currentGameMode == 6);
                 if (isBall)
                 {
                     pfHoldCounter = PF_BALL_HOLD_FRAMES; // Hold for N extra frames after press
                 }
-                else if (!isContinuousThrust && !isCube)
+                else if (!isContinuousThrust && !isCube && !isRobot && !isWave)
                 {
                     pfHoldCounter = 1; // Hold for 1 extra frame after this one
                 }

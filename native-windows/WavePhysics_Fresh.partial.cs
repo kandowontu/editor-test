@@ -14,8 +14,11 @@ namespace FamidashEditor
             // Skip all physics if death already triggered
             if (deathTriggered || paused) return;
             
-            // Reset the "just landed" flag at the START of the frame so velocity can be recalculated
-            wasZeroedByCollisionLastFrame = false;
+            // NOTE: Do NOT clear wasZeroedByCollisionLastFrame here.
+            // The NES checks the flag first (to skip velY recalculation after eject),
+            // then clears it inside the velocity calculation block below.
+            
+            AppendSimDebug($"[WAVE_PHYS] START X={playerX_fixed >> 8} Y={playerY_fixed >> 8} velY=0x{playerVelY_fixed:X} wasZeroed={wasZeroedByCollisionLastFrame} dblocked={dblocked} mini={miniMode} grav={gravityFlipped}");
             
             // Check for orb activation
             {
@@ -61,6 +64,8 @@ namespace FamidashEditor
             switch (tmp1) {
                 case 0:
                     // Calculate vel_y based on vel_x UNLESS we just landed
+                    // NES: check the flag BEFORE clearing it so the wave stays at velY=0
+                    // for one frame after eject (allows surface-sliding)
                     if (!wasZeroedByCollisionLastFrame)
                     {
                         if (!miniMode) {
@@ -69,10 +74,13 @@ namespace FamidashEditor
                             playerVelY_fixed = gravityFlipped ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
                         }
                     }
+                    wasZeroedByCollisionLastFrame = false; // Clear AFTER checking — matches NES/PF
                     
                     // Input handling - use same system as cube
                     bool holding = IsXDownAsync() || keyXHeld;
                     if (holding) playerVelY_fixed = -playerVelY_fixed;
+                    
+                    AppendSimDebug($"[WAVE_PHYS] postCalc velY=0x{playerVelY_fixed:X} hold={holding} slopeF={currplayer_slope_frames} slopeW={currplayer_was_on_slope_counter}");
                     
                     // Apply movement
                     // Wave/snake with dblocked: skip slope freeze so wave can traverse multi-tile slopes
@@ -83,8 +91,10 @@ namespace FamidashEditor
                         else
                             playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
                     } else {
+                        AppendSimDebug($"[WAVE_PHYS] SLOPE_FREEZE velY zeroed (slopeF={currplayer_slope_frames} slopeW={currplayer_was_on_slope_counter})");
                         playerVelY_fixed = 0;
                     }
+                    AppendSimDebug($"[WAVE_PHYS] postMove Y={playerY_fixed >> 8} Y_fixed=0x{playerY_fixed:X}");
                     break;
                 case 1: 
                     playerVelY_fixed = 1; 
@@ -179,6 +189,7 @@ namespace FamidashEditor
                 bool slopeHit = bg_coll_D_slopes();
                 if (slopeHit)
                 {
+                    AppendSimDebug($"[WAVE_EJECT] slopeHit=true dblocked={dblocked} eject_D={eject_D}");
                     if (dblocked)
                     {
                         if (eject_D > 0)
@@ -189,12 +200,30 @@ namespace FamidashEditor
                         }
                         playerVelY_fixed = 0;
                         wasZeroedByCollisionLastFrame = true;
+                        AppendSimDebug($"[WAVE_EJECT] slope eject Y={playerY_fixed >> 8}");
                         return;
                     }
                     else if (!MainWindow.Option_NoDeath)
                     {
+                        AppendSimDebug($"[WAVE_DEATH] slope death (dblocked=false) X={playerX_fixed >> 8} Y={playerY_fixed >> 8}");
                         deathTriggered = true;
-                        if (!pfSimulating) { paused = true; _ = StopMusicAsync(); }
+                        if (!pfSimulating)
+                        {
+                            paused = true;
+                            _ = StopMusicAsync();
+                            try
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    if (this.Owner is MainWindow mw)
+                                    {
+                                        try { mw.PauseSimulatorPlayback(); } catch { }
+                                    }
+                                }));
+                            }
+                            catch { }
+                        }
                         return;
                     }
                 }
@@ -218,15 +247,20 @@ namespace FamidashEditor
             Generic_width = 8;
             Generic_height = isMini ? 8 : 16;
             
+            AppendSimDebug($"[WAVE_EJECT] Generic=({Generic_x},{Generic_y}) {Generic_width}x{Generic_height} velY=0x{playerVelY_fixed:X} miniOff={miniOffset}");
+            
             // Check collision based on VELOCITY direction
-            // NES wave_eject: if dblocked → eject + zero vel; else → death
-            if ((playerVelY_fixed & 0x8000) != 0)  // Velocity is negative (moving UP)
+            // When velY == 0 (wasZeroed frame), skip collision — wave is resting on surface
+            if (playerVelY_fixed < 0)  // Velocity is negative (moving UP)
             {
                 if (wave_coll_U())
                 {
-                    // NES: COL_FLOOR_CEIL tiles auto-set dblocked
-                    if ((MetatileCollision)collision == MetatileCollision.COL_FLOOR_CEIL)
+                    var colType = (MetatileCollision)collision;
+                    // NES: only COL_FLOOR_CEIL sets dblocked — all other solid tiles kill wave
+                    if (colType == MetatileCollision.COL_FLOOR_CEIL)
                         dblocked = true;
+
+                    AppendSimDebug($"[WAVE_EJECT] coll_U hit tile={colType} dblocked={dblocked} eject_U={eject_U}");
 
                     if (dblocked)
                     {
@@ -235,22 +269,43 @@ namespace FamidashEditor
                         playerY_fixed = currentY << 8;
                         playerVelY_fixed = 0;
                         wasZeroedByCollisionLastFrame = true;
+                        AppendSimDebug($"[WAVE_EJECT] UP eject Y={playerY_fixed >> 8}");
                     }
                     else if (!MainWindow.Option_NoDeath)
                     {
+                        AppendSimDebug($"[WAVE_DEATH] UP non-walkable tile={colType} X={playerX_fixed >> 8} Y={playerY_fixed >> 8} probe=({Generic_x},{Generic_y - 1})");
                         deathTriggered = true;
-                        if (!pfSimulating) { paused = true; _ = StopMusicAsync(); }
+                        if (!pfSimulating)
+                        {
+                            paused = true;
+                            _ = StopMusicAsync();
+                            try
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    if (this.Owner is MainWindow mw)
+                                    {
+                                        try { mw.PauseSimulatorPlayback(); } catch { }
+                                    }
+                                }));
+                            }
+                            catch { }
+                        }
                     }
                     return;
                 }
             }
-            else  // Velocity is non-negative (moving DOWN)
+            else if (playerVelY_fixed > 0)  // Velocity is positive (moving DOWN)
             {
                 if (wave_coll_D())
                 {
-                    // NES: COL_FLOOR_CEIL tiles auto-set dblocked
-                    if ((MetatileCollision)collision == MetatileCollision.COL_FLOOR_CEIL)
+                    var colType = (MetatileCollision)collision;
+                    // NES: only COL_FLOOR_CEIL sets dblocked — all other solid tiles kill wave
+                    if (colType == MetatileCollision.COL_FLOOR_CEIL)
                         dblocked = true;
+
+                    AppendSimDebug($"[WAVE_EJECT] coll_D hit tile={colType} dblocked={dblocked} eject_D={eject_D}");
 
                     if (dblocked)
                     {
@@ -259,14 +314,36 @@ namespace FamidashEditor
                         playerY_fixed = currentY << 8;
                         playerVelY_fixed = 0;
                         wasZeroedByCollisionLastFrame = true;
+                        AppendSimDebug($"[WAVE_EJECT] DOWN eject Y={playerY_fixed >> 8}");
                     }
                     else if (!MainWindow.Option_NoDeath)
                     {
+                        AppendSimDebug($"[WAVE_DEATH] DOWN non-walkable tile={colType} X={playerX_fixed >> 8} Y={playerY_fixed >> 8} probe=({Generic_x},{Generic_y + Generic_height})");
                         deathTriggered = true;
-                        if (!pfSimulating) { paused = true; _ = StopMusicAsync(); }
+                        if (!pfSimulating)
+                        {
+                            paused = true;
+                            _ = StopMusicAsync();
+                            try
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    if (this.Owner is MainWindow mw)
+                                    {
+                                        try { mw.PauseSimulatorPlayback(); } catch { }
+                                    }
+                                }));
+                            }
+                            catch { }
+                        }
                     }
                     return;
                 }
+            }
+            else
+            {
+                AppendSimDebug($"[WAVE_EJECT] velY==0 skip collision");
             }
         }
     }

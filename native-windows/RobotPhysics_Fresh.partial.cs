@@ -84,20 +84,29 @@ namespace FamidashEditor
             }
             
             // Apply gravity (applies simTimeScale internally)
-            // BUT skip gravity acceleration if a pad/orb was just hit this frame - let the pad velocity apply first
-            if (!orbhitonthisframe[currplayer])
+            // Famidash always applies gravity every frame, even on pad/orb hit frames
+            CommonGravityRoutine_Fresh();
+            
+            // Ceiling proximity check (same as cube — needed for flipped gravity).
+            // After gravity, if gravity is flipped and player is moving toward ceiling,
+            // check collision at Y-1 to detect boundary hits that CubeEject would miss
+            // (CheckCeiling uses strict < comparison, so playerTop == ceilBottom misses).
+            if (currplayer_gravity != 0)
             {
-                CommonGravityRoutine_Fresh();
-            }
-            else
-            {
-                // Pad/orb hit: skip gravity acceleration but still integrate velocity into position
-                AppendSimDebug($"[ROBOT] Pad/orb hit this frame - skipping gravity acceleration but integrating velocity. velY=0x{playerVelY_fixed:X4}");
-                if (isFullSpeed)
-                    playerY_fixed += playerVelY_fixed;
-                else
-                    playerY_fixed += (int)Math.Round(playerVelY_fixed * simTimeScale);
-                AppendSimDebug($"[ROBOT] Position integrated: posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px)");
+                bool isMini_check = (currplayer_mini != 0);
+                int hitboxW_check = isMini_check ? 8 : 15;
+                int hitboxH_check = isMini_check ? 7 : 15;
+                int hitboxOffsetY_check = SharedPhysics.GetMiniCenterOffsetY(isMini_check);
+                int collisionX_check = (playerX_fixed >> 8);
+                int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
+                var (collided_check, collisionBottomY_check) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
+                
+                if (collided_check && playerVelY_fixed < 0)
+                {
+                    int newY_prox = collisionBottomY_check - hitboxOffsetY_check - 1;
+                    playerY_fixed = newY_prox << 8;
+                    playerVelY_fixed = 0;
+                }
             }
             
             // Collision

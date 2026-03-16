@@ -10149,76 +10149,12 @@ namespace FamidashEditor
                 int preAdvancePlayerX_fixed = playerX_fixed;  // Save OLD X for forward collision (NES checks at OLD X)
                 playerX_fixed = attemptedPlayerX_fixed;
                 
-                // When player moves horizontally while grounded, verify still supported
-                // Clear onGround if walking off platform to resume gravity immediately
-                if (onGround && physicsEnabled)
-                {
-                    try
-                    {
-                        bool stillSupported = false;
-                        if (gravityReversed)
-                        {
-                            stillSupported = IsTouchingCeiling();
-                        }
-                        else
-                        {
-                            const int HITBOX_W_LOCAL = 15;
-                            // Always center on TILE/2 (player pos = 16x16 tile space)
-                            int playerCenter_px = (playerX_fixed >> 8) + (TILE / 2);
-                            int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
-                            int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
-                            // Foot = bottom of actual hitbox (hitboxOffset + hitboxH)
-                            int hitboxH_gs = miniMode ? 7 : 15;
-                            int hitboxOffY_gs = 0;
-                            if (miniMode)
-                                hitboxOffY_gs = (currentGameMode == 2) ? 4 : 9;
-                            int footWorldY_px = (playerY_fixed >> 8) + hitboxOffY_gs + hitboxH_gs;
-                            int tileBelowY_world = footWorldY_px / TILE;
-                            int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                            int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
-                            if (tileIndexY >= mapHeight)
-                            {
-                                // Player is over the implicit ground layer — always supported
-                                stillSupported = true;
-                            }
-                            else if (tileIndexY >= 0)
-                            {
-                                for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
-                                {
-                                    if (tx < 0 || tx >= mapWidth) continue;
-                                    int tid = tiles[tileIndexY * mapWidth + tx];
-                                    int useTidForAnim = MapAnimatedTileIndex(tid);
-                                    int collisionTid = useTidForAnim;
-                                    if (useTidForAnim >= 1000)
-                                    {
-                                        if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
-                                            collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
-                                        else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
-                                        {
-                                            int group = (useTidForAnim - 1010) % 3;
-                                            collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
-                                        }
-                                        else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
-                                            collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
-                                        else
-                                            collisionTid = tid;
-                                    }
-                                    var col = MetatileCollisionTable.GetCollision((byte)collisionTid);
-                                    int tileStartX = tx * TILE;
-                                    int localX = Math.Max(0, Math.Min(TILE - 1, playerCenter_px - tileStartX));
-                                    if (ProvidesFloorAtColumnStatic(col, localX, out int _)) { stillSupported = true; break; }
-                                }
-                            }
-                        }
-
-                        if (!stillSupported)
-                        {
-                            onGround = false;
-                            wasZeroedByCollisionLastFrame = false;  // Clear flag so gravity resumes immediately
-                        }
-                    }
-                    catch { }
-                }
+                // NOTE: Ground-support-at-new-X check has been removed to match PF
+                // and NES behavior.  The NES has no such look-ahead — ground loss is
+                // detected naturally by gravity pulling the player down and CubeEject
+                // finding no floor.  The old check ran at NEW X before physics reverted
+                // to OLD X, which could prematurely clear onGround/wasZeroed and cause
+                // 1-frame divergences at ledge edges.
                 
                 // === COLLISION/GROUNDING DISABLED ===
                 /*
@@ -10541,6 +10477,11 @@ namespace FamidashEditor
                         {
                             int floorSpikeX = preAdvancePlayerX_fixed >> 8;
                             int floorSpikeY = playerY_fixed >> 8;
+                            // DIAG: log state near the problem spike area
+                            if (floorSpikeX >= 6830 && floorSpikeX <= 6920 && currentGameMode == 4)
+                            {
+                                AppendSimDebug($"[SPIKE_DIAG] oldX={floorSpikeX} Y={floorSpikeY} velY=0x{playerVelY_fixed:X4} newX={attemptedPlayerX_fixed >> 8} mode={currentGameMode} deathTriggered={deathTriggered}");
+                            }
                             if (CheckFloorSpikes(floorSpikeX, floorSpikeY, out int fsDeathX, out int fsDeathY))
                             {
                                 AppendSimDebug($"[DEATH] Floor spike 4-corner death at ({fsDeathX},{fsDeathY})");

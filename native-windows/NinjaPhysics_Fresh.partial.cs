@@ -64,6 +64,28 @@ namespace FamidashEditor
             // Apply gravity (applies simTimeScale internally)
             CommonGravityRoutine_Fresh();
             
+            // Ceiling proximity check (same as cube — needed for flipped gravity).
+            // After gravity, if gravity is flipped and player is moving toward ceiling,
+            // check collision at Y-1 to detect boundary hits that CubeEject would miss
+            // (CheckCeiling uses strict < comparison, so playerTop == ceilBottom misses).
+            if (currplayer_gravity != 0)
+            {
+                bool isMini_check = (currplayer_mini != 0);
+                int hitboxW_check = isMini_check ? 8 : 15;
+                int hitboxH_check = isMini_check ? 7 : 15;
+                int hitboxOffsetY_check = SharedPhysics.GetMiniCenterOffsetY(isMini_check);
+                int collisionX_check = (playerX_fixed >> 8);
+                int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
+                var (collided_check, collisionBottomY_check) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
+                
+                if (collided_check && playerVelY_fixed < 0)
+                {
+                    int newY_prox = collisionBottomY_check - hitboxOffsetY_check - 1;
+                    playerY_fixed = newY_prox << 8;
+                    playerVelY_fixed = 0;
+                }
+            }
+            
             // Collision
             byte gravityAtFrameStart = currplayer_gravity;
             CubeEject_Fresh();

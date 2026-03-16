@@ -28,15 +28,8 @@ namespace FamidashEditor
             tmpgravity = GameModePhysics.CUBE_GRAVITY(baseTableIdx) * gravityMultiplier;
             
             // Apply gravity using common routine
-            // BUT skip gravity if a pad/orb was just hit this frame - let the pad velocity apply first
-            if (!orbhitonthisframe[currplayer])
-            {
-                CommonGravityRoutine_Fresh();
-            }
-            else
-            {
-                AppendSimDebug($"[FOOTBALL] Pad/orb hit this frame - skipping gravity. velY=0x{playerVelY_fixed:X4}");
-            }
+            // Famidash always applies gravity every frame, even on pad/orb hit frames
+            CommonGravityRoutine_Fresh();
             
             // Football always has headbonking enabled (like H block)
             // This will be handled in CubeEject_Fresh by temporarily setting hblocked

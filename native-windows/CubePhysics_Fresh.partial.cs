@@ -408,12 +408,8 @@ namespace FamidashEditor
             // Cube collision detection based on gravity direction
             if (currplayer_gravity == 0)
             {
-                // NES bg_coll_D velocity guard: the ENTIRE floor collision
-                // (slopes + flat + spike-death) is skipped when vel_y < 0.
-                // Matches NES: if(!(high_byte(currplayer_vel_y) & 0x80))
-                if (playerVelY_fixed >= 0)
-                {
-                // Normal gravity: check slopes first (from collision.h line 920)
+                // Normal gravity: check slopes first (NES bg_coll_D slope section
+                // has NO velocity guard — slopes are always checked regardless of vel_y)
                 bool slopeHit = bg_coll_D_slopes();
                 // AppendSimDebug($"[CUBE]   Slope check result: slopeHit={slopeHit}, eject_D={eject_D}, counter={currplayer_was_on_slope_counter}");
                 if (slopeHit)
@@ -448,10 +444,11 @@ namespace FamidashEditor
                         wasZeroedByCollisionLastFrame = true;  // Signal that gravity should not re-apply next frame
                     }
                 }
-                else
+                else if (playerVelY_fixed >= 0)
                 {
-                    // Slope check failed - fall back to flat collision
-                    // This matches collision.h lines 946-968
+                    // Flat floor check — NES bg_coll_D velocity guard:
+                    // if(!(high_byte(currplayer_vel_y) & 0x80))
+                    // Only runs when vel_y >= 0 (falling/grounded).
                     // AppendSimDebug($"[CUBE]   Falling back to flat collision (slopeHit={slopeHit}, eject_D={eject_D})");
                     // AppendSimDebug($"[CUBE]   Checking from: playerX={playerX_px}, playerY={playerY_px}, velY={playerVelY_fixed}");
                     
@@ -488,7 +485,6 @@ namespace FamidashEditor
                         // AppendSimDebug($"[CUBE]     NO COLLISION - falling! Y={playerY_px}");
                     }
                 }
-                } // end velocity guard (playerVelY_fixed >= 0)
                 
                 // Normal gravity: Check TOP collision for hblocked/fblocked eject
                 if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (hblocked || fblocked))

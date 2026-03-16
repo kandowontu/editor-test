@@ -798,23 +798,10 @@ namespace FamidashEditor
                 int hitboxW_local = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
                 hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
                 
-                int hitboxOffsetY;
-                if (currplayer_mini != 0 && currplayer_gravity == 0)
-                {
-                    // Normal gravity mini: bottom-align hitbox within 16px sprite
-                    if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8)
-                        hitboxOffsetY = 9;  // cube/robot/ninja
-                    else
-                        hitboxOffsetY = 4;  // ball/ship/ufo/spider/wave
-                }
-                else if (currplayer_mini != 0 && currplayer_gravity != 0)
-                {
-                    hitboxOffsetY = 0;  // reversed gravity mini
-                }
-                else
-                {
-                    hitboxOffsetY = 0;  // not mini
-                }
+                // NES bg_coll_D slope probe offset:
+                // Generic.y + Generic.height - 2 + (currplayer_mini ? byte(0x10 - Generic.height) >> 1 : 0)
+                // The mini offset is (0x10 - height) >> 1 = 4 for ALL modes (not mode-specific).
+                int hitboxOffsetY = (currplayer_mini != 0) ? ((0x10 - hitboxH) >> 1) : 0;
                 int adjustedPlayerY = playerY_px + hitboxOffsetY;
                 
                 checkBaseX = playerX_px;
