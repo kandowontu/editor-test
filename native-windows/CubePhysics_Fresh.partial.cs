@@ -156,16 +156,22 @@ namespace FamidashEditor
                         // Log pathfinder jump check data when pathfinder is active and input is present
                         if (pathfinderEnabled && (holdJump || pressJump))
                             AppendSimDebug($"[PF-JUMP] hold={holdJump}, press={pressJump}, velY=0x{playerVelY_fixed:X4}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}, wasZeroed={wasZeroedByCollisionLastFrame}");                        
-                        // Two jump paths from gamemode_cube.h:
-                        // Path 1 (lines 81-91): Hold A to buffer jump (no jblocked/fblocked)
-                        // Path 2 (lines 92-102): Press A for immediate jump (with jblocked/fblocked)
-                        // For now, simplified: either hold or press allows jump
+                        // Two jump paths from gamemode_cube.h lines 50-65:
+                        // Path 1: Hold A && !jblocked && !fblocked → if (!orbed) jump
+                        // Path 2: Press A && (jblocked || fblocked) → jump (no orbed check!)
                         
                         // Use tolerance for grounded check (check if at rest)
                         bool isGrounded = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
                         
-                        // Check gamemode_cube.h line 70: dashing == 0
-                        if ((holdJump || pressJump) && isGrounded && !orbed[currplayer] && dashing[currplayer] == 0)
+                        bool doJump = false;
+                        // Path 1: hold-to-jump (no jblocked/fblocked, checks orbed)
+                        if (holdJump && !jblocked && !fblocked && isGrounded && !orbed[currplayer] && dashing[currplayer] == 0)
+                            doJump = true;
+                        // Path 2: press-to-jump (jblocked/fblocked, no orbed check)
+                        else if (pressJump && (jblocked || fblocked) && isGrounded && dashing[currplayer] == 0)
+                            doJump = true;
+
+                        if (doJump)
                         {
                             if (pathfinderEnabled) AppendSimDebug($"[PF-JUMP] JUMP TRIGGERED! velY → 0x{(GameModePhysics.JUMP_VEL(currplayer_mini != 0 ? 4 : 0) * (currplayer_gravity != 0 ? -1 : 1)):X4}");
                             
@@ -257,6 +263,14 @@ namespace FamidashEditor
                     }
                 }
                 
+                // Clear alphabet block flags AFTER jump check (matches PF/NES order:
+                // ProcessSprites sets jblocked → gravity → eject → jump check reads jblocked → clear)
+                // Previously these were cleared inside CubeEject_Fresh, BEFORE the jump check,
+                // which caused Path 2 (pressJump && jblocked) to never fire.
+                jblocked = false;
+                fblocked = false;
+                hblocked = false;
+
                 // STEP 5: Update slope counters (decrement each frame)
                 UpdateSlopeCounters_Fresh();
                 
@@ -580,10 +594,9 @@ namespace FamidashEditor
                 }
             }
             
-            // Clear alphabet block flags at end of frame (matches gamemode_cube.h lines 170-172)
-            fblocked = false;
-            hblocked = false;
-            jblocked = false;
+            // jblocked/fblocked/hblocked clearing moved to ProcessCubePhysics_Fresh
+            // AFTER the jump check, matching PF order where these flags persist
+            // through the jump check and are only cleared afterward.
         }
         
         /// <summary>

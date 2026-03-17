@@ -117,6 +117,9 @@ namespace FamidashEditor
                 AppendSimDebug($"[NINJA] Jump! Remaining={ninjajumps[currplayer]}, vel={playerVelY_fixed}");
             }
             
+            // NES x_movement_coll: decrement slope_frames + apply_slope_vel
+            UpdateSlopeCounters_Fresh();
+            
             // Record trail (skip during pathfinder speculative simulation)
             if (!pfSimulating)
             try

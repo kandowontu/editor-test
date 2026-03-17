@@ -25,6 +25,9 @@ namespace FamidashEditor
         // SimulateNumericStep checks this and skips the entire physics frame
         // to prevent position divergence from running gravity twice in one tick.
         private bool pfWasPhantomStep = false;
+        // Track previous PF input to distinguish press (false→true) from hold (true→true).
+        // NES only generates pressJump on the first frame of a button press, not on holds.
+        private bool pfPrevInjectedPress = false;
 
         /// <summary>
         /// Called from SimulateNumericStep each frame when pathfinder is active.
@@ -100,12 +103,14 @@ namespace FamidashEditor
                 bool isCube = (currentGameMode == 0);
                 bool isBall = (currentGameMode == 2);
                 bool isRobot = (currentGameMode == 4);
+                bool isSpider = (currentGameMode == 5);
                 bool isWave = (currentGameMode == 6);
+                bool isSwing = (currentGameMode == 7);
                 if (isBall)
                 {
                     pfHoldCounter = PF_BALL_HOLD_FRAMES; // Hold for N extra frames after press
                 }
-                else if (!isContinuousThrust && !isCube && !isRobot && !isWave)
+                else if (!isContinuousThrust && !isCube && !isRobot && !isSpider && !isWave && !isSwing)
                 {
                     pfHoldCounter = 1; // Hold for 1 extra frame after this one
                 }
@@ -118,6 +123,13 @@ namespace FamidashEditor
         /// </summary>
         private void PF_InjectInput(bool press)
         {
+            // Always clear stale press at the start of each injection.
+            // On the NES, pressJump is a single-frame rising edge — if nothing
+            // consumed it this frame (e.g. cube was airborne), it's gone next
+            // frame.  Without this, keyXPressedCount=1 persists across airborne
+            // frames and triggers a phantom jump on landing.
+            Interlocked.Exchange(ref keyXPressedCount, 0);
+
             if (press)
             {
                 // Ball hold continuation: only maintain keyXHeld (hold state),
@@ -129,12 +141,19 @@ namespace FamidashEditor
                     keyXHeld = true;
                     // Keep prevKeyXDown true so the sim sees continuous hold
                     prevKeyXDown = true;
+                    pfPrevInjectedPress = true;
                     return;
                 }
 
-                Interlocked.Exchange(ref keyXPressedCount, 1);
+                // Only generate a fresh press (keyXPressedCount=1) on a false→true
+                // transition. Continuous holds (true→true) should NOT generate new
+                // presses — matching NES behavior where holding the button keeps
+                // holdJump=true but pressJump only fires on the initial press frame.
+                if (!pfPrevInjectedPress)
+                    Interlocked.Exchange(ref keyXPressedCount, 1);
                 keyXHeld = true;
                 prevKeyXDown = true;
+                pfPrevInjectedPress = true;
                 if (currentGameMode == 2)
                     Interlocked.Exchange(ref ballToggleRequested, 1);
                 // Clear orb hold-suppression on EVERY pathfinder press.
@@ -150,9 +169,9 @@ namespace FamidashEditor
             }
             else
             {
-                Interlocked.Exchange(ref keyXPressedCount, 0);
                 keyXHeld = false;
                 prevKeyXDown = false;
+                pfPrevInjectedPress = false;
                 // Mirror what KeyUp handler does: clear orb suppression so a
                 // subsequent pathfinder press while airborne can activate orbs.
                 // Without this, orbHoldSuppressing stays true after a ground jump
@@ -172,6 +191,7 @@ namespace FamidashEditor
             pfHoldCounter = 0;
             pfBallHoldContinuation = false;
             pfLastAdvancedTick = -1;
+            pfPrevInjectedPress = false;
             pfInputSequence = null;
 
             try

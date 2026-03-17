@@ -10,16 +10,14 @@ namespace FamidashEditor
         
         /// <summary>
         /// Returns the mini-mode Y offset for sprite collision (pads, orbs, portals).
-        /// Must match the terrain collision offset so eject positioning and sprite overlap
-        /// are consistent.  Cube/robot/ninja use bottom-aligned (9) for normal gravity
-        /// and top-aligned (0) for reversed; all other modes center (4).
+        /// Matches NES: Generic.y = high_byte(currplayer_y) + (byte(0x10 - Generic.height) >> 1)
+        /// which always centres the mini hitbox (4 when mini, 0 when normal) regardless
+        /// of game mode or gravity direction.
         /// </summary>
         private int GetMiniSpriteOffsetY()
         {
             if (currplayer_mini == 0) return 0;
-            if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8)
-                return (currplayer_gravity == 0) ? 9 : 0;
-            return 4; // ball, ship, UFO, spider, wave, etc.
+            return (0x10 - 7) >> 1; // 4
         }
         
         // Generic collision variables (like NES Generic struct)

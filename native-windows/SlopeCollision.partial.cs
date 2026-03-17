@@ -442,71 +442,19 @@ namespace FamidashEditor
         private static readonly short[] EXIT_SLOPE_CUBE_22 = { unchecked((short)0xFECD), 0x0133, unchecked((short)0xFECD), 0x0133, unchecked((short)0xFF00), 0x0100, unchecked((short)0xFF00), 0x0100 };
         
         /// <summary>
-        /// decrement_was_on_slope() from x_movement.h line 38
-        /// Called each frame from UpdateSlopeCounters_Fresh.
-        /// When counter reaches 0, applies exit velocity for certain game modes.
+        /// x_movement_coll slope_frames handling — called AFTER eject.
+        /// Matches NES x_movement_coll() slope section:
+        ///   - Only decrements slope_frames (NOT was_on_slope_counter)
+        ///   - When slope_frames was >0 and slope_type is set: apply_slope_vel()
+        /// was_on_slope_counter is handled separately by UpdateSlopeCounters (in eject).
         /// </summary>
         private void UpdateSlopeCounters_Fresh()
         {
-            if (currplayer_was_on_slope_counter > 0)
-            {
-                currplayer_was_on_slope_counter--;
-                if (currplayer_was_on_slope_counter == 0)
-                {
-                    // Counter just reached 0 - apply exit velocity for ball/cube
-                    // NES: uses currplayer_table_idx which encodes gravity + mini
-                    int tableIdx = currplayer_table_idx;
-                    if (tableIdx < 0 || tableIdx >= 8) tableIdx = 0;
-                    
-                    if (currentGameMode == 2 || currentGameMode == 9) // Ball or Pogo
-                    {
-                        switch (currplayer_slope_type)
-                        {
-                            case SLOPE_22DEG_UP:
-                            case SLOPE_22DEG_UP_UD:
-                                playerVelY_fixed += EXIT_SLOPE_BALL_22[tableIdx];
-                                AppendSimDebug($"[SLOPE] Exit velocity Ball 22°: +{EXIT_SLOPE_BALL_22[tableIdx]}, velY={playerVelY_fixed}");
-                                break;
-                            case SLOPE_66DEG_UP:
-                            case SLOPE_66DEG_UP_UD:
-                                playerVelY_fixed += EXIT_SLOPE_BALL_66[tableIdx];
-                                AppendSimDebug($"[SLOPE] Exit velocity Ball 66°: +{EXIT_SLOPE_BALL_66[tableIdx]}, velY={playerVelY_fixed}");
-                                break;
-                        }
-                    }
-                    else if (currentGameMode == 0 || currentGameMode == 11) // Cube or Football
-                    {
-                        switch (currplayer_slope_type)
-                        {
-                            case SLOPE_22DEG_UP:
-                            case SLOPE_22DEG_UP_UD:
-                                playerVelY_fixed += EXIT_SLOPE_CUBE_22[tableIdx];
-                                AppendSimDebug($"[SLOPE] Exit velocity Cube 22°: +{EXIT_SLOPE_CUBE_22[tableIdx]}, velY={playerVelY_fixed}");
-                                break;
-                        }
-                    }
-                    
-                    // Clear slope type when counter expires
-                    currplayer_slope_type = 0;
-                    AppendSimDebug($"[SLOPE] Counter expired, slope_type cleared");
-                }
-            }
-            else
-            {
-                // Not on slope and counter is 0 - clear everything
-                currplayer_last_slope_type = 0;
-                currplayer_slope_type = 0;
-            }
-            
-            // x_movement_coll slope_frames handling:
-            // When slope_frames > 0, decrement. When it transitions to 0 and slope_type
-            // is still set, apply_slope_vel to push player in slope direction.
             if (currplayer_slope_frames > 0)
             {
                 currplayer_slope_frames--;
-                if (currplayer_slope_frames == 0 && currplayer_slope_type != 0)
+                if (currplayer_slope_type != 0)
                 {
-                    // We were on a slope and just left it - apply exit velocity
                     apply_slope_vel();
                     AppendSimDebug($"[SLOPE] slope_frames expired, apply_slope_vel applied");
                 }
@@ -533,6 +481,9 @@ namespace FamidashEditor
             switch (collision)
             {
                 case MetatileCollision.COL_SLOPE_LU45:
+                    // NES: wave mode (non-mini) skips LU45 slopes
+                    if (currentGameMode == 6 && currplayer_mini == 0)
+                        return false;
                     tmp7 = temp_x & 0x0f;
                     tmp4 = (temp_y & 0x0f) ^ 0x0f;
                     currplayer_slope_type = SLOPE_45DEG | SLOPE_UPSIDEDOWN; // SLOPE_45DEG_DOWN_UD
@@ -649,6 +600,9 @@ namespace FamidashEditor
                     break;
                     
                 case MetatileCollision.COL_SLOPE_LU66_TOP:
+                    // NES: wave mode (mini) skips LU66 slopes
+                    if (currentGameMode == 6 && currplayer_mini != 0)
+                        return false;
                     if ((temp_x & 0x0f) >= 0x08) return false;
                     tmp7 = ((temp_x & 0x07) << 1) & 0x0f;
                     tmp4 = (temp_y & 0x0f) ^ 0x0f;
@@ -656,6 +610,9 @@ namespace FamidashEditor
                     break;
                     
                 case MetatileCollision.COL_SLOPE_LU66_BOT:
+                    // NES: wave mode (mini) skips LU66 slopes
+                    if (currentGameMode == 6 && currplayer_mini != 0)
+                        return false;
                     if ((temp_x & 0x0f) < 0x08) return true;
                     tmp7 = ((temp_x & 0x0f) << 1) & 0x0f;
                     tmp4 = (temp_y & 0x0f) ^ 0x0f;
@@ -678,7 +635,7 @@ namespace FamidashEditor
                 // Other modes: use a_check_lookup table for unstick logic
                 if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 11) // Cube, Robot, Ninja, Football
                 {
-                    if (keyXPressedCount > 0 || upHeld) // PAD_A | PAD_UP
+                    if (IsXDownAsync() || keyXHeld || upHeld) // NES: controllingplayer->hold & (PAD_A | PAD_UP)
                     {
                         make_cube_jump_higher = true;
                         AppendSimDebug($"[SLOPE] col_end: Cube/Robot/Ninja mode, A held → make_cube_jump_higher");
@@ -691,7 +648,26 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    // Ship/Ball/UFO/Wave/etc: always set slope counters
+                    // Ship/Ball/UFO/Wave/etc: NES uses a_check_lookup table + unstick()
+                    // a_check_lookup indexed by (RISING?4:0)|(UD?2:0)|(gravity?1:0)
+                    int aIdx = 0;
+                    if ((currplayer_slope_type & SLOPE_RISING) != 0) aIdx |= 0b100;
+                    if ((currplayer_slope_type & SLOPE_UPSIDEDOWN) != 0) aIdx |= 0b010;
+                    if (currplayer_gravity != 0) aIdx |= 0b001;
+                    
+                    // a_check_lookup = {1, 0, 0, 1, 1, 0, 0, 1}
+                    bool aCheckResult = (aIdx == 0 || aIdx == 3 || aIdx == 4 || aIdx == 7);
+                    bool holdingInput = IsXDownAsync() || keyXHeld || upHeld;
+                    
+                    if (aCheckResult)
+                    {
+                        if (holdingInput) tmp8 = 4; // unstick
+                    }
+                    else
+                    {
+                        if (!holdingInput) tmp8 = 4; // unstick
+                    }
+                    
                     currplayer_slope_frames = 1;
                     currplayer_was_on_slope_counter = 3;
                 }
@@ -746,7 +722,7 @@ namespace FamidashEditor
                     if (currplayer_last_slope_type != 0 && currplayer_slope_type != 0)
                     {
                         currplayer_slope_type = currplayer_last_slope_type;
-                        tmp8 = 0x03; // Approximation of horizontal speed >> 8
+                        tmp8 = playerVelX_fixed >> 8; // NES: high_byte(currplayer_vel_x)
                     }
                 }
                 if (currplayer_slope_type != 0)
@@ -865,30 +841,61 @@ namespace FamidashEditor
         }
         
         /// <summary>
-        /// Update slope counter each frame (used by all eject functions)
-        /// Simple counter management without exit velocity
-        /// Exit velocity is handled by UpdateSlopeCounters_Fresh (called in ProcessCubePhysics_Fresh STEP 5)
+        /// decrement_was_on_slope() — called at top of eject, BEFORE slope probes.
+        /// Matches NES decrement_was_on_slope() from titlescreen.c:
+        ///   - Only decrements was_on_slope_counter (NOT slope_frames)
+        ///   - When counter reaches 0: applies EXIT_SLOPE velocity tables, clears slope_type
+        ///   - When already 0: clears last_slope_type and slope_type
+        /// slope_frames is handled separately by UpdateSlopeCounters_Fresh (post-eject).
         /// </summary>
         private void UpdateSlopeCounters()
         {
-            // Decrement was_on_slope_counter (allows slope to persist for a few frames after leaving)
             if (currplayer_was_on_slope_counter > 0)
             {
                 currplayer_was_on_slope_counter--;
                 if (currplayer_was_on_slope_counter == 0)
                 {
+                    // Counter just reached 0 — apply exit velocity for ball/cube
+                    // NES: uses currplayer_table_idx which encodes gravity + mini
+                    int tableIdx = currplayer_table_idx;
+                    if (tableIdx < 0 || tableIdx >= 8) tableIdx = 0;
+                    
+                    if (currentGameMode == 2 || currentGameMode == 9) // Ball or Pogo
+                    {
+                        switch (currplayer_slope_type)
+                        {
+                            case SLOPE_22DEG_UP:
+                            case SLOPE_22DEG_UP_UD:
+                                playerVelY_fixed += EXIT_SLOPE_BALL_22[tableIdx];
+                                AppendSimDebug($"[SLOPE] Exit velocity Ball 22°: +{EXIT_SLOPE_BALL_22[tableIdx]}, velY={playerVelY_fixed}");
+                                break;
+                            case SLOPE_66DEG_UP:
+                            case SLOPE_66DEG_UP_UD:
+                                playerVelY_fixed += EXIT_SLOPE_BALL_66[tableIdx];
+                                AppendSimDebug($"[SLOPE] Exit velocity Ball 66°: +{EXIT_SLOPE_BALL_66[tableIdx]}, velY={playerVelY_fixed}");
+                                break;
+                        }
+                    }
+                    else if (currentGameMode == 0 || currentGameMode == 11) // Cube or Football
+                    {
+                        switch (currplayer_slope_type)
+                        {
+                            case SLOPE_22DEG_UP:
+                            case SLOPE_22DEG_UP_UD:
+                                playerVelY_fixed += EXIT_SLOPE_CUBE_22[tableIdx];
+                                AppendSimDebug($"[SLOPE] Exit velocity Cube 22°: +{EXIT_SLOPE_CUBE_22[tableIdx]}, velY={playerVelY_fixed}");
+                                break;
+                        }
+                    }
+                    
                     currplayer_slope_type = 0;
+                    AppendSimDebug($"[SLOPE] was_on_slope_counter expired, slope_type cleared");
                 }
             }
             else
             {
                 currplayer_last_slope_type = 0;
                 currplayer_slope_type = 0;
-            }
-            // Decrement slope_frames (allows slope velocity to apply on transition)
-            if (currplayer_slope_frames > 0)
-            {
-                currplayer_slope_frames--;
             }
         }
         

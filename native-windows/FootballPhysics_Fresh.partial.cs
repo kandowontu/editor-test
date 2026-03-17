@@ -41,6 +41,9 @@ namespace FamidashEditor
             // Clear hblocked flag at end of frame
             hblocked = false;
             
+            // NES x_movement_coll: decrement slope_frames + apply_slope_vel
+            UpdateSlopeCounters_Fresh();
+            
             // Charge mechanic (matching gamemode_cube.h logic)
             bool xHeld = IsXDownAsync() || keyXHeld;
             

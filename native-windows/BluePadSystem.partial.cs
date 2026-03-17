@@ -8,6 +8,7 @@ namespace FamidashEditor
     /// Blue pads reverse/normalize gravity and apply velocity.
     /// Bottom pads activate when gravity is normal and reverse it.
     /// Top pads activate when gravity is reversed and normalize it.
+    /// Uses inline AABB matching PF's ProcessSprites exactly (no SpriteIntersectsPlayer).
     /// </summary>
     public partial class SimulatorWindow
     {
@@ -17,11 +18,12 @@ namespace FamidashEditor
         private const byte BOTTOM_BLUE_PAD_MULTI = 0xFD;
         private const byte TOP_BLUE_PAD_MULTI = 0xFE;
 
-        // Blue pad activation tracking (can only be activated once per pad)
-        private Dictionary<int, bool> bluePadActivated = new Dictionary<int, bool>();
-
         /// <summary>
-        /// Check for blue pad collision and apply gravity change + velocity
+        /// Check for blue pad collision and apply gravity change + velocity.
+        /// Uses inline AABB computation matching PF's ProcessSprites exactly:
+        /// - NO SpriteIntersectsPlayer (avoids hh>=0xFC skip and bitmap override)
+        /// - Uses anchor-overridden id_for_geom for hitbox table lookup
+        /// - Pads fire every overlapping frame (no activation tracking), matching PF
         /// </summary>
         private void CheckBluePadCollision()
         {
@@ -29,82 +31,103 @@ namespace FamidashEditor
             {
                 int playerX_px = playerX_fixed >> 8;
                 int playerY_px = playerY_fixed >> 8;
-                
-                // Use actual collision hitbox size (15x15 for normal, 8x7 for mini)
+
                 bool isMini = (currplayer_mini != 0);
                 bool gravityInverted = (currplayer_gravity != 0);
-                int hitboxW = isMini ? 8 : 15;
-                int hitboxH = isMini ? 7 : 15;
-                
-                // Apply mini mode offset matching terrain collision conventions
+                int hitboxW = SharedPhysics.GetCubeHitboxW(isMini);
+                int hitboxH = SharedPhysics.GetCubeHitboxH(isMini);
+
+                // Apply mini mode offset matching PF's GetHitboxOffsetY
                 playerY_px += GetMiniSpriteOffsetY();
-                
-                // Player bounding box for collision
-                int playerLeft_px = playerX_px;
-                int playerRight_px = playerX_px + hitboxW - 1;
-                int playerTop_px = playerY_px;
-                int playerBottom_px = playerY_px + hitboxH - 1;
-                
-                // Iterate through ALL sprites and check for blue pads
+
+                // PF uses padLeft = currentX_px + 0 (no +1 for blue pads)
+                int padLeft = playerX_px;
+                int padRight = padLeft + hitboxW;        // exclusive (matches PF)
+                int playerTop = playerY_px;
+                int playerBottom = playerTop + hitboxH;  // exclusive (matches PF)
+
+                // Ground row adjustment matching PF's groundRowsToReserve
+                int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+
                 for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = nonEmptySpriteIndices[_si];
+                    int sid = sprites[idx];
                     if (sid < 0) continue;
-                    
-                    // Check if this sprite is a blue pad
+
                     bool isBottomPad = (sid == BOTTOM_BLUE_PAD || sid == BOTTOM_BLUE_PAD_MULTI);
                     bool isTopPad = (sid == TOP_BLUE_PAD || sid == TOP_BLUE_PAD_MULTI);
-                    
+
                     if (!isBottomPad && !isTopPad)
-                        continue; // Not a blue pad
-                    
-                    // Check if already activated
-                    if (bluePadActivated.ContainsKey(idx) && bluePadActivated[idx])
-                        continue; // Already activated
-                    
-                    // Check gravity condition for activation
-                    bool canActivate = false;
-                    if (isBottomPad && !gravityInverted)
-                    {
-                        // Bottom pad activates when gravity is normal
-                        canActivate = true;
-                    }
-                    else if (isTopPad && gravityInverted)
-                    {
-                        // Top pad activates when gravity is reversed
-                        canActivate = true;
-                    }
-                    
-                    if (!canActivate)
                         continue;
-                    
-                    // Use SpriteIntersectsPlayer to check sprite hitbox overlap
-                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+
+                    // Gravity gate: bottom pads need normal grav, top pads need inverted grav
+                    if (isBottomPad && gravityInverted) continue;
+                    if (isTopPad && !gravityInverted) continue;
+
+                    // Inline AABB matching PF's ProcessSprites:
+                    // Use anchor-overridden id_for_geom for hitbox lookup (same as PF)
+                    int id_for_geom = sid & 0xFF;
+                    int anchorKey = -1;
+                    if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
                     {
-                        // Mark as activated (can only activate once)
-                        bluePadActivated[idx] = true;
-                        
-                        // NES spcl_gvdn_pd/spcl_gvup_pd calls clear_slope_stuff() before applying velocity
+                        anchorKey = anchor.anchorTileY * mapWidth + anchor.anchorTileX;
+                        if (anchorKey >= 0 && anchorKey < sprites.Length)
+                        {
+                            int anchoredId = sprites[anchorKey];
+                            if (anchoredId >= 0 && anchoredId < 256) id_for_geom = anchoredId & 0xFF;
+                        }
+                    }
+
+                    // Use SharedPhysics tables (same as PF) — SIM's local sprite_y_offset has +8
+                    // globalObjectOffset baked into bottom pad entries (0x0A,0x0D,0x25,0x52,0x56,0xFD),
+                    // making hitboxes 8px lower than PF. SharedPhysics matches PF exactly.
+                    int hw = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_widths.Length) ? SharedPhysics.sprite_widths[id_for_geom] : TILE;
+                    int hh = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_heights.Length) ? SharedPhysics.sprite_heights[id_for_geom] : TILE;
+                    // NO hh >= 0xFC skip — PF doesn't skip sentinels for pad detection
+                    int hxoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_x_offset.Length) ? SharedPhysics.sprite_x_offset[id_for_geom] : 0;
+                    int hyoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom] : 0;
+
+                    // Per-position pixel offset (matching PF's spritePixelOffsets lookup)
+                    int pxOff = 0, pyOff = 0;
+                    if (anchorKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs))
+                    {
+                        pxOff = aoffs.offsetX; pyOff = aoffs.offsetY;
+                    }
+                    else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs))
+                    {
+                        pxOff = offs.offsetX; pyOff = offs.offsetY;
+                    }
+
+                    int storageTileX = idx % mapWidth;
+                    int storageTileY = idx / mapWidth;
+                    // NO bitmap override — PF uses table-based hitbox w/h only
+                    int spriteLeft = storageTileX * TILE + hxoff + pxOff;
+                    int spriteTop = (storageTileY - groundRowsLocal) * TILE + hyoff + pyOff - 1;
+                    int spriteRight = spriteLeft + Math.Max(1, hw);
+                    int spriteBottom = spriteTop + Math.Max(1, hh);
+
+                    // Overlap check matching PF's ProcessSprites exactly
+                    bool xOverlap = !(padRight < spriteLeft || spriteRight < padLeft);
+                    bool yOverlap = !(playerBottom < spriteTop || spriteBottom < playerTop);
+
+                    // DEBUG: trace blue pad collision math in critical X range
+                    if (isBottomPad && padLeft >= 4500 && padLeft <= 4560)
+                        AppendSimDebug($"[BPAD_DBG] idx={idx} sid=0x{sid:X2} pad=({padLeft},{playerTop})-({padRight},{playerBottom}) spr=({spriteLeft},{spriteTop})-({spriteRight},{spriteBottom}) xO={xOverlap} yO={yOverlap} tX={storageTileX} tY={storageTileY} grR={groundRowsLocal} hw={hw} hh={hh} hxo={hxoff} hyo={hyoff} pxO={pxOff} pyO={pyOff} gInv={gravityInverted}");
+
+                    if (xOverlap && yOverlap)
+                    {
                         ClearSlopeStuff();
-                        
-                        // Reverse gravity state
+
                         gravityInverted = !gravityInverted;
                         gravityFlipped = gravityInverted;
                         gravityReversed = gravityInverted;
-                        
-                        // Update player icon flip on UI thread (this is called from simulation thread)
+
                         try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
-                        
-                        // Apply velocity AFTER gravity change
-                        // Negative if gravity is now reversed (upward)
-                        // Positive if gravity is now normal (downward)
+
                         int baseVel = isMini ? PAD_HEIGHT_BLUE_mini : PAD_HEIGHT_BLUE_normal;
-                        
-                        // baseVel is negative (-0x3A0 or -0x160)
-                        // If gravity is now reversed: keep negative (upward in inverted gravity)
-                        // If gravity is now normal: negate to positive (downward in normal gravity)
                         int newVel = gravityInverted ? baseVel : -baseVel;
-                        
+
                         playerVelY_fixed = newVel;
                         orbhitonthisframe[currplayer] = true;
                     }
@@ -120,7 +143,7 @@ namespace FamidashEditor
         /// </summary>
         private void ResetBluePadSystem()
         {
-            bluePadActivated.Clear();
+            // No per-pad tracking needed — pads fire every overlapping frame (matching PF/NES)
         }
     }
 }

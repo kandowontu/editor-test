@@ -544,7 +544,8 @@ namespace FamidashEditor
         {
             if (sprites == null || mapWidth <= 0 || mapHeight <= 0) return;
 
-            int playerX_px = playerX_fixed >> 8;
+            // NES: Generic.x = high_byte(currplayer_x) + 1 (sprite_collide offset)
+            int playerX_px = (playerX_fixed >> 8) + 1;
             int playerY_px = playerY_fixed >> 8;
             
             // Use actual collision hitbox size, not visual size

@@ -554,8 +554,8 @@ namespace FamidashEditor
         /// </summary>
         private bool IsSolidCollisionForSpider(MetatileCollision collision)
         {
-            return collision != MetatileCollision.COL_NONE && 
-                   collision != MetatileCollision.COL_DEATH_BOTTOM;
+             return collision != MetatileCollision.COL_NONE &&
+                 !SharedPhysics.IsDeathCollision(collision);
         }
         
         /// <summary>

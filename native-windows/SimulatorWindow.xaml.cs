@@ -972,7 +972,9 @@ namespace FamidashEditor
                 // NES sprite_collide() skips DECO/COLR/OUTL/SPBH sentinels (height >= 0xFC)
                 if (hh >= 0xFC) return false;
                 int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
-                int hyoff = (id_for_geom >= 0 && id_for_geom < sprite_y_offset.Length) ? sprite_y_offset[id_for_geom] : 0;
+                // Use SharedPhysics.sprite_y_offset (same as PF) — SIM's local table has +8
+                // globalObjectOffset baked into bottom pad entries, causing hitbox mismatch
+                int hyoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom] : 0;
 
                 // Per-position pixel offset (visual shift).
                 int pxOff = 0; int pyOff = 0;
@@ -1063,7 +1065,9 @@ namespace FamidashEditor
                 // NES sprite_collide() skips DECO/COLR/OUTL/SPBH sentinels (height >= 0xFC)
                 if (hh >= 0xFC) return false;
                 int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
-                int hyoff = (id_for_geom >= 0 && id_for_geom < sprite_y_offset.Length) ? sprite_y_offset[id_for_geom] : 0;
+                // Use SharedPhysics.sprite_y_offset (same as PF) — SIM's local table has +8
+                // globalObjectOffset baked into bottom pad entries, causing hitbox mismatch
+                int hyoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom] : 0;
 
                 // Per-position pixel offset (visual shift).
                 // When anchored, prefer the anchor tile's pixel offset so collision and
@@ -1388,6 +1392,7 @@ namespace FamidashEditor
         {
             if (col == MetatileCollision.COL_NONE) return false;
             if (col == MetatileCollision.COL_TOP) return false; // top slabs are pass-through from below
+            if (SharedPhysics.IsDeathCollision(col)) return false;
             return true;
         }
 
@@ -1955,6 +1960,94 @@ namespace FamidashEditor
             }
         }
 
+        private void CheckGameModePortals()
+        {
+            try
+            {
+                int playerX_px = (playerX_fixed >> 8) + 1;
+                int playerY_px = playerY_fixed >> 8;
+                int hitboxW = miniMode ? 8 : 15;
+                int hitboxH = miniMode ? 7 : 15;
+
+                playerY_px += GetMiniSpriteOffsetY();
+
+                int playerLeft_px = playerX_px;
+                int playerRight_px = playerX_px + hitboxW - 1;
+                int playerTop_px = playerY_px;
+                int playerBottom_px = playerY_px + hitboxH - 1;
+
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                {
+                    int idx = nonEmptySpriteIndices[_si];
+                    int sid = sprites[idx];
+                    if (sid < 0) continue;
+                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
+
+                    if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58 || sid == 0x6A || sid == 0x6B || sid == 0x6C)
+                    {
+                        if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                            continue;
+
+                        int oldMode = currentGameMode;
+                        int newMode = sid switch {
+                            0x00 => 0,
+                            0x01 => 1,
+                            0x02 => 2,
+                            0x03 => 3,
+                            0x04 => 4,
+                            0x17 => 5,
+                            0x24 => 6,
+                            0x4B => 7,
+                            0x58 => 8,
+                            0x6A => 9,
+                            0x6B => 10,
+                            0x6C => 11,
+                            _ => currentGameMode
+                        };
+
+                        if (newMode != oldMode)
+                        {
+                            currentGameMode = newMode;
+                            try { UpdateGameModeDisplay(); } catch { }
+                            try { UpdateEffectiveGravity(); } catch { }
+                            try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                        }
+
+                        try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
+                        break;
+                    }
+
+                    if (sid == 0x64 || sid == 0x7E)
+                    {
+                        if (processedRandomPortals.Contains(idx)) continue;
+                        if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                            continue;
+
+                        int oldMode = currentGameMode;
+                        int newMode = (sid == 0x64)
+                            ? new System.Random().Next(0, 8)
+                            : new System.Random().Next(0, 12);
+
+                        if (newMode != oldMode)
+                        {
+                            currentGameMode = newMode;
+                            try { UpdateGameModeDisplay(); } catch { }
+                            try { UpdateEffectiveGravity(); } catch { }
+                            try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                        }
+
+                        try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
+                        processedRandomPortals.Add(idx);
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendSimDebug($"[GAMEMODE PORTAL] Error: {ex.Message}");
+            }
+        }
+
         /// <summary>
         /// Check for gravity modifier portal collision (0x5F-0x63)
         /// 0x5F = 1/3 gravity, 0x60 = 1/2 gravity, 0x61 = 2/3 gravity
@@ -2395,17 +2488,18 @@ namespace FamidashEditor
                 int hitboxH = miniMode ? 7 : 15;
                 playerY_px += GetMiniSpriteOffsetY();
                 
-                // Player bounding box for collision
-                int playerLeft_px = playerX_px;
+                // Player bounding box for collision (inclusive bounds)
                 int playerRight_px = playerX_px + hitboxW - 1;
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
+
+                // groundRowsToReserve for sprite Y adjustment (matching PF and SpriteIntersectsPlayer)
+                int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                 
                 for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
-                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Check if this sprite is an alphabet block
                     bool isSBlock = (sid == 0xF9);
@@ -2416,8 +2510,54 @@ namespace FamidashEditor
                     
                     if (!isSBlock && !isDBlock && !isHBlock && !isJBlock && !isFBlock) continue;
                     
-                    // Check for collision
-                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                    // Inline AABB collision matching PF's ProcessSprites exactly.
+                    // SpriteIntersectsPlayer has a bitmap size override that inflates
+                    // TILE-sized sprites using preview images, which breaks collision
+                    // for alphabet blocks. Use the sprite table geometry directly.
+                    int storageTileX = idx % mapWidth;
+                    int storageTileY = idx / mapWidth;
+
+                    int id_for_geom = sid & 0xFF;
+                    if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
+                    {
+                        int anchorKey = anchor.anchorTileY * mapWidth + anchor.anchorTileX;
+                        if (anchorKey >= 0 && anchorKey < sprites.Length)
+                        {
+                            int anchoredId = sprites[anchorKey];
+                            if (anchoredId >= 0 && anchoredId < 256) id_for_geom = anchoredId & 0xFF;
+                        }
+                    }
+
+                    int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
+                    int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
+                    if (hh >= 0xFC) continue; // skip DECO/COLR/OUTL/SPBH
+                    int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
+                    // Use SharedPhysics.sprite_y_offset (same as PF) — SIM's local table has +8
+                    // globalObjectOffset baked into bottom pad entries, causing hitbox mismatch
+                    int hyoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom] : 0;
+
+                    int pxOff = 0, pyOff = 0;
+                    {
+                        int aKey = -1;
+                        if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anch2))
+                            aKey = anch2.anchorTileY * mapWidth + anch2.anchorTileX;
+                        if (aKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(aKey, out var aoffs))
+                        { pxOff = aoffs.offsetX; pyOff = aoffs.offsetY; }
+                        else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs))
+                        { pxOff = offs.offsetX; pyOff = offs.offsetY; }
+                    }
+
+                    // Sprite hitbox (exclusive right/bottom, matching PF)
+                    int sprLeft = storageTileX * TILE + hxoff + pxOff;
+                    int sprTop = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff - 1;
+                    int sprRight = sprLeft + Math.Max(1, hw);   // exclusive
+                    int sprBottom = sprTop + Math.Max(1, hh);   // exclusive
+
+                    // AABB overlap check matching PF: inclusive player vs exclusive sprite
+                    bool xOverlap = !(playerRight_px < sprLeft || sprRight < playerX_px);
+                    bool yOverlap = !(playerBottom_px < sprTop || sprBottom < playerTop_px);
+                    
+                    if (xOverlap && yOverlap)
                     {
                         // S_BLOCK: Stop dashing, set orbed, zero velocity (sprite_loading.h line 935)
                         if (isSBlock && dashing[currplayer] != 0)
@@ -10098,6 +10238,24 @@ namespace FamidashEditor
                     attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplierLocal) * simTimeScale);
                 attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
 
+                // -- Dash end check (before sprite_collide, matching NES state_game.h line 372-374) --
+                if (dashing[currplayer] != 0)
+                {
+                    if (!(IsXDownAsync() || keyXHeld))
+                    {
+                        velocityY = 0;
+                        playerVelY_fixed = 0;
+                        dashing[currplayer] = 0;
+                    }
+                }
+
+                // -- Orbed clear (before sprite_collide, matching NES state_game.h line 557-559) --
+                if (orbed[currplayer])
+                {
+                    if (!(IsXDownAsync() || keyXHeld))
+                        orbed[currplayer] = false;
+                }
+
                 // === SPRITE INTERACTIONS (BEFORE MOVEMENT) ===
                 // Check sprite interactions with the player's CURRENT position before moving
                 // This ensures portals/pads/orbs are detected before the player moves past them
@@ -10113,6 +10271,9 @@ namespace FamidashEditor
                         
                         // Check for single portal activation (sprite 0x23) - exits dual mode
                         CheckSinglePortal();
+
+                        // Check for gamemode/random portal activation during sprite_collide
+                        CheckGameModePortals();
                         
                         // Check for gravity portal activation
                         CheckGravityPortals();
@@ -10647,24 +10808,8 @@ namespace FamidashEditor
                         // Clear dblocked every frame (matches state_game.h line 636)
                         dblocked = false;
                         
-                        // Clear dashing state when X is released (user requested Y velocity = 0)
-                        if (dashing[currplayer] != 0)
-                        {
-                            if (!(IsXDownAsync() || keyXHeld))
-                            {
-                                // Zero Y velocity when stopping dash
-                                velocityY = 0;
-                                playerVelY_fixed = 0;
-                                dashing[currplayer] = 0;
-                            }
-                        }
-                        
-                        // Clear orbed flag when X is released (matches state_game.h lines 142-143)
-                        if (orbed[currplayer])
-                        {
-                            if (!(IsXDownAsync() || keyXHeld))
-                                orbed[currplayer] = false;
-                        }
+                        // Dashing and orbed are now cleared before sprite interactions
+                        // (matching NES state_game.h lines 372-374 and 557-559)
                         
                         // === PLAYER 2 PROCESSING IN DUAL MODE ===
                         if (dual && !twoplayer)
@@ -11216,99 +11361,6 @@ namespace FamidashEditor
                     }
                     catch { }
 
-                    // Portal handling: All 9 gamemode portals + random portals (0x64, 0x7E)
-                    try
-                    {
-                        // Regular mode portals
-                        if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58 || sid == 0x6A || sid == 0x6B || sid == 0x6C)
-                        {
-                            // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1
-                            int hitboxW_local = miniMode ? 8 : 15;
-                            int hitboxH_local = miniMode ? 7 : 15;
-                            int playerLeft_px_local = (playerX_fixed >> 8) + 1;
-                            int playerRight_px_local = playerLeft_px_local + hitboxW_local - 1;
-                            int playerTop_px_local = (playerY_fixed >> 8);
-                            playerTop_px_local += GetMiniSpriteOffsetY();
-                            int playerBottom_px_local = playerTop_px_local + hitboxH_local - 1;
-
-                            if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_local, playerRight_px_local, playerTop_px_local, playerBottom_px_local))
-                            {
-                                int oldMode = currentGameMode;
-                                int newMode = sid switch {
-                                    0x00 => 0, // Cube
-                                    0x01 => 1, // Ship
-                                    0x02 => 2, // Ball
-                                    0x03 => 3, // UFO
-                                    0x04 => 4, // Robot
-                                    0x17 => 5, // Spider
-                                    0x24 => 6, // Wave
-                                    0x4B => 7, // Swing
-                                    0x58 => 8, // Ninja
-                                    0x6A => 9, // Pogo
-                                    0x6B => 10, // Snake
-                                    0x6C => 11, // Football
-                                    _ => currentGameMode
-                                };
-                                if (newMode != oldMode)
-                                {
-                                    currentGameMode = newMode;
-                                    try { UpdateGameModeDisplay(); } catch { }
-                                    try { UpdateEffectiveGravity(); } catch { }
-                                    try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
-                                }
-                                try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
-                                break;
-                            }
-                        }
-                        // Random portals: 0x64 = Limited random (up to Swingcopter), 0x7E = Super random (any mode)
-                        else if (sid == 0x64 || sid == 0x7E)
-                        {
-                            // Check if already activated
-                            if (processedRandomPortals.Contains(idx)) continue;
-
-                            // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1
-                            int hitboxW_rand = miniMode ? 8 : 15;
-                            int hitboxH_rand = miniMode ? 7 : 15;
-                            int playerLeft_px_rand = (playerX_fixed >> 8) + 1;
-                            int playerRight_px_rand = playerLeft_px_rand + hitboxW_rand - 1;
-                            int playerTop_px_rand = (playerY_fixed >> 8);
-                            playerTop_px_rand += GetMiniSpriteOffsetY();
-                            int playerBottom_px_rand = playerTop_px_rand + hitboxH_rand - 1;
-
-                            if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_rand, playerRight_px_rand, playerTop_px_rand, playerBottom_px_rand))
-                            {
-                                int oldMode = currentGameMode;
-                                int newMode;
-                                
-                                // 0x64 = Random up to Swingcopter (modes 0-7)
-                                // 0x7E = Super random including all modes (0-11: includes Ninja, Pogo, Snake, Football)
-                                if (sid == 0x64)
-                                {
-                                    // Limited random: 0-7 (Cube, Ship, Ball, UFO, Robot, Spider, Wave, Swing)
-                                    newMode = new System.Random().Next(0, 8);
-                                }
-                                else // sid == 0x7E
-                                {
-                                    // Super random: 0-11 (all modes including Ninja, Pogo, Snake, Football)
-                                    newMode = new System.Random().Next(0, 12);
-                                }
-
-                                if (newMode != oldMode)
-                                {
-                                    currentGameMode = newMode;
-                                    try { UpdateGameModeDisplay(); } catch { }
-                                    try { UpdateEffectiveGravity(); } catch { }
-                                    try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
-                                }
-                                try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
-                                
-                                // Mark this random portal as activated so it only works once
-                                processedRandomPortals.Add(idx);
-                                break;
-                            }
-                        }
-                    }
-                    catch { }
                     if (!speedPortalMap.ContainsKey(sid)) continue;
                     int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                     int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
