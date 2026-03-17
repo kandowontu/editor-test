@@ -2396,6 +2396,7 @@ namespace FamidashEditor
     private Shapes.Polyline? playerPath2Polyline = null;  // Player 2 path line for dual mode
     // Pathfinder-calculated paths (colored by bias, persist until F12 clear)
     private System.Collections.Generic.List<(System.Collections.Generic.List<(int x, int y)> points, Color color)> pathfinderPaths = new();
+    private System.Collections.Generic.List<(System.Collections.Generic.List<(int x, int y)> points, Color color)> pathfinderPath2s = new();  // P2 paths for dual mode
     private System.Collections.Generic.List<System.Windows.UIElement> pathfinderPathPolylines = new();
     // Attempted (failed backtrack) paths from pathfinder — shown in a different color
     private System.Collections.Generic.List<System.Collections.Generic.List<(int x, int y)>> attemptedPaths = new();
@@ -12531,6 +12532,59 @@ namespace FamidashEditor
                     pathfinderPathPolylines.Add(pfPathElement);
                 }
 
+                // Draw pathfinder Player 2 paths (dual mode — sky blue, same decimation)
+                foreach (var pfPath in pathfinderPath2s)
+                {
+                    if (pfPath.points == null || pfPath.points.Count == 0) continue;
+
+                    var pfGeo = new System.Windows.Media.StreamGeometry();
+                    using (var ctx = pfGeo.Open())
+                    {
+                        double minDist2 = scale * scale;
+                        double lastDx = 0, lastDy = 0;
+                        bool started = false;
+                        foreach (var p in pfPath.points)
+                        {
+                            double dx = pad + p.x * scale;
+                            double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                            if (!started)
+                            {
+                                ctx.BeginFigure(new System.Windows.Point(dx, dy), false, false);
+                                lastDx = dx; lastDy = dy;
+                                started = true;
+                            }
+                            else
+                            {
+                                double ddx = dx - lastDx, ddy = dy - lastDy;
+                                if (ddx * ddx + ddy * ddy >= minDist2)
+                                {
+                                    ctx.LineTo(new System.Windows.Point(dx, dy), true, false);
+                                    lastDx = dx; lastDy = dy;
+                                }
+                            }
+                        }
+                        if (started && pfPath.points.Count > 1)
+                        {
+                            var last = pfPath.points[pfPath.points.Count - 1];
+                            double dx = pad + last.x * scale;
+                            double dy = pad + (last.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                            ctx.LineTo(new System.Windows.Point(dx, dy), true, false);
+                        }
+                    }
+                    pfGeo.Freeze();
+
+                    var pfP2Element = new Shapes.Path()
+                    {
+                        Data = pfGeo,
+                        Stroke = new SolidColorBrush(pfPath.color),
+                        StrokeThickness = Math.Max(1.0, 2.0 * scale),
+                        IsHitTestVisible = false
+                    };
+                    Canvas.SetZIndex(pfP2Element, 2000);
+                    CanvasHost.Children.Add(pfP2Element);
+                    pathfinderPathPolylines.Add(pfP2Element);
+                }
+
                 if (playerPathPoints == null || playerPathPoints.Count == 0) return;
 
                 // Draw Player 1 path (light green)
@@ -12666,6 +12720,7 @@ namespace FamidashEditor
                 _attemptedPathsCleared = false;
                 // Also clear pathfinder-calculated paths
                 pathfinderPaths.Clear();
+                pathfinderPath2s.Clear();
                 foreach (var pfPoly in pathfinderPathPolylines)
                     try { if (CanvasHost != null) CanvasHost.Children.Remove(pfPoly); } catch { }
                 pathfinderPathPolylines.Clear();
@@ -21458,6 +21513,8 @@ namespace FamidashEditor
                                     if (drawPathLine)
                                     {
                                         pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
+                                        if (engine.Path2Points != null && engine.Path2Points.Count > 0)
+                                            pathfinderPath2s.Add((new System.Collections.Generic.List<(int, int)>(engine.Path2Points), Color.FromArgb(0xE0, 0x87, 0xCE, 0xEB)));
                                         UpdatePlayerPathOverlay();
                                     }
                                     StatusText.Text = $"Pathfinder ({biasLabel}): {engine.ResultMessage}" +
@@ -21474,6 +21531,8 @@ namespace FamidashEditor
                                     if (drawPathLine)
                                     {
                                         pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
+                                        if (engine.Path2Points != null && engine.Path2Points.Count > 0)
+                                            pathfinderPath2s.Add((new System.Collections.Generic.List<(int, int)>(engine.Path2Points), Color.FromArgb(0xE0, 0x87, 0xCE, 0xEB)));
                                         UpdatePlayerPathOverlay();
                                     }
                                     string incompleteMsg = $"Pathfinder ({biasLabel}): INCOMPLETE — {engine.ResultMessage}" +

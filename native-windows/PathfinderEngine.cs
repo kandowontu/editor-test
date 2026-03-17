@@ -355,6 +355,7 @@ namespace FamidashEditor
         // -- Best-so-far path tracking (for partial results on fail/cancel) --
         private int _bestPathHighWaterX;      // highest X (pixels) reached by any attempted path
         private List<(int x, int y)> _bestPathPoints = new();  // snapshot of PathPoints at best X
+        private List<(int x, int y)> _bestPath2Points = new(); // snapshot of Path2Points at best X
         private List<bool> _bestInputs = new();                 // snapshot of Inputs at best X
 
         // -- Backtrack timing --
@@ -365,6 +366,7 @@ namespace FamidashEditor
         // -- Speculative depth / frame counter (needed in both debug and release) ---
         private int _speculativeDepth; // >0 means we're inside lookahead � suppress logging
         private int _frameCounter;     // current frame in the main Run() loop
+        private bool _dualP2Guard;     // true during P2's StepFrame call (prevents infinite recursion)
 
         // -- Debug logging ---------------------------------------------------
 #if !DISABLE_DEBUG_LOGGING
@@ -588,6 +590,32 @@ namespace FamidashEditor
             // BFS death diagnostics (set by StepFrame when returning false)
             public byte DeathType; // 0=none,1=CEIL_SPIKE,2=EJECT,3=CENTER,4=BALL_PROBE,5=BALL_VELZERO,6=BALL_EJECT,7=FLOOR_SPIKE,8=FWD,9=DEATH_COLL,10=BOUNDS
 
+            // ---- Dual portal state ----
+            public bool DualActive;             // true when in dual mode (two players)
+            // Player 2 physics state (P1 uses the main fields above)
+            public int P2_Y_fixed;
+            public int P2_VelY_fixed;
+            public bool P2_GravFlipped;
+            public int P2_GravMul;
+            public bool P2_Mini;
+            public bool P2_WasZeroedByCollision;
+            public bool P2_OnGround;
+            public int P2_BallFlipCooldown;
+            public int P2_BallInputBuffer;
+            public int P2_BallCooldownFrames;
+            public int P2_RobotJumpTime;
+            public int P2_SlopeWasOnCounter;
+            public int P2_SlopeFrames;
+            public int P2_SlopeType;
+            public bool P2_Orbed;
+            public bool P2_BlackOrbed;
+            public bool P2_PrevInputHeld;
+            public int P2_Dashing;
+            public bool P2_JBlocked;
+            public bool P2_FBlocked;
+            public int P2_PendingOrbIndex;
+            public int P2_PendingOrbSpriteId;
+
             public SimState Clone()
             {
                 var c = this;
@@ -679,6 +707,7 @@ namespace FamidashEditor
 
         // -- Output ---------------------------------------------------------
         public List<(int x, int y)> PathPoints { get; private set; } = null!;
+        public List<(int x, int y)> Path2Points { get; private set; } = null!;  // Player 2 path (dual mode)
         public List<bool> Inputs { get; private set; } = null!;
         public bool Success { get; private set; }
         public string ResultMessage { get; private set; } = "";
@@ -800,6 +829,7 @@ namespace FamidashEditor
                 _spriteCompactMap[sp.Index] = _spriteCompactCount++;
 
             PathPoints = new List<(int, int)>();
+            Path2Points = new List<(int, int)>();
             Inputs = new List<bool>();
         }
 
@@ -1479,6 +1509,7 @@ namespace FamidashEditor
             ApplyPortalsUpTo(ref state, startX_px);
 
             PathPoints.Clear();
+            Path2Points.Clear();
             Inputs.Clear();
             _cubeHoldJump = false;
             _cubeHoldDelay = 0;
@@ -1511,6 +1542,7 @@ namespace FamidashEditor
             _ballGroundedWalkFrames = 0;
             _bestPathHighWaterX = startX_px;
             _bestPathPoints.Clear();
+            _bestPath2Points.Clear();
             _bestInputs.Clear();
             _nextCoinCheckIdx = 0;
             _forgivenCoins.Clear();
@@ -1769,6 +1801,12 @@ namespace FamidashEditor
                     int pathMiniOffY = (state.Mini && !state.GravFlipped) ? 4 : 0;
                     PathPoints.Add(((state.X_fixed >> 8) + 8,
                                     (state.Y_fixed >> 8) + pathMiniOffY + 8));
+                    if (state.DualActive)
+                    {
+                        int p2MiniOffY = (state.P2_Mini && !state.P2_GravFlipped) ? 4 : 0;
+                        Path2Points.Add(((state.X_fixed >> 8) + 8,
+                                         (state.P2_Y_fixed >> 8) + p2MiniOffY + 8));
+                    }
                 }
 
                 // -- Coin miss detection --
@@ -2677,6 +2715,7 @@ namespace FamidashEditor
             ApplyPortalsUpTo(ref state, startX_px);
 
             PathPoints.Clear();
+            Path2Points.Clear();
             Inputs.Clear();
             _speculativeDepth = 0;
             _frameCounter = 0;
@@ -2694,6 +2733,12 @@ namespace FamidashEditor
                 int pathMiniOffY = (state.Mini && !state.GravFlipped) ? 4 : 0;
                 PathPoints.Add(((state.X_fixed >> 8) + 8,
                                 (state.Y_fixed >> 8) + pathMiniOffY + 8));
+                if (state.DualActive)
+                {
+                    int p2MiniOffY = (state.P2_Mini && !state.P2_GravFlipped) ? 4 : 0;
+                    Path2Points.Add(((state.X_fixed >> 8) + 8,
+                                     (state.P2_Y_fixed >> 8) + p2MiniOffY + 8));
+                }
 
                 if (endLevel || !alive) break;
             }
@@ -2732,6 +2777,7 @@ namespace FamidashEditor
             {
                 _bestPathHighWaterX = last.x;
                 _bestPathPoints = new List<(int x, int y)>(PathPoints);
+                _bestPath2Points = new List<(int x, int y)>(Path2Points);
                 _bestInputs = new List<bool>(Inputs);
             }
         }
@@ -2750,6 +2796,8 @@ namespace FamidashEditor
             {
                 PathPoints.Clear();
                 PathPoints.AddRange(_bestPathPoints);
+                Path2Points.Clear();
+                Path2Points.AddRange(_bestPath2Points);
                 Inputs.Clear();
                 Inputs.AddRange(_bestInputs);
             }
@@ -7533,6 +7581,127 @@ namespace FamidashEditor
             // Orbed clear now happens before ProcessSprites (matching NES order)
             s.PrevInputHeld = input;
 
+            // ---- DUAL MODE: PLAYER 2 PROCESSING ----
+            // After P1 completes successfully, if dual is active, context-switch
+            // to P2 and run a full physics frame.  Both players share X and
+            // VelX; P2 has independent Y/VelY/gravity/mini.
+            // Matching SIM order: save P1 → load P2 → sprites + physics → save P2 → restore P1.
+            if (s.DualActive && !_dualP2Guard)
+            {
+                // Save P1 state
+                int p1_Y = s.Y_fixed;
+                int p1_VelY = s.VelY_fixed;
+                bool p1_GravFlipped = s.GravFlipped;
+                int p1_GravMul = s.GravMul;
+                bool p1_Mini = s.Mini;
+                bool p1_WasZeroed = s.WasZeroedByCollision;
+                bool p1_OnGround = s.OnGround;
+                int p1_BallFlipCooldown = s.BallFlipCooldown;
+                int p1_BallInputBuffer = s.BallInputBuffer;
+                int p1_BallCooldownFrames = s.BallCooldownFrames;
+                int p1_RobotJumpTime = s.RobotJumpTime;
+                int p1_SlopeWasOnCounter = s.SlopeWasOnCounter;
+                int p1_SlopeFrames = s.SlopeFrames;
+                int p1_SlopeType = s.SlopeType;
+                bool p1_Orbed = s.Orbed;
+                bool p1_BlackOrbed = s.BlackOrbed;
+                bool p1_PrevInputHeld = s.PrevInputHeld;
+                int p1_Dashing = s.Dashing;
+                bool p1_JBlocked = s.JBlocked;
+                bool p1_FBlocked = s.FBlocked;
+                int p1_PendingOrbIndex = s.PendingOrbIndex;
+                int p1_PendingOrbSpriteId = s.PendingOrbSpriteId;
+
+                // Load P2 state into s — X starts at P1's OLD X so P2's sprite
+                // checks and physics match the SIM's per-frame ordering.
+                s.X_fixed = oldX_fixed;
+                s.Y_fixed = s.P2_Y_fixed;
+                s.VelY_fixed = s.P2_VelY_fixed;
+                s.GravFlipped = s.P2_GravFlipped;
+                s.GravMul = s.P2_GravMul;
+                s.Mini = s.P2_Mini;
+                s.WasZeroedByCollision = s.P2_WasZeroedByCollision;
+                s.OnGround = s.P2_OnGround;
+                s.BallFlipCooldown = s.P2_BallFlipCooldown;
+                s.BallInputBuffer = s.P2_BallInputBuffer;
+                s.BallCooldownFrames = s.P2_BallCooldownFrames;
+                s.RobotJumpTime = s.P2_RobotJumpTime;
+                s.SlopeWasOnCounter = s.P2_SlopeWasOnCounter;
+                s.SlopeFrames = s.P2_SlopeFrames;
+                s.SlopeType = s.P2_SlopeType;
+                s.Orbed = s.P2_Orbed;
+                s.BlackOrbed = s.P2_BlackOrbed;
+                s.PrevInputHeld = s.P2_PrevInputHeld;
+                s.Dashing = s.P2_Dashing;
+                s.JBlocked = s.P2_JBlocked;
+                s.FBlocked = s.P2_FBlocked;
+                s.PendingOrbIndex = s.P2_PendingOrbIndex;
+                s.PendingOrbSpriteId = s.P2_PendingOrbSpriteId;
+
+                // Run P2's StepFrame (recursion guard prevents infinite dual loop)
+                _dualP2Guard = true;
+                bool p2Alive = StepFrame(ref s, input, out bool p2EndLevel);
+                _dualP2Guard = false;
+
+                // Save P2 state back from s
+                s.P2_Y_fixed = s.Y_fixed;
+                s.P2_VelY_fixed = s.VelY_fixed;
+                s.P2_GravFlipped = s.GravFlipped;
+                s.P2_GravMul = s.GravMul;
+                s.P2_Mini = s.Mini;
+                s.P2_WasZeroedByCollision = s.WasZeroedByCollision;
+                s.P2_OnGround = s.OnGround;
+                s.P2_BallFlipCooldown = s.BallFlipCooldown;
+                s.P2_BallInputBuffer = s.BallInputBuffer;
+                s.P2_BallCooldownFrames = s.BallCooldownFrames;
+                s.P2_RobotJumpTime = s.RobotJumpTime;
+                s.P2_SlopeWasOnCounter = s.SlopeWasOnCounter;
+                s.P2_SlopeFrames = s.SlopeFrames;
+                s.P2_SlopeType = s.SlopeType;
+                s.P2_Orbed = s.Orbed;
+                s.P2_BlackOrbed = s.BlackOrbed;
+                s.P2_PrevInputHeld = s.PrevInputHeld;
+                s.P2_Dashing = s.Dashing;
+                s.P2_JBlocked = s.JBlocked;
+                s.P2_FBlocked = s.FBlocked;
+                s.P2_PendingOrbIndex = s.PendingOrbIndex;
+                s.P2_PendingOrbSpriteId = s.PendingOrbSpriteId;
+
+                // Restore P1 state
+                s.X_fixed = newX_fixed; // P1's post-advance X (shared)
+                s.Y_fixed = p1_Y;
+                s.VelY_fixed = p1_VelY;
+                s.GravFlipped = p1_GravFlipped;
+                s.GravMul = p1_GravMul;
+                s.Mini = p1_Mini;
+                s.WasZeroedByCollision = p1_WasZeroed;
+                s.OnGround = p1_OnGround;
+                s.BallFlipCooldown = p1_BallFlipCooldown;
+                s.BallInputBuffer = p1_BallInputBuffer;
+                s.BallCooldownFrames = p1_BallCooldownFrames;
+                s.RobotJumpTime = p1_RobotJumpTime;
+                s.SlopeWasOnCounter = p1_SlopeWasOnCounter;
+                s.SlopeFrames = p1_SlopeFrames;
+                s.SlopeType = p1_SlopeType;
+                s.Orbed = p1_Orbed;
+                s.BlackOrbed = p1_BlackOrbed;
+                s.PrevInputHeld = p1_PrevInputHeld;
+                s.Dashing = p1_Dashing;
+                s.JBlocked = p1_JBlocked;
+                s.FBlocked = p1_FBlocked;
+                s.PendingOrbIndex = p1_PendingOrbIndex;
+                s.PendingOrbSpriteId = p1_PendingOrbSpriteId;
+
+                if (p2EndLevel) { endLevel = true; return true; }
+                if (!p2Alive)
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DUAL_P2_DEATH] X={s.X_fixed >> 8}px P2_Y={s.P2_Y_fixed >> 8}px deathType={s.DeathType}");
+#endif
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -9722,6 +9891,7 @@ namespace FamidashEditor
             int? lastMiniSid = null, lastMiniX = null;
             int? lastGravSid = null, lastGravX = null;
             int? lastSpeedSid = null, lastSpeedX = null;
+            int? lastDualSingleSid = null, lastDualSingleX = null;
 
             foreach (var sp in allSprites)
             {
@@ -9749,6 +9919,11 @@ namespace FamidashEditor
                     if (!lastSpeedX.HasValue || sp.AnchorX_px > lastSpeedX.Value)
                     { lastSpeedSid = sid; lastSpeedX = sp.AnchorX_px; }
                 }
+                else if (sid == 0x22 || sid == 0x23)
+                {
+                    if (!lastDualSingleX.HasValue || sp.AnchorX_px > lastDualSingleX.Value)
+                    { lastDualSingleSid = sid; lastDualSingleX = sp.AnchorX_px; }
+                }
 
                 s.ProcessedSprites.Add(sp.Index);
             }
@@ -9770,6 +9945,27 @@ namespace FamidashEditor
             {
                 int spd = SpriteIdToSpeedFixed(lastSpeedSid.Value);
                 if (spd > 0) s.VelX_fixed = spd;
+            }
+            if (lastDualSingleSid.HasValue)
+            {
+                if (lastDualSingleSid.Value == 0x22)
+                {
+                    // Dual portal before start — activate dual with P2 at same pos, inverted gravity
+                    s.DualActive = true;
+                    s.P2_Y_fixed = s.Y_fixed;
+                    s.P2_VelY_fixed = 0;
+                    s.P2_GravFlipped = !s.GravFlipped;
+                    s.P2_GravMul = -s.GravMul;
+                    s.P2_Mini = s.Mini;
+                    s.P2_WasZeroedByCollision = true;
+                    s.P2_OnGround = true;
+                    s.P2_PendingOrbIndex = -1;
+                    s.P2_PendingOrbSpriteId = -1;
+                }
+                else
+                {
+                    s.DualActive = false;
+                }
             }
         }
 
@@ -9801,6 +9997,59 @@ namespace FamidashEditor
                 // Speed portals use anchor-based detection at NEW X (CheckSpeedPortalsAtNewX),
                 // matching the SIM's camera-center activation logic. Skip overlap detection.
                 if (IsSpeedPortal(sid)) continue;
+
+                // Dual/single portals (0x22/0x23) — handled like game mode portals
+                if (sid == 0x22 || sid == 0x23)
+                {
+                    bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < nesX);
+                    bool yOverlap = !((playerBottom) < sp.HitTop || sp.HitBottom < playerTop);
+                    if (xOverlap && yOverlap)
+                    {
+                        if (sid == 0x22 && !s.DualActive)
+                        {
+                            // Activate dual mode: spawn P2 at same position, inverted gravity, negated velocity
+                            s.DualActive = true;
+                            s.P2_Y_fixed = s.Y_fixed;
+                            s.P2_VelY_fixed = -s.VelY_fixed;
+                            s.P2_GravFlipped = !s.GravFlipped;
+                            s.P2_GravMul = -s.GravMul;
+                            s.P2_Mini = s.Mini;
+                            s.P2_WasZeroedByCollision = s.WasZeroedByCollision;
+                            s.P2_OnGround = s.OnGround;
+                            s.P2_BallFlipCooldown = 0;
+                            s.P2_BallInputBuffer = 0;
+                            s.P2_BallCooldownFrames = 0;
+                            s.P2_RobotJumpTime = 0;
+                            s.P2_SlopeWasOnCounter = 0;
+                            s.P2_SlopeFrames = 0;
+                            s.P2_SlopeType = 0;
+                            s.P2_Orbed = false;
+                            s.P2_BlackOrbed = false;
+                            s.P2_PrevInputHeld = s.PrevInputHeld;
+                            s.P2_Dashing = 0;
+                            s.P2_JBlocked = false;
+                            s.P2_FBlocked = false;
+                            s.P2_PendingOrbIndex = -1;
+                            s.P2_PendingOrbSpriteId = -1;
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[DUAL_ACTIVATE] idx={sp.Index} P2_Y={s.P2_Y_fixed >> 8} P2_VelY=0x{s.P2_VelY_fixed:X4} P2_GravFlipped={s.P2_GravFlipped}");
+#endif
+                        }
+                        else if (sid == 0x23 && s.DualActive)
+                        {
+                            // Deactivate dual mode
+                            // (simplified: P2 just disappears; if we wanted SIM-exact
+                            //  P2-hit-syncs-to-P1 logic, that requires per-player collision
+                            //  which will be handled in StepFrameDual)
+                            s.DualActive = false;
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[SINGLE_ACTIVATE] idx={sp.Index}");
+#endif
+                        }
+                        s.ProcessedSprites.Add(sp.Index);
+                    }
+                    continue;
+                }
 
                 // Game mode portals, gravity portals, mini/growth portals, and end-level
                 // are all handled in sprite_collide at OLD X (matching NES).
