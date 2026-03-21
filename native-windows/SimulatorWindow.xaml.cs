@@ -2008,6 +2008,7 @@ namespace FamidashEditor
                         if (newMode != oldMode)
                         {
                             currentGameMode = newMode;
+                            pfHoldCounter = 0; // Reset ball-hold extension on mode change
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
@@ -2031,6 +2032,7 @@ namespace FamidashEditor
                         if (newMode != oldMode)
                         {
                             currentGameMode = newMode;
+                            pfHoldCounter = 0; // Reset ball-hold extension on mode change
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }

@@ -132,6 +132,8 @@ if (!gotOffsetsFromConfig)
         Console.WriteLine($"No config or metadata found for sprite offsets");
     }
 }
+// globalObjectOffsets (bottom pad +8Y, medium post -8X) are now baked into
+// SharedPhysics.sprite_y_offset / sprite_x_offset tables, matching SimulatorWindow.
 
 // Ground layer: the GUI always loads a ground bitmap (3 tile rows reserved)
 bool hasGround = true;
@@ -340,4 +342,72 @@ static Dictionary<int, (int, int)> ParseMetadataOffsets(string metaPath, string 
         }
     }
     return offsets;
+}
+
+// ══════════════════════════════════════════════════════════════
+// Helper: apply globalObjectOffsets from metadata root
+// These are sprite-ID-based offsets that apply to ALL instances
+// of matching sprite types across all levels (e.g. +8Y for bottom pads).
+// Only applies to positions that don't already have a per-level offset.
+// ══════════════════════════════════════════════════════════════
+static int ApplyGlobalObjectOffsets(string metaPath, int[] sprites, int mapWidth,
+    Dictionary<int, (int, int)> offsets)
+{
+    string raw = File.ReadAllText(metaPath);
+    string json = Json5ToJson(raw);
+
+    using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = true });
+    var root = doc.RootElement;
+
+    if (!root.TryGetProperty("globalObjectOffsets", out var gooArray)
+        || gooArray.ValueKind != JsonValueKind.Array)
+        return 0;
+
+    int applied = 0;
+    foreach (var entry in gooArray.EnumerateArray())
+    {
+        int ox = 0, oy = 0;
+        if (entry.TryGetProperty("offsetX", out var oxProp)) ox = oxProp.GetInt32();
+        if (entry.TryGetProperty("offsetY", out var oyProp)) oy = oyProp.GetInt32();
+        if (entry.TryGetProperty("offset", out var offProp) && offProp.ValueKind == JsonValueKind.Array && offProp.GetArrayLength() >= 2)
+        {
+            ox = offProp[0].GetInt32();
+            oy = offProp[1].GetInt32();
+        }
+        if (ox == 0 && oy == 0) continue;
+
+        // Collect matching object IDs
+        var matchIds = new HashSet<int>();
+        if (entry.TryGetProperty("objectID", out var oidProp))
+        {
+            if (oidProp.ValueKind == JsonValueKind.Number)
+                matchIds.Add(oidProp.GetInt32());
+            else if (oidProp.ValueKind == JsonValueKind.Array)
+                foreach (var id in oidProp.EnumerateArray())
+                    if (id.ValueKind == JsonValueKind.Number)
+                        matchIds.Add(id.GetInt32());
+        }
+        if (matchIds.Count == 0) continue;
+
+        bool isOverride = false;
+        if (entry.TryGetProperty("override", out var ovProp) && ovProp.ValueKind == JsonValueKind.True)
+            isOverride = true;
+
+        // Apply to every sprite instance that matches
+        for (int idx = 0; idx < sprites.Length; idx++)
+        {
+            int sid = sprites[idx] & 0xFF;
+            if (sid == 0 || !matchIds.Contains(sid)) continue;
+
+            if (!isOverride && offsets.ContainsKey(idx)) continue; // per-level offset takes priority
+
+            // Merge with existing offset if override
+            if (offsets.TryGetValue(idx, out var existing))
+                offsets[idx] = (existing.Item1 + ox, existing.Item2 + oy);
+            else
+                offsets[idx] = (ox, oy);
+            applied++;
+        }
+    }
+    return applied;
 }

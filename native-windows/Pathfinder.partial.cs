@@ -149,7 +149,11 @@ namespace FamidashEditor
                 // transition. Continuous holds (true→true) should NOT generate new
                 // presses — matching NES behavior where holding the button keeps
                 // holdJump=true but pressJump only fires on the initial press frame.
-                if (!pfPrevInjectedPress)
+                // Exception: Non-bufferable orb modes (ship=1, UFO=3, wave=6)
+                // need a fresh press on EVERY true frame so the orb system can
+                // activate orbs during sustained holds — these modes use xPressed
+                // (not xHeld+buffer) for orb activation.
+                if (!pfPrevInjectedPress || !CanBufferOrb(currentGameMode))
                     Interlocked.Exchange(ref keyXPressedCount, 1);
                 keyXHeld = true;
                 prevKeyXDown = true;

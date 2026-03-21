@@ -1,0 +1,5 @@
+OUT=107 last=DONE_CLUT2
+ERR=2705
+[STAB_SET] prevMode=0 mode=1 stab=0
+[STAB_SET] prevMode=2 mode=1 stab=200
+[BFS] BFS failed ∩┐╜ best path to X=15257px (94%)
