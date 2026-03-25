@@ -121,6 +121,8 @@ namespace FamidashEditor
                         // Just pressed - start jump
                         playerVelY_fixed = GameModePhysics.ROBOT_JUMP_VEL(baseTableIdx) * gravityMultiplier;
                         robotJumpTime[0] = 19; // ROBOT_JUMP_TIME for 60fps (0x13)
+                        // NES slope_jump_check: add extra velocity when jumping off a slope
+                        SlopeJumpCheck_Fresh();
                         AppendSimDebug($"[ROBOT] Jump started: vel={playerVelY_fixed}, time={robotJumpTime[0]}");
                     }
                 }

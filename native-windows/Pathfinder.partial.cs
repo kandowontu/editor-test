@@ -15,6 +15,7 @@ namespace FamidashEditor
         private int pfFrameIndex = 0;
         private int pfHoldCounter = 0; // Extra frames to keep X held after a jump press
         private bool pfBallHoldContinuation = false; // True when ball hold is continuing (not fresh press)
+        private bool pfRawSequenceInput = false; // Raw PF sequence value BEFORE hold-continuation override (for P2 dual input)
         private const int PF_BALL_HOLD_FRAMES = 8; // Ball hold duration to bridge PF/sim timing divergence
         private const int PF_FRAME_DELAY = 0; // Delay pathfinder inputs by N frames to compensate for sim timing
         // Guard: each timer tick increments pfTickGeneration; PF_GetInput only advances pfFrameIndex
@@ -38,8 +39,18 @@ namespace FamidashEditor
         /// </summary>
         private bool PF_GetInput()
         {
+            bool wasBallHoldContinuation = pfBallHoldContinuation;
             pfBallHoldContinuation = false;
             pfWasPhantomStep = false;
+
+            // Read the raw PF sequence value for this frame BEFORE hold-continuation
+            // may override it.  P2 dual input uses this to avoid inheriting P1's hold.
+            {
+                int rawIdx = pfFrameIndex - PF_FRAME_DELAY;
+                pfRawSequenceInput = (pfInputSequence != null && rawIdx >= 0 && rawIdx < pfInputSequence.Count)
+                    ? pfInputSequence[rawIdx]
+                    : false;
+            }
 
             // Double-step guard: if this tick already advanced pfFrameIndex, replay last input
             if (pfLastAdvancedTick == pfTickGeneration)
@@ -75,6 +86,16 @@ namespace FamidashEditor
                 }
             }
 
+            // When ball hold continuation just expired (wasBallHoldContinuation
+            // was set on the previous frame's hold path), the next PF sequence
+            // TRUE is a fresh press — the PF independently decided to flip again.
+            // Reset pfPrevInjectedPress so PF_InjectInput generates
+            // keyXPressedCount=1 instead of treating it as a continuous hold.
+            if (currentGameMode == 2 && wasBallHoldContinuation)
+            {
+                pfPrevInjectedPress = false;
+            }
+
             if (pfInputSequence == null)
                 return false;
 
@@ -108,7 +129,12 @@ namespace FamidashEditor
                 bool isSwing = (currentGameMode == 7);
                 if (isBall)
                 {
-                    pfHoldCounter = PF_BALL_HOLD_FRAMES; // Hold for N extra frames after press
+                    // Ball mode: do NOT extend holds.  The ballFlipBuffer countdown
+                    // (matching PF's BallInputBuffer) handles airborne-to-landing
+                    // buffering independently.  Extending the hold would skip
+                    // reading PF sequence values for 8 frames, missing the
+                    // critical input=true at the exact landing frame.
+                    pfHoldCounter = 0;
                 }
                 else if (!isContinuousThrust && !isCube && !isRobot && !isSpider && !isWave && !isSwing)
                 {
@@ -142,6 +168,19 @@ namespace FamidashEditor
                     // Keep prevKeyXDown true so the sim sees continuous hold
                     prevKeyXDown = true;
                     pfPrevInjectedPress = true;
+                    // Ball hold continuation is a synthetic hold for the ball flip
+                    // mechanic — the PF raw input at this frame is likely false.
+                    // Suppress orb activation entirely: UpdateOrbSystem has three
+                    // xHeld-based paths (buffer active, buffer start, hold start)
+                    // and orbHoldSuppressing blocks ALL of them.  Without this,
+                    // the synthetic hold triggers orb activation up to 5+ frames
+                    // early, diverging from PF which checks raw input.
+                    try { orbHoldSuppressing[currplayer] = true; } catch { }
+                    // Do NOT clear orbBufferActive here — the buffer was primed
+                    // by a real press on the previous frame and must survive until
+                    // BallPhysics_Fresh can consume it for the landing flip.
+                    // Clearing it prevented the ball from flipping on landing,
+                    // diverging from the PF which keeps BallInputBuffer alive.
                     return;
                 }
 
@@ -149,17 +188,30 @@ namespace FamidashEditor
                 // transition. Continuous holds (true→true) should NOT generate new
                 // presses — matching NES behavior where holding the button keeps
                 // holdJump=true but pressJump only fires on the initial press frame.
-                // Exception: Non-bufferable orb modes (ship=1, UFO=3, wave=6)
+                // Exception 1: Non-bufferable orb modes (ship=1, UFO=3, wave=6)
                 // need a fresh press on EVERY true frame so the orb system can
                 // activate orbs during sustained holds — these modes use xPressed
                 // (not xHeld+buffer) for orb activation.
-                if (!pfPrevInjectedPress || !CanBufferOrb(currentGameMode))
+                // Exception 2: Cube mode (0) — the PF's input sequence may contain
+                // consecutive trues from CubeWillLandThisFrame predictions across
+                // airborne frames.  If the SIM's landing frame differs from the
+                // PF's prediction, a stale held-true triggers a hold-jump at the
+                // wrong frame.  Always generating a press lets the cube jump code
+                // use pressJump (consumed once) instead of holdJump (persistent),
+                // ensuring the jump only fires on the exact frame velY==0.
+                if (!pfPrevInjectedPress || !CanBufferOrb(currentGameMode) || currentGameMode == 0)
+                {
                     Interlocked.Exchange(ref keyXPressedCount, 1);
+                    // ballToggleRequested must be guarded by the same fresh-press
+                    // condition.  Without this, a continued hold (pfPrevInjected
+                    // =true) still sets ballToggleRequested→pressJump=true, which
+                    // bypasses BallFlipCooldown and causes a spurious double-flip.
+                    if (currentGameMode == 2)
+                        Interlocked.Exchange(ref ballToggleRequested, 1);
+                }
                 keyXHeld = true;
                 prevKeyXDown = true;
                 pfPrevInjectedPress = true;
-                if (currentGameMode == 2)
-                    Interlocked.Exchange(ref ballToggleRequested, 1);
                 // Clear orb hold-suppression on EVERY pathfinder press.
                 // The pathfinder explicitly decides each frame whether to
                 // press or not; it doesn't need the simulator's anti-hold
@@ -194,6 +246,7 @@ namespace FamidashEditor
             pfFrameIndex = 0;
             pfHoldCounter = 0;
             pfBallHoldContinuation = false;
+            pfRawSequenceInput = false;
             pfLastAdvancedTick = -1;
             pfPrevInjectedPress = false;
             pfInputSequence = null;

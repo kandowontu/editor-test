@@ -11414,11 +11414,11 @@ namespace FamidashEditor
             int hbH = GetHitboxH(s.Mini);
 
             // SIM bg_coll_D_slopes uses a slope-specific hitbox offset:
-            //   Mini + normal gravity: (0x10 - hitboxH) >> 1 = 4 for ALL modes
-            //   Mini + reversed gravity: 0
+            //   Mini: (0x10 - hitboxH) >> 1 = 4 for ALL modes, regardless of gravity direction
             //   Normal (not mini): 0
+            // NES code always applies the mini centering offset in bg_coll_D_slopes.
             int slopeHbOffY;
-            if (s.Mini && !s.GravFlipped)
+            if (s.Mini)
                 slopeHbOffY = (0x10 - hbH) >> 1;  // = 4 for all mini modes
             else
                 slopeHbOffY = 0;

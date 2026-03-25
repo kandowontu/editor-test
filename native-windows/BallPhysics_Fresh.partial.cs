@@ -90,40 +90,66 @@ namespace FamidashEditor
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
                 int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-                int collisionX = (playerX_fixed >> 8);
                 
                 // If we're in cooldown from a recent flip, use the cached grounded state
                 if (ballFlipCooldown > 0) {
                     isGrounded = ballWasGroundedBeforeFlip;
                     AppendSimDebug($"[BALL] Using cached grounded state during cooldown: isGrounded={isGrounded}");
-                } else if (currplayer_gravity == 0) {
-                    // Normal gravity - test a 2px tall hitbox starting at player's bottom (tests downward)
-                    int playerBottom = (playerY_fixed >> 8) + hitboxOffsetY + hitboxH;
-                    int testHeight = 2;
-                    int testTop = playerBottom;  // Start test at player's bottom edge
-                    var (collided, _) = CheckCollisionDown(collisionX, testTop, hitboxW, testHeight);
-                    isGrounded = collided;
-                    AppendSimDebug($"[BALL] Grounded check (normal): playerBottom={playerBottom}, testTop={testTop}, isGrounded={isGrounded}");
                 } else {
-                    // Inverted gravity - test UPWARD at player's TOP (ceiling contact)
-                    // When inverted, the ball hangs from ceiling, so TOP touches the surface
-                    int playerTop = (playerY_fixed >> 8) + hitboxOffsetY;
-                    int testHeight = 2;
-                    int testTop = playerTop - 2;  // Start test 2px above player's top to detect ceiling
-                    var (collided, _) = CheckCollisionUp(collisionX, testTop, hitboxW, testHeight);
-                    isGrounded = collided;
-                    AppendSimDebug($"[BALL] Grounded check (inverted): playerTop={playerTop}, testTop={testTop}, isGrounded={isGrounded}");
+                    // Step 0: Grounded spike death check — runs every frame before flip/gravity.
+                    // Normal gravity only: probe 2px below player bottom for floor spikes.
+                    // Matches PF's BALL_GROUNDED_SPIKE_DEATH check.
+                    if (!gravityInverted)
+                    {
+                        int playerBottom_g = (playerY_fixed >> 8) + hitboxOffsetY + hitboxH;
+                        int groundRowsToReserve_g = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                        var map_g = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve_g);
+                        var (_, _, groundedSpike) = SharedPhysics.CheckFloor(in map_g, playerX_fixed >> 8, playerBottom_g, hitboxW, 2);
+                        if (groundedSpike && !MainWindow.Option_NoDeath)
+                        {
+                            AppendSimDebug($"[BALL_GROUNDED_SPIKE_DEATH] X={playerX_fixed >> 8} Y={playerY_fixed >> 8}");
+                            deathTriggered = true;
+                            deathTileX = playerX_fixed >> 8;
+                            deathTileY = playerBottom_g;
+                            paused = true;
+                            _ = StopMusicAsync();
+                            try
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    if (this.Owner is MainWindow mw)
+                                    {
+                                        try { mw.PauseSimulatorPlayback(); } catch { }
+                                        try { mw.AddDeathMarker(deathTileX, deathTileY); } catch { }
+                                    }
+                                }));
+                            }
+                            catch { }
+                            return;
+                        }
+                    }
+
+                    // Use SharedPhysics.BallIsGrounded to match PF exactly:
+                    // no spike death side effects, spikes not considered ground.
+                    int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                    var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
+                    isGrounded = SharedPhysics.BallIsGrounded(in map,
+                        playerX_fixed >> 8, playerY_fixed >> 8,
+                        hitboxW, hitboxH, hitboxOffsetY,
+                        gravityInverted);
+                    AppendSimDebug($"[BALL] Grounded check: isGrounded={isGrounded}");
                 }
                 
-                AppendSimDebug($"[BALL] press={pressJump}, hold={holdJump}, ballSwitched={ballSwitched[0]}, velY={playerVelY_fixed}, grounded={isGrounded}");
+                AppendSimDebug($"[BALL] press={pressJump}, hold={holdJump}, ballSwitched={ballSwitched[currplayer]}, velY={playerVelY_fixed}, grounded={isGrounded}");
                 
                 // Ground flip buffering - similar to orb buffering
                 // Can buffer the input while falling to trigger when landing
                 bool shouldFlip = false;
                 
-                AppendSimDebug($"[BALL_FLIP_CHECK] pressJump={pressJump} holdJump={holdJump} isGrounded={isGrounded} currplayer={currplayer} orbHoldConsumed={orbHoldConsumedKeyStillDown[currplayer]} orbHoldSuppress={orbHoldSuppressing[currplayer]} ballSwitched={ballSwitched[0]}");
+                AppendSimDebug($"[BALL_FLIP_CHECK] pressJump={pressJump} holdJump={holdJump} isGrounded={isGrounded} currplayer={currplayer} orbHoldConsumed={orbHoldConsumedKeyStillDown[currplayer]} orbHoldSuppress={orbHoldSuppressing[currplayer]} ballSwitched={ballSwitched[currplayer]} ballFlipBuffer={ballFlipBuffer[currplayer]}");
                 
-                // Set buffer when X is freshly pressed
+                // Path 1: Fresh press — flip directly if grounded, otherwise buffer for landing
                 if (pressJump && !orbHoldConsumedKeyStillDown[currplayer] && !orbHoldSuppressing[currplayer])
                 {
                     if (isGrounded)
@@ -131,16 +157,17 @@ namespace FamidashEditor
                         // Allow flip even if ballSwitched is true - fresh press overrides
                         shouldFlip = true;
                     }
-                    orbBufferActive[currplayer] = true; // Buffer the input
-                }
-                // While X is held and buffer is active, check for ground landing
-                else if (holdJump && orbBufferActive[currplayer] && !orbHoldSuppressing[currplayer])
-                {
-                    if (isGrounded && !ballSwitched[0])
+                    else
                     {
-                        // Only respect hold buffer if not already switched
-                        shouldFlip = true;
+                        // Buffer the input for landing within 8 frames (matches PF's BallInputBuffer)
+                        ballFlipBuffer[currplayer] = 8;
                     }
+                    orbBufferActive[currplayer] = true; // Keep for orb system
+                }
+                // Path 2: Buffered landing flip — countdown-based, matching PF's BallInputBuffer
+                else if (ballFlipBuffer[currplayer] > 0 && !ballSwitched[currplayer] && isGrounded)
+                {
+                    shouldFlip = true;
                 }
                 
                 // Ball flips gravity when grounded with buffered/fresh press
@@ -155,7 +182,7 @@ namespace FamidashEditor
                     tmpfallspeed = GameModePhysics.BALL_MAX_FALLSPEED(baseTableIdx) * gravityMultiplier;
                     tmpgravity = GameModePhysics.BALL_GRAVITY(baseTableIdx) * gravityMultiplier;
                     
-                    ballSwitched[0] = true;
+                    ballSwitched[currplayer] = true;
                     playerVelY_fixed = GameModePhysics.BALL_SWITCH_VEL(currplayer_table_idx);
                     
                     // Skip collision checks for 2 frames after flip to prevent stutter
@@ -166,12 +193,18 @@ namespace FamidashEditor
                     // Consume the press and clear buffer (require fresh press for next flip)
                     Interlocked.Exchange(ref keyXPressedCount, 0);
                     orbHoldConsumedKeyStillDown[currplayer] = true;
+                    ballFlipBuffer[currplayer] = 0;
                     ClearOrbBuffer();
+                }
+                else if (ballFlipBuffer[currplayer] > 0)
+                {
+                    // Decrement ball flip buffer countdown (matches PF's BallInputBuffer decrement)
+                    ballFlipBuffer[currplayer]--;
                 }
                 
                 // Clear ballSwitched flag when key is released
-                if (ballSwitched[0] && !holdJump) {
-                    ballSwitched[0] = false;
+                if (ballSwitched[currplayer] && !holdJump) {
+                    ballSwitched[currplayer] = false;
                 }
             }
             
@@ -234,8 +267,11 @@ namespace FamidashEditor
                 }
             }
             
-            // Collision ejection (only runs when cooldown == 0)
-            BallEject_Fresh();
+            // Collision ejection
+            if (currentGameMode == 7) // Swingcopter: ship-style eject (both directions, no velocity guard)
+                UfoShipEject_Fresh();
+            else
+                BallEject_Fresh();
 
             // Update slope exit velocity counters
             UpdateSlopeCounters_Fresh();

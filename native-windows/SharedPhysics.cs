@@ -1343,9 +1343,11 @@ namespace FamidashEditor
 
         /// <summary>
         /// CheckDeathCollision — center-point death check matching NES bg_coll_death.
+        /// gameMode: current game mode (pass -1 to skip solid-block check for backward compat).
         /// </summary>
         internal static bool CheckDeathCollision(
-            in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY)
+            in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY,
+            int gameMode = -1)
         {
             int centerX = playerX_px + (hbW >> 1) - 1;
             int centerY = playerY_px + (hbH / 2) + hbOffY;
@@ -1369,7 +1371,21 @@ namespace FamidashEditor
             int localX = Math.Max(0, Math.Min(TILE - 1, centerX - tileStartX));
             int localY = Math.Max(0, Math.Min(TILE - 1, centerY - tileStartY));
 
-            return MetatileCollisionTable.TileKillsAtPixel(col, localX, localY);
+            // bg_coll_spikes equivalent
+            if (MetatileCollisionTable.TileKillsAtPixel(col, localX, localY))
+                return true;
+
+            // bg_coll_U_D_checks equivalent: solid block penetration death.
+            // NES kills when the center point is inside a solid tile.
+            // Skipped for wave (6) — NES skips when wave+dblocked; PF doesn't track dblocked.
+            if (gameMode >= 0 && gameMode != 6)
+            {
+                var (colLeft, colTop, colRight, colBottom) = GetCollisionBounds(col);
+                if (localX >= colLeft && localX < colRight && localY >= colTop && localY < colBottom)
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -1423,7 +1439,9 @@ namespace FamidashEditor
             int tileArrayY = tileY + map.GroundRowsToReserve;
 
             if (tileX < 0 || tileX >= map.MapWidth) return false;
-            if (tileArrayY < 0 || tileArrayY >= map.MapHeight) return false;
+            // Above the map = solid ceiling; below the map = solid ground
+            // (matches SIM's CheckPixelCollision OOB behavior)
+            if (tileArrayY < 0 || tileArrayY >= map.MapHeight) return true;
 
             int tileIdx = tileArrayY * map.MapWidth + tileX;
             if (tileIdx < 0 || tileIdx >= map.Tiles.Length) return false;

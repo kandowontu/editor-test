@@ -284,6 +284,7 @@ namespace FamidashEditor
         private static bool IsAnyPad(int sid) => SharedPhysics.IsAnyPad(sid);
 
         // -- Hold-jump state (persists across frames in the main loop) ----
+        private bool _cubeJumpedThisStep; // set by StepFrame when a cube jump actually fires
         private bool _cubeHoldJump = false; // when true, keep jumping every landing
         private int _cubeHoldDelay = 0;    // frames to wait before first jump in hold mode
         private int _committedJumpDelay = -1; // when >= 0, counting down to a committed single-jump
@@ -366,7 +367,8 @@ namespace FamidashEditor
         // -- Speculative depth / frame counter (needed in both debug and release) ---
         private int _speculativeDepth; // >0 means we're inside lookahead � suppress logging
         private int _frameCounter;     // current frame in the main Run() loop
-        private bool _dualP2Guard;     // true during P2's StepFrame call (prevents infinite recursion)
+        [ThreadStatic]
+        private static bool _dualP2Guard; // true during P2's StepFrame call (prevents infinite recursion)
 
         // -- Debug logging ---------------------------------------------------
 #if !DISABLE_DEBUG_LOGGING
@@ -586,6 +588,7 @@ namespace FamidashEditor
             public int SlopeWasOnCounter;       // frames since last slope contact (starts 3, decremented once/frame in eject)
             public int SlopeFrames;             // 1 on slope hit, decremented to 0 triggers apply_slope_vel
             public int SlopeType;               // last slope type (direction + degree bits)
+            public bool SlopeJumpHigher;        // NES make_cube_jump_higher flag (set on slope + input held)
 
             // BFS death diagnostics (set by StepFrame when returning false)
             public byte DeathType; // 0=none,1=CEIL_SPIKE,2=EJECT,3=CENTER,4=BALL_PROBE,5=BALL_VELZERO,6=BALL_EJECT,7=FLOOR_SPIKE,8=FWD,9=DEATH_COLL,10=BOUNDS
@@ -1790,7 +1793,28 @@ namespace FamidashEditor
                 PfLog($"[DECIDE] input={input}");
 #endif
 
+                int preStepGameMode = state.GameMode;
+                _cubeJumpedThisStep = false;
                 bool alive = StepFrame(ref state, input, out bool endLevel);
+
+                // Fix 23: Post-hoc input correction for cube mode.
+                // DecideInput may return True for reasons that don't correspond
+                // to an actual cube jump (e.g. CubeWillLandThisFrame passthrough,
+                // swing-mode carryover, hold-jump continuity, etc.).
+                // If StepFrame didn't actually fire a cube jump, correct the
+                // stored input to False so the SIM replay doesn't jump either.
+                // Fix 31: Don't clear the input if a mode-change portal fired
+                // during this frame.  The press was consumed by the NEW mode's
+                // physics (e.g. UFO jump on a cube→UFO transition frame).
+                if (preStepGameMode == 0 && input && !_cubeJumpedThisStep
+                    && state.GameMode == 0)
+                {
+                    Inputs[frame] = false;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[FIX23] Corrected Inputs[{frame}] True->False (cube input=True but no jump fired)");
+#endif
+                }
+
                 TraceFrame(frame, ref state, input, alive);
 
                 // Record path at visual center AFTER physics+eject (matching sim's
@@ -2170,12 +2194,10 @@ namespace FamidashEditor
         /// </summary>
         private long BfsQuantizeKey(ref SimState s)
         {
-            // Ship/UFO modes have continuous Y/VelY � fine quantization needed
-            // Discrete modes (cube/ball/etc.) benefit from coarser quantization:
-            // sub-pixel Y differences rarely produce meaningfully different
-            // trajectories, and fine quantization wastes frontier slots on
-            // near-duplicate states, reducing path diversity.
-            bool continuous = (s.GameMode == 1 || s.GameMode == 3); // ship, UFO
+            // Ship/UFO/Swing modes have continuous Y/VelY -- coarser quantization
+            // prevents the frontier from filling with near-duplicate states.
+            // Discrete modes (cube/ball/etc.) benefit from finer quantization.
+            bool continuous = (s.GameMode == 1 || s.GameMode == 3 || s.GameMode == 7); // ship, UFO, swing
             
             // Quantize Y: ship/UFO at 2px, discrete at 1/4px (sub-pixel)
             int yq = continuous ? ((s.Y_fixed >> 9) & 0xFFF) 
@@ -2183,17 +2205,40 @@ namespace FamidashEditor
             // Quantize VelY: ship/UFO at 64-unit buckets, discrete at 32-unit
             int vq = continuous ? (((s.VelY_fixed + 0x8000) >> 6) & 0x7FF)
                                 : (((s.VelY_fixed + 0x8000) >> 5) & 0x7FF);
-            // Pack game mode, gravity, mini, onGround.
+            // Pack game mode, gravity, mini, onGround, orbed.
+            // Orbed is critical for swing: it determines whether a gravity
+            // flip can happen this frame. Without it, flip-ready and
+            // flip-blocked states get merged, losing corridor navigation paths.
             int flags = (s.GameMode & 0x7) | ((s.GravFlipped ? 1 : 0) << 3)
-                      | ((s.Mini ? 1 : 0) << 4) | ((s.OnGround ? 1 : 0) << 5);
+                      | ((s.Mini ? 1 : 0) << 4) | ((s.OnGround ? 1 : 0) << 5)
+                      | ((s.Orbed ? 1 : 0) << 6);
             // ProcessedSprites hash (include RobotJumpTime for robot mode dedup)
             int sprHash = s.ProcessedSprites.GetBitsHash();
             if (s.RobotJumpTime > 0)
                 sprHash = sprHash * 31 + s.RobotJumpTime;
+            // Mix P2 state into hash when dual is active so that paths with
+            // different P2 positions/velocities are not collapsed.
+            // Use COARSER P2 quantization than P1 to prevent the state
+            // space from exploding during dual sections (P2 adds extra
+            // dimensions; fine P2 buckets cause cap-trimming to prune
+            // valid paths before they can navigate the corridor).
+            if (s.DualActive)
+            {
+                int p2y = continuous ? ((s.P2_Y_fixed >> 11) & 0x1FF)
+                                     : ((s.P2_Y_fixed >> 9) & 0x1FF);
+                int p2v = continuous ? (((s.P2_VelY_fixed + 0x8000) >> 8) & 0xFF)
+                                     : (((s.P2_VelY_fixed + 0x8000) >> 8) & 0xFF);
+                unchecked
+                {
+                    sprHash = sprHash * 397 + p2y;
+                    sprHash = sprHash * 397 + p2v;
+                    sprHash = sprHash * 397 + (s.P2_GravFlipped ? 1 : 0);
+                }
+            }
               // Pack into 64 bits.
-              // Layout: [sprHash:22][flags:6][vel:11][y:16]
-              return ((long)(sprHash & 0x3FFFFF) << 42)
-                  | ((long)(flags & 0x3F) << 36)
+              // Layout: [sprHash:21][flags:7][vel:11][y:16]
+              return ((long)(sprHash & 0x1FFFFF) << 43)
+                  | ((long)(flags & 0x7F) << 36)
                  | ((long)(vq & 0x7FF) << 25)
                  | ((long)(yq & 0xFFFF));
         }
@@ -2725,7 +2770,23 @@ namespace FamidashEditor
                 bool inp = inputSequence[f];
                 Inputs.Add(inp);
 
+                int preStepGameMode = state.GameMode;
+                _cubeJumpedThisStep = false;
                 bool alive = StepFrame(ref state, inp, out bool endLevel);
+
+                // Fix 23: Post-hoc input correction for cube mode.
+                // The BFS may have produced True inputs for frames where the cube
+                // doesn't actually jump (e.g. Orbed blocks the jump, or the cube
+                // is airborne). Correct these to False so the SIM replay matches.
+                // Fix 31: Don't clear the input if a mode-change portal fired
+                // during this frame — the press was consumed by the NEW mode
+                // (e.g. UFO jump on a cube→UFO transition frame).
+                if (preStepGameMode == 0 && inp && !_cubeJumpedThisStep
+                    && state.GameMode == 0)
+                {
+                    Inputs[f] = false;
+                }
+
                 TraceFrame(f, ref state, inp, alive);
 
                 int pathMiniOffY = (state.Mini && !state.GravFlipped) ? 4 : 0;
@@ -4695,10 +4756,12 @@ namespace FamidashEditor
                     // Deduplicate: states with same physics within a lineage are redundant.
                     // Key: (Y_fixed, VelY_fixed, OnGround, GravFlipped, GameMode, jumpedFrame0)
                     // Keep the one with highest landingsJumped/totalLandings (most "jump-like")
-                    var deduped = new Dictionary<(int, int, bool, bool, int, bool), (SimState s, bool j0, int lj, int tl, int my, bool os)>();
+                    var deduped = new Dictionary<(int, int, bool, bool, int, bool, int, int, bool), (SimState s, bool j0, int lj, int tl, int my, bool os)>();
                     foreach (var n in alive)
                     {
-                        var key = (n.s.Y_fixed, n.s.VelY_fixed, n.s.OnGround, n.s.GravFlipped, n.s.GameMode, n.j0);
+                        var key = (n.s.Y_fixed, n.s.VelY_fixed, n.s.OnGround, n.s.GravFlipped, n.s.GameMode, n.j0,
+                                   n.s.DualActive ? n.s.P2_Y_fixed : 0, n.s.DualActive ? n.s.P2_VelY_fixed : 0,
+                                   n.s.DualActive && n.s.P2_GravFlipped);
                         if (!deduped.ContainsKey(key) || n.lj > deduped[key].lj)
                             deduped[key] = n;
                     }
@@ -6560,10 +6623,12 @@ namespace FamidashEditor
                 if (alive.Count > maxAlive)
                 {
                     // Deduplicate by physics state
-                    var deduped = new Dictionary<(int, int, bool, bool, int), SimState>();
+                    var deduped = new Dictionary<(int, int, bool, bool, int, int, int, bool), SimState>();
                     foreach (var nd in alive)
                     {
-                        var key = (nd.Y_fixed, nd.VelY_fixed, nd.OnGround, nd.GravFlipped, nd.GameMode);
+                        var key = (nd.Y_fixed, nd.VelY_fixed, nd.OnGround, nd.GravFlipped, nd.GameMode,
+                                   nd.DualActive ? nd.P2_Y_fixed : 0, nd.DualActive ? nd.P2_VelY_fixed : 0,
+                                   nd.DualActive && nd.P2_GravFlipped);
                         if (!deduped.ContainsKey(key))
                             deduped[key] = nd;
                     }
@@ -6649,6 +6714,11 @@ namespace FamidashEditor
                 {
                     // Wave: continuous hold/release each frame
                     input = holdAfterLanding;
+                }
+                else if (chainJumps && s.GameMode == 7 && !s.Orbed)
+                {
+                    // Swing: after initial flip, evaluate danger to decide next flip
+                    input = QuickDangerCheck(s);
                 }
                 // Auto-activate orbs encountered after the initial action.
                 // Gated on chainJumps so that singleJumpOnly callers (orb/pad
@@ -6751,6 +6821,11 @@ namespace FamidashEditor
                 {
                     // Wave: continuous hold/release each frame
                     input = holdAfterLanding;
+                }
+                else if (chainJumps && s.GameMode == 7 && !s.Orbed)
+                {
+                    // Swing: after initial flip, evaluate danger to decide next flip
+                    input = QuickDangerCheck(s);
                 }
 
                 // Auto-activate orbs encountered after the initial action.
@@ -6912,6 +6987,7 @@ namespace FamidashEditor
                 s.PendingOrbIndex = -1;
                 s.PendingOrbSpriteId = -1;
                 orbHitThisFrame = true;
+                _cubeJumpedThisStep = true; // Fix 23: orb activation consumes input — preserve True
             }
 
             // -- STEP 2: Compute new X (applied at the end, matching NES
@@ -6965,7 +7041,7 @@ namespace FamidashEditor
                 // Eject first (matching NES: cube_eject runs inside cube_movement,
                 // bg_coll_death runs later in runthecolls using post-eject Generic.y)
                 bool ejectDied = false;
-                CubeEject(ref s, out ejectDied);
+                CubeEject(ref s, input, out ejectDied);
                 if (ejectDied)
                 {
 #if !DISABLE_DEBUG_LOGGING
@@ -6975,8 +7051,15 @@ namespace FamidashEditor
                     s.DeathType = 2;
                     return false;
                 }
-                // Step 5: UpdateSlopeCounters_Fresh — decrement counters, fire apply_slope_vel
-                PfUpdateSlopeCounters_Fresh(ref s);
+                // NES col_end: Cube with input held on slope → make_cube_jump_higher
+                // When input IS held: only set SlopeJumpHigher, clear SlopeFrames
+                //   (NES col_end does NOT set slope_frames when A held)
+                // When input NOT held: leave SlopeFrames=1 so apply_slope_vel fires
+                if (input && s.SlopeFrames > 0 && s.SlopeType != 0)
+                {
+                    s.SlopeJumpHigher = true;
+                    s.SlopeFrames = 0; // NES: col_end only sets slope_frames when NOT holding A
+                }
 
                 // Center death check at post-eject Y (NES: bg_coll_death in runthecolls
                 // reads Generic.y which was set from currplayer_y after cube_eject)
@@ -7004,11 +7087,18 @@ namespace FamidashEditor
                     {
                         s.VelY_fixed = GetJumpVel(s.Mini) * s.GravMul;
                         s.OnGround = false;
+                        _cubeJumpedThisStep = true;
+                        // NES slope_jump_check: add extra velocity when jumping off a slope
+                        PfSlopeJumpCheck(ref s);
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[JUMP] VelY=0x{s.VelY_fixed:X4} gravMul={s.GravMul} mini={s.Mini} jblocked={s.JBlocked}");
 #endif
                     }
                 }
+
+                // Step 5: UpdateSlopeCounters_Fresh — decrement counters, fire apply_slope_vel
+                // Must be AFTER jump check (matching SIM order) so velY is still 0 when jump fires
+                PfUpdateSlopeCounters_Fresh(ref s);
             }
             else if (s.GameMode == 1) // Ship mode
             {
@@ -7023,7 +7113,7 @@ namespace FamidashEditor
                     return false;
                 }
 
-                ShipEject(ref s, out bool shipDied);
+                ShipEject(ref s, input, out bool shipDied);
                 if (shipDied)
                 {
 #if !DISABLE_DEBUG_LOGGING
@@ -7105,7 +7195,11 @@ namespace FamidashEditor
                         s.GravMul = s.GravFlipped ? -1 : 1;
                         s.VelY_fixed = BallSwitchVel(s.Mini) * s.GravMul;
                         s.OnGround = false;
-                        s.WasZeroedByCollision = false;
+                        // NOTE: Do NOT clear WasZeroedByCollision here — SIM's
+                        // BallPhysics_Fresh / InvertGravity_Fresh does not touch it.
+                        // Clearing it here caused stale-false to propagate into wave
+                        // mode where it prevented the first-frame velocity-preserve
+                        // path (wave overwrote the portal-halved velocity).
                         s.BallFlipCooldown = 1;  // ball_switched = true
                         s.BallInputBuffer = 0;
                         s.BallCooldownFrames = 2; // SIM skips vel zeroing + eject for 2 frames after flip
@@ -7162,7 +7256,7 @@ namespace FamidashEditor
                     //    with velocity gating inside each function.
                     {
                         bool died = false;
-                        BallEject(ref s, out died);
+                        BallEject(ref s, input, out died);
                         if (died)
                         {
 #if !DISABLE_DEBUG_LOGGING
@@ -7216,7 +7310,7 @@ namespace FamidashEditor
                 }
 
                 // -- UFO EJECT (shared with Ship: ceiling + floor, no velocity guard) --
-                ShipEject(ref s, out bool ufoDied);
+                ShipEject(ref s, input, out bool ufoDied);
                 if (ufoDied)
                 {
 #if !DISABLE_DEBUG_LOGGING
@@ -7230,7 +7324,9 @@ namespace FamidashEditor
                 PfUpdateSlopeCounters_Fresh(ref s);
 
                 // -- UFO JUMP (tap-to-jump, can jump mid-air) --
-                if (input)
+                // NES: orb activation consumes the press, so UFO jump doesn't fire
+                // on the same frame an orb was hit.
+                if (input && !orbHitThisFrame)
                 {
                     int jumpVel = (int)UfoJumpVel(s.Mini) * -s.GravMul; // against gravity
                     s.VelY_fixed = jumpVel;
@@ -7300,7 +7396,7 @@ namespace FamidashEditor
 
                 // 4. Eject (same as cube)
                 bool robotEjectDied = false;
-                CubeEject(ref s, out robotEjectDied);
+                CubeEject(ref s, input, out robotEjectDied);
                 if (robotEjectDied)
                 {
 #if !DISABLE_DEBUG_LOGGING
@@ -7310,9 +7406,15 @@ namespace FamidashEditor
                     s.DeathType = 2;
                     return false;
                 }
-                // NOTE: SIM's RobotPhysics_Fresh now calls UpdateSlopeCounters_Fresh
-                // after eject, matching NES x_movement_coll slope_frames handling.
-                PfUpdateSlopeCounters_Fresh(ref s);
+                // NES col_end: Robot with input held on slope → make_cube_jump_higher
+                // When input IS held: only set SlopeJumpHigher, clear SlopeFrames
+                //   (NES col_end does NOT set slope_frames when A held)
+                // When input NOT held: leave SlopeFrames=1 so apply_slope_vel fires
+                if (input && s.SlopeFrames > 0 && s.SlopeType != 0)
+                {
+                    s.SlopeJumpHigher = true;
+                    s.SlopeFrames = 0; // NES: col_end only sets slope_frames when NOT holding A
+                }
 
                 // 5. Center death check (same as cube)
                 if (CheckCenterPointDeath(ref s))
@@ -7333,10 +7435,16 @@ namespace FamidashEditor
                     s.VelY_fixed = ROBOT_JUMP_VEL * s.GravMul;
                     s.RobotJumpTime = ROBOT_JUMP_TIME;
                     s.OnGround = false;
+                    // NES slope_jump_check: add extra velocity when jumping off a slope
+                    PfSlopeJumpCheck(ref s);
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[ROBOT_JUMP] VelY=0x{s.VelY_fixed:X4} time={s.RobotJumpTime} gravMul={s.GravMul}");
 #endif
                 }
+
+                // UpdateSlopeCounters — decrement counters, fire apply_slope_vel
+                // Must be AFTER jump check (matching SIM order) so velY is still 0 when jump fires
+                PfUpdateSlopeCounters_Fresh(ref s);
             }
             else if (s.GameMode == 6) // Wave mode
             {
@@ -7407,7 +7515,7 @@ namespace FamidashEditor
                 // Spider eject
                 int spiderOffY = s.GravFlipped ? -2 : 1;
                 int spiderEjectY = (s.Y_fixed >> 8) + spiderOffY;
-                SpiderEject(ref s, spiderEjectY, out bool spiderEjectDied);
+                SpiderEject(ref s, spiderEjectY, input, out bool spiderEjectDied);
                 if (spiderEjectDied)
                 {
                     s.DeathType = 2;
@@ -7460,21 +7568,12 @@ namespace FamidashEditor
                 // (no velocity impulse, no grounded requirement, can flip mid-air)
                 SwingGravityStep(ref s);
 
-                // Velocity zeroing (same as ball)
-                {
-                    bool velZeroDied = false;
-                    BallVelocityZeroing(ref s, out velZeroDied);
-                    if (velZeroDied)
-                    {
-                        s.DeathType = 6;
-                        return false;
-                    }
-                }
-
-                // Ball eject (shared with ball/swing)
+                // Ship-style eject: always check BOTH ceiling and floor (no velocity guard)
+                // BallVelocityZeroing is redundant since ShipEject is unconditional.
+                // so swingcopter navigates corridors like ship/UFO instead of clipping into ceiling.
                 {
                     bool died = false;
-                    BallEject(ref s, out died);
+                    ShipEject(ref s, input, out died);
                     if (died)
                     {
                         s.DeathType = 6;
@@ -7636,9 +7735,21 @@ namespace FamidashEditor
                 s.PendingOrbIndex = s.P2_PendingOrbIndex;
                 s.PendingOrbSpriteId = s.P2_PendingOrbSpriteId;
 
+                // FAMIDASH shared-press model: both players read from the same
+                // NES button press counter.  P1 runs first and may consume it;
+                // P2 only sees what remains.
+                //   Ball mode: consumed on flip (BallCooldownFrames set to 2,
+                //              decremented to 1 by end of P1's physics).
+                //   Orb activation: consumed when input was used for an orb.
+                //   Hold-based modes (ship, wave): unaffected — both see held.
+                bool p1ConsumedPress = orbHitThisFrame;
+                if (!p1ConsumedPress && s.GameMode == 2 && p1_BallCooldownFrames > 0)
+                    p1ConsumedPress = true;
+                bool p2Input = input && !p1ConsumedPress;
+
                 // Run P2's StepFrame (recursion guard prevents infinite dual loop)
                 _dualP2Guard = true;
-                bool p2Alive = StepFrame(ref s, input, out bool p2EndLevel);
+                bool p2Alive = StepFrame(ref s, p2Input, out bool p2EndLevel);
                 _dualP2Guard = false;
 
                 // Save P2 state back from s
@@ -7664,6 +7775,21 @@ namespace FamidashEditor
                 s.P2_FBlocked = s.FBlocked;
                 s.P2_PendingOrbIndex = s.PendingOrbIndex;
                 s.P2_PendingOrbSpriteId = s.PendingOrbSpriteId;
+
+                // P2 hit single portal → sync P1 to P2's state (matching SIM behavior).
+                // When P2 deactivates dual mode, the surviving player gets P2's physics
+                // (Y, velocity, gravity etc.) just like the NES/SIM does.
+                if (!s.DualActive)
+                {
+                    // s still contains P2's state; just fix X to P1's post-advance value
+                    s.X_fixed = newX_fixed;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[SINGLE_P2_SYNC] P2 hit single portal — syncing P1 to P2 state: Y={s.Y_fixed >> 8} VelY=0x{s.VelY_fixed:X4} GravFlipped={s.GravFlipped}");
+#endif
+                    if (p2EndLevel) { endLevel = true; return true; }
+                    if (!p2Alive) return false;
+                    return true;
+                }
 
                 // Restore P1 state
                 s.X_fixed = newX_fixed; // P1's post-advance X (shared)
@@ -7808,7 +7934,7 @@ namespace FamidashEditor
         ///             CheckCollisionDown = only if hblocked||fblocked (alphabet blocks).
         /// The pathfinder has no alphabet block tracking, so the headbonk branches are omitted.
         /// </summary>
-        private void CubeEject(ref SimState s, out bool died)
+        private void CubeEject(ref SimState s, bool input, out bool died)
         {
             died = false;
 
@@ -7827,7 +7953,7 @@ namespace FamidashEditor
             {
                 // NES bg_coll_D: slopes are always checked regardless of vel_y
                 // (NO velocity guard on slopes — matches SIM CubeEject_Fresh)
-                var (slopeHit, slopeEject, slopeType) = PfCheckSlopes(ref s);
+                var (slopeHit, slopeEject, slopeType) = PfCheckSlopes(ref s, input);
                 if (slopeHit)
                 {
                     if (slopeEject > 0)
@@ -8048,7 +8174,7 @@ namespace FamidashEditor
         /// No spike death � bg_coll_U_D_checks returns 0 for spike tiles in eject context.
         /// </summary>
         private int _ballEjectTraceCount = 0;
-        private void BallEject(ref SimState s, out bool died)
+        private void BallEject(ref SimState s, bool input, out bool died)
         {
             died = false;
 
@@ -8105,7 +8231,7 @@ namespace FamidashEditor
                 // -- Normal gravity: floor check (bg_coll_D) --
                 // NES bg_coll_D: slopes are always checked regardless of vel_y
                 // (NO velocity guard on slopes — matches SIM BallEject_Fresh)
-                var (slopeHit, slopeEject, slopeType) = PfCheckSlopes(ref s);
+                var (slopeHit, slopeEject, slopeType) = PfCheckSlopes(ref s, input);
                 if (slopeHit)
                 {
                     if (slopeEject > 0)
@@ -9379,8 +9505,10 @@ namespace FamidashEditor
 #endif
                     if (col == MetatileCollision.COL_FLOOR_CEIL)
                     {
-                        // Eject: snap to ceiling surface
-                        int newY = ceilBotY - miniOffset;
+                        // Eject: snap 1 px below ceiling surface (matches SIM wave_coll_U
+                        // which probes at Generic_y-1 and computes eject_U = -(bottom - probe),
+                        // then Y -= eject_U → Y = ceilBotY + 1).
+                        int newY = ceilBotY + 1 - miniOffset;
                         s.Y_fixed = newY << 8;
                         s.VelY_fixed = 0;
                         s.WasZeroedByCollision = true;
@@ -9468,7 +9596,7 @@ namespace FamidashEditor
                 clampMaxY);
         }
 
-        private void SpiderEject(ref SimState s, int offsetY, out bool died)
+        private void SpiderEject(ref SimState s, int offsetY, bool input, out bool died)
         {
             died = false;
             int hbW = s.Mini ? 8 : 15;
@@ -9482,7 +9610,7 @@ namespace FamidashEditor
             if (!s.GravFlipped)
             {
                 // Normal gravity: check slopes first, then floor
-                var (slopeHit, slopeEject, slopeType) = PfCheckSlopes(ref s);
+                var (slopeHit, slopeEject, slopeType) = PfCheckSlopes(ref s, input);
                 if (slopeHit)
                 {
                     if (slopeEject > 0)
@@ -9795,7 +9923,7 @@ namespace FamidashEditor
         /// Ship eject: ceiling + floor collision (matching UfoShipEject_Fresh).
         /// No slopes � just flat collision.
         /// </summary>
-        private void ShipEject(ref SimState s, out bool died)
+        private void ShipEject(ref SimState s, bool input, out bool died)
         {
             died = false;
             int playerX_px = s.X_fixed >> 8;
@@ -9825,7 +9953,7 @@ namespace FamidashEditor
 
             // NES ufo_ship_eject: floor check, NO velocity guard.
             // NES order: slopes FIRST, then flat collision.
-            var (slopeHit, slopeEject, slopeType) = PfCheckSlopes(ref s);
+            var (slopeHit, slopeEject, slopeType) = PfCheckSlopes(ref s, input);
             if (slopeHit)
             {
                 if (slopeEject > 0)
@@ -11062,7 +11190,7 @@ namespace FamidashEditor
             int hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
 
             bool result = SharedPhysics.CheckDeathCollision(_collisionMap,
-                playerX_px, playerY_px, hbW, hbH, hbOffY);
+                playerX_px, playerY_px, hbW, hbH, hbOffY, s.GameMode);
 #if !DISABLE_DEBUG_LOGGING
             if (result)
             {
@@ -11406,7 +11534,26 @@ namespace FamidashEditor
                 s.VelY_fixed = upsideDown ? -velComponent : velComponent;
         }
 
-        private (bool hit, int ejection, int slopeType) PfCheckSlopes(ref SimState s)
+        /// <summary>
+        /// NES slope_jump_check: when make_cube_jump_higher is set and slope is not 22°,
+        /// add a velocity bonus to the jump. Matches SIM SlopeJumpCheck_Fresh().
+        /// </summary>
+        private static void PfSlopeJumpCheck(ref SimState s)
+        {
+            if (!s.SlopeJumpHigher) return;
+            int slopeDegrees = s.SlopeType & 0b0011;
+            if (slopeDegrees != 0b10) // not 22° — 22° slopes get no bonus
+            {
+                // Match SIM SlopeJumpCheck_Fresh: flat bonus, not gravity-adjusted
+                int bonus = s.Mini ? -0xC0 : -0x100;
+                s.VelY_fixed += bonus;
+            }
+            s.SlopeJumpHigher = false;
+        }
+
+        private const int PF_SLOPE_UD = 0b1000;
+
+        private (bool hit, int ejection, int slopeType) PfCheckSlopes(ref SimState s, bool input)
         {
             int playerX_px = s.X_fixed >> 8;
             int playerY_px = s.Y_fixed >> 8;
@@ -11414,14 +11561,10 @@ namespace FamidashEditor
             int hbH = GetHitboxH(s.Mini);
 
             // SIM bg_coll_D_slopes uses a slope-specific hitbox offset:
-            //   Mini + normal gravity: (0x10 - hitboxH) >> 1 = 4 for ALL modes
-            //   Mini + reversed gravity: 0
+            //   Mini: (0x10 - hitboxH) >> 1 = 4, regardless of gravity
             //   Normal (not mini): 0
-            int slopeHbOffY;
-            if (s.Mini && !s.GravFlipped)
-                slopeHbOffY = (0x10 - hbH) >> 1;  // = 4 for all mini modes
-            else
-                slopeHbOffY = 0;
+            // NES always applies the mini offset; gravity does NOT suppress it.
+            int slopeHbOffY = s.Mini ? ((0x10 - hbH) >> 1) : 0;
 
             // SIM bg_coll_D_slopes: check Y = adjustedPlayerY + hitboxH - 2
             int checkBaseY = playerY_px + slopeHbOffY + hbH - 2;
@@ -11459,6 +11602,24 @@ namespace FamidashEditor
 
                 if (hit)
                 {
+                    // NES bg_coll_slope col_end: non-cube modes use a_check_lookup
+                    // unstick. Only enable for UFO(3) and Ship(1) where we have
+                    // confirmed PF/SIM slope-eject divergence. Enabling for ALL modes
+                    // (like the SIM does) regresses ball-mode BFS paths that were
+                    // computed without unstick.
+                    if (s.GameMode == 1 || s.GameMode == 3)
+                    {
+                        // NES a_check_lookup = {1, 0, 0, 1, 1, 0, 0, 1}
+                        // aIdx = (RISING?4)|(UD?2)|(gravity?1)
+                        int aIdx = 0;
+                        if ((slopeType & PF_SLOPE_RISING) != 0) aIdx |= 4;
+                        if ((slopeType & PF_SLOPE_UD) != 0) aIdx |= 2;
+                        if (s.GravFlipped) aIdx |= 1;
+                        bool aCheckResult = (aIdx == 0 || aIdx == 3 || aIdx == 4 || aIdx == 7);
+                        if (aCheckResult ? input : !input)
+                            ejection = 4; // unstick override
+                    }
+
                     bestEjection = ejection;  // SIM takes the last-hit ejection
                     bestSlopeType = slopeType;
                     anyHit = true;

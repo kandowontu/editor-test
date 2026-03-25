@@ -49,6 +49,9 @@ namespace FamidashEditor
         // Note: orbBufferActive, orbHoldConsumedKeyStillDown, orbHoldSuppressing
         // are already defined in SimulatorWindow.xaml.cs
         private Dictionary<int, bool> orbActivated = new Dictionary<int, bool>();
+        // Per-player orb tracking: prevents same player from re-activating the same orb
+        // Each player has an independent set, matching PF's per-player ProcessedSprites
+        private HashSet<int>[] playerProcessedOrbs = new HashSet<int>[] { new HashSet<int>(), new HashSet<int>() };
         private bool keyXHeldStartedOnGround = false; // Track if X hold started while grounded
 
         /// <summary>
@@ -58,6 +61,7 @@ namespace FamidashEditor
         {
             orbBufferActive[currplayer] = false;
             orbHoldConsumedKeyStillDown[currplayer] = false;
+            ballInputBufferCountdown[currplayer] = 0;
             keyXHeldStartedOnGround = false;
         }
         
@@ -186,10 +190,11 @@ namespace FamidashEditor
                 if (!CheckOrbCollision(idx, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     continue;
                     
-                // Check if already activated (except multi orbs and dual mode)
-                // In dual mode, each player can independently activate the same orb
+                // Check if already activated (except multi orbs)
+                // Per-player tracking: each player can independently activate the same orb
+                // but cannot re-activate an orb they already triggered
                 bool isMultiOrb = (spriteType == BLUE_ORB_MULTI || spriteType == GREEN_ORB_MULTI);
-                if (!isMultiOrb && !dual && orbActivated.ContainsKey(idx) && orbActivated[idx])
+                if (!isMultiOrb && playerProcessedOrbs[currplayer].Contains(idx))
                     continue;
                     
                 // Handle activation based on gamemode and input
@@ -237,10 +242,11 @@ namespace FamidashEditor
                     // Activate the orb!
                     ActivateOrb(spriteType, gamemode, gravityInverted, mini, ref velocityY);
                     
-                    // Mark as activated (but not in dual mode - each player can activate independently)
-                    if (!isMultiOrb && !dual)
+                    // Mark as activated per-player (prevents same player re-activating)
+                    if (!isMultiOrb)
                     {
-                        orbActivated[idx] = true;
+                        playerProcessedOrbs[currplayer].Add(idx);
+                        if (!dual) orbActivated[idx] = true;
                     }
                     
                     orbActivatedThisFrame = true;
@@ -248,6 +254,7 @@ namespace FamidashEditor
                     orbHoldConsumedKeyStillDown[currplayer] = true;
                     // Clear buffer on orb activation - require fresh press/hold for next orb
                     orbBufferActive[currplayer] = false;
+                    ballInputBufferCountdown[currplayer] = 0;
                     
                     // Only one orb per frame
                     return (true, activatedOrbType);
@@ -503,9 +510,12 @@ namespace FamidashEditor
         private void ResetOrbSystem()
         {
             orbActivated.Clear();
+            playerProcessedOrbs[0].Clear();
+            playerProcessedOrbs[1].Clear();
             orbBufferActive[currplayer] = false;
             orbHoldConsumedKeyStillDown[currplayer] = false;
             orbHoldSuppressing[currplayer] = false;
+            ballInputBufferCountdown[currplayer] = 0;
             
             // Debug: Log all orbs in the level
             try

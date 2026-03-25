@@ -1237,8 +1237,14 @@ namespace FamidashEditor
         private bool[] player_mini = new bool[2] { false, false };  // Mini mode for each player
         private byte[] player_gravity = new byte[2] { 0, 0 };  // Gravity state (0=down, 0xFF=up)
         
+        // Per-player physics flags for dual mode (prevents P1↔P2 cross-contamination)
+        private bool[] player_wasZeroed = new bool[2] { true, false };
+        private bool[] player_onGround = new bool[2] { true, false };
+        private int[] player_groundStabilize = new int[2] { 0, 0 };
+        
         // Dual/single mode flags
         private bool dual = false;  // Is dual-mode active
+        private bool singlePortalExitPending = false;  // Deferred single portal exit (sync after P2 physics)
         private bool applyPlayer2Colors = false;  // Should we apply player 2 colors to next icon load
         private System.Collections.Generic.Dictionary<string, System.Windows.Media.Imaging.BitmapSource> playerColorCache = new();  // Cache for all icon colors
         private System.Collections.Generic.Dictionary<string, System.Windows.Media.Imaging.BitmapSource> player2ColorCache = new();  // Separate cache for player 2 recolored icons
@@ -1834,12 +1840,27 @@ namespace FamidashEditor
             int tileStartY = sampleTileY * TILE;
             int localY = Math.Max(0, Math.Min(TILE - 1, centerY - tileStartY));
 
-            // Check if this pixel causes death
+            // Check if this pixel causes death (bg_coll_spikes equivalent)
             if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
             {
                 deathX_px = centerX;
                 deathY_px = centerY;
                 return true;
+            }
+
+            // bg_coll_U_D_checks equivalent: solid block penetration death.
+            // NES kills when the center point has penetrated into a solid tile.
+            // Skipped for wave mode with dblocked (NES: !dblocked || gamemode != GAMEMODE_WAVE).
+            if (!(currentGameMode == 6 && dblocked))
+            {
+                var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType(collision);
+                if (localX >= colLeft && localX < colRight && localY >= colTop && localY < colBottom)
+                {
+                    try { AppendSimDebug($"[DEATH_CHECK] bg_coll_U_D kill: col={collision} local=({localX},{localY}) bounds=({colLeft},{colTop},{colRight},{colBottom})"); } catch { }
+                    deathX_px = centerX;
+                    deathY_px = centerY;
+                    return true;
+                }
             }
 
             return false;
@@ -1890,12 +1911,13 @@ namespace FamidashEditor
                 AppendSimDebug($"[GRAV_PORTAL_CHECK] mini={miniMode} grav={gravityFlipped} playerBox=({playerLeft_px},{playerTop_px})-({playerRight_px},{playerBottom_px}) size={hitboxW}x{hitboxH}");
                 
                 // Iterate through ALL sprites and check for gravity portals
+                // NOTE: Do NOT skip sub-tiles (spriteAnchors entries) — the PF
+                // processes every sprite index including sub-tiles, and gravity
+                // portals may only exist as sub-tiles of multi-tile sprites.
                 for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
-                    // NES only checks anchor sprites — skip sub-tiles of multi-tile sprites
-                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Check if this sprite is a gravity portal
                     bool isNormalGravityPortal = (sid == 0x08 || sid == 0x10 || sid == 0x11 || sid == 0xFC);
@@ -1907,7 +1929,8 @@ namespace FamidashEditor
                     if (processedGravityPortals.Contains(idx)) continue;
                     
                     // Use SpriteIntersectsPlayer to check sprite hitbox overlap
-                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                    bool gravIntersects = SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px);
+                    if (gravIntersects)
                     {
                         // Activate portal with proper conditional logic
                         bool activated = false;
@@ -1981,7 +2004,6 @@ namespace FamidashEditor
                     int idx = nonEmptySpriteIndices[_si];
                     int sid = sprites[idx];
                     if (sid < 0) continue;
-                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
 
                     if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58 || sid == 0x6A || sid == 0x6B || sid == 0x6C)
                     {
@@ -2009,6 +2031,11 @@ namespace FamidashEditor
                         {
                             currentGameMode = newMode;
                             pfHoldCounter = 0; // Reset ball-hold extension on mode change
+                            p2BallHoldCounter = 0;
+                            // Clear stale collision-zeroing flag so it doesn't leak
+                            // across game modes.  E.g. ball eject sets the flag; UFO
+                            // never clears it; wave then wrongly skips velY recalculation.
+                            wasZeroedByCollisionLastFrame = false;
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
@@ -2033,6 +2060,8 @@ namespace FamidashEditor
                         {
                             currentGameMode = newMode;
                             pfHoldCounter = 0; // Reset ball-hold extension on mode change
+                            p2BallHoldCounter = 0;
+                            wasZeroedByCollisionLastFrame = false;
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
@@ -2083,7 +2112,6 @@ namespace FamidashEditor
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
-                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Check if this sprite is a gravity mod portal (0x5F-0x63)
                     if (sid < 0x5F || sid > 0x63) continue;
@@ -2259,7 +2287,6 @@ namespace FamidashEditor
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
-                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Check if this sprite is a mini or growth portal
                     bool isMiniPortal = (sid == 0x18);
@@ -2290,9 +2317,9 @@ namespace FamidashEditor
                             // Update UI checkbox
                             try { Dispatcher.BeginInvoke(new Action(() => { if (MiniCheckBox != null) MiniCheckBox.IsChecked = miniMode; })); } catch { }
                             
-                            // Update player visuals
-                            try { UpdatePlayerImageForMode(); } catch { }
-                            try { UpdatePlayerVisualSizeForMode(); } catch { }
+                            // Update player visuals (must dispatch to UI thread — this runs on threadpool via SimulateNumericStep)
+                            try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
+                            try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerVisualSizeForMode(); } catch { } })); } catch { }
                             
                             // Mark as activated
                             processedMiniPortals.Add(idx);
@@ -2342,7 +2369,6 @@ namespace FamidashEditor
                 for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
-                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     if (sid != 0x22) continue; // Only dual portal
                     
                     // Check if already activated
@@ -2369,6 +2395,21 @@ namespace FamidashEditor
                         player_mini[1] = miniMode;
                         player_gravity[1] = (byte)(currplayer_gravity ^ 0xFF);
                         
+                        // Initialize player 2 per-player physics flags
+                        player_wasZeroed[1] = false;
+                        player_onGround[1] = false;
+                        player_groundStabilize[1] = 0;
+                        
+                        // Initialize player 2 ball flip state
+                        player_ballFlipCooldown[1] = 0;
+                        player_ballWasGroundedBeforeFlip[1] = false;
+                        ballSwitched[1] = false;
+                        ballFlipBuffer[1] = 0;
+                        orbBufferActive[1] = false;
+                        orbHoldSuppressing[1] = false;
+                        orbHoldConsumedKeyStillDown[1] = false;
+                        p2BallHoldCounter = 0;
+                        
                         AppendSimDebug($"[DUAL_PORTAL] Activated! Player 2 spawned: X={player_x_fixed[1]>>8} Y={player_y_fixed[1]>>8} velY={player_vel_y_fixed[1]:X4} gravity={player_gravity[1]:X2}");
                         
                         // Mark as activated
@@ -2389,77 +2430,48 @@ namespace FamidashEditor
             {
                 if (!dual) return; // Only in dual mode
                 
-                // When called during player 2 processing, only check player 2
-                // When called during player 1 processing, check both players
-                int playerCheckStart = (currplayer == 1) ? 1 : 0;
-                int playerCheckEnd = (currplayer == 1) ? 2 : 2;
+                // Check only the current player's collision with single portal.
+                // The sync is DEFERRED until after P2 runs physics for the current
+                // frame (matching PF behavior where P2's StepFrame runs fully before
+                // the caller syncs P1 to P2's post-physics state).
+                int checkPlayer = currplayer;
                 
-                // Check the appropriate player(s)
-                for (int checkPlayer = playerCheckStart; checkPlayer < playerCheckEnd; checkPlayer++)
+                // NES: Generic.x = high_byte(currplayer_x) + 1
+                int playerX_px = (player_x_fixed[checkPlayer] >> 8) + 1;
+                int playerY_px = player_y_fixed[checkPlayer] >> 8;
+                
+                // NES hitbox: CUBE_WIDTH x CUBE_HEIGHT
+                int hitboxW = miniMode ? 8 : 15;
+                int hitboxH = miniMode ? 7 : 15;
+                playerY_px += GetMiniSpriteOffsetY();
+                
+                // Player bounding box for collision
+                int playerLeft_px = playerX_px;
+                int playerRight_px = playerX_px + hitboxW - 1;
+                int playerTop_px = playerY_px;
+                int playerBottom_px = playerY_px + hitboxH - 1;
+                
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
-                    // NES: Generic.x = high_byte(currplayer_x) + 1
-                    int playerX_px = (player_x_fixed[checkPlayer] >> 8) + 1;
-                    int playerY_px = player_y_fixed[checkPlayer] >> 8;
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    if (sid != 0x23) continue; // Only single portal
                     
-                    // NES hitbox: CUBE_WIDTH x CUBE_HEIGHT
-                    int hitboxW = miniMode ? 8 : 15;
-                    int hitboxH = miniMode ? 7 : 15;
-                    playerY_px += GetMiniSpriteOffsetY();
+                    // Check if already activated
+                    if (processedMiniPortals.Contains(idx)) continue;
                     
-                    // Player bounding box for collision
-                    int playerLeft_px = playerX_px;
-                    int playerRight_px = playerX_px + hitboxW - 1;
-                    int playerTop_px = playerY_px;
-                    int playerBottom_px = playerY_px + hitboxH - 1;
-                    
-                    for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                    // Check for collision
+                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     {
-                        int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
-                        if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
-                        if (sid != 0x23) continue; // Only single portal
+                        // Defer dual exit: keep dual=true so P2 still runs physics
+                        // this frame. The actual sync + dual=false happens after P2's
+                        // physics completes (see PLAYER2_END section).
+                        singlePortalExitPending = true;
                         
-                        // Check if already activated
-                        if (processedMiniPortals.Contains(idx)) continue;
+                        AppendSimDebug($"[SINGLE_PORTAL] Player {checkPlayer + 1} hit portal (deferred exit) idx={idx}");
                         
-                        // Check for collision
-                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
-                        {
-                            // Exit dual mode
-                            dual = false;
-                            
-                            // Reset to single mode (player 1 only)
-                            currplayer = 0;
-                            
-                            // Only sync state if PLAYER 2 hit the portal
-                            // If player 1 hit it, player 2 just disappears with no sync
-                            if (checkPlayer == 1)
-                            {
-                                player_y_fixed[0] = player_y_fixed[1];
-                                player_vel_y_fixed[0] = player_vel_y_fixed[1];
-                                player_gravity[0] = player_gravity[1];  // Sync gravity state too
-                                
-                                // Copy synced state back to active variables for immediate use
-                                playerY_fixed = player_y_fixed[0];
-                                playerVelY_fixed = player_vel_y_fixed[0];
-                                currplayer_gravity = player_gravity[0];
-                                
-                                // Recalculate gravity-related values based on new gravity state
-                                UpdateCurrplayerTableIdx_Fresh();
-                                gravityFlipped = (!gravityFlipped);  // Player 2 had inverted gravity, so toggle
-                                AppendSimDebug($"[SINGLE_PORTAL] Player 2 hit portal! Synced Player 1 Y: {playerY_fixed>>8}, velY: {playerVelY_fixed:X4}, gravity: {currplayer_gravity:X2}, gravityFlipped: {gravityFlipped}");
-                            }
-                            else
-                            {
-                                AppendSimDebug($"[SINGLE_PORTAL] Player 1 hit portal - NO SYNC");
-                            }
-                            
-                            // Don't clear player 2's path - just stop recording to it so it remains in the editor
-                            // recordedPlayer2Path.Clear();  // REMOVED: Keep the path visible
-                            
-                            // Mark as activated
-                            processedMiniPortals.Add(idx);
-                            return; // Exit after first collision
-                        }
+                        // Mark as activated so neither player re-detects it
+                        processedMiniPortals.Add(idx);
+                        return; // Exit after first collision
                     }
                 }
             }
@@ -2715,8 +2727,6 @@ namespace FamidashEditor
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
-                    // NES only checks anchor sprites — skip sub-tiles of multi-tile sprites
-                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Check if this sprite is a pad
                     // Yellow pads: 0x0A (down), 0x0C (up)
@@ -2900,7 +2910,6 @@ namespace FamidashEditor
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
-                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                     
                     // Spider orb up: 0x54, Spider orb down: 0x55
                     // Spider pad up: 0x56, Spider pad down: 0x57
@@ -2915,9 +2924,9 @@ namespace FamidashEditor
                     spiderOrbPadCount++;
                     
                     // Check if already activated (ONLY for orbs, not pads - pads can trigger multiple times)
-                    // In dual mode, each player can independently activate the same orb
+                    // Per-player tracking: each player can independently activate the same orb
                     bool isOrb = (isSpiderOrbUp || isSpiderOrbDown);
-                    if (isOrb && !dual && orbActivated.ContainsKey(idx) && orbActivated[idx])
+                    if (isOrb && playerProcessedOrbs[currplayer].Contains(idx))
                         continue;
                     
                     // Use CheckOrbCollision for more reliable detection (same as regular orbs)
@@ -3048,7 +3057,8 @@ namespace FamidashEditor
                             // Mark orb as activated (pads don't get marked - they can trigger multiple times)
                             if (isOrb)
                             {
-                                orbActivated[idx] = true;
+                                playerProcessedOrbs[currplayer].Add(idx);
+                                if (!dual) orbActivated[idx] = true;
                             }
                             
                             // Consume press if it was an orb activation
@@ -3330,6 +3340,12 @@ namespace FamidashEditor
         // to activate orbs. This is cleared on ground, when X is released, when
         // the player jumps, or when an orb is activated.
         private bool[] orbBufferActive = new bool[2] { false, false };
+        // Ball input buffer countdown: mirrors PF's BallInputBuffer counter.
+        // When a press sets orbBufferActive in ball mode, this counts down from 8.
+        // When it hits 0, orbBufferActive is cleared — prevents stale buffer from
+        // triggering a flip many frames later (hold-continuation would otherwise
+        // keep orbBufferActive alive indefinitely).
+        private int[] ballInputBufferCountdown = new int[2];
         // Prevent multiple orb activations from a single UI press: set when an orb
         // was activated in response to the current pressed state and cleared when
         // X is released or player lands.
@@ -3407,6 +3423,17 @@ namespace FamidashEditor
         private bool[] ballSwitched = new bool[2];
         private int ballFlipCooldown = 0;
         private bool ballWasGroundedBeforeFlip = false;
+        // Per-player ball flip state for dual mode save/restore
+        private int[] player_ballFlipCooldown = new int[2];
+        private bool[] player_ballWasGroundedBeforeFlip = new bool[2];
+        // Countdown-based ball flip buffer (matches PF's BallInputBuffer: set to 8 when pressing while airborne, decremented each frame)
+        private int[] ballFlipBuffer = new int[2];
+        // Track PF input for the current frame (for dual mode P2 input re-injection)
+        private bool pfInputThisFrame = false;
+        // P2-specific ball hold counter (mirrors PF's per-player BallInputBuffer).
+        // When P2 receives a raw True in ball mode, this is set to PF_BALL_HOLD_FRAMES
+        // and decremented each frame, providing keyXHeld=true to bridge air-to-landing.
+        private int p2BallHoldCounter = 0;
         private bool ufoOrbed = false;
         private bool[] orbed = new bool[2]; // Prevents jumps/teleports until X released (spider orbs/pads, teleport portals, S blocks, J blocks)
         private bool blackOrbed = false; // Spider black orb hold mechanic
@@ -3555,6 +3582,10 @@ namespace FamidashEditor
                 {
                     AppendSimDebug($"[BALL_MODE] gameMode=2, counter={ballAnimationFrameCounter}, choice={choice}");
                 }
+
+                // Robot/Spider normal mode animation is handled in RenderFrame;
+                // skip image load here to avoid the magenta-rectangle fallback.
+                if (string.IsNullOrEmpty(choice)) return;
 
                 BitmapSource? bi = null;
 
@@ -5667,6 +5698,7 @@ namespace FamidashEditor
                 try { Interlocked.Exchange(ref keyXPressStartedOnGroundInt, 0); } catch { }
                 // Clear orb buffer immediately on UI release so holds cannot persist.
                 try { orbBufferActive[currplayer] = false; } catch { }
+                try { ballInputBufferCountdown[currplayer] = 0; } catch { }
                 try { orbHoldConsumed[currplayer] = false; } catch { }
                 try { orbHoldConsumedKeyStillDown[currplayer] = false; } catch { }
                 try { orbHoldSuppressing[currplayer] = false; } catch { }
@@ -5785,6 +5817,12 @@ namespace FamidashEditor
         {
             try
             {
+                // Fix 21: Don't let UI-thread checkbox events modify physics state while
+                // the sim is running. Dispatcher callbacks (e.g. InvertedCheckBox.IsChecked = ...)
+                // fire asynchronously on the UI thread and race with the background sim thread,
+                // corrupting gravityFlipped/currplayer_gravity during dual mode.
+                if (physicsEnabled) return;
+                
                 bool wasInverted = gravityReversed;
                 gravityReversed = InvertedCheckBox.IsChecked == true;
                 gravityFlipped = gravityReversed;
@@ -6064,6 +6102,7 @@ namespace FamidashEditor
                 
                 // Reset dual mode state
                 dual = false;
+                singlePortalExitPending = false;
                 currplayer = 0;
                 twoplayer = false;
 
@@ -6116,6 +6155,7 @@ namespace FamidashEditor
                 // Reset ball/swing state
                 ballSwitched[0] = false;
                 ballFlipCooldown = 0;
+                p2BallHoldCounter = 0;
                 ufoOrbed = false;
 
                 // Stop music first (same as death) before restarting simulation
@@ -7216,7 +7256,6 @@ namespace FamidashEditor
                     {
                         int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                         if (sid < 0) continue;
-                        if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                         // Portal handling: All 9 gamemode portals
                         try
                         {
@@ -7254,6 +7293,7 @@ namespace FamidashEditor
                                         if (newMode != oldMode)
                                         {
                                             currentGameMode = newMode;
+                                            wasZeroedByCollisionLastFrame = false;
                                             try { UpdateGameModeDisplay(); } catch { }
                                             try { UpdateEffectiveGravity(); } catch { }
                                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
@@ -7779,6 +7819,16 @@ namespace FamidashEditor
                     }
                     
                     // Update flip every frame for ship based on gravity
+                    UpdatePlayerIconFlip();
+                }
+                catch { }
+            }
+
+            // Update UFO icon flip (every frame for gravity changes)
+            if (currentGameMode == 3)
+            {
+                try
+                {
                     UpdatePlayerIconFlip();
                 }
                 catch { }
@@ -9902,20 +9952,15 @@ namespace FamidashEditor
 
                 // For mini mode, adjust visual position based on gravity
                 // Mini sprites are 8x8 pixels, normal sprites are 16x16 pixels
-                // Normal gravity: align bottom-left (shift down 8 pixels for visual centering)
-                // Reversed gravity: align top-left (no shift)
-                // NOTE: This is visual offset (8px), collision uses (0x10-0x07)>>1 = 4px
+                // Normal gravity: shift down to align the 8x8 sprite with the collision hitbox.
+                // Collision offset = (16 - 7) >> 1 = 4 for all mini modes; using the same
+                // value here keeps the sprite bottom at floor + 1 (matching the normal cube).
+                // The NES itself draws the sprite at +8 (bottom of the OAM tile), but the
+                // NES BG layer hides overlapping pixels — the WPF renderer doesn't have BG
+                // priority, so using the collision offset avoids the sprite sinking into ground.
                 if (snapMiniMode && !snapGravFlipped)
                 {
-                    // Shift down by (16 - 8) = 8 pixels to align bottom visually
-                    playerPixelY += (TILE - 8);
-                    
-                    // Additional -1 pixel adjustment for ship/ball/UFO/wave/swingcopter to prevent visual sinking
-                    // Cube/robot/ninja use -1 collision offset which works, but ship/ball/UFO/wave need visual adjustment
-                    if (currentGameMode == 1 || currentGameMode == 2 || currentGameMode == 3 || currentGameMode == 6 || currentGameMode == 7)
-                    {
-                        playerPixelY -= 1;
-                    }
+                    playerPixelY += 4; // collision offset (GetMiniCenterOffsetY)
                 }
 
                 // Path recording moved to SimulateNumericStep for better performance (60Hz instead of 144Hz+)
@@ -10214,6 +10259,7 @@ namespace FamidashEditor
                 if (pathfinderEnabled)
                 {
                     bool pfInput = PF_GetInput();
+                    pfInputThisFrame = pfInput; // Save for dual mode P2 re-injection
                     // CRITICAL: If PF_GetInput detected a phantom double-step (same tick
                     // generation), skip the ENTIRE physics frame. Running gravity/physics
                     // twice in one tick causes position divergence from the PF path.
@@ -10813,16 +10859,55 @@ namespace FamidashEditor
                         // Dashing and orbed are now cleared before sprite interactions
                         // (matching NES state_game.h lines 372-374 and 557-559)
                         
+                        // === SPEED PORTAL CHECK BEFORE P2 (Fix 17) ===
+                        // The PF's CheckSpeedPortalsAtNewX runs during P1's StepFrame
+                        // (step 8c), so P2 sees the updated speed on the same frame.
+                        // The SIM's main speed portal detection runs after P2, so P2
+                        // would use the stale speed. Check here to match PF timing.
+                        try
+                        {
+                            // PF uses: center = X_fixed + 0x3000 ((NES_W*TILE/2 - 80) << 8)
+                            const int PF_SPEED_CENTER_OFFSET = 0x3000;
+                            int speedCenter_fixed = playerX_fixed + PF_SPEED_CENTER_OFFSET;
+                            for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                            {
+                                int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                                if (sid < 0) continue;
+                                if (!speedPortalMap.ContainsKey(sid)) continue;
+                                if (processedSpeedPortals.Contains(idx)) continue;
+                                int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
+                                int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
+                                if (anchorX_center_fixed <= speedCenter_fixed)
+                                {
+                                    int spd = speedPortalMap[sid];
+                                    currentSpeed_fixed = spd;
+                                    playerVelX_fixed = spd;
+                                    if (spd == CUBE_SPEED_X05) speed = 0;
+                                    else if (spd == CUBE_SPEED_X1) speed = 1;
+                                    else if (spd == CUBE_SPEED_X2) speed = 2;
+                                    else if (spd == CUBE_SPEED_X3) speed = 3;
+                                    else if (spd == CUBE_SPEED_X4) speed = 4;
+                                    processedSpeedPortals.Add(idx);
+                                    AppendSimDebug($"[SPEED_PRE_P2] sid=0x{sid:X2} VelX -> 0x{spd:X4}");
+                                    break; // one per frame, matching PF
+                                }
+                            }
+                        }
+                        catch { }
+                        
                         // === PLAYER 2 PROCESSING IN DUAL MODE ===
                         if (dual && !twoplayer)
                         {
                             AppendSimDebug($"[PLAYER2_START] Processing player 2: X={player_x_fixed[1]>>8} Y={player_y_fixed[1]>>8}");
                             
-                            // Clear orb activation tracking so player 2 can activate the same orbs
-                            orbActivated.Clear();
+                            // Per-player orb tracking (playerProcessedOrbs) handles dual-mode
+                            // re-activation prevention — no need to clear shared orbActivated here
                             
-                            // Reset player 2's orb state to allow activation
-                            orbBufferActive[1] = false;
+                            // Reset player 2's per-frame orb state to allow activation.
+                            // NOTE: Do NOT clear orbBufferActive[1] or ballInputBufferCountdown[1]
+                            // here — those are the ball-mode input buffer that must persist across
+                            // frames so an airborne press can trigger a flip upon landing (matching
+                            // the PF's P2_BallInputBuffer which persists across frames).
                             orbHoldSuppressing[1] = false;
                             orbHoldConsumedKeyStillDown[1] = false;
                             orbhitonthisframe[1] = false;
@@ -10833,9 +10918,87 @@ namespace FamidashEditor
                             player_vel_y_fixed[0] = playerVelY_fixed;
                             player_mini[0] = miniMode;
                             player_gravity[0] = currplayer_gravity;
+                            AppendSimDebug($"[P1_SAVE] player_gravity[0]={player_gravity[0]:X2} currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed}");
+                            
+                            // Save player 1 per-player physics flags
+                            player_wasZeroed[0] = wasZeroedByCollisionLastFrame;
+                            player_onGround[0] = onGround;
+                            player_groundStabilize[0] = groundStabilizeCounter;
+                            
+                            // Save player 1 ball flip state
+                            player_ballFlipCooldown[0] = ballFlipCooldown;
+                            player_ballWasGroundedBeforeFlip[0] = ballWasGroundedBeforeFlip;
                             
                             // Save player 1 slope state
                             SaveSlopeStateForPlayer(0);
+                            
+                            // --- Dual mode input re-injection for P2 ---
+                            // Matches PF's dual input model: P1 runs first and may consume the
+                            // press; P2 only sees what remains.  Without this, P1's ball flip /
+                            // orb activation consumes the shared keyXPressedCount, leaving P2
+                            // with pressJump=false even when the PF solution expects P2 to act.
+                            // NOTE: Use player_ballFlipCooldown[0] (POST-physics value) to match
+                            // the PF's p1_BallCooldownFrames semantics.  The PF snapshots
+                            // BallCooldownFrames AFTER P1's StepFrame, so a flip on the current
+                            // frame (cooldown goes 0→2→1) correctly shows > 0, consuming the
+                            // press and preventing P2 from also flipping on the same frame.
+                            if (pathfinderEnabled)
+                            {
+                                bool p1ConsumedPress = orbhitonthisframe[0];
+                                if (!p1ConsumedPress && currentGameMode == 2 && player_ballFlipCooldown[0] > 0)
+                                    p1ConsumedPress = true;
+
+                                // Use the raw PF sequence value (before P1's hold-continuation
+                                // stretches it) so P2 only sees actual True frames from the PF.
+                                // P2 gets its own hold counter to bridge air-to-landing in ball mode.
+                                bool p2RawInput = pfRawSequenceInput && !p1ConsumedPress;
+
+                                Interlocked.Exchange(ref keyXPressedCount, 0);
+                                Interlocked.Exchange(ref ballToggleRequested, 0);
+
+                                if (currentGameMode == 2)
+                                {
+                                    // Ball mode: P2 needs its own hold counter (matching PF's per-player BallInputBuffer)
+                                    if (p2RawInput)
+                                    {
+                                        p2BallHoldCounter = PF_BALL_HOLD_FRAMES;
+                                        // Fresh press
+                                        Interlocked.Exchange(ref keyXPressedCount, 1);
+                                        keyXHeld = true;
+                                        Interlocked.Exchange(ref ballToggleRequested, 1);
+                                    }
+                                    else if (p2BallHoldCounter > 0)
+                                    {
+                                        // Hold continuation: just hold (no press)
+                                        keyXHeld = true;
+                                    }
+                                    else
+                                    {
+                                        keyXHeld = false;
+                                    }
+                                    if (p2BallHoldCounter > 0)
+                                        p2BallHoldCounter--;
+                                    // Cut hold early if P2 already flipped (matches PF_GetInput's ballFlipCooldown gate)
+                                    if (player_ballFlipCooldown[1] > 0)
+                                        p2BallHoldCounter = 0;
+                                }
+                                else
+                                {
+                                    // Non-ball modes: use the overall pfInputThisFrame
+                                    // (hold continuation only affects ball mode)
+                                    bool p2Input = pfInputThisFrame && !p1ConsumedPress;
+                                    if (p2Input)
+                                    {
+                                        Interlocked.Exchange(ref keyXPressedCount, 1);
+                                        keyXHeld = true;
+                                    }
+                                    else
+                                    {
+                                        keyXHeld = false;
+                                    }
+                                }
+                                AppendSimDebug($"[DUAL_INPUT] pfInput={pfInputThisFrame} pfRaw={pfRawSequenceInput} p1Consumed={p1ConsumedPress} p2Hold={p2BallHoldCounter} pressCount={keyXPressedCount} held={keyXHeld}");
+                            }
                             
                             // Switch to player 2
                             currplayer = 1;
@@ -10847,11 +11010,21 @@ namespace FamidashEditor
                             currplayer_mini = (byte)(miniMode ? 1 : 0);
                             gravityFlipped = (player_gravity[1] != 0);
                             currplayer_gravity = player_gravity[1];
+                            gravityReversed = (player_gravity[1] != 0);
+                            effectiveInvertedByW = gravityReversed;
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
                             
                             // Load player 2 slope state
                             LoadSlopeStateForPlayer(1);
                             
+                            // Load player 2 per-player physics flags
+                            wasZeroedByCollisionLastFrame = player_wasZeroed[1];
+                            onGround = player_onGround[1];
+                            groundStabilizeCounter = player_groundStabilize[1];
+                            
+                            // Load player 2 ball flip state
+                            ballFlipCooldown = player_ballFlipCooldown[1];
+                            ballWasGroundedBeforeFlip = player_ballWasGroundedBeforeFlip[1];
                             // === SPRITE INTERACTIONS FOR PLAYER 2 ===
                             try
                             {
@@ -10969,10 +11142,41 @@ namespace FamidashEditor
                             player_mini[1] = miniMode;
                             player_gravity[1] = currplayer_gravity;
                             
+                            // Save player 2 per-player physics flags
+                            player_wasZeroed[1] = wasZeroedByCollisionLastFrame;
+                            player_onGround[1] = onGround;
+                            player_groundStabilize[1] = groundStabilizeCounter;
+                            
+                            // Save player 2 ball flip state
+                            player_ballFlipCooldown[1] = ballFlipCooldown;
+                            player_ballWasGroundedBeforeFlip[1] = ballWasGroundedBeforeFlip;
+                            
                             // Save player 2 slope state
                             SaveSlopeStateForPlayer(1);
                             
                             AppendSimDebug($"[PLAYER2_END] Player 2 final state: X={player_x_fixed[1]>>8} Y={player_y_fixed[1]>>8}");
+                            
+                            // --- Deferred single portal exit (Fix 30: match PF behavior) ---
+                            // The PF simply sets DualActive=false; P1 keeps its own state.
+                            // Previously we synced P1 to P2's post-physics state, which
+                            // clobbered P1's gravity/position when the two players had
+                            // different gravity states (e.g. reversed vs normal).
+                            if (singlePortalExitPending)
+                            {
+                                singlePortalExitPending = false;
+                                dual = false;
+                                
+                                // P1 keeps its own saved state from P1_SAVE — no sync needed.
+                                AppendSimDebug($"[SINGLE_PORTAL_EXIT] dual=false, P1 keeps own state: Y={player_y_fixed[0]>>8}, velY={player_vel_y_fixed[0]:X4}, grav={player_gravity[0]:X2}");
+                            }
+                            
+                            // Capture P2 state needed for sprite update before switching back to P1.
+                            // We'll dispatch an async UI update using these captured values so we
+                            // don't deadlock (Dispatcher.Invoke blocks and can freeze).
+                            int p2_gameMode = currentGameMode;
+                            bool p2_mini = miniMode;
+                            int p2_velY = playerVelY_fixed;
+                            bool p2_gravReversed = gravityReversed;
                             
                             // Switch back to player 1 for rendering
                             currplayer = 0;
@@ -10984,10 +11188,73 @@ namespace FamidashEditor
                             currplayer_mini = (byte)(miniMode ? 1 : 0);
                             gravityFlipped = (player_gravity[0] != 0);
                             currplayer_gravity = player_gravity[0];
+                            gravityReversed = (player_gravity[0] != 0);
+                            effectiveInvertedByW = gravityReversed;
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            AppendSimDebug($"[P1_RESTORE] player_gravity[0]={player_gravity[0]:X2} currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed}");
+                            
+                            // Load player 1 per-player physics flags
+                            wasZeroedByCollisionLastFrame = player_wasZeroed[0];
+                            onGround = player_onGround[0];
+                            groundStabilizeCounter = player_groundStabilize[0];
+                            
+                            // Load player 1 ball flip state
+                            ballFlipCooldown = player_ballFlipCooldown[0];
+                            ballWasGroundedBeforeFlip = player_ballWasGroundedBeforeFlip[0];
                             
                             // Load player 1 slope state
                             LoadSlopeStateForPlayer(0);
+                            
+                            // Update player2Image with P2's correct mode sprite (async, non-blocking).
+                            // Fix 21: Acquire simLock so the temporary field swap doesn't race
+                            // with the background sim thread reading shared physics state.
+                            try
+                            {
+                                Dispatcher?.BeginInvoke(new Action(() =>
+                                {
+                                    lock (simLock)
+                                    {
+                                        try
+                                        {
+                                            // Save P1 fields that UpdatePlayerImageForMode reads
+                                            int save_gameMode = currentGameMode;
+                                            bool save_mini = miniMode;
+                                            int save_velY = playerVelY_fixed;
+                                            bool save_gravRev = gravityReversed;
+                                            
+                                            // Temporarily set P2's captured state
+                                            currentGameMode = p2_gameMode;
+                                            miniMode = p2_mini;
+                                            playerVelY_fixed = p2_velY;
+                                            gravityReversed = p2_gravReversed;
+                                            applyPlayer2Colors = true;
+                                            
+                                            UpdatePlayerImageForMode();
+                                            
+                                            if (player2Image != null && playerImage != null && playerImage.Source != null)
+                                            {
+                                                player2Image.Source = playerImage.Source;
+                                                player2Image.Width = playerImage.Width;
+                                                player2Image.Height = playerImage.Height;
+                                                player2Image.RenderTransformOrigin = playerImage.RenderTransformOrigin;
+                                                player2Image.RenderTransform = playerImage.RenderTransform;
+                                            }
+                                            
+                                            // Restore P1 fields
+                                            currentGameMode = save_gameMode;
+                                            miniMode = save_mini;
+                                            playerVelY_fixed = save_velY;
+                                            gravityReversed = save_gravRev;
+                                            applyPlayer2Colors = false;
+                                            
+                                            // Now update playerImage with P1's correct sprite
+                                            UpdatePlayerImageForMode();
+                                        }
+                                        catch { }
+                                    }
+                                }));
+                            }
+                            catch { }
                         }
                     }
                     catch (Exception ex)
@@ -11041,6 +11308,7 @@ namespace FamidashEditor
                                 if (effectiveOnGround_local)
                                 {
                                     orbBufferActive[currplayer] = false;
+                                    ballInputBufferCountdown[currplayer] = 0;
                                     orbHoldConsumed[currplayer] = false;
                                     orbHoldConsumedKeyStillDown[currplayer] = false;
                                     orbActivationConsumedThisPress[currplayer] = false;
@@ -11049,6 +11317,7 @@ namespace FamidashEditor
                                 {
                                     // A jump used this frame should not also prime the orb buffer
                                     orbBufferActive[currplayer] = false;
+                                    ballInputBufferCountdown[currplayer] = 0;
                                     orbHoldConsumed[currplayer] = false;
                                     orbHoldConsumedKeyStillDown[currplayer] = false;
                                     orbActivationConsumedThisPress[currplayer] = false;
@@ -11203,59 +11472,10 @@ namespace FamidashEditor
                             // integrate
                             playerY_fixed += playerVelY_fixed;
 
-                            // Gravity portal numeric activation: detect sprite overlap in numeric path
-                            try
-                            {
-                                // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1
-                                int hitboxW_num = miniMode ? 8 : 15;
-                                int hitboxH_num = miniMode ? 7 : 15;
-                                int playerLeft_px_num = (playerX_fixed >> 8) + 1;
-                                int playerRight_px_num = playerLeft_px_num + hitboxW_num - 1;
-                                int playerTop_px_num = (playerY_fixed >> 8);
-                                playerTop_px_num += GetMiniSpriteOffsetY();
-                                int playerBottom_px_num = playerTop_px_num + hitboxH_num - 1;
-
-                                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
-                                {
-                                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
-                                    if (sid < 0) continue;
-                                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
-                                    // Gravity portals: normal (0x08,0x10,0x11,0xFC) and reverse (0x09,0x12,0x13,0xFB)
-                                    if (!(sid == 0x08 || sid == 0x10 || sid == 0x11 || sid == 0xFC || sid == 0x09 || sid == 0x12 || sid == 0x13 || sid == 0xFB)) continue;
-
-                                    // Only activate once per crossing
-                                    if (processedGravityPortals.Contains(idx)) continue;
-
-                                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_num, playerRight_px_num, playerTop_px_num, playerBottom_px_num))
-                                    {
-                                        bool isReverse = (sid == 0x09 || sid == 0x12 || sid == 0x13 || sid == 0xFB);
-                                        // Reverse portal: only activate if gravity currently normal
-                                        if (isReverse && !gravityReversed)
-                                        {
-                                            AppendSimDebug($"[GRAV_7895] ACTIVATED mini={miniMode}/{currplayer_mini} grav before={gravityReversed}");
-                                            try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
-                                            try { gravityReversed = true; gravityFlipped = true; currplayer_gravity = 0xFF; effectiveInvertedByW = gravityReversed; gravityFlippedThisFrame = true; wasZeroedByCollisionLastFrame = false; } catch { }
-                                            try { UpdateEffectiveGravity(); } catch { }
-                                            try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
-                                            try { UpdatePlayerImageForMode(); } catch { }
-                                            processedGravityPortals.Add(idx);
-                                            break; // only one portal per frame
-                                        }
-                                        // Normal portal: only activate if gravity currently reversed
-                                        else if (!isReverse && gravityReversed)
-                                        {
-                                            try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
-                                            try { gravityReversed = false; gravityFlipped = false; currplayer_gravity = 0x00; effectiveInvertedByW = gravityReversed; gravityFlippedThisFrame = true; wasZeroedByCollisionLastFrame = false; } catch { }
-                                            try { UpdateEffectiveGravity(); } catch { }
-                                            try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
-                                            try { UpdatePlayerImageForMode(); } catch { }
-                                            processedGravityPortals.Add(idx);
-                                            break; // only one portal per frame
-                                        }
-                                    }
-                                }
-                            }
-                            catch { }
+                            // Inline gravity portal check REMOVED (Fix 20) — this was a second
+                            // duplicate that ran after P1_RESTORE in dual mode, corrupting P1's
+                            // gravity by activating normal portals. Gravity portals are now
+                            // handled exclusively by CheckGravityPortals() in the Fresh physics path.
 
                             // try { OrbPad_HandleNumericActivations(pendingPresses_num, pendingPressStartedOnGround, keyXHeld_local, ref jumpAppliedThisStep_local, pendingPresses_forLater); } catch { } // REMOVED - fresh port
                             try
@@ -11315,53 +11535,11 @@ namespace FamidashEditor
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
-                    if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
 
-                    // Gravity portals (UI/sprite-intersection path): handle independently
-                    // of mode portals so invisible gravity tiles still work.
-                    try
-                    {
-                        if (sid == 0x08 || sid == 0x10 || sid == 0x11 || sid == 0xFB || sid == 0x09 || sid == 0x12 || sid == 0x13 || sid == 0xFC)
-                        {
-                            // NES sprite_collide: Generic.x = high_byte(currplayer_x) + 1
-                            int hitboxW_ui = miniMode ? 8 : 15;
-                            int hitboxH_ui = miniMode ? 7 : 15;
-                            int playerLeft_px_ui = (playerX_fixed >> 8) + 1;
-                            int playerRight_px_ui = playerLeft_px_ui + hitboxW_ui - 1;
-                            int playerTop_px_ui = (playerY_fixed >> 8);
-                            playerTop_px_ui += GetMiniSpriteOffsetY();
-                            int playerBottom_px_ui = playerTop_px_ui + hitboxH_ui - 1;
-
-                            if (processedGravityPortals.Contains(idx)) { /* wait until portal moves past interaction line */ }
-                            else if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_ui, playerRight_px_ui, playerTop_px_ui, playerBottom_px_ui))
-                            {
-                                bool isReverse = (sid == 0x09 || sid == 0x12 || sid == 0x13 || sid == 0xFC);
-                                if (isReverse && !gravityReversed)
-                                {
-                                    gravityReversed = true;
-                                    gravityFlipped = true;
-                                    currplayer_gravity = 0xFF;
-                                    try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
-                                    try { UpdateEffectiveGravity(); } catch { }
-                                    try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
-                                    processedGravityPortals.Add(idx);
-                                    break;
-                                }
-                                else if (!isReverse && gravityReversed)
-                                {
-                                    gravityReversed = false;
-                                    gravityFlipped = false;
-                                    currplayer_gravity = 0x00;
-                                    try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
-                                    try { UpdateEffectiveGravity(); } catch { }
-                                    try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
-                                    processedGravityPortals.Add(idx);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    catch { }
+                    // Gravity portals are now handled exclusively by CheckGravityPortals()
+                    // in the Fresh physics path. The duplicate UI-path check was removed
+                    // because it ran after P2 processing with P1's restored state, causing
+                    // spurious portal activations that desynchronized gravity during dual mode.
 
                     if (!speedPortalMap.ContainsKey(sid)) continue;
                     int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;

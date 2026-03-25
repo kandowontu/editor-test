@@ -155,7 +155,7 @@ namespace FamidashEditor
                         
                         // Log pathfinder jump check data when pathfinder is active and input is present
                         if (pathfinderEnabled && (holdJump || pressJump))
-                            AppendSimDebug($"[PF-JUMP] hold={holdJump}, press={pressJump}, velY=0x{playerVelY_fixed:X4}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}, wasZeroed={wasZeroedByCollisionLastFrame}");                        
+                            AppendSimDebug($"[PF-JUMP] hold={holdJump}, press={pressJump}, velY=0x{playerVelY_fixed:X4}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}, wasZeroed={wasZeroedByCollisionLastFrame}, pfIdx={pfFrameIndex}");                        
                         // Two jump paths from gamemode_cube.h lines 50-65:
                         // Path 1: Hold A && !jblocked && !fblocked → if (!orbed) jump
                         // Path 2: Press A && (jblocked || fblocked) → jump (no orbed check!)
@@ -165,7 +165,12 @@ namespace FamidashEditor
                         
                         bool doJump = false;
                         // Path 1: hold-to-jump (no jblocked/fblocked, checks orbed)
-                        if (holdJump && !jblocked && !fblocked && isGrounded && !orbed[currplayer] && dashing[currplayer] == 0)
+                        // During pathfinder replay, use pressJump instead of holdJump.
+                        // The PF's input may have consecutive trues from landing
+                        // predictions; pressJump is consumed once per true→grounded
+                        // transition, preventing stale holds from mis-firing jumps.
+                        bool cubeJumpInput = pathfinderEnabled ? pressJump : holdJump;
+                        if (cubeJumpInput && !jblocked && !fblocked && isGrounded && !orbed[currplayer] && dashing[currplayer] == 0)
                             doJump = true;
                         // Path 2: press-to-jump (jblocked/fblocked, no orbed check)
                         else if (pressJump && (jblocked || fblocked) && isGrounded && dashing[currplayer] == 0)
@@ -186,6 +191,9 @@ namespace FamidashEditor
                             // From gamemode_cube.h: currplayer_vel_y = JUMP_VEL(currplayer_table_idx);
                             int jumpVel = GameModePhysics.JUMP_VEL(baseTableIdx) * gravityMultiplier;
                             playerVelY_fixed = jumpVel;
+                            
+                            // NES slope_jump_check: add extra velocity when jumping off a slope
+                            SlopeJumpCheck_Fresh();
                             
                             // AppendSimDebug($"[CUBE] Jump applied: table_idx={currplayer_table_idx}, jumpVel={jumpVel}, velY now = {playerVelY_fixed}");
                         }
@@ -255,6 +263,8 @@ namespace FamidashEditor
                         if (tmp3 > 0 && isGroundedOrNearGround)
                         {
                             playerVelY_fixed = tmpA;
+                            // NES slope_jump_check: add extra velocity when jumping off a slope
+                            SlopeJumpCheck_Fresh();
                             AppendSimDebug($"[FOOTBALL] Released! chargepower={tmp3}, tmpA=0x{tmpA:X4}, velY now = {playerVelY_fixed}");
                         }
                         

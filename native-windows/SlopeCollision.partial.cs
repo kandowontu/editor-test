@@ -158,6 +158,9 @@ namespace FamidashEditor
         private void LoadSlopeStateForPlayer(int player)
         {
             // currplayer is already set to the new player index, so the property accessors work
+            currplayer_slope_frames = slope_frames_arr[player];
+            currplayer_was_on_slope_counter = was_on_slope_counter_arr[player];
+            currplayer_slope_type = slope_type_arr[player];
             currplayer_last_slope_type = last_slope_type_arr[player];
         }
         
@@ -690,6 +693,12 @@ namespace FamidashEditor
         /// </summary>
         private bool bg_coll_return_slope_D(int temp_x, int temp_y, MetatileCollision collision, int tmp2)
         {
+            // Fix 33: Save slope counters before bg_coll_slope may modify them.
+            // When pathfinder is active and direction filter rejects, restore them
+            // to prevent phantom apply_slope_vel events that PF doesn't produce.
+            int saved_slope_frames = currplayer_slope_frames;
+            int saved_was_on_slope_counter = currplayer_was_on_slope_counter;
+            
             bool tmp1 = bg_coll_slope(temp_x, temp_y, collision);
             
             AppendSimDebug($"[SLOPE] Filter: tmp2={tmp2}, tmp1={tmp1}, slopeType={currplayer_slope_type:X2}, hasRISING={(currplayer_slope_type & SLOPE_RISING) != 0}");
@@ -701,6 +710,12 @@ namespace FamidashEditor
                 {
                     AppendSimDebug($"[SLOPE] Filter: LEFT rejects RISING slope");
                     currplayer_slope_type = currplayer_last_slope_type;
+                    // Fix 33: Undo slope counter writes from bg_coll_slope on direction rejection
+                    if (pathfinderEnabled)
+                    {
+                        currplayer_slope_frames = saved_slope_frames;
+                        currplayer_was_on_slope_counter = saved_was_on_slope_counter;
+                    }
                     return false;
                 }
             }
@@ -711,6 +726,12 @@ namespace FamidashEditor
                 {
                     AppendSimDebug($"[SLOPE] Filter: RIGHT rejects non-RISING slope");
                     currplayer_slope_type = currplayer_last_slope_type;
+                    // Fix 33: Undo slope counter writes from bg_coll_slope on direction rejection
+                    if (pathfinderEnabled)
+                    {
+                        currplayer_slope_frames = saved_slope_frames;
+                        currplayer_was_on_slope_counter = saved_was_on_slope_counter;
+                    }
                     return false;
                 }
             }

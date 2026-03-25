@@ -113,6 +113,9 @@ namespace FamidashEditor
                 
                 ninjajumps[currplayer]--;
                 
+                // NES slope_jump_check: add extra velocity when jumping off a slope
+                SlopeJumpCheck_Fresh();
+                
                 ninjaJumpedThisFrame = true;
                 AppendSimDebug($"[NINJA] Jump! Remaining={ninjajumps[currplayer]}, vel={playerVelY_fixed}");
             }
