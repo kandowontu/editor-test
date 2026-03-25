@@ -257,11 +257,17 @@ namespace FamidashEditor
                         int playerBottom = (playerY_fixed >> 8) + hitboxOffsetY + hitboxH;
                         int testTop = playerBottom;
                         int testHeight = 2;
-                        var (collided, _) = CheckCollisionDown(collisionX, testTop, hitboxW, testHeight);
+                        var (collided, collisionTopY) = CheckCollisionDown(collisionX, testTop, hitboxW, testHeight);
                         
                         if (collided) {
+                            // Fix 34: Snap Y to floor surface (matches PF BallVelocityZeroing).
+                            // Previously only zeroed velocity without adjusting position,
+                            // causing the ball to drift into the floor when a pad kept
+                            // re-applying downward velocity each frame.
+                            int newY = collisionTopY - hitboxH - hitboxOffsetY;
+                            playerY_fixed = newY << 8;
                             playerVelY_fixed = 0;
-                            AppendSimDebug($"[BALL] Floor grounded - zeroed downward velocity");
+                            AppendSimDebug($"[BALL] Floor grounded - zeroed downward velocity, snapped Y to {newY}");
                         }
                     }
                 }

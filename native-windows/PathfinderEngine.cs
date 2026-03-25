@@ -1806,8 +1806,11 @@ namespace FamidashEditor
                 // Fix 31: Don't clear the input if a mode-change portal fired
                 // during this frame.  The press was consumed by the NEW mode's
                 // physics (e.g. UFO jump on a cube→UFO transition frame).
+                // Fix 36: Don't clear input during dashing — input=true sustains
+                // the dash (Dashing != 0 && !input ends it).  The cube jump
+                // check is irrelevant while dashing.
                 if (preStepGameMode == 0 && input && !_cubeJumpedThisStep
-                    && state.GameMode == 0)
+                    && state.GameMode == 0 && state.Dashing == 0)
                 {
                     Inputs[frame] = false;
 #if !DISABLE_DEBUG_LOGGING
@@ -1815,7 +1818,7 @@ namespace FamidashEditor
 #endif
                 }
 
-                TraceFrame(frame, ref state, input, alive);
+                TraceFrame(frame, ref state, Inputs[frame], alive);
 
                 // Record path at visual center AFTER physics+eject (matching sim's
                 // recording inside UfoShipEject_Fresh / CubePhysics_Fresh which uses
@@ -2781,13 +2784,14 @@ namespace FamidashEditor
                 // Fix 31: Don't clear the input if a mode-change portal fired
                 // during this frame — the press was consumed by the NEW mode
                 // (e.g. UFO jump on a cube→UFO transition frame).
+                // Fix 36: Don't clear input during dashing.
                 if (preStepGameMode == 0 && inp && !_cubeJumpedThisStep
-                    && state.GameMode == 0)
+                    && state.GameMode == 0 && state.Dashing == 0)
                 {
                     Inputs[f] = false;
                 }
 
-                TraceFrame(f, ref state, inp, alive);
+                TraceFrame(f, ref state, Inputs[f], alive);
 
                 int pathMiniOffY = (state.Mini && !state.GravFlipped) ? 4 : 0;
                 PathPoints.Add(((state.X_fixed >> 8) + 8,
@@ -11376,7 +11380,7 @@ namespace FamidashEditor
                     slopeType = 0b0111; // 66_UP (RISING)
                     break;
                 case MetatileCollision.COL_SLOPE_RD66_BOT:
-                    if ((temp_x & 0x0f) >= 0x08) return (true, 0, 0b0111); // Solid in right half
+                    if ((temp_x & 0x0f) >= 0x08) return (true, temp_y & 0x0f, 0b0111); // Solid in right half — NES: tmp8 = temp_y & 0x0f
                     tmp7 = (((temp_x & 0x0f) << 1) & 0x0f) ^ 0x0f;
                     tmp4 = temp_y & 0x0f;
                     slopeType = 0b0111;
@@ -11388,7 +11392,7 @@ namespace FamidashEditor
                     slopeType = 0b0011; // 66_DOWN
                     break;
                 case MetatileCollision.COL_SLOPE_LD66_BOT:
-                    if ((temp_x & 0x0f) < 0x08) return (true, 0, 0b0011); // Solid in left half
+                    if ((temp_x & 0x0f) < 0x08) return (true, temp_y & 0x0f, 0b0011); // Solid in left half — NES: tmp8 = temp_y & 0x0f
                     tmp7 = ((temp_x & 0x0f) << 1) & 0x0f;
                     tmp4 = temp_y & 0x0f;
                     slopeType = 0b0011;
@@ -11400,7 +11404,7 @@ namespace FamidashEditor
                     slopeType = 0b1111; // 66_UP_UD
                     break;
                 case MetatileCollision.COL_SLOPE_RU66_BOT:
-                    if ((temp_x & 0x0f) >= 0x08) return (true, 0, 0b1111);
+                    if ((temp_x & 0x0f) >= 0x08) return (true, temp_y & 0x0f, 0b1111); // NES: tmp8 = temp_y & 0x0f
                     tmp7 = (((temp_x & 0x0f) << 1) & 0x0f) ^ 0x0f;
                     tmp4 = (temp_y & 0x0f) ^ 0x0f;
                     slopeType = 0b1111;
@@ -11412,7 +11416,7 @@ namespace FamidashEditor
                     slopeType = 0b1011; // 66_DOWN_UD
                     break;
                 case MetatileCollision.COL_SLOPE_LU66_BOT:
-                    if ((temp_x & 0x0f) < 0x08) return (true, 0, 0b1011);
+                    if ((temp_x & 0x0f) < 0x08) return (true, temp_y & 0x0f, 0b1011); // NES: tmp8 = temp_y & 0x0f
                     tmp7 = ((temp_x & 0x0f) << 1) & 0x0f;
                     tmp4 = (temp_y & 0x0f) ^ 0x0f;
                     slopeType = 0b1011;

@@ -569,7 +569,7 @@ namespace FamidashEditor
 
         internal static bool IsSlopeTile(MetatileCollision col)
         {
-            return col >= MetatileCollision.COL_SLOPE_RD45 && col <= MetatileCollision.COL_SLOPE_LU66_BOT;
+            return col >= MetatileCollision.COL_SLOPE_RD45 && col <= MetatileCollision.COL_SLOPE_LU66_TOP;
         }
 
         internal static bool IsMiniBlockType(MetatileCollision col)
@@ -647,8 +647,6 @@ namespace FamidashEditor
                 case MetatileCollision.COL_DOWN_LEFT_SPIKE:
                 case MetatileCollision.COL_DOWN_RIGHT_SPIKE:
                 case MetatileCollision.COL_DOWN_BOTH_SPIKES:
-                case MetatileCollision.COL_FLOOR_CEIL:
-                case MetatileCollision.COL_NO_SIDE:
                     return false;
                 default:
                     break;
@@ -1371,21 +1369,7 @@ namespace FamidashEditor
             int localX = Math.Max(0, Math.Min(TILE - 1, centerX - tileStartX));
             int localY = Math.Max(0, Math.Min(TILE - 1, centerY - tileStartY));
 
-            // bg_coll_spikes equivalent
-            if (MetatileCollisionTable.TileKillsAtPixel(col, localX, localY))
-                return true;
-
-            // bg_coll_U_D_checks equivalent: solid block penetration death.
-            // NES kills when the center point is inside a solid tile.
-            // Skipped for wave (6) — NES skips when wave+dblocked; PF doesn't track dblocked.
-            if (gameMode >= 0 && gameMode != 6)
-            {
-                var (colLeft, colTop, colRight, colBottom) = GetCollisionBounds(col);
-                if (localX >= colLeft && localX < colRight && localY >= colTop && localY < colBottom)
-                    return true;
-            }
-
-            return false;
+            return MetatileCollisionTable.TileKillsAtPixel(col, localX, localY);
         }
 
         /// <summary>

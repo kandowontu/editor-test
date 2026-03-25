@@ -1848,20 +1848,11 @@ namespace FamidashEditor
                 return true;
             }
 
-            // bg_coll_U_D_checks equivalent: solid block penetration death.
-            // NES kills when the center point has penetrated into a solid tile.
-            // Skipped for wave mode with dblocked (NES: !dblocked || gamemode != GAMEMODE_WAVE).
-            if (!(currentGameMode == 6 && dblocked))
-            {
-                var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType(collision);
-                if (localX >= colLeft && localX < colRight && localY >= colTop && localY < colBottom)
-                {
-                    try { AppendSimDebug($"[DEATH_CHECK] bg_coll_U_D kill: col={collision} local=({localX},{localY}) bounds=({colLeft},{colTop},{colRight},{colBottom})"); } catch { }
-                    deathX_px = centerX;
-                    deathY_px = centerY;
-                    return true;
-                }
-            }
+            // Fix 35b: Removed solid-block penetration death check (bg_coll_U_D_checks).
+            // The PF's SharedPhysics.CheckDeathCollision had the same check removed
+            // in Fix 35 because the SIM's eject logic has minor gaps vs NES that
+            // cause the player center to briefly penetrate solid tiles without the
+            // NES actually killing.  The SIM's copy must match.
 
             return false;
         }

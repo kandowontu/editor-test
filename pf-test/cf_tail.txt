@@ -1,0 +1,5 @@
+﻿gravF=2272 X∩┐╜4425px pct=27% ms/f=1.6
+  Progress: 27%   
+  Progress: 28%   
+[BFS] f=1700 front=25301 dedup=31257 deaths=277 Y=[224..368] mode=1 
+gravN=25301 gravF=0 X∩┐╜4701px pct=29% ms/f=3.1

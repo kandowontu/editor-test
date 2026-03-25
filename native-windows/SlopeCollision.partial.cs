@@ -270,10 +270,10 @@ namespace FamidashEditor
                     break;
                 
                 case MetatileCollision.COL_SLOPE_RD66_BOT:
-                    if ((byte)(temp_x & 0x0f) >= 0x08) return (true, 0);  // Solid if in right half
+                    currplayer_slope_type = SLOPE_66DEG_UP;
+                    if ((byte)(temp_x & 0x0f) >= 0x08) return (true, temp_y & 0x0f);  // Solid — NES: tmp8 = temp_y & 0x0f
                     tmp7 = (((temp_x & 0x0f) << 1) & 0x0f) ^ 0x0f;
                     tmp4 = ((temp_y) & 0x0f);
-                    currplayer_slope_type = SLOPE_66DEG_UP;
                     break;
                 
                 case MetatileCollision.COL_SLOPE_LD66_TOP:
@@ -284,10 +284,10 @@ namespace FamidashEditor
                     break;
                 
                 case MetatileCollision.COL_SLOPE_LD66_BOT:
-                    if ((byte)(temp_x & 0x0f) < 0x08) return (true, 0);  // Solid if in left half
+                    currplayer_slope_type = SLOPE_66DEG_DOWN;
+                    if ((byte)(temp_x & 0x0f) < 0x08) return (true, temp_y & 0x0f);  // Solid — NES: tmp8 = temp_y & 0x0f
                     tmp7 = (((temp_x & 0x0f) << 1) & 0x0f);
                     tmp4 = ((temp_y) & 0x0f);
-                    currplayer_slope_type = SLOPE_66DEG_DOWN;
                     break;
                 
                 case MetatileCollision.COL_SLOPE_RU66_TOP:
@@ -298,10 +298,10 @@ namespace FamidashEditor
                     break;
                 
                 case MetatileCollision.COL_SLOPE_RU66_BOT:
-                    if ((byte)(temp_x & 0x0f) >= 0x08) return (true, 0);  // Solid if in right half
+                    currplayer_slope_type = SLOPE_66DEG_UP_UD;
+                    if ((byte)(temp_x & 0x0f) >= 0x08) return (true, temp_y & 0x0f);  // Solid — NES: tmp8 = temp_y & 0x0f
                     tmp7 = (((temp_x & 0x0f) << 1) & 0x0f) ^ 0x0f;
                     tmp4 = ((temp_y) & 0x0f) ^ 0x0f;
-                    currplayer_slope_type = SLOPE_66DEG_UP_UD;
                     break;
                 
                 case MetatileCollision.COL_SLOPE_LU66_TOP:
@@ -312,10 +312,10 @@ namespace FamidashEditor
                     break;
                 
                 case MetatileCollision.COL_SLOPE_LU66_BOT:
-                    if ((byte)(temp_x & 0x0f) < 0x08) return (true, 0);  // Solid if in left half
+                    currplayer_slope_type = SLOPE_66DEG_DOWN_UD;
+                    if ((byte)(temp_x & 0x0f) < 0x08) return (true, temp_y & 0x0f);  // Solid — NES: tmp8 = temp_y & 0x0f
                     tmp7 = (((temp_x & 0x0f) << 1) & 0x0f);
                     tmp4 = ((temp_y) & 0x0f) ^ 0x0f;
-                    currplayer_slope_type = SLOPE_66DEG_DOWN_UD;
                     break;
                 
                 default:
@@ -568,10 +568,10 @@ namespace FamidashEditor
                     break;
                     
                 case MetatileCollision.COL_SLOPE_RD66_BOT:
+                    currplayer_slope_type = SLOPE_66DEG | SLOPE_RISING;
                     if ((temp_x & 0x0f) >= 0x08) return true;
                     tmp7 = (((temp_x & 0x0f) << 1) & 0x0f) ^ 0x0f;
                     tmp4 = temp_y & 0x0f;
-                    currplayer_slope_type = SLOPE_66DEG | SLOPE_RISING;
                     break;
                     
                 case MetatileCollision.COL_SLOPE_LD66_TOP:
@@ -582,10 +582,10 @@ namespace FamidashEditor
                     break;
                     
                 case MetatileCollision.COL_SLOPE_LD66_BOT:
+                    currplayer_slope_type = SLOPE_66DEG;
                     if ((temp_x & 0x0f) < 0x08) return true;
                     tmp7 = ((temp_x & 0x0f) << 1) & 0x0f;
                     tmp4 = temp_y & 0x0f;
-                    currplayer_slope_type = SLOPE_66DEG;
                     break;
                     
                 case MetatileCollision.COL_SLOPE_RU66_TOP:
@@ -596,10 +596,10 @@ namespace FamidashEditor
                     break;
                     
                 case MetatileCollision.COL_SLOPE_RU66_BOT:
+                    currplayer_slope_type = SLOPE_66DEG | SLOPE_RISING | SLOPE_UPSIDEDOWN;
                     if ((temp_x & 0x0f) >= 0x08) return true;
                     tmp7 = (((temp_x & 0x0f) << 1) & 0x0f) ^ 0x0f;
                     tmp4 = (temp_y & 0x0f) ^ 0x0f;
-                    currplayer_slope_type = SLOPE_66DEG | SLOPE_RISING | SLOPE_UPSIDEDOWN;
                     break;
                     
                 case MetatileCollision.COL_SLOPE_LU66_TOP:
@@ -616,10 +616,10 @@ namespace FamidashEditor
                     // NES: wave mode (mini) skips LU66 slopes
                     if (currentGameMode == 6 && currplayer_mini != 0)
                         return false;
+                    currplayer_slope_type = SLOPE_66DEG | SLOPE_UPSIDEDOWN;
                     if ((temp_x & 0x0f) < 0x08) return true;
                     tmp7 = ((temp_x & 0x0f) << 1) & 0x0f;
                     tmp4 = (temp_y & 0x0f) ^ 0x0f;
-                    currplayer_slope_type = SLOPE_66DEG | SLOPE_UPSIDEDOWN;
                     break;
                     
                 default:
