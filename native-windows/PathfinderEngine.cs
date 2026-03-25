@@ -2197,10 +2197,10 @@ namespace FamidashEditor
         /// </summary>
         private long BfsQuantizeKey(ref SimState s)
         {
-            // Ship/UFO/Swing modes have continuous Y/VelY -- coarser quantization
+            // Ship/UFO/Wave/Snake/Swing modes have continuous Y/VelY -- coarser quantization
             // prevents the frontier from filling with near-duplicate states.
             // Discrete modes (cube/ball/etc.) benefit from finer quantization.
-            bool continuous = (s.GameMode == 1 || s.GameMode == 3 || s.GameMode == 7); // ship, UFO, swing
+            bool continuous = (s.GameMode == 1 || s.GameMode == 3 || s.GameMode == 6 || s.GameMode == 7 || s.GameMode == 10); // ship, UFO, wave, swing, snake
             
             // Quantize Y: ship/UFO at 2px, discrete at 1/4px (sub-pixel)
             int yq = continuous ? ((s.Y_fixed >> 9) & 0xFFF) 
@@ -7780,15 +7780,37 @@ namespace FamidashEditor
                 s.P2_PendingOrbIndex = s.PendingOrbIndex;
                 s.P2_PendingOrbSpriteId = s.PendingOrbSpriteId;
 
-                // P2 hit single portal → sync P1 to P2's state (matching SIM behavior).
-                // When P2 deactivates dual mode, the surviving player gets P2's physics
-                // (Y, velocity, gravity etc.) just like the NES/SIM does.
+                // P2 hit single portal → P1 keeps its own state (matching SIM Fix 30).
+                // When P2 deactivates dual mode, the surviving player keeps P1's
+                // saved physics (Y, velocity, gravity etc.), NOT P2's state.
                 if (!s.DualActive)
                 {
-                    // s still contains P2's state; just fix X to P1's post-advance value
+                    // Restore P1 state — s currently holds P2's post-physics state
                     s.X_fixed = newX_fixed;
+                    s.Y_fixed = p1_Y;
+                    s.VelY_fixed = p1_VelY;
+                    s.GravFlipped = p1_GravFlipped;
+                    s.GravMul = p1_GravMul;
+                    s.Mini = p1_Mini;
+                    s.WasZeroedByCollision = p1_WasZeroed;
+                    s.OnGround = p1_OnGround;
+                    s.BallFlipCooldown = p1_BallFlipCooldown;
+                    s.BallInputBuffer = p1_BallInputBuffer;
+                    s.BallCooldownFrames = p1_BallCooldownFrames;
+                    s.RobotJumpTime = p1_RobotJumpTime;
+                    s.SlopeWasOnCounter = p1_SlopeWasOnCounter;
+                    s.SlopeFrames = p1_SlopeFrames;
+                    s.SlopeType = p1_SlopeType;
+                    s.Orbed = p1_Orbed;
+                    s.BlackOrbed = p1_BlackOrbed;
+                    s.PrevInputHeld = p1_PrevInputHeld;
+                    s.Dashing = p1_Dashing;
+                    s.JBlocked = p1_JBlocked;
+                    s.FBlocked = p1_FBlocked;
+                    s.PendingOrbIndex = p1_PendingOrbIndex;
+                    s.PendingOrbSpriteId = p1_PendingOrbSpriteId;
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[SINGLE_P2_SYNC] P2 hit single portal — syncing P1 to P2 state: Y={s.Y_fixed >> 8} VelY=0x{s.VelY_fixed:X4} GravFlipped={s.GravFlipped}");
+                    PfLog($"[SINGLE_P1_KEEP] P2 hit single portal — P1 keeps own state: Y={s.Y_fixed >> 8} VelY=0x{s.VelY_fixed:X4} GravFlipped={s.GravFlipped}");
 #endif
                     if (p2EndLevel) { endLevel = true; return true; }
                     if (!p2Alive) return false;
@@ -9463,22 +9485,39 @@ namespace FamidashEditor
             PfLog($"[WAVE_EJECT] Generic=({collX},{collY}) {waveW}x{waveH} velY=0x{s.VelY_fixed:X4} miniOff={miniOffset}");
 #endif
             // -- Slope check (NES: bg_coll_D_slopes runs before wave_coll) --
-            // Scan tiles the wave hitbox overlaps; any slope tile → death.
-            // NES only allows slope walking if dblocked (COL_FLOOR_CEIL surface);
-            // the pathfinder doesn't track dblocked, so treat slopes as deadly.
+            // Match SIM: only check slopes when moving down (velY >= 0).
+            // Probe two bottom-edge points matching bg_coll_D_slopes exactly:
+            //   checkBaseX = playerX + 4, checkBaseY = genericY + genericHeight - 2 + miniAdj
+            // Then call PfSlopeCalc for pixel-level surface check and apply
+            // direction filtering (LEFT rejects RISING, RIGHT rejects non-RISING).
+            // Without dblocked (no D_BLOCK sprite support yet), any slope hit → death.
+            if (s.VelY_fixed >= 0)
             {
-                int tileL = collX / TILE;
-                int tileR = (collX + waveW - 1) / TILE;
-                int tileT = collY / TILE;
-                int tileB = (collY + waveH - 1) / TILE;
-                for (int ty = tileT; ty <= tileB; ty++)
+                int slopeCheckX = playerX_px + 4;
+                int slopeGenY = playerY_px + (-2); // waveYOffset = -2 when velY >= 0
+                int slopeH = s.Mini ? 8 : 16;
+                int slopeMiniAdj = s.Mini ? ((16 - slopeH) >> 1) : 0;
+                int slopeCheckY = slopeGenY + slopeH - 2 + slopeMiniAdj;
+                int slopeCheckW = 8;
+
+                for (int probe = 0; probe < 2; probe++)
                 {
-                    for (int tx = tileL; tx <= tileR; tx++)
+                    int probeX = slopeCheckX + (probe * slopeCheckW);
+                    int tileX = probeX / TILE;
+                    int tileY = slopeCheckY / TILE;
+                    var sCol = GetTileCollision(tileX, tileY);
+                    if (sCol >= MetatileCollision.COL_SLOPE_RD45 && sCol <= MetatileCollision.COL_SLOPE_LU66_BOT)
                     {
-                        if (SharedPhysics.IsSlopeTile(GetTileCollision(tx, ty)))
+                        var (sHit, sEject, sType) = PfSlopeCalc(probeX, slopeCheckY, sCol);
+                        if (sHit)
                         {
+                            // Direction filter: LEFT (probe 0) rejects RISING, RIGHT (probe 1) rejects non-RISING
+                            bool isRising = (sType & 0x04) != 0; // SLOPE_RISING bit
+                            if (probe == 0 && isRising) continue;
+                            if (probe == 1 && !isRising) continue;
+
 #if !DISABLE_DEBUG_LOGGING
-                            PfLog($"[WAVE_DEATH] slope death X={playerX_px} Y={playerY_px} slopeTile=({tx},{ty})");
+                            PfLog($"[WAVE_DEATH] slope death X={playerX_px} Y={playerY_px} slopeTile=({tileX},{tileY}) col={sCol} probe={probe}");
 #endif
                             died = true;
                             return;
