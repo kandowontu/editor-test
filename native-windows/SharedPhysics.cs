@@ -1563,6 +1563,9 @@ namespace FamidashEditor
         /// past the edge of a platform.
         /// Normal gravity:  CheckFloor  at playerBottom,     height 2.
         /// Inverted gravity: CheckCeiling at playerTop − 2, height 2.
+        /// NOTE: This does NOT detect slopes — slopes are handled by ball_eject
+        /// which sets OnGround.  Callers that need slope-grounded detection
+        /// (e.g. ball flip) should also check the OnGround flag.
         /// </summary>
         internal static bool BallIsGrounded(in CollisionMap map,
             int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY,

@@ -779,9 +779,10 @@ namespace FamidashEditor
             if (isWaveMode)
             {
                 // Match NES wave Generic setup
+                // NES: WAVE_HEIGHT = 0x08 for all wave modes (mini and non-mini)
                 int waveYOffset = (playerVelY_fixed < 0) ? 2 : -2;
                 int genericY = playerY_px + waveYOffset;
-                int genericHeight = (currplayer_mini != 0) ? 8 : 16;
+                const int genericHeight = 8; // NES WAVE_HEIGHT = 0x08
                 int miniYAdj = (currplayer_mini != 0) ? ((0x10 - genericHeight) >> 1) : 0;
                 
                 checkBaseX = playerX_px + 4;  // NES: Generic.x = playerX + 4
@@ -857,6 +858,159 @@ namespace FamidashEditor
                 
                 tmp2++;
             } while (tmp2 < 2);
+            
+            return tmp3_low != 0;
+        }
+        
+        /// <summary>
+        /// bg_coll_return_slope_U() - 1:1 port from collision.h line 805
+        /// Filters slope collision by LEFT/RIGHT and sets eject_U = -tmp8
+        /// </summary>
+        private bool bg_coll_return_slope_U(int temp_x, int temp_y, MetatileCollision collision, int tmp2)
+        {
+            int saved_slope_frames = currplayer_slope_frames;
+            int saved_was_on_slope_counter = currplayer_was_on_slope_counter;
+            
+            bool tmp1 = bg_coll_slope(temp_x, temp_y, collision);
+            
+            AppendSimDebug($"[SLOPE_U] Filter: tmp2={tmp2}, tmp1={tmp1}, slopeType={currplayer_slope_type:X2}, hasRISING={(currplayer_slope_type & SLOPE_RISING) != 0}");
+            
+            if (tmp2 == 0)
+            {
+                // LEFT CHECK
+                if ((currplayer_slope_type & SLOPE_RISING) != 0)
+                {
+                    currplayer_slope_type = currplayer_last_slope_type;
+                    if (pathfinderEnabled)
+                    {
+                        currplayer_slope_frames = saved_slope_frames;
+                        currplayer_was_on_slope_counter = saved_was_on_slope_counter;
+                    }
+                    return false;
+                }
+            }
+            else
+            {
+                // RIGHT CHECK  
+                if ((currplayer_slope_type & SLOPE_RISING) == 0)
+                {
+                    currplayer_slope_type = currplayer_last_slope_type;
+                    if (pathfinderEnabled)
+                    {
+                        currplayer_slope_frames = saved_slope_frames;
+                        currplayer_was_on_slope_counter = saved_was_on_slope_counter;
+                    }
+                    return false;
+                }
+            }
+            
+            if (tmp1)
+            {
+                if ((currplayer_last_slope_type & SLOPE_RISING) != 0 && (currplayer_slope_type & SLOPE_RISING) == 0)
+                {
+                    if (currplayer_last_slope_type != 0 && currplayer_slope_type != 0)
+                    {
+                        currplayer_slope_type = currplayer_last_slope_type;
+                        tmp8 = playerVelX_fixed >> 8;
+                    }
+                }
+                if (currplayer_slope_type != 0)
+                {
+                    currplayer_last_slope_type = currplayer_slope_type;
+                }
+                eject_U = -tmp8;  // NES: eject_U = -tmp8 (opposite of eject_D = tmp8)
+            }
+            
+            return tmp1;
+        }
+        
+        /// <summary>
+        /// bg_coll_U() slopes portion - 1:1 port from collision.h line 863
+        /// Checks slopes at the top of the hitbox, loops for LEFT and RIGHT edges.
+        /// NES probe Y: Generic.y + (byte(0x10 - Generic.height) >> 1)
+        ///              + (currplayer_mini ? 1 : 2) + (gamemode == GAMEMODE_SHIP ? 1 : 0)
+        /// Returns true if slope collision found, sets eject_U
+        /// </summary>
+        private bool bg_coll_U_slopes()
+        {
+            int playerX_px = playerX_fixed >> 8;
+            int playerY_px = playerY_fixed >> 8;
+            
+            bool isWaveMode = (currentGameMode == 6 || currentGameMode == 10);
+            
+            int checkBaseX, checkWidth, checkBaseY;
+            
+            if (isWaveMode)
+            {
+                // NES: WAVE_HEIGHT = 0x08 for all wave modes (mini and non-mini)
+                // NES bg_coll_U: centering ((0x10-height)>>1) is applied UNCONDITIONALLY
+                int waveYOffset = (playerVelY_fixed < 0) ? 2 : -2;
+                int genericY = playerY_px + waveYOffset;
+                const int genericHeight = 8; // NES WAVE_HEIGHT = 0x08
+                int centerAdj = (0x10 - genericHeight) >> 1; // Always applied for bg_coll_U
+                
+                checkBaseX = playerX_px + 4;
+                checkWidth = 8;
+                // NES bg_coll_U: Generic.y + (0x10-height)>>1 + (mini?1:2) + (ship?1:0)
+                // Wave is not ship, so ship offset = 0
+                checkBaseY = genericY + centerAdj + (currplayer_mini != 0 ? 1 : 2);
+            }
+            else
+            {
+                int hitboxW_local = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
+                int hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
+                int hitboxOffsetY = (currplayer_mini != 0) ? ((0x10 - hitboxH) >> 1) : 0;
+                
+                checkBaseX = playerX_px;
+                checkWidth = hitboxW_local;
+                // NES: Generic.y + (byte(0x10 - Generic.height) >> 1) + (mini?1:2) + (ship?1:0)
+                checkBaseY = playerY_px + hitboxOffsetY + (currplayer_mini != 0 ? 1 : 2) + (currentGameMode == 1 ? 1 : 0);
+            }
+            
+            AppendSimDebug($"[SLOPE_U] bg_coll_U_slopes: playerX={playerX_px}, checkY={checkBaseY}, checkX={checkBaseX}, checkW={checkWidth}, mini={currplayer_mini != 0}");
+            
+            if (playerX_px < 0x10)
+            {
+                return false;
+            }
+            
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            
+            int temp_y_val = checkBaseY;
+            int tmp2_dir = 0;
+            int tmp3_low = 0;
+            
+            do
+            {
+                int temp_x_val = checkBaseX + (tmp2_dir * checkWidth);
+                
+                int tileX = temp_x_val / TILE;
+                int tileY = temp_y_val / TILE;
+                int tileArrayY = tileY + groundRowsToReserve;
+                
+                if (tileX >= 0 && tileX < mapWidth && tileY >= 0 && tileY < mapHeight && tileArrayY < mapHeight)
+                {
+                    int tileIdx = tileArrayY * mapWidth + tileX;
+                    if (tileIdx >= 0 && tileIdx < tiles.Length)
+                    {
+                        byte tileValue = (byte)tiles[tileIdx];
+                        MetatileCollision coll = MetatileCollisionTable.GetCollision(tileValue);
+                        
+                        AppendSimDebug($"[SLOPE_U] Check: tmp2={tmp2_dir}, tempX={temp_x_val}, tempY={temp_y_val}, tile=[{tileX},{tileY}], tileVal=0x{tileValue:X2}, collision={coll}");
+                        
+                        if (coll >= MetatileCollision.COL_SLOPE_RD45 && coll <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                        {
+                            if (bg_coll_return_slope_U(temp_x_val, temp_y_val, coll, tmp2_dir))
+                            {
+                                tmp3_low = 1;
+                                AppendSimDebug($"[SLOPE_U] HIT! eject_U={eject_U}, tmp8={tmp8}, slopeType={currplayer_slope_type:X2}");
+                            }
+                        }
+                    }
+                }
+                
+                tmp2_dir++;
+            } while (tmp2_dir < 2);
             
             return tmp3_low != 0;
         }

@@ -65,6 +65,15 @@ namespace FamidashEditor
                         ClearOrbBuffer();
                 }
                 
+                // Refresh gravity locals after orb processing — blue/green orbs flip
+                // currplayer_gravity inside ActivateOrb(), but gravityInverted was read
+                // before orb processing.  Without this, the grounded spike death check
+                // uses a stale value and kills the player when PF (correctly) survives.
+                gravityInverted = (currplayer_gravity != 0);
+                gravityMultiplier = gravityInverted ? -1 : 1;
+                tmpfallspeed = GameModePhysics.BALL_MAX_FALLSPEED(baseTableIdx) * gravityMultiplier;
+                tmpgravity = GameModePhysics.BALL_GRAVITY(baseTableIdx) * gravityMultiplier;
+                
                 // Read input for ground flip - track fresh press and hold state
                 bool holdJump = IsXDownAsync() || keyXHeld;
                 int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
@@ -138,6 +147,11 @@ namespace FamidashEditor
                         playerX_fixed >> 8, playerY_fixed >> 8,
                         hitboxW, hitboxH, hitboxOffsetY,
                         gravityInverted);
+                    // Match PF's || s.OnGround fallback: slopes set was_on_slope_counter
+                    // via bg_coll_D_slopes in eject, allowing flip on the next frame
+                    // even when BallIsGrounded probe misses the slope tile.
+                    if (!isGrounded && currplayer_was_on_slope_counter > 0)
+                        isGrounded = true;
                     AppendSimDebug($"[BALL] Grounded check: isGrounded={isGrounded}");
                 }
                 

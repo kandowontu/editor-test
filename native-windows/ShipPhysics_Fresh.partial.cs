@@ -135,11 +135,25 @@ namespace FamidashEditor
             // Update slope counters each frame
             UpdateSlopeCounters();
             
-            // NES ufo_ship_eject: NO velocity guard on ceiling eject
-            var (collidedUp, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-            if (collidedUp) {
-                playerY_fixed = ((collisionBottomY - hitboxOffsetY) << 8);
+            // NES bg_coll_U: check ceiling slopes BEFORE flat ceiling collision
+            bool ceilingSlopeHit = bg_coll_U_slopes();
+            if (ceilingSlopeHit)
+            {
+                // NES: high_byte(Y) = high_byte(Y) - eject_U - 1
+                // eject_U = -tmp8, so this becomes Y_px = Y_px + tmp8 - 1 (push down, away from ceiling slope)
+                int newPixelY = (playerY_fixed >> 8) - eject_U - 1;
+                playerY_fixed = newPixelY << 8;
                 playerVelY_fixed = 0;
+                AppendSimDebug($"[SHIP] Ceiling slope eject: eject_U={eject_U}, newY={newPixelY}");
+            }
+            else
+            {
+                // NES ufo_ship_eject: flat ceiling check, NO velocity guard
+                var (collidedUp, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
+                if (collidedUp) {
+                    playerY_fixed = ((collisionBottomY - hitboxOffsetY) << 8);
+                    playerVelY_fixed = 0;
+                }
             }
 
             // Check slopes BEFORE flat downward collision

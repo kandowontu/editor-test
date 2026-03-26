@@ -184,6 +184,9 @@ namespace FamidashEditor
             UpdateSlopeCounters();
 
             // Check slopes BEFORE wave collision
+            // NES: bg_coll_U/bg_coll_D each have a slope section that runs
+            // regardless of velocity.  wave_eject calls bg_coll_U when moving
+            // up and bg_coll_D when moving down, so both directions are covered.
             if (playerVelY_fixed >= 0)
             {
                 bool slopeHit = bg_coll_D_slopes();
@@ -206,6 +209,49 @@ namespace FamidashEditor
                     else if (!MainWindow.Option_NoDeath)
                     {
                         AppendSimDebug($"[WAVE_DEATH] slope death (dblocked=false) X={playerX_fixed >> 8} Y={playerY_fixed >> 8}");
+                        deathTriggered = true;
+                        if (!pfSimulating)
+                        {
+                            paused = true;
+                            _ = StopMusicAsync();
+                            try
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    if (this.Owner is MainWindow mw)
+                                    {
+                                        try { mw.PauseSimulatorPlayback(); } catch { }
+                                    }
+                                }));
+                            }
+                            catch { }
+                        }
+                        return;
+                    }
+                }
+            }
+            else // velY < 0 — moving UP: check ceiling slopes (bg_coll_U_slopes)
+            {
+                bool slopeHit = bg_coll_U_slopes();
+                if (slopeHit)
+                {
+                    AppendSimDebug($"[WAVE_EJECT] U_slopeHit=true dblocked={dblocked} eject_U={eject_U}");
+                    if (dblocked)
+                    {
+                        // eject_U is negative (from bg_coll_return_slope_U: eject_U = -tmp8).
+                        // playerY -= eject_U → moves DOWN (away from ceiling slope).
+                        int currentY = playerY_fixed >> 8;
+                        currentY -= eject_U;
+                        playerY_fixed = currentY << 8;
+                        playerVelY_fixed = 0;
+                        wasZeroedByCollisionLastFrame = true;
+                        AppendSimDebug($"[WAVE_EJECT] U slope eject Y={playerY_fixed >> 8}");
+                        return;
+                    }
+                    else if (!MainWindow.Option_NoDeath)
+                    {
+                        AppendSimDebug($"[WAVE_DEATH] U slope death (dblocked=false) X={playerX_fixed >> 8} Y={playerY_fixed >> 8}");
                         deathTriggered = true;
                         if (!pfSimulating)
                         {

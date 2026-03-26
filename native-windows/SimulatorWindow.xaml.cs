@@ -10838,6 +10838,72 @@ namespace FamidashEditor
                             catch { }
                         }
                         
+                        // --- Wave-specific slope death checks (NES bg_coll_death + bg_coll_R) ---
+                        // NES bg_coll_death calls bg_coll_slope at the center point.
+                        // NES bg_coll_R → bg_side_coll_common calls bg_coll_slope at the right edge.
+                        // Both kill the wave if the slope surface is reached (dblocked doesn't
+                        // prevent slope death in bg_coll_death).
+                        // NES x_movement: WAVE_WIDTH=8, WAVE_HEIGHT=8 for the player hitbox.
+                        if (!MainWindow.Option_NoDeath && !deathTriggered && (currentGameMode == 6 || currentGameMode == 10))
+                        {
+                            int wPx = preAdvancePlayerX_fixed >> 8;
+                            int wPy = playerY_fixed >> 8;
+                            const int WAVE_W = 8, WAVE_H = 8;
+                            int groundRowsToReserve_ws = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            bool isMiniWave = (currplayer_mini != 0);
+                            
+                            // 1) Center-point slope (bg_coll_death → bg_coll_slope)
+                            int cX = wPx + (WAVE_W >> 1) - 1;
+                            int cY = wPy + (WAVE_H >> 1);
+                            int cTileX = cX / TILE, cTileY = cY / TILE;
+                            int cTileArrayY = cTileY + groundRowsToReserve_ws;
+                            if (cTileX >= 0 && cTileX < mapWidth && cTileArrayY >= 0 && cTileArrayY < mapHeight)
+                            {
+                                byte cTileVal = (byte)tiles[cTileArrayY * mapWidth + cTileX];
+                                var cCol = MetatileCollisionTable.GetCollision(cTileVal);
+                                if (cCol >= MetatileCollision.COL_SLOPE_RD45 && cCol <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                                {
+                                    bool skipSlope = (!isMiniWave && cCol == MetatileCollision.COL_SLOPE_LU45) ||
+                                                     (isMiniWave && (cCol == MetatileCollision.COL_SLOPE_LU66_TOP || cCol == MetatileCollision.COL_SLOPE_LU66_BOT));
+                                    if (!skipSlope && bg_coll_slope(cX, cY, cCol))
+                                    {
+                                        AppendSimDebug($"[WAVE_DEATH] center slope X={wPx} Y={wPy} tile=({cTileX},{cTileY}) col={cCol}");
+                                        deathTriggered = true;
+                                        paused = true;
+                                        _ = StopMusicAsync();
+                                        try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } } })); } catch { }
+                                    }
+                                }
+                            }
+                            
+                            // 2) Right-edge slope (bg_coll_R → bg_side_coll_common → bg_coll_slope)
+                            if (!deathTriggered && !ShouldSkipSideCollisionForSlope())
+                            {
+                                int rX = wPx + WAVE_W;
+                                int rY = wPy + (WAVE_H >> 1);
+                                int rTileX = rX / TILE, rTileY = rY / TILE;
+                                int rTileArrayY = rTileY + groundRowsToReserve_ws;
+                                if (rTileX >= 0 && rTileX < mapWidth && rTileArrayY >= 0 && rTileArrayY < mapHeight)
+                                {
+                                    byte rTileVal = (byte)tiles[rTileArrayY * mapWidth + rTileX];
+                                    var rCol = MetatileCollisionTable.GetCollision(rTileVal);
+                                    if (rCol >= MetatileCollision.COL_SLOPE_RD45 && rCol <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                                    {
+                                        bool skipSlope = (!isMiniWave && rCol == MetatileCollision.COL_SLOPE_LU45) ||
+                                                         (isMiniWave && (rCol == MetatileCollision.COL_SLOPE_LU66_TOP || rCol == MetatileCollision.COL_SLOPE_LU66_BOT));
+                                        if (!skipSlope && bg_coll_slope(rX, rY, rCol))
+                                        {
+                                            AppendSimDebug($"[WAVE_DEATH] R-edge slope X={wPx} Y={wPy} tile=({rTileX},{rTileY}) col={rCol}");
+                                            deathTriggered = true;
+                                            paused = true;
+                                            _ = StopMusicAsync();
+                                            try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } } })); } catch { }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
                         // Restore NEW X after physics+forward collision+death check ran at OLD X
                         playerX_fixed = attemptedPlayerX_fixed;
                         

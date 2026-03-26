@@ -1,0 +1,19 @@
+﻿powershell : At line:1 char:84
+At line:1 char:1
++ powershell -NoProfile -Command "$lines = Get-Content 'c:\Editor Test\ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (At line:1 char:84:String) [], Rem 
+   oteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
++ ... tor Test\pf-test\hf5_stderr.txt' -Encoding Unicode; foreach ( in ) {  ...
++                                                                  ~
+Missing variable name after foreach.
+At line:1 char:88
++ ... est\pf-test\hf5_stderr.txt' -Encoding Unicode; foreach ( in ) { if (  ...
++                                                                 ~
+Unexpected token ')' in expression or statement.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordEx 
+   ception
+    + FullyQualifiedErrorId : MissingVariableNameAfterForeach
+ 

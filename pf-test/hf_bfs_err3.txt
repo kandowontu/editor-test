@@ -1,0 +1,1086 @@
+[BFS] Starting exhaustive BFS exploration (frontier cap=30000)
+[BFS] f=0 front=2 dedup=2 deaths=0 Y=[577..577] mode=0 gravN=2 gravF=0 X�0px pct=0% ms/f=20.2
+[BFS] f=1 front=3 dedup=3 deaths=0 Y=[571..577] mode=0 gravN=3 gravF=0 X�2px pct=0% ms/f=10.6
+[BFS] f=2 front=4 dedup=4 deaths=0 Y=[567..577] mode=0 gravN=4 gravF=0 X�5px pct=0% ms/f=7.2
+[BFS] f=3 front=5 dedup=5 deaths=0 Y=[562..577] mode=0 gravN=5 gravF=0 X�8px pct=0% ms/f=5.4
+[BFS] f=4 front=6 dedup=6 deaths=0 Y=[558..577] mode=0 gravN=6 gravF=0 X�11px pct=0% ms/f=4.4
+[BFS] f=5 front=7 dedup=7 deaths=0 Y=[555..577] mode=0 gravN=7 gravF=0 X�13px pct=0% ms/f=3.7
+[BFS] f=6 front=8 dedup=8 deaths=0 Y=[552..577] mode=0 gravN=8 gravF=0 X�16px pct=0% ms/f=3.2
+[BFS] f=7 front=9 dedup=9 deaths=0 Y=[549..577] mode=0 gravN=9 gravF=0 X�19px pct=0% ms/f=2.8
+[BFS] f=8 front=10 dedup=10 deaths=0 Y=[547..577] mode=0 gravN=10 gravF=0 X�22px pct=0% ms/f=2.5
+[BFS] f=9 front=11 dedup=11 deaths=0 Y=[545..577] mode=0 gravN=11 gravF=0 X�24px pct=0% ms/f=2.3
+[BFS] f=10 front=12 dedup=12 deaths=0 Y=[544..577] mode=0 gravN=12 gravF=0 X�27px pct=0% ms/f=2.1
+[BFS] f=11 front=13 dedup=13 deaths=0 Y=[543..577] mode=0 gravN=13 gravF=0 X�30px pct=0% ms/f=2.0
+[BFS] f=12 front=14 dedup=14 deaths=0 Y=[542..577] mode=0 gravN=14 gravF=0 X�33px pct=0% ms/f=1.8
+[BFS] f=13 front=15 dedup=15 deaths=0 Y=[542..577] mode=0 gravN=15 gravF=0 X�35px pct=0% ms/f=1.7
+[BFS] f=14 front=16 dedup=16 deaths=0 Y=[542..577] mode=0 gravN=16 gravF=0 X�38px pct=0% ms/f=1.6
+[BFS] f=15 front=17 dedup=17 deaths=0 Y=[542..577] mode=0 gravN=17 gravF=0 X�41px pct=0% ms/f=1.5
+[BFS] f=16 front=18 dedup=18 deaths=0 Y=[542..577] mode=0 gravN=18 gravF=0 X�44px pct=0% ms/f=1.4
+[BFS] f=17 front=19 dedup=19 deaths=0 Y=[542..577] mode=0 gravN=19 gravF=0 X�47px pct=0% ms/f=1.4
+[BFS] f=18 front=20 dedup=20 deaths=0 Y=[542..577] mode=0 gravN=20 gravF=0 X�49px pct=0% ms/f=1.3
+[BFS] f=19 front=21 dedup=21 deaths=0 Y=[542..577] mode=0 gravN=21 gravF=0 X�52px pct=0% ms/f=1.3
+[BFS] f=20 front=22 dedup=22 deaths=0 Y=[542..577] mode=0 gravN=22 gravF=0 X�55px pct=0% ms/f=1.2
+[BFS] f=21 front=23 dedup=23 deaths=0 Y=[542..577] mode=0 gravN=23 gravF=0 X�58px pct=0% ms/f=1.2
+[BFS] f=22 front=24 dedup=24 deaths=0 Y=[542..577] mode=0 gravN=24 gravF=0 X�60px pct=0% ms/f=1.1
+[BFS] f=23 front=25 dedup=25 deaths=0 Y=[542..577] mode=0 gravN=25 gravF=0 X�63px pct=0% ms/f=1.1
+[BFS] f=24 front=26 dedup=26 deaths=0 Y=[542..577] mode=0 gravN=26 gravF=0 X�66px pct=0% ms/f=1.1
+[BFS] f=25 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�69px pct=0% ms/f=1.0
+[BFS] f=26 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�71px pct=0% ms/f=1.0
+[BFS] f=27 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�74px pct=0% ms/f=1.0
+[BFS] f=28 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�77px pct=0% ms/f=0.9
+[BFS] f=29 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�80px pct=0% ms/f=0.9
+[BFS] f=30 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�82px pct=0% ms/f=0.9
+[BFS] f=31 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�85px pct=0% ms/f=0.9
+[BFS] f=32 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�88px pct=0% ms/f=0.8
+[BFS] f=33 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�91px pct=0% ms/f=0.8
+[BFS] f=34 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�94px pct=0% ms/f=0.8
+[BFS] f=35 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�96px pct=0% ms/f=0.8
+[BFS] f=36 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�99px pct=0% ms/f=0.8
+[BFS] f=37 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�102px pct=0% ms/f=0.8
+[BFS] f=38 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�105px pct=0% ms/f=0.7
+[BFS] f=39 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�107px pct=0% ms/f=0.7
+[BFS] f=40 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�110px pct=0% ms/f=0.7
+[BFS] f=41 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�113px pct=0% ms/f=0.7
+[BFS] f=42 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�116px pct=0% ms/f=0.7
+[BFS] f=43 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�118px pct=0% ms/f=0.7
+[BFS] f=44 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�121px pct=0% ms/f=0.7
+[BFS] f=45 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�124px pct=0% ms/f=0.7
+[BFS] f=46 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�127px pct=0% ms/f=0.6
+[BFS] f=47 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�129px pct=0% ms/f=0.6
+[BFS] f=48 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�132px pct=0% ms/f=0.6
+[BFS] f=49 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�135px pct=0% ms/f=0.6
+[BFS] f=50 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�138px pct=0% ms/f=0.6
+[BFS] f=51 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�141px pct=0% ms/f=0.6
+[BFS] f=52 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�143px pct=0% ms/f=0.6
+[BFS] f=53 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�146px pct=0% ms/f=0.6
+[BFS] f=54 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�149px pct=0% ms/f=0.6
+[BFS] f=55 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�152px pct=0% ms/f=0.6
+[BFS] f=56 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�154px pct=0% ms/f=0.6
+[BFS] f=57 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�157px pct=0% ms/f=0.6
+[BFS] f=58 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�160px pct=0% ms/f=0.6
+[BFS] f=59 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�163px pct=0% ms/f=0.5
+[BFS] f=60 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�165px pct=0% ms/f=0.5
+[BFS] f=61 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�168px pct=0% ms/f=0.5
+[BFS] f=62 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�171px pct=1% ms/f=0.5
+[BFS] f=63 front=27 dedup=27 deaths=0 Y=[542..577] mode=0 gravN=27 gravF=0 X�174px pct=1% ms/f=0.5
+[BFS] f=64 front=23 dedup=23 deaths=6 Y=[542..567] mode=0 gravN=23 gravF=0 X�177px pct=1% ms/f=0.5
+[BFS] f=65 front=23 dedup=23 deaths=0 Y=[542..562] mode=0 gravN=23 gravF=0 X�179px pct=1% ms/f=0.5
+[BFS] f=66 front=23 dedup=23 deaths=0 Y=[542..561] mode=0 gravN=23 gravF=0 X�182px pct=1% ms/f=0.5
+[BFS] f=67 front=23 dedup=23 deaths=0 Y=[542..561] mode=0 gravN=23 gravF=0 X�185px pct=1% ms/f=0.5
+[BFS] f=68 front=23 dedup=23 deaths=0 Y=[542..561] mode=0 gravN=23 gravF=0 X�188px pct=1% ms/f=0.5
+[BFS] f=69 front=23 dedup=23 deaths=0 Y=[539..561] mode=0 gravN=23 gravF=0 X�190px pct=1% ms/f=0.5
+[BFS] f=70 front=23 dedup=23 deaths=0 Y=[536..561] mode=0 gravN=23 gravF=0 X�193px pct=1% ms/f=0.5
+[BFS] f=71 front=23 dedup=23 deaths=0 Y=[533..561] mode=0 gravN=23 gravF=0 X�196px pct=1% ms/f=0.5
+[BFS] f=72 front=23 dedup=23 deaths=0 Y=[531..561] mode=0 gravN=23 gravF=0 X�199px pct=1% ms/f=0.5
+[BFS] f=73 front=23 dedup=23 deaths=0 Y=[529..561] mode=0 gravN=23 gravF=0 X�201px pct=1% ms/f=0.5
+[BFS] f=74 front=23 dedup=23 deaths=0 Y=[528..561] mode=0 gravN=23 gravF=0 X�204px pct=1% ms/f=0.5
+[BFS] f=75 front=23 dedup=23 deaths=0 Y=[527..561] mode=0 gravN=23 gravF=0 X�207px pct=1% ms/f=0.5
+[BFS] f=76 front=23 dedup=23 deaths=0 Y=[526..561] mode=0 gravN=23 gravF=0 X�210px pct=1% ms/f=0.5
+[BFS] f=77 front=23 dedup=23 deaths=0 Y=[526..561] mode=0 gravN=23 gravF=0 X�212px pct=1% ms/f=0.5
+[BFS] f=78 front=23 dedup=23 deaths=0 Y=[526..561] mode=0 gravN=23 gravF=0 X�215px pct=1% ms/f=0.5
+[BFS] f=79 front=23 dedup=23 deaths=0 Y=[526..561] mode=0 gravN=23 gravF=0 X�218px pct=1% ms/f=0.5
+[BFS] f=80 front=21 dedup=21 deaths=4 Y=[526..560] mode=0 gravN=21 gravF=0 X�221px pct=1% ms/f=0.5
+[BFS] f=81 front=19 dedup=19 deaths=4 Y=[526..564] mode=0 gravN=19 gravF=0 X�224px pct=1% ms/f=0.5
+[BFS] f=82 front=19 dedup=19 deaths=0 Y=[526..568] mode=0 gravN=19 gravF=0 X�226px pct=1% ms/f=0.4
+[BFS] f=83 front=19 dedup=19 deaths=0 Y=[526..573] mode=0 gravN=19 gravF=0 X�229px pct=1% ms/f=0.4
+[BFS] f=84 front=16 dedup=16 deaths=6 Y=[526..539] mode=0 gravN=16 gravF=0 X�232px pct=1% ms/f=0.4
+[BFS] f=85 front=16 dedup=16 deaths=0 Y=[526..540] mode=0 gravN=16 gravF=0 X�235px pct=1% ms/f=0.4
+[BFS] f=86 front=16 dedup=16 deaths=0 Y=[526..544] mode=0 gravN=16 gravF=0 X�237px pct=1% ms/f=0.4
+[BFS] f=87 front=16 dedup=16 deaths=0 Y=[526..548] mode=0 gravN=16 gravF=0 X�240px pct=1% ms/f=0.4
+[BFS] f=88 front=16 dedup=16 deaths=0 Y=[526..552] mode=0 gravN=16 gravF=0 X�243px pct=1% ms/f=0.4
+[BFS] f=89 front=15 dedup=15 deaths=2 Y=[526..552] mode=0 gravN=15 gravF=0 X�246px pct=1% ms/f=0.4
+[BFS] f=90 front=14 dedup=14 deaths=2 Y=[526..552] mode=0 gravN=14 gravF=0 X�248px pct=1% ms/f=0.4
+[BFS] f=91 front=14 dedup=14 deaths=0 Y=[526..557] mode=0 gravN=14 gravF=0 X�251px pct=1% ms/f=0.4
+[BFS] f=92 front=13 dedup=13 deaths=2 Y=[526..557] mode=0 gravN=13 gravF=0 X�254px pct=1% ms/f=0.4
+[BFS] f=93 front=11 dedup=11 deaths=4 Y=[527..552] mode=0 gravN=11 gravF=0 X�257px pct=1% ms/f=0.4
+[BFS] f=94 front=11 dedup=11 deaths=0 Y=[527..557] mode=0 gravN=11 gravF=0 X�259px pct=1% ms/f=0.4
+[BFS] f=95 front=12 dedup=12 deaths=0 Y=[528..561] mode=0 gravN=12 gravF=0 X�262px pct=1% ms/f=0.4
+[BFS] f=96 front=12 dedup=12 deaths=0 Y=[530..561] mode=0 gravN=12 gravF=0 X�265px pct=1% ms/f=0.4
+[BFS] f=97 front=12 dedup=12 deaths=0 Y=[532..561] mode=0 gravN=12 gravF=0 X�268px pct=1% ms/f=0.4
+[BFS] f=98 front=12 dedup=12 deaths=0 Y=[534..561] mode=0 gravN=12 gravF=0 X�271px pct=1% ms/f=0.4
+[BFS] f=99 front=11 dedup=11 deaths=0 Y=[537..557] mode=0 gravN=11 gravF=0 X�273px pct=1% ms/f=0.4
+[BFS] f=100 front=11 dedup=11 deaths=0 Y=[539..557] mode=0 gravN=11 gravF=0 X�276px pct=1% ms/f=0.4
+[BFS] f=101 front=11 dedup=11 deaths=0 Y=[536..557] mode=0 gravN=11 gravF=0 X�279px pct=1% ms/f=0.4
+[BFS] f=102 front=11 dedup=11 deaths=0 Y=[530..557] mode=0 gravN=11 gravF=0 X�282px pct=1% ms/f=0.4
+[BFS] f=103 front=11 dedup=11 deaths=0 Y=[525..557] mode=0 gravN=11 gravF=0 X�284px pct=1% ms/f=0.4
+[BFS] f=104 front=11 dedup=11 deaths=0 Y=[520..557] mode=0 gravN=11 gravF=0 X�287px pct=1% ms/f=0.4
+[BFS] f=105 front=11 dedup=11 deaths=0 Y=[515..550] mode=0 gravN=11 gravF=0 X�290px pct=1% ms/f=0.4
+[BFS] f=106 front=11 dedup=11 deaths=0 Y=[510..543] mode=0 gravN=11 gravF=0 X�293px pct=1% ms/f=0.4
+[BFS] f=107 front=11 dedup=11 deaths=0 Y=[506..537] mode=0 gravN=11 gravF=0 X�295px pct=1% ms/f=0.4
+[BFS] f=108 front=11 dedup=11 deaths=0 Y=[503..530] mode=0 gravN=11 gravF=0 X�298px pct=1% ms/f=0.4
+[BFS] f=109 front=11 dedup=11 deaths=0 Y=[500..527] mode=0 gravN=11 gravF=0 X�301px pct=1% ms/f=0.4
+[BFS] f=110 front=11 dedup=11 deaths=0 Y=[497..527] mode=0 gravN=11 gravF=0 X�304px pct=1% ms/f=0.4
+[BFS] f=111 front=11 dedup=11 deaths=0 Y=[495..528] mode=0 gravN=11 gravF=0 X�306px pct=1% ms/f=0.4
+[BFS] f=112 front=11 dedup=11 deaths=0 Y=[493..530] mode=0 gravN=11 gravF=0 X�309px pct=1% ms/f=0.4
+[BFS] f=113 front=11 dedup=11 deaths=0 Y=[491..532] mode=0 gravN=11 gravF=0 X�312px pct=1% ms/f=0.4
+[BFS] f=114 front=11 dedup=11 deaths=0 Y=[490..534] mode=0 gravN=11 gravF=0 X�315px pct=1% ms/f=0.4
+[BFS] f=115 front=11 dedup=11 deaths=0 Y=[489..537] mode=0 gravN=11 gravF=0 X�318px pct=1% ms/f=0.4
+[BFS] f=116 front=11 dedup=11 deaths=0 Y=[489..540] mode=0 gravN=11 gravF=0 X�320px pct=1% ms/f=0.3
+[BFS] f=117 front=11 dedup=11 deaths=0 Y=[489..544] mode=0 gravN=11 gravF=0 X�323px pct=1% ms/f=0.3
+[BFS] f=118 front=11 dedup=11 deaths=0 Y=[489..548] mode=0 gravN=11 gravF=0 X�326px pct=1% ms/f=0.3
+[BFS] f=119 front=11 dedup=11 deaths=0 Y=[489..552] mode=0 gravN=11 gravF=0 X�329px pct=1% ms/f=0.3
+[BFS] f=120 front=11 dedup=11 deaths=0 Y=[489..557] mode=0 gravN=11 gravF=0 X�331px pct=1% ms/f=0.3
+[BFS] f=121 front=10 dedup=10 deaths=2 Y=[489..557] mode=0 gravN=10 gravF=0 X�334px pct=1% ms/f=0.3
+[BFS] f=122 front=9 dedup=9 deaths=2 Y=[489..563] mode=0 gravN=9 gravF=0 X�337px pct=1% ms/f=0.3
+[BFS] f=123 front=9 dedup=9 deaths=0 Y=[489..568] mode=0 gravN=9 gravF=0 X�340px pct=2% ms/f=0.3
+[BFS] f=124 front=10 dedup=10 deaths=0 Y=[490..573] mode=0 gravN=10 gravF=0 X�342px pct=2% ms/f=0.3
+[BFS] f=125 front=11 dedup=11 deaths=0 Y=[491..570] mode=0 gravN=11 gravF=0 X�345px pct=2% ms/f=0.3
+[BFS] f=126 front=12 dedup=12 deaths=0 Y=[493..567] mode=0 gravN=12 gravF=0 X�348px pct=2% ms/f=0.3
+[BFS] f=127 front=13 dedup=13 deaths=0 Y=[494..564] mode=0 gravN=13 gravF=0 X�351px pct=2% ms/f=0.3
+[BFS] f=128 front=11 dedup=11 deaths=4 Y=[497..562] mode=0 gravN=11 gravF=0 X�354px pct=2% ms/f=0.3
+[BFS] f=129 front=10 dedup=10 deaths=2 Y=[499..560] mode=0 gravN=10 gravF=0 X�356px pct=2% ms/f=0.3
+[BFS] f=130 front=8 dedup=8 deaths=4 Y=[502..529] mode=0 gravN=8 gravF=0 X�359px pct=2% ms/f=0.3
+[BFS] f=131 front=8 dedup=8 deaths=0 Y=[506..529] mode=0 gravN=8 gravF=0 X�362px pct=2% ms/f=0.3
+[BFS] f=132 front=8 dedup=8 deaths=0 Y=[510..529] mode=0 gravN=8 gravF=0 X�365px pct=2% ms/f=0.3
+[BFS] f=133 front=8 dedup=8 deaths=0 Y=[514..529] mode=0 gravN=8 gravF=0 X�367px pct=2% ms/f=0.3
+[BFS] f=134 front=8 dedup=8 deaths=0 Y=[510..529] mode=0 gravN=8 gravF=0 X�370px pct=2% ms/f=0.3
+[BFS] f=135 front=8 dedup=8 deaths=0 Y=[507..529] mode=0 gravN=8 gravF=0 X�373px pct=2% ms/f=0.3
+[BFS] f=136 front=8 dedup=8 deaths=0 Y=[504..529] mode=0 gravN=8 gravF=0 X�376px pct=2% ms/f=0.3
+[BFS] f=137 front=9 dedup=9 deaths=0 Y=[501..529] mode=0 gravN=9 gravF=0 X�378px pct=2% ms/f=0.3
+[BFS] f=138 front=10 dedup=10 deaths=0 Y=[499..529] mode=0 gravN=10 gravF=0 X�381px pct=2% ms/f=0.3
+[BFS] f=139 front=11 dedup=11 deaths=0 Y=[497..529] mode=0 gravN=11 gravF=0 X�384px pct=2% ms/f=0.3
+[BFS] f=140 front=12 dedup=12 deaths=0 Y=[496..529] mode=0 gravN=12 gravF=0 X�387px pct=2% ms/f=0.3
+[BFS] f=141 front=9 dedup=9 deaths=8 Y=[501..529] mode=0 gravN=9 gravF=0 X�389px pct=2% ms/f=0.3
+[BFS] f=142 front=7 dedup=7 deaths=6 Y=[507..529] mode=0 gravN=7 gravF=0 X�392px pct=2% ms/f=0.3
+[BFS] f=143 front=7 dedup=7 deaths=2 Y=[507..529] mode=0 gravN=7 gravF=0 X�395px pct=2% ms/f=0.3
+[BFS] f=144 front=8 dedup=8 deaths=0 Y=[504..529] mode=0 gravN=8 gravF=0 X�398px pct=2% ms/f=0.3
+[BFS] f=145 front=6 dedup=6 deaths=4 Y=[507..529] mode=0 gravN=6 gravF=0 X�401px pct=2% ms/f=0.3
+[BFS] f=146 front=5 dedup=5 deaths=2 Y=[507..530] mode=0 gravN=5 gravF=0 X�403px pct=2% ms/f=0.3
+[BFS] f=147 front=4 dedup=4 deaths=2 Y=[507..531] mode=0 gravN=4 gravF=0 X�406px pct=2% ms/f=0.3
+[BFS] f=148 front=3 dedup=3 deaths=2 Y=[507..533] mode=0 gravN=3 gravF=0 X�409px pct=2% ms/f=0.3
+[BFS] f=149 front=2 dedup=2 deaths=2 Y=[507..535] mode=0 gravN=2 gravF=0 X�412px pct=2% ms/f=0.3
+[BFS] f=150 front=1 dedup=1 deaths=2 Y=[537..537] mode=0 gravN=1 gravF=0 X�414px pct=2% ms/f=0.3
+[BFS] f=151 front=1 dedup=1 deaths=0 Y=[540..540] mode=0 gravN=1 gravF=0 X�417px pct=2% ms/f=0.3
+[BFS] f=152 front=1 dedup=1 deaths=0 Y=[544..544] mode=0 gravN=1 gravF=0 X�420px pct=2% ms/f=0.3
+[BFS] f=153 front=2 dedup=2 deaths=0 Y=[538..547] mode=0 gravN=2 gravF=0 X�423px pct=2% ms/f=0.3
+[BFS] f=154 front=3 dedup=3 deaths=0 Y=[534..551] mode=0 gravN=3 gravF=0 X�425px pct=2% ms/f=0.3
+[BFS] f=155 front=4 dedup=4 deaths=0 Y=[529..556] mode=0 gravN=4 gravF=0 X�428px pct=2% ms/f=0.3
+[BFS] f=156 front=5 dedup=5 deaths=0 Y=[525..561] mode=0 gravN=5 gravF=0 X�431px pct=2% ms/f=0.3
+[BFS] f=157 front=6 dedup=6 deaths=0 Y=[522..567] mode=0 gravN=6 gravF=0 X�434px pct=2% ms/f=0.3
+[BFS] f=158 front=7 dedup=7 deaths=0 Y=[519..572] mode=0 gravN=7 gravF=0 X�436px pct=2% ms/f=0.3
+[BFS] f=159 front=8 dedup=8 deaths=0 Y=[516..577] mode=0 gravN=8 gravF=0 X�439px pct=2% ms/f=0.3
+[BFS] f=160 front=9 dedup=9 deaths=0 Y=[514..577] mode=0 gravN=9 gravF=0 X�442px pct=2% ms/f=0.3
+[BFS] f=161 front=8 dedup=8 deaths=2 Y=[512..571] mode=0 gravN=8 gravF=0 X�445px pct=2% ms/f=0.3
+[BFS] f=162 front=7 dedup=7 deaths=2 Y=[511..554] mode=0 gravN=7 gravF=0 X�448px pct=2% ms/f=0.3
+[BFS] f=163 front=7 dedup=7 deaths=0 Y=[510..551] mode=0 gravN=7 gravF=0 X�450px pct=2% ms/f=0.3
+[BFS] f=164 front=7 dedup=7 deaths=0 Y=[509..548] mode=0 gravN=7 gravF=0 X�453px pct=2% ms/f=0.3
+[BFS] f=165 front=7 dedup=7 deaths=0 Y=[509..545] mode=0 gravN=7 gravF=0 X�456px pct=2% ms/f=0.3
+[BFS] f=166 front=7 dedup=7 deaths=0 Y=[510..543] mode=0 gravN=7 gravF=0 X�459px pct=2% ms/f=0.3
+[BFS] f=167 front=7 dedup=7 deaths=0 Y=[510..541] mode=0 gravN=7 gravF=0 X�461px pct=2% ms/f=0.3
+[BFS] f=168 front=7 dedup=7 deaths=0 Y=[511..540] mode=0 gravN=7 gravF=0 X�464px pct=2% ms/f=0.3
+[BFS] f=169 front=7 dedup=7 deaths=0 Y=[513..539] mode=0 gravN=7 gravF=0 X�467px pct=2% ms/f=0.3
+[BFS] f=170 front=7 dedup=7 deaths=0 Y=[515..538] mode=0 gravN=7 gravF=0 X�470px pct=2% ms/f=0.3
+[BFS] f=171 front=7 dedup=7 deaths=0 Y=[517..538] mode=0 gravN=7 gravF=0 X�472px pct=2% ms/f=0.3
+[BFS] f=172 front=7 dedup=7 deaths=0 Y=[520..538] mode=0 gravN=7 gravF=0 X�475px pct=2% ms/f=0.3
+[BFS] f=173 front=7 dedup=7 deaths=0 Y=[523..539] mode=0 gravN=7 gravF=0 X�478px pct=2% ms/f=0.3
+[BFS] f=174 front=7 dedup=7 deaths=0 Y=[527..540] mode=0 gravN=7 gravF=0 X�481px pct=2% ms/f=0.3
+[BFS] f=175 front=7 dedup=7 deaths=0 Y=[531..542] mode=0 gravN=7 gravF=0 X�483px pct=2% ms/f=0.3
+[BFS] f=176 front=7 dedup=7 deaths=0 Y=[535..544] mode=0 gravN=7 gravF=0 X�486px pct=2% ms/f=0.3
+[BFS] f=177 front=8 dedup=8 deaths=0 Y=[539..545] mode=0 gravN=8 gravF=0 X�489px pct=2% ms/f=0.3
+[BFS] f=178 front=7 dedup=7 deaths=0 Y=[539..545] mode=0 gravN=7 gravF=0 X�492px pct=2% ms/f=0.3
+[BFS] f=179 front=4 dedup=4 deaths=0 Y=[535..545] mode=0 gravN=4 gravF=0 X�495px pct=2% ms/f=0.3
+[BFS] f=180 front=5 dedup=5 deaths=0 Y=[530..545] mode=0 gravN=5 gravF=0 X�497px pct=2% ms/f=0.3
+[BFS] f=181 front=6 dedup=6 deaths=0 Y=[526..545] mode=0 gravN=6 gravF=0 X�500px pct=2% ms/f=0.3
+[BFS] f=182 front=7 dedup=7 deaths=0 Y=[523..545] mode=0 gravN=7 gravF=0 X�503px pct=2% ms/f=0.3
+[BFS] f=183 front=8 dedup=8 deaths=0 Y=[520..545] mode=0 gravN=8 gravF=0 X�506px pct=2% ms/f=0.3
+[BFS] f=184 front=9 dedup=9 deaths=0 Y=[517..545] mode=0 gravN=9 gravF=0 X�508px pct=3% ms/f=0.3
+[BFS] f=185 front=10 dedup=10 deaths=0 Y=[515..545] mode=0 gravN=10 gravF=0 X�511px pct=3% ms/f=0.3
+[BFS] f=186 front=10 dedup=10 deaths=0 Y=[513..545] mode=0 gravN=10 gravF=0 X�514px pct=3% ms/f=0.2
+[BFS] f=187 front=10 dedup=10 deaths=0 Y=[512..546] mode=0 gravN=10 gravF=0 X�517px pct=3% ms/f=0.2
+[BFS] f=188 front=10 dedup=10 deaths=0 Y=[511..547] mode=0 gravN=10 gravF=0 X�519px pct=3% ms/f=0.2
+[BFS] f=189 front=10 dedup=10 deaths=0 Y=[510..549] mode=0 gravN=10 gravF=0 X�522px pct=3% ms/f=0.2
+[BFS] f=190 front=10 dedup=10 deaths=0 Y=[510..551] mode=0 gravN=10 gravF=0 X�525px pct=3% ms/f=0.2
+[BFS] f=191 front=10 dedup=10 deaths=0 Y=[510..553] mode=0 gravN=10 gravF=0 X�528px pct=3% ms/f=0.2
+[BFS] f=192 front=10 dedup=10 deaths=0 Y=[510..556] mode=0 gravN=10 gravF=0 X�531px pct=3% ms/f=0.2
+[BFS] f=193 front=9 dedup=9 deaths=2 Y=[510..515] mode=0 gravN=9 gravF=0 X�533px pct=3% ms/f=0.2
+[BFS] f=194 front=9 dedup=9 deaths=0 Y=[510..514] mode=0 gravN=9 gravF=0 X�536px pct=3% ms/f=0.2
+[BFS] f=195 front=9 dedup=9 deaths=0 Y=[510..516] mode=0 gravN=9 gravF=0 X�539px pct=3% ms/f=0.2
+[BFS] f=196 front=9 dedup=9 deaths=0 Y=[510..518] mode=0 gravN=9 gravF=0 X�542px pct=3% ms/f=0.2
+[BFS] f=197 front=9 dedup=9 deaths=0 Y=[510..521] mode=0 gravN=9 gravF=0 X�544px pct=3% ms/f=0.2
+[BFS] f=198 front=9 dedup=9 deaths=0 Y=[510..524] mode=0 gravN=9 gravF=0 X�547px pct=3% ms/f=0.2
+[BFS] f=199 front=9 dedup=9 deaths=0 Y=[511..528] mode=0 gravN=9 gravF=0 X�550px pct=3% ms/f=0.2
+[BFS] f=200 front=10 dedup=10 deaths=0 Y=[511..529] mode=0 gravN=10 gravF=0 X�553px pct=3% ms/f=0.2
+[BFS] f=201 front=10 dedup=10 deaths=0 Y=[512..529] mode=0 gravN=10 gravF=0 X�555px pct=3% ms/f=0.2
+[BFS] f=202 front=10 dedup=10 deaths=0 Y=[514..529] mode=0 gravN=10 gravF=0 X�558px pct=3% ms/f=0.2
+[BFS] f=203 front=10 dedup=10 deaths=0 Y=[514..529] mode=0 gravN=10 gravF=0 X�561px pct=3% ms/f=0.2
+[BFS] f=204 front=10 dedup=10 deaths=0 Y=[510..529] mode=0 gravN=10 gravF=0 X�564px pct=3% ms/f=0.2
+[BFS] f=205 front=10 dedup=10 deaths=0 Y=[507..529] mode=0 gravN=10 gravF=0 X�566px pct=3% ms/f=0.2
+[BFS] f=206 front=10 dedup=10 deaths=0 Y=[504..529] mode=0 gravN=10 gravF=0 X�569px pct=3% ms/f=0.2
+[BFS] f=207 front=10 dedup=10 deaths=0 Y=[501..529] mode=0 gravN=10 gravF=0 X�572px pct=3% ms/f=0.2
+[BFS] f=208 front=10 dedup=10 deaths=0 Y=[499..529] mode=0 gravN=10 gravF=0 X�575px pct=3% ms/f=0.2
+[BFS] f=209 front=10 dedup=10 deaths=0 Y=[497..529] mode=0 gravN=10 gravF=0 X�578px pct=3% ms/f=0.2
+[BFS] f=210 front=10 dedup=10 deaths=0 Y=[496..530] mode=0 gravN=10 gravF=0 X�580px pct=3% ms/f=0.2
+[BFS] f=211 front=10 dedup=10 deaths=0 Y=[495..531] mode=0 gravN=10 gravF=0 X�583px pct=3% ms/f=0.2
+[BFS] f=212 front=10 dedup=10 deaths=0 Y=[494..533] mode=0 gravN=10 gravF=0 X�586px pct=3% ms/f=0.2
+[BFS] f=213 front=10 dedup=10 deaths=0 Y=[494..535] mode=0 gravN=10 gravF=0 X�589px pct=3% ms/f=0.2
+[BFS] f=214 front=10 dedup=10 deaths=0 Y=[494..537] mode=0 gravN=10 gravF=0 X�591px pct=3% ms/f=0.2
+[BFS] f=215 front=10 dedup=10 deaths=0 Y=[494..540] mode=0 gravN=10 gravF=0 X�594px pct=3% ms/f=0.2
+[BFS] f=216 front=10 dedup=10 deaths=0 Y=[494..544] mode=0 gravN=10 gravF=0 X�597px pct=3% ms/f=0.2
+[BFS] f=217 front=10 dedup=10 deaths=0 Y=[494..547] mode=0 gravN=10 gravF=0 X�600px pct=3% ms/f=0.2
+[BFS] f=218 front=10 dedup=10 deaths=0 Y=[494..551] mode=0 gravN=10 gravF=0 X�602px pct=3% ms/f=0.2
+[BFS] f=219 front=10 dedup=10 deaths=0 Y=[494..556] mode=0 gravN=10 gravF=0 X�605px pct=3% ms/f=0.2
+[BFS] f=220 front=10 dedup=10 deaths=0 Y=[494..561] mode=0 gravN=10 gravF=0 X�608px pct=3% ms/f=0.2
+[BFS] f=221 front=9 dedup=9 deaths=2 Y=[494..508] mode=0 gravN=9 gravF=0 X�611px pct=3% ms/f=0.2
+[BFS] f=222 front=9 dedup=9 deaths=0 Y=[495..512] mode=0 gravN=9 gravF=0 X�613px pct=3% ms/f=0.2
+[BFS] f=223 front=9 dedup=9 deaths=0 Y=[495..516] mode=0 gravN=9 gravF=0 X�616px pct=3% ms/f=0.2
+[BFS] f=224 front=9 dedup=9 deaths=0 Y=[496..520] mode=0 gravN=9 gravF=0 X�619px pct=3% ms/f=0.2
+[BFS] f=225 front=9 dedup=9 deaths=0 Y=[498..525] mode=0 gravN=9 gravF=0 X�622px pct=3% ms/f=0.2
+[BFS] f=226 front=9 dedup=9 deaths=0 Y=[500..531] mode=0 gravN=9 gravF=0 X�625px pct=3% ms/f=0.2
+[BFS] f=227 front=10 dedup=10 deaths=0 Y=[502..536] mode=0 gravN=9 gravF=1 X�627px pct=3% ms/f=0.2
+[BFS] f=228 front=12 dedup=12 deaths=0 Y=[505..542] mode=0 gravN=9 gravF=3 X�630px pct=3% ms/f=0.2
+[BFS] f=229 front=15 dedup=15 deaths=0 Y=[508..549] mode=0 gravN=9 gravF=6 X�633px pct=3% ms/f=0.2
+[BFS] f=230 front=19 dedup=19 deaths=0 Y=[512..556] mode=0 gravN=9 gravF=10 X�636px pct=3% ms/f=0.2
+[BFS] f=231 front=24 dedup=24 deaths=0 Y=[506..563] mode=0 gravN=9 gravF=15 X�638px pct=3% ms/f=0.2
+[BFS] f=232 front=29 dedup=29 deaths=0 Y=[500..570] mode=0 gravN=9 gravF=20 X�641px pct=3% ms/f=0.2
+[BFS] f=233 front=33 dedup=33 deaths=2 Y=[494..570] mode=0 gravN=8 gravF=25 X�644px pct=3% ms/f=0.2
+[BFS] f=234 front=39 dedup=39 deaths=0 Y=[487..577] mode=0 gravN=9 gravF=30 X�647px pct=3% ms/f=0.2
+[BFS] f=235 front=42 dedup=42 deaths=4 Y=[479..571] mode=0 gravN=7 gravF=35 X�649px pct=3% ms/f=0.2
+[BFS] f=236 front=47 dedup=47 deaths=0 Y=[472..577] mode=0 gravN=8 gravF=39 X�652px pct=3% ms/f=0.2
+[BFS] f=237 front=50 dedup=50 deaths=0 Y=[465..577] mode=0 gravN=8 gravF=42 X�655px pct=3% ms/f=0.2
+[BFS] f=238 front=52 dedup=52 deaths=4 Y=[458..571] mode=0 gravN=10 gravF=42 X�658px pct=3% ms/f=0.2
+[BFS] f=239 front=57 dedup=57 deaths=2 Y=[450..570] mode=0 gravN=15 gravF=42 X�660px pct=3% ms/f=0.2
+[BFS] f=240 front=67 dedup=67 deaths=0 Y=[443..577] mode=0 gravN=25 gravF=42 X�663px pct=3% ms/f=0.2
+[BFS] f=241 front=76 dedup=76 deaths=4 Y=[436..571] mode=0 gravN=34 gravF=42 X�666px pct=3% ms/f=0.2
+[BFS] f=242 front=90 dedup=90 deaths=0 Y=[429..567] mode=0 gravN=48 gravF=42 X�669px pct=3% ms/f=0.2
+[BFS] f=280 front=88 dedup=88 deaths=0 Y=[225..513] mode=0 gravN=81 gravF=7 X�774px pct=4% ms/f=0.4
+[BFS] f=281 front=71 dedup=71 deaths=0 Y=[217..513] mode=0 gravN=64 gravF=7 X�777px pct=4% ms/f=0.4
+[BFS] f=282 front=57 dedup=57 deaths=0 Y=[210..513] mode=0 gravN=50 gravF=7 X�779px pct=4% ms/f=0.4
+[BFS] f=283 front=49 dedup=49 deaths=0 Y=[203..513] mode=0 gravN=42 gravF=7 X�782px pct=4% ms/f=0.4
+[BFS] f=284 front=45 dedup=45 deaths=0 Y=[196..513] mode=0 gravN=38 gravF=7 X�785px pct=4% ms/f=0.4
+[BFS] f=285 front=47 dedup=47 deaths=0 Y=[189..513] mode=0 gravN=40 gravF=7 X�788px pct=4% ms/f=0.4
+[BFS] f=286 front=49 dedup=49 deaths=0 Y=[182..513] mode=0 gravN=42 gravF=7 X�790px pct=4% ms/f=0.4
+[BFS] f=287 front=51 dedup=51 deaths=0 Y=[174..513] mode=0 gravN=44 gravF=7 X�793px pct=4% ms/f=0.4
+[BFS] f=288 front=53 dedup=53 deaths=0 Y=[167..513] mode=0 gravN=46 gravF=7 X�796px pct=4% ms/f=0.4
+[BFS] f=289 front=55 dedup=55 deaths=0 Y=[160..513] mode=0 gravN=48 gravF=7 X�799px pct=4% ms/f=0.4
+[BFS] f=290 front=57 dedup=57 deaths=0 Y=[153..513] mode=0 gravN=50 gravF=7 X�802px pct=4% ms/f=0.4
+[BFS] f=291 front=59 dedup=59 deaths=0 Y=[146..513] mode=0 gravN=52 gravF=7 X�804px pct=4% ms/f=0.4
+[BFS] f=292 front=61 dedup=61 deaths=0 Y=[139..513] mode=0 gravN=54 gravF=7 X�807px pct=4% ms/f=0.4
+[BFS] f=293 front=61 dedup=61 deaths=0 Y=[131..513] mode=0 gravN=54 gravF=7 X�810px pct=4% ms/f=0.4
+[BFS] f=294 front=61 dedup=61 deaths=0 Y=[124..513] mode=0 gravN=54 gravF=7 X�813px pct=4% ms/f=0.4
+[BFS] f=295 front=61 dedup=61 deaths=0 Y=[117..513] mode=0 gravN=54 gravF=7 X�815px pct=4% ms/f=0.4
+[BFS] f=296 front=61 dedup=61 deaths=0 Y=[110..515] mode=0 gravN=54 gravF=7 X�818px pct=4% ms/f=0.3
+[BFS] f=297 front=59 dedup=59 deaths=4 Y=[103..515] mode=0 gravN=52 gravF=7 X�821px pct=4% ms/f=0.3
+[BFS] f=298 front=59 dedup=59 deaths=0 Y=[96..520] mode=0 gravN=52 gravF=7 X�824px pct=4% ms/f=0.3
+[BFS] f=299 front=59 dedup=59 deaths=0 Y=[88..526] mode=0 gravN=52 gravF=7 X�826px pct=4% ms/f=0.3
+[BFS] f=300 front=57 dedup=57 deaths=4 Y=[81..526] mode=0 gravN=50 gravF=7 X�829px pct=4% ms/f=0.3
+[BFS] f=301 front=53 dedup=53 deaths=8 Y=[74..521] mode=0 gravN=46 gravF=7 X�832px pct=4% ms/f=0.3
+[BFS] f=302 front=53 dedup=53 deaths=0 Y=[67..526] mode=0 gravN=46 gravF=7 X�835px pct=4% ms/f=0.3
+[BFS] f=303 front=55 dedup=55 deaths=0 Y=[60..529] mode=0 gravN=48 gravF=7 X�837px pct=4% ms/f=0.3
+[BFS] f=304 front=53 dedup=53 deaths=0 Y=[53..529] mode=0 gravN=46 gravF=7 X�840px pct=4% ms/f=0.3
+[BFS] f=305 front=53 dedup=53 deaths=0 Y=[45..529] mode=0 gravN=46 gravF=7 X�843px pct=4% ms/f=0.3
+[BFS] f=306 front=53 dedup=53 deaths=0 Y=[38..529] mode=0 gravN=46 gravF=7 X�846px pct=5% ms/f=0.3
+[BFS] f=307 front=53 dedup=53 deaths=0 Y=[31..529] mode=0 gravN=46 gravF=7 X�849px pct=5% ms/f=0.3
+[BFS] f=308 front=53 dedup=53 deaths=0 Y=[24..529] mode=0 gravN=46 gravF=7 X�851px pct=5% ms/f=0.3
+[BFS] f=309 front=53 dedup=53 deaths=0 Y=[16..529] mode=0 gravN=46 gravF=7 X�854px pct=5% ms/f=0.3
+[BFS] f=310 front=53 dedup=53 deaths=0 Y=[9..529] mode=0 gravN=46 gravF=7 X�857px pct=5% ms/f=0.3
+[BFS] f=311 front=53 dedup=53 deaths=0 Y=[2..529] mode=0 gravN=46 gravF=7 X�860px pct=5% ms/f=0.3
+[BFS] f=312 front=49 dedup=49 deaths=8 Y=[2..529] mode=0 gravN=46 gravF=3 X�862px pct=5% ms/f=0.3
+[BFS] f=313 front=44 dedup=44 deaths=6 Y=[484..526] mode=0 gravN=44 gravF=0 X�865px pct=5% ms/f=0.3
+[BFS] f=314 front=44 dedup=44 deaths=0 Y=[486..526] mode=0 gravN=44 gravF=0 X�868px pct=5% ms/f=0.3
+[BFS] f=315 front=44 dedup=44 deaths=0 Y=[489..526] mode=0 gravN=44 gravF=0 X�871px pct=5% ms/f=0.3
+[BFS] f=316 front=44 dedup=44 deaths=0 Y=[492..526] mode=0 gravN=44 gravF=0 X�873px pct=5% ms/f=0.3
+[BFS] f=317 front=44 dedup=44 deaths=0 Y=[494..526] mode=0 gravN=44 gravF=0 X�876px pct=5% ms/f=0.3
+[BFS] f=318 front=44 dedup=44 deaths=0 Y=[489..526] mode=0 gravN=44 gravF=0 X�879px pct=5% ms/f=0.3
+[BFS] f=319 front=44 dedup=44 deaths=0 Y=[484..526] mode=0 gravN=44 gravF=0 X�882px pct=5% ms/f=0.3
+[BFS] f=320 front=44 dedup=44 deaths=0 Y=[479..526] mode=0 gravN=44 gravF=0 X�885px pct=5% ms/f=0.3
+[BFS] f=321 front=44 dedup=44 deaths=0 Y=[476..526] mode=0 gravN=44 gravF=0 X�887px pct=5% ms/f=0.3
+[BFS] f=322 front=44 dedup=44 deaths=0 Y=[472..526] mode=0 gravN=44 gravF=0 X�890px pct=5% ms/f=0.3
+[BFS] f=323 front=44 dedup=44 deaths=0 Y=[469..526] mode=0 gravN=44 gravF=0 X�893px pct=5% ms/f=0.3
+[BFS] f=324 front=44 dedup=44 deaths=0 Y=[466..533] mode=0 gravN=44 gravF=0 X�896px pct=5% ms/f=0.3
+[BFS] f=325 front=44 dedup=44 deaths=0 Y=[464..540] mode=0 gravN=44 gravF=0 X�898px pct=5% ms/f=0.3
+[BFS] f=326 front=44 dedup=44 deaths=0 Y=[462..547] mode=0 gravN=44 gravF=0 X�901px pct=5% ms/f=0.3
+[BFS] f=327 front=44 dedup=44 deaths=0 Y=[460..554] mode=0 gravN=44 gravF=0 X�904px pct=5% ms/f=0.3
+[BFS] f=328 front=42 dedup=42 deaths=4 Y=[459..525] mode=0 gravN=42 gravF=0 X�907px pct=5% ms/f=0.3
+[BFS] f=329 front=42 dedup=42 deaths=0 Y=[459..531] mode=0 gravN=42 gravF=0 X�909px pct=5% ms/f=0.3
+[BFS] f=330 front=42 dedup=42 deaths=0 Y=[458..536] mode=0 gravN=42 gravF=0 X�912px pct=5% ms/f=0.3
+[BFS] f=331 front=42 dedup=42 deaths=0 Y=[458..542] mode=0 gravN=42 gravF=0 X�915px pct=5% ms/f=0.3
+[BFS] f=332 front=42 dedup=42 deaths=0 Y=[458..549] mode=0 gravN=42 gravF=0 X�918px pct=5% ms/f=0.3
+[BFS] f=333 front=40 dedup=40 deaths=4 Y=[458..549] mode=0 gravN=40 gravF=0 X�920px pct=5% ms/f=0.3
+[BFS] f=334 front=40 dedup=40 deaths=0 Y=[458..556] mode=0 gravN=40 gravF=0 X�923px pct=5% ms/f=0.3
+[BFS] f=335 front=38 dedup=38 deaths=4 Y=[458..563] mode=0 gravN=38 gravF=0 X�926px pct=5% ms/f=0.3
+[BFS] f=336 front=38 dedup=38 deaths=0 Y=[458..570] mode=0 gravN=38 gravF=0 X�929px pct=5% ms/f=0.3
+[BFS] f=337 front=34 dedup=34 deaths=8 Y=[458..556] mode=0 gravN=34 gravF=0 X�932px pct=5% ms/f=0.3
+[BFS] f=338 front=30 dedup=30 deaths=8 Y=[458..549] mode=0 gravN=30 gravF=0 X�934px pct=5% ms/f=0.3
+[BFS] f=339 front=28 dedup=28 deaths=4 Y=[458..549] mode=0 gravN=28 gravF=0 X�937px pct=5% ms/f=0.3
+[BFS] f=340 front=28 dedup=28 deaths=0 Y=[458..556] mode=0 gravN=28 gravF=0 X�940px pct=5% ms/f=0.3
+[BFS] f=341 front=24 dedup=24 deaths=8 Y=[459..486] mode=0 gravN=24 gravF=0 X�943px pct=5% ms/f=0.3
+[BFS] f=342 front=24 dedup=24 deaths=0 Y=[459..490] mode=0 gravN=24 gravF=0 X�945px pct=5% ms/f=0.3
+[BFS] f=343 front=24 dedup=24 deaths=0 Y=[460..496] mode=0 gravN=24 gravF=0 X�948px pct=5% ms/f=0.3
+[BFS] f=344 front=24 dedup=24 deaths=0 Y=[462..501] mode=0 gravN=24 gravF=0 X�951px pct=5% ms/f=0.3
+[BFS] f=345 front=24 dedup=24 deaths=0 Y=[464..507] mode=0 gravN=24 gravF=0 X�954px pct=5% ms/f=0.3
+[BFS] f=346 front=24 dedup=24 deaths=0 Y=[466..514] mode=0 gravN=24 gravF=0 X�956px pct=5% ms/f=0.3
+[BFS] f=347 front=24 dedup=24 deaths=0 Y=[469..521] mode=0 gravN=24 gravF=0 X�959px pct=5% ms/f=0.3
+[BFS] f=348 front=34 dedup=34 deaths=0 Y=[472..528] mode=0 gravN=34 gravF=0 X�962px pct=5% ms/f=0.3
+[BFS] f=349 front=46 dedup=46 deaths=0 Y=[475..535] mode=0 gravN=46 gravF=0 X�965px pct=5% ms/f=0.3
+[BFS] f=350 front=56 dedup=56 deaths=0 Y=[479..542] mode=0 gravN=56 gravF=0 X�967px pct=5% ms/f=0.3
+[BFS] f=351 front=66 dedup=66 deaths=0 Y=[481..549] mode=0 gravN=66 gravF=0 X�970px pct=5% ms/f=0.3
+[BFS] f=352 front=76 dedup=76 deaths=0 Y=[478..556] mode=0 gravN=76 gravF=0 X�973px pct=5% ms/f=0.3
+[BFS] f=353 front=84 dedup=84 deaths=4 Y=[475..563] mode=0 gravN=84 gravF=0 X�976px pct=5% ms/f=0.3
+[BFS] f=354 front=92 dedup=92 deaths=4 Y=[472..561] mode=0 gravN=92 gravF=0 X�979px pct=5% ms/f=0.3
+[BFS] f=355 front=98 dedup=98 deaths=8 Y=[470..554] mode=0 gravN=98 gravF=0 X�981px pct=5% ms/f=0.3
+[BFS] f=364 front=98 dedup=98 deaths=4 Y=[465..496] mode=0 gravN=98 gravF=0 X�1006px pct=5% ms/f=0.4
+[BFS] f=365 front=98 dedup=98 deaths=0 Y=[465..497] mode=0 gravN=98 gravF=0 X�1009px pct=5% ms/f=0.4
+[BFS] f=366 front=98 dedup=98 deaths=0 Y=[465..499] mode=0 gravN=98 gravF=0 X�1012px pct=5% ms/f=0.4
+[BFS] f=367 front=98 dedup=98 deaths=0 Y=[465..502] mode=0 gravN=98 gravF=0 X�1014px pct=6% ms/f=0.4
+[BFS] f=368 front=98 dedup=98 deaths=0 Y=[465..504] mode=0 gravN=98 gravF=0 X�1017px pct=6% ms/f=0.4
+[BFS] f=369 front=98 dedup=98 deaths=0 Y=[466..508] mode=0 gravN=98 gravF=0 X�1020px pct=6% ms/f=0.4
+[BFS] f=370 front=98 dedup=98 deaths=0 Y=[467..511] mode=0 gravN=98 gravF=0 X�1023px pct=6% ms/f=0.4
+[BFS] f=390 front=80 dedup=80 deaths=0 Y=[431..577] mode=0 gravN=10 gravF=70 X�1078px pct=6% ms/f=0.4
+[BFS] f=391 front=54 dedup=54 deaths=16 Y=[431..571] mode=0 gravN=2 gravF=52 X�1081px pct=6% ms/f=0.4
+[BFS] f=392 front=40 dedup=40 deaths=0 Y=[431..567] mode=0 gravN=2 gravF=38 X�1084px pct=6% ms/f=0.4
+[BFS] f=393 front=34 dedup=34 deaths=0 Y=[431..562] mode=0 gravN=2 gravF=32 X�1086px pct=6% ms/f=0.4
+[BFS] f=394 front=34 dedup=34 deaths=0 Y=[430..558] mode=0 gravN=2 gravF=32 X�1089px pct=6% ms/f=0.4
+[BFS] f=395 front=34 dedup=34 deaths=0 Y=[429..555] mode=0 gravN=2 gravF=32 X�1092px pct=6% ms/f=0.4
+[BFS] f=396 front=34 dedup=34 deaths=0 Y=[428..552] mode=0 gravN=2 gravF=32 X�1095px pct=6% ms/f=0.4
+[BFS] f=397 front=34 dedup=34 deaths=0 Y=[426..549] mode=0 gravN=2 gravF=32 X�1097px pct=6% ms/f=0.4
+[BFS] f=398 front=34 dedup=34 deaths=0 Y=[424..547] mode=0 gravN=2 gravF=32 X�1100px pct=6% ms/f=0.4
+[BFS] f=399 front=34 dedup=34 deaths=0 Y=[422..545] mode=0 gravN=2 gravF=32 X�1103px pct=6% ms/f=0.4
+[BFS] f=400 front=32 dedup=32 deaths=4 Y=[451..544] mode=0 gravN=2 gravF=30 X�1106px pct=6% ms/f=0.4
+[BFS] f=401 front=32 dedup=32 deaths=0 Y=[447..543] mode=0 gravN=2 gravF=30 X�1109px pct=6% ms/f=0.4
+[BFS] f=402 front=32 dedup=32 deaths=0 Y=[443..542] mode=0 gravN=2 gravF=30 X�1111px pct=6% ms/f=0.4
+[BFS] f=403 front=32 dedup=32 deaths=0 Y=[439..542] mode=0 gravN=2 gravF=30 X�1114px pct=6% ms/f=0.4
+[BFS] f=404 front=32 dedup=32 deaths=0 Y=[434..543] mode=0 gravN=2 gravF=30 X�1117px pct=6% ms/f=0.4
+[BFS] f=405 front=44 dedup=44 deaths=0 Y=[428..543] mode=0 gravN=2 gravF=42 X�1120px pct=6% ms/f=0.4
+[BFS] f=406 front=58 dedup=58 deaths=0 Y=[423..544] mode=0 gravN=2 gravF=56 X�1122px pct=6% ms/f=0.4
+[BFS] f=407 front=74 dedup=74 deaths=0 Y=[417..546] mode=0 gravN=2 gravF=72 X�1125px pct=6% ms/f=0.4
+[BFS] f=408 front=90 dedup=90 deaths=0 Y=[410..548] mode=0 gravN=2 gravF=88 X�1128px pct=6% ms/f=0.4
+[BFS] f=429 front=90 dedup=90 deaths=40 Y=[259..486] mode=0 gravN=0 gravF=90 X�1186px pct=7% ms/f=0.4
+[BFS] f=430 front=80 dedup=80 deaths=0 Y=[252..485] mode=0 gravN=0 gravF=80 X�1189px pct=7% ms/f=0.4
+[BFS] f=431 front=66 dedup=66 deaths=8 Y=[245..483] mode=0 gravN=0 gravF=66 X�1191px pct=7% ms/f=0.4
+[BFS] f=432 front=54 dedup=54 deaths=4 Y=[238..480] mode=0 gravN=0 gravF=54 X�1194px pct=7% ms/f=0.4
+[BFS] f=433 front=46 dedup=46 deaths=0 Y=[231..481] mode=0 gravN=0 gravF=46 X�1197px pct=7% ms/f=0.4
+[BFS] f=434 front=38 dedup=38 deaths=0 Y=[223..484] mode=0 gravN=0 gravF=38 X�1200px pct=7% ms/f=0.4
+[BFS] f=435 front=32 dedup=32 deaths=0 Y=[216..487] mode=0 gravN=0 gravF=32 X�1203px pct=7% ms/f=0.4
+[BFS] f=436 front=20 dedup=20 deaths=12 Y=[209..490] mode=0 gravN=0 gravF=20 X�1205px pct=7% ms/f=0.4
+[BFS] f=437 front=8 dedup=8 deaths=16 Y=[202..468] mode=0 gravN=0 gravF=8 X�1208px pct=7% ms/f=0.4
+[BFS] f=438 front=8 dedup=8 deaths=4 Y=[194..468] mode=0 gravN=0 gravF=8 X�1211px pct=7% ms/f=0.4
+[BFS] f=439 front=10 dedup=10 deaths=0 Y=[187..472] mode=0 gravN=0 gravF=10 X�1214px pct=7% ms/f=0.4
+[BFS] f=440 front=8 dedup=8 deaths=4 Y=[180..472] mode=0 gravN=0 gravF=8 X�1216px pct=7% ms/f=0.4
+[BFS] f=441 front=4 dedup=4 deaths=8 Y=[173..461] mode=0 gravN=0 gravF=4 X�1219px pct=7% ms/f=0.4
+[BFS] f=442 front=4 dedup=4 deaths=0 Y=[166..460] mode=0 gravN=0 gravF=4 X�1222px pct=7% ms/f=0.4
+[BFS] f=443 front=4 dedup=4 deaths=0 Y=[159..458] mode=0 gravN=0 gravF=4 X�1225px pct=7% ms/f=0.4
+[BFS] f=444 front=4 dedup=4 deaths=0 Y=[151..456] mode=0 gravN=0 gravF=4 X�1227px pct=7% ms/f=0.4
+[BFS] f=445 front=4 dedup=4 deaths=0 Y=[144..454] mode=0 gravN=0 gravF=4 X�1230px pct=7% ms/f=0.4
+[BFS] f=446 front=4 dedup=4 deaths=0 Y=[137..451] mode=0 gravN=0 gravF=4 X�1233px pct=7% ms/f=0.4
+[BFS] f=447 front=6 dedup=6 deaths=0 Y=[130..447] mode=0 gravN=0 gravF=6 X�1236px pct=7% ms/f=0.4
+[BFS] f=448 front=8 dedup=8 deaths=0 Y=[123..452] mode=0 gravN=0 gravF=8 X�1239px pct=7% ms/f=0.4
+[BFS] f=449 front=10 dedup=10 deaths=0 Y=[116..456] mode=0 gravN=0 gravF=10 X�1241px pct=7% ms/f=0.4
+[BFS] f=450 front=12 dedup=12 deaths=0 Y=[108..461] mode=0 gravN=0 gravF=12 X�1244px pct=7% ms/f=0.4
+[BFS] f=451 front=14 dedup=14 deaths=0 Y=[101..465] mode=0 gravN=0 gravF=14 X�1247px pct=7% ms/f=0.4
+[BFS] f=452 front=16 dedup=16 deaths=0 Y=[94..468] mode=0 gravN=0 gravF=16 X�1250px pct=7% ms/f=0.4
+[BFS] f=453 front=18 dedup=18 deaths=0 Y=[87..471] mode=0 gravN=0 gravF=18 X�1252px pct=7% ms/f=0.4
+[BFS] f=454 front=20 dedup=20 deaths=0 Y=[79..474] mode=0 gravN=0 gravF=20 X�1255px pct=7% ms/f=0.4
+[BFS] f=455 front=22 dedup=22 deaths=0 Y=[72..476] mode=0 gravN=0 gravF=22 X�1258px pct=7% ms/f=0.4
+[BFS] f=456 front=24 dedup=24 deaths=0 Y=[65..478] mode=0 gravN=0 gravF=24 X�1261px pct=7% ms/f=0.4
+[BFS] f=457 front=26 dedup=26 deaths=0 Y=[58..479] mode=0 gravN=0 gravF=26 X�1263px pct=7% ms/f=0.4
+[BFS] f=458 front=26 dedup=26 deaths=0 Y=[51..480] mode=0 gravN=0 gravF=26 X�1266px pct=7% ms/f=0.4
+[BFS] f=459 front=26 dedup=26 deaths=0 Y=[44..481] mode=0 gravN=0 gravF=26 X�1269px pct=7% ms/f=0.4
+[BFS] f=460 front=26 dedup=26 deaths=0 Y=[36..481] mode=0 gravN=0 gravF=26 X�1272px pct=7% ms/f=0.4
+[BFS] f=461 front=26 dedup=26 deaths=0 Y=[29..481] mode=0 gravN=0 gravF=26 X�1274px pct=7% ms/f=0.4
+[BFS] f=462 front=26 dedup=26 deaths=0 Y=[22..481] mode=0 gravN=0 gravF=26 X�1277px pct=7% ms/f=0.4
+[BFS] f=463 front=26 dedup=26 deaths=0 Y=[15..488] mode=0 gravN=0 gravF=26 X�1280px pct=7% ms/f=0.4
+[BFS] f=464 front=26 dedup=26 deaths=0 Y=[8..495] mode=0 gravN=0 gravF=26 X�1283px pct=7% ms/f=0.4
+[BFS] f=465 front=24 dedup=24 deaths=4 Y=[1..502] mode=0 gravN=0 gravF=24 X�1286px pct=7% ms/f=0.4
+[BFS] f=466 front=22 dedup=22 deaths=4 Y=[496..508] mode=0 gravN=0 gravF=22 X�1288px pct=7% ms/f=0.4
+[BFS] f=467 front=22 dedup=22 deaths=0 Y=[502..513] mode=0 gravN=0 gravF=22 X�1291px pct=7% ms/f=0.4
+[BFS] f=468 front=22 dedup=22 deaths=0 Y=[508..519] mode=0 gravN=0 gravF=22 X�1294px pct=7% ms/f=0.4
+[BFS] f=469 front=22 dedup=22 deaths=0 Y=[513..523] mode=0 gravN=0 gravF=22 X�1297px pct=7% ms/f=0.4
+[BFS] f=470 front=22 dedup=22 deaths=0 Y=[518..528] mode=0 gravN=0 gravF=22 X�1299px pct=7% ms/f=0.4
+[BFS] f=471 front=22 dedup=22 deaths=0 Y=[522..532] mode=0 gravN=0 gravF=22 X�1302px pct=7% ms/f=0.4
+[BFS] f=472 front=22 dedup=22 deaths=0 Y=[526..535] mode=0 gravN=0 gravF=22 X�1305px pct=7% ms/f=0.4
+[BFS] f=473 front=22 dedup=22 deaths=0 Y=[530..538] mode=0 gravN=0 gravF=22 X�1308px pct=7% ms/f=0.4
+[BFS] f=474 front=22 dedup=22 deaths=0 Y=[533..541] mode=0 gravN=0 gravF=22 X�1310px pct=7% ms/f=0.4
+[BFS] f=475 front=22 dedup=22 deaths=0 Y=[536..543] mode=0 gravN=0 gravF=22 X�1313px pct=7% ms/f=0.4
+[BFS] f=476 front=22 dedup=22 deaths=0 Y=[538..545] mode=0 gravN=0 gravF=22 X�1316px pct=7% ms/f=0.4
+[BFS] f=477 front=22 dedup=22 deaths=0 Y=[540..547] mode=0 gravN=0 gravF=22 X�1319px pct=7% ms/f=0.4
+[BFS] f=478 front=22 dedup=22 deaths=0 Y=[541..548] mode=0 gravN=0 gravF=22 X�1321px pct=7% ms/f=0.4
+[BFS] f=479 front=22 dedup=22 deaths=0 Y=[543..549] mode=0 gravN=0 gravF=22 X�1324px pct=7% ms/f=0.4
+[BFS] f=480 front=22 dedup=22 deaths=0 Y=[543..549] mode=0 gravN=0 gravF=22 X�1327px pct=7% ms/f=0.4
+[BFS] f=481 front=22 dedup=22 deaths=0 Y=[543..549] mode=0 gravN=0 gravF=22 X�1330px pct=7% ms/f=0.4
+[BFS] f=482 front=22 dedup=22 deaths=0 Y=[543..549] mode=0 gravN=0 gravF=22 X�1333px pct=7% ms/f=0.4
+[BFS] f=483 front=22 dedup=22 deaths=0 Y=[542..548] mode=0 gravN=0 gravF=22 X�1335px pct=7% ms/f=0.4
+[BFS] f=484 front=22 dedup=22 deaths=0 Y=[541..547] mode=0 gravN=0 gravF=22 X�1338px pct=7% ms/f=0.4
+[BFS] f=485 front=22 dedup=22 deaths=0 Y=[539..546] mode=0 gravN=0 gravF=22 X�1341px pct=7% ms/f=0.4
+[BFS] f=486 front=22 dedup=22 deaths=0 Y=[537..544] mode=0 gravN=0 gravF=22 X�1344px pct=7% ms/f=0.4
+[BFS] f=487 front=22 dedup=22 deaths=0 Y=[534..542] mode=0 gravN=0 gravF=22 X�1346px pct=7% ms/f=0.4
+[BFS] f=488 front=22 dedup=22 deaths=0 Y=[531..539] mode=0 gravN=0 gravF=22 X�1349px pct=7% ms/f=0.4
+[BFS] f=489 front=22 dedup=22 deaths=0 Y=[527..536] mode=0 gravN=0 gravF=22 X�1352px pct=8% ms/f=0.4
+[BFS] f=490 front=22 dedup=22 deaths=0 Y=[523..532] mode=0 gravN=0 gravF=22 X�1355px pct=8% ms/f=0.4
+[BFS] f=491 front=22 dedup=22 deaths=0 Y=[519..528] mode=0 gravN=0 gravF=22 X�1357px pct=8% ms/f=0.4
+[BFS] f=492 front=22 dedup=22 deaths=0 Y=[514..524] mode=0 gravN=0 gravF=22 X�1360px pct=8% ms/f=0.4
+[BFS] f=493 front=22 dedup=22 deaths=0 Y=[509..519] mode=0 gravN=0 gravF=22 X�1363px pct=8% ms/f=0.4
+[BFS] f=494 front=22 dedup=22 deaths=0 Y=[503..514] mode=0 gravN=0 gravF=22 X�1366px pct=8% ms/f=0.4
+[BFS] f=495 front=22 dedup=22 deaths=0 Y=[497..508] mode=0 gravN=0 gravF=22 X�1368px pct=8% ms/f=0.4
+[BFS] f=496 front=22 dedup=22 deaths=0 Y=[491..502] mode=0 gravN=0 gravF=22 X�1371px pct=8% ms/f=0.4
+[BFS] f=497 front=38 dedup=38 deaths=0 Y=[484..500] mode=0 gravN=16 gravF=22 X�1374px pct=8% ms/f=0.4
+[BFS] f=498 front=60 dedup=60 deaths=0 Y=[477..504] mode=0 gravN=38 gravF=22 X�1377px pct=8% ms/f=0.4
+[BFS] f=499 front=82 dedup=82 deaths=0 Y=[470..509] mode=0 gravN=60 gravF=22 X�1380px pct=8% ms/f=0.4
+[BFS] f=500 front=104 dedup=104 deaths=0 Y=[462..514] mode=0 gravN=82 gravF=22 X�1382px pct=8% ms/f=0.4
+[BFS] f=529 front=98 dedup=98 deaths=0 Y=[261..513] mode=0 gravN=90 gravF=8 X�1463px pct=8% ms/f=0.4
+[BFS] f=530 front=80 dedup=80 deaths=0 Y=[254..513] mode=0 gravN=72 gravF=8 X�1465px pct=8% ms/f=0.4
+[BFS] f=531 front=54 dedup=54 deaths=0 Y=[247..513] mode=0 gravN=46 gravF=8 X�1468px pct=8% ms/f=0.4
+[BFS] f=532 front=40 dedup=40 deaths=0 Y=[240..513] mode=0 gravN=32 gravF=8 X�1471px pct=8% ms/f=0.4
+[BFS] f=533 front=26 dedup=26 deaths=0 Y=[233..513] mode=0 gravN=18 gravF=8 X�1474px pct=8% ms/f=0.4
+[BFS] f=534 front=26 dedup=26 deaths=0 Y=[226..513] mode=0 gravN=18 gravF=8 X�1476px pct=8% ms/f=0.4
+[BFS] f=535 front=28 dedup=28 deaths=0 Y=[219..513] mode=0 gravN=20 gravF=8 X�1479px pct=8% ms/f=0.4
+[BFS] f=536 front=30 dedup=30 deaths=0 Y=[211..513] mode=0 gravN=22 gravF=8 X�1482px pct=8% ms/f=0.4
+[BFS] f=537 front=32 dedup=32 deaths=0 Y=[205..513] mode=0 gravN=24 gravF=8 X�1485px pct=8% ms/f=0.4
+[BFS] f=538 front=34 dedup=34 deaths=0 Y=[197..513] mode=0 gravN=26 gravF=8 X�1487px pct=8% ms/f=0.4
+[BFS] f=539 front=34 dedup=34 deaths=0 Y=[190..513] mode=0 gravN=26 gravF=8 X�1490px pct=8% ms/f=0.4
+[BFS] f=540 front=34 dedup=34 deaths=0 Y=[183..514] mode=0 gravN=26 gravF=8 X�1493px pct=8% ms/f=0.4
+[BFS] f=541 front=34 dedup=34 deaths=0 Y=[176..515] mode=0 gravN=26 gravF=8 X�1496px pct=8% ms/f=0.4
+[BFS] f=542 front=34 dedup=34 deaths=0 Y=[169..517] mode=0 gravN=26 gravF=8 X�1498px pct=8% ms/f=0.4
+[BFS] f=543 front=34 dedup=34 deaths=0 Y=[162..519] mode=0 gravN=26 gravF=8 X�1501px pct=8% ms/f=0.4
+[BFS] f=544 front=34 dedup=34 deaths=0 Y=[155..521] mode=0 gravN=26 gravF=8 X�1504px pct=8% ms/f=0.4
+[BFS] f=545 front=32 dedup=32 deaths=4 Y=[148..485] mode=0 gravN=24 gravF=8 X�1507px pct=8% ms/f=0.4
+[BFS] f=546 front=32 dedup=32 deaths=0 Y=[141..486] mode=0 gravN=24 gravF=8 X�1510px pct=8% ms/f=0.4
+[BFS] f=547 front=32 dedup=32 deaths=0 Y=[134..489] mode=0 gravN=24 gravF=8 X�1512px pct=8% ms/f=0.4
+[BFS] f=548 front=32 dedup=32 deaths=0 Y=[126..492] mode=0 gravN=24 gravF=8 X�1515px pct=8% ms/f=0.4
+[BFS] f=549 front=32 dedup=32 deaths=0 Y=[119..496] mode=0 gravN=24 gravF=8 X�1518px pct=8% ms/f=0.4
+[BFS] f=550 front=34 dedup=34 deaths=0 Y=[112..497] mode=0 gravN=26 gravF=8 X�1521px pct=9% ms/f=0.4
+[BFS] f=551 front=34 dedup=34 deaths=0 Y=[105..497] mode=0 gravN=26 gravF=8 X�1523px pct=9% ms/f=0.4
+[BFS] f=552 front=34 dedup=34 deaths=0 Y=[98..497] mode=0 gravN=26 gravF=8 X�1526px pct=9% ms/f=0.4
+[BFS] f=553 front=34 dedup=34 deaths=0 Y=[91..497] mode=0 gravN=26 gravF=8 X�1529px pct=9% ms/f=0.4
+[BFS] f=554 front=34 dedup=34 deaths=0 Y=[84..497] mode=0 gravN=26 gravF=8 X�1532px pct=9% ms/f=0.4
+[BFS] f=555 front=34 dedup=34 deaths=0 Y=[77..497] mode=0 gravN=26 gravF=8 X�1534px pct=9% ms/f=0.4
+[BFS] f=556 front=34 dedup=34 deaths=0 Y=[70..497] mode=0 gravN=26 gravF=8 X�1537px pct=9% ms/f=0.4
+[BFS] f=557 front=34 dedup=34 deaths=0 Y=[63..497] mode=0 gravN=26 gravF=8 X�1540px pct=9% ms/f=0.4
+[BFS] f=558 front=34 dedup=34 deaths=0 Y=[55..497] mode=0 gravN=26 gravF=8 X�1543px pct=9% ms/f=0.4
+[BFS] f=559 front=34 dedup=34 deaths=0 Y=[49..497] mode=0 gravN=26 gravF=8 X�1545px pct=9% ms/f=0.4
+[BFS] f=560 front=34 dedup=34 deaths=0 Y=[41..497] mode=0 gravN=26 gravF=8 X�1548px pct=9% ms/f=0.4
+[BFS] f=561 front=34 dedup=34 deaths=0 Y=[34..497] mode=0 gravN=26 gravF=8 X�1551px pct=9% ms/f=0.4
+[BFS] f=562 front=34 dedup=34 deaths=0 Y=[27..497] mode=0 gravN=26 gravF=8 X�1554px pct=9% ms/f=0.4
+[BFS] f=563 front=34 dedup=34 deaths=0 Y=[20..498] mode=0 gravN=26 gravF=8 X�1557px pct=9% ms/f=0.4
+[BFS] f=564 front=34 dedup=34 deaths=0 Y=[13..499] mode=0 gravN=26 gravF=8 X�1559px pct=9% ms/f=0.4
+[BFS] f=565 front=34 dedup=34 deaths=0 Y=[6..501] mode=0 gravN=26 gravF=8 X�1562px pct=9% ms/f=0.4
+[BFS] f=566 front=26 dedup=26 deaths=16 Y=[462..503] mode=0 gravN=26 gravF=0 X�1565px pct=9% ms/f=0.4
+[BFS] f=567 front=26 dedup=26 deaths=0 Y=[462..505] mode=0 gravN=26 gravF=0 X�1568px pct=9% ms/f=0.4
+[BFS] f=568 front=26 dedup=26 deaths=0 Y=[462..508] mode=0 gravN=26 gravF=0 X�1570px pct=9% ms/f=0.4
+[BFS] f=569 front=4 dedup=4 deaths=44 Y=[459..512] mode=0 gravN=4 gravF=0 X�1573px pct=9% ms/f=0.4
+[BFS] f=570 front=2 dedup=2 deaths=4 Y=[515..515] mode=0 gravN=2 gravF=0 X�1576px pct=9% ms/f=0.4
+[BFS] f=571 front=2 dedup=2 deaths=0 Y=[519..519] mode=0 gravN=2 gravF=0 X�1579px pct=9% ms/f=0.4
+[BFS] f=572 front=2 dedup=2 deaths=0 Y=[524..524] mode=0 gravN=2 gravF=0 X�1581px pct=9% ms/f=0.4
+[BFS] f=573 front=4 dedup=4 deaths=0 Y=[529..529] mode=0 gravN=4 gravF=0 X�1584px pct=9% ms/f=0.4
+[BFS] f=574 front=6 dedup=6 deaths=0 Y=[523..529] mode=0 gravN=6 gravF=0 X�1587px pct=9% ms/f=0.4
+[BFS] f=575 front=8 dedup=8 deaths=0 Y=[519..529] mode=0 gravN=8 gravF=0 X�1590px pct=9% ms/f=0.4
+[BFS] f=576 front=10 dedup=10 deaths=0 Y=[514..529] mode=0 gravN=10 gravF=0 X�1593px pct=9% ms/f=0.4
+[BFS] f=577 front=12 dedup=12 deaths=0 Y=[510..529] mode=0 gravN=12 gravF=0 X�1595px pct=9% ms/f=0.4
+[BFS] f=578 front=14 dedup=14 deaths=0 Y=[507..529] mode=0 gravN=14 gravF=0 X�1598px pct=9% ms/f=0.4
+[BFS] f=579 front=14 dedup=14 deaths=4 Y=[507..529] mode=0 gravN=14 gravF=0 X�1601px pct=9% ms/f=0.4
+[BFS] f=580 front=14 dedup=14 deaths=4 Y=[507..529] mode=0 gravN=14 gravF=0 X�1604px pct=9% ms/f=0.4
+[BFS] f=581 front=16 dedup=16 deaths=0 Y=[504..529] mode=0 gravN=16 gravF=0 X�1606px pct=9% ms/f=0.4
+[BFS] f=582 front=18 dedup=18 deaths=0 Y=[501..529] mode=0 gravN=18 gravF=0 X�1609px pct=9% ms/f=0.4
+[BFS] f=583 front=20 dedup=20 deaths=0 Y=[499..529] mode=0 gravN=20 gravF=0 X�1612px pct=9% ms/f=0.4
+[BFS] f=584 front=22 dedup=22 deaths=0 Y=[497..529] mode=0 gravN=22 gravF=0 X�1615px pct=9% ms/f=0.4
+[BFS] f=585 front=24 dedup=24 deaths=0 Y=[496..529] mode=0 gravN=24 gravF=0 X�1617px pct=9% ms/f=0.4
+[BFS] f=586 front=26 dedup=26 deaths=0 Y=[495..529] mode=0 gravN=26 gravF=0 X�1620px pct=9% ms/f=0.4
+[BFS] f=587 front=28 dedup=28 deaths=0 Y=[494..529] mode=0 gravN=28 gravF=0 X�1623px pct=9% ms/f=0.4
+[BFS] f=588 front=30 dedup=30 deaths=0 Y=[494..529] mode=0 gravN=30 gravF=0 X�1626px pct=9% ms/f=0.4
+[BFS] f=589 front=28 dedup=28 deaths=4 Y=[494..523] mode=0 gravN=28 gravF=0 X�1628px pct=9% ms/f=0.4
+[BFS] f=590 front=28 dedup=28 deaths=0 Y=[494..519] mode=0 gravN=28 gravF=0 X�1631px pct=9% ms/f=0.4
+[BFS] f=591 front=28 dedup=28 deaths=0 Y=[494..514] mode=0 gravN=28 gravF=0 X�1634px pct=9% ms/f=0.4
+[BFS] f=592 front=28 dedup=28 deaths=0 Y=[494..510] mode=0 gravN=28 gravF=0 X�1637px pct=9% ms/f=0.4
+[BFS] f=593 front=28 dedup=28 deaths=0 Y=[494..507] mode=0 gravN=28 gravF=0 X�1640px pct=9% ms/f=0.4
+[BFS] f=594 front=28 dedup=28 deaths=0 Y=[494..504] mode=0 gravN=28 gravF=0 X�1642px pct=9% ms/f=0.4
+[BFS] f=595 front=28 dedup=28 deaths=0 Y=[494..505] mode=0 gravN=28 gravF=0 X�1645px pct=9% ms/f=0.4
+[BFS] f=596 front=28 dedup=28 deaths=0 Y=[494..508] mode=0 gravN=28 gravF=0 X�1648px pct=9% ms/f=0.4
+[BFS] f=597 front=28 dedup=28 deaths=0 Y=[494..512] mode=0 gravN=28 gravF=0 X�1651px pct=9% ms/f=0.4
+[BFS] f=598 front=28 dedup=28 deaths=0 Y=[494..516] mode=0 gravN=28 gravF=0 X�1653px pct=9% ms/f=0.4
+[BFS] f=599 front=28 dedup=28 deaths=0 Y=[494..520] mode=0 gravN=28 gravF=0 X�1656px pct=9% ms/f=0.4
+[BFS] f=600 front=28 dedup=28 deaths=0 Y=[494..525] mode=0 gravN=28 gravF=0 X�1659px pct=9% ms/f=0.4
+[BFS] f=601 front=28 dedup=28 deaths=0 Y=[494..531] mode=0 gravN=28 gravF=0 X�1662px pct=9% ms/f=0.4
+[BFS] f=602 front=28 dedup=28 deaths=0 Y=[495..536] mode=0 gravN=28 gravF=0 X�1664px pct=9% ms/f=0.4
+[BFS] f=603 front=28 dedup=28 deaths=0 Y=[495..542] mode=0 gravN=28 gravF=0 X�1667px pct=9% ms/f=0.4
+[BFS] f=604 front=28 dedup=28 deaths=0 Y=[496..549] mode=0 gravN=28 gravF=0 X�1670px pct=9% ms/f=0.4
+[BFS] f=605 front=28 dedup=28 deaths=0 Y=[496..556] mode=0 gravN=28 gravF=0 X�1673px pct=9% ms/f=0.4
+[BFS] f=606 front=28 dedup=28 deaths=0 Y=[493..563] mode=0 gravN=28 gravF=0 X�1675px pct=9% ms/f=0.4
+[BFS] f=607 front=28 dedup=28 deaths=0 Y=[490..570] mode=0 gravN=28 gravF=0 X�1678px pct=9% ms/f=0.4
+[BFS] f=608 front=30 dedup=30 deaths=0 Y=[488..577] mode=0 gravN=30 gravF=0 X�1681px pct=9% ms/f=0.4
+[BFS] f=609 front=28 dedup=28 deaths=4 Y=[486..571] mode=0 gravN=28 gravF=0 X�1684px pct=9% ms/f=0.4
+[BFS] f=610 front=28 dedup=28 deaths=0 Y=[485..567] mode=0 gravN=28 gravF=0 X�1687px pct=9% ms/f=0.4
+[BFS] f=611 front=28 dedup=28 deaths=0 Y=[484..562] mode=0 gravN=28 gravF=0 X�1689px pct=9% ms/f=0.4
+[BFS] f=612 front=28 dedup=28 deaths=0 Y=[484..558] mode=0 gravN=28 gravF=0 X�1692px pct=10% ms/f=0.4
+[BFS] f=613 front=28 dedup=28 deaths=0 Y=[483..555] mode=0 gravN=28 gravF=0 X�1695px pct=10% ms/f=0.4
+[BFS] f=614 front=28 dedup=28 deaths=0 Y=[483..552] mode=0 gravN=28 gravF=0 X�1698px pct=10% ms/f=0.4
+[BFS] f=615 front=28 dedup=28 deaths=0 Y=[483..549] mode=0 gravN=28 gravF=0 X�1700px pct=10% ms/f=0.4
+[BFS] f=616 front=28 dedup=28 deaths=0 Y=[483..547] mode=0 gravN=28 gravF=0 X�1703px pct=10% ms/f=0.4
+[BFS] f=617 front=28 dedup=28 deaths=0 Y=[484..545] mode=0 gravN=28 gravF=0 X�1706px pct=10% ms/f=0.4
+[BFS] f=618 front=28 dedup=28 deaths=0 Y=[484..544] mode=0 gravN=28 gravF=0 X�1709px pct=10% ms/f=0.4
+[BFS] f=619 front=28 dedup=28 deaths=0 Y=[484..543] mode=0 gravN=28 gravF=0 X�1711px pct=10% ms/f=0.4
+[BFS] f=620 front=28 dedup=28 deaths=0 Y=[484..542] mode=0 gravN=28 gravF=0 X�1714px pct=10% ms/f=0.4
+[BFS] f=621 front=30 dedup=30 deaths=0 Y=[484..542] mode=0 gravN=30 gravF=0 X�1717px pct=10% ms/f=0.4
+[BFS] f=622 front=36 dedup=36 deaths=0 Y=[484..543] mode=0 gravN=36 gravF=0 X�1720px pct=10% ms/f=0.4
+[BFS] f=623 front=44 dedup=44 deaths=0 Y=[481..543] mode=0 gravN=44 gravF=0 X�1722px pct=10% ms/f=0.4
+[BFS] f=624 front=58 dedup=58 deaths=0 Y=[477..544] mode=0 gravN=58 gravF=0 X�1725px pct=10% ms/f=0.4
+[BFS] f=625 front=74 dedup=74 deaths=0 Y=[474..546] mode=0 gravN=74 gravF=0 X�1728px pct=10% ms/f=0.4
+[BFS] f=626 front=92 dedup=92 deaths=0 Y=[471..548] mode=0 gravN=92 gravF=0 X�1731px pct=10% ms/f=0.4
+[BFS] f=669 front=80 dedup=80 deaths=0 Y=[433..465] mode=0 gravN=80 gravF=0 X�1850px pct=10% ms/f=0.5
+[BFS] f=670 front=48 dedup=48 deaths=0 Y=[432..465] mode=0 gravN=48 gravF=0 X�1852px pct=10% ms/f=0.5
+[BFS] f=671 front=30 dedup=30 deaths=0 Y=[431..465] mode=0 gravN=30 gravF=0 X�1855px pct=10% ms/f=0.5
+[BFS] f=672 front=28 dedup=28 deaths=0 Y=[430..465] mode=0 gravN=28 gravF=0 X�1858px pct=10% ms/f=0.5
+[BFS] f=673 front=30 dedup=30 deaths=0 Y=[430..465] mode=0 gravN=30 gravF=0 X�1861px pct=11% ms/f=0.5
+[BFS] f=674 front=32 dedup=32 deaths=0 Y=[430..465] mode=0 gravN=32 gravF=0 X�1864px pct=11% ms/f=0.5
+[BFS] f=675 front=34 dedup=34 deaths=0 Y=[430..465] mode=0 gravN=34 gravF=0 X�1867px pct=11% ms/f=0.5
+[BFS] f=676 front=36 dedup=36 deaths=0 Y=[430..465] mode=0 gravN=36 gravF=0 X�1870px pct=11% ms/f=0.5
+[BFS] f=677 front=36 dedup=36 deaths=0 Y=[430..465] mode=0 gravN=36 gravF=0 X�1874px pct=11% ms/f=0.5
+[BFS] f=678 front=36 dedup=36 deaths=0 Y=[430..466] mode=0 gravN=36 gravF=0 X�1877px pct=11% ms/f=0.5
+[BFS] f=679 front=36 dedup=36 deaths=0 Y=[430..467] mode=0 gravN=36 gravF=0 X�1881px pct=11% ms/f=0.5
+[BFS] f=680 front=36 dedup=36 deaths=0 Y=[430..469] mode=0 gravN=36 gravF=0 X�1884px pct=11% ms/f=0.5
+[BFS] f=681 front=36 dedup=36 deaths=0 Y=[430..471] mode=0 gravN=36 gravF=0 X�1888px pct=11% ms/f=0.5
+[BFS] f=682 front=36 dedup=36 deaths=0 Y=[430..473] mode=0 gravN=36 gravF=0 X�1891px pct=11% ms/f=0.5
+[BFS] f=683 front=36 dedup=36 deaths=0 Y=[430..476] mode=0 gravN=36 gravF=0 X�1895px pct=11% ms/f=0.5
+[BFS] f=684 front=36 dedup=36 deaths=0 Y=[430..480] mode=0 gravN=36 gravF=0 X�1898px pct=11% ms/f=0.5
+[BFS] f=685 front=36 dedup=36 deaths=0 Y=[430..483] mode=0 gravN=36 gravF=0 X�1901px pct=11% ms/f=0.5
+[BFS] f=686 front=36 dedup=36 deaths=0 Y=[430..487] mode=0 gravN=36 gravF=0 X�1905px pct=11% ms/f=0.5
+[BFS] f=687 front=36 dedup=36 deaths=0 Y=[430..492] mode=0 gravN=36 gravF=0 X�1908px pct=11% ms/f=0.5
+[BFS] f=688 front=34 dedup=34 deaths=4 Y=[430..478] mode=0 gravN=34 gravF=0 X�1912px pct=11% ms/f=0.5
+[BFS] f=689 front=34 dedup=34 deaths=0 Y=[430..485] mode=0 gravN=34 gravF=0 X�1915px pct=11% ms/f=0.5
+[BFS] f=690 front=32 dedup=32 deaths=4 Y=[431..485] mode=0 gravN=32 gravF=0 X�1919px pct=11% ms/f=0.5
+[BFS] f=691 front=30 dedup=30 deaths=4 Y=[431..485] mode=0 gravN=30 gravF=0 X�1922px pct=11% ms/f=0.5
+[BFS] f=692 front=30 dedup=30 deaths=0 Y=[432..492] mode=0 gravN=30 gravF=0 X�1925px pct=11% ms/f=0.5
+[BFS] f=693 front=30 dedup=30 deaths=0 Y=[434..499] mode=0 gravN=30 gravF=0 X�1929px pct=11% ms/f=0.5
+[BFS] f=694 front=30 dedup=30 deaths=0 Y=[436..506] mode=0 gravN=30 gravF=0 X�1932px pct=11% ms/f=0.5
+[BFS] f=695 front=38 dedup=38 deaths=4 Y=[438..506] mode=0 gravN=38 gravF=0 X�1936px pct=11% ms/f=0.5
+[BFS] f=696 front=48 dedup=48 deaths=0 Y=[441..514] mode=0 gravN=48 gravF=0 X�1939px pct=11% ms/f=0.5
+[BFS] f=697 front=54 dedup=54 deaths=8 Y=[444..506] mode=0 gravN=54 gravF=0 X�1943px pct=11% ms/f=0.5
+[BFS] f=698 front=62 dedup=62 deaths=4 Y=[448..506] mode=0 gravN=62 gravF=0 X�1946px pct=11% ms/f=0.5
+[BFS] f=699 front=72 dedup=72 deaths=0 Y=[445..514] mode=0 gravN=72 gravF=0 X�1950px pct=11% ms/f=0.5
+[BFS] f=700 front=82 dedup=82 deaths=0 Y=[442..521] mode=0 gravN=82 gravF=0 X�1953px pct=11% ms/f=0.5
+[BFS] f=701 front=86 dedup=86 deaths=12 Y=[439..506] mode=0 gravN=86 gravF=0 X�1956px pct=11% ms/f=0.5
+[BFS] f=702 front=94 dedup=94 deaths=4 Y=[437..506] mode=0 gravN=94 gravF=0 X�1960px pct=11% ms/f=0.5
+[BFS] f=800 front=807 dedup=807 deaths=1 Y=[385..526] mode=1 gravN=807 gravF=0 X�2297px pct=13% ms/f=0.8
+[BFS] f=900 front=681 dedup=681 deaths=0 Y=[384..433] mode=1 gravN=72 gravF=609 X�2641px pct=15% ms/f=1.0
+[BFS] f=1000 front=872 dedup=872 deaths=264 Y=[400..454] mode=1 gravN=327 gravF=545 X�2985px pct=17% ms/f=1.4
+[BFS] f=1091 front=99 dedup=99 deaths=27 Y=[381..442] mode=2 gravN=27 gravF=72 X�3299px pct=19% ms/f=1.4
+[BFS] f=1092 front=83 dedup=83 deaths=6 Y=[384..441] mode=2 gravN=30 gravF=53 X�3302px pct=19% ms/f=1.4
+[BFS] f=1093 front=77 dedup=77 deaths=9 Y=[381..440] mode=2 gravN=44 gravF=33 X�3305px pct=19% ms/f=1.4
+[BFS] f=1094 front=80 dedup=80 deaths=0 Y=[379..439] mode=2 gravN=47 gravF=33 X�3309px pct=19% ms/f=1.4
+[BFS] f=1095 front=83 dedup=83 deaths=3 Y=[384..438] mode=2 gravN=50 gravF=33 X�3312px pct=19% ms/f=1.4
+[BFS] f=1096 front=83 dedup=83 deaths=6 Y=[408..443] mode=2 gravN=53 gravF=30 X�3316px pct=19% ms/f=1.4
+[BFS] f=1097 front=80 dedup=80 deaths=0 Y=[408..448] mode=2 gravN=56 gravF=24 X�3319px pct=19% ms/f=1.4
+[BFS] f=1098 front=72 dedup=72 deaths=0 Y=[408..453] mode=2 gravN=59 gravF=13 X�3323px pct=19% ms/f=1.4
+[BFS] f=1099 front=68 dedup=68 deaths=0 Y=[408..459] mode=2 gravN=65 gravF=3 X�3326px pct=19% ms/f=1.4
+[BFS] f=1100 front=71 dedup=71 deaths=0 Y=[408..465] mode=2 gravN=68 gravF=3 X�3330px pct=19% ms/f=1.4
+[BFS] f=1101 front=74 dedup=74 deaths=0 Y=[408..471] mode=2 gravN=71 gravF=3 X�3333px pct=19% ms/f=1.4
+[BFS] f=1102 front=77 dedup=77 deaths=0 Y=[408..477] mode=2 gravN=74 gravF=3 X�3336px pct=19% ms/f=1.4
+[BFS] f=1103 front=57 dedup=57 deaths=46 Y=[408..483] mode=2 gravN=54 gravF=3 X�3340px pct=19% ms/f=1.4
+[BFS] f=1104 front=42 dedup=42 deaths=36 Y=[408..489] mode=2 gravN=39 gravF=3 X�3343px pct=19% ms/f=1.4
+[BFS] f=1105 front=39 dedup=39 deaths=12 Y=[408..483] mode=2 gravN=36 gravF=3 X�3347px pct=19% ms/f=1.4
+[BFS] f=1106 front=36 dedup=36 deaths=12 Y=[408..489] mode=2 gravN=33 gravF=3 X�3350px pct=19% ms/f=1.4
+[BFS] f=1107 front=36 dedup=36 deaths=6 Y=[408..443] mode=2 gravN=33 gravF=3 X�3354px pct=19% ms/f=1.4
+[BFS] f=1108 front=39 dedup=39 deaths=0 Y=[408..448] mode=2 gravN=36 gravF=3 X�3357px pct=19% ms/f=1.4
+[BFS] f=1109 front=39 dedup=39 deaths=6 Y=[408..451] mode=2 gravN=36 gravF=3 X�3361px pct=19% ms/f=1.4
+[BFS] f=1110 front=33 dedup=33 deaths=18 Y=[408..443] mode=2 gravN=30 gravF=3 X�3364px pct=19% ms/f=1.4
+[BFS] f=1111 front=30 dedup=30 deaths=12 Y=[408..438] mode=2 gravN=27 gravF=3 X�3367px pct=19% ms/f=1.4
+[BFS] f=1112 front=33 dedup=33 deaths=0 Y=[408..443] mode=2 gravN=30 gravF=3 X�3371px pct=19% ms/f=1.4
+[BFS] f=1113 front=36 dedup=36 deaths=0 Y=[408..448] mode=2 gravN=33 gravF=3 X�3374px pct=19% ms/f=1.4
+[BFS] f=1114 front=33 dedup=33 deaths=12 Y=[408..453] mode=2 gravN=30 gravF=3 X�3378px pct=19% ms/f=1.4
+[BFS] f=1115 front=36 dedup=36 deaths=0 Y=[408..459] mode=2 gravN=33 gravF=3 X�3381px pct=20% ms/f=1.4
+[BFS] f=1116 front=39 dedup=39 deaths=0 Y=[408..465] mode=2 gravN=36 gravF=3 X�3385px pct=20% ms/f=1.4
+[BFS] f=1117 front=42 dedup=42 deaths=0 Y=[408..471] mode=2 gravN=39 gravF=3 X�3388px pct=20% ms/f=1.4
+[BFS] f=1118 front=45 dedup=45 deaths=0 Y=[408..477] mode=2 gravN=42 gravF=3 X�3392px pct=20% ms/f=1.4
+[BFS] f=1119 front=48 dedup=48 deaths=0 Y=[408..483] mode=2 gravN=45 gravF=3 X�3395px pct=20% ms/f=1.4
+[BFS] f=1120 front=51 dedup=51 deaths=0 Y=[408..489] mode=2 gravN=48 gravF=3 X�3398px pct=20% ms/f=1.4
+[BFS] f=1121 front=51 dedup=51 deaths=6 Y=[408..477] mode=2 gravN=48 gravF=3 X�3402px pct=20% ms/f=1.4
+[BFS] f=1122 front=54 dedup=54 deaths=0 Y=[408..483] mode=2 gravN=51 gravF=3 X�3405px pct=20% ms/f=1.4
+[BFS] f=1123 front=54 dedup=54 deaths=0 Y=[407..489] mode=2 gravN=51 gravF=3 X�3409px pct=20% ms/f=1.4
+[BFS] f=1124 front=51 dedup=51 deaths=6 Y=[407..473] mode=2 gravN=48 gravF=3 X�3412px pct=20% ms/f=1.4
+[BFS] f=1125 front=51 dedup=51 deaths=0 Y=[406..471] mode=2 gravN=48 gravF=3 X�3416px pct=20% ms/f=1.4
+[BFS] f=1126 front=45 dedup=45 deaths=0 Y=[405..469] mode=2 gravN=42 gravF=3 X�3419px pct=20% ms/f=1.4
+[BFS] f=1127 front=45 dedup=45 deaths=0 Y=[403..468] mode=2 gravN=42 gravF=3 X�3422px pct=20% ms/f=1.4
+[BFS] f=1128 front=54 dedup=54 deaths=0 Y=[402..467] mode=2 gravN=33 gravF=21 X�3426px pct=20% ms/f=1.4
+[BFS] f=1129 front=60 dedup=60 deaths=0 Y=[400..464] mode=2 gravN=27 gravF=33 X�3429px pct=20% ms/f=1.4
+[BFS] f=1130 front=54 dedup=54 deaths=0 Y=[398..462] mode=2 gravN=21 gravF=33 X�3433px pct=20% ms/f=1.4
+[BFS] f=1131 front=54 dedup=54 deaths=0 Y=[395..459] mode=2 gravN=21 gravF=33 X�3436px pct=20% ms/f=1.4
+[BFS] f=1132 front=42 dedup=42 deaths=0 Y=[392..456] mode=2 gravN=12 gravF=30 X�3440px pct=20% ms/f=1.4
+[BFS] f=1133 front=54 dedup=54 deaths=0 Y=[389..453] mode=2 gravN=12 gravF=42 X�3443px pct=20% ms/f=1.4
+[BFS] f=1134 front=60 dedup=60 deaths=0 Y=[386..449] mode=2 gravN=6 gravF=54 X�3447px pct=20% ms/f=1.4
+[BFS] f=1135 front=60 dedup=60 deaths=3 Y=[388..446] mode=2 gravN=9 gravF=51 X�3450px pct=20% ms/f=1.4
+[BFS] f=1136 front=60 dedup=60 deaths=0 Y=[391..442] mode=2 gravN=9 gravF=51 X�3453px pct=20% ms/f=1.4
+[BFS] f=1137 front=60 dedup=60 deaths=0 Y=[394..438] mode=2 gravN=9 gravF=51 X�3457px pct=20% ms/f=1.4
+[BFS] f=1138 front=60 dedup=60 deaths=0 Y=[397..434] mode=2 gravN=9 gravF=51 X�3460px pct=20% ms/f=1.4
+[BFS] f=1139 front=60 dedup=60 deaths=0 Y=[400..430] mode=2 gravN=9 gravF=51 X�3464px pct=20% ms/f=1.4
+[BFS] f=1140 front=60 dedup=60 deaths=0 Y=[404..429] mode=2 gravN=9 gravF=51 X�3467px pct=20% ms/f=1.4
+[BFS] f=1141 front=60 dedup=60 deaths=0 Y=[408..427] mode=2 gravN=9 gravF=51 X�3471px pct=20% ms/f=1.4
+[BFS] f=1142 front=60 dedup=60 deaths=0 Y=[401..426] mode=2 gravN=9 gravF=51 X�3474px pct=20% ms/f=1.4
+[BFS] f=1143 front=60 dedup=60 deaths=0 Y=[395..425] mode=2 gravN=9 gravF=51 X�3478px pct=20% ms/f=1.4
+[BFS] f=1144 front=60 dedup=60 deaths=0 Y=[389..424] mode=2 gravN=9 gravF=51 X�3481px pct=20% ms/f=1.4
+[BFS] f=1145 front=60 dedup=60 deaths=0 Y=[384..426] mode=2 gravN=9 gravF=51 X�3484px pct=20% ms/f=1.4
+[BFS] f=1146 front=42 dedup=42 deaths=0 Y=[384..432] mode=2 gravN=12 gravF=30 X�3488px pct=20% ms/f=1.4
+[BFS] f=1147 front=30 dedup=30 deaths=24 Y=[388..437] mode=2 gravN=12 gravF=18 X�3491px pct=20% ms/f=1.4
+[BFS] f=1148 front=15 dedup=15 deaths=0 Y=[384..443] mode=2 gravN=12 gravF=3 X�3495px pct=20% ms/f=1.4
+[BFS] f=1149 front=12 dedup=12 deaths=6 Y=[394..449] mode=2 gravN=12 gravF=0 X�3498px pct=20% ms/f=1.4
+[BFS] f=1150 front=12 dedup=12 deaths=0 Y=[398..455] mode=2 gravN=12 gravF=0 X�3502px pct=20% ms/f=1.4
+[BFS] f=1151 front=12 dedup=12 deaths=0 Y=[401..461] mode=2 gravN=12 gravF=0 X�3505px pct=20% ms/f=1.3
+[BFS] f=1152 front=12 dedup=12 deaths=0 Y=[405..467] mode=2 gravN=12 gravF=0 X�3509px pct=20% ms/f=1.3
+[BFS] f=1153 front=12 dedup=12 deaths=0 Y=[409..473] mode=2 gravN=12 gravF=0 X�3512px pct=20% ms/f=1.3
+[BFS] f=1154 front=9 dedup=9 deaths=6 Y=[414..433] mode=2 gravN=9 gravF=0 X�3515px pct=20% ms/f=1.3
+[BFS] f=1155 front=9 dedup=9 deaths=0 Y=[419..435] mode=2 gravN=9 gravF=0 X�3519px pct=20% ms/f=1.3
+[BFS] f=1156 front=9 dedup=9 deaths=0 Y=[424..438] mode=2 gravN=9 gravF=0 X�3522px pct=20% ms/f=1.3
+[BFS] f=1157 front=9 dedup=9 deaths=0 Y=[429..441] mode=2 gravN=9 gravF=0 X�3526px pct=20% ms/f=1.3
+[BFS] f=1158 front=9 dedup=9 deaths=0 Y=[433..444] mode=2 gravN=9 gravF=0 X�3529px pct=20% ms/f=1.3
+[BFS] f=1159 front=9 dedup=9 deaths=0 Y=[436..448] mode=2 gravN=9 gravF=0 X�3533px pct=20% ms/f=1.3
+[BFS] f=1160 front=9 dedup=9 deaths=0 Y=[439..451] mode=2 gravN=9 gravF=0 X�3536px pct=20% ms/f=1.3
+[BFS] f=1161 front=9 dedup=9 deaths=0 Y=[442..455] mode=2 gravN=9 gravF=0 X�3539px pct=20% ms/f=1.3
+[BFS] f=1162 front=9 dedup=9 deaths=0 Y=[446..460] mode=2 gravN=9 gravF=0 X�3543px pct=20% ms/f=1.3
+[BFS] f=1163 front=9 dedup=9 deaths=0 Y=[450..465] mode=2 gravN=9 gravF=0 X�3546px pct=20% ms/f=1.3
+[BFS] f=1164 front=9 dedup=9 deaths=0 Y=[454..471] mode=2 gravN=9 gravF=0 X�3550px pct=21% ms/f=1.3
+[BFS] f=1165 front=9 dedup=9 deaths=0 Y=[459..474] mode=2 gravN=9 gravF=0 X�3553px pct=21% ms/f=1.3
+[BFS] f=1166 front=9 dedup=9 deaths=0 Y=[464..472] mode=2 gravN=9 gravF=0 X�3557px pct=21% ms/f=1.3
+[BFS] f=1167 front=9 dedup=9 deaths=0 Y=[469..471] mode=2 gravN=9 gravF=0 X�3560px pct=21% ms/f=1.3
+[BFS] f=1168 front=9 dedup=9 deaths=0 Y=[469..469] mode=2 gravN=9 gravF=0 X�3564px pct=21% ms/f=1.3
+[BFS] f=1169 front=9 dedup=9 deaths=0 Y=[467..467] mode=2 gravN=9 gravF=0 X�3567px pct=21% ms/f=1.3
+[BFS] f=1170 front=18 dedup=18 deaths=0 Y=[464..466] mode=2 gravN=9 gravF=9 X�3570px pct=21% ms/f=1.3
+[BFS] f=1171 front=27 dedup=27 deaths=0 Y=[462..464] mode=2 gravN=9 gravF=18 X�3574px pct=21% ms/f=1.3
+[BFS] f=1172 front=36 dedup=36 deaths=0 Y=[459..462] mode=2 gravN=9 gravF=27 X�3577px pct=21% ms/f=1.3
+[BFS] f=1173 front=33 dedup=33 deaths=0 Y=[456..460] mode=2 gravN=6 gravF=27 X�3581px pct=21% ms/f=1.3
+[BFS] f=1174 front=33 dedup=33 deaths=0 Y=[452..459] mode=2 gravN=6 gravF=27 X�3584px pct=21% ms/f=1.3
+[BFS] f=1175 front=33 dedup=33 deaths=0 Y=[449..457] mode=2 gravN=6 gravF=27 X�3588px pct=21% ms/f=1.3
+[BFS] f=1176 front=33 dedup=33 deaths=0 Y=[445..455] mode=2 gravN=6 gravF=27 X�3591px pct=21% ms/f=1.3
+[BFS] f=1177 front=33 dedup=33 deaths=0 Y=[442..453] mode=2 gravN=6 gravF=27 X�3595px pct=21% ms/f=1.3
+[BFS] f=1178 front=33 dedup=33 deaths=0 Y=[438..452] mode=2 gravN=6 gravF=27 X�3598px pct=21% ms/f=1.3
+[BFS] f=1179 front=39 dedup=39 deaths=0 Y=[433..450] mode=2 gravN=6 gravF=33 X�3601px pct=21% ms/f=1.3
+[BFS] f=1180 front=45 dedup=45 deaths=0 Y=[428..448] mode=2 gravN=6 gravF=39 X�3605px pct=21% ms/f=1.3
+[BFS] f=1181 front=51 dedup=51 deaths=0 Y=[423..447] mode=2 gravN=6 gravF=45 X�3608px pct=21% ms/f=1.3
+[BFS] f=1182 front=54 dedup=54 deaths=0 Y=[418..445] mode=2 gravN=6 gravF=48 X�3612px pct=21% ms/f=1.3
+[BFS] f=1183 front=54 dedup=54 deaths=0 Y=[413..443] mode=2 gravN=6 gravF=48 X�3615px pct=21% ms/f=1.3
+[BFS] f=1184 front=54 dedup=54 deaths=0 Y=[407..442] mode=2 gravN=6 gravF=48 X�3619px pct=21% ms/f=1.3
+[BFS] f=1185 front=45 dedup=45 deaths=12 Y=[400..436] mode=2 gravN=0 gravF=45 X�3622px pct=21% ms/f=1.3
+[BFS] f=1186 front=39 dedup=39 deaths=0 Y=[400..433] mode=2 gravN=6 gravF=33 X�3626px pct=21% ms/f=1.3
+[BFS] f=1187 front=33 dedup=33 deaths=0 Y=[400..430] mode=2 gravN=9 gravF=24 X�3629px pct=21% ms/f=1.3
+[BFS] f=1188 front=36 dedup=36 deaths=0 Y=[400..426] mode=2 gravN=12 gravF=24 X�3632px pct=21% ms/f=1.3
+[BFS] f=1189 front=39 dedup=39 deaths=0 Y=[400..422] mode=2 gravN=15 gravF=24 X�3636px pct=21% ms/f=1.3
+[BFS] f=1190 front=42 dedup=42 deaths=0 Y=[400..418] mode=2 gravN=18 gravF=24 X�3639px pct=21% ms/f=1.3
+[BFS] f=1191 front=45 dedup=45 deaths=0 Y=[400..420] mode=2 gravN=21 gravF=24 X�3643px pct=21% ms/f=1.3
+[BFS] f=1192 front=42 dedup=42 deaths=0 Y=[400..424] mode=2 gravN=24 gravF=18 X�3646px pct=21% ms/f=1.3
+[BFS] f=1193 front=48 dedup=48 deaths=0 Y=[397..428] mode=2 gravN=33 gravF=15 X�3650px pct=21% ms/f=1.3
+[BFS] f=1194 front=51 dedup=51 deaths=0 Y=[397..432] mode=2 gravN=36 gravF=15 X�3653px pct=21% ms/f=1.3
+[BFS] f=1195 front=51 dedup=51 deaths=0 Y=[397..437] mode=2 gravN=36 gravF=15 X�3657px pct=21% ms/f=1.3
+[BFS] f=1196 front=48 dedup=48 deaths=0 Y=[397..442] mode=2 gravN=33 gravF=15 X�3660px pct=21% ms/f=1.3
+[BFS] f=1197 front=45 dedup=45 deaths=0 Y=[400..447] mode=2 gravN=30 gravF=15 X�3663px pct=21% ms/f=1.3
+[BFS] f=1198 front=45 dedup=45 deaths=0 Y=[400..453] mode=2 gravN=30 gravF=15 X�3667px pct=21% ms/f=1.3
+[BFS] f=1199 front=45 dedup=45 deaths=0 Y=[400..459] mode=2 gravN=30 gravF=15 X�3670px pct=21% ms/f=1.3
+[BFS] f=1200 front=45 dedup=45 deaths=0 Y=[400..465] mode=2 gravN=30 gravF=15 X�3674px pct=21% ms/f=1.3
+[BFS] f=1201 front=45 dedup=45 deaths=0 Y=[400..471] mode=2 gravN=30 gravF=15 X�3677px pct=21% ms/f=1.3
+[BFS] f=1202 front=45 dedup=45 deaths=0 Y=[400..477] mode=2 gravN=30 gravF=15 X�3681px pct=21% ms/f=1.3
+[BFS] f=1203 front=42 dedup=42 deaths=0 Y=[400..480] mode=2 gravN=27 gravF=15 X�3684px pct=21% ms/f=1.3
+[BFS] f=1204 front=42 dedup=42 deaths=0 Y=[401..480] mode=2 gravN=24 gravF=18 X�3687px pct=21% ms/f=1.3
+[BFS] f=1205 front=42 dedup=42 deaths=0 Y=[402..480] mode=2 gravN=21 gravF=21 X�3691px pct=21% ms/f=1.3
+[BFS] f=1206 front=42 dedup=42 deaths=0 Y=[404..480] mode=2 gravN=18 gravF=24 X�3694px pct=21% ms/f=1.3
+[BFS] f=1207 front=42 dedup=42 deaths=0 Y=[405..480] mode=2 gravN=15 gravF=27 X�3698px pct=21% ms/f=1.3
+[BFS] f=1208 front=42 dedup=42 deaths=0 Y=[407..480] mode=2 gravN=12 gravF=30 X�3701px pct=21% ms/f=1.3
+[BFS] f=1209 front=45 dedup=45 deaths=0 Y=[409..480] mode=2 gravN=12 gravF=33 X�3705px pct=21% ms/f=1.3
+[BFS] f=1210 front=42 dedup=42 deaths=0 Y=[412..480] mode=2 gravN=6 gravF=36 X�3708px pct=21% ms/f=1.3
+[BFS] f=1211 front=45 dedup=45 deaths=0 Y=[415..482] mode=2 gravN=6 gravF=39 X�3712px pct=21% ms/f=1.3
+[BFS] f=1212 front=45 dedup=45 deaths=0 Y=[418..482] mode=2 gravN=6 gravF=39 X�3715px pct=21% ms/f=1.3
+[BFS] f=1213 front=42 dedup=42 deaths=0 Y=[421..481] mode=2 gravN=6 gravF=36 X�3718px pct=22% ms/f=1.3
+[BFS] f=1214 front=42 dedup=42 deaths=0 Y=[425..481] mode=2 gravN=6 gravF=36 X�3722px pct=22% ms/f=1.3
+[BFS] f=1215 front=42 dedup=42 deaths=0 Y=[429..481] mode=2 gravN=6 gravF=36 X�3725px pct=22% ms/f=1.3
+[BFS] f=1216 front=42 dedup=42 deaths=0 Y=[428..481] mode=2 gravN=6 gravF=36 X�3729px pct=22% ms/f=1.3
+[BFS] f=1217 front=42 dedup=42 deaths=0 Y=[422..481] mode=2 gravN=6 gravF=36 X�3732px pct=22% ms/f=1.3
+[BFS] f=1218 front=42 dedup=42 deaths=0 Y=[416..481] mode=2 gravN=6 gravF=36 X�3736px pct=22% ms/f=1.3
+[BFS] f=1219 front=42 dedup=42 deaths=0 Y=[410..481] mode=2 gravN=6 gravF=36 X�3739px pct=22% ms/f=1.3
+[BFS] f=1220 front=42 dedup=42 deaths=0 Y=[404..480] mode=2 gravN=6 gravF=36 X�3743px pct=22% ms/f=1.3
+[BFS] f=1221 front=42 dedup=42 deaths=0 Y=[398..480] mode=2 gravN=6 gravF=36 X�3746px pct=22% ms/f=1.3
+[BFS] f=1222 front=42 dedup=42 deaths=0 Y=[392..479] mode=2 gravN=6 gravF=36 X�3749px pct=22% ms/f=1.3
+[BFS] f=1223 front=39 dedup=39 deaths=6 Y=[392..478] mode=2 gravN=6 gravF=33 X�3753px pct=22% ms/f=1.3
+[BFS] f=1224 front=39 dedup=39 deaths=0 Y=[386..476] mode=2 gravN=6 gravF=33 X�3756px pct=22% ms/f=1.3
+[BFS] f=1225 front=39 dedup=39 deaths=0 Y=[384..482] mode=2 gravN=6 gravF=33 X�3760px pct=22% ms/f=1.3
+[BFS] f=1226 front=33 dedup=33 deaths=12 Y=[394..487] mode=2 gravN=12 gravF=21 X�3763px pct=22% ms/f=1.3
+[BFS] f=1227 front=27 dedup=27 deaths=6 Y=[397..471] mode=2 gravN=15 gravF=12 X�3767px pct=22% ms/f=1.3
+[BFS] f=1228 front=30 dedup=30 deaths=0 Y=[400..468] mode=2 gravN=21 gravF=9 X�3770px pct=22% ms/f=1.3
+[BFS] f=1229 front=33 dedup=33 deaths=0 Y=[400..465] mode=2 gravN=27 gravF=6 X�3774px pct=22% ms/f=1.3
+[BFS] f=1230 front=36 dedup=36 deaths=0 Y=[400..462] mode=2 gravN=30 gravF=6 X�3777px pct=22% ms/f=1.3
+[BFS] f=1231 front=39 dedup=39 deaths=0 Y=[400..459] mode=2 gravN=33 gravF=6 X�3780px pct=22% ms/f=1.3
+[BFS] f=1232 front=42 dedup=42 deaths=0 Y=[400..455] mode=2 gravN=36 gravF=6 X�3784px pct=22% ms/f=1.3
+[BFS] f=1233 front=45 dedup=45 deaths=0 Y=[400..451] mode=2 gravN=39 gravF=6 X�3787px pct=22% ms/f=1.3
+[BFS] f=1234 front=48 dedup=48 deaths=0 Y=[400..447] mode=2 gravN=42 gravF=6 X�3791px pct=22% ms/f=1.3
+[BFS] f=1235 front=51 dedup=51 deaths=0 Y=[400..446] mode=2 gravN=45 gravF=6 X�3794px pct=22% ms/f=1.3
+[BFS] f=1236 front=54 dedup=54 deaths=0 Y=[400..448] mode=2 gravN=48 gravF=6 X�3798px pct=22% ms/f=1.3
+[BFS] f=1237 front=57 dedup=57 deaths=0 Y=[400..451] mode=2 gravN=51 gravF=6 X�3801px pct=22% ms/f=1.3
+[BFS] f=1238 front=60 dedup=60 deaths=0 Y=[400..454] mode=2 gravN=54 gravF=6 X�3804px pct=22% ms/f=1.3
+[BFS] f=1239 front=60 dedup=60 deaths=0 Y=[399..457] mode=2 gravN=54 gravF=6 X�3808px pct=22% ms/f=1.3
+[BFS] f=1240 front=60 dedup=60 deaths=0 Y=[399..462] mode=2 gravN=54 gravF=6 X�3811px pct=22% ms/f=1.3
+[BFS] f=1241 front=60 dedup=60 deaths=0 Y=[398..467] mode=2 gravN=54 gravF=6 X�3815px pct=22% ms/f=1.3
+[BFS] f=1242 front=60 dedup=60 deaths=0 Y=[397..474] mode=2 gravN=54 gravF=6 X�3818px pct=22% ms/f=1.3
+[BFS] f=1243 front=60 dedup=60 deaths=0 Y=[395..480] mode=2 gravN=54 gravF=6 X�3822px pct=22% ms/f=1.3
+[BFS] f=1244 front=87 dedup=87 deaths=0 Y=[393..486] mode=2 gravN=81 gravF=6 X�3825px pct=22% ms/f=1.3
+[BFS] f=1300 front=2367 dedup=2367 deaths=177 Y=[388..456] mode=2 gravN=2166 gravF=201 X�4018px pct=23% ms/f=1.2
+[BFS] f=1356 front=86 dedup=86 deaths=142 Y=[388..418] mode=2 gravN=9 gravF=77 X�4211px pct=24% ms/f=1.6
+[BFS] f=1357 front=40 dedup=40 deaths=0 Y=[384..418] mode=2 gravN=9 gravF=31 X�4214px pct=24% ms/f=1.6
+[BFS] f=1358 front=37 dedup=37 deaths=34 Y=[388..418] mode=2 gravN=37 gravF=0 X�4217px pct=24% ms/f=1.6
+[BFS] f=1359 front=37 dedup=37 deaths=0 Y=[390..418] mode=2 gravN=37 gravF=0 X�4221px pct=24% ms/f=1.6
+[BFS] f=1360 front=37 dedup=37 deaths=0 Y=[393..419] mode=2 gravN=37 gravF=0 X�4224px pct=25% ms/f=1.6
+[BFS] f=1361 front=37 dedup=37 deaths=0 Y=[396..420] mode=2 gravN=37 gravF=0 X�4228px pct=25% ms/f=1.6
+[BFS] f=1362 front=37 dedup=37 deaths=0 Y=[400..421] mode=2 gravN=37 gravF=0 X�4231px pct=25% ms/f=1.6
+[BFS] f=1363 front=37 dedup=37 deaths=0 Y=[403..423] mode=2 gravN=37 gravF=0 X�4235px pct=25% ms/f=1.6
+[BFS] f=1364 front=37 dedup=37 deaths=0 Y=[407..425] mode=2 gravN=37 gravF=0 X�4238px pct=25% ms/f=1.6
+[BFS] f=1365 front=37 dedup=37 deaths=0 Y=[412..427] mode=2 gravN=37 gravF=0 X�4242px pct=25% ms/f=1.6
+[BFS] f=1366 front=37 dedup=37 deaths=0 Y=[416..429] mode=2 gravN=37 gravF=0 X�4245px pct=25% ms/f=1.6
+[BFS] f=1367 front=37 dedup=37 deaths=0 Y=[421..435] mode=2 gravN=37 gravF=0 X�4248px pct=25% ms/f=1.6
+[BFS] f=1368 front=37 dedup=37 deaths=0 Y=[426..441] mode=2 gravN=37 gravF=0 X�4252px pct=25% ms/f=1.6
+[BFS] f=1369 front=37 dedup=37 deaths=0 Y=[431..447] mode=2 gravN=37 gravF=0 X�4255px pct=25% ms/f=1.5
+[BFS] f=1370 front=37 dedup=37 deaths=0 Y=[436..453] mode=2 gravN=37 gravF=0 X�4259px pct=25% ms/f=1.5
+[BFS] f=1371 front=37 dedup=37 deaths=0 Y=[439..459] mode=2 gravN=37 gravF=0 X�4262px pct=25% ms/f=1.5
+[BFS] f=1372 front=37 dedup=37 deaths=0 Y=[443..465] mode=2 gravN=37 gravF=0 X�4266px pct=25% ms/f=1.5
+[BFS] f=1373 front=37 dedup=37 deaths=0 Y=[447..471] mode=2 gravN=37 gravF=0 X�4269px pct=25% ms/f=1.5
+[BFS] f=1374 front=71 dedup=71 deaths=0 Y=[443..477] mode=2 gravN=71 gravF=0 X�4273px pct=25% ms/f=1.5
+[BFS] f=1379 front=80 dedup=80 deaths=56 Y=[429..477] mode=2 gravN=80 gravF=0 X�4290px pct=25% ms/f=1.5
+[BFS] f=1380 front=77 dedup=77 deaths=6 Y=[427..448] mode=2 gravN=77 gravF=0 X�4293px pct=25% ms/f=1.5
+[BFS] f=1381 front=77 dedup=77 deaths=0 Y=[425..445] mode=2 gravN=77 gravF=0 X�4297px pct=25% ms/f=1.5
+[BFS] f=1382 front=77 dedup=77 deaths=0 Y=[423..443] mode=2 gravN=77 gravF=0 X�4300px pct=25% ms/f=1.5
+[BFS] f=1383 front=77 dedup=77 deaths=0 Y=[422..441] mode=2 gravN=77 gravF=0 X�4303px pct=25% ms/f=1.5
+[BFS] f=1384 front=77 dedup=77 deaths=0 Y=[421..439] mode=2 gravN=77 gravF=0 X�4307px pct=25% ms/f=1.5
+[BFS] f=1385 front=77 dedup=77 deaths=0 Y=[420..438] mode=2 gravN=77 gravF=0 X�4310px pct=25% ms/f=1.5
+[BFS] f=1386 front=77 dedup=77 deaths=0 Y=[420..437] mode=2 gravN=77 gravF=0 X�4314px pct=25% ms/f=1.5
+[BFS] f=1387 front=77 dedup=77 deaths=0 Y=[419..436] mode=2 gravN=77 gravF=0 X�4317px pct=25% ms/f=1.5
+[BFS] f=1388 front=77 dedup=77 deaths=0 Y=[420..436] mode=2 gravN=77 gravF=0 X�4321px pct=25% ms/f=1.5
+[BFS] f=1389 front=77 dedup=77 deaths=0 Y=[420..435] mode=2 gravN=77 gravF=0 X�4324px pct=25% ms/f=1.5
+[BFS] f=1390 front=77 dedup=77 deaths=0 Y=[421..436] mode=2 gravN=77 gravF=0 X�4328px pct=25% ms/f=1.5
+[BFS] f=1391 front=77 dedup=77 deaths=0 Y=[422..436] mode=2 gravN=77 gravF=0 X�4331px pct=25% ms/f=1.5
+[BFS] f=1392 front=77 dedup=77 deaths=0 Y=[423..437] mode=2 gravN=77 gravF=0 X�4334px pct=25% ms/f=1.5
+[BFS] f=1393 front=77 dedup=77 deaths=0 Y=[424..438] mode=2 gravN=77 gravF=0 X�4338px pct=25% ms/f=1.5
+[BFS] f=1394 front=77 dedup=77 deaths=0 Y=[426..439] mode=2 gravN=77 gravF=0 X�4341px pct=25% ms/f=1.5
+[BFS] f=1395 front=77 dedup=77 deaths=0 Y=[428..440] mode=2 gravN=77 gravF=0 X�4345px pct=25% ms/f=1.5
+[BFS] f=1396 front=77 dedup=77 deaths=0 Y=[430..442] mode=2 gravN=77 gravF=0 X�4348px pct=25% ms/f=1.5
+[BFS] f=1397 front=77 dedup=77 deaths=0 Y=[433..444] mode=2 gravN=77 gravF=0 X�4352px pct=25% ms/f=1.5
+[BFS] f=1398 front=77 dedup=77 deaths=0 Y=[436..447] mode=2 gravN=77 gravF=0 X�4355px pct=25% ms/f=1.5
+[BFS] f=1399 front=77 dedup=77 deaths=0 Y=[439..450] mode=2 gravN=77 gravF=0 X�4359px pct=25% ms/f=1.5
+[BFS] f=1400 front=77 dedup=77 deaths=0 Y=[442..453] mode=2 gravN=77 gravF=0 X�4362px pct=25% ms/f=1.5
+[BFS] f=1401 front=77 dedup=77 deaths=0 Y=[446..456] mode=2 gravN=77 gravF=0 X�4365px pct=25% ms/f=1.5
+[BFS] f=1402 front=77 dedup=77 deaths=0 Y=[450..460] mode=2 gravN=77 gravF=0 X�4369px pct=25% ms/f=1.5
+[BFS] f=1403 front=52 dedup=52 deaths=0 Y=[454..464] mode=2 gravN=52 gravF=0 X�4372px pct=25% ms/f=1.5
+[BFS] f=1404 front=18 dedup=18 deaths=0 Y=[459..464] mode=2 gravN=15 gravF=3 X�4376px pct=25% ms/f=1.5
+[BFS] f=1405 front=15 dedup=15 deaths=0 Y=[459..464] mode=2 gravN=9 gravF=6 X�4379px pct=25% ms/f=1.5
+[BFS] f=1406 front=18 dedup=18 deaths=0 Y=[456..464] mode=2 gravN=3 gravF=15 X�4383px pct=25% ms/f=1.5
+[BFS] f=1407 front=18 dedup=18 deaths=0 Y=[454..464] mode=0 gravN=3 gravF=15 X�4386px pct=25% ms/f=1.5
+[BFS] f=1408 front=21 dedup=21 deaths=0 Y=[452..465] mode=0 gravN=6 gravF=15 X�4390px pct=25% ms/f=1.5
+[BFS] f=1409 front=24 dedup=24 deaths=0 Y=[449..465] mode=0 gravN=9 gravF=15 X�4393px pct=26% ms/f=1.5
+[BFS] f=1410 front=27 dedup=27 deaths=0 Y=[446..465] mode=0 gravN=12 gravF=15 X�4396px pct=26% ms/f=1.5
+[BFS] f=1411 front=30 dedup=30 deaths=0 Y=[442..465] mode=0 gravN=15 gravF=15 X�4400px pct=26% ms/f=1.5
+[BFS] f=1412 front=33 dedup=33 deaths=0 Y=[439..465] mode=0 gravN=18 gravF=15 X�4403px pct=26% ms/f=1.5
+[BFS] f=1413 front=36 dedup=36 deaths=0 Y=[434..465] mode=0 gravN=21 gravF=15 X�4407px pct=26% ms/f=1.5
+[BFS] f=1414 front=39 dedup=39 deaths=0 Y=[429..465] mode=0 gravN=24 gravF=15 X�4410px pct=26% ms/f=1.5
+[BFS] f=1415 front=42 dedup=42 deaths=0 Y=[424..465] mode=0 gravN=27 gravF=15 X�4414px pct=26% ms/f=1.5
+[BFS] f=1416 front=45 dedup=45 deaths=0 Y=[419..465] mode=0 gravN=30 gravF=15 X�4417px pct=26% ms/f=1.5
+[BFS] f=1417 front=48 dedup=48 deaths=0 Y=[415..465] mode=0 gravN=33 gravF=15 X�4420px pct=26% ms/f=1.5
+[BFS] f=1418 front=45 dedup=45 deaths=0 Y=[415..465] mode=0 gravN=36 gravF=9 X�4424px pct=26% ms/f=1.5
+[BFS] f=1419 front=51 dedup=51 deaths=0 Y=[415..465] mode=0 gravN=39 gravF=12 X�4427px pct=26% ms/f=1.5
+[BFS] f=1420 front=57 dedup=57 deaths=0 Y=[415..465] mode=0 gravN=42 gravF=15 X�4431px pct=26% ms/f=1.5
+[BFS] f=1421 front=63 dedup=63 deaths=0 Y=[415..465] mode=0 gravN=45 gravF=18 X�4434px pct=26% ms/f=1.5
+[BFS] f=1422 front=69 dedup=69 deaths=0 Y=[415..465] mode=0 gravN=48 gravF=21 X�4438px pct=26% ms/f=1.5
+[BFS] f=1423 front=75 dedup=75 deaths=0 Y=[415..465] mode=0 gravN=51 gravF=24 X�4441px pct=26% ms/f=1.5
+[BFS] f=1424 front=81 dedup=81 deaths=0 Y=[415..465] mode=0 gravN=54 gravF=27 X�4445px pct=26% ms/f=1.5
+[BFS] f=1425 front=87 dedup=87 deaths=0 Y=[415..465] mode=0 gravN=57 gravF=30 X�4448px pct=26% ms/f=1.5
+[BFS] f=1426 front=93 dedup=93 deaths=0 Y=[415..465] mode=0 gravN=60 gravF=33 X�4451px pct=26% ms/f=1.5
+[BFS] f=1427 front=93 dedup=93 deaths=6 Y=[415..459] mode=0 gravN=57 gravF=36 X�4455px pct=26% ms/f=1.5
+[BFS] f=1428 front=93 dedup=93 deaths=6 Y=[415..450] mode=0 gravN=54 gravF=39 X�4458px pct=26% ms/f=1.5
+[BFS] f=1429 front=96 dedup=96 deaths=0 Y=[415..449] mode=0 gravN=54 gravF=42 X�4462px pct=26% ms/f=1.5
+[BFS] f=1430 front=99 dedup=99 deaths=0 Y=[415..449] mode=0 gravN=54 gravF=45 X�4465px pct=26% ms/f=1.5
+[BFS] f=1500 front=90 dedup=90 deaths=24 Y=[455..502] mode=0 gravN=63 gravF=27 X�4706px pct=27% ms/f=1.4
+[BFS] f=1501 front=90 dedup=90 deaths=0 Y=[453..506] mode=0 gravN=63 gravF=27 X�4710px pct=27% ms/f=1.4
+[BFS] f=1502 front=87 dedup=87 deaths=6 Y=[451..506] mode=0 gravN=60 gravF=27 X�4713px pct=27% ms/f=1.4
+[BFS] f=1503 front=87 dedup=87 deaths=6 Y=[447..490] mode=0 gravN=57 gravF=30 X�4716px pct=27% ms/f=1.4
+[BFS] f=1504 front=87 dedup=87 deaths=0 Y=[446..487] mode=0 gravN=57 gravF=30 X�4720px pct=27% ms/f=1.4
+[BFS] f=1505 front=78 dedup=78 deaths=12 Y=[462..485] mode=0 gravN=0 gravF=78 X�4723px pct=27% ms/f=1.4
+[BFS] f=1506 front=78 dedup=78 deaths=0 Y=[463..483] mode=0 gravN=0 gravF=78 X�4727px pct=27% ms/f=1.4
+[BFS] f=1507 front=75 dedup=75 deaths=0 Y=[463..481] mode=0 gravN=0 gravF=75 X�4730px pct=27% ms/f=1.4
+[BFS] f=1508 front=72 dedup=72 deaths=0 Y=[463..482] mode=0 gravN=0 gravF=72 X�4734px pct=28% ms/f=1.4
+[BFS] f=1509 front=75 dedup=75 deaths=0 Y=[463..482] mode=0 gravN=0 gravF=75 X�4737px pct=28% ms/f=1.4
+[BFS] f=1510 front=78 dedup=78 deaths=0 Y=[463..484] mode=0 gravN=0 gravF=78 X�4741px pct=28% ms/f=1.4
+[BFS] f=1511 front=81 dedup=81 deaths=0 Y=[463..487] mode=0 gravN=0 gravF=81 X�4744px pct=28% ms/f=1.4
+[BFS] f=1512 front=81 dedup=81 deaths=0 Y=[463..490] mode=0 gravN=0 gravF=81 X�4747px pct=28% ms/f=1.4
+[BFS] f=1513 front=84 dedup=84 deaths=0 Y=[463..492] mode=0 gravN=0 gravF=84 X�4751px pct=28% ms/f=1.4
+[BFS] f=1514 front=87 dedup=87 deaths=0 Y=[463..494] mode=0 gravN=0 gravF=87 X�4754px pct=28% ms/f=1.4
+[BFS] f=1515 front=90 dedup=90 deaths=0 Y=[463..495] mode=0 gravN=0 gravF=90 X�4758px pct=28% ms/f=1.4
+[BFS] f=1516 front=96 dedup=96 deaths=0 Y=[463..496] mode=0 gravN=0 gravF=96 X�4761px pct=28% ms/f=1.4
+[BFS] f=1517 front=96 dedup=96 deaths=0 Y=[463..497] mode=0 gravN=0 gravF=96 X�4765px pct=28% ms/f=1.4
+[BFS] f=1518 front=99 dedup=99 deaths=0 Y=[463..497] mode=0 gravN=0 gravF=99 X�4768px pct=28% ms/f=1.4
+[BFS] f=1519 front=96 dedup=96 deaths=0 Y=[463..497] mode=0 gravN=0 gravF=96 X�4772px pct=28% ms/f=1.4
+[BFS] f=1554 front=90 dedup=90 deaths=0 Y=[480..513] mode=0 gravN=90 gravF=0 X�4892px pct=28% ms/f=1.4
+[BFS] f=1555 front=72 dedup=72 deaths=0 Y=[482..513] mode=0 gravN=72 gravF=0 X�4895px pct=28% ms/f=1.4
+[BFS] f=1556 front=66 dedup=66 deaths=0 Y=[484..513] mode=0 gravN=66 gravF=0 X�4899px pct=28% ms/f=1.4
+[BFS] f=1557 front=66 dedup=66 deaths=0 Y=[487..513] mode=0 gravN=66 gravF=0 X�4902px pct=29% ms/f=1.4
+[BFS] f=1558 front=66 dedup=66 deaths=0 Y=[490..513] mode=0 gravN=66 gravF=0 X�4906px pct=29% ms/f=1.4
+[BFS] f=1559 front=66 dedup=66 deaths=0 Y=[491..513] mode=0 gravN=66 gravF=0 X�4909px pct=29% ms/f=1.4
+[BFS] f=1560 front=72 dedup=72 deaths=0 Y=[488..515] mode=0 gravN=72 gravF=0 X�4913px pct=29% ms/f=1.4
+[BFS] f=1561 front=78 dedup=78 deaths=0 Y=[485..517] mode=0 gravN=78 gravF=0 X�4916px pct=29% ms/f=1.4
+[BFS] f=1562 front=90 dedup=90 deaths=0 Y=[483..519] mode=0 gravN=90 gravF=0 X�4920px pct=29% ms/f=1.4
+[BFS] f=1563 front=90 dedup=90 deaths=0 Y=[481..520] mode=0 gravN=90 gravF=0 X�4923px pct=29% ms/f=1.4
+[BFS] f=1600 front=172 dedup=172 deaths=0 Y=[462..478] mode=0 gravN=172 gravF=0 X�5050px pct=29% ms/f=1.4
+[BFS] f=1616 front=90 dedup=90 deaths=48 Y=[442..504] mode=0 gravN=90 gravF=0 X�5105px pct=30% ms/f=1.3
+[BFS] f=1617 front=78 dedup=78 deaths=0 Y=[444..510] mode=0 gravN=78 gravF=0 X�5109px pct=30% ms/f=1.3
+[BFS] f=1618 front=84 dedup=84 deaths=0 Y=[447..516] mode=0 gravN=84 gravF=0 X�5112px pct=30% ms/f=1.3
+[BFS] f=1619 front=96 dedup=96 deaths=0 Y=[444..522] mode=0 gravN=96 gravF=0 X�5116px pct=30% ms/f=1.3
+[BFS] f=1634 front=96 dedup=96 deaths=36 Y=[395..426] mode=0 gravN=96 gravF=0 X�5167px pct=30% ms/f=1.3
+[BFS] f=1635 front=96 dedup=96 deaths=0 Y=[393..427] mode=0 gravN=96 gravF=0 X�5171px pct=30% ms/f=1.3
+[BFS] f=1636 front=84 dedup=84 deaths=24 Y=[391..427] mode=0 gravN=84 gravF=0 X�5174px pct=30% ms/f=1.3
+[BFS] f=1637 front=78 dedup=78 deaths=12 Y=[390..425] mode=0 gravN=78 gravF=0 X�5178px pct=30% ms/f=1.3
+[BFS] f=1638 front=78 dedup=78 deaths=0 Y=[390..428] mode=0 gravN=78 gravF=0 X�5181px pct=30% ms/f=1.3
+[BFS] f=1639 front=72 dedup=72 deaths=12 Y=[389..423] mode=0 gravN=72 gravF=0 X�5184px pct=30% ms/f=1.3
+[BFS] f=1640 front=72 dedup=72 deaths=0 Y=[389..426] mode=0 gravN=72 gravF=0 X�5188px pct=30% ms/f=1.3
+[BFS] f=1641 front=66 dedup=66 deaths=12 Y=[390..423] mode=0 gravN=66 gravF=0 X�5191px pct=30% ms/f=1.3
+[BFS] f=1642 front=66 dedup=66 deaths=0 Y=[391..426] mode=0 gravN=66 gravF=0 X�5195px pct=30% ms/f=1.3
+[BFS] f=1643 front=66 dedup=66 deaths=0 Y=[392..430] mode=0 gravN=66 gravF=0 X�5198px pct=30% ms/f=1.3
+[BFS] f=1644 front=60 dedup=60 deaths=12 Y=[394..435] mode=0 gravN=60 gravF=0 X�5202px pct=30% ms/f=1.3
+[BFS] f=1645 front=60 dedup=60 deaths=0 Y=[396..439] mode=0 gravN=60 gravF=0 X�5205px pct=30% ms/f=1.3
+[BFS] f=1646 front=36 dedup=36 deaths=24 Y=[399..417] mode=0 gravN=36 gravF=0 X�5209px pct=30% ms/f=1.3
+[BFS] f=1647 front=36 dedup=36 deaths=0 Y=[402..417] mode=0 gravN=36 gravF=0 X�5212px pct=30% ms/f=1.3
+[BFS] f=1648 front=42 dedup=42 deaths=0 Y=[405..417] mode=0 gravN=42 gravF=0 X�5215px pct=30% ms/f=1.3
+[BFS] f=1649 front=36 dedup=36 deaths=0 Y=[402..417] mode=0 gravN=36 gravF=0 X�5219px pct=30% ms/f=1.3
+[BFS] f=1650 front=42 dedup=42 deaths=0 Y=[398..417] mode=0 gravN=42 gravF=0 X�5222px pct=30% ms/f=1.3
+[BFS] f=1651 front=42 dedup=42 deaths=0 Y=[395..417] mode=0 gravN=42 gravF=0 X�5226px pct=30% ms/f=1.3
+[BFS] f=1652 front=48 dedup=48 deaths=0 Y=[392..417] mode=0 gravN=48 gravF=0 X�5229px pct=30% ms/f=1.3
+[BFS] f=1653 front=54 dedup=54 deaths=0 Y=[389..417] mode=0 gravN=54 gravF=0 X�5233px pct=30% ms/f=1.3
+[BFS] f=1654 front=60 dedup=60 deaths=0 Y=[387..417] mode=0 gravN=60 gravF=0 X�5236px pct=30% ms/f=1.3
+[BFS] f=1655 front=66 dedup=66 deaths=0 Y=[385..417] mode=0 gravN=66 gravF=0 X�5240px pct=31% ms/f=1.3
+[BFS] f=1656 front=72 dedup=72 deaths=0 Y=[384..417] mode=0 gravN=72 gravF=0 X�5243px pct=31% ms/f=1.3
+[BFS] f=1657 front=78 dedup=78 deaths=0 Y=[383..417] mode=0 gravN=78 gravF=0 X�5246px pct=31% ms/f=1.3
+[BFS] f=1658 front=84 dedup=84 deaths=0 Y=[382..417] mode=0 gravN=84 gravF=0 X�5250px pct=31% ms/f=1.3
+[BFS] f=1659 front=90 dedup=90 deaths=0 Y=[382..417] mode=0 gravN=90 gravF=0 X�5253px pct=31% ms/f=1.3
+[BFS] f=1660 front=96 dedup=96 deaths=0 Y=[382..417] mode=0 gravN=96 gravF=0 X�5257px pct=31% ms/f=1.3
+[BFS] f=1685 front=96 dedup=96 deaths=24 Y=[382..424] mode=0 gravN=96 gravF=0 X�5343px pct=31% ms/f=1.3
+[BFS] f=1686 front=96 dedup=96 deaths=12 Y=[382..424] mode=0 gravN=96 gravF=0 X�5346px pct=31% ms/f=1.3
+[BFS] f=1700 front=162 dedup=162 deaths=0 Y=[358..523] mode=0 gravN=162 gravF=0 X�5394px pct=31% ms/f=1.3
+[BFS] f=1800 front=2060 dedup=2060 deaths=0 Y=[382..417] mode=0 gravN=2060 gravF=0 X�5739px pct=33% ms/f=1.3
+[BFS] f=1869 front=49 dedup=49 deaths=126 Y=[375..385] mode=0 gravN=49 gravF=0 X�5976px pct=35% ms/f=1.4
+[BFS] f=1870 front=66 dedup=66 deaths=0 Y=[370..385] mode=0 gravN=66 gravF=0 X�5979px pct=35% ms/f=1.4
+[BFS] f=1871 front=24 dedup=24 deaths=96 Y=[375..385] mode=0 gravN=24 gravF=0 X�5983px pct=35% ms/f=1.4
+[BFS] f=1872 front=24 dedup=24 deaths=12 Y=[375..385] mode=0 gravN=24 gravF=0 X�5986px pct=35% ms/f=1.4
+[BFS] f=1873 front=24 dedup=24 deaths=12 Y=[375..385] mode=0 gravN=24 gravF=0 X�5990px pct=35% ms/f=1.4
+[BFS] f=1874 front=24 dedup=24 deaths=12 Y=[375..385] mode=0 gravN=24 gravF=0 X�5993px pct=35% ms/f=1.4
+[BFS] f=1875 front=30 dedup=30 deaths=0 Y=[370..386] mode=0 gravN=30 gravF=0 X�5997px pct=35% ms/f=1.4
+[BFS] f=1876 front=24 dedup=24 deaths=24 Y=[387..387] mode=0 gravN=24 gravF=0 X�6000px pct=35% ms/f=1.4
+[BFS] f=1877 front=30 dedup=30 deaths=0 Y=[389..389] mode=0 gravN=30 gravF=0 X�6004px pct=35% ms/f=1.4
+[BFS] f=1878 front=36 dedup=36 deaths=0 Y=[391..391] mode=0 gravN=36 gravF=0 X�6007px pct=35% ms/f=1.4
+[BFS] f=1879 front=42 dedup=42 deaths=0 Y=[393..393] mode=0 gravN=42 gravF=0 X�6010px pct=35% ms/f=1.4
+[BFS] f=1880 front=48 dedup=48 deaths=0 Y=[396..396] mode=0 gravN=48 gravF=0 X�6014px pct=35% ms/f=1.4
+[BFS] f=1881 front=54 dedup=54 deaths=0 Y=[400..400] mode=0 gravN=54 gravF=0 X�6017px pct=35% ms/f=1.4
+[BFS] f=1882 front=60 dedup=60 deaths=0 Y=[403..403] mode=0 gravN=60 gravF=0 X�6021px pct=35% ms/f=1.4
+[BFS] f=1883 front=66 dedup=66 deaths=0 Y=[407..407] mode=0 gravN=66 gravF=0 X�6024px pct=35% ms/f=1.4
+[BFS] f=1884 front=66 dedup=66 deaths=0 Y=[412..412] mode=0 gravN=66 gravF=0 X�6028px pct=35% ms/f=1.4
+[BFS] f=1900 front=156 dedup=156 deaths=0 Y=[382..387] mode=0 gravN=156 gravF=0 X�6083px pct=36% ms/f=1.4
+[BFS] f=2000 front=14774 dedup=14774 deaths=0 Y=[383..429] mode=0 gravN=14774 gravF=0 X�6427px pct=38% ms/f=2.1
+[BFS] f=2100 front=22583 dedup=24522 deaths=874 Y=[308..365] mode=0 gravN=0 gravF=22583 X�6771px pct=40% ms/f=4.2
+[BFS] f=2200 front=14197 dedup=14197 deaths=9319 Y=[304..449] mode=1 gravN=0 gravF=14197 X�7115px pct=42% ms/f=7.8
+[BFS] f=2300 front=23994 dedup=27187 deaths=1951 Y=[308..445] mode=1 gravN=0 gravF=23994 X�7459px pct=44% ms/f=11.1
+[BFS] f=2400 front=24132 dedup=26567 deaths=3627 Y=[308..445] mode=1 gravN=0 gravF=24132 X�7803px pct=46% ms/f=14.4
+[BFS] f=2500 front=1535 dedup=1535 deaths=0 Y=[363..428] mode=0 gravN=1277 gravF=258 X�8148px pct=48% ms/f=16.7
+[BFS] f=2600 front=22630 dedup=23608 deaths=178 Y=[354..436] mode=0 gravN=21536 gravF=1094 X�8492px pct=50% ms/f=16.7
+[BFS] f=2700 front=24276 dedup=33471 deaths=98 Y=[309..371] mode=0 gravN=24276 gravF=0 X�8836px pct=52% ms/f=19.0
+[BFS] f=2800 front=23450 dedup=28289 deaths=1056 Y=[316..382] mode=0 gravN=23450 gravF=0 X�9180px pct=54% ms/f=21.4
+[BFS] f=2900 front=22919 dedup=25886 deaths=124 Y=[268..353] mode=3 gravN=22919 gravF=0 X�9465px pct=56% ms/f=23.9
+[BFS] f=3000 front=22993 dedup=26797 deaths=1686 Y=[271..414] mode=3 gravN=22993 gravF=0 X�9742px pct=57% ms/f=26.2
+[BFS] f=3100 front=23189 dedup=28325 deaths=926 Y=[274..400] mode=3 gravN=23189 gravF=0 X�10018px pct=59% ms/f=28.4
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_MAP] mapW=1056 mapH=40 groundRows=3 tilesLen=42240
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=323 collY=324 probeBot=339 tileY=21 tileArrY=24 localY=3 velY=0x58 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10225 Y=325 collY=324 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFF97 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10225 Y=323 collY=324 probeBot=339 tileY=21 tileArrY=24 localY=3 velY=0x58 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10225 Y=325 collY=324 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFF97 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x47 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x47 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=352 collY=353 probeBot=368 tileY=23 tileArrY=26 localY=0 velY=0x120 hit=False surfY=0 spike=False grav=False mini=False tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10225 Y=336 collY=335 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFE07 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10225 Y=352 collY=353 probeBot=368 tileY=23 tileArrY=26 localY=0 velY=0x120 hit=False surfY=0 spike=False grav=False mini=False tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10225 Y=336 collY=335 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFE07 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_U] X=10225 Y=369 collY=368 hbW=15 hbH=15 miniOff=0 velY=0x0 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_U] X=10225 Y=369 collY=368 hbW=15 hbH=15 miniOff=0 velY=0x0 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x47 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x47 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=332 collY=333 probeBot=348 tileY=21 tileArrY=24 localY=12 velY=0x3F hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10225 Y=336 collY=335 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFFC9 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10225 Y=332 collY=333 probeBot=348 tileY=21 tileArrY=24 localY=12 velY=0x3F hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10225 Y=336 collY=335 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFFC9 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x47 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10225 Y=324 collY=323 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFFC9 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x47 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10225 Y=324 collY=323 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFFC9 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10225 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x8E hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x8E hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x8E hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10228 Y=324 collY=323 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFF82 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x8E hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10228 Y=324 collY=323 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFF82 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10228 Y=353 collY=354 probeBot=369 tileY=23 tileArrY=26 localY=1 velY=0x167 hit=False surfY=0 spike=False grav=False mini=False tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10228 Y=334 collY=333 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFDC0 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10228 Y=353 collY=354 probeBot=369 tileY=23 tileArrY=26 localY=1 velY=0x167 hit=False surfY=0 spike=False grav=False mini=False tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10228 Y=334 collY=333 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFDC0 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x47 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x47 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=332 collY=333 probeBot=348 tileY=21 tileArrY=24 localY=12 velY=0x86 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10228 Y=335 collY=334 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFF82 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10228 Y=332 collY=333 probeBot=348 tileY=21 tileArrY=24 localY=12 velY=0x86 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10228 Y=335 collY=334 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFF82 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x47 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x47 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10228 Y=368 collY=367 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFFB9 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_U] X=10228 Y=369 collY=368 hbW=15 hbH=15 miniOff=0 velY=0x0 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_U] X=10228 Y=368 collY=367 hbW=15 hbH=15 miniOff=0 velY=0xFFFFFFB9 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_U] X=10228 Y=369 collY=368 hbW=15 hbH=15 miniOff=0 velY=0x0 hit=False ceilBot=0 grav=True mini=False
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10228 Y=320 collY=321 probeBot=336 tileY=21 tileArrY=24 localY=0 velY=0x0 hit=False surfY=0 spike=False grav=False mini=False tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=321 collY=324 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF27 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=321 collY=324 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF27 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=351 collY=356 probeBot=363 tileY=22 tileArrY=25 localY=11 velY=0x7F hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=351 collY=354 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF59 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=351 collY=356 probeBot=363 tileY=22 tileArrY=25 localY=11 velY=0x7F hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=351 collY=354 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF59 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=317 collY=320 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFEF5 hit=True ceilBot=320 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=341 collY=346 probeBot=353 tileY=22 tileArrY=25 localY=1 velY=0x1F6 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+  -> ceiling eject Y: 317 -> 316
+[BALL_EJECT_U] X=10232 Y=315 collY=318 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFFA9 hit=True ceilBot=320 grav=True mini=True
+  -> ceiling eject Y: 315 -> 316
+[BALL_EJECT_D] X=10232 Y=341 collY=346 probeBot=353 tileY=22 tileArrY=25 localY=1 velY=0x1F6 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=331 collY=336 probeBot=343 tileY=21 tileArrY=24 localY=7 velY=0x34 hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=337 collY=340 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFFEF hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=331 collY=336 probeBot=343 tileY=21 tileArrY=24 localY=7 velY=0x34 hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=337 collY=340 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFFEF hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=316 collY=321 probeBot=328 tileY=20 tileArrY=23 localY=8 velY=0x0 hit=False surfY=0 spike=False grav=False mini=True tiles@row20(arr23): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=316 collY=321 probeBot=328 tileY=20 tileArrY=23 localY=8 velY=0x0 hit=False surfY=0 spike=False grav=False mini=True tiles@row20(arr23): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=350 collY=353 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFD65 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=350 collY=353 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFD65 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=352 collY=357 probeBot=364 tileY=22 tileArrY=25 localY=12 velY=0x66 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=354 collY=357 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF8B hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=352 collY=357 probeBot=364 tileY=22 tileArrY=25 localY=12 velY=0x66 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=354 collY=357 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF8B hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=348 collY=353 probeBot=360 tileY=22 tileArrY=25 localY=8 velY=0x2 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=348 collY=353 probeBot=360 tileY=22 tileArrY=25 localY=8 velY=0x2 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=316 collY=321 probeBot=328 tileY=20 tileArrY=23 localY=8 velY=0x57 hit=False surfY=0 spike=False grav=False mini=True tiles@row20(arr23): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=316 collY=321 probeBot=328 tileY=20 tileArrY=23 localY=8 velY=0x57 hit=False surfY=0 spike=False grav=False mini=True tiles@row20(arr23): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=356 collY=359 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFFEF hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=356 collY=359 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFFEF hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=346 collY=349 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFDFB hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=346 collY=349 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFDFB hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=327 collY=332 probeBot=339 tileY=21 tileArrY=24 localY=3 velY=0x2 hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=316 collY=321 probeBot=328 tileY=20 tileArrY=23 localY=8 velY=0x0 hit=False surfY=0 spike=False grav=False mini=True tiles@row20(arr23): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=327 collY=332 probeBot=339 tileY=21 tileArrY=24 localY=3 velY=0x2 hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=316 collY=321 probeBot=328 tileY=20 tileArrY=23 localY=8 velY=0x0 hit=False surfY=0 spike=False grav=False mini=True tiles@row20(arr23): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=320 collY=325 probeBot=332 tileY=20 tileArrY=23 localY=12 velY=0x98 hit=False surfY=0 spike=False grav=False mini=True tiles@row20(arr23): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=318 collY=321 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF27 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=362 collY=367 probeBot=374 tileY=23 tileArrY=26 localY=6 velY=0x14C hit=False surfY=0 spike=False grav=False mini=True tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_D] X=10232 Y=362 collY=367 probeBot=374 tileY=23 tileArrY=26 localY=6 velY=0x14C hit=False surfY=0 spike=False grav=False mini=True tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_D] X=10232 Y=352 collY=357 probeBot=364 tileY=22 tileArrY=25 localY=12 velY=0xE3 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=362 collY=367 probeBot=374 tileY=23 tileArrY=26 localY=6 velY=0x133 hit=False surfY=0 spike=False grav=False mini=True tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10232 Y=346 collY=349 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFDFB hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=362 collY=367 probeBot=374 tileY=23 tileArrY=26 localY=6 velY=0x133 hit=False surfY=0 spike=False grav=False mini=True tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10232 Y=346 collY=349 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFDFB hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=320 collY=325 probeBot=332 tileY=20 tileArrY=23 localY=12 velY=0x98 hit=False surfY=0 spike=False grav=False mini=True tiles@row20(arr23): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=316 collY=319 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFD01 hit=True ceilBot=320 grav=True mini=True
+  -> ceiling eject Y: 316 -> 316
+[BALL_EJECT_D] X=10232 Y=331 collY=336 probeBot=343 tileY=21 tileArrY=24 localY=7 velY=0xB1 hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=316 collY=319 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFD01 hit=True ceilBot=320 grav=True mini=True
+  -> ceiling eject Y: 316 -> 316
+[BALL_EJECT_U] X=10232 Y=326 collY=329 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFEF5 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=343 collY=346 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFE91 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=331 collY=336 probeBot=343 tileY=21 tileArrY=24 localY=7 velY=0xB1 hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=352 collY=357 probeBot=364 tileY=22 tileArrY=25 localY=12 velY=0xE3 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=326 collY=329 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFEF5 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=343 collY=346 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFE91 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=316 collY=321 probeBot=328 tileY=20 tileArrY=23 localY=8 velY=0x57 hit=False surfY=0 spike=False grav=False mini=True tiles@row20(arr23): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=316 collY=321 probeBot=328 tileY=20 tileArrY=23 localY=8 velY=0x57 hit=False surfY=0 spike=False grav=False mini=True tiles@row20(arr23): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=353 collY=358 probeBot=365 tileY=22 tileArrY=25 localY=13 velY=0xB1 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=348 collY=351 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFEF5 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=331 collY=336 probeBot=343 tileY=21 tileArrY=24 localY=7 velY=0x1B hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=353 collY=358 probeBot=365 tileY=22 tileArrY=25 localY=13 velY=0xB1 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=331 collY=336 probeBot=343 tileY=21 tileArrY=24 localY=7 velY=0x1B hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=348 collY=351 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFEF5 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=335 collY=340 probeBot=347 tileY=21 tileArrY=24 localY=11 velY=0x66 hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=337 collY=340 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF8B hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=335 collY=340 probeBot=347 tileY=21 tileArrY=24 localY=11 velY=0x66 hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_U] X=10232 Y=337 collY=340 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF8B hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=343 collY=346 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFFBD hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=362 collY=367 probeBot=374 tileY=23 tileArrY=26 localY=6 velY=0x133 hit=False surfY=0 spike=False grav=False mini=True tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10232 Y=343 collY=346 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFFBD hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=362 collY=367 probeBot=374 tileY=23 tileArrY=26 localY=6 velY=0x133 hit=False surfY=0 spike=False grav=False mini=True tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10232 Y=343 collY=346 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFEF5 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=328 collY=331 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF59 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=343 collY=346 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFEF5 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=328 collY=331 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFF59 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=320 collY=323 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFDFB hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=362 collY=367 probeBot=374 tileY=23 tileArrY=26 localY=6 velY=0x14C hit=False surfY=0 spike=False grav=False mini=True tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10232 Y=320 collY=323 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFDFB hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=320 collY=323 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFEC3 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=351 collY=356 probeBot=363 tileY=22 tileArrY=25 localY=11 velY=0x147 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=356 collY=361 probeBot=368 tileY=23 tileArrY=26 localY=0 velY=0x20F hit=False surfY=0 spike=False grav=False mini=True tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10232 Y=333 collY=336 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFDC9 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_U] X=10232 Y=317 collY=320 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFC39 hit=True ceilBot=320 grav=True mini=True
+  -> ceiling eject Y: 317 -> 316
+[BALL_EJECT_U] X=10232 Y=315 collY=318 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFFA9 hit=True ceilBot=320 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=356 collY=361 probeBot=368 tileY=23 tileArrY=26 localY=0 velY=0x20F hit=False surfY=0 spike=False grav=False mini=True tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+  -> ceiling eject Y: 315 -> 316
+[BALL_EJECT_U] X=10232 Y=320 collY=323 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFEC3 hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=337 collY=342 probeBot=349 tileY=21 tileArrY=24 localY=13 velY=0x115 hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=359 collY=364 probeBot=371 tileY=23 tileArrY=26 localY=3 velY=0x1F6 hit=False surfY=0 spike=False grav=False mini=True tiles@row23(arr26): [639]=tid150/COL_SLOPE_LD22_RIGHT [639]=tid150/COL_SLOPE_LD22_RIGHT [640]=tid151/COL_SLOPE_LD22_LEFT
+[BALL_EJECT_U] X=10232 Y=336 collY=339 hbW=8 hbH=7 miniOff=4 velY=0xFFFFFC6B hit=False ceilBot=0 grav=True mini=True
+[BALL_EJECT_D] X=10232 Y=336 collY=341 probeBot=348 tileY=21 tileArrY=24 localY=12 velY=0x34 hit=False surfY=0 spike=False grav=False mini=True tiles@row21(arr24): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=351 collY=356 probeBot=363 tileY=22 tileArrY=25 localY=11 velY=0x147 hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BALL_EJECT_D] X=10232 Y=345 collY=350 probeBot=357 tileY=22 tileArrY=25 localY=5 velY=0x4D hit=False surfY=0 spike=False grav=False mini=True tiles@row22(arr25): [639]=tid0/COL_NONE [639]=tid0/COL_NONE [640]=tid0/COL_NONE
+[BFS] f=3200 front=23702 dedup=27631 deaths=0 Y=[300..388] mode=2 gravN=4852 gravF=18850 X�10318px pct=61% ms/f=30.5
+[BFS] f=3300 front=5049 dedup=5049 deaths=0 Y=[388..405] mode=2 gravN=2989 gravF=2060 X�10662px pct=63% ms/f=32.2
+[BFS] f=3400 front=24618 dedup=30738 deaths=0 Y=[300..389] mode=1 gravN=23388 gravF=1230 X�11006px pct=65% ms/f=32.3
+[BFS] f=3500 front=11228 dedup=11228 deaths=177 Y=[321..368] mode=1 gravN=11228 gravF=0 X�11350px pct=67% ms/f=34.2
+[BFS] f=3600 front=22529 dedup=23232 deaths=2781 Y=[271..415] mode=1 gravN=22529 gravF=0 X�11695px pct=69% ms/f=35.9
+[BFS] f=3700 front=22845 dedup=25961 deaths=434 Y=[270..415] mode=1 gravN=22845 gravF=0 X�12039px pct=71% ms/f=37.8
+[BFS] f=3800 front=22615 dedup=25803 deaths=0 Y=[261..358] mode=1 gravN=22615 gravF=0 X�12383px pct=73% ms/f=39.4
+[BFS] f=3900 front=3240 dedup=3240 deaths=0 Y=[333..373] mode=0 gravN=3240 gravF=0 X�12727px pct=75% ms/f=40.8
+[BFS] f=4000 front=1088 dedup=1088 deaths=74 Y=[324..377] mode=0 gravN=1088 gravF=0 X�13071px pct=77% ms/f=39.9
+[BFS] f=4100 front=485 dedup=485 deaths=0 Y=[258..325] mode=0 gravN=485 gravF=0 X�13415px pct=79% ms/f=39.0
+[BFS] f=4200 front=2265 dedup=2265 deaths=0 Y=[173..581] mode=0 gravN=2265 gravF=0 X�13759px pct=81% ms/f=38.1
+[BFS] f=4300 front=22882 dedup=26448 deaths=0 Y=[40..551] mode=0 gravN=22732 gravF=150 X�14104px pct=83% ms/f=37.6
+[BFS] f=4400 front=7071 dedup=7071 deaths=0 Y=[246..315] mode=0 gravN=7071 gravF=0 X�14448px pct=85% ms/f=38.3
+[BFS] f=4500 front=1875 dedup=1875 deaths=0 Y=[256..284] mode=0 gravN=1875 gravF=0 X�14792px pct=87% ms/f=37.6
+[BFS] f=4600 front=22824 dedup=28969 deaths=0 Y=[140..379] mode=1 gravN=22824 gravF=0 X�15106px pct=89% ms/f=37.8
+[BFS] f=4700 front=19915 dedup=19915 deaths=4613 Y=[124..223] mode=1 gravN=19915 gravF=0 X�15329px pct=90% ms/f=39.1
+[BFS] f=4800 front=22500 dedup=22639 deaths=3959 Y=[130..273] mode=1 gravN=22500 gravF=0 X�15552px pct=92% ms/f=40.2
+[BFS] f=4900 front=22698 dedup=28284 deaths=1048 Y=[127..271] mode=1 gravN=22698 gravF=0 X�15775px pct=93% ms/f=41.1
+[BFS] f=5000 front=22893 dedup=25240 deaths=1767 Y=[128..238] mode=1 gravN=22893 gravF=0 X�15998px pct=94% ms/f=42.0
+[BFS] f=5100 front=16652 dedup=16652 deaths=0 Y=[176..240] mode=1 gravN=16652 gravF=0 X�16221px pct=96% ms/f=42.6
+[BFS] f=5200 front=23448 dedup=26088 deaths=0 Y=[161..270] mode=1 gravN=23448 gravF=0 X�16444px pct=97% ms/f=43.1
+[BFS] Level complete at frame 5288! coins=2 X�16640px
+[BFS] ALL DEAD at frame 5288 (X�16640px pct=98% expanded=45084 deaths=0)
+[BFS] Death types: 
+[BFS] Last frontier: size=22542 X=[16640..16640] Y=[128..273] mode=1 grav=False mini=False VelY=[0xFFFFFC73..0x2D7]
+[BFS] Replaying winning path (5289 frames)...
+[STAB_SET] prevMode=0 mode=1 stab=0
+[STAB_SET] prevMode=0 mode=1 stab=0
+[STAB_SET] prevMode=0 mode=3 stab=0
+[STAB_SET] prevMode=2 mode=1 stab=200
+[STAB_SET] prevMode=0 mode=1 stab=0
+[BFS] Completed in 5289 frames (5289 path points) [230.4s BFS]

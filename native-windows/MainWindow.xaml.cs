@@ -21352,7 +21352,7 @@ namespace FamidashEditor
                             spritePixelOffsets);
                         engine.JumpTimingBias = jumpTimingBias;
                         engine.PreferCoins = preferCoins;
-                        engine.UseBFS = preferCoins; // BFS collects all coins in a single pass
+                        engine.UseBFS = preferCoins; // BFS always runs first; UseBFS=true prevents heuristic fallback
                         engine.Progress = progress;
                         _activePathfinderEngine = engine;
 
