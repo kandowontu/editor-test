@@ -79,11 +79,11 @@ namespace FamidashEditor
                         bool foundExit = false;
                         int exitY_px = 0;
 
-                        // Calculate visible screen bounds
+                        // Calculate visible screen X bounds
+                        // NES stores teleport_output when exit sprite is loaded (column-based),
+                        // so only X visibility matters — no Y restriction needed.
                         int cameraLeft_px = cameraX_fixed >> 8;
-                        int cameraTop_px = cameraY_fixed >> 8;
                         int cameraRight_px = cameraLeft_px + (NES_W * TILE);
-                        int cameraBottom_px = cameraTop_px + (NES_H * TILE);
 
                         // Search for exit portal on visible screen
                         // For vertical: look for 0x4F
@@ -137,9 +137,8 @@ namespace FamidashEditor
                                 exitWorldY_px += offset.offsetY;
                             }
 
-                            // Check if this exit portal is on the visible screen
-                            if (exitWorldX_px >= cameraLeft_px && exitWorldX_px < cameraRight_px &&
-                                exitWorldY_px >= cameraTop_px && exitWorldY_px < cameraBottom_px)
+                            // Check if this exit portal is on the visible screen (X only, matching NES column-based sprite loading)
+                            if (exitWorldX_px >= cameraLeft_px && exitWorldX_px < cameraRight_px)
                             {
                                 // This exit is visible - calculate Y position based on portal type
                                 if (isVerticalEnter)
