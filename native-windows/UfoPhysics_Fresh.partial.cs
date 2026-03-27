@@ -57,8 +57,8 @@ namespace FamidashEditor
             AppendSimDebug($"[UFO] table_idx={currplayer_table_idx}, gravity={tmpgravity}, fallspeed={tmpfallspeed}");
             CommonGravityRoutine_Fresh();
             
-            // If grounded with inverted gravity, prevent velocity from pulling into ceiling
-            if (!gravityFlipped) {
+            // Prevent velocity from pulling player into ceiling (needed for both gravity states)
+            {
                 bool isMini = (miniMode);
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;

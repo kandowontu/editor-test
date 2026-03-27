@@ -452,6 +452,8 @@ namespace FamidashEditor
 
         // Coin-specific list (subset of allSprites with coin sprite IDs)
         private readonly List<SpriteEntry> allCoins;
+        // Mode portal positions for BFS Y-bias (precomputed at init)
+        private readonly List<(int X, int Y)> _modePortalPositions;
         // Next coin index to check for collection/miss detection
         private int _nextCoinCheckIdx;
         // Coins that were missed and forgiven (backtrack failed, continue without them)
@@ -821,6 +823,9 @@ namespace FamidashEditor
             }
 
             allSprites.Sort((a, b) => a.AnchorX_px.CompareTo(b.AnchorX_px));
+
+            // Build mode portal position list (reserved for future use)
+            _modePortalPositions = new List<(int X, int Y)>();
 
             // Build sorted coin list for miss detection and coin-aware pathfinding
             allCoins = allSprites.Where(sp => IsCoinSprite(sp.SpriteId) || IsMiniCoinSprite(sp.SpriteId)).ToList();
@@ -7361,7 +7366,7 @@ namespace FamidashEditor
                 // This check zeros upward velocity AND snaps Y to the ceiling surface,
                 // matching SIM UfoPhysics_Fresh which snaps playerY_fixed to clear
                 // sub-pixel drift (prevents trajectory divergence over many frames).
-                if (!s.GravFlipped)
+                // Runs unconditionally — needed for both normal and flipped gravity.
                 {
                     int hbW_chk = GetHitboxW(s.Mini);
                     int hbH_chk = GetHitboxH(s.Mini);
@@ -7585,7 +7590,7 @@ namespace FamidashEditor
                     int cY = wPy + (WAVE_H >> 1);
                     int cTileX = cX / TILE, cTileY = cY / TILE;
                     var cCol = GetTileCollision(cTileX, cTileY);
-                    if (cCol >= MetatileCollision.COL_SLOPE_RD45 && cCol <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                    if (cCol >= MetatileCollision.COL_SLOPE_RD45 && cCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
                     {
                         if (!(!s.Mini && cCol == MetatileCollision.COL_SLOPE_LU45) &&
                             !(s.Mini && (cCol == MetatileCollision.COL_SLOPE_LU66_TOP || cCol == MetatileCollision.COL_SLOPE_LU66_BOT)))
@@ -7611,7 +7616,7 @@ namespace FamidashEditor
                         int rY = wPy + (WAVE_H >> 1);  // center Y
                         int rTileX = rX / TILE, rTileY = rY / TILE;
                         var rCol = GetTileCollision(rTileX, rTileY);
-                        if (rCol >= MetatileCollision.COL_SLOPE_RD45 && rCol <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                        if (rCol >= MetatileCollision.COL_SLOPE_RD45 && rCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
                         {
                             if (!(!s.Mini && rCol == MetatileCollision.COL_SLOPE_LU45) &&
                                 !(s.Mini && (rCol == MetatileCollision.COL_SLOPE_LU66_TOP || rCol == MetatileCollision.COL_SLOPE_LU66_BOT)))
@@ -7768,6 +7773,19 @@ namespace FamidashEditor
                 PfLog($"[DEATH_COLL] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                 if (_speculativeDepth == 0) { _lastDeathReason = "DEATH_COLL"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                s.DeathType = 9;
+                return false;
+            }
+
+            // -- STEP 7d: SLOPE PENETRATION DEATH (NES bg_coll_death's bg_coll_slope()) --
+            // NES bg_coll_death kills when center pixel is inside a slope surface.
+            // Without this, BFS can find paths that pass through slope terrain.
+            if (CheckSlopePenetrationDeath(ref s))
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[SLOPE_PENETRATION_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                if (_speculativeDepth == 0) { _lastDeathReason = "SLOPE_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                 s.DeathType = 9;
                 return false;
             }
@@ -8182,6 +8200,29 @@ namespace FamidashEditor
             }
             else // Reversed gravity
             {
+                // NES bg_coll_U checks ceiling slopes BEFORE flat ceiling collision.
+                var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = PfCheckSlopesUp(ref s, input);
+                if (ceilSlopeHit)
+                {
+                    int newY = (s.Y_fixed >> 8) + ceilSlopeEject - 1;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[EJECT] ceiling slope (reversed) Y: {s.Y_fixed >> 8} -> {newY} (eject={ceilSlopeEject})");
+#endif
+                    s.Y_fixed = newY << 8;
+                    s.VelY_fixed = 0;
+                    s.WasZeroedByCollision = true;
+                    s.OnGround = true;
+                    s.SlopeType = ceilSlopeType;
+                    if (input && (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 11))
+                        s.SlopeJumpHigher = true;
+                    else
+                    {
+                        s.SlopeFrames = 1;
+                        s.SlopeWasOnCounter = 3;
+                    }
+                }
+                else
+                {
                 // Ceiling landing � NES CubeEject_Fresh uses velY <= 0
                 // so that the ceiling check also runs when velocity was
                 // zeroed by the proximity check (matching the NES simulator's
@@ -8192,8 +8233,6 @@ namespace FamidashEditor
                     var (ceilHit, ceilBotY, _) = CheckCeiling(collX, collY, hbW, hbH);
                     if (ceilHit)
                     {
-                        // NES bg_coll_U probes 1px inside the hitbox, so the cube's
-                        // resting position on the ceiling is 1 pixel closer than ceilBotY.
                         int newY = ceilBotY - hbOffY - 1;
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[EJECT] ceiling land (reversed) Y: {playerY_px} -> {newY} (ceilBot={ceilBotY})");
@@ -8205,10 +8244,9 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        // No ceiling above � cube is falling away from ceiling.
-                        // Mirrors the normal-gravity "no floor" path.
                         s.OnGround = false;
                     }
+                }
                 }
 
                 // NOTE: Floor headbonk (CheckCollisionDown) only fires in the simulator
@@ -9661,7 +9699,7 @@ namespace FamidashEditor
                     int tileX = probeX / TILE;
                     int tileY = slopeCheckY / TILE;
                     var sCol = GetTileCollision(tileX, tileY);
-                    if (sCol >= MetatileCollision.COL_SLOPE_RD45 && sCol <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                    if (sCol >= MetatileCollision.COL_SLOPE_RD45 && sCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
                     {
                         // NES wave-specific slope filters
                         if (!s.Mini && sCol == MetatileCollision.COL_SLOPE_LU45) continue;
@@ -9704,7 +9742,7 @@ namespace FamidashEditor
                     int tileX = probeX / TILE;
                     int tileY = slopeCheckY / TILE;
                     var sCol = GetTileCollision(tileX, tileY);
-                    if (sCol >= MetatileCollision.COL_SLOPE_RD45 && sCol <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                    if (sCol >= MetatileCollision.COL_SLOPE_RD45 && sCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
                     {
                         // NES wave-specific slope filters
                         if (!s.Mini && sCol == MetatileCollision.COL_SLOPE_LU45) continue;
@@ -10988,6 +11026,9 @@ namespace FamidashEditor
                     // then wrongly skips velY recalculation.  Matches SIM's
                     // CheckGameModePortals which clears wasZeroedByCollisionLastFrame.
                     s.WasZeroedByCollision = false;
+                    // Clear ball input buffer — a buffered flip from a previous
+                    // ball segment shouldn't leak through other modes.
+                    s.BallInputBuffer = 0;
                     // Ball?ship/UFO stabilization: suppress coin-seeking for
                     // a limited window so the ship navigates initial obstacles with
                     // pure survival + corridorCenter PD (matching no-coin
@@ -11581,6 +11622,42 @@ namespace FamidashEditor
         }
 
         /// <summary>
+        /// Slope penetration death check — matches NES bg_coll_death's bg_coll_slope() call.
+        /// NES bg_coll_death checks if the center pixel is inside a slope surface.
+        /// SharedPhysics.CheckDeathCollision only checks death/spike tiles via TileKillsAtPixel,
+        /// missing the slope check. This method fills that gap so the PF correctly prunes
+        /// BFS paths that pass through slope terrain.
+        /// </summary>
+        private bool CheckSlopePenetrationDeath(ref SimState s)
+        {
+            int hbW = GetHitboxW(s.Mini);
+            int hbH = GetHitboxH(s.Mini);
+            int hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
+
+            // NES bg_coll_death center pixel: Generic.x + (width>>1)-1, Generic.y + (height>>1) + miniOffset
+            int centerX = (s.X_fixed >> 8) + (hbW >> 1) - 1;
+            int centerY = (s.Y_fixed >> 8) + (hbH / 2) + hbOffY;
+
+            int tileX = centerX / TILE;
+            int tileY = centerY / TILE;
+            var collision = GetTileCollision(tileX, tileY);
+
+            // Check if tile is a slope type (use full range including LU66_TOP)
+            if (collision >= MetatileCollision.COL_SLOPE_RD45 && collision <= MetatileCollision.COL_SLOPE_LU66_TOP)
+            {
+                var (hit, _, _) = PfSlopeCalc(centerX, centerY, collision);
+                if (hit)
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[SLOPE_DEATH] center ({centerX},{centerY}) inside slope {collision}");
+#endif
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Forward collision check � right edge middle pixel for solid/spike collision.
         /// </summary>
         private bool CheckForwardCollision(ref SimState s)
@@ -11657,7 +11734,7 @@ namespace FamidashEditor
         /// </summary>
         private static (bool hit, int ejection, int slopeType) PfSlopeCalc(int temp_x, int temp_y, MetatileCollision collision)
         {
-            if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_BOT)
+            if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_TOP)
                 return (false, 0, 0);
 
             int tmp7 = 0, tmp4 = 0;
@@ -11948,7 +12025,7 @@ namespace FamidashEditor
                 int tileY = temp_y / TILE;
 
                 var collision = GetTileCollision(tileX, tileY);
-                if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_BOT)
+                if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_TOP)
                     continue;
 
                 var (hit, ejection, slopeType) = PfSlopeCalc(temp_x, temp_y, collision);
@@ -12036,7 +12113,7 @@ namespace FamidashEditor
                 int tileY = temp_y / TILE;
 
                 var collision = GetTileCollision(tileX, tileY);
-                if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_BOT)
+                if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_TOP)
                     continue;
 
                 var (hit, ejection, slopeType) = PfSlopeCalc(temp_x, temp_y, collision);

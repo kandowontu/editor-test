@@ -155,6 +155,11 @@ namespace FamidashEditor
             // frame.  Without this, keyXPressedCount=1 persists across airborne
             // frames and triggers a phantom jump on landing.
             Interlocked.Exchange(ref keyXPressedCount, 0);
+            // Also clear ballToggleRequested — if a ball-mode press set it but a
+            // portal changed the mode before BallPhysics_Fresh consumed it, the
+            // stale flag persists through non-ball modes and triggers a false
+            // press when ball mode is re-entered (wave→ball death in TOE2).
+            Interlocked.Exchange(ref ballToggleRequested, 0);
 
             if (press)
             {

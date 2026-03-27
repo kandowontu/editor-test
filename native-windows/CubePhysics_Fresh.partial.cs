@@ -538,7 +538,25 @@ namespace FamidashEditor
             }
             else
             {
-                // Reversed gravity: Top is for landing (always collide), bottom can passthrough
+                // Reversed gravity: NES bg_coll_U checks ceiling slopes BEFORE flat ceiling.
+                bool ceilSlopeHit = bg_coll_U_slopes();
+                if (ceilSlopeHit)
+                {
+                    // NES: high_byte(Y) -= eject_U + 1; eject_U = -tmp8 → Y_px = Y_px + tmp8 - 1
+                    if (eject_U != 0)
+                    {
+                        int newPixelY = (playerY_fixed >> 8) - eject_U - 1;
+                        playerY_fixed = newPixelY << 8;
+                        playerY_px = newPixelY;
+                        collisionY = playerY_px + hitboxOffsetY;
+                    }
+                    playerVelY_fixed = 0;
+                    wasZeroedByCollisionLastFrame = true;
+                    onGround = true;
+                    AppendSimDebug($"[CUBE] Reversed gravity ceiling slope eject: eject_U={eject_U}");
+                }
+                else
+                {
                 // Check upward collision for landing (only when moving toward ceiling or grounded)
                 if (playerVelY_fixed <= 0) // Moving toward ceiling or stationary
                 {
@@ -576,6 +594,7 @@ namespace FamidashEditor
                         }
                     }
                 }
+                } // end else (flat ceiling when no ceiling slope hit)
                 
                 // Reversed gravity: Check BOTTOM collision for hblocked/fblocked eject
                 if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (hblocked || fblocked))

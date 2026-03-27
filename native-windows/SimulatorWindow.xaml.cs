@@ -2027,6 +2027,13 @@ namespace FamidashEditor
                             // across game modes.  E.g. ball eject sets the flag; UFO
                             // never clears it; wave then wrongly skips velY recalculation.
                             wasZeroedByCollisionLastFrame = false;
+                            // Clear ball flip buffer — a buffered flip from a previous
+                            // ball segment shouldn't leak through other modes.
+                            ballFlipBuffer[0] = 0;
+                            ballFlipBuffer[1] = 0;
+                            // Clear ballToggleRequested — a press during the old ball mode
+                            // that wasn't consumed must not carry into the next ball segment.
+                            Interlocked.Exchange(ref ballToggleRequested, 0);
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
@@ -2053,6 +2060,9 @@ namespace FamidashEditor
                             pfHoldCounter = 0; // Reset ball-hold extension on mode change
                             p2BallHoldCounter = 0;
                             wasZeroedByCollisionLastFrame = false;
+                            ballFlipBuffer[0] = 0;
+                            ballFlipBuffer[1] = 0;
+                            Interlocked.Exchange(ref ballToggleRequested, 0);
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
@@ -5307,18 +5317,27 @@ namespace FamidashEditor
                 {
                     if (!e.IsRepeat)
                     {
-                        AppendSimDebug($"[KEYDOWN_X] Key={e.Key} IsRepeat={e.IsRepeat} CamMode={MainWindow.Option_CamMode} currentGameMode={currentGameMode}");
-                        lock (simLock)
+                        // When pathfinder is active, PF_InjectInput exclusively controls
+                        // keyXPressedCount.  Physical key presses must not corrupt it.
+                        if (pathfinderEnabled)
                         {
-                            // Increment press counter atomically for cube physics
-                            // Physics will be ignored if physicsEnabled is false (cam mode)
-                            int newCount = Interlocked.Increment(ref keyXPressedCount);
-                            AppendSimDebug($"[KEYDOWN_X] Incremented keyXPressedCount to {newCount}");
-                            
-                            // For ball mode, queue a toggle request
-                            if (currentGameMode == 2)
+                            AppendSimDebug($"[KEYDOWN_X] IGNORED (pathfinder active)");
+                        }
+                        else
+                        {
+                            AppendSimDebug($"[KEYDOWN_X] Key={e.Key} IsRepeat={e.IsRepeat} CamMode={MainWindow.Option_CamMode} currentGameMode={currentGameMode}");
+                            lock (simLock)
                             {
-                                try { Interlocked.Exchange(ref ballToggleRequested, 1); } catch { }
+                                // Increment press counter atomically for cube physics
+                                // Physics will be ignored if physicsEnabled is false (cam mode)
+                                int newCount = Interlocked.Increment(ref keyXPressedCount);
+                                AppendSimDebug($"[KEYDOWN_X] Incremented keyXPressedCount to {newCount}");
+                                
+                                // For ball mode, queue a toggle request
+                                if (currentGameMode == 2)
+                                {
+                                    try { Interlocked.Exchange(ref ballToggleRequested, 1); } catch { }
+                                }
                             }
                         }
                     }
@@ -5677,9 +5696,14 @@ namespace FamidashEditor
                 // Clear any buffered X presses when key is released
                 try
                 {
-                    lock (simLock)
+                    // When pathfinder is active, PF_InjectInput exclusively controls
+                    // keyXPressedCount.  Physical key releases must not wipe it.
+                    if (!pathfinderEnabled)
                     {
-                        try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
+                        lock (simLock)
+                        {
+                            try { Interlocked.Exchange(ref keyXPressedCount, 0); } catch { }
+                        }
                     }
                 }
                 catch { }
@@ -10861,7 +10885,7 @@ namespace FamidashEditor
                             {
                                 byte cTileVal = (byte)tiles[cTileArrayY * mapWidth + cTileX];
                                 var cCol = MetatileCollisionTable.GetCollision(cTileVal);
-                                if (cCol >= MetatileCollision.COL_SLOPE_RD45 && cCol <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                                if (cCol >= MetatileCollision.COL_SLOPE_RD45 && cCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
                                 {
                                     bool skipSlope = (!isMiniWave && cCol == MetatileCollision.COL_SLOPE_LU45) ||
                                                      (isMiniWave && (cCol == MetatileCollision.COL_SLOPE_LU66_TOP || cCol == MetatileCollision.COL_SLOPE_LU66_BOT));
@@ -10887,7 +10911,7 @@ namespace FamidashEditor
                                 {
                                     byte rTileVal = (byte)tiles[rTileArrayY * mapWidth + rTileX];
                                     var rCol = MetatileCollisionTable.GetCollision(rTileVal);
-                                    if (rCol >= MetatileCollision.COL_SLOPE_RD45 && rCol <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                                    if (rCol >= MetatileCollision.COL_SLOPE_RD45 && rCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
                                     {
                                         bool skipSlope = (!isMiniWave && rCol == MetatileCollision.COL_SLOPE_LU45) ||
                                                          (isMiniWave && (rCol == MetatileCollision.COL_SLOPE_LU66_TOP || rCol == MetatileCollision.COL_SLOPE_LU66_BOT));

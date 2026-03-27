@@ -472,7 +472,7 @@ namespace FamidashEditor
         {
             tmp8 = temp_y & 0x0f;
             
-            if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_BOT)
+            if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_TOP)
             {
                 return false;
             }
@@ -844,7 +844,7 @@ namespace FamidashEditor
                         
                         AppendSimDebug($"[SLOPE] Check: tmp2={tmp2}, tempX={temp_x}, tempY={temp_y}, tile=[{tileX},{tileY}], arrayY={tileArrayY}, idx={tileIdx}, tileVal=0x{tileValue:X2}, collision={collision}");
                         
-                        if (collision >= MetatileCollision.COL_SLOPE_RD45 && collision <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                        if (collision >= MetatileCollision.COL_SLOPE_RD45 && collision <= MetatileCollision.COL_SLOPE_LU66_TOP)
                         {
                             // bg_coll_return_slope_D()
                             if (bg_coll_return_slope_D(temp_x, temp_y, collision, tmp2))
@@ -998,7 +998,7 @@ namespace FamidashEditor
                         
                         AppendSimDebug($"[SLOPE_U] Check: tmp2={tmp2_dir}, tempX={temp_x_val}, tempY={temp_y_val}, tile=[{tileX},{tileY}], tileVal=0x{tileValue:X2}, collision={coll}");
                         
-                        if (coll >= MetatileCollision.COL_SLOPE_RD45 && coll <= MetatileCollision.COL_SLOPE_LU66_BOT)
+                        if (coll >= MetatileCollision.COL_SLOPE_RD45 && coll <= MetatileCollision.COL_SLOPE_LU66_TOP)
                         {
                             if (bg_coll_return_slope_U(temp_x_val, temp_y_val, coll, tmp2_dir))
                             {
