@@ -269,8 +269,8 @@ namespace FamidashEditor
                     // against a spike it's moving away from.
                     if (playerVelY_fixed > 0) {
                         int playerBottom = (playerY_fixed >> 8) + hitboxOffsetY + hitboxH;
-                        int testTop = playerBottom;
                         int testHeight = 2;
+                        int testTop = playerBottom - testHeight;
                         var (collided, collisionTopY) = CheckCollisionDown(collisionX, testTop, hitboxW, testHeight);
                         
                         if (collided) {
