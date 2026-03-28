@@ -38,7 +38,8 @@ namespace FamidashEditor
         {
             try
             {
-                int playerX_px = playerX_fixed >> 8;
+                // NES: Generic.x = high_byte(currplayer_x) + 1
+                int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = playerY_fixed >> 8;
 
                 // Use actual collision hitbox size, not visual size

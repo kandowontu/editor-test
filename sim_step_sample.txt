@@ -1,0 +1,5 @@
+﻿2026-03-27T23:07:11.2559720Z [STEP_START] playerX_fixed=0x3FFC79 (16380px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.2787013Z [STEP_START] playerX_fixed=0x3FFFEA (16383px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.2917250Z [STEP_START] playerX_fixed=0x40035B (16387px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.3146765Z [STEP_START] playerX_fixed=0x4006CC (16390px), playerY_fixed=0xFBCF (251px), playerVelY_fixed=0xFFFFFFCF
+2026-03-27T23:07:11.3276655Z [STEP_START] playerX_fixed=0x400A3D (16394px), playerY_fixed=0xFB6D (251px), playerVelY_fixed=0xFFFFFF9E

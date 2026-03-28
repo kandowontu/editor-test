@@ -1,0 +1,28 @@
+﻿151: 2026-03-27T23:05:46.6176676Z [PHYSICS] Mode=0, gravity=00, mini=0, table_idx=0
+3052: 2026-03-27T23:05:49.2297950Z [PHYSICS] Mode=6, gravity=00, mini=0, table_idx=0
+3108: 2026-03-27T23:05:49.2772255Z [PHYSICS] Mode=6, gravity=00, mini=1, table_idx=4
+4095: 2026-03-27T23:05:50.2287030Z [PHYSICS] Mode=0, gravity=00, mini=1, table_idx=4
+4152: 2026-03-27T23:05:50.2756126Z [PHYSICS] Mode=0, gravity=00, mini=0, table_idx=0
+15885: 2026-03-27T23:06:00.7609613Z [PHYSICS] Mode=6, gravity=00, mini=0, table_idx=0
+19728: 2026-03-27T23:06:04.5737970Z [PHYSICS] Mode=1, gravity=00, mini=0, table_idx=0
+19771: 2026-03-27T23:06:04.6099283Z [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+23765: 2026-03-27T23:06:07.9497297Z [PHYSICS] Mode=2, gravity=00, mini=1, table_idx=4
+23910: 2026-03-27T23:06:08.0575124Z [PHYSICS] Mode=2, gravity=00, mini=0, table_idx=0
+27922: 2026-03-27T23:06:11.4262183Z [PHYSICS] FLIPPED! Mode=2, gravity=FF, mini=1, table_idx=5, gravityFlipped=True, gravityReversed=True
+27988: 2026-03-27T23:06:11.4936244Z [PHYSICS] FLIPPED! Mode=3, gravity=FF, mini=1, table_idx=5, gravityFlipped=True, gravityReversed=True
+32431: 2026-03-27T23:06:15.1492497Z [PHYSICS] Mode=0, gravity=00, mini=1, table_idx=4
+32486: 2026-03-27T23:06:15.1980500Z [PHYSICS] Mode=0, gravity=00, mini=0, table_idx=0
+36412: 2026-03-27T23:06:18.6839949Z [PHYSICS] FLIPPED! Mode=4, gravity=FF, mini=0, table_idx=1, gravityFlipped=True, gravityReversed=True
+40517: 2026-03-27T23:06:22.1343065Z [PHYSICS] Mode=2, gravity=00, mini=0, table_idx=0
+40587: 2026-03-27T23:06:22.1808295Z [PHYSICS] Mode=2, gravity=00, mini=1, table_idx=4
+48411: 2026-03-27T23:06:29.3585399Z [PHYSICS] Mode=0, gravity=00, mini=1, table_idx=4
+48466: 2026-03-27T23:06:29.4144467Z [PHYSICS] Mode=0, gravity=00, mini=0, table_idx=0
+52419: 2026-03-27T23:06:32.9469019Z [PHYSICS] Mode=0, gravity=00, mini=1, table_idx=4
+56175: 2026-03-27T23:06:36.4633187Z [PHYSICS] Mode=4, gravity=00, mini=1, table_idx=4
+56233: 2026-03-27T23:06:36.5105648Z [PHYSICS] Mode=4, gravity=00, mini=0, table_idx=0
+64459: 2026-03-27T23:06:43.5110904Z [PHYSICS] Mode=1, gravity=00, mini=0, table_idx=0
+81686: 2026-03-27T23:06:57.9337790Z [PHYSICS] Mode=6, gravity=00, mini=0, table_idx=0
+88748: 2026-03-27T23:07:01.4618433Z [PHYSICS] Mode=6, gravity=00, mini=1, table_idx=4
+92206: 2026-03-27T23:07:04.9581511Z [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+92277: 2026-03-27T23:07:05.0168855Z [PHYSICS] Mode=1, gravity=00, mini=0, table_idx=0
+95316: 2026-03-27T23:07:07.6768203Z [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4

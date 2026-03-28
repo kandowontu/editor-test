@@ -7076,6 +7076,12 @@ namespace FamidashEditor
             // -- STEP 5: Y PHYSICS + EJECT at OLD X (movement) --
 #if !DISABLE_DEBUG_LOGGING
             PfLog($"[PHYSICS] Mode={s.GameMode}, gravity={( s.GravFlipped ? 0xFF : 0x00 ):X2}, mini={( s.Mini ? 1 : 0 )}, table_idx={( s.Mini ? 4 : 0 )}");
+            if (s.GameMode == 1 && s.Mini)
+            {
+                int px = (int)(s.X_fixed >> 8);
+                int py = (int)(s.Y_fixed >> 8);
+                PfLog($"[MINISHIP_Y] X={px} Y={py} velY=0x{(s.VelY_fixed & 0xFFFF):X4}");
+            }
 #endif
             if (s.GameMode == 0) // Cube mode
             {
@@ -10731,6 +10737,9 @@ namespace FamidashEditor
                     bool yOverlap = !((playerBottom) < sp.HitTop || sp.HitBottom < playerTop);
                     if (xOverlap && yOverlap)
                     {
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[TELEPORT_ENTRANCE] sid=0x{sid:X2} idx={sp.Index} playerBox=({nesX},{playerTop})-({playerRight},{playerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom})");
+#endif
                         ApplyTeleportPortal(ref s, sp, sid, currentX_px);
                         s.ProcessedSprites.Add(sp.Index);
                     }
@@ -11389,11 +11398,13 @@ namespace FamidashEditor
                     if (isVertical)
                     {
                         // Vertical: exit at middle tile of 3-tile-tall portal
-                        bestExitY = sp.HitTop + TILE;
+                        // +1 compensates for the NES -1 sprite offset baked into HitTop;
+                        // teleport destination is a position, not a collision probe.
+                        bestExitY = sp.HitTop + TILE + 1;
                     }
                     else
                     {
-                        bestExitY = sp.HitTop;
+                        bestExitY = sp.HitTop + 1;
                     }
                     foundExit = true;
                     // Last visible exit wins (matching SIM)
@@ -11677,6 +11688,23 @@ namespace FamidashEditor
                 playerX_px, playerY_px, hbW, hbH, hbOffY,
                 s.GameMode, s.Mini, s.GravFlipped, skipSlopeCheck: true);
 #if !DISABLE_DEBUG_LOGGING
+            // Diagnostic: always log forward check near the problem area
+            if (playerX_px >= 16380 && playerX_px <= 16400 && s.GameMode == 1 && s.Mini)
+            {
+                int dbgRightEdge = playerX_px + hbW;
+                int dbgCenterY;
+                if (s.Mini) { int mto = (0x10 - hbH) >> 1; dbgCenterY = playerY_px + mto + (hbH >> 1); } else { dbgCenterY = playerY_px + (hbH >> 1); }
+                int dbgTileX = dbgRightEdge / TILE;
+                int dbgTileY = dbgCenterY / TILE;
+                int dbgTileArrayY = dbgTileY + _collisionMap.GroundRowsToReserve;
+                int dbgTid = -1;
+                if (dbgTileX >= 0 && dbgTileX < _collisionMap.MapWidth && dbgTileArrayY >= 0 && dbgTileArrayY < _collisionMap.MapHeight)
+                {
+                    int dbgIdx = dbgTileArrayY * _collisionMap.MapWidth + dbgTileX;
+                    if (dbgIdx >= 0 && dbgIdx < _collisionMap.Tiles.Length) dbgTid = _collisionMap.Tiles[dbgIdx];
+                }
+                PfLog($"[FWD_DIAG] X={playerX_px} Y={playerY_px} rightEdge={dbgRightEdge} centerY={dbgCenterY} tile=({dbgTileX},{dbgTileY}) tid=0x{dbgTid:X2} result={result} slopeSkip={s.SlopeWasOnCounter}|{s.SlopeFrames}");
+            }
             if (result)
             {
                 int rightEdge_px = playerX_px + hbW;

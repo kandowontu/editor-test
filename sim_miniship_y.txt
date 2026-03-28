@@ -1,0 +1,661 @@
+﻿2026-03-27T23:07:07.6661340Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=False
+2026-03-27T23:07:07.6762224Z [STEP_START] playerX_fixed=0x3D1892 (15640px), playerY_fixed=0xDEC7 (222px), playerVelY_fixed=0xFFFFFDC3
+2026-03-27T23:07:07.6769526Z [GRAV_POS] posY: 0xDEC7 (222px) -> 0xDC59 (220px), velY: 0xFFFFFDC3 -> 0xFFFFFD92
+2026-03-27T23:07:07.6775456Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:07.6983366Z [STEP_START] playerX_fixed=0x3D1C03 (15644px), playerY_fixed=0xDC59 (220px), playerVelY_fixed=0xFFFFFD92
+2026-03-27T23:07:07.6991070Z [GRAV_POS] posY: 0xDC59 (220px) -> 0xD9BA (217px), velY: 0xFFFFFD92 -> 0xFFFFFD61
+2026-03-27T23:07:07.6996719Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:07.7098472Z [STEP_START] playerX_fixed=0x3D1F74 (15647px), playerY_fixed=0xD9BA (217px), playerVelY_fixed=0xFFFFFD61
+2026-03-27T23:07:07.7106734Z [GRAV_POS] posY: 0xD9BA (217px) -> 0xD6EA (214px), velY: 0xFFFFFD61 -> 0xFFFFFD30
+2026-03-27T23:07:07.7111922Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:07.7324157Z [STEP_START] playerX_fixed=0x3D22E5 (15650px), playerY_fixed=0xD6EA (214px), playerVelY_fixed=0xFFFFFD30
+2026-03-27T23:07:07.7340828Z [GRAV_POS] posY: 0xD6EA (214px) -> 0xD3E9 (211px), velY: 0xFFFFFD30 -> 0xFFFFFCFF
+2026-03-27T23:07:07.7353869Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:07.7463673Z [STEP_START] playerX_fixed=0x3D2656 (15654px), playerY_fixed=0xD3E9 (211px), playerVelY_fixed=0xFFFFFCFF
+2026-03-27T23:07:07.7471514Z [GRAV_POS] posY: 0xD3E9 (211px) -> 0xD0B7 (208px), velY: 0xFFFFFCFF -> 0xFFFFFCCE
+2026-03-27T23:07:07.7477617Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:07.7578560Z [STEP_START] playerX_fixed=0x3D29C7 (15657px), playerY_fixed=0xD0B7 (208px), playerVelY_fixed=0xFFFFFCCE
+2026-03-27T23:07:07.7588824Z [GRAV_POS] posY: 0x15800 (344px) -> 0x1549D (340px), velY: 0xFFFFFCCE -> 0xFFFFFC9D
+2026-03-27T23:07:07.7594447Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:07.7793826Z [STEP_START] playerX_fixed=0x3D2D38 (15661px), playerY_fixed=0x1549D (340px), playerVelY_fixed=0xFFFFFC9D
+2026-03-27T23:07:07.7805947Z [GRAV_POS] posY: 0x1549D (340px) -> 0x1532A (339px), velY: 0xFFFFFE4F -> 0xFFFFFE8D
+2026-03-27T23:07:07.7811222Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.7909026Z [STEP_START] playerX_fixed=0x3D30A9 (15664px), playerY_fixed=0x1532A (339px), playerVelY_fixed=0xFFFFFE8D
+2026-03-27T23:07:07.7922382Z [GRAV_POS] posY: 0x1532A (339px) -> 0x151F5 (337px), velY: 0xFFFFFE8D -> 0xFFFFFECB
+2026-03-27T23:07:07.7932193Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.8135200Z [STEP_START] playerX_fixed=0x3D341A (15668px), playerY_fixed=0x151F5 (337px), playerVelY_fixed=0xFFFFFECB
+2026-03-27T23:07:07.8144521Z [GRAV_POS] posY: 0x151F5 (337px) -> 0x1509E (336px), velY: 0xFFFFFECB -> 0xFFFFFEA9
+2026-03-27T23:07:07.8153648Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.8263591Z [STEP_START] playerX_fixed=0x3D378B (15671px), playerY_fixed=0x1509E (336px), playerVelY_fixed=0xFFFFFEA9
+2026-03-27T23:07:07.8271112Z [GRAV_POS] posY: 0x1509E (336px) -> 0x14F25 (335px), velY: 0xFFFFFEA9 -> 0xFFFFFE87
+2026-03-27T23:07:07.8276848Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.8479712Z [STEP_START] playerX_fixed=0x3D3AFC (15674px), playerY_fixed=0x14F25 (335px), playerVelY_fixed=0xFFFFFE87
+2026-03-27T23:07:07.8490939Z [GRAV_POS] posY: 0x14F25 (335px) -> 0x14DEA (333px), velY: 0xFFFFFE87 -> 0xFFFFFEC5
+2026-03-27T23:07:07.8496638Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.8594756Z [STEP_START] playerX_fixed=0x3D3E6D (15678px), playerY_fixed=0x14DEA (333px), playerVelY_fixed=0xFFFFFEC5
+2026-03-27T23:07:07.8604567Z [GRAV_POS] posY: 0x14DEA (333px) -> 0x14CED (332px), velY: 0xFFFFFEC5 -> 0xFFFFFF03
+2026-03-27T23:07:07.8611631Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.8728546Z [STEP_START] playerX_fixed=0x3D41DE (15681px), playerY_fixed=0x14CED (332px), playerVelY_fixed=0xFFFFFF03
+2026-03-27T23:07:07.8750666Z [GRAV_POS] posY: 0x14CED (332px) -> 0x14C2E (332px), velY: 0xFFFFFF03 -> 0xFFFFFF41
+2026-03-27T23:07:07.8758287Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.8966666Z [STEP_START] playerX_fixed=0x3D454F (15685px), playerY_fixed=0x14C2E (332px), playerVelY_fixed=0xFFFFFF41
+2026-03-27T23:07:07.8977628Z [GRAV_POS] posY: 0x14C2E (332px) -> 0x14BAD (331px), velY: 0xFFFFFF41 -> 0xFFFFFF7F
+2026-03-27T23:07:07.8983132Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.9076630Z [STEP_START] playerX_fixed=0x3D48C0 (15688px), playerY_fixed=0x14BAD (331px), playerVelY_fixed=0xFFFFFF7F
+2026-03-27T23:07:07.9083288Z [GRAV_POS] posY: 0x14BAD (331px) -> 0x14B0A (331px), velY: 0xFFFFFF7F -> 0xFFFFFF5D
+2026-03-27T23:07:07.9089107Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.9291643Z [STEP_START] playerX_fixed=0x3D4C31 (15692px), playerY_fixed=0x14B0A (331px), playerVelY_fixed=0xFFFFFF5D
+2026-03-27T23:07:07.9299164Z [GRAV_POS] posY: 0x14B0A (331px) -> 0x14A45 (330px), velY: 0xFFFFFF5D -> 0xFFFFFF3B
+2026-03-27T23:07:07.9304804Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.9406913Z [STEP_START] playerX_fixed=0x3D4FA2 (15695px), playerY_fixed=0x14A45 (330px), playerVelY_fixed=0xFFFFFF3B
+2026-03-27T23:07:07.9423259Z [GRAV_POS] posY: 0x14A45 (330px) -> 0x1495E (329px), velY: 0xFFFFFF3B -> 0xFFFFFF19
+2026-03-27T23:07:07.9436759Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.9649333Z [STEP_START] playerX_fixed=0x3D5313 (15699px), playerY_fixed=0x1495E (329px), playerVelY_fixed=0xFFFFFF19
+2026-03-27T23:07:07.9657564Z [GRAV_POS] posY: 0x1495E (329px) -> 0x148B5 (328px), velY: 0xFFFFFF19 -> 0xFFFFFF57
+2026-03-27T23:07:07.9663740Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.9764218Z [STEP_START] playerX_fixed=0x3D5684 (15702px), playerY_fixed=0x148B5 (328px), playerVelY_fixed=0xFFFFFF57
+2026-03-27T23:07:07.9772854Z [GRAV_POS] posY: 0x148B5 (328px) -> 0x1484A (328px), velY: 0xFFFFFF57 -> 0xFFFFFF95
+2026-03-27T23:07:07.9778424Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:07.9987327Z [STEP_START] playerX_fixed=0x3D59F5 (15705px), playerY_fixed=0x1484A (328px), playerVelY_fixed=0xFFFFFF95
+2026-03-27T23:07:07.9995752Z [GRAV_POS] posY: 0x1484A (328px) -> 0x1481D (328px), velY: 0xFFFFFF95 -> 0xFFFFFFD3
+2026-03-27T23:07:08.0001388Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.0098629Z [STEP_START] playerX_fixed=0x3D5D66 (15709px), playerY_fixed=0x1481D (328px), playerVelY_fixed=0xFFFFFFD3
+2026-03-27T23:07:08.0105959Z [GRAV_POS] posY: 0x1481D (328px) -> 0x147CE (327px), velY: 0xFFFFFFD3 -> 0xFFFFFFB1
+2026-03-27T23:07:08.0111601Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.0317121Z [STEP_START] playerX_fixed=0x3D60D7 (15712px), playerY_fixed=0x147CE (327px), playerVelY_fixed=0xFFFFFFB1
+2026-03-27T23:07:08.0327466Z [GRAV_POS] posY: 0x147CE (327px) -> 0x1475D (327px), velY: 0xFFFFFFB1 -> 0xFFFFFF8F
+2026-03-27T23:07:08.0335965Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.0438065Z [STEP_START] playerX_fixed=0x3D6448 (15716px), playerY_fixed=0x1475D (327px), playerVelY_fixed=0xFFFFFF8F
+2026-03-27T23:07:08.0445296Z [GRAV_POS] posY: 0x1475D (327px) -> 0x1472A (327px), velY: 0xFFFFFF8F -> 0xFFFFFFCD
+2026-03-27T23:07:08.0450575Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.0658471Z [STEP_START] playerX_fixed=0x3D67B9 (15719px), playerY_fixed=0x1472A (327px), playerVelY_fixed=0xFFFFFFCD
+2026-03-27T23:07:08.0666953Z [GRAV_POS] posY: 0x1472A (327px) -> 0x146D5 (326px), velY: 0xFFFFFFCD -> 0xFFFFFFAB
+2026-03-27T23:07:08.0673673Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.0773614Z [STEP_START] playerX_fixed=0x3D6B2A (15723px), playerY_fixed=0x146D5 (326px), playerVelY_fixed=0xFFFFFFAB
+2026-03-27T23:07:08.0783146Z [GRAV_POS] posY: 0x146D5 (326px) -> 0x146BE (326px), velY: 0xFFFFFFAB -> 0xFFFFFFE9
+2026-03-27T23:07:08.0789368Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.0888661Z [STEP_START] playerX_fixed=0x3D6E9B (15726px), playerY_fixed=0x146BE (326px), playerVelY_fixed=0xFFFFFFE9
+2026-03-27T23:07:08.0897033Z [GRAV_POS] posY: 0x146BE (326px) -> 0x146E5 (326px), velY: 0xFFFFFFE9 -> 0x0027
+2026-03-27T23:07:08.0906421Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.1118404Z [STEP_START] playerX_fixed=0x3D720C (15730px), playerY_fixed=0x146E5 (326px), playerVelY_fixed=0x0027
+2026-03-27T23:07:08.1125314Z [GRAV_POS] posY: 0x146E5 (326px) -> 0x146D1 (326px), velY: 0x0027 -> 0xFFFFFFEC
+2026-03-27T23:07:08.1131129Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.1232779Z [STEP_START] playerX_fixed=0x3D757D (15733px), playerY_fixed=0x146D1 (326px), playerVelY_fixed=0xFFFFFFEC
+2026-03-27T23:07:08.1240639Z [GRAV_POS] posY: 0x146D1 (326px) -> 0x146FB (326px), velY: 0xFFFFFFEC -> 0x002A
+2026-03-27T23:07:08.1245657Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.1448886Z [STEP_START] playerX_fixed=0x3D78EE (15736px), playerY_fixed=0x146FB (326px), playerVelY_fixed=0x002A
+2026-03-27T23:07:08.1456398Z [GRAV_POS] posY: 0x146FB (326px) -> 0x146EA (326px), velY: 0x002A -> 0xFFFFFFEF
+2026-03-27T23:07:08.1461667Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.1559954Z [STEP_START] playerX_fixed=0x3D7C5F (15740px), playerY_fixed=0x146EA (326px), playerVelY_fixed=0xFFFFFFEF
+2026-03-27T23:07:08.1566933Z [GRAV_POS] posY: 0x146EA (326px) -> 0x146B7 (326px), velY: 0xFFFFFFEF -> 0xFFFFFFCD
+2026-03-27T23:07:08.1572247Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.1777986Z [STEP_START] playerX_fixed=0x3D7FD0 (15743px), playerY_fixed=0x146B7 (326px), playerVelY_fixed=0xFFFFFFCD
+2026-03-27T23:07:08.1786019Z [GRAV_POS] posY: 0x146B7 (326px) -> 0x14662 (326px), velY: 0xFFFFFFCD -> 0xFFFFFFAB
+2026-03-27T23:07:08.1791298Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.1992189Z [STEP_START] playerX_fixed=0x3D8341 (15747px), playerY_fixed=0x14662 (326px), playerVelY_fixed=0xFFFFFFAB
+2026-03-27T23:07:08.2009761Z [GRAV_POS] posY: 0x14662 (326px) -> 0x1464B (326px), velY: 0xFFFFFFAB -> 0xFFFFFFE9
+2026-03-27T23:07:08.2017262Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.2126512Z [STEP_START] playerX_fixed=0x3D86B2 (15750px), playerY_fixed=0x1464B (326px), playerVelY_fixed=0xFFFFFFE9
+2026-03-27T23:07:08.2133627Z [GRAV_POS] posY: 0x1464B (326px) -> 0x14612 (326px), velY: 0xFFFFFFE9 -> 0xFFFFFFC7
+2026-03-27T23:07:08.2139219Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.2240888Z [STEP_START] playerX_fixed=0x3D8A23 (15754px), playerY_fixed=0x14612 (326px), playerVelY_fixed=0xFFFFFFC7
+2026-03-27T23:07:08.2248400Z [GRAV_POS] posY: 0x14612 (326px) -> 0x14617 (326px), velY: 0xFFFFFFC7 -> 0x0005
+2026-03-27T23:07:08.2254156Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.2466618Z [STEP_START] playerX_fixed=0x3D8D94 (15757px), playerY_fixed=0x14617 (326px), playerVelY_fixed=0x0005
+2026-03-27T23:07:08.2480314Z [GRAV_POS] posY: 0x14617 (326px) -> 0x1464D (326px), velY: 0x0005 -> 0x0036
+2026-03-27T23:07:08.2487173Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.2586483Z [STEP_START] playerX_fixed=0x3D9105 (15761px), playerY_fixed=0x1464D (326px), playerVelY_fixed=0x0036
+2026-03-27T23:07:08.2595996Z [GRAV_POS] posY: 0x1464D (326px) -> 0x146B4 (326px), velY: 0x0036 -> 0x0067
+2026-03-27T23:07:08.2602324Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.2804878Z [STEP_START] playerX_fixed=0x3D9476 (15764px), playerY_fixed=0x146B4 (326px), playerVelY_fixed=0x0067
+2026-03-27T23:07:08.2822945Z [GRAV_POS] posY: 0x146B4 (326px) -> 0x1474C (327px), velY: 0x0067 -> 0x0098
+2026-03-27T23:07:08.2831798Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.2934941Z [STEP_START] playerX_fixed=0x3D97E7 (15767px), playerY_fixed=0x1474C (327px), playerVelY_fixed=0x0098
+2026-03-27T23:07:08.2950028Z [GRAV_POS] posY: 0x1474C (327px) -> 0x14815 (328px), velY: 0x0098 -> 0x00C9
+2026-03-27T23:07:08.2958534Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.3066765Z [STEP_START] playerX_fixed=0x3D9B58 (15771px), playerY_fixed=0x14815 (328px), playerVelY_fixed=0x00C9
+2026-03-27T23:07:08.3074506Z [GRAV_POS] posY: 0x14815 (328px) -> 0x1490F (329px), velY: 0x00C9 -> 0x00FA
+2026-03-27T23:07:08.3082631Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.3283132Z [STEP_START] playerX_fixed=0x3D9EC9 (15774px), playerY_fixed=0x1490F (329px), playerVelY_fixed=0x00FA
+2026-03-27T23:07:08.3291494Z [GRAV_POS] posY: 0x1490F (329px) -> 0x14A3A (330px), velY: 0x00FA -> 0x012B
+2026-03-27T23:07:08.3296557Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.3398140Z [STEP_START] playerX_fixed=0x3DA23A (15778px), playerY_fixed=0x14A3A (330px), playerVelY_fixed=0x012B
+2026-03-27T23:07:08.3405667Z [GRAV_POS] posY: 0x14A3A (330px) -> 0x14B96 (331px), velY: 0x012B -> 0x015C
+2026-03-27T23:07:08.3411218Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.3623035Z [STEP_START] playerX_fixed=0x3DA5AB (15781px), playerY_fixed=0x14B96 (331px), playerVelY_fixed=0x015C
+2026-03-27T23:07:08.3630973Z [GRAV_POS] posY: 0x14B96 (331px) -> 0x14D23 (333px), velY: 0x015C -> 0x018D
+2026-03-27T23:07:08.3636485Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.3738044Z [STEP_START] playerX_fixed=0x3DA91C (15785px), playerY_fixed=0x14D23 (333px), playerVelY_fixed=0x018D
+2026-03-27T23:07:08.3749692Z [GRAV_POS] posY: 0x14D23 (333px) -> 0x14E75 (334px), velY: 0x018D -> 0x0152
+2026-03-27T23:07:08.3756140Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.3972036Z [STEP_START] playerX_fixed=0x3DAC8D (15788px), playerY_fixed=0x14E75 (334px), playerVelY_fixed=0x0152
+2026-03-27T23:07:08.3981094Z [GRAV_POS] posY: 0x14E75 (334px) -> 0x14FF8 (335px), velY: 0x0152 -> 0x0183
+2026-03-27T23:07:08.3986154Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.4082845Z [STEP_START] playerX_fixed=0x3DAFFE (15791px), playerY_fixed=0x14FF8 (335px), playerVelY_fixed=0x0183
+2026-03-27T23:07:08.4091076Z [GRAV_POS] posY: 0x14FF8 (335px) -> 0x151AC (337px), velY: 0x0183 -> 0x01B4
+2026-03-27T23:07:08.4107075Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.4307959Z [STEP_START] playerX_fixed=0x3DB36F (15795px), playerY_fixed=0x151AC (337px), playerVelY_fixed=0x01B4
+2026-03-27T23:07:08.4325981Z [GRAV_POS] posY: 0x151AC (337px) -> 0x15325 (339px), velY: 0x01B4 -> 0x0179
+2026-03-27T23:07:08.4333420Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.4436490Z [STEP_START] playerX_fixed=0x3DB6E0 (15798px), playerY_fixed=0x15325 (339px), playerVelY_fixed=0x0179
+2026-03-27T23:07:08.4444577Z [GRAV_POS] posY: 0x15325 (339px) -> 0x154CF (340px), velY: 0x0179 -> 0x01AA
+2026-03-27T23:07:08.4451429Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.4561831Z [STEP_START] playerX_fixed=0x3DBA51 (15802px), playerY_fixed=0x154CF (340px), playerVelY_fixed=0x01AA
+2026-03-27T23:07:08.4576758Z [GRAV_POS] posY: 0x154CF (340px) -> 0x156AA (342px), velY: 0x01AA -> 0x01DB
+2026-03-27T23:07:08.4583200Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.4788352Z [STEP_START] playerX_fixed=0x3DBDC2 (15805px), playerY_fixed=0x156AA (342px), playerVelY_fixed=0x01DB
+2026-03-27T23:07:08.4795999Z [GRAV_POS] posY: 0x156AA (342px) -> 0x158B6 (344px), velY: 0x01DB -> 0x020C
+2026-03-27T23:07:08.4801764Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.4908730Z [STEP_START] playerX_fixed=0x3DC133 (15809px), playerY_fixed=0x158B6 (344px), playerVelY_fixed=0x020C
+2026-03-27T23:07:08.4916965Z [GRAV_POS] posY: 0x158B6 (344px) -> 0x15AF3 (346px), velY: 0x020C -> 0x023D
+2026-03-27T23:07:08.4922988Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.5130628Z [STEP_START] playerX_fixed=0x3DC4A4 (15812px), playerY_fixed=0x15AF3 (346px), playerVelY_fixed=0x023D
+2026-03-27T23:07:08.5142778Z [GRAV_POS] posY: 0x15AF3 (346px) -> 0x15CF5 (348px), velY: 0x023D -> 0x0202
+2026-03-27T23:07:08.5163167Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.5266502Z [STEP_START] playerX_fixed=0x3DC815 (15816px), playerY_fixed=0x15CF5 (348px), playerVelY_fixed=0x0202
+2026-03-27T23:07:08.5279435Z [GRAV_POS] posY: 0x15CF5 (348px) -> 0x15EBC (350px), velY: 0x0202 -> 0x01C7
+2026-03-27T23:07:08.5290705Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.5495154Z [STEP_START] playerX_fixed=0x3DCB86 (15819px), playerY_fixed=0x15EBC (350px), playerVelY_fixed=0x01C7
+2026-03-27T23:07:08.5503997Z [GRAV_POS] posY: 0x15EBC (350px) -> 0x160B4 (352px), velY: 0x01C7 -> 0x01F8
+2026-03-27T23:07:08.5509443Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.5605476Z [STEP_START] playerX_fixed=0x3DCEF7 (15822px), playerY_fixed=0x160B4 (352px), playerVelY_fixed=0x01F8
+2026-03-27T23:07:08.5613977Z [GRAV_POS] posY: 0x160B4 (352px) -> 0x162DD (354px), velY: 0x01F8 -> 0x0229
+2026-03-27T23:07:08.5619234Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.5828691Z [STEP_START] playerX_fixed=0x3DD268 (15826px), playerY_fixed=0x162DD (354px), playerVelY_fixed=0x0229
+2026-03-27T23:07:08.5837719Z [GRAV_POS] posY: 0x162DD (354px) -> 0x16537 (357px), velY: 0x0229 -> 0x025A
+2026-03-27T23:07:08.5843488Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.5943618Z [STEP_START] playerX_fixed=0x3DD5D9 (15829px), playerY_fixed=0x16537 (357px), playerVelY_fixed=0x025A
+2026-03-27T23:07:08.5952118Z [GRAV_POS] posY: 0x16537 (357px) -> 0x167C2 (359px), velY: 0x025A -> 0x028B
+2026-03-27T23:07:08.5957586Z [GRAV_POST_PHYSICS] currplayer_gravity=FF gravityFlipped=True gravityReversed=True mini=True
+2026-03-27T23:07:08.6059201Z [STEP_START] playerX_fixed=0x3DD94A (15833px), playerY_fixed=0x167C2 (359px), playerVelY_fixed=0x028B
+2026-03-27T23:07:08.6070292Z [GRAV_POS] posY: 0x167C2 (359px) -> 0x16929 (361px), velY: 0x0145 -> 0x0167
+2026-03-27T23:07:08.6075813Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.6283484Z [STEP_START] playerX_fixed=0x3DDCBB (15836px), playerY_fixed=0x16929 (361px), playerVelY_fixed=0x0167
+2026-03-27T23:07:08.6290863Z [GRAV_POS] posY: 0x16929 (361px) -> 0x16AB2 (362px), velY: 0x0167 -> 0x0189
+2026-03-27T23:07:08.6314993Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.6420135Z [STEP_START] playerX_fixed=0x3DE02C (15840px), playerY_fixed=0x16AB2 (362px), playerVelY_fixed=0x0189
+2026-03-27T23:07:08.6432481Z [GRAV_POS] posY: 0x16AB2 (362px) -> 0x16C5D (364px), velY: 0x0189 -> 0x01AB
+2026-03-27T23:07:08.6442034Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.6649537Z [STEP_START] playerX_fixed=0x3DE39D (15843px), playerY_fixed=0x16C5D (364px), playerVelY_fixed=0x01AB
+2026-03-27T23:07:08.6657637Z [GRAV_POS] posY: 0x16C5D (364px) -> 0x16E2A (366px), velY: 0x01AB -> 0x01CD
+2026-03-27T23:07:08.6662856Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.6759755Z [STEP_START] playerX_fixed=0x3DE70E (15847px), playerY_fixed=0x16E2A (366px), playerVelY_fixed=0x01CD
+2026-03-27T23:07:08.6770960Z [GRAV_POS] posY: 0xE800 (232px) -> 0xE9EF (233px), velY: 0x01CD -> 0x01EF
+2026-03-27T23:07:08.6776625Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.6977104Z [STEP_START] playerX_fixed=0x3DEA7F (15850px), playerY_fixed=0xE9EF (233px), playerVelY_fixed=0x01EF
+2026-03-27T23:07:08.6987547Z [GRAV_POS] posY: 0xE9EF (233px) -> 0xEBA0 (235px), velY: 0x01EF -> 0x01B1
+2026-03-27T23:07:08.6993447Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.7095943Z [STEP_START] playerX_fixed=0x3DEDF0 (15853px), playerY_fixed=0xEBA0 (235px), playerVelY_fixed=0x01B1
+2026-03-27T23:07:08.7105290Z [GRAV_POS] posY: 0xEBA0 (235px) -> 0xED13 (237px), velY: 0x01B1 -> 0x0173
+2026-03-27T23:07:08.7112050Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.7305964Z [STEP_START] playerX_fixed=0x3DF161 (15857px), playerY_fixed=0xED13 (237px), playerVelY_fixed=0x0173
+2026-03-27T23:07:08.7313715Z [GRAV_POS] posY: 0xED13 (237px) -> 0xEE48 (238px), velY: 0x0173 -> 0x0135
+2026-03-27T23:07:08.7320783Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.7427474Z [STEP_START] playerX_fixed=0x3DF4D2 (15860px), playerY_fixed=0xEE48 (238px), playerVelY_fixed=0x0135
+2026-03-27T23:07:08.7435475Z [GRAV_POS] posY: 0xEE48 (238px) -> 0xEF3F (239px), velY: 0x0135 -> 0x00F7
+2026-03-27T23:07:08.7442494Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.7643007Z [STEP_START] playerX_fixed=0x3DF843 (15864px), playerY_fixed=0xEF3F (239px), playerVelY_fixed=0x00F7
+2026-03-27T23:07:08.7651890Z [GRAV_POS] posY: 0xEF3F (239px) -> 0xEFF8 (239px), velY: 0x00F7 -> 0x00B9
+2026-03-27T23:07:08.7659548Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.7761738Z [STEP_START] playerX_fixed=0x3DFBB4 (15867px), playerY_fixed=0xEFF8 (239px), playerVelY_fixed=0x00B9
+2026-03-27T23:07:08.7818592Z [GRAV_POS] posY: 0xEFF8 (239px) -> 0xF073 (240px), velY: 0x00B9 -> 0x007B
+2026-03-27T23:07:08.7830452Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.7928810Z [STEP_START] playerX_fixed=0x3DFF25 (15871px), playerY_fixed=0xF073 (240px), playerVelY_fixed=0x007B
+2026-03-27T23:07:08.7936662Z [GRAV_POS] posY: 0xF073 (240px) -> 0xF0B0 (240px), velY: 0x007B -> 0x003D
+2026-03-27T23:07:08.7942255Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.8149865Z [STEP_START] playerX_fixed=0x3E0296 (15874px), playerY_fixed=0xF0B0 (240px), playerVelY_fixed=0x003D
+2026-03-27T23:07:08.8161020Z [GRAV_POS] posY: 0xF0B0 (240px) -> 0xF10F (241px), velY: 0x003D -> 0x005F
+2026-03-27T23:07:08.8170255Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.8272443Z [STEP_START] playerX_fixed=0x3E0607 (15878px), playerY_fixed=0xF10F (241px), playerVelY_fixed=0x005F
+2026-03-27T23:07:08.8280625Z [GRAV_POS] posY: 0xF10F (241px) -> 0xF190 (241px), velY: 0x005F -> 0x0081
+2026-03-27T23:07:08.8286201Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.8486127Z [STEP_START] playerX_fixed=0x3E0978 (15881px), playerY_fixed=0xF190 (241px), playerVelY_fixed=0x0081
+2026-03-27T23:07:08.8494164Z [GRAV_POS] posY: 0xF190 (241px) -> 0xF233 (242px), velY: 0x0081 -> 0x00A3
+2026-03-27T23:07:08.8499582Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.8606457Z [STEP_START] playerX_fixed=0x3E0CE9 (15884px), playerY_fixed=0xF233 (242px), playerVelY_fixed=0x00A3
+2026-03-27T23:07:08.8614112Z [GRAV_POS] posY: 0xF233 (242px) -> 0xF2F8 (242px), velY: 0x00A3 -> 0x00C5
+2026-03-27T23:07:08.8619793Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.8820174Z [STEP_START] playerX_fixed=0x3E105A (15888px), playerY_fixed=0xF2F8 (242px), playerVelY_fixed=0x00C5
+2026-03-27T23:07:08.8827729Z [GRAV_POS] posY: 0xF2F8 (242px) -> 0xF3DF (243px), velY: 0x00C5 -> 0x00E7
+2026-03-27T23:07:08.8832946Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.8935075Z [STEP_START] playerX_fixed=0x3E13CB (15891px), playerY_fixed=0xF3DF (243px), playerVelY_fixed=0x00E7
+2026-03-27T23:07:08.8945214Z [GRAV_POS] posY: 0xF3DF (243px) -> 0xF4E8 (244px), velY: 0x00E7 -> 0x0109
+2026-03-27T23:07:08.8954163Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.9055777Z [STEP_START] playerX_fixed=0x3E173C (15895px), playerY_fixed=0xF4E8 (244px), playerVelY_fixed=0x0109
+2026-03-27T23:07:08.9073140Z [GRAV_POS] posY: 0xF4E8 (244px) -> 0xF613 (246px), velY: 0x0109 -> 0x012B
+2026-03-27T23:07:08.9079250Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.9281535Z [STEP_START] playerX_fixed=0x3E1AAD (15898px), playerY_fixed=0xF613 (246px), playerVelY_fixed=0x012B
+2026-03-27T23:07:08.9289586Z [GRAV_POS] posY: 0xF613 (246px) -> 0xF760 (247px), velY: 0x012B -> 0x014D
+2026-03-27T23:07:08.9303497Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.9406872Z [STEP_START] playerX_fixed=0x3E1E1E (15902px), playerY_fixed=0xF760 (247px), playerVelY_fixed=0x014D
+2026-03-27T23:07:08.9423404Z [GRAV_POS] posY: 0xF760 (247px) -> 0xF8CF (248px), velY: 0x014D -> 0x016F
+2026-03-27T23:07:08.9430199Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.9637703Z [STEP_START] playerX_fixed=0x3E218F (15905px), playerY_fixed=0xF8CF (248px), playerVelY_fixed=0x016F
+2026-03-27T23:07:08.9645930Z [GRAV_POS] posY: 0xF8CF (248px) -> 0xFA00 (250px), velY: 0x016F -> 0x0131
+2026-03-27T23:07:08.9651099Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.9748454Z [STEP_START] playerX_fixed=0x3E2500 (15909px), playerY_fixed=0xFA00 (250px), playerVelY_fixed=0x0131
+2026-03-27T23:07:08.9755984Z [GRAV_POS] posY: 0xFA00 (250px) -> 0xFAF3 (250px), velY: 0x0131 -> 0x00F3
+2026-03-27T23:07:08.9761676Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:08.9971457Z [STEP_START] playerX_fixed=0x3E2871 (15912px), playerY_fixed=0xFAF3 (250px), playerVelY_fixed=0x00F3
+2026-03-27T23:07:08.9988183Z [GRAV_POS] posY: 0xFAF3 (250px) -> 0xFC08 (252px), velY: 0x00F3 -> 0x0115
+2026-03-27T23:07:08.9996634Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.0093817Z [STEP_START] playerX_fixed=0x3E2BE2 (15915px), playerY_fixed=0xFC08 (252px), playerVelY_fixed=0x0115
+2026-03-27T23:07:09.0108270Z [GRAV_POS] posY: 0xFC08 (252px) -> 0xFD3F (253px), velY: 0x0115 -> 0x0137
+2026-03-27T23:07:09.0116432Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.0325663Z [STEP_START] playerX_fixed=0x3E2F53 (15919px), playerY_fixed=0xFD3F (253px), playerVelY_fixed=0x0137
+2026-03-27T23:07:09.0332997Z [GRAV_POS] posY: 0xFD3F (253px) -> 0xFE98 (254px), velY: 0x0137 -> 0x0159
+2026-03-27T23:07:09.0339862Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.0441933Z [STEP_START] playerX_fixed=0x3E32C4 (15922px), playerY_fixed=0xFE98 (254px), playerVelY_fixed=0x0159
+2026-03-27T23:07:09.0450331Z [GRAV_POS] posY: 0xFE98 (254px) -> 0x10013 (256px), velY: 0x0159 -> 0x017B
+2026-03-27T23:07:09.0457024Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.0557308Z [STEP_START] playerX_fixed=0x3E3635 (15926px), playerY_fixed=0x10013 (256px), playerVelY_fixed=0x017B
+2026-03-27T23:07:09.0564555Z [GRAV_POS] posY: 0x10013 (256px) -> 0x101B0 (257px), velY: 0x017B -> 0x019D
+2026-03-27T23:07:09.0570119Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.0787237Z [STEP_START] playerX_fixed=0x3E39A6 (15929px), playerY_fixed=0x101B0 (257px), playerVelY_fixed=0x019D
+2026-03-27T23:07:09.0794611Z [GRAV_POS] posY: 0x101B0 (257px) -> 0x1036F (259px), velY: 0x019D -> 0x01BF
+2026-03-27T23:07:09.0800865Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.0907186Z [STEP_START] playerX_fixed=0x3E3D17 (15933px), playerY_fixed=0x1036F (259px), playerVelY_fixed=0x01BF
+2026-03-27T23:07:09.0918259Z [GRAV_POS] posY: 0x1036F (259px) -> 0x10550 (261px), velY: 0x01BF -> 0x01E1
+2026-03-27T23:07:09.0924830Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.1130167Z [STEP_START] playerX_fixed=0x3E4088 (15936px), playerY_fixed=0x10500 (261px), playerVelY_fixed=0x0000
+2026-03-27T23:07:09.1137345Z [GRAV_POS] posY: 0x10500 (261px) -> 0x1053B (261px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:09.1143477Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.1250195Z [STEP_START] playerX_fixed=0x3E43F9 (15939px), playerY_fixed=0x1053B (261px), playerVelY_fixed=0x003B
+2026-03-27T23:07:09.1257087Z [GRAV_POS] posY: 0x1053B (261px) -> 0x10598 (261px), velY: 0x003B -> 0x005D
+2026-03-27T23:07:09.1262544Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.1473207Z [STEP_START] playerX_fixed=0x3E476A (15943px), playerY_fixed=0x10598 (261px), playerVelY_fixed=0x005D
+2026-03-27T23:07:09.1488670Z [GRAV_POS] posY: 0x10598 (261px) -> 0x10617 (262px), velY: 0x005D -> 0x007F
+2026-03-27T23:07:09.1498821Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.1593775Z [STEP_START] playerX_fixed=0x3E4ADB (15946px), playerY_fixed=0x10617 (262px), playerVelY_fixed=0x007F
+2026-03-27T23:07:09.1611282Z [GRAV_POS] posY: 0x10617 (262px) -> 0x106B8 (262px), velY: 0x007F -> 0x00A1
+2026-03-27T23:07:09.1619394Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.1725405Z [STEP_START] playerX_fixed=0x3E4E4C (15950px), playerY_fixed=0x106B8 (262px), playerVelY_fixed=0x00A1
+2026-03-27T23:07:09.1732713Z [GRAV_POS] posY: 0x106B8 (262px) -> 0x1077B (263px), velY: 0x00A1 -> 0x00C3
+2026-03-27T23:07:09.1738259Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.1940682Z [STEP_START] playerX_fixed=0x3E51BD (15953px), playerY_fixed=0x1077B (263px), playerVelY_fixed=0x00C3
+2026-03-27T23:07:09.1948479Z [GRAV_POS] posY: 0x1077B (263px) -> 0x10800 (264px), velY: 0x00C3 -> 0x0085
+2026-03-27T23:07:09.1954151Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.2055432Z [STEP_START] playerX_fixed=0x3E552E (15957px), playerY_fixed=0x10800 (264px), playerVelY_fixed=0x0085
+2026-03-27T23:07:09.2062828Z [GRAV_POS] posY: 0x10800 (264px) -> 0x108A7 (264px), velY: 0x0085 -> 0x00A7
+2026-03-27T23:07:09.2068550Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.2268945Z [STEP_START] playerX_fixed=0x3E589F (15960px), playerY_fixed=0x108A7 (264px), playerVelY_fixed=0x00A7
+2026-03-27T23:07:09.2275996Z [GRAV_POS] posY: 0x108A7 (264px) -> 0x10970 (265px), velY: 0x00A7 -> 0x00C9
+2026-03-27T23:07:09.2281848Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.2489020Z [STEP_START] playerX_fixed=0x3E5C10 (15964px), playerY_fixed=0x10970 (265px), playerVelY_fixed=0x00C9
+2026-03-27T23:07:09.2496761Z [GRAV_POS] posY: 0x10970 (265px) -> 0x10A5B (266px), velY: 0x00C9 -> 0x00EB
+2026-03-27T23:07:09.2502080Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.2608928Z [STEP_START] playerX_fixed=0x3E5F81 (15967px), playerY_fixed=0x10A5B (266px), playerVelY_fixed=0x00EB
+2026-03-27T23:07:09.2621738Z [GRAV_POS] posY: 0x10A5B (266px) -> 0x10B08 (267px), velY: 0x00EB -> 0x00AD
+2026-03-27T23:07:09.2627853Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.2729494Z [STEP_START] playerX_fixed=0x3E62F2 (15970px), playerY_fixed=0x10B08 (267px), playerVelY_fixed=0x00AD
+2026-03-27T23:07:09.2737307Z [GRAV_POS] posY: 0x10B08 (267px) -> 0x10B77 (267px), velY: 0x00AD -> 0x006F
+2026-03-27T23:07:09.2742712Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.2949527Z [STEP_START] playerX_fixed=0x3E6663 (15974px), playerY_fixed=0x10B77 (267px), playerVelY_fixed=0x006F
+2026-03-27T23:07:09.2960386Z [GRAV_POS] posY: 0x10B77 (267px) -> 0x10BA8 (267px), velY: 0x006F -> 0x0031
+2026-03-27T23:07:09.2966415Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.3065411Z [STEP_START] playerX_fixed=0x3E69D4 (15977px), playerY_fixed=0x10BA8 (267px), playerVelY_fixed=0x0031
+2026-03-27T23:07:09.3078602Z [GRAV_POS] posY: 0x10BA8 (267px) -> 0x10BFB (267px), velY: 0x0031 -> 0x0053
+2026-03-27T23:07:09.3087903Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.3295964Z [STEP_START] playerX_fixed=0x3E6D45 (15981px), playerY_fixed=0x10BFB (267px), playerVelY_fixed=0x0053
+2026-03-27T23:07:09.3304596Z [GRAV_POS] posY: 0x10BFB (267px) -> 0x10C10 (268px), velY: 0x0053 -> 0x0015
+2026-03-27T23:07:09.3311983Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.3416436Z [STEP_START] playerX_fixed=0x3E70B6 (15984px), playerY_fixed=0x10C10 (268px), playerVelY_fixed=0x0015
+2026-03-27T23:07:09.3426261Z [GRAV_POS] posY: 0x10C10 (268px) -> 0x10BE7 (267px), velY: 0x0015 -> 0xFFFFFFD7
+2026-03-27T23:07:09.3431368Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.3634962Z [STEP_START] playerX_fixed=0x3E7427 (15988px), playerY_fixed=0x10BE7 (267px), playerVelY_fixed=0xFFFFFFD7
+2026-03-27T23:07:09.3643217Z [GRAV_POS] posY: 0x10BE7 (267px) -> 0x10B8D (267px), velY: 0xFFFFFFD7 -> 0xFFFFFFA6
+2026-03-27T23:07:09.3648624Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.3745138Z [STEP_START] playerX_fixed=0x3E7798 (15991px), playerY_fixed=0x10B8D (267px), playerVelY_fixed=0xFFFFFFA6
+2026-03-27T23:07:09.3753780Z [GRAV_POS] posY: 0x10B8D (267px) -> 0x10B02 (267px), velY: 0xFFFFFFA6 -> 0xFFFFFF75
+2026-03-27T23:07:09.3760328Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.3970491Z [STEP_START] playerX_fixed=0x3E7B09 (15995px), playerY_fixed=0x10B02 (267px), playerVelY_fixed=0xFFFFFF75
+2026-03-27T23:07:09.3990631Z [GRAV_POS] posY: 0x10B02 (267px) -> 0x10A46 (266px), velY: 0xFFFFFF75 -> 0xFFFFFF44
+2026-03-27T23:07:09.4019672Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.4117993Z [STEP_START] playerX_fixed=0x3E7E7A (15998px), playerY_fixed=0x10A46 (266px), playerVelY_fixed=0xFFFFFF44
+2026-03-27T23:07:09.4125947Z [GRAV_POS] posY: 0x10A46 (266px) -> 0x10959 (265px), velY: 0xFFFFFF44 -> 0xFFFFFF13
+2026-03-27T23:07:09.4131300Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.4233221Z [STEP_START] playerX_fixed=0x3E81EB (16001px), playerY_fixed=0x10959 (265px), playerVelY_fixed=0xFFFFFF13
+2026-03-27T23:07:09.4240315Z [GRAV_POS] posY: 0x10959 (265px) -> 0x108A7 (264px), velY: 0xFFFFFF13 -> 0xFFFFFF4E
+2026-03-27T23:07:09.4246266Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.4454148Z [STEP_START] playerX_fixed=0x3E855C (16005px), playerY_fixed=0x108A7 (264px), playerVelY_fixed=0xFFFFFF4E
+2026-03-27T23:07:09.4461237Z [GRAV_POS] posY: 0x108A7 (264px) -> 0x10830 (264px), velY: 0xFFFFFF4E -> 0xFFFFFF89
+2026-03-27T23:07:09.4467104Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.4569249Z [STEP_START] playerX_fixed=0x3E88CD (16008px), playerY_fixed=0x10830 (264px), playerVelY_fixed=0xFFFFFF89
+2026-03-27T23:07:09.4577268Z [GRAV_POS] posY: 0x10830 (264px) -> 0x107F4 (263px), velY: 0xFFFFFF89 -> 0xFFFFFFC4
+2026-03-27T23:07:09.4583806Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.4794838Z [STEP_START] playerX_fixed=0x3E8C3E (16012px), playerY_fixed=0x107F4 (263px), playerVelY_fixed=0xFFFFFFC4
+2026-03-27T23:07:09.4802080Z [GRAV_POS] posY: 0x107F4 (263px) -> 0x107F3 (263px), velY: 0xFFFFFFC4 -> 0xFFFFFFFF
+2026-03-27T23:07:09.4807343Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.4910075Z [STEP_START] playerX_fixed=0x3E8FAF (16015px), playerY_fixed=0x107F3 (263px), playerVelY_fixed=0xFFFFFFFF
+2026-03-27T23:07:09.4918067Z [GRAV_POS] posY: 0x107F3 (263px) -> 0x1082D (264px), velY: 0xFFFFFFFF -> 0x003A
+2026-03-27T23:07:09.4923714Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.5131367Z [STEP_START] playerX_fixed=0x3E9320 (16019px), playerY_fixed=0x1082D (264px), playerVelY_fixed=0x003A
+2026-03-27T23:07:09.5139779Z [GRAV_POS] posY: 0x1082D (264px) -> 0x10829 (264px), velY: 0x003A -> 0xFFFFFFFC
+2026-03-27T23:07:09.5147219Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.5254887Z [STEP_START] playerX_fixed=0x3E9691 (16022px), playerY_fixed=0x10829 (264px), playerVelY_fixed=0xFFFFFFFC
+2026-03-27T23:07:09.5262535Z [GRAV_POS] posY: 0x10829 (264px) -> 0x10860 (264px), velY: 0xFFFFFFFC -> 0x0037
+2026-03-27T23:07:09.5268649Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.5471398Z [STEP_START] playerX_fixed=0x3E9A02 (16026px), playerY_fixed=0x10860 (264px), playerVelY_fixed=0x0037
+2026-03-27T23:07:09.5489653Z [GRAV_POS] posY: 0x10860 (264px) -> 0x10859 (264px), velY: 0x0037 -> 0xFFFFFFF9
+2026-03-27T23:07:09.5496668Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.5596271Z [STEP_START] playerX_fixed=0x3E9D73 (16029px), playerY_fixed=0x10859 (264px), playerVelY_fixed=0xFFFFFFF9
+2026-03-27T23:07:09.5606833Z [GRAV_POS] posY: 0x10859 (264px) -> 0x1088D (264px), velY: 0xFFFFFFF9 -> 0x0034
+2026-03-27T23:07:09.5615003Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.5722016Z [STEP_START] playerX_fixed=0x3EA0E4 (16032px), playerY_fixed=0x1088D (264px), playerVelY_fixed=0x0034
+2026-03-27T23:07:09.5729254Z [GRAV_POS] posY: 0x1088D (264px) -> 0x108E3 (264px), velY: 0x0034 -> 0x0056
+2026-03-27T23:07:09.5734945Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.5936843Z [STEP_START] playerX_fixed=0x3EA455 (16036px), playerY_fixed=0x108E3 (264px), playerVelY_fixed=0x0056
+2026-03-27T23:07:09.5944917Z [GRAV_POS] posY: 0x108E3 (264px) -> 0x1095B (265px), velY: 0x0056 -> 0x0078
+2026-03-27T23:07:09.5950890Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.6157337Z [STEP_START] playerX_fixed=0x3EA7C6 (16039px), playerY_fixed=0x1095B (265px), playerVelY_fixed=0x0078
+2026-03-27T23:07:09.6169024Z [GRAV_POS] posY: 0x1095B (265px) -> 0x109F5 (265px), velY: 0x0078 -> 0x009A
+2026-03-27T23:07:09.6180019Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.6282361Z [STEP_START] playerX_fixed=0x3EAB37 (16043px), playerY_fixed=0x109F5 (265px), playerVelY_fixed=0x009A
+2026-03-27T23:07:09.6289627Z [GRAV_POS] posY: 0x109F5 (265px) -> 0x10AB1 (266px), velY: 0x009A -> 0x00BC
+2026-03-27T23:07:09.6294904Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.6397458Z [STEP_START] playerX_fixed=0x3EAEA8 (16046px), playerY_fixed=0x10AB1 (266px), playerVelY_fixed=0x00BC
+2026-03-27T23:07:09.6407681Z [GRAV_POS] posY: 0x10AB1 (266px) -> 0x10B2F (267px), velY: 0x00BC -> 0x007E
+2026-03-27T23:07:09.6413588Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.6607968Z [STEP_START] playerX_fixed=0x3EB219 (16050px), playerY_fixed=0x10B2F (267px), playerVelY_fixed=0x007E
+2026-03-27T23:07:09.6623683Z [GRAV_POS] posY: 0x10B2F (267px) -> 0x10BCF (267px), velY: 0x007E -> 0x00A0
+2026-03-27T23:07:09.6633073Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.6728283Z [STEP_START] playerX_fixed=0x3EB58A (16053px), playerY_fixed=0x10BCF (267px), playerVelY_fixed=0x00A0
+2026-03-27T23:07:09.6736342Z [GRAV_POS] posY: 0x10BCF (267px) -> 0x10C31 (268px), velY: 0x00A0 -> 0x0062
+2026-03-27T23:07:09.6741424Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.6950591Z [STEP_START] playerX_fixed=0x3EB8FB (16056px), playerY_fixed=0x10C31 (268px), playerVelY_fixed=0x0062
+2026-03-27T23:07:09.6957858Z [GRAV_POS] posY: 0x10C31 (268px) -> 0x10CB5 (268px), velY: 0x0062 -> 0x0084
+2026-03-27T23:07:09.6972332Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.7077101Z [STEP_START] playerX_fixed=0x3EBC6C (16060px), playerY_fixed=0x10CB5 (268px), playerVelY_fixed=0x0084
+2026-03-27T23:07:09.7084086Z [GRAV_POS] posY: 0x10CB5 (268px) -> 0x10D5B (269px), velY: 0x0084 -> 0x00A6
+2026-03-27T23:07:09.7089969Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.7296627Z [STEP_START] playerX_fixed=0x3EBFDD (16063px), playerY_fixed=0x10D5B (269px), playerVelY_fixed=0x00A6
+2026-03-27T23:07:09.7311787Z [GRAV_POS] posY: 0x10D5B (269px) -> 0x10E23 (270px), velY: 0x00A6 -> 0x00C8
+2026-03-27T23:07:09.7321044Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.7426694Z [STEP_START] playerX_fixed=0x3EC34E (16067px), playerY_fixed=0x10E23 (270px), playerVelY_fixed=0x00C8
+2026-03-27T23:07:09.7444544Z [GRAV_POS] posY: 0x10E23 (270px) -> 0x10EAD (270px), velY: 0x00C8 -> 0x008A
+2026-03-27T23:07:09.7451592Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.7659173Z [STEP_START] playerX_fixed=0x3EC6BF (16070px), playerY_fixed=0x10EAD (270px), playerVelY_fixed=0x008A
+2026-03-27T23:07:09.7669565Z [GRAV_POS] posY: 0x10EAD (270px) -> 0x10EF9 (270px), velY: 0x008A -> 0x004C
+2026-03-27T23:07:09.7690129Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.7789101Z [STEP_START] playerX_fixed=0x3ECA30 (16074px), playerY_fixed=0x10EF9 (270px), playerVelY_fixed=0x004C
+2026-03-27T23:07:09.7796192Z [GRAV_POS] posY: 0x10EF9 (270px) -> 0x10F67 (271px), velY: 0x004C -> 0x006E
+2026-03-27T23:07:09.7801846Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.7905098Z [STEP_START] playerX_fixed=0x3ECDA1 (16077px), playerY_fixed=0x10F67 (271px), playerVelY_fixed=0x006E
+2026-03-27T23:07:09.7912094Z [GRAV_POS] posY: 0x10F67 (271px) -> 0x10F97 (271px), velY: 0x006E -> 0x0030
+2026-03-27T23:07:09.7917833Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.8115422Z [STEP_START] playerX_fixed=0x3ED112 (16081px), playerY_fixed=0x10F97 (271px), playerVelY_fixed=0x0030
+2026-03-27T23:07:09.8123533Z [GRAV_POS] posY: 0x10F97 (271px) -> 0x10F89 (271px), velY: 0x0030 -> 0xFFFFFFF2
+2026-03-27T23:07:09.8129505Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.8226486Z [STEP_START] playerX_fixed=0x3ED483 (16084px), playerY_fixed=0x10F89 (271px), playerVelY_fixed=0xFFFFFFF2
+2026-03-27T23:07:09.8244054Z [GRAV_POS] posY: 0x10F89 (271px) -> 0x10FB6 (271px), velY: 0xFFFFFFF2 -> 0x002D
+2026-03-27T23:07:09.8250947Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.8451626Z [STEP_START] playerX_fixed=0x3ED7F4 (16087px), playerY_fixed=0x10FB6 (271px), playerVelY_fixed=0x002D
+2026-03-27T23:07:09.8466332Z [GRAV_POS] posY: 0x10FB6 (271px) -> 0x11005 (272px), velY: 0x002D -> 0x004F
+2026-03-27T23:07:09.8475446Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.8571375Z [STEP_START] playerX_fixed=0x3EDB65 (16091px), playerY_fixed=0x11005 (272px), playerVelY_fixed=0x004F
+2026-03-27T23:07:09.8579336Z [GRAV_POS] posY: 0x11005 (272px) -> 0x11016 (272px), velY: 0x004F -> 0x0011
+2026-03-27T23:07:09.8584853Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.8786472Z [STEP_START] playerX_fixed=0x3EDED6 (16094px), playerY_fixed=0x11016 (272px), playerVelY_fixed=0x0011
+2026-03-27T23:07:09.8794623Z [GRAV_POS] posY: 0x11016 (272px) -> 0x11049 (272px), velY: 0x0011 -> 0x0033
+2026-03-27T23:07:09.8800235Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.8906541Z [STEP_START] playerX_fixed=0x3EE247 (16098px), playerY_fixed=0x11049 (272px), playerVelY_fixed=0x0033
+2026-03-27T23:07:09.8921389Z [GRAV_POS] posY: 0x11049 (272px) -> 0x1109E (272px), velY: 0x0033 -> 0x0055
+2026-03-27T23:07:09.8929426Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.9128845Z [STEP_START] playerX_fixed=0x3EE5B8 (16101px), playerY_fixed=0x1109E (272px), playerVelY_fixed=0x0055
+2026-03-27T23:07:09.9145940Z [GRAV_POS] posY: 0x1109E (272px) -> 0x110B5 (272px), velY: 0x0055 -> 0x0017
+2026-03-27T23:07:09.9155394Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.9250754Z [STEP_START] playerX_fixed=0x3EE929 (16105px), playerY_fixed=0x110B5 (272px), playerVelY_fixed=0x0017
+2026-03-27T23:07:09.9259003Z [GRAV_POS] posY: 0x110B5 (272px) -> 0x1108E (272px), velY: 0x0017 -> 0xFFFFFFD9
+2026-03-27T23:07:09.9264141Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.9479166Z [STEP_START] playerX_fixed=0x3EEC9A (16108px), playerY_fixed=0x1108E (272px), playerVelY_fixed=0xFFFFFFD9
+2026-03-27T23:07:09.9486426Z [GRAV_POS] posY: 0x1108E (272px) -> 0x110A2 (272px), velY: 0xFFFFFFD9 -> 0x0014
+2026-03-27T23:07:09.9491434Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.9589732Z [STEP_START] playerX_fixed=0x3EF00B (16112px), playerY_fixed=0x110A2 (272px), playerVelY_fixed=0x0014
+2026-03-27T23:07:09.9603655Z [GRAV_POS] posY: 0x110A2 (272px) -> 0x110D8 (272px), velY: 0x0014 -> 0x0036
+2026-03-27T23:07:09.9612890Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.9816020Z [STEP_START] playerX_fixed=0x3EF37C (16115px), playerY_fixed=0x110D8 (272px), playerVelY_fixed=0x0036
+2026-03-27T23:07:09.9824082Z [GRAV_POS] posY: 0x110D8 (272px) -> 0x110D0 (272px), velY: 0x0036 -> 0xFFFFFFF8
+2026-03-27T23:07:09.9829814Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:09.9936297Z [STEP_START] playerX_fixed=0x3EF6ED (16118px), playerY_fixed=0x110D0 (272px), playerVelY_fixed=0xFFFFFFF8
+2026-03-27T23:07:09.9956581Z [GRAV_POS] posY: 0x110D0 (272px) -> 0x11097 (272px), velY: 0xFFFFFFF8 -> 0xFFFFFFC7
+2026-03-27T23:07:09.9962472Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.0056768Z [STEP_START] playerX_fixed=0x3EFA5E (16122px), playerY_fixed=0x11097 (272px), playerVelY_fixed=0xFFFFFFC7
+2026-03-27T23:07:10.0063896Z [GRAV_POS] posY: 0x11097 (272px) -> 0x11099 (272px), velY: 0xFFFFFFC7 -> 0x0002
+2026-03-27T23:07:10.0069959Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.0276005Z [STEP_START] playerX_fixed=0x3EFDCF (16125px), playerY_fixed=0x11099 (272px), playerVelY_fixed=0x0002
+2026-03-27T23:07:10.0283131Z [GRAV_POS] posY: 0x11099 (272px) -> 0x110BD (272px), velY: 0x0002 -> 0x0024
+2026-03-27T23:07:10.0289028Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.0390961Z [STEP_START] playerX_fixed=0x3F0140 (16129px), playerY_fixed=0x110BD (272px), playerVelY_fixed=0x0024
+2026-03-27T23:07:10.0399510Z [GRAV_POS] posY: 0x110BD (272px) -> 0x110A3 (272px), velY: 0x0024 -> 0xFFFFFFE6
+2026-03-27T23:07:10.0405150Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.0608331Z [STEP_START] playerX_fixed=0x3F04B1 (16132px), playerY_fixed=0x110A3 (272px), playerVelY_fixed=0xFFFFFFE6
+2026-03-27T23:07:10.0615964Z [GRAV_POS] posY: 0x110A3 (272px) -> 0x110C4 (272px), velY: 0xFFFFFFE6 -> 0x0021
+2026-03-27T23:07:10.0621450Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.0829479Z [STEP_START] playerX_fixed=0x3F0822 (16136px), playerY_fixed=0x110C4 (272px), playerVelY_fixed=0x0021
+2026-03-27T23:07:10.0838407Z [GRAV_POS] posY: 0x110C4 (272px) -> 0x110A7 (272px), velY: 0x0021 -> 0xFFFFFFE3
+2026-03-27T23:07:10.0845237Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.0944580Z [STEP_START] playerX_fixed=0x3F0B93 (16139px), playerY_fixed=0x10500 (261px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.0951468Z [GRAV_POS] posY: 0x10500 (261px) -> 0x1053B (261px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.0957453Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.1060594Z [STEP_START] playerX_fixed=0x3F0F04 (16143px), playerY_fixed=0x10500 (261px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.1068804Z [GRAV_POS] posY: 0x10500 (261px) -> 0x104CF (260px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:10.1074230Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.1276004Z [STEP_START] playerX_fixed=0x3F1275 (16146px), playerY_fixed=0x104CF (260px), playerVelY_fixed=0xFFFFFFCF
+2026-03-27T23:07:10.1283790Z [GRAV_POS] posY: 0x104CF (260px) -> 0x104D9 (260px), velY: 0xFFFFFFCF -> 0x000A
+2026-03-27T23:07:10.1289651Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.1391311Z [STEP_START] playerX_fixed=0x3F15E6 (16149px), playerY_fixed=0x104D9 (260px), playerVelY_fixed=0x000A
+2026-03-27T23:07:10.1399933Z [GRAV_POS] posY: 0x104D9 (260px) -> 0x104A5 (260px), velY: 0x000A -> 0xFFFFFFCC
+2026-03-27T23:07:10.1405371Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.1616388Z [STEP_START] playerX_fixed=0x3F1957 (16153px), playerY_fixed=0x104A5 (260px), playerVelY_fixed=0xFFFFFFCC
+2026-03-27T23:07:10.1623990Z [GRAV_POS] posY: 0x104A5 (260px) -> 0x104AC (260px), velY: 0xFFFFFFCC -> 0x0007
+2026-03-27T23:07:10.1629953Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.1727394Z [STEP_START] playerX_fixed=0x3F1CC8 (16156px), playerY_fixed=0x104AC (260px), playerVelY_fixed=0x0007
+2026-03-27T23:07:10.1735220Z [GRAV_POS] posY: 0x104AC (260px) -> 0x10475 (260px), velY: 0x0007 -> 0xFFFFFFC9
+2026-03-27T23:07:10.1740456Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.1942853Z [STEP_START] playerX_fixed=0x3F2039 (16160px), playerY_fixed=0x10475 (260px), playerVelY_fixed=0xFFFFFFC9
+2026-03-27T23:07:10.1950900Z [GRAV_POS] posY: 0x10475 (260px) -> 0x1040D (260px), velY: 0xFFFFFFC9 -> 0xFFFFFF98
+2026-03-27T23:07:10.1956786Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.2058444Z [STEP_START] playerX_fixed=0x3F23AA (16163px), playerY_fixed=0x1040D (260px), playerVelY_fixed=0xFFFFFF98
+2026-03-27T23:07:10.2067112Z [GRAV_POS] posY: 0x1040D (260px) -> 0x10374 (259px), velY: 0xFFFFFF98 -> 0xFFFFFF67
+2026-03-27T23:07:10.2072785Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.2276404Z [STEP_START] playerX_fixed=0x3F271B (16167px), playerY_fixed=0x10374 (259px), playerVelY_fixed=0xFFFFFF67
+2026-03-27T23:07:10.2285970Z [GRAV_POS] posY: 0x10374 (259px) -> 0x102AA (258px), velY: 0xFFFFFF67 -> 0xFFFFFF36
+2026-03-27T23:07:10.2292204Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.2391507Z [STEP_START] playerX_fixed=0x3F2A8C (16170px), playerY_fixed=0x102AA (258px), playerVelY_fixed=0xFFFFFF36
+2026-03-27T23:07:10.2399178Z [GRAV_POS] posY: 0x102AA (258px) -> 0x101AF (257px), velY: 0xFFFFFF36 -> 0xFFFFFF05
+2026-03-27T23:07:10.2404350Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.2609170Z [STEP_START] playerX_fixed=0x3F2DFD (16173px), playerY_fixed=0x101AF (257px), playerVelY_fixed=0xFFFFFF05
+2026-03-27T23:07:10.2630028Z [GRAV_POS] posY: 0x101AF (257px) -> 0x10083 (256px), velY: 0xFFFFFF05 -> 0xFFFFFED4
+2026-03-27T23:07:10.2640132Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.2744671Z [STEP_START] playerX_fixed=0x3F316E (16177px), playerY_fixed=0x10083 (256px), playerVelY_fixed=0xFFFFFED4
+2026-03-27T23:07:10.2758701Z [GRAV_POS] posY: 0x10083 (256px) -> 0xFF92 (255px), velY: 0xFFFFFED4 -> 0xFFFFFF0F
+2026-03-27T23:07:10.2769028Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.2967196Z [STEP_START] playerX_fixed=0x3F34DF (16180px), playerY_fixed=0xFF92 (255px), playerVelY_fixed=0xFFFFFF0F
+2026-03-27T23:07:10.2979532Z [GRAV_POS] posY: 0xFF92 (255px) -> 0xFEDC (254px), velY: 0xFFFFFF0F -> 0xFFFFFF4A
+2026-03-27T23:07:10.2985534Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.3080026Z [STEP_START] playerX_fixed=0x3F3850 (16184px), playerY_fixed=0xFEDC (254px), playerVelY_fixed=0xFFFFFF4A
+2026-03-27T23:07:10.3087316Z [GRAV_POS] posY: 0xFEDC (254px) -> 0xFE61 (254px), velY: 0xFFFFFF4A -> 0xFFFFFF85
+2026-03-27T23:07:10.3092862Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.3305621Z [STEP_START] playerX_fixed=0x3F3BC1 (16187px), playerY_fixed=0xFE61 (254px), playerVelY_fixed=0xFFFFFF85
+2026-03-27T23:07:10.3321855Z [GRAV_POS] posY: 0xFE61 (254px) -> 0xFDB5 (253px), velY: 0xFFFFFF85 -> 0xFFFFFF54
+2026-03-27T23:07:10.3332008Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.3434956Z [STEP_START] playerX_fixed=0x3F3F32 (16191px), playerY_fixed=0xFDB5 (253px), playerVelY_fixed=0xFFFFFF54
+2026-03-27T23:07:10.3442089Z [GRAV_POS] posY: 0xFDB5 (253px) -> 0xFD44 (253px), velY: 0xFFFFFF54 -> 0xFFFFFF8F
+2026-03-27T23:07:10.3449232Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.3650394Z [STEP_START] playerX_fixed=0x3F42A3 (16194px), playerY_fixed=0xFD44 (253px), playerVelY_fixed=0xFFFFFF8F
+2026-03-27T23:07:10.3660190Z [GRAV_POS] posY: 0xFD44 (253px) -> 0xFD0E (253px), velY: 0xFFFFFF8F -> 0xFFFFFFCA
+2026-03-27T23:07:10.3665583Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.3769882Z [STEP_START] playerX_fixed=0x3F4614 (16198px), playerY_fixed=0xFD0E (253px), playerVelY_fixed=0xFFFFFFCA
+2026-03-27T23:07:10.3776694Z [GRAV_POS] posY: 0xFD0E (253px) -> 0xFD13 (253px), velY: 0xFFFFFFCA -> 0x0005
+2026-03-27T23:07:10.3782800Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.3988313Z [STEP_START] playerX_fixed=0x3F4985 (16201px), playerY_fixed=0xFD13 (253px), playerVelY_fixed=0x0005
+2026-03-27T23:07:10.4000270Z [GRAV_POS] posY: 0xFD13 (253px) -> 0xFD3A (253px), velY: 0x0005 -> 0x0027
+2026-03-27T23:07:10.4005484Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.4107002Z [STEP_START] playerX_fixed=0x3F4CF6 (16204px), playerY_fixed=0xFD3A (253px), playerVelY_fixed=0x0027
+2026-03-27T23:07:10.4121351Z [GRAV_POS] posY: 0xFD3A (253px) -> 0xFD83 (253px), velY: 0x0027 -> 0x0049
+2026-03-27T23:07:10.4134612Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.4241949Z [STEP_START] playerX_fixed=0x3F5067 (16208px), playerY_fixed=0xFD83 (253px), playerVelY_fixed=0x0049
+2026-03-27T23:07:10.4249556Z [GRAV_POS] posY: 0xFD83 (253px) -> 0xFD8E (253px), velY: 0x0049 -> 0x000B
+2026-03-27T23:07:10.4254802Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.4458880Z [STEP_START] playerX_fixed=0x3F53D8 (16211px), playerY_fixed=0xFD8E (253px), playerVelY_fixed=0x000B
+2026-03-27T23:07:10.4465950Z [GRAV_POS] posY: 0xFD8E (253px) -> 0xFDBB (253px), velY: 0x000B -> 0x002D
+2026-03-27T23:07:10.4472222Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.4569030Z [STEP_START] playerX_fixed=0x3F5749 (16215px), playerY_fixed=0xFDBB (253px), playerVelY_fixed=0x002D
+2026-03-27T23:07:10.4576843Z [GRAV_POS] posY: 0xFDBB (253px) -> 0xFDAA (253px), velY: 0x002D -> 0xFFFFFFEF
+2026-03-27T23:07:10.4582221Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.4807243Z [STEP_START] playerX_fixed=0x3F5ABA (16218px), playerY_fixed=0xFDAA (253px), playerVelY_fixed=0xFFFFFFEF
+2026-03-27T23:07:10.4829422Z [GRAV_POS] posY: 0xFDAA (253px) -> 0xFD68 (253px), velY: 0xFFFFFFEF -> 0xFFFFFFBE
+2026-03-27T23:07:10.4844485Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.4947315Z [STEP_START] playerX_fixed=0x3F5E2B (16222px), playerY_fixed=0xFD68 (253px), playerVelY_fixed=0xFFFFFFBE
+2026-03-27T23:07:10.4954914Z [GRAV_POS] posY: 0xFD68 (253px) -> 0xFCF5 (252px), velY: 0xFFFFFFBE -> 0xFFFFFF8D
+2026-03-27T23:07:10.4960320Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.5057884Z [STEP_START] playerX_fixed=0x3F619C (16225px), playerY_fixed=0xFCF5 (252px), playerVelY_fixed=0xFFFFFF8D
+2026-03-27T23:07:10.5065594Z [GRAV_POS] posY: 0xFCF5 (252px) -> 0xFCBD (252px), velY: 0xFFFFFF8D -> 0xFFFFFFC8
+2026-03-27T23:07:10.5070719Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.5277989Z [STEP_START] playerX_fixed=0x3F650D (16229px), playerY_fixed=0xFCBD (252px), playerVelY_fixed=0xFFFFFFC8
+2026-03-27T23:07:10.5286535Z [GRAV_POS] posY: 0xFCBD (252px) -> 0xFC54 (252px), velY: 0xFFFFFFC8 -> 0xFFFFFF97
+2026-03-27T23:07:10.5292103Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.5393131Z [STEP_START] playerX_fixed=0x3F687E (16232px), playerY_fixed=0xFC54 (252px), playerVelY_fixed=0xFFFFFF97
+2026-03-27T23:07:10.5407441Z [GRAV_POS] posY: 0xFC54 (252px) -> 0xFBBA (251px), velY: 0xFFFFFF97 -> 0xFFFFFF66
+2026-03-27T23:07:10.5413612Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.5617720Z [STEP_START] playerX_fixed=0x3F6BEF (16235px), playerY_fixed=0xFBBA (251px), playerVelY_fixed=0xFFFFFF66
+2026-03-27T23:07:10.5624955Z [GRAV_POS] posY: 0xFBBA (251px) -> 0xFB5B (251px), velY: 0xFFFFFF66 -> 0xFFFFFFA1
+2026-03-27T23:07:10.5630997Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.5732843Z [STEP_START] playerX_fixed=0x3F6F60 (16239px), playerY_fixed=0xFB5B (251px), playerVelY_fixed=0xFFFFFFA1
+2026-03-27T23:07:10.5740071Z [GRAV_POS] posY: 0xFB5B (251px) -> 0xFB37 (251px), velY: 0xFFFFFFA1 -> 0xFFFFFFDC
+2026-03-27T23:07:10.5745450Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.5955826Z [STEP_START] playerX_fixed=0x3F72D1 (16242px), playerY_fixed=0xFB37 (251px), playerVelY_fixed=0xFFFFFFDC
+2026-03-27T23:07:10.5973659Z [GRAV_POS] posY: 0xFB37 (251px) -> 0xFAE2 (250px), velY: 0xFFFFFFDC -> 0xFFFFFFAB
+2026-03-27T23:07:10.5984668Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.6091231Z [STEP_START] playerX_fixed=0x3F7642 (16246px), playerY_fixed=0xFAE2 (250px), playerVelY_fixed=0xFFFFFFAB
+2026-03-27T23:07:10.6099171Z [GRAV_POS] posY: 0xFAE2 (250px) -> 0xFA5C (250px), velY: 0xFFFFFFAB -> 0xFFFFFF7A
+2026-03-27T23:07:10.6104513Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.6307079Z [STEP_START] playerX_fixed=0x3F79B3 (16249px), playerY_fixed=0xFA5C (250px), playerVelY_fixed=0xFFFFFF7A
+2026-03-27T23:07:10.6315615Z [GRAV_POS] posY: 0xFA5C (250px) -> 0xF9A5 (249px), velY: 0xFFFFFF7A -> 0xFFFFFF49
+2026-03-27T23:07:10.6320849Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.6424154Z [STEP_START] playerX_fixed=0x3F7D24 (16253px), playerY_fixed=0xF9A5 (249px), playerVelY_fixed=0xFFFFFF49
+2026-03-27T23:07:10.6432960Z [GRAV_POS] posY: 0xF9A5 (249px) -> 0xF8BD (248px), velY: 0xFFFFFF49 -> 0xFFFFFF18
+2026-03-27T23:07:10.6438770Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.6640438Z [STEP_START] playerX_fixed=0x3F8095 (16256px), playerY_fixed=0xF8BD (248px), playerVelY_fixed=0xFFFFFF18
+2026-03-27T23:07:10.6646731Z [GRAV_POS] posY: 0xF8BD (248px) -> 0xF810 (248px), velY: 0xFFFFFF18 -> 0xFFFFFF53
+2026-03-27T23:07:10.6652081Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.6755803Z [STEP_START] playerX_fixed=0x3F8406 (16260px), playerY_fixed=0xF810 (248px), playerVelY_fixed=0xFFFFFF53
+2026-03-27T23:07:10.6762525Z [GRAV_POS] posY: 0xF810 (248px) -> 0xF79E (247px), velY: 0xFFFFFF53 -> 0xFFFFFF8E
+2026-03-27T23:07:10.6768003Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.6966372Z [STEP_START] playerX_fixed=0x3F8777 (16263px), playerY_fixed=0xF79E (247px), playerVelY_fixed=0xFFFFFF8E
+2026-03-27T23:07:10.6983859Z [GRAV_POS] posY: 0xF79E (247px) -> 0xF6FB (246px), velY: 0xFFFFFF8E -> 0xFFFFFF5D
+2026-03-27T23:07:10.6994390Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.7096953Z [STEP_START] playerX_fixed=0x3F8AE8 (16266px), playerY_fixed=0xF6FB (246px), playerVelY_fixed=0xFFFFFF5D
+2026-03-27T23:07:10.7104848Z [GRAV_POS] posY: 0xF6FB (246px) -> 0xF693 (246px), velY: 0xFFFFFF5D -> 0xFFFFFF98
+2026-03-27T23:07:10.7119398Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.7226781Z [STEP_START] playerX_fixed=0x3F8E59 (16270px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.7233876Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:10.7246321Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.7457009Z [STEP_START] playerX_fixed=0x3F91CA (16273px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.7464411Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.7469987Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.7567560Z [STEP_START] playerX_fixed=0x3F953B (16277px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.7574511Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.7579508Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.7782361Z [STEP_START] playerX_fixed=0x3F98AC (16280px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.7789389Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.7795280Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.7897697Z [STEP_START] playerX_fixed=0x3F9C1D (16284px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.7912852Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.7921333Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.8126356Z [STEP_START] playerX_fixed=0x3F9F8E (16287px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.8133961Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.8147836Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.8251509Z [STEP_START] playerX_fixed=0x3FA2FF (16290px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.8258066Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.8264511Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.8467662Z [STEP_START] playerX_fixed=0x3FA670 (16294px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.8483733Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.8491232Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.8589245Z [STEP_START] playerX_fixed=0x3FA9E1 (16297px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.8596726Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.8602507Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.8806811Z [STEP_START] playerX_fixed=0x3FAD52 (16301px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.8817375Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.8827249Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.8930656Z [STEP_START] playerX_fixed=0x3FB0C3 (16304px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.8976098Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.8986791Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.9092041Z [STEP_START] playerX_fixed=0x3FB434 (16308px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.9101977Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.9107109Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.9316564Z [STEP_START] playerX_fixed=0x3FB7A5 (16311px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.9331333Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:10.9340561Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.9439420Z [STEP_START] playerX_fixed=0x3FBB16 (16315px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.9447816Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:10.9453075Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.9659812Z [STEP_START] playerX_fixed=0x3FBE87 (16318px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.9668377Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:10.9674475Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.9774767Z [STEP_START] playerX_fixed=0x3FC1F8 (16321px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:10.9786029Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:10.9796392Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:10.9894693Z [STEP_START] playerX_fixed=0x3FC569 (16325px), playerY_fixed=0xFC3B (252px), playerVelY_fixed=0x003B
+2026-03-27T23:07:10.9902340Z [GRAV_POS] posY: 0xFC3B (252px) -> 0xFC38 (252px), velY: 0x003B -> 0xFFFFFFFD
+2026-03-27T23:07:10.9908033Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.0106775Z [STEP_START] playerX_fixed=0x3FC8DA (16328px), playerY_fixed=0xFC38 (252px), playerVelY_fixed=0xFFFFFFFD
+2026-03-27T23:07:11.0114911Z [GRAV_POS] posY: 0xFC38 (252px) -> 0xFC04 (252px), velY: 0xFFFFFFFD -> 0xFFFFFFCC
+2026-03-27T23:07:11.0120675Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.0222316Z [STEP_START] playerX_fixed=0x3FCC4B (16332px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.0230051Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:11.0235839Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.0439402Z [STEP_START] playerX_fixed=0x3FCFBC (16335px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.0446834Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:11.0452131Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.0664320Z [STEP_START] playerX_fixed=0x3FD32D (16339px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.0683076Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:11.0690780Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.0789436Z [STEP_START] playerX_fixed=0x3FD69E (16342px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.0806645Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:11.0812965Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.0922964Z [STEP_START] playerX_fixed=0x3FDA0F (16346px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.0931156Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:11.0937259Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.1145486Z [STEP_START] playerX_fixed=0x3FDD80 (16349px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.1152568Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:11.1168570Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.1275550Z [STEP_START] playerX_fixed=0x3FE0F1 (16352px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.1290789Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:11.1303632Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.1410748Z [STEP_START] playerX_fixed=0x3FE462 (16356px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.1419738Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:11.1433114Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.1637688Z [STEP_START] playerX_fixed=0x3FE7D3 (16359px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.1652687Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:11.1661657Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.1757941Z [STEP_START] playerX_fixed=0x3FEB44 (16363px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.1765100Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:11.1771009Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.1971121Z [STEP_START] playerX_fixed=0x3FEEB5 (16366px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.1982297Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:11.1991534Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.2096328Z [STEP_START] playerX_fixed=0x3FF226 (16370px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.2110976Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:11.2119376Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.2324067Z [STEP_START] playerX_fixed=0x3FF597 (16373px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.2332619Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:11.2337876Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.2439650Z [STEP_START] playerX_fixed=0x3FF908 (16377px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.2453469Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:11.2462874Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.2559720Z [STEP_START] playerX_fixed=0x3FFC79 (16380px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.2573152Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFC3B (252px), velY: 0x0000 -> 0x003B
+2026-03-27T23:07:11.2583324Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.2787013Z [STEP_START] playerX_fixed=0x3FFFEA (16383px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.2805634Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:11.2811826Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.2917250Z [STEP_START] playerX_fixed=0x40035B (16387px), playerY_fixed=0xFC00 (252px), playerVelY_fixed=0x0000
+2026-03-27T23:07:11.2926923Z [GRAV_POS] posY: 0xFC00 (252px) -> 0xFBCF (251px), velY: 0x0000 -> 0xFFFFFFCF
+2026-03-27T23:07:11.2934331Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.3146765Z [STEP_START] playerX_fixed=0x4006CC (16390px), playerY_fixed=0xFBCF (251px), playerVelY_fixed=0xFFFFFFCF
+2026-03-27T23:07:11.3160228Z [GRAV_POS] posY: 0xFBCF (251px) -> 0xFB6D (251px), velY: 0xFFFFFFCF -> 0xFFFFFF9E
+2026-03-27T23:07:11.3173321Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:11.3276655Z [STEP_START] playerX_fixed=0x400A3D (16394px), playerY_fixed=0xFB6D (251px), playerVelY_fixed=0xFFFFFF9E
+2026-03-27T23:07:11.3284540Z [GRAV_POS] posY: 0xFB6D (251px) -> 0xFADA (250px), velY: 0xFFFFFF9E -> 0xFFFFFF6D
+2026-03-27T23:07:11.3290306Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True

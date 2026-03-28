@@ -1,0 +1,10 @@
+﻿
+Line                                                         
+----                                                         
+[PF f=1080] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+[PF f=1081] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+[PF f=1082] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+[PF f=1083] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+[PF f=1084] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+
+

@@ -1,0 +1,30 @@
+﻿2026-03-27T23:07:07.7476248Z [SLOPE] Check: tmp2=1, tempX=15662, tempY=217, tile=[978,13], arrayY=16, idx=20066, tileVal=0x0D, collision=COL_DEATH_TOP
+2026-03-27T23:07:07.7476910Z [SHIP_ROT] velY=0xFFFFFCCE, rotate=0x0732, frame=7
+2026-03-27T23:07:07.7477617Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:07.7478282Z [FWD_CHECK] probe=(15662,215) tile=(978,13) tileIdxY=16 tid=0x0D col=COL_DEATH_TOP oldX=15654 newX=15657
+2026-03-27T23:07:07.7479327Z [DEATH_CHECK] Point (15657,215) -> Tile(978,13) TID=13
+2026-03-27T23:07:07.7578560Z [STEP_START] playerX_fixed=0x3D29C7 (15657px), playerY_fixed=0xD0B7 (208px), playerVelY_fixed=0xFFFFFCCE
+2026-03-27T23:07:07.7580357Z [PF] Frame 4863: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFCCE, wasZeroed=False)
+2026-03-27T23:07:07.7581512Z [GRAV_PORTAL_CHECK] mini=True grav=False playerBox=(15658,212)-(15665,218) size=8x7
+2026-03-27T23:07:07.7582383Z [GRAV_PRE_MOVEMENT] currplayer_gravity=00 gravityFlipped=False gravityReversed=False
+2026-03-27T23:07:07.7583160Z [TELEPORT_PORTAL] Checking collision: player (15658,212)-(15665,218) size=8x7
+2026-03-27T23:07:07.7583861Z [TELEPORT_PORTAL] Colliding with entrance portal 0x4E at idx=20067
+2026-03-27T23:07:07.7584974Z [TELEPORT_PORTAL] Found visible exit 0x4F at (15648, 376), exit Y=392
+2026-03-27T23:07:07.7585670Z [TELEPORT_PORTAL] Teleported to Y=344 (camera Y=192)
+2026-03-27T23:07:07.7586393Z [GRAV_MOD] Checking portals - playerX=15657, playerY=344, gravMult=1.000
+2026-03-27T23:07:07.7587369Z [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+2026-03-27T23:07:07.7588118Z [GRAV_START] velY=0xFFFFFCCE, posY=0x15800 (344px), dashing=0, wasZeroedByCollision=False, mode=1
+2026-03-27T23:07:07.7588824Z [GRAV_POS] posY: 0x15800 (344px) -> 0x1549D (340px), velY: 0xFFFFFCCE -> 0xFFFFFC9D
+2026-03-27T23:07:07.7589474Z [SLOPE_U] bg_coll_U_slopes: playerX=15657, checkY=346, checkX=15657, checkW=8, mini=True
+2026-03-27T23:07:07.7590448Z [SLOPE_U] Check: tmp2=0, tempX=15657, tempY=346, tile=[978,21], tileVal=0x00, collision=COL_NONE
+2026-03-27T23:07:07.7591109Z [SLOPE_U] Check: tmp2=1, tempX=15665, tempY=346, tile=[979,21], tileVal=0x00, collision=COL_NONE
+2026-03-27T23:07:07.7591752Z [SLOPE] bg_coll_D_slopes: playerX=15657, checkY=349, checkX=15657, checkW=8, mini=True
+2026-03-27T23:07:07.7592380Z [SLOPE] Check: tmp2=0, tempX=15657, tempY=349, tile=[978,21], arrayY=24, idx=29610, tileVal=0x00, collision=COL_NONE
+2026-03-27T23:07:07.7593105Z [SLOPE] Check: tmp2=1, tempX=15665, tempY=349, tile=[979,21], arrayY=24, idx=29611, tileVal=0x00, collision=COL_NONE
+2026-03-27T23:07:07.7593759Z [SHIP_ROT] velY=0xFFFFFC9D, rotate=0x0763, frame=7
+2026-03-27T23:07:07.7594447Z [GRAV_POST_PHYSICS] currplayer_gravity=00 gravityFlipped=False gravityReversed=False mini=True
+2026-03-27T23:07:07.7595113Z [FWD_CHECK] probe=(15665,347) tile=(979,21) tileIdxY=24 tid=0x00 col=COL_NONE oldX=15657 newX=15661
+2026-03-27T23:07:07.7595744Z [DEATH_CHECK] Point (15660,347) -> Tile(978,21) TID=0
+2026-03-27T23:07:07.7639085Z Built tileLayerCache pxW=272 pxH=256 hadAnimated=False startTileX=973 startTileY=12 tilesLen=32211 mapWidth=1193 mapHeight=27
+2026-03-27T23:07:07.7641960Z Assigned tileLayerImage.Source=CachedBitmap
+2026-03-27T23:07:07.7793826Z [STEP_START] playerX_fixed=0x3D2D38 (15661px), playerY_fixed=0x1549D (340px), playerVelY_fixed=0xFFFFFC9D
