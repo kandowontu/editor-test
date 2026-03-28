@@ -108,7 +108,7 @@ namespace FamidashEditor
                 int playerY_px_trail = playerY_fixed >> 8;
                 // Apply mini mode offset for trail to match visual position
                 bool isMini_trail = (miniMode);
-                bool gravityInverted_trail = (!gravityFlipped);
+                bool gravityInverted_trail = (currplayer_gravity != 0);
                 if (isMini_trail && !gravityInverted_trail)
                 {
                     playerY_px_trail += 4;  // Adjust for visual position offset

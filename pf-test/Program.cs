@@ -17,8 +17,9 @@ using FamidashEditor;
 // Parse --coins flag (can appear anywhere in args)
 bool preferCoins = args.Any(a => a.Equals("--coins", StringComparison.OrdinalIgnoreCase));
 bool useBfs = args.Any(a => a.Equals("--bfs", StringComparison.OrdinalIgnoreCase));
+bool verbose = args.Any(a => a.Equals("--verbose", StringComparison.OrdinalIgnoreCase) || a.Equals("-v", StringComparison.OrdinalIgnoreCase));
 // Filter out named flags before positional parsing
-var positionalArgs = args.Where(a => !a.StartsWith("--")).ToArray();
+var positionalArgs = args.Where(a => !a.StartsWith("--") && !a.Equals("-v", StringComparison.OrdinalIgnoreCase)).ToArray();
 
 string tmxPath = positionalArgs.Length > 0 ? positionalArgs[0] : @"..\famidash\LEVELS\LEVEL DATA\lvlset_HUGE\everyend.tmx";
 int maxFallSpeed = positionalArgs.Length > 1 ? int.Parse(positionalArgs[1]) : 0x06;
@@ -158,6 +159,7 @@ var engine = new PathfinderEngine(
 engine.JumpTimingBias = jumpTimingBias;
 engine.PreferCoins = preferCoins;
 engine.UseBFS = useBfs || preferCoins; // Editor: UseBFS = preferCoins (BFS collects all coins in a single pass)
+engine.Verbose = verbose;
 
 if (preferCoins)
     Console.WriteLine("Coin collection mode ENABLED");

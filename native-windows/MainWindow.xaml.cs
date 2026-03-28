@@ -554,6 +554,18 @@ namespace FamidashEditor
                 catch { }
             }
 
+            // F6 triggers Calculate Path
+            if (e.Key == System.Windows.Input.Key.F6 && !e.IsRepeat)
+            {
+                try
+                {
+                    CalculatePathButton_Click(CalculatePathButton, new RoutedEventArgs());
+                    e.Handled = true;
+                    return;
+                }
+                catch { }
+            }
+
             // F10 toggles Cam Mode global option
             if (e.Key == System.Windows.Input.Key.F10)
             {
@@ -1175,10 +1187,10 @@ namespace FamidashEditor
 
     // When locking sprites to a deco set, this hash contains the sprite ids that should be disabled
     private HashSet<int> disabledSprites = new HashSet<int>();
-    private bool lockSpritesToSet = false;
+    private bool lockSpritesToSet = true;
     public bool LockSpritesToSet => lockSpritesToSet;
     // When true, prefer external per-set tileset PNGs (if available) and swap famidash.bmp at runtime
-    private bool showAccurateTileset = false;
+    private bool showAccurateTileset = true;
     public bool ShowAccurateTileset => showAccurateTileset;
     // Public accessor for no-parallax background option
     public bool NoParallaxBg => noParallaxBg;
@@ -7123,7 +7135,7 @@ namespace FamidashEditor
                 // If no settings file exists, create default one
                 if (!System.IO.File.Exists(path))
                 {
-                    var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"hideBackground\":false,\"hideGround\":false,\"useFastZoom\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                    var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"hideBackground\":false,\"hideGround\":false,\"useFastZoom\":false,\"lockSpritesToSet\":true,\"showAccurateTileset\":true,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
                     System.IO.File.WriteAllText(path, defaultSettings);
                 }
                 
@@ -7143,7 +7155,7 @@ namespace FamidashEditor
                     {
                         // Old version - delete and recreate
                         try { System.IO.File.Delete(path); } catch { }
-                        var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"hideBackground\":false,\"hideGround\":false,\"useFastZoom\":false,\"lockSpritesToSet\":false,\"showAccurateTileset\":false,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
+                        var defaultSettings = "{\"version\":2,\"background\":[255,59,59,59],\"backgroundTint\":[255,0,23,116],\"groundTint\":[255,0,23,116],\"tileTint\":[255,0,23,116],\"useLegacyTriggerOffset\":false,\"swapMouseWheelScroll\":false,\"invertPinchGesture\":true,\"hideColorTriggers\":false,\"hideInvisibleSprites\":false,\"hideBackground\":false,\"hideGround\":false,\"useFastZoom\":false,\"lockSpritesToSet\":true,\"showAccurateTileset\":true,\"playerColor\":[255,100,229,60],\"playerColorEnabled\":true,\"gridDarkness\":0.18,\"famistudioPath\":\"C:\\\\Program Files\\\\FamiStudio\"}";
                         System.IO.File.WriteAllText(path, defaultSettings);
                         txt = defaultSettings;
                         doc = System.Text.Json.JsonDocument.Parse(txt);
@@ -15768,6 +15780,7 @@ namespace FamidashEditor
             if (spriteIdx == 0x8E) return true;
             if (spriteIdx == 0x9E) return true;
             if (spriteIdx >= 0xDD && spriteIdx <= 0xDF) return true;
+            if (spriteIdx == 0xED) return true;
             if (spriteIdx >= 0xEE && spriteIdx <= 0xEF) return true;
             if (spriteIdx >= 0xF0 && spriteIdx <= 0xFC) return true;
             return false;

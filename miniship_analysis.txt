@@ -1,0 +1,535 @@
+﻿PF MINISHIP_Y: 1240 entries, PF frames 1080-5333
+Number of BFS branches: 4
+  Branch 0: f=1080-1279 (200 frames), X=3305-3990, Y=271-261
+  Branch 1: f=3714-4274 (561 frames), X=11801-13734, Y=237-289
+  Branch 2: f=4695-4697 (3 frames), X=15079-15086, Y=304-298
+  Branch 3: f=4858-5333 (476 frames), X=15640-17013, Y=230-263
+
+Total SIM steps: 1246
+
+First PF branch: f=1080-1279, 200 frames
+  First entry: X=3305, Y=271
+  Closest SIM match for PF X=3305: SIM frame 1073, X=3303px, Y=274px
+  Offset: SIM frame = PF frame + (-7)
+
+SIM at step index 1080: X=3328px, Y=268px, velY=0xFFFFFF78
+PF at f=1080:           X=3305, Y=271, velY=0xFEAC
+X diff: -23
+Y diff: 3
+
+=== FRAME-BY-FRAME COMPARISON ===
+   gf   PF_X PF_Y  PF_velY |  SIM_X SIM_Y   SIM_velY |   dX  dY   inj
+ 1080   3305  271   0xFEAC |   3328  268 0xFFFFFF78 |  -23   3     - *** FIRST DIVERGE ***
+ 1081   3309  270   0xFEE7 |   3331  267 0xFFFFFF47 |  -22   3     -  DIFF
+ 1082   3312  269   0xFF22 |   3334  266 0xFFFFFF16 |  -22   3     -  DIFF
+ 1083   3316  269   0xFF5D |   3338  265 0xFFFFFEE5 |  -22   4     -  DIFF
+ 1084   3319  268   0xFF98 |   3341  264 0xFFFFFF20 |  -22   4  HOLD  DIFF
+ 1085   3323  268   0xFF67 |   3345  264 0xFFFFFF5B |  -22   4  HOLD  DIFF
+ 1086   3326  267   0xFF36 |   3348  263 0xFFFFFF96 |  -22   4  HOLD  DIFF
+ 1087   3329  266   0xFF05 |   3352  263 0xFFFFFFD1 |  -23   3  HOLD  DIFF
+ 1088   3333  265   0xFED4 |   3355  263     0x000C |  -22   2     -  DIFF
+ 1089   3336  264   0xFF0F |   3359  263     0x002E |  -23   1     -
+ 1090   3340  263   0xFF4A |   3362  264     0x0050 |  -22  -1     -
+ 1091   3343  263   0xFF85 |   3365  264     0x0072 |  -22  -1     -
+ 1092   3347  262   0xFFC0 |   3369  265     0x0094 |  -22  -3     -  DIFF
+ 1093   3350  262   0xFFFB |   3372  265     0x00B6 |  -22  -3     -  DIFF
+ 1094   3354  263   0x0036 |   3376  266     0x00D8 |  -22  -3     -  DIFF
+ 1095   3357  263   0x0058 |   3379  267     0x00FA |  -22  -4     -  DIFF
+ 1096   3360  263   0x007A |   3383  268     0x011C |  -23  -5     -  DIFF
+ 1097   3364  264   0x009C |   3386  269     0x013E |  -22  -5     -  DIFF
+ 1098   3367  265   0x00BE |   3390  271     0x0160 |  -23  -6     -  DIFF
+ 1099   3371  266   0x00E0 |   3393  272     0x0182 |  -22  -6     -  DIFF
+ 1100   3374  267   0x0102 |   3396  274     0x01A4 |  -22  -7     -  DIFF
+ 1101   3378  268   0x0124 |   3400  276     0x01C6 |  -22  -8     -  DIFF
+ 1102   3381  269   0x0146 |   3403  278     0x01E8 |  -22  -9     -  DIFF
+ 1103   3384  271   0x0168 |   3407  279     0x01AA |  -23  -8     -  DIFF
+ 1104   3388  272   0x018A |   3410  281     0x01CC |  -22  -9     -  DIFF
+ 1105   3391  274   0x01AC |   3414  283     0x01EE |  -23  -9     -  DIFF
+ 1106   3395  276   0x01CE |   3417  285     0x0210 |  -22  -9     -  DIFF
+ 1107   3398  277   0x01F0 |   3420  287     0x0232 |  -22 -10  HOLD  DIFF
+ 1108   3402  279   0x01B2 |   3424  290     0x0254 |  -22 -11     -  DIFF
+ 1109   3405  281   0x01D4 |   3427  292     0x0276 |  -22 -11     -  DIFF
+ 1110   3409  283   0x01F6 |   3431  294     0x0238 |  -22 -11     -  DIFF
+ 1111   3412  285   0x0218 |   3434  297     0x025A |  -22 -12     -  DIFF
+ 1112   3415  287   0x023A |   3438  299     0x027C |  -23 -12     -  DIFF
+ 1113   3419  290   0x025C |   3441  302     0x029E |  -22 -12     -  DIFF
+ 1114   3422  292   0x027E |   3445  305     0x02C0 |  -23 -13  HOLD  DIFF
+ 1115   3426  294   0x0240 |   3448  307     0x02D7 |  -22 -13     -  DIFF
+ 1116   3429  297   0x0262 |   3451  310     0x02D7 |  -22 -13     -  DIFF
+ 1117   3433  299   0x0284 |   3455  313     0x0299 |  -22 -14     -  DIFF
+ 1118   3436  302   0x02A6 |   3458  315     0x025B |  -22 -13     -  DIFF
+ 1119   3440  305   0x02C8 |   3462  317     0x021D |  -22 -12     -  DIFF
+ 1120   3443  308   0x02D7 |   3465  319     0x01DF |  -22 -11     -  DIFF
+ 1121   3446  311   0x02D7 |   3469  321     0x01A1 |  -23 -10  HOLD  DIFF
+ 1122   3450  313   0x0299 |   3472  322     0x0163 |  -22  -9  HOLD  DIFF
+ 1123   3453  316   0x025B |   3476  324     0x0185 |  -23  -8  HOLD  DIFF
+ 1124   3457  318   0x021D |   3479  325     0x01A7 |  -22  -7  HOLD  DIFF
+ 1125   3460  320   0x01DF |   3482  327     0x0169 |  -22  -7  HOLD  DIFF
+ 1126   3464  321   0x01A1 |   3486  328     0x012B |  -22  -7  HOLD  DIFF
+ 1127   3467  323   0x0163 |   3489  329     0x00ED |  -22  -6     -  DIFF
+ 1128   3471  324   0x0185 |   3493  330     0x00AF |  -22  -6     -  DIFF
+ 1129   3474  326   0x01A7 |   3496  330     0x0071 |  -22  -4  HOLD  DIFF
+ 1130   3477  327   0x0169 |   3500  330     0x0033 |  -23  -3  HOLD  DIFF
+ 1131   3481  328   0x012B |   3503  330 0xFFFFFFF5 |  -22  -2  HOLD  DIFF
+ 1132   3484  329   0x00ED |   3507  330 0xFFFFFFC4 |  -23  -1  HOLD
+ 1133   3488  330   0x00AF |   3510  330 0xFFFFFF93 |  -22   0  HOLD
+ 1134   3491  330   0x0071 |   3513  329 0xFFFFFF62 |  -22   1  HOLD
+ 1135   3495  331   0x0033 |   3517  328 0xFFFFFF31 |  -22   3  HOLD  DIFF
+ 1136   3498  330   0xFFF5 |   3520  327 0xFFFFFF00 |  -22   3  HOLD  DIFF
+ 1137   3501  330   0xFFC4 |   3524  326 0xFFFFFECF |  -23   4  HOLD  DIFF
+ 1138   3505  330   0xFF93 |   3527  325 0xFFFFFE9E |  -22   5  HOLD  DIFF
+ 1139   3508  329   0xFF62 |   3531  323 0xFFFFFE6D |  -23   6  HOLD  DIFF
+ 1140   3512  328   0xFF31 |   3534  321 0xFFFFFE3C |  -22   7  HOLD  DIFF
+ 1141   3515  327   0xFF00 |   3538  319 0xFFFFFE0B |  -23   8  HOLD  DIFF
+ 1142   3519  326   0xFECF |   3541  317 0xFFFFFDDA |  -22   9  HOLD  DIFF
+ 1143   3522  325   0xFE9E |   3544  315 0xFFFFFDA9 |  -22  10  HOLD  DIFF
+ 1144   3526  323   0xFE6D |   3548  312 0xFFFFFD78 |  -22  11  HOLD  DIFF
+ 1145   3529  321   0xFE3C |   3551  310 0xFFFFFD47 |  -22  11  HOLD  DIFF
+ 1146   3532  320   0xFE0B |   3555  307 0xFFFFFD16 |  -23  13  HOLD  DIFF
+ 1147   3536  317   0xFDDA |   3558  304 0xFFFFFCE5 |  -22  13  HOLD  DIFF
+ 1148   3539  315   0xFDA9 |   3562  300 0xFFFFFCB4 |  -23  15  HOLD  DIFF
+ 1149   3543  313   0xFD78 |   3565  297 0xFFFFFC83 |  -22  16     -  DIFF
+ 1150   3546  310   0xFD47 |   3568  293 0xFFFFFC73 |  -22  17  HOLD  DIFF
+ 1151   3550  307   0xFD16 |   3572  289 0xFFFFFC73 |  -22  18  HOLD  DIFF
+ 1152   3553  304   0xFCE5 |   3575  286 0xFFFFFCAE |  -22  18  HOLD  DIFF
+ 1153   3557  300   0xFCB4 |   3579  283 0xFFFFFCE9 |  -22  17  HOLD  DIFF
+ 1154   3560  297   0xFC83 |   3582  280 0xFFFFFD24 |  -22  17  HOLD  DIFF
+ 1155   3563  293   0xFC73 |   3586  277 0xFFFFFD5F |  -23  16  HOLD  DIFF
+ 1156   3567  290   0xFC73 |   3589  275 0xFFFFFD9A |  -22  15     -  DIFF
+ 1157   3570  286   0xFCAE |   3593  272 0xFFFFFD69 |  -23  14     -  DIFF
+ 1158   3574  283   0xFCE9 |   3596  270 0xFFFFFD38 |  -22  13     -  DIFF
+ 1159   3577  280   0xFD24 |   3599  267 0xFFFFFD73 |  -22  13     -  DIFF
+ 1160   3581  278   0xFD5F |   3603  265 0xFFFFFDAE |  -22  13     -  DIFF
+ 1161   3584  275   0xFD9A |   3606  263 0xFFFFFDE9 |  -22  12  HOLD  DIFF
+ 1162   3588  273   0xFD69 |   3610  261 0xFFFFFE24 |  -22  12  HOLD  DIFF
+ 1163   3591  270   0xFD38 |   3613  259 0xFFFFFE5F |  -22  11     -  DIFF
+ 1164   3594  267   0xFD73 |   3617  258 0xFFFFFE9A |  -23   9     -  DIFF
+ 1165   3598  265   0xFDAE |   3620  257 0xFFFFFED5 |  -22   8     -  DIFF
+ 1166   3601  263   0xFDE9 |   3624  256 0xFFFFFF10 |  -23   7     -  DIFF
+ 1167   3605  261   0xFE24 |   3627  255 0xFFFFFF4B |  -22   6     -  DIFF
+ 1168   3608  259   0xFE5F |   3630  255 0xFFFFFF86 |  -22   4     -  DIFF
+ 1169   3612  258   0xFE9A |   3634  254 0xFFFFFFC1 |  -22   4     -  DIFF
+ 1170   3615  257   0xFED5 |   3637  254 0xFFFFFFFC |  -22   3     -  DIFF
+ 1171   3619  256   0xFF10 |   3641  254     0x0037 |  -22   2     -  DIFF
+ 1172   3622  255   0xFF4B |   3644  255     0x0059 |  -22   0     -
+ 1173   3625  255   0xFF86 |   3648  255     0x007B |  -23   0     -
+ 1174   3629  255   0xFFC1 |   3651  256     0x009D |  -22  -1     -
+ 1175   3632  254   0xFFFC |   3655  257     0x00BF |  -23  -3     -  DIFF
+ 1176   3636  255   0x0037 |   3658  258     0x00E1 |  -22  -3     -  DIFF
+ 1177   3639  255   0x0059 |   3661  259     0x0103 |  -22  -4     -  DIFF
+ 1178   3643  256   0x007B |   3665  260     0x0125 |  -22  -4     -  DIFF
+ 1179   3646  256   0x009D |   3668  261     0x0147 |  -22  -5     -  DIFF
+ 1180   3649  257   0x00BF |   3672  262     0x0169 |  -23  -5     -  DIFF
+ 1181   3653  258   0x00E1 |   3675  264     0x018B |  -22  -6     -  DIFF
+ 1182   3656  259   0x0103 |   3679  266     0x01AD |  -23  -7     -  DIFF
+ 1183   3660  260   0x0125 |   3682  267     0x01CF |  -22  -7     -  DIFF
+ 1184   3663  261   0x0147 |   3685  269     0x01F1 |  -22  -8     -  DIFF
+ 1185   3667  263   0x0169 |   3689  271     0x0213 |  -22  -8     -  DIFF
+ 1186   3670  264   0x018B |   3692  273     0x01D5 |  -22  -9     -  DIFF
+ 1187   3674  266   0x01AD |   3696  275     0x0197 |  -22  -9     -  DIFF
+ 1188   3677  268   0x01CF |   3699  276     0x0159 |  -22  -8     -  DIFF
+ 1189   3680  270   0x01F1 |   3703  278     0x017B |  -23  -8     -  DIFF
+ 1190   3684  272   0x0213 |   3706  279     0x019D |  -22  -7  HOLD  DIFF
+ 1191   3687  273   0x01D5 |   3710  281     0x015F |  -23  -8  HOLD  DIFF
+ 1192   3691  275   0x0197 |   3713  282     0x0121 |  -22  -7  HOLD  DIFF
+ 1193   3694  276   0x0159 |   3716  283     0x00E3 |  -22  -7     -  DIFF
+ 1194   3698  278   0x017B |   3720  283     0x00A5 |  -22  -5     -  DIFF
+ 1195   3701  280   0x019D |   3723  284     0x0000 |  -22  -4  HOLD  DIFF
+ 1196   3705  281   0x015F |   3727  284     0x0000 |  -22  -3  HOLD  DIFF
+ 1197   3708  282   0x0121 |   3730  284     0x0000 |  -22  -2  HOLD  DIFF
+ 1198   3711  283   0x00E3 |   3734  284     0x0000 |  -23  -1  HOLD
+ 1199   3715  284   0x00A5 |   3737  284     0x0000 |  -22   0     -
+ 1200   3718  284   0x00C7 |   3741  284     0x0000 |  -23   0     -
+ 1201   3722  285   0x00E9 |   3744  284     0x0000 |  -22   1  HOLD
+ 1202   3725  286   0x00AB |   3747  284     0x0000 |  -22   2  HOLD  DIFF
+ 1203   3729  286   0x006D |   3751  284     0x0000 |  -22   2  HOLD  DIFF
+ 1204   3732  287   0x002F |   3754  284     0x0000 |  -22   3  HOLD  DIFF
+ 1205   3736  286   0xFFF1 |   3758  284     0x0000 |  -22   2     -  DIFF
+ 1206   3739  287   0x002C |   3761  284     0x0000 |  -22   3  HOLD  DIFF
+ 1207   3742  287   0xFFEE |   3765  284     0x0000 |  -23   3  HOLD  DIFF
+ 1208   3746  286   0xFFBD |   3768  284     0x0000 |  -22   2     -  DIFF
+ 1209   3749  286   0xFFF8 |   3772  284     0x0000 |  -23   2     -  DIFF
+ 1210   3753  286   0x0033 |   3775  284     0x0000 |  -22   2     -  DIFF
+ 1211   3756  287   0x0055 |   3778  284     0x0000 |  -22   3     -  DIFF
+ 1212   3760  287   0x0077 |   3782  284     0x003B |  -22   3     -  DIFF
+ 1213   3763  288   0x0099 |   3785  284     0x005D |  -22   4     -  DIFF
+ 1214   3766  289   0x00BB |   3789  285     0x007F |  -23   4     -  DIFF
+ 1215   3770  289   0x00DD |   3792  285     0x00A1 |  -22   4     -  DIFF
+ 1216   3773  290   0x00FF |   3796  286     0x00C3 |  -23   4     -  DIFF
+ 1217   3777  292   0x0121 |   3799  287     0x00E5 |  -22   5     -  DIFF
+ 1218   3780  293   0x0143 |   3802  288     0x0107 |  -22   5     -  DIFF
+ 1219   3784  294   0x0165 |   3806  289     0x0129 |  -22   5     -  DIFF
+ 1220   3787  296   0x0187 |   3809  290     0x014B |  -22   6     -  DIFF
+ 1221   3791  297   0x01A9 |   3813  292     0x016D |  -22   5     -  DIFF
+ 1222   3794  299   0x01CB |   3816  293     0x012F |  -22   6     -  DIFF
+ 1223   3797  301   0x01ED |   3820  294     0x00F1 |  -23   7     -  DIFF
+ 1224   3801  303   0x020F |   3823  295     0x0113 |  -22   8     -  DIFF
+ 1225   3804  305   0x0231 |   3827  296     0x00D5 |  -23   9     -  DIFF
+ 1226   3808  308   0x0253 |   3830  296     0x0097 |  -22  12  HOLD  DIFF
+ 1227   3811  310   0x0215 |   3833  297     0x0059 |  -22  13  HOLD  DIFF
+ 1228   3815  312   0x01D7 |   3837  297     0x001B |  -22  15     -  DIFF
+ 1229   3818  314   0x01F9 |   3840  297 0xFFFFFFDD |  -22  17  HOLD  DIFF
+ 1230   3822  315   0x01BB |   3844  296 0xFFFFFFAC |  -22  19  HOLD  DIFF
+ 1231   3825  317   0x017D |   3847  296 0xFFFFFF7B |  -22  21  HOLD  DIFF
+ 1232   3828  318   0x013F |   3851  296 0xFFFFFFB6 |  -23  22  HOLD  DIFF
+ 1233   3832  319   0x0101 |   3854  295 0xFFFFFF85 |  -22  24  HOLD  DIFF
+ 1234   3835  320   0x00C3 |   3858  294 0xFFFFFF54 |  -23  26  HOLD  DIFF
+ 1235   3839  320   0x0085 |   3861  294 0xFFFFFF23 |  -22  26  HOLD  DIFF
+ 1236   3842  321   0x0047 |   3864  293 0xFFFFFEF2 |  -22  28     -  DIFF
+ 1237   3846  321   0x0069 |   3868  291 0xFFFFFEC1 |  -22  30  HOLD  DIFF
+ 1238   3849  321   0x002B |   3871  290 0xFFFFFE90 |  -22  31  HOLD  DIFF
+ 1239   3853  321   0xFFED |   3875  288 0xFFFFFE5F |  -22  33  HOLD  DIFF
+ 1240   3856  321   0xFFBC |   3878  286 0xFFFFFE2E |  -22  35  HOLD  DIFF
+ 1241   3859  320   0xFF8B |   3882  284 0xFFFFFDFD |  -23  36  HOLD  DIFF
+ 1242   3863  320   0xFF5A |   3885  282 0xFFFFFDCC |  -22  38  HOLD  DIFF
+ 1243   3866  319   0xFF29 |   3889  280 0xFFFFFD9B |  -23  39  HOLD  DIFF
+ 1244   3870  318   0xFEF8 |   3892  277 0xFFFFFD6A |  -22  41  HOLD  DIFF
+ 1245   3873  317   0xFEC7 |   3895  274 0xFFFFFD39 |  -22  43  HOLD  DIFF
+ 1246   3877  315   0xFE96 |    N/A  N/A        N/A |
+ 1247   3880  314   0xFE65 |    N/A  N/A        N/A |
+ 1248   3883  312   0xFE34 |    N/A  N/A        N/A |
+ 1249   3887  310   0xFE03 |    N/A  N/A        N/A |
+ 1250   3890  308   0xFDD2 |    N/A  N/A        N/A |
+ 1251   3894  305   0xFDA1 |    N/A  N/A        N/A |
+ 1252   3897  303   0xFD70 |    N/A  N/A        N/A |
+ 1253   3901  300   0xFD3F |    N/A  N/A        N/A |
+ 1254   3904  297   0xFD7A |    N/A  N/A        N/A |
+ 1255   3908  295   0xFDB5 |    N/A  N/A        N/A |
+ 1256   3911  293   0xFDF0 |    N/A  N/A        N/A |
+ 1257   3914  291   0xFDBF |    N/A  N/A        N/A |
+ 1258   3918  289   0xFDFA |    N/A  N/A        N/A |
+ 1259   3921  287   0xFDC9 |    N/A  N/A        N/A |
+ 1260   3925  285   0xFE04 |    N/A  N/A        N/A |
+ 1261   3928  283   0xFE3F |    N/A  N/A        N/A |
+ 1262   3932  281   0xFE0E |    N/A  N/A        N/A |
+ 1263   3935  279   0xFDDD |    N/A  N/A        N/A |
+ 1264   3939  276   0xFDAC |    N/A  N/A        N/A |
+ 1265   3942  274   0xFDE7 |    N/A  N/A        N/A |
+ 1266   3945  273   0xFE22 |    N/A  N/A        N/A |
+ 1267   3949  271   0xFE5D |    N/A  N/A        N/A |
+ 1268   3952  269   0xFE98 |    N/A  N/A        N/A |
+ 1269   3956  268   0xFED3 |    N/A  N/A        N/A |
+ 1270   3959  267   0xFF0E |    N/A  N/A        N/A |
+ 1271   3963  267   0xFF49 |    N/A  N/A        N/A |
+ 1272   3966  266   0xFF84 |    N/A  N/A        N/A |
+ 1273   3970  265   0xFF53 |    N/A  N/A        N/A |
+ 1274   3973  265   0xFF8E |    N/A  N/A        N/A |
+ 1275   3976  264   0xFF5D |    N/A  N/A        N/A |
+ 1276   3980  264   0xFF2C |    N/A  N/A        N/A |
+ 1277   3983  263   0xFEFB |    N/A  N/A        N/A |
+ 1278   3987  262   0xFF36 |    N/A  N/A        N/A |
+ 1279   3990  261   0xFF71 |    N/A  N/A        N/A |
+
+=== PF INJECTIONS IN SHIP MODE (1078-1260) ===
+  Frame 1084: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFFA9, wasZeroed=False)
+  Frame 1085: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFF78, wasZeroed=False)
+  Frame 1086: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFF47, wasZeroed=False)
+  Frame 1087: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFF16, wasZeroed=False)
+  Frame 1107: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x01E8, wasZeroed=False)
+  Frame 1114: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0276, wasZeroed=False)
+  Frame 1121: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x02D7, wasZeroed=False)
+  Frame 1122: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0299, wasZeroed=False)
+  Frame 1123: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x025B, wasZeroed=False)
+  Frame 1124: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x021D, wasZeroed=False)
+  Frame 1125: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x01DF, wasZeroed=False)
+  Frame 1126: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x01A1, wasZeroed=False)
+  Frame 1129: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x01A7, wasZeroed=False)
+  Frame 1130: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0169, wasZeroed=False)
+  Frame 1131: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x012B, wasZeroed=False)
+  Frame 1132: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x00ED, wasZeroed=False)
+  Frame 1133: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x00AF, wasZeroed=False)
+  Frame 1134: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0071, wasZeroed=False)
+  Frame 1135: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0033, wasZeroed=False)
+  Frame 1136: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFFF5, wasZeroed=False)
+  Frame 1137: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFFC4, wasZeroed=False)
+  Frame 1138: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFF93, wasZeroed=False)
+  Frame 1139: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFF62, wasZeroed=False)
+  Frame 1140: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFF31, wasZeroed=False)
+  Frame 1141: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFF00, wasZeroed=False)
+  Frame 1142: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFECF, wasZeroed=False)
+  Frame 1143: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFE9E, wasZeroed=False)
+  Frame 1144: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFE6D, wasZeroed=False)
+  Frame 1145: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFE3C, wasZeroed=False)
+  Frame 1146: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFE0B, wasZeroed=False)
+  Frame 1147: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFDDA, wasZeroed=False)
+  Frame 1148: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFDA9, wasZeroed=False)
+  Frame 1150: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFD47, wasZeroed=False)
+  Frame 1151: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFD16, wasZeroed=False)
+  Frame 1152: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFCE5, wasZeroed=False)
+  Frame 1153: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFCB4, wasZeroed=False)
+  Frame 1154: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFC83, wasZeroed=False)
+  Frame 1155: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFC73, wasZeroed=False)
+  Frame 1161: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFD9A, wasZeroed=False)
+  Frame 1162: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFD69, wasZeroed=False)
+  Frame 1190: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0213, wasZeroed=False)
+  Frame 1191: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x01D5, wasZeroed=False)
+  Frame 1192: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0197, wasZeroed=False)
+  Frame 1195: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x019D, wasZeroed=False)
+  Frame 1196: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x015F, wasZeroed=False)
+  Frame 1197: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0121, wasZeroed=False)
+  Frame 1198: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x00E3, wasZeroed=False)
+  Frame 1201: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0000, wasZeroed=False)
+  Frame 1202: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0000, wasZeroed=False)
+  Frame 1203: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0000, wasZeroed=False)
+  Frame 1204: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0000, wasZeroed=False)
+  Frame 1206: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0000, wasZeroed=False)
+  Frame 1207: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0000, wasZeroed=False)
+  Frame 1226: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x016D, wasZeroed=False)
+  Frame 1227: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x012F, wasZeroed=False)
+  Frame 1229: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0113, wasZeroed=False)
+  Frame 1230: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x00D5, wasZeroed=False)
+  Frame 1231: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0097, wasZeroed=False)
+  Frame 1232: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x0059, wasZeroed=False)
+  Frame 1233: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0x001B, wasZeroed=False)
+  Frame 1234: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFFDD, wasZeroed=False)
+  Frame 1235: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFFAC, wasZeroed=False)
+  Frame 1237: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFFB6, wasZeroed=False)
+  Frame 1238: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFF85, wasZeroed=False)
+  Frame 1239: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFF54, wasZeroed=False)
+  Frame 1240: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFF23, wasZeroed=False)
+  Frame 1241: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFEF2, wasZeroed=False)
+  Frame 1242: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFEC1, wasZeroed=False)
+  Frame 1243: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFE90, wasZeroed=False)
+  Frame 1244: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFE5F, wasZeroed=False)
+  Frame 1245: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFE2E, wasZeroed=False)
+  Frame 1246: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFDFD, wasZeroed=False)
+  Frame 1247: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFDCC, wasZeroed=False)
+  Frame 1248: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFD9B, wasZeroed=False)
+  Frame 1249: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFD6A, wasZeroed=False)
+  Frame 1250: JUMP INPUT injected (keyXHeld=True, pressCount=1, velY=0xFFFFFD39, wasZeroed=False)
+
+No-hold frames (95):
+  [1080, 1081, 1082, 1083, 1088, 1089, 1090, 1091, 1092, 1093, 1094, 1095, 1096, 1097, 1098, 1099, 1100, 1101, 1102, 1103]
+  [1104, 1105, 1106, 1108, 1109, 1110, 1111, 1112, 1113, 1115, 1116, 1117, 1118, 1119, 1120, 1127, 1128, 1149, 1156, 1157]
+  [1158, 1159, 1160, 1163, 1164, 1165, 1166, 1167, 1168, 1169, 1170, 1171, 1172, 1173, 1174, 1175, 1176, 1177, 1178, 1179]
+  [1180, 1181, 1182, 1183, 1184, 1185, 1186, 1187, 1188, 1189, 1193, 1194, 1199, 1200, 1205, 1208, 1209, 1210, 1211, 1212]
+  [1213, 1214, 1215, 1216, 1217, 1218, 1219, 1220, 1221, 1222, 1223, 1224, 1225, 1228, 1236]
+
+=== SIM COLL_UP/DOWN events (frames 1070-1260) ===
+
+=== PF EVENTS DURING MINISHIP (first branch) ===
+  PF f=1100: [BFS] f=1100 front=5383 dedup=5383 deaths=273 Y=[217..356] mode=1 gravN=5383 gravF=0 X~3374px pct=17% ms/f=2.2
+  PF f=1200: [BFS] f=1200 front=22863 dedup=23772 deaths=336 Y=[0..373] mode=1 gravN=22863 gravF=0 X~3718px pct=19% ms/f=6.0
+  PF f=1078: [PF f=1078] [SPRITE_HIT] sid=0x01 idx=24067 applied=True gravFlipped=False gravMul=1
+  PF f=1078: [PF f=1078] [PHYSICS] Mode=1, gravity=00, mini=0, table_idx=0
+  PF f=1079: [PF f=1079] [PHYSICS] Mode=1, gravity=00, mini=0, table_idx=0
+  PF f=1080: [PF f=1080] [SPRITE_HIT] sid=0x18 idx=24068 applied=True gravFlipped=False gravMul=1
+  PF f=1080: [PF f=1080] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1081: [PF f=1081] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1082: [PF f=1082] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1083: [PF f=1083] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1084: [PF f=1084] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1085: [PF f=1085] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1086: [PF f=1086] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1087: [PF f=1087] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1088: [PF f=1088] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1089: [PF f=1089] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1090: [PF f=1090] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1091: [PF f=1091] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1092: [PF f=1092] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1093: [PF f=1093] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1094: [PF f=1094] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1095: [PF f=1095] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1096: [PF f=1096] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1097: [PF f=1097] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1098: [PF f=1098] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1099: [PF f=1099] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1100: [PF f=1100] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1101: [PF f=1101] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1102: [PF f=1102] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1103: [PF f=1103] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1104: [PF f=1104] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1105: [PF f=1105] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1106: [PF f=1106] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1107: [PF f=1107] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1108: [PF f=1108] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1109: [PF f=1109] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1110: [PF f=1110] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1111: [PF f=1111] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1112: [PF f=1112] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1113: [PF f=1113] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1114: [PF f=1114] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1115: [PF f=1115] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1116: [PF f=1116] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1117: [PF f=1117] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1118: [PF f=1118] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1119: [PF f=1119] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1120: [PF f=1120] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1121: [PF f=1121] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1122: [PF f=1122] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1123: [PF f=1123] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1124: [PF f=1124] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1125: [PF f=1125] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1126: [PF f=1126] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1127: [PF f=1127] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1128: [PF f=1128] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1129: [PF f=1129] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1130: [PF f=1130] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1131: [PF f=1131] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1132: [PF f=1132] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1133: [PF f=1133] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1134: [PF f=1134] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1135: [PF f=1135] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1136: [PF f=1136] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1137: [PF f=1137] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1138: [PF f=1138] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1139: [PF f=1139] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1140: [PF f=1140] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1141: [PF f=1141] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1142: [PF f=1142] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1143: [PF f=1143] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1144: [PF f=1144] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1145: [PF f=1145] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1146: [PF f=1146] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1147: [PF f=1147] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1148: [PF f=1148] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1149: [PF f=1149] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1150: [PF f=1150] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1151: [PF f=1151] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1152: [PF f=1152] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1153: [PF f=1153] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1154: [PF f=1154] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1155: [PF f=1155] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1156: [PF f=1156] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1157: [PF f=1157] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1158: [PF f=1158] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1159: [PF f=1159] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1160: [PF f=1160] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1161: [PF f=1161] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1162: [PF f=1162] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1163: [PF f=1163] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1164: [PF f=1164] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1165: [PF f=1165] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1166: [PF f=1166] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1167: [PF f=1167] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1168: [PF f=1168] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1169: [PF f=1169] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1170: [PF f=1170] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1171: [PF f=1171] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1172: [PF f=1172] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1173: [PF f=1173] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1174: [PF f=1174] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1175: [PF f=1175] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1176: [PF f=1176] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1177: [PF f=1177] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1178: [PF f=1178] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1179: [PF f=1179] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1180: [PF f=1180] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1181: [PF f=1181] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1182: [PF f=1182] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1183: [PF f=1183] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1184: [PF f=1184] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1185: [PF f=1185] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1186: [PF f=1186] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1187: [PF f=1187] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1188: [PF f=1188] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1189: [PF f=1189] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1190: [PF f=1190] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1191: [PF f=1191] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1192: [PF f=1192] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1193: [PF f=1193] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1194: [PF f=1194] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1195: [PF f=1195] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1196: [PF f=1196] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1197: [PF f=1197] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1198: [PF f=1198] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1199: [PF f=1199] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1200: [PF f=1200] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1201: [PF f=1201] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1202: [PF f=1202] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1203: [PF f=1203] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1204: [PF f=1204] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1205: [PF f=1205] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1206: [PF f=1206] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1207: [PF f=1207] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1208: [PF f=1208] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1209: [PF f=1209] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1210: [PF f=1210] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1211: [PF f=1211] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1212: [PF f=1212] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1213: [PF f=1213] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1214: [PF f=1214] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1215: [PF f=1215] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1216: [PF f=1216] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1217: [PF f=1217] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1218: [PF f=1218] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1219: [PF f=1219] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1220: [PF f=1220] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1221: [PF f=1221] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1222: [PF f=1222] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1223: [PF f=1223] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1224: [PF f=1224] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1225: [PF f=1225] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1226: [PF f=1226] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1227: [PF f=1227] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1228: [PF f=1228] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1229: [PF f=1229] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1230: [PF f=1230] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1231: [PF f=1231] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1232: [PF f=1232] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1233: [PF f=1233] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1234: [PF f=1234] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1235: [PF f=1235] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1236: [PF f=1236] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1237: [PF f=1237] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1238: [PF f=1238] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1239: [PF f=1239] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1240: [PF f=1240] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1241: [PF f=1241] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1242: [PF f=1242] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1243: [PF f=1243] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1244: [PF f=1244] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1245: [PF f=1245] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1246: [PF f=1246] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1247: [PF f=1247] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1248: [PF f=1248] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1249: [PF f=1249] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1250: [PF f=1250] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1251: [PF f=1251] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1252: [PF f=1252] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1253: [PF f=1253] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1254: [PF f=1254] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1255: [PF f=1255] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1256: [PF f=1256] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1257: [PF f=1257] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1258: [PF f=1258] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1259: [PF f=1259] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1260: [PF f=1260] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1261: [PF f=1261] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1262: [PF f=1262] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1263: [PF f=1263] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1264: [PF f=1264] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1265: [PF f=1265] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1266: [PF f=1266] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1267: [PF f=1267] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1268: [PF f=1268] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1269: [PF f=1269] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1270: [PF f=1270] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1271: [PF f=1271] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1272: [PF f=1272] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1273: [PF f=1273] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1274: [PF f=1274] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1275: [PF f=1275] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1276: [PF f=1276] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1277: [PF f=1277] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1278: [PF f=1278] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1279: [PF f=1279] [PHYSICS] Mode=1, gravity=00, mini=1, table_idx=4
+  PF f=1280: [PF f=1280] [SPRITE_HIT] sid=0x02 idx=22917 applied=True gravFlipped=False gravMul=1
+  PF f=1280: [PF f=1280] [PHYSICS] Mode=2, gravity=00, mini=1, table_idx=4
+  PF f=1280: [PF f=1280] [BALL_GRAV] velY: 0xFFFFFFD6 -> 0x002D, posY: 0x10561 (261px) -> 0x1058E (261px)
+  PF f=1281: [PF f=1281] [PHYSICS] Mode=2, gravity=00, mini=1, table_idx=4
+  PF f=1281: [PF f=1281] [BALL_GRAV] velY: 0x002D -> 0x0084, posY: 0x1058E (261px) -> 0x10612 (262px)
+
+=== FIRST Y DIVERGENCE ===
+  Game frame: 1080
+  PF:  X=3305, Y=271, velY=0xFEAC
+  SIM: X=3328px, Y=268px, velY=0xFFFFFF78
+  dX=-23, dY=3
+
+  Context (5 frames before/after):
+    gf=1080 PF_Y=271 SIM_Y=268 dY= +3 velY_PF=0xFEAC velY_SIM=0xFFFFFF78   -  <<<
+    gf=1081 PF_Y=270 SIM_Y=267 dY= +3 velY_PF=0xFEE7 velY_SIM=0xFFFFFF47   - 
+    gf=1082 PF_Y=269 SIM_Y=266 dY= +3 velY_PF=0xFF22 velY_SIM=0xFFFFFF16   - 
+    gf=1083 PF_Y=269 SIM_Y=265 dY= +4 velY_PF=0xFF5D velY_SIM=0xFFFFFEE5   - 
+    gf=1084 PF_Y=268 SIM_Y=264 dY= +4 velY_PF=0xFF98 velY_SIM=0xFFFFFF20 HOLD
+    gf=1085 PF_Y=268 SIM_Y=264 dY= +4 velY_PF=0xFF67 velY_SIM=0xFFFFFF5B HOLD

@@ -187,9 +187,9 @@
                         <MenuItem x:Name="MenuColorGroundTint" Header="Ground Tint..." />
                         <MenuItem x:Name="MenuColorTileTint" Header="Tile Tint..." />
                         <Separator />
-                        <MenuItem x:Name="MenuOptionShowAccurateTileset" Header="Show accurate tileset" IsCheckable="True" IsChecked="False" Checked="MenuOptionShowAccurateTileset_Checked" Unchecked="MenuOptionShowAccurateTileset_Unchecked" />
+                        <MenuItem x:Name="MenuOptionShowAccurateTileset" Header="Show accurate tileset" IsCheckable="True" IsChecked="True" Checked="MenuOptionShowAccurateTileset_Checked" Unchecked="MenuOptionShowAccurateTileset_Unchecked" />
                         <Separator />
-                        <MenuItem x:Name="MenuOptionLockSprites" Header="Lock sprites to usable set" IsCheckable="True" IsChecked="False" />
+                        <MenuItem x:Name="MenuOptionLockSprites" Header="Lock sprites to usable set" IsCheckable="True" IsChecked="True" />
                     </MenuItem>
                     <MenuItem Header="Preview Mode Options">
                         <MenuItem x:Name="MenuOptionHideColorTriggers" Header="Hide Color Triggers" IsCheckable="True" IsChecked="False" />

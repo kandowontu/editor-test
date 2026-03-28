@@ -2039,6 +2039,21 @@ namespace FamidashEditor
                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
                         }
 
+                        // Set target_scroll_y for modes that use smooth camera scroll
+                        // Matches Famidash: ship/UFO/ball/spider/wave/swing/snake/football/pogo all set target
+                        // Cube(0x00) and Robot(0x04) and Ninja(0x58) do NOT set target_scroll_y
+                        if ((!dual || twoplayer) && sid != 0x00 && sid != 0x04 && sid != 0x58)
+                        {
+                            try
+                            {
+                                int storageTileY = idx / mapWidth;
+                                int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                                int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
+                                targetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                            }
+                            catch { }
+                        }
+
                         try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
                         break;
                     }
@@ -2334,6 +2349,54 @@ namespace FamidashEditor
             catch (Exception ex)
             {
                 AppendSimDebug($"[MINI/GROWTH PORTAL] Error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Check for cam lock portal collision.
+        /// 0xDD = cam lock ON (freeze camera Y auto-follow)
+        /// 0xED = cam lock OFF (resume camera Y auto-follow)
+        /// </summary>
+        private void CheckCamLockPortals()
+        {
+            try
+            {
+                int playerX_px = (playerX_fixed >> 8) + 1;
+                int playerY_px = playerY_fixed >> 8;
+
+                bool isMini = (currplayer_mini != 0);
+                int hitboxW = isMini ? 8 : 15;
+                int hitboxH = isMini ? 7 : 15;
+                playerY_px += GetMiniSpriteOffsetY();
+
+                int playerLeft_px = playerX_px;
+                int playerRight_px = playerX_px + hitboxW - 1;
+                int playerTop_px = playerY_px;
+                int playerBottom_px = playerY_px + hitboxH - 1;
+
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                {
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    if (sid < 0) continue;
+
+                    bool isCamLockOn = (sid == 0xDD);
+                    bool isCamLockOff = (sid == 0xED);
+                    if (!isCamLockOn && !isCamLockOff) continue;
+
+                    if (processedCamLockPortals.Contains(idx)) continue;
+
+                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                    {
+                        nocamlockforced = isCamLockOn;
+                        processedCamLockPortals.Add(idx);
+                        AppendSimDebug($"[CAM_LOCK] nocamlockforced={nocamlockforced} at idx={idx}");
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendSimDebug($"[CAM_LOCK] Error: {ex.Message}");
             }
         }
 
@@ -3335,6 +3398,15 @@ namespace FamidashEditor
         private System.Collections.Generic.HashSet<int> processedRandomPortals = new System.Collections.Generic.HashSet<int>();
         // Speed portals processed set: avoid re-applying speed change while portal remains near interaction line
         private System.Collections.Generic.HashSet<int> processedSpeedPortals = new System.Collections.Generic.HashSet<int>();
+        // Cam lock portals: 0xDD = cam lock ON (freeze camera Y), 0xED = cam lock OFF (resume auto-follow)
+        private System.Collections.Generic.HashSet<int> processedCamLockPortals = new System.Collections.Generic.HashSet<int>();
+        private bool nocamlockforced = false;
+        // Smooth camera Y target for non-cube modes (ship/ball/UFO/spider/wave/swing)
+        // Matches Famidash target_scroll_y: camera scrolls smoothly toward this value
+        private int targetCameraY_fixed = 0;
+        private const int PORTAL_TO_TOP_DIFF_PX = 0x3A; // 58px offset from portal Y to screen top
+        private const int SHIP_SCROLL_SPEED_FIXED = 0x0266; // 8.8 fixed-point ~2.4 px/frame
+        private bool _suppressDebugBarEvents = false;
         // Track orbs that have been activated so they only fire once
         private System.Collections.Generic.HashSet<int> processedOrbs = new System.Collections.Generic.HashSet<int>();
         // Orb buffer: true when the player has pressed/held X in-air and is eligible
@@ -4011,6 +4083,7 @@ namespace FamidashEditor
                 int? lastGravityIdx = null, lastGravitySid = null, lastGravityX = null;
                 int? lastSpeedIdx = null, lastSpeedSid = null, lastSpeedX = null;
                 int? lastBluePadIdx = null, lastBluePadSid = null, lastBluePadX = null;
+                int? lastCamLockIdx = null, lastCamLockSid = null, lastCamLockX = null;
                 
                 // Find the last portal of each type before target position (by X coordinate, not array order)
                 for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
@@ -4073,6 +4146,16 @@ namespace FamidashEditor
                                 lastSpeedIdx = idx;
                                 lastSpeedSid = sid;
                                 lastSpeedX = anchorX_px;
+                            }
+                        }
+                        // Cam lock portals: 0xDD=lock ON, 0xED=lock OFF
+                        else if (sid == 0xDD || sid == 0xED)
+                        {
+                            if (!lastCamLockX.HasValue || anchorX_px > lastCamLockX.Value)
+                            {
+                                lastCamLockIdx = idx;
+                                lastCamLockSid = sid;
+                                lastCamLockX = anchorX_px;
                             }
                         }
                     }
@@ -4160,6 +4243,31 @@ namespace FamidashEditor
                         try { UpdateSpeedDisplay(); } catch { }
                     }
                     // Don't add to processed set - let collision detection handle it during gameplay
+                }
+                
+                // Apply cam lock portal
+                if (lastCamLockIdx.HasValue && lastCamLockSid.HasValue)
+                {
+                    nocamlockforced = (lastCamLockSid.Value == 0xDD);
+                }
+
+                // Set targetCameraY_fixed for the last game mode portal (for smooth cam scroll)
+                if (lastGamemodeIdx.HasValue && lastGamemodeSid.HasValue)
+                {
+                    int gmSid = lastGamemodeSid.Value;
+                    // Non-cube/robot/ninja modes set target_scroll_y
+                    if (gmSid != 0x00 && gmSid != 0x04 && gmSid != 0x58)
+                    {
+                        try
+                        {
+                            int gmIdx = lastGamemodeIdx.Value;
+                            int storageTileY = gmIdx / mapWidth;
+                            int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
+                            targetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                        }
+                        catch { }
+                    }
                 }
             }
             catch { }
@@ -4436,27 +4544,50 @@ namespace FamidashEditor
                 // Automatic camera-follow while physics is active: ensure player stays within vertical thresholds
                 try
                 {
-                    if (physicsEnabled && jumpedOnce)
+                    // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9), or when nocamlockforced
+                    bool camFollowsY = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
+                    if (physicsEnabled && jumpedOnce && (!dual || twoplayer))
                     {
-                        int playerCenterScreenY_post = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
-                        int topThreshold_post = 5 * TILE;
-                        int bottomThreshold_post = NES_H * TILE - 5 * TILE;
+                        if (camFollowsY)
+                        {
+                            int playerCenterScreenY_post = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                            int topThreshold_post = 5 * TILE;
+                            int bottomThreshold_post = NES_H * TILE - 5 * TILE;
 
-                        if (playerCenterScreenY_post <= topThreshold_post)
-                        {
-                            int need = topThreshold_post - playerCenterScreenY_post;
-                            int camMove = Math.Min(need, (cameraY_fixed >> 8));
-                            cameraY_fixed -= (camMove << 8);
-                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            if (playerCenterScreenY_post <= topThreshold_post)
+                            {
+                                int need = topThreshold_post - playerCenterScreenY_post;
+                                int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                                cameraY_fixed -= (camMove << 8);
+                                if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            }
+                            else if (playerCenterScreenY_post >= bottomThreshold_post)
+                            {
+                                int need = playerCenterScreenY_post - bottomThreshold_post;
+                                int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                                int camAvail = (maxCameraY_fixed - cameraY_fixed) >> 8;
+                                int camMove = Math.Min(need, camAvail);
+                                cameraY_fixed += (camMove << 8);
+                                if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
+                            }
                         }
-                        else if (playerCenterScreenY_post >= bottomThreshold_post)
+                        else
                         {
-                            int need = playerCenterScreenY_post - bottomThreshold_post;
-                            int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                            int camAvail = (maxCameraY_fixed - cameraY_fixed) >> 8;
-                            int camMove = Math.Min(need, camAvail);
-                            cameraY_fixed += (camMove << 8);
-                            if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
+                            // Ship-style smooth scroll: move camera toward targetCameraY_fixed at fixed speed
+                            if (targetCameraY_fixed > cameraY_fixed)
+                            {
+                                cameraY_fixed += SHIP_SCROLL_SPEED_FIXED;
+                                if (cameraY_fixed > targetCameraY_fixed) cameraY_fixed = targetCameraY_fixed;
+                            }
+                            else if (targetCameraY_fixed < cameraY_fixed)
+                            {
+                                cameraY_fixed -= SHIP_SCROLL_SPEED_FIXED;
+                                if (cameraY_fixed < targetCameraY_fixed) cameraY_fixed = targetCameraY_fixed;
+                            }
+                            // Clamp to valid range
+                            int maxCamY = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            if (cameraY_fixed > maxCamY) cameraY_fixed = maxCamY;
                         }
                     }
                 }
@@ -5802,6 +5933,7 @@ namespace FamidashEditor
 
         private void GameModeComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
+            if (_suppressDebugBarEvents) return;
             try
             {
                 if (GameModeComboBox.SelectedIndex >= 0)
@@ -5817,6 +5949,7 @@ namespace FamidashEditor
 
         private void MiniCheckBox_Changed(object sender, RoutedEventArgs e)
         {
+            if (_suppressDebugBarEvents) return;
             try
             {
                 miniMode = MiniCheckBox.IsChecked == true;
@@ -5830,6 +5963,7 @@ namespace FamidashEditor
 
         private void InvertedCheckBox_Changed(object sender, RoutedEventArgs e)
         {
+            if (_suppressDebugBarEvents) return;
             try
             {
                 // Fix 21: Don't let UI-thread checkbox events modify physics state while
@@ -5881,6 +6015,7 @@ namespace FamidashEditor
 
         private void SpeedComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
+            if (_suppressDebugBarEvents) return;
             try
             {
                 if (SpeedComboBox.SelectedItem is ComboBoxItem item && item.Tag != null)
@@ -6114,6 +6249,9 @@ namespace FamidashEditor
                 try { processedRandomPortals.Clear(); } catch { }
                 try { processedMiniPortals.Clear(); } catch { }  // Reset dual/single portal tracking
                 try { processedTeleportPortals.Clear(); } catch { }  // Reset teleport portal tracking
+                try { processedCamLockPortals.Clear(); } catch { }
+                nocamlockforced = false;
+                targetCameraY_fixed = 0;
                 
                 // Reset dual mode state
                 dual = false;
@@ -6714,29 +6852,51 @@ namespace FamidashEditor
             }
 
                 // Automatic camera-follow while physics is active in numeric path
+                // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9), or when nocamlockforced
                 try
                 {
-                    if (physicsEnabled && jumpedOnce)
+                    bool camFollowsY_2 = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
+                    if (physicsEnabled && jumpedOnce && (!dual || twoplayer))
                     {
-                        int playerCenterScreenY_post = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
-                        int topThreshold_post = 5 * TILE;
-                        int bottomThreshold_post = NES_H * TILE - 5 * TILE;
+                        if (camFollowsY_2)
+                        {
+                            int playerCenterScreenY_post = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                            int topThreshold_post = 5 * TILE;
+                            int bottomThreshold_post = NES_H * TILE - 5 * TILE;
 
-                        if (playerCenterScreenY_post <= topThreshold_post)
-                        {
-                            int need = topThreshold_post - playerCenterScreenY_post;
-                            int camMove = Math.Min(need, (cameraY_fixed >> 8));
-                            cameraY_fixed -= (camMove << 8);
-                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            if (playerCenterScreenY_post <= topThreshold_post)
+                            {
+                                int need = topThreshold_post - playerCenterScreenY_post;
+                                int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                                cameraY_fixed -= (camMove << 8);
+                                if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            }
+                            else if (playerCenterScreenY_post >= bottomThreshold_post)
+                            {
+                                int need = playerCenterScreenY_post - bottomThreshold_post;
+                                int maxCameraY_fixed_local = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                                int camAvail = (maxCameraY_fixed_local - cameraY_fixed) >> 8;
+                                int camMove = Math.Min(need, camAvail);
+                                cameraY_fixed += (camMove << 8);
+                                if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
+                            }
                         }
-                        else if (playerCenterScreenY_post >= bottomThreshold_post)
+                        else
                         {
-                            int need = playerCenterScreenY_post - bottomThreshold_post;
-                            int maxCameraY_fixed_local = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                            int camAvail = (maxCameraY_fixed_local - cameraY_fixed) >> 8;
-                            int camMove = Math.Min(need, camAvail);
-                            cameraY_fixed += (camMove << 8);
-                            if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
+                            // Ship-style smooth scroll toward target
+                            if (targetCameraY_fixed > cameraY_fixed)
+                            {
+                                cameraY_fixed += SHIP_SCROLL_SPEED_FIXED;
+                                if (cameraY_fixed > targetCameraY_fixed) cameraY_fixed = targetCameraY_fixed;
+                            }
+                            else if (targetCameraY_fixed < cameraY_fixed)
+                            {
+                                cameraY_fixed -= SHIP_SCROLL_SPEED_FIXED;
+                                if (cameraY_fixed < targetCameraY_fixed) cameraY_fixed = targetCameraY_fixed;
+                            }
+                            int maxCamY_2 = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            if (cameraY_fixed > maxCamY_2) cameraY_fixed = maxCamY_2;
                         }
                     }
                 }
@@ -7352,10 +7512,8 @@ namespace FamidashEditor
                                     }
                                 }
                             }
-                            else
-                            {
-                                if (processedSpeedPortals.Contains(idx)) processedSpeedPortals.Remove(idx);
-                            }
+                            // No else: once processed, speed portals stay in the set
+                            // to prevent SPEED_PRE_P2 from re-triggering old portals.
                         }
                         // When cam mode is ON, use screen threshold logic
                         else if (crossedInteraction)
@@ -7372,10 +7530,7 @@ namespace FamidashEditor
                                     }
                                 }
                             }
-                            else
-                            {
-                                if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
-                            }
+                            // No else: once processed, speed portals stay in the set.
                         }
                         else
                         {
@@ -7391,10 +7546,7 @@ namespace FamidashEditor
                                     }
                                 }
                             }
-                            else
-                            {
-                                if (processedSpeedPortals.Contains(idx)) processedSpeedPortals.Remove(idx);
-                            }
+                            // No else: once processed, speed portals stay in the set.
                         }
                     }
                 }
@@ -7484,8 +7636,7 @@ namespace FamidashEditor
                             if (processedGravityPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityPortals.Remove(idx);
                             if (processedGravityModPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityModPortals.Remove(idx);
                             if (processedOrbs.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedOrbs.Remove(idx);
-                            if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
-                            if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
+                            // Speed portals stay permanently processed (no Remove) to prevent re-triggering.
                             if (processedTeleportPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedTeleportPortals.Remove(idx);
                         }
                     }
@@ -10240,6 +10391,24 @@ namespace FamidashEditor
                     try { ApplyPendingTints(); } catch { }
                 }
 
+                // Sync debug bar controls to match current sim state each frame
+                try
+                {
+                    _suppressDebugBarEvents = true;
+                    if (GameModeComboBox != null && GameModeComboBox.SelectedIndex != currentGameMode
+                        && currentGameMode >= 0 && currentGameMode < GameModeComboBox.Items.Count)
+                        GameModeComboBox.SelectedIndex = currentGameMode;
+                    if (SpeedComboBox != null && SpeedComboBox.SelectedIndex != speed
+                        && speed >= 0 && speed < SpeedComboBox.Items.Count)
+                        SpeedComboBox.SelectedIndex = speed;
+                    if (MiniCheckBox != null && MiniCheckBox.IsChecked != miniMode)
+                        MiniCheckBox.IsChecked = miniMode;
+                    if (InvertedCheckBox != null && InvertedCheckBox.IsChecked != gravityReversed)
+                        InvertedCheckBox.IsChecked = gravityReversed;
+                }
+                catch { }
+                finally { _suppressDebugBarEvents = false; }
+
                 // Ensure overlays are not visible while running
                 try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
                 try { LevelCompleteOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
@@ -10353,6 +10522,9 @@ namespace FamidashEditor
                         
                         // Check for mini/growth portal activation
                         CheckMiniGrowthPortals();
+                        
+                        // Check for cam lock portal activation (0xDD=lock, 0xED=unlock)
+                        CheckCamLockPortals();
                         
                         // Check for pad collision
                         CheckPadCollision();
@@ -11626,9 +11798,30 @@ namespace FamidashEditor
                     int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                     int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
 
-                    // Use interaction-line crossing logic so speed portals activate when anchors cross
-                    // the player's interaction line (consistent with color triggers behavior).
-                    if (crossedInteraction)
+                    // When cam mode is OFF, use hitbox-based collision like gamemode/gravity portals
+                    if (!camModeActive)
+                    {
+                        int hitboxW_speed = miniMode ? 8 : 15;
+                        int hitboxH_speed = miniMode ? 7 : 15;
+                        int playerLeft_px_speed = (playerX_fixed >> 8) + 1;
+                        int playerRight_px_speed = playerLeft_px_speed + hitboxW_speed - 1;
+                        int playerTop_px_speed = (playerY_fixed >> 8);
+                        playerTop_px_speed += GetMiniSpriteOffsetY();
+                        int playerBottom_px_speed = playerTop_px_speed + hitboxH_speed - 1;
+
+                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px_speed, playerRight_px_speed, playerTop_px_speed, playerBottom_px_speed))
+                        {
+                            if (!processedSpeedPortals.Contains(idx))
+                            {
+                                newSpeed_fixed = speedPortalMap[sid];
+                                processedSpeedPortals.Add(idx);
+                                break;
+                            }
+                        }
+                        // No else: once processed, speed portals stay in the set.
+                    }
+                    // When cam mode is ON, use interaction-line crossing logic
+                    else if (crossedInteraction)
                     {
                         if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
                         {
@@ -11639,10 +11832,7 @@ namespace FamidashEditor
                                 break;
                             }
                         }
-                        else
-                        {
-                            if (processedSpeedPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedSpeedPortals.Remove(idx);
-                        }
+                        // No else: once processed, speed portals stay in the set.
                     }
                     else
                     {
@@ -11655,10 +11845,7 @@ namespace FamidashEditor
                                 break;
                             }
                         }
-                        else
-                        {
-                            if (processedSpeedPortals.Contains(idx)) processedSpeedPortals.Remove(idx);
-                        }
+                        // No else: once processed, speed portals stay in the set.
                     }
                 }
                 if (newSpeed_fixed.HasValue)

@@ -84,6 +84,14 @@ namespace FamidashEditor
         /// </summary>
         public bool UseBFS { get; set; } = false;
 
+        /// <summary>
+        /// When true, verbose BFS/eject messages are printed to stderr.
+        /// When false (default), only the progress percentage is shown.
+        /// </summary>
+        public bool Verbose { get; set; } = false;
+
+        private System.IO.TextWriter _log = System.IO.TextWriter.Null;
+
         public Action<List<(int x, int y)>?, int, int, bool>? OnSpeculativePath { get; set; }
         public int CurrentX_px => _currentX_px;
         private volatile int _currentX_px;
@@ -854,8 +862,8 @@ namespace FamidashEditor
                 foreach (var kv in this.spriteAnchors.OrderBy(x => x.Key))
                     anchHash = anchHash * 31 + kv.Key + kv.Value.anchorTileX * 7 + kv.Value.anchorTileY * 13;
                 var diagMsg = $"[PF_DIAG] tiles={this.tiles.Length} tileHash=0x{tileHash:X8} sprites={this.sprites.Length} sprHash=0x{sprHash:X8} offsets={this.spritePixelOffsets.Count} offHash=0x{offHash:X8} anchors={this.spriteAnchors.Count} anchHash=0x{anchHash:X8} w={mapWidth} h={mapHeight} ground={groundRowsToReserve} maxFall=0x{this.maxFallSpeed:X} spriteEntries={allSprites.Count}";
-                Console.Error.WriteLine(diagMsg);
-                Console.Error.Flush();
+                _log.WriteLine(diagMsg);
+                _log.Flush();
 #if !DISABLE_DEBUG_LOGGING
                 try { System.IO.File.AppendAllText(pfDebugLogPath, diagMsg + System.Environment.NewLine); } catch { }
 #endif
@@ -869,6 +877,7 @@ namespace FamidashEditor
         public void Run(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode,
                         bool startGravFlipped, bool startMini)
         {
+            _log = Verbose ? Console.Error : System.IO.TextWriter.Null;
             var sw = System.Diagnostics.Stopwatch.StartNew();
             double originalBias = JumpTimingBias;
             _autoForgivenCoins.Clear();
@@ -902,11 +911,11 @@ namespace FamidashEditor
                 }
                 if (preForceWalk.Count > 0 || preAltPenalties.Count > 0)
                 {
-                    Console.Error.WriteLine($"[COIN_PRE_ZONES] forceWalk={preForceWalk.Count} altPenalty={preAltPenalties.Count} � applying on first run");
+                    _log.WriteLine($"[COIN_PRE_ZONES] forceWalk={preForceWalk.Count} altPenalty={preAltPenalties.Count} � applying on first run");
                     foreach (var fw in preForceWalk)
-                        Console.Error.WriteLine($"  forceWalk: X=[{fw.startX},{fw.endX}]");
+                        _log.WriteLine($"  forceWalk: X=[{fw.startX},{fw.endX}]");
                     foreach (var ap in preAltPenalties)
-                        Console.Error.WriteLine($"  altPenalty: X=[{ap.startX},{ap.endX}] ceilY={ap.ceilingY}");
+                        _log.WriteLine($"  altPenalty: X=[{ap.startX},{ap.endX}] ceilY={ap.ceilingY}");
                     _coinForceWalkZones = preForceWalk;
                     _coinAltitudePenalties = preAltPenalties;
                 }
@@ -927,7 +936,7 @@ namespace FamidashEditor
             // the frontier, preventing BFS from discovering viable paths.
             if (!Success && Math.Abs(JumpTimingBias - 0.5) >= 0.05)
             {
-                Console.Error.WriteLine($"[BFS_RETRY] BFS failed with bias={JumpTimingBias:F2}, retrying with neutral bias...");
+                _log.WriteLine($"[BFS_RETRY] BFS failed with bias={JumpTimingBias:F2}, retrying with neutral bias...");
                 double savedBias = JumpTimingBias;
                 JumpTimingBias = 0.5;
                 RunBFS(startX_px, startY_px, startSpeedUiIndex,
@@ -956,7 +965,7 @@ namespace FamidashEditor
             // The heuristic's backtracking can navigate sections that BFS's
             // frontier pruning misses, regardless of BFS progress percentage.
             {
-                Console.Error.WriteLine($"[BFS?HEURISTIC] BFS reached {bfsPct}%, trying heuristic...");
+                _log.WriteLine($"[BFS?HEURISTIC] BFS reached {bfsPct}%, trying heuristic...");
                 RunSingleAttempt(startX_px, startY_px, startSpeedUiIndex,
                                  startGameMode, startGravFlipped, startMini);
 
@@ -969,7 +978,7 @@ namespace FamidashEditor
                         Inputs = bfsInputs!;
                         PathPoints = bfsPath!;
                         ResultMessage = bfsMsg;
-                        Console.Error.WriteLine($"[BFS?HEURISTIC] Heuristic worse ({heuristicBestX}px vs BFS {bfsBestX}px), keeping BFS result");
+                        _log.WriteLine($"[BFS?HEURISTIC] Heuristic worse ({heuristicBestX}px vs BFS {bfsBestX}px), keeping BFS result");
                     }
                 }
             }
@@ -1034,7 +1043,7 @@ namespace FamidashEditor
                     }
                     if (anyPads)
                     {
-                        Console.Error.WriteLine($"[COIN_RETRY_COMBINED] Attempting {cubeForgiven.Count} cube-mode forgiven coins, forceWalk={combinedForceWalk.Count} altPenalty={combinedAltPenalties.Count}");
+                        _log.WriteLine($"[COIN_RETRY_COMBINED] Attempting {cubeForgiven.Count} cube-mode forgiven coins, forceWalk={combinedForceWalk.Count} altPenalty={combinedAltPenalties.Count}");
                         JumpTimingBias = originalBias;
                         _coinForceWalkZones = combinedForceWalk;
                         _coinAltitudePenalties = combinedAltPenalties;
@@ -1045,10 +1054,10 @@ namespace FamidashEditor
                         if (Success)
                         {
                             int retryCoins = FinalCollectedCoinIndices != null ? FinalCollectedCoinIndices.Count : 0;
-                            Console.Error.WriteLine($"[COIN_RETRY_COMBINED] Result: {retryCoins}/{allCoins.Count} coins");
+                            _log.WriteLine($"[COIN_RETRY_COMBINED] Result: {retryCoins}/{allCoins.Count} coins");
                             if (retryCoins > overallBestCoins)
                             {
-                                Console.Error.WriteLine($"[COIN_RETRY_COMBINED] Improved: {retryCoins} vs {overallBestCoins}");
+                                _log.WriteLine($"[COIN_RETRY_COMBINED] Improved: {retryCoins} vs {overallBestCoins}");
                                 overallBestInputs = new List<bool>(Inputs!);
                                 overallBestPath = new List<(int x, int y)>(PathPoints!);
                                 overallBestMsg = ResultMessage;
@@ -1079,7 +1088,7 @@ namespace FamidashEditor
                     // harmless in ball mode, and the bias change can help.
                     if (_forgivenCoinGameModes.TryGetValue(coin.Index, out int coinGm) && (coinGm == 1 || coinGm == 3))
                     {
-                        Console.Error.WriteLine($"[COIN_RETRY_SKIP] coin idx={coin.Index} sid=0x{coin.SpriteId:X2} gameMode={coinGm} � skip non-cube retry");
+                        _log.WriteLine($"[COIN_RETRY_SKIP] coin idx={coin.Index} sid=0x{coin.SpriteId:X2} gameMode={coinGm} � skip non-cube retry");
                         continue;
                     }
 
@@ -1100,7 +1109,7 @@ namespace FamidashEditor
                         int padCenterY = (sp.HitTop + sp.HitBottom) / 2;
                         if (padCenterY < groundY - 40) continue;
                         hasPads = true;
-                        Console.Error.WriteLine($"[COIN_RETRY_PAD] coin={coin.Index} pad idx={sp.Index} sid=0x{sp.SpriteId:X2} hit=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom})");
+                        _log.WriteLine($"[COIN_RETRY_PAD] coin={coin.Index} pad idx={sp.Index} sid=0x{sp.SpriteId:X2} hit=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom})");
                         // Force-walk zone: only for pads AT ground level (within 30px
                         // of groundY). Elevated pads shouldn't have walk forcing.
                         // Blue pads are EXCLUDED: players typically approach blue pads
@@ -1134,7 +1143,7 @@ namespace FamidashEditor
                     double[] retryBiases = new[] { originalBias, 0.0, 1.0 };
                     foreach (double retryBias in retryBiases)
                     {
-                        Console.Error.WriteLine($"[COIN_RETRY] Attempting coin idx={coin.Index} sid=0x{coin.SpriteId:X2} bias={retryBias:F2} forceWalk={thisCoinForceWalk.Count} altPenalty={thisCoinAltPenalties.Count}");
+                        _log.WriteLine($"[COIN_RETRY] Attempting coin idx={coin.Index} sid=0x{coin.SpriteId:X2} bias={retryBias:F2} forceWalk={thisCoinForceWalk.Count} altPenalty={thisCoinAltPenalties.Count}");
 
                         JumpTimingBias = retryBias;
                         _coinForceWalkZones = thisCoinForceWalk;
@@ -1147,10 +1156,10 @@ namespace FamidashEditor
                         if (Success)
                         {
                             int retryCoins = FinalCollectedCoinIndices != null ? FinalCollectedCoinIndices.Count : 0;
-                            Console.Error.WriteLine($"[COIN_RETRY] Retry result: {retryCoins}/{allCoins.Count} coins");
+                            _log.WriteLine($"[COIN_RETRY] Retry result: {retryCoins}/{allCoins.Count} coins");
                             if (retryCoins > overallBestCoins)
                             {
-                                Console.Error.WriteLine($"[COIN_RETRY] Improved: {retryCoins} vs {overallBestCoins}");
+                                _log.WriteLine($"[COIN_RETRY] Improved: {retryCoins} vs {overallBestCoins}");
                                 overallBestInputs = new List<bool>(Inputs!);
                                 overallBestPath = new List<(int x, int y)>(PathPoints!);
                                 overallBestMsg = ResultMessage;
@@ -1162,7 +1171,7 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            Console.Error.WriteLine($"[COIN_RETRY] Retry for coin {coin.Index} bias={retryBias:F2} FAILED");
+                            _log.WriteLine($"[COIN_RETRY] Retry for coin {coin.Index} bias={retryBias:F2} FAILED");
                             Success = true; // keep going
                         }
                     }
@@ -1197,14 +1206,14 @@ namespace FamidashEditor
                     return mc >= 3;
                 });
                 if (shipForgiven.Count > 0 && allShipAutoForgiven)
-                    Console.Error.WriteLine($"[SHIP_RETRY_SKIP] All {shipForgiven.Count} ship coins have high miss counts � skipping ship retry");
+                    _log.WriteLine($"[SHIP_RETRY_SKIP] All {shipForgiven.Count} ship coins have high miss counts � skipping ship retry");
                 if (shipForgiven.Count > 0 && !allShipAutoForgiven && overallBestCoins < allCoins.Count)
                 {
                     double[] shipRetryBiases = new[] { originalBias, 0.3 };
                     foreach (double shipBias in shipRetryBiases)
                     {
                         if (overallBestCoins >= allCoins.Count) break;
-                        Console.Error.WriteLine($"[COIN_RETRY_SHIP] Attempting {shipForgiven.Count} ship-mode forgiven coins bias={shipBias:F2} with aggressive threshold");
+                        _log.WriteLine($"[COIN_RETRY_SHIP] Attempting {shipForgiven.Count} ship-mode forgiven coins bias={shipBias:F2} with aggressive threshold");
                         JumpTimingBias = shipBias;
                         _coinForceWalkZones.Clear();
                         _coinAltitudePenalties.Clear();
@@ -1218,10 +1227,10 @@ namespace FamidashEditor
                         if (Success)
                         {
                             int retryCoins = FinalCollectedCoinIndices != null ? FinalCollectedCoinIndices.Count : 0;
-                            Console.Error.WriteLine($"[COIN_RETRY_SHIP] Result: {retryCoins}/{allCoins.Count} coins (bias={shipBias:F2})");
+                            _log.WriteLine($"[COIN_RETRY_SHIP] Result: {retryCoins}/{allCoins.Count} coins (bias={shipBias:F2})");
                             if (retryCoins > overallBestCoins)
                             {
-                                Console.Error.WriteLine($"[COIN_RETRY_SHIP] Improved: {retryCoins} vs {overallBestCoins}");
+                                _log.WriteLine($"[COIN_RETRY_SHIP] Improved: {retryCoins} vs {overallBestCoins}");
                                 overallBestInputs = new List<bool>(Inputs!);
                                 overallBestPath = new List<(int x, int y)>(PathPoints!);
                                 overallBestMsg = ResultMessage;
@@ -1233,7 +1242,7 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            Console.Error.WriteLine($"[COIN_RETRY_SHIP] Retry bias={shipBias:F2} FAILED");
+                            _log.WriteLine($"[COIN_RETRY_SHIP] Retry bias={shipBias:F2} FAILED");
                             Success = true; // keep going
                         }
                     }
@@ -1255,7 +1264,7 @@ namespace FamidashEditor
                     {
                         if (overallBestCoins >= allCoins.Count) break;
                         if (Math.Abs(ballBias - originalBias) < 0.05) continue;
-                        Console.Error.WriteLine($"[COIN_RETRY_BALL] Attempting {ballForgiven.Count} ball-mode forgiven coins bias={ballBias:F2}");
+                        _log.WriteLine($"[COIN_RETRY_BALL] Attempting {ballForgiven.Count} ball-mode forgiven coins bias={ballBias:F2}");
                         JumpTimingBias = ballBias;
                         _coinForceWalkZones.Clear();
                         _coinAltitudePenalties.Clear();
@@ -1266,10 +1275,10 @@ namespace FamidashEditor
                         if (Success)
                         {
                             int retryCoins = FinalCollectedCoinIndices != null ? FinalCollectedCoinIndices.Count : 0;
-                            Console.Error.WriteLine($"[COIN_RETRY_BALL] Result: {retryCoins}/{allCoins.Count} coins (bias={ballBias:F2})");
+                            _log.WriteLine($"[COIN_RETRY_BALL] Result: {retryCoins}/{allCoins.Count} coins (bias={ballBias:F2})");
                             if (retryCoins > overallBestCoins)
                             {
-                                Console.Error.WriteLine($"[COIN_RETRY_BALL] Improved: {retryCoins} vs {overallBestCoins}");
+                                _log.WriteLine($"[COIN_RETRY_BALL] Improved: {retryCoins} vs {overallBestCoins}");
                                 overallBestInputs = new List<bool>(Inputs!);
                                 overallBestPath = new List<(int x, int y)>(PathPoints!);
                                 overallBestMsg = ResultMessage;
@@ -1281,7 +1290,7 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            Console.Error.WriteLine($"[COIN_RETRY_BALL] Retry bias={ballBias:F2} FAILED");
+                            _log.WriteLine($"[COIN_RETRY_BALL] Retry bias={ballBias:F2} FAILED");
                             Success = true;
                         }
                     }
@@ -1896,7 +1905,7 @@ namespace FamidashEditor
                                 _forgivenCoinGameModes[coin.Index] = state.GameMode;
                                 _autoForgivenCoins.Add(coin.Index);
                                 if (ci == _nextCoinCheckIdx) _nextCoinCheckIdx++;
-                                Console.Error.WriteLine($"[COIN_AUTO_FORGIVEN] idx={coin.Index} gm={state.GameMode} missCount={missCount} playerX={state.X_fixed >> 8}");
+                                _log.WriteLine($"[COIN_AUTO_FORGIVEN] idx={coin.Index} gm={state.GameMode} missCount={missCount} playerX={state.X_fixed >> 8}");
 #if !DISABLE_DEBUG_LOGGING
                                 PfLog($"[COIN_AUTO_FORGIVEN] idx={coin.Index} sid=0x{coin.SpriteId:X2} missCount={missCount} � auto-forgiven after {MAX_COIN_MISS_RETRIES} retries");
 #endif
@@ -1914,7 +1923,7 @@ namespace FamidashEditor
                                 int playerY = state.Y_fixed >> 8;
                                 int coinCY = (coin.HitTop + coin.HitBottom) / 2;
                                 int yOff = playerY - coinCY;
-                                Console.Error.WriteLine($"[SHIP_COIN_MISS] idx={coin.Index} playerY={playerY} coinY={coinCY} yOff={yOff} missCount={missCount}");
+                                _log.WriteLine($"[SHIP_COIN_MISS] idx={coin.Index} playerY={playerY} coinY={coinCY} yOff={yOff} missCount={missCount}");
                             }
                             if (state.GameMode == 2)
                             {
@@ -1922,7 +1931,7 @@ namespace FamidashEditor
                                 int coinCY = (coin.HitTop + coin.HitBottom) / 2;
                                 int coinCX = (coin.HitLeft + coin.HitRight) / 2;
                                 int yOff = playerY - coinCY;
-                                Console.Error.WriteLine($"[BALL_COIN_MISS] idx={coin.Index} playerX={state.X_fixed >> 8} playerY={playerY} coinX={coinCX} coinY={coinCY} yOff={yOff} onGround={state.OnGround} gravFlip={state.GravFlipped} missCount={missCount}");
+                                _log.WriteLine($"[BALL_COIN_MISS] idx={coin.Index} playerX={state.X_fixed >> 8} playerY={playerY} coinX={coinCX} coinY={coinCY} yOff={yOff} onGround={state.OnGround} gravFlip={state.GravFlipped} missCount={missCount}");
                             }
 #if !DISABLE_DEBUG_LOGGING
                             PfLog($"[MISSED_COIN] idx={coin.Index} sid=0x{coin.SpriteId:X2} hitbox=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) playerX={playerX} retryCount={missCount}");
@@ -1962,7 +1971,7 @@ namespace FamidashEditor
                             if (_speculativeDepth == 0)
                             {
                                 _permanentlyCollectedCoins[coin.Index] = frame;
-                                Console.Error.WriteLine($"[COIN_COLLECTED] idx={coin.Index} sid=0x{coin.SpriteId:X2} gm={state.GameMode} playerX={nesX} playerY={playerTop} coinHit=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom})");
+                                _log.WriteLine($"[COIN_COLLECTED] idx={coin.Index} sid=0x{coin.SpriteId:X2} gm={state.GameMode} playerX={nesX} playerY={playerTop} coinHit=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom})");
                             }
 #if !DISABLE_DEBUG_LOGGING
                             PfLog($"[COIN_COLLECTED] idx={coin.Index} sid=0x{coin.SpriteId:X2} hitbox=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) player=({nesX},{playerTop})-({playerRight},{playerBottom})");
@@ -1978,7 +1987,7 @@ namespace FamidashEditor
                     PfLog($"[DEATH] frame={frame} X={state.X_fixed >> 8}px Y={state.Y_fixed >> 8}px pct={deathPct}% reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY} VelY=0x{state.VelY_fixed:X4} gravFlipped={state.GravFlipped}");
 #endif
                     if (_speculativeDepth == 0 && !UseBFS)
-                        Console.Error.WriteLine($"[DEATH_DBG] frame={frame} X={state.X_fixed >> 8} Y={state.Y_fixed >> 8} gm={state.GameMode} reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY} totalBT={_totalBacktrackAttempts}");
+                        _log.WriteLine($"[DEATH_DBG] frame={frame} X={state.X_fixed >> 8} Y={state.Y_fixed >> 8} gm={state.GameMode} reason={_lastDeathReason} dX={_lastDeathX} dY={_lastDeathY} totalBT={_totalBacktrackAttempts}");
                     // Snapshot the current full path if it reached further than any previous attempt
                     SnapshotBestPath();
 
@@ -2043,14 +2052,14 @@ namespace FamidashEditor
                         // Mandatory coins during retry: do NOT forgive � treat as permanent death
                         if (_retryMandatoryCoins.Contains(missedCoin.Index))
                         {
-                            Console.Error.WriteLine($"[MANDATORY_COIN_DEATH] idx={missedCoin.Index} sid=0x{missedCoin.SpriteId:X2} � mandatory coin missed, permanent death");
+                            _log.WriteLine($"[MANDATORY_COIN_DEATH] idx={missedCoin.Index} sid=0x{missedCoin.SpriteId:X2} � mandatory coin missed, permanent death");
                             // Use the best path we found
                             UseBestPathIfBetter();
                             Success = false;
                             int bestX2 = PathPoints.Count > 0 ? PathPoints[PathPoints.Count - 1].x : 0;
                             int bestPct2 = levelLengthPx > 0 ? bestX2 * 100 / levelLengthPx : 0;
                             ResultMessage = $"Permanent death at frame {frame} (reason: mandatory coin {missedCoin.Index} missed) � best X {bestX2}px ({bestPct2}%)";
-                            Console.Error.WriteLine($"[PERM_DEATH] frame={frame} X={state.X_fixed >> 8} Y={state.Y_fixed >> 8} reason=MANDATORY_COIN_{missedCoin.Index}");
+                            _log.WriteLine($"[PERM_DEATH] frame={frame} X={state.X_fixed >> 8} Y={state.Y_fixed >> 8} reason=MANDATORY_COIN_{missedCoin.Index}");
                             TraceFrameClose();
                             return;
                         }
@@ -2180,7 +2189,7 @@ namespace FamidashEditor
                                 collectedCoinIndices.Add(coin.Index);
                         }
                         FinalCollectedCoinIndices = collectedCoinIndices;
-                        Console.Error.WriteLine($"[RUN_COMPLETE] coins={collectedCoinIndices.Count}/{allCoins.Count} forgiven={_forgivenCoins.Count} collected=[{string.Join(",", collectedCoinIndices)}]");
+                        _log.WriteLine($"[RUN_COMPLETE] coins={collectedCoinIndices.Count}/{allCoins.Count} forgiven={_forgivenCoins.Count} collected=[{string.Join(",", collectedCoinIndices)}]");
                         successMsg += $" [{collectedCoinIndices.Count}/{allCoins.Count} coins]";
                         if (_forgivenCoins.Count > 0) successMsg += $" ({_forgivenCoins.Count} unreachable)";
                     }
@@ -2315,8 +2324,8 @@ namespace FamidashEditor
                             int startGameMode, bool startGravFlipped, bool startMini)
         {
             var bfsSw = System.Diagnostics.Stopwatch.StartNew();
-            Console.Error.WriteLine($"[BFS] Starting exhaustive BFS exploration (frontier cap={BFS_MAX_FRONTIER})");
-            Console.Error.WriteLine($"[BFS_PARAMS] startX={startX_px} startY={startY_px} speed={startSpeedUiIndex} mode={startGameMode} gravFlip={startGravFlipped} mini={startMini} bias={JumpTimingBias} coins={PreferCoins} useBfs={UseBFS}");
+            if (Verbose) _log.WriteLine($"[BFS] Starting exhaustive BFS exploration (frontier cap={BFS_MAX_FRONTIER})");
+            if (Verbose) _log.WriteLine($"[BFS_PARAMS] startX={startX_px} startY={startY_px} speed={startSpeedUiIndex} mode={startGameMode} gravFlip={startGravFlipped} mini={startMini} bias={JumpTimingBias} coins={PreferCoins} useBfs={UseBFS}");
 #if !DISABLE_DEBUG_LOGGING
             void BfsLog(string msg) { try { System.IO.File.AppendAllText(pfDebugLogPath, "[BFS] " + msg + System.Environment.NewLine); } catch { } }
             BfsLog($"Starting BFS (frontier cap={BFS_MAX_FRONTIER})");
@@ -2429,7 +2438,7 @@ namespace FamidashEditor
                                 winInputVal = inp;
                                 winCoins = coins;
                                 winState = sim;
-                                Console.Error.WriteLine($"[BFS] Level complete at frame {frame}! coins={coins} X�{sim.X_fixed >> 8}px");
+                                _log.WriteLine($"[BFS] Level complete at frame {frame}! coins={coins} X�{sim.X_fixed >> 8}px");
                             }
                             continue;
                         }
@@ -2448,7 +2457,7 @@ namespace FamidashEditor
 
                     if (candState.Count == 0)
                     {
-                        Console.Error.WriteLine($"[BFS] ALL DEAD at frame {frame} (X~{highWaterX}px pct={pct}% expanded={frontier.Count * 2} deaths={deathCount})");
+                        _log.WriteLine($"[BFS] ALL DEAD at frame {frame} (X~{highWaterX}px pct={pct}% expanded={frontier.Count * 2} deaths={deathCount})");
 #if !DISABLE_DEBUG_LOGGING
                         BfsLog($"ALL DEAD at frame {frame} (X~{highWaterX}px pct={pct}% expanded={frontier.Count * 2} deaths={deathCount})");
 #endif                        // Death type distribution
@@ -2459,7 +2468,7 @@ namespace FamidashEditor
                         var dtParts = new System.Collections.Generic.List<string>();
                         for (int d = 0; d < dtCounts.Length; d++)
                             if (dtCounts[d] > 0) dtParts.Add($"{dtNames[d]}={dtCounts[d]}");
-                        Console.Error.WriteLine($"[BFS] Death types: {string.Join(" ", dtParts)}");
+                        _log.WriteLine($"[BFS] Death types: {string.Join(" ", dtParts)}");
                         // Log a few sample dead states with exact coordinates
                         int samp = 0;
                         for (int k = 0; k < expandCount && samp < 5; k++)
@@ -2469,7 +2478,7 @@ namespace FamidashEditor
                                 var ds = rState[k];
                                 int pi2 = k >> 1;
                                 var ps = frontier[pi2];
-                                Console.Error.WriteLine($"[BFS_DEAD] parent X=0x{ps.X_fixed:X} Y=0x{ps.Y_fixed:X} VelY=0x{ps.VelY_fixed:X} grav={ps.GravFlipped} | child X=0x{ds.X_fixed:X} Y=0x{ds.Y_fixed:X} VelY=0x{ds.VelY_fixed:X} grav={ds.GravFlipped} dt={ds.DeathType} inp={(k&1)==1}");
+                                _log.WriteLine($"[BFS_DEAD] parent X=0x{ps.X_fixed:X} Y=0x{ps.Y_fixed:X} VelY=0x{ps.VelY_fixed:X} grav={ps.GravFlipped} | child X=0x{ds.X_fixed:X} Y=0x{ds.Y_fixed:X} VelY=0x{ds.VelY_fixed:X} grav={ds.GravFlipped} dt={ds.DeathType} inp={(k&1)==1}");
                                 samp++;
                             }
                         }
@@ -2490,9 +2499,9 @@ namespace FamidashEditor
                                 if (s.VelY_fixed < minVelY) minVelY = s.VelY_fixed;
                                 if (s.VelY_fixed > maxVelY) maxVelY = s.VelY_fixed;
                             }
-                            Console.Error.WriteLine($"[BFS] Last frontier: size={frontier.Count} X=[{minX}..{maxX}] Y=[{minY}..{maxY}] mode={frontier[0].GameMode} grav={frontier[0].GravFlipped} mini={frontier[0].Mini} VelY=[0x{minVelY:X}..0x{maxVelY:X}]");
+                            _log.WriteLine($"[BFS] Last frontier: size={frontier.Count} X=[{minX}..{maxX}] Y=[{minY}..{maxY}] mode={frontier[0].GameMode} grav={frontier[0].GravFlipped} mini={frontier[0].Mini} VelY=[0x{minVelY:X}..0x{maxVelY:X}]");
                         }
-                        Console.Error.Flush();
+                        _log.Flush();
                         break;
                     }
 
@@ -2506,7 +2515,7 @@ namespace FamidashEditor
                         }
                         if (!anyBetter)
                         {
-                            Console.Error.WriteLine($"[BFS] Optimal � winning path at frame {winFrame} with {winCoins} coins, no better candidates");
+                            _log.WriteLine($"[BFS] Optimal � winning path at frame {winFrame} with {winCoins} coins, no better candidates");
                             break;
                         }
                     }
@@ -2632,14 +2641,15 @@ namespace FamidashEditor
                             if (s.GravFlipped) gravF++; else gravN++;
                         }
                         double ms = bfsSw.Elapsed.TotalMilliseconds / Math.Max(1, frame + 1);
-                        Console.Error.WriteLine(
-                            $"[BFS] f={frame} front={frontier.Count} dedup={deduped.Count} " +
-                            $"deaths={deathCount} Y=[{minY}..{maxY}] " +
-                            $"mode={frontier[0].GameMode} gravN={gravN} gravF={gravF} " +
-                            $"X�{highWaterX}px pct={pct}% ms/f={ms:F1}");
-                        Console.Error.Flush();
+                        if (Verbose)
+                            _log.WriteLine(
+                                $"[BFS] f={frame} front={frontier.Count} dedup={deduped.Count} " +
+                                $"deaths={deathCount} Y=[{minY}..{maxY}] " +
+                                $"mode={frontier[0].GameMode} gravN={gravN} gravF={gravF} " +
+                                $"X~{highWaterX}px pct={pct}% ms/f={ms:F1}");
+                        if (Verbose) _log.Flush();
                         // Dump frontier state hash at key frames for divergence debugging
-                        if (frame >= 703 && frame <= 810)
+                        if (Verbose && frame >= 703 && frame <= 810)
                         {
                             long fHash = 0;
                             for (int fi = 0; fi < frontier.Count; fi++)
@@ -2648,8 +2658,8 @@ namespace FamidashEditor
                                 fHash = fHash * 31 + fs.X_fixed + fs.Y_fixed * 7L + fs.VelY_fixed * 13L + (fs.GravFlipped ? 1 : 0) + fs.GameMode * 37L;
                             }
                             var hashMsg = $"[BFS_HASH] f={frame} frontHash=0x{fHash:X16} first=(X=0x{frontier[0].X_fixed:X},Y=0x{frontier[0].Y_fixed:X},VelY=0x{frontier[0].VelY_fixed:X},mode={frontier[0].GameMode}) last=(X=0x{frontier[frontier.Count-1].X_fixed:X},Y=0x{frontier[frontier.Count-1].Y_fixed:X},VelY=0x{frontier[frontier.Count-1].VelY_fixed:X},mode={frontier[frontier.Count-1].GameMode})";
-                            Console.Error.WriteLine(hashMsg);
-                            Console.Error.Flush();
+                            _log.WriteLine(hashMsg);
+                            _log.Flush();
 #if !DISABLE_DEBUG_LOGGING
                             BfsLog(hashMsg);
 #endif
@@ -2725,7 +2735,7 @@ namespace FamidashEditor
                     inputs.Reverse();
                     inputs.Add(winInputVal); // the winning frame's input
 
-                    Console.Error.WriteLine($"[BFS] Replaying winning path ({inputs.Count} frames)...");
+                    _log.WriteLine($"[BFS] Replaying winning path ({inputs.Count} frames)...");
                     ReplayBfsPath(inputs, startX_px, startY_px, startSpeedUiIndex,
                                   startGameMode, startGravFlipped, startMini);
 
@@ -2736,7 +2746,7 @@ namespace FamidashEditor
                     msg += $" [{elapsed:F1}s BFS]";
                     ResultMessage = msg;
                     Success = true;
-                    Console.Error.WriteLine($"[BFS] {msg}");
+                    _log.WriteLine($"[BFS] {msg}");
                 }
                 else
                 {
@@ -2760,7 +2770,7 @@ namespace FamidashEditor
                     int bp = levelLengthPx > 0 ? bx * 100 / levelLengthPx : 0;
                     ResultMessage = $"BFS failed ~ best path to X={bx}px ({bp}%)";
                     Success = false;
-                    Console.Error.WriteLine($"[BFS] {ResultMessage}");
+                    _log.WriteLine($"[BFS] {ResultMessage}");
 #if !DISABLE_DEBUG_LOGGING
                     BfsLog($"RESULT: {ResultMessage}");
 #endif
@@ -2769,8 +2779,8 @@ namespace FamidashEditor
             catch (Exception ex)
             {
                 _speculativeDepth = 0;
-                Console.Error.WriteLine($"[BFS] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
-                Console.Error.WriteLine(ex.StackTrace);
+                _log.WriteLine($"[BFS] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+                _log.WriteLine(ex.StackTrace);
                 ResultMessage = $"BFS crashed: {ex.GetType().Name}";
                 Success = false;
 #if !DISABLE_DEBUG_LOGGING
@@ -2991,7 +3001,7 @@ namespace FamidashEditor
                         continue;
                     }
                     if (isCoinRetryDeath && cp.RetryStage == 0)
-                        Console.Error.WriteLine($"[CROSSMODE_BT] cpMode={cp.GameMode} deathMode={deathGameMode} frameDist={frameDist} attempts={_backtrackAttempts}");
+                        _log.WriteLine($"[CROSSMODE_BT] cpMode={cp.GameMode} deathMode={deathGameMode} frameDist={frameDist} attempts={_backtrackAttempts}");
                 }
 
                 // SHIP COIN ESCALATION: After 3 failed attempts to collect a
@@ -3156,7 +3166,7 @@ namespace FamidashEditor
                                     break;
                                 }
                             }
-                            Console.Error.WriteLine($"[COIN_COLLECT_LOSE_FORGIVEN] idx={stale} gm={state.GameMode} loseCount={loseCount}");
+                            _log.WriteLine($"[COIN_COLLECT_LOSE_FORGIVEN] idx={stale} gm={state.GameMode} loseCount={loseCount}");
 #if !DISABLE_DEBUG_LOGGING
                             PfLog($"[COIN_COLLECT_LOSE_FORGIVEN] idx={stale} loseCount={loseCount} � collected {MAX_COIN_COLLECT_LOSE}x but path always dies");
 #endif
@@ -3212,7 +3222,7 @@ namespace FamidashEditor
                             _backtrackCheckpoints.Clear();
                             _backtrackCheckpoints.Add(recovery);
                             _backtrackAttempts = 0;
-                            Console.Error.WriteLine($"[COIN_DEEP_RECOVERY] injecting ship entry frame={recovery.Frame} mode={recovery.GameMode}");
+                            _log.WriteLine($"[COIN_DEEP_RECOVERY] injecting ship entry frame={recovery.Frame} mode={recovery.GameMode}");
                             return TryBacktrack(ref state, ref frame);
                         }
                     }
@@ -3309,7 +3319,7 @@ namespace FamidashEditor
                 _backtrackCheckpoints.Clear();
                 _backtrackCheckpoints.Add(injected);
                 _backtrackAttempts = 0;
-                Console.Error.WriteLine($"[CROSSMODE_INJECT] frame={injected.Frame} mode={injected.GameMode} attempts={_backtrackAttempts}");
+                _log.WriteLine($"[CROSSMODE_INJECT] frame={injected.Frame} mode={injected.GameMode} attempts={_backtrackAttempts}");
                 return TryBacktrack(ref state, ref frame);
             }
 
@@ -3756,8 +3766,41 @@ namespace FamidashEditor
 #endif
                     return false;
                 }
-                // Stages 20+ (pad-skip) removed: pads fire on collision,
-                // cannot be suppressed by the pathfinder.
+                else if (stage == 20) // Intermediate bias 0.25
+                {
+                    JumpTimingBias = 0.25;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=20: bias=0.25");
+#endif
+                    // Fall through to normal decision
+                }
+                else if (stage == 21) // Intermediate bias 0.75
+                {
+                    JumpTimingBias = 0.75;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=21: bias=0.75");
+#endif
+                    // Fall through to normal decision
+                }
+                else if (stage == 22) // Bias 0.0 + suppress
+                {
+                    JumpTimingBias = 0.0;
+                    _btSuppressJumpUntilAirborne = true;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=22: bias=0.0 + suppress");
+#endif
+                    return false;
+                }
+                else if (stage == 23) // Bias 1.0 + suppress
+                {
+                    JumpTimingBias = 1.0;
+                    _btSuppressJumpUntilAirborne = true;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[BACKTRACK_OVERRIDE] stage=23: bias=1.0 + suppress");
+#endif
+                    return false;
+                }
+                // Stages 24+ reserved.
             }
 
             // ---------------------------------------------------------------
@@ -8418,7 +8461,7 @@ namespace FamidashEditor
             PfUpdateSlopeCounters(ref s);
 
             bool trace = (playerX_px >= 7100 && _ballEjectTraceCount < 80);
-            if (_ballEjectTraceCount == 0 && playerX_px >= 7100) Console.Error.WriteLine($"[BALL_EJECT_MAP] mapW={_collisionMap.MapWidth} mapH={_collisionMap.MapHeight} groundRows={_collisionMap.GroundRowsToReserve} tilesLen={_collisionMap.Tiles.Length}");
+            if (_ballEjectTraceCount == 0 && playerX_px >= 7100) _log.WriteLine($"[BALL_EJECT_MAP] mapW={_collisionMap.MapWidth} mapH={_collisionMap.MapHeight} groundRows={_collisionMap.GroundRowsToReserve} tilesLen={_collisionMap.Tiles.Length}");
 
             // SIM BallEject_Fresh splits checks by gravity direction:
             //   Normal gravity  ? floor check only  (bg_coll_D, vel >= 0)
@@ -8435,13 +8478,13 @@ namespace FamidashEditor
                 if (s.VelY_fixed <= 0)
                 {
                     var (hit, ceilingBottomY, _) = CheckCeiling(playerX_px, collisionY, hbW, hbH);
-                    if (trace) Console.Error.WriteLine($"[BALL_EJECT_U] X={playerX_px} Y={playerY_px} collY={collisionY} hbW={hbW} hbH={hbH} miniOff={miniOffset} velY=0x{s.VelY_fixed:X} hit={hit} ceilBot={ceilingBottomY} grav={s.GravFlipped} mini={s.Mini}");
+                    if (trace) _log.WriteLine($"[BALL_EJECT_U] X={playerX_px} Y={playerY_px} collY={collisionY} hbW={hbW} hbH={hbH} miniOff={miniOffset} velY=0x{s.VelY_fixed:X} hit={hit} ceilBot={ceilingBottomY} grav={s.GravFlipped} mini={s.Mini}");
                     if (hit)
                     {
                         // SIM formula: newY = collisionBottomY - hitboxOffsetY
                         // (no ballYOffset subtraction for ceiling eject � matches BallEject_Fresh)
                         int newY = ceilingBottomY - miniOffset;
-                        if (trace) Console.Error.WriteLine($"  -> ceiling eject Y: {playerY_px} -> {newY}");
+                        if (trace) _log.WriteLine($"  -> ceiling eject Y: {playerY_px} -> {newY}");
                         s.Y_fixed = newY << 8;
                         s.VelY_fixed = 0;
                         s.OnGround = true;
@@ -8494,7 +8537,7 @@ namespace FamidashEditor
                         int rawTile0 = (rawIdx0 >= 0 && rawIdx0 < _collisionMap.Tiles.Length) ? _collisionMap.Tiles[rawIdx0] : -1;
                         int rawTile1 = (rawIdx1 >= 0 && rawIdx1 < _collisionMap.Tiles.Length) ? _collisionMap.Tiles[rawIdx1] : -1;
                         int rawTile2 = (rawIdx2 >= 0 && rawIdx2 < _collisionMap.Tiles.Length) ? _collisionMap.Tiles[rawIdx2] : -1;
-                        Console.Error.WriteLine($"[BALL_EJECT_D] X={playerX_px} Y={playerY_px} collY={collisionY} probeBot={probeBottom} tileY={tileY} tileArrY={tileArrayY} localY={localY} velY=0x{s.VelY_fixed:X} hit={hit} surfY={surfaceY} spike={spikeDeath} grav={s.GravFlipped} mini={s.Mini} tiles@row{tileY}(arr{tileArrayY}): [{tileX}]=tid{rawTile0}/{col} [{tileX2}]=tid{rawTile1}/{col2} [{tileX3}]=tid{rawTile2}/{col3}");
+                        _log.WriteLine($"[BALL_EJECT_D] X={playerX_px} Y={playerY_px} collY={collisionY} probeBot={probeBottom} tileY={tileY} tileArrY={tileArrayY} localY={localY} velY=0x{s.VelY_fixed:X} hit={hit} surfY={surfaceY} spike={spikeDeath} grav={s.GravFlipped} mini={s.Mini} tiles@row{tileY}(arr{tileArrayY}): [{tileX}]=tid{rawTile0}/{col} [{tileX2}]=tid{rawTile1}/{col2} [{tileX3}]=tid{rawTile2}/{col3}");
                         _ballEjectTraceCount++;
                     }
                     if (spikeDeath)
@@ -8506,7 +8549,7 @@ namespace FamidashEditor
                     if (hit)
                     {
                         int newY = surfaceY - hbH - miniOffset - ballYOffset;
-                        if (trace) Console.Error.WriteLine($"  -> floor eject Y: {playerY_px} -> {newY}");
+                        if (trace) _log.WriteLine($"  -> floor eject Y: {playerY_px} -> {newY}");
                         s.Y_fixed = newY << 8;
                         s.VelY_fixed = 0;
                         s.OnGround = true;
@@ -9091,7 +9134,7 @@ namespace FamidashEditor
 
                     if (coinDelays.Count == 0 && coinDistX_sc <= maxReachPx)
                     {
-                        Console.Error.WriteLine($"[BALL_COIN_MISS_DETAIL] idx={coin.Index} playerX={playerX_sc} playerY={state.Y_fixed >> 8} gravFlip={state.GravFlipped} coinHit=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) closestXDist={dbgClosestXDist} closestYDist={dbgClosestYDist} closestDelay={dbgClosestDelay} closestFrame={dbgClosestFrame} diedCount={dbgDiedCount}/{coinSeekMax} maxFrame={dbgMaxFrame} deathX={dbgDeathX} deathY={dbgDeathY} deathDelay={dbgBestDeathDelay}");
+                        _log.WriteLine($"[BALL_COIN_MISS_DETAIL] idx={coin.Index} playerX={playerX_sc} playerY={state.Y_fixed >> 8} gravFlip={state.GravFlipped} coinHit=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) closestXDist={dbgClosestXDist} closestYDist={dbgClosestYDist} closestDelay={dbgClosestDelay} closestFrame={dbgClosestFrame} diedCount={dbgDiedCount}/{coinSeekMax} maxFrame={dbgMaxFrame} deathX={dbgDeathX} deathY={dbgDeathY} deathDelay={dbgBestDeathDelay}");
                     }
                     } // end distance gate
 
@@ -9102,7 +9145,7 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[BALL_COIN] {coinDelays.Count}/{coinSeekMax} delays collect coin idx={coin.Index} ({alsoViable} also viable) � preferring coin delays");
 #endif
-                        Console.Error.WriteLine($"[BALL_COIN_FOUND] idx={coin.Index} {coinDelays.Count}/{coinSeekMax} delays collect coin ({alsoViable} viable) at playerX={playerX_sc} playerY={state.Y_fixed >> 8} gravFlip={state.GravFlipped} delays=[{string.Join(",", coinDelays.Select(cd => cd.delay).Take(10))}]");
+                        _log.WriteLine($"[BALL_COIN_FOUND] idx={coin.Index} {coinDelays.Count}/{coinSeekMax} delays collect coin ({alsoViable} viable) at playerX={playerX_sc} playerY={state.Y_fixed >> 8} gravFlip={state.GravFlipped} delays=[{string.Join(",", coinDelays.Select(cd => cd.delay).Take(10))}]");
                         viableDelays = coinDelays;
                     }
 
@@ -9157,7 +9200,7 @@ namespace FamidashEditor
                             if (noPressFrames >= framesNeeded)
                             {
                                 // Floor path reaches coin ? suppress and walk forward
-                                Console.Error.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} suppress flip, walk forward playerX={playerX_sc} coinX={coinCX} dist={coinCX-playerX_sc} noPressFrames={noPressFrames}");
+                                _log.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} suppress flip, walk forward playerX={playerX_sc} coinX={coinCX} dist={coinCX-playerX_sc} noPressFrames={noPressFrames}");
                                 return false;
                             }
                             else
@@ -9169,20 +9212,20 @@ namespace FamidashEditor
                                 _speculativeDepth--;
                                 if (ceilSurv >= framesNeeded)
                                 {
-                                    Console.Error.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} FLIP to ceiling (floor dies at {noPressFrames}, ceiling survives {ceilSurv}, need {framesNeeded}) playerX={playerX_sc}");
+                                    _log.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} FLIP to ceiling (floor dies at {noPressFrames}, ceiling survives {ceilSurv}, need {framesNeeded}) playerX={playerX_sc}");
                                     return true;
                                 }
                                 else if (ceilSurv >= noPressFrames)
                                 {
                                     // Ceiling survives at least as long as floor � floor is dying
                                     // anyway, so flip to ceiling and let the full pathfinder navigate.
-                                    Console.Error.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} FLIP to ceiling (floor dies at {noPressFrames}, ceiling dies at {ceilSurv}, need {framesNeeded} � ceiling at least as good) playerX={playerX_sc}");
+                                    _log.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} FLIP to ceiling (floor dies at {noPressFrames}, ceiling dies at {ceilSurv}, need {framesNeeded} � ceiling at least as good) playerX={playerX_sc}");
                                     return true;
                                 }
                                 else
                                 {
                                     // Ceiling dies sooner than floor ? stay on floor (pads/orbs may help)
-                                    Console.Error.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} suppress flip (ceiling dies at {ceilSurv} < floor {noPressFrames}, need {framesNeeded}) playerX={playerX_sc}");
+                                    _log.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} suppress flip (ceiling dies at {ceilSurv} < floor {noPressFrames}, need {framesNeeded}) playerX={playerX_sc}");
                                     return false;
                                 }
                             }
@@ -9197,7 +9240,7 @@ namespace FamidashEditor
                             if (noPressFrames >= framesNeeded_c)
                             {
                                 // Ceiling path survives to coin ? stay on ceiling
-                                Console.Error.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} suppress flip (ceiling), walk forward playerX={playerX_sc} coinX={coinCX_c} dist={coinCX_c-playerX_sc} noPressFrames={noPressFrames}");
+                                _log.WriteLine($"[BALL_COIN_APPROACH] idx={coin.Index} suppress flip (ceiling), walk forward playerX={playerX_sc} coinX={coinCX_c} dist={coinCX_c-playerX_sc} noPressFrames={noPressFrames}");
                                 return false;
                             }
                             // else: ceiling can't reach coin � fall through to
@@ -10962,7 +11005,7 @@ namespace FamidashEditor
                     PfLog($"[PORTAL_GAMEMODE] sid=0x{sid:X2} mode {s.GameMode} -> {mode} VelY halved: 0x{s.VelY_fixed:X4} -> 0x{s.VelY_fixed / 2:X4}");
 #endif
                     if (_speculativeDepth == 0 && false) // DEBUG: mode transition logging
-                        Console.Error.WriteLine($"[MODE_TRANSITION] {s.GameMode}->{mode} Y={s.Y_fixed >> 8} VelY=0x{s.VelY_fixed:X} X={s.X_fixed >> 8} GravMul={s.GravMul} GravFlip={s.GravFlipped} Processed={s.ProcessedSprites.Count}");
+                        _log.WriteLine($"[MODE_TRANSITION] {s.GameMode}->{mode} Y={s.Y_fixed >> 8} VelY=0x{s.VelY_fixed:X} X={s.X_fixed >> 8} GravMul={s.GravMul} GravFlip={s.GravFlipped} Processed={s.ProcessedSprites.Count}");
                     // Save last cube/ball checkpoint before entering ship/UFO so
                     // cross-mode backtracking can reach it even after FIFO eviction.
                     if ((s.GameMode == 0 || s.GameMode == 2) && (mode == 1 || mode == 3) && _backtrackCheckpoints != null)
@@ -11066,7 +11109,7 @@ namespace FamidashEditor
                             }
                         }
                         _modeTransitionStabilizeFrames = baseStab;
-                        Console.Error.WriteLine($"[STAB_SET] prevMode={prevMode} mode={mode} stab={_modeTransitionStabilizeFrames}");
+                        _log.WriteLine($"[STAB_SET] prevMode={prevMode} mode={mode} stab={_modeTransitionStabilizeFrames}");
                     }
                     // Un-forgive cross-corridor coins whose section mode
                     // matches the new mode so they can now be collected.
