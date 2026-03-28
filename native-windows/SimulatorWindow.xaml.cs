@@ -1222,6 +1222,14 @@ namespace FamidashEditor
         // Experimental: record player world positions each rendered frame for editor overlay
         private System.Collections.Generic.List<(int x, int y)> recordedPlayerPath = new System.Collections.Generic.List<(int x, int y)>();
         private System.Collections.Generic.List<(int x, int y)> recordedPlayer2Path = new System.Collections.Generic.List<(int x, int y)>();  // Player 2 path for dual mode
+        private bool _prevDualActiveForP2Path; // tracks dual-mode transitions for P2 path sentinel breaks
+        private void RecordP2PathPoint(int x, int y)
+        {
+            if (!_prevDualActiveForP2Path && recordedPlayer2Path.Count > 0)
+                recordedPlayer2Path.Add((-1, -1));
+            recordedPlayer2Path.Add((x, y));
+            _prevDualActiveForP2Path = true;
+        }
         // Interaction line: player's center (fixed-point) where scrolling begins
         private const int INTERACTION_LINE_FIXED = 0x5000;
 
@@ -2712,7 +2720,7 @@ namespace FamidashEditor
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
-                    if (!IsCoinSprite(sid)) continue;
+                    if (!IsCoinSprite(sid) && !SharedPhysics.IsMiniCoinSprite(sid)) continue;
                     if (collectedCoins.Contains(idx)) continue;
 
                     // Coins use a simple 16×16 hitbox (NES sprite_load_special_behavior returns
@@ -4446,7 +4454,7 @@ namespace FamidashEditor
                 catch { }
                 // Clear any previously recorded path for a fresh run
                 try { recordedPlayerPath.Clear(); } catch { }
-                try { recordedPlayer2Path.Clear(); } catch { }
+                try { recordedPlayer2Path.Clear(); _prevDualActiveForP2Path = false; } catch { }
                 // Don't clear processed portals here - RestartButton_Click handles that before ApplyPortalStatesUpToPosition
                 // Respect the global Cam Mode option: when Cam Mode is enabled, disable physics
                 try
@@ -6241,8 +6249,8 @@ namespace FamidashEditor
 
                 // Clear paths and processed portals
                 try { recordedPlayerPath.Clear(); } catch { }
-                try { recordedPlayer2Path.Clear(); } catch { }
-                try { recordedPlayer2Path.Clear(); } catch { }
+                try { recordedPlayer2Path.Clear(); _prevDualActiveForP2Path = false; } catch { }
+                try { recordedPlayer2Path.Clear(); _prevDualActiveForP2Path = false; } catch { }
                 try { processedGravityPortals.Clear(); } catch { }
                 try { processedGravityModPortals.Clear(); } catch { }
                 try { processedSpeedPortals.Clear(); } catch { }
@@ -6255,6 +6263,7 @@ namespace FamidashEditor
                 
                 // Reset dual mode state
                 dual = false;
+                _prevDualActiveForP2Path = false;
                 singlePortalExitPending = false;
                 currplayer = 0;
                 twoplayer = false;
@@ -10124,9 +10133,9 @@ namespace FamidashEditor
                 // The NES itself draws the sprite at +8 (bottom of the OAM tile), but the
                 // NES BG layer hides overlapping pixels — the WPF renderer doesn't have BG
                 // priority, so using the collision offset avoids the sprite sinking into ground.
-                if (snapMiniMode && !snapGravFlipped)
+                if (snapMiniMode)
                 {
-                    playerPixelY += 4; // collision offset (GetMiniCenterOffsetY)
+                    playerPixelY += 4; // collision offset (GetMiniCenterOffsetY) — gravity-independent
                 }
 
                 // Path recording moved to SimulateNumericStep for better performance (60Hz instead of 144Hz+)
@@ -10169,14 +10178,9 @@ namespace FamidashEditor
                     int player2PixelY = (player_y_fixed[1] >> 8) - (snapCameraY >> 8);
 
                     // Apply mini mode visual adjustments for player 2
-                    if (player_mini[1] && player_gravity[1] == 0)  // Mini and normal gravity
+                    if (player_mini[1])  // Mini — gravity-independent offset
                     {
-                        player2PixelY += (TILE - 8);
-                        // Additional adjustment for certain modes
-                        if (currentGameMode == 1 || currentGameMode == 2 || currentGameMode == 3 || currentGameMode == 6 || currentGameMode == 7)
-                        {
-                            player2PixelY -= 1;
-                        }
+                        player2PixelY += 4;
                     }
 
                     // Render player 2 using image or rectangle
@@ -11418,7 +11422,7 @@ namespace FamidashEditor
                             {
                                 singlePortalExitPending = false;
                                 dual = false;
-                                
+                                _prevDualActiveForP2Path = false;
                                 // P1 keeps its own saved state from P1_SAVE — no sync needed.
                                 AppendSimDebug($"[SINGLE_PORTAL_EXIT] dual=false, P1 keeps own state: Y={player_y_fixed[0]>>8}, velY={player_vel_y_fixed[0]:X4}, grav={player_gravity[0]:X2}");
                             }

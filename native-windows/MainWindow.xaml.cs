@@ -12630,18 +12630,28 @@ namespace FamidashEditor
                         IsHitTestVisible = false
                     };
 
-                    foreach (var p in playerPath2Points)
+                    // Use StreamGeometry to handle segment breaks (sentinel -1,-1)
+                    var p2Geo = new System.Windows.Media.StreamGeometry();
+                    using (var p2Ctx = p2Geo.Open())
                     {
-                        double dx = pad + p.x * scale;
-                        // Shift path down 3 tiles so it lines up with player visuals/ground
-                        double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
-                        poly2.Points.Add(new System.Windows.Point(dx, dy));
+                        bool p2started = false;
+                        foreach (var p in playerPath2Points)
+                        {
+                            if (p.x == -1 && p.y == -1) { p2started = false; continue; }
+                            double dx = pad + p.x * scale;
+                            double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                            if (!p2started)
+                            { p2Ctx.BeginFigure(new System.Windows.Point(dx, dy), false, false); p2started = true; }
+                            else
+                            { p2Ctx.LineTo(new System.Windows.Point(dx, dy), true, false); }
+                        }
                     }
+                    p2Geo.Freeze();
+                    var poly2Path = new Shapes.Path() { Data = p2Geo, Stroke = poly2.Stroke, StrokeThickness = poly2.StrokeThickness, IsHitTestVisible = false };
+                    Canvas.SetZIndex(poly2Path, 2000);
+                    CanvasHost.Children.Add(poly2Path);
 
-                    playerPath2Polyline = poly2;
-                    // Put overlay above normal canvas content
-                    Canvas.SetZIndex(poly2, 2000);
-                    CanvasHost.Children.Add(poly2);
+                    playerPath2Polyline = poly2; // keep reference for removal
                 }
             }
             catch { }

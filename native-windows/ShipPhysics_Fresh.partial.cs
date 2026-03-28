@@ -187,10 +187,9 @@ namespace FamidashEditor
                 int playerY_px_trail = playerY_fixed >> 8;
                 // Apply mini mode offset for trail to match visual position
                 bool isMini_trail = (currplayer_mini != 0);
-                bool gravityInverted_trail = (currplayer_gravity != 0);
-                if (isMini_trail && !gravityInverted_trail)
+                if (isMini_trail)
                 {
-                    playerY_px_trail += 4;  // Adjust for visual position offset
+                    playerY_px_trail += 4;
                 }
                 int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
                 
@@ -198,7 +197,7 @@ namespace FamidashEditor
                 if (currplayer == 0)
                     recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
                 else if (dual)
-                    recordedPlayer2Path.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                    RecordP2PathPoint(playerWorldCenterX_px, playerWorldCenterY_px);
             }
             catch { }
         }

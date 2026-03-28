@@ -366,6 +366,7 @@ namespace FamidashEditor
         private List<(int x, int y)> _bestPathPoints = new();  // snapshot of PathPoints at best X
         private List<(int x, int y)> _bestPath2Points = new(); // snapshot of Path2Points at best X
         private List<bool> _bestInputs = new();                 // snapshot of Inputs at best X
+        private bool _prevDualActiveForPath; // tracks dual-mode transitions for P2 path sentinel breaks
 
         // -- Backtrack timing --
         private System.Diagnostics.Stopwatch? _backtrackTimer;
@@ -1551,6 +1552,7 @@ namespace FamidashEditor
             PathPoints.Clear();
             Path2Points.Clear();
             Inputs.Clear();
+            _prevDualActiveForPath = false;
             _cubeHoldJump = false;
             _cubeHoldDelay = 0;
             _committedJumpDelay = -1;
@@ -1862,15 +1864,19 @@ namespace FamidashEditor
                 //   X: (playerX_fixed >> 8) + playerVisualWidth / 2  (= X + 8)
                 //   Y: (playerY_fixed >> 8) + [4 if mini && !inverted] + playerVisualHeight / 2
                 {
-                    int pathMiniOffY = (state.Mini && !state.GravFlipped) ? 4 : 0;
+                    int pathMiniOffY = state.Mini ? 4 : 0;
                     PathPoints.Add(((state.X_fixed >> 8) + 8,
                                     (state.Y_fixed >> 8) + pathMiniOffY + 8));
                     if (state.DualActive)
                     {
-                        int p2MiniOffY = (state.P2_Mini && !state.P2_GravFlipped) ? 4 : 0;
+                        // Insert segment break when dual mode just activated (gap from previous section)
+                        if (!_prevDualActiveForPath && Path2Points.Count > 0)
+                            Path2Points.Add((-1, -1)); // sentinel: start new segment
+                        int p2MiniOffY = state.P2_Mini ? 4 : 0;
                         Path2Points.Add(((state.X_fixed >> 8) + 8,
                                          (state.P2_Y_fixed >> 8) + p2MiniOffY + 8));
                     }
+                    _prevDualActiveForPath = state.DualActive;
                 }
 
                 // -- Coin miss detection --
@@ -2250,9 +2256,9 @@ namespace FamidashEditor
             // Orbed is critical for swing: it determines whether a gravity
             // flip can happen this frame. Without it, flip-ready and
             // flip-blocked states get merged, losing corridor navigation paths.
-            int flags = (s.GameMode & 0x7) | ((s.GravFlipped ? 1 : 0) << 3)
-                      | ((s.Mini ? 1 : 0) << 4) | ((s.OnGround ? 1 : 0) << 5)
-                      | ((s.Orbed ? 1 : 0) << 6);
+            int flags = (s.GameMode & 0xF) | ((s.GravFlipped ? 1 : 0) << 4)
+                      | ((s.Mini ? 1 : 0) << 5) | ((s.OnGround ? 1 : 0) << 6)
+                      | ((s.Orbed ? 1 : 0) << 7);
             // ProcessedSprites hash (include RobotJumpTime for robot mode dedup)
             int sprHash = s.ProcessedSprites.GetBitsHash();
             if (s.RobotJumpTime > 0)
@@ -2837,6 +2843,7 @@ namespace FamidashEditor
             PathPoints.Clear();
             Path2Points.Clear();
             Inputs.Clear();
+            _prevDualActiveForPath = false;
             _speculativeDepth = 0;
             _frameCounter = 0;
             TraceFrameOpen();
@@ -2867,15 +2874,18 @@ namespace FamidashEditor
 
                 TraceFrame(f, ref state, Inputs[f], alive);
 
-                int pathMiniOffY = (state.Mini && !state.GravFlipped) ? 4 : 0;
+                int pathMiniOffY = state.Mini ? 4 : 0;
                 PathPoints.Add(((state.X_fixed >> 8) + 8,
                                 (state.Y_fixed >> 8) + pathMiniOffY + 8));
                 if (state.DualActive)
                 {
-                    int p2MiniOffY = (state.P2_Mini && !state.P2_GravFlipped) ? 4 : 0;
+                    if (!_prevDualActiveForPath && Path2Points.Count > 0)
+                        Path2Points.Add((-1, -1)); // sentinel: start new segment
+                    int p2MiniOffY = state.P2_Mini ? 4 : 0;
                     Path2Points.Add(((state.X_fixed >> 8) + 8,
                                      (state.P2_Y_fixed >> 8) + p2MiniOffY + 8));
                 }
+                _prevDualActiveForPath = state.DualActive;
 
                 if (endLevel || !alive) break;
             }
@@ -3059,7 +3069,7 @@ namespace FamidashEditor
                         else if (frameDist4 < 300)
                             maxStages = 4;   // moderate: bias � and force
                         else if (frameDist4 < 700)
-                            maxStages = 16;  // fork area: full exploration
+                            maxStages = 23;  // fork area: full exploration incl. bias combos
                         else
                             maxStages = 4;   // before fork: moderate
                     }
@@ -3067,7 +3077,7 @@ namespace FamidashEditor
                     {
                         int frameDist5 = _btDeathFrame - cp.Frame;
                         if (frameDist5 <= 60)
-                            maxStages = 12;  // nearby: full ship exploration
+                            maxStages = 23;  // nearby: full ship exploration incl. bias combos
                         else if (frameDist5 <= 240)
                             maxStages = 8;   // moderate distance
                         else
@@ -3075,7 +3085,7 @@ namespace FamidashEditor
                     }
                 }
                 else if (cp.GameMode == 2 || cp.GameMode == 5 || cp.GameMode == 7)
-                    maxStages = 10;
+                    maxStages = 23;
                 else
                 {
                     int frameDist2 = _btDeathFrame - cp.Frame;
@@ -3109,12 +3119,12 @@ namespace FamidashEditor
                         if (coinAbove && frameDist2 <= 90)
                             maxStages = 4; // fast-skip: only try core strategies near floor
                         else if (frameDist2 <= 60)
-                            maxStages = 19; // full exploration for nearby checkpoints
+                            maxStages = 23; // full exploration for nearby checkpoints
                         else
-                            maxStages = 12; // distant: include force-jump window
+                            maxStages = 23; // distant: include bias combo stages
                     }
                     else if (frameDist2 <= 60)
-                        maxStages = 19;  // within ~1 second: full exploration
+                        maxStages = 23;  // within ~1 second: full exploration
                     else if (frameDist2 <= 240)
                         maxStages = 8;   // within ~4 seconds: core strategies
                     else
@@ -5382,6 +5392,7 @@ namespace FamidashEditor
                 case 5: return DecideSpiderInput(state, isOverrideFrame);
                 case 6: return DecideWaveInput(state, isOverrideFrame);
                 case 7: return DecideSwingInput(state, isOverrideFrame);
+                case 9: return DecidePogoInput(state, isOverrideFrame);
                 default: return false;
             }
         }
@@ -7778,6 +7789,85 @@ namespace FamidashEditor
                     return false;
                 }
             }
+            else if (s.GameMode == 9) // Pogo mode
+            {
+                // Pogo uses swing gravity + ball-style (velocity-gated) eject + auto-bounce
+                SwingGravityStep(ref s);
+
+                // No ball cooldown for pogo (pogo has no flip mechanic)
+
+                // Velocity zeroing (same as ball — prevents vel accumulation when grounded)
+                {
+                    bool velZeroDied = false;
+                    BallVelocityZeroing(ref s, out velZeroDied);
+                    if (velZeroDied)
+                    {
+                        s.DeathType = s.DeathType >= 11 ? s.DeathType : (byte)6;
+                        return false;
+                    }
+                }
+
+                // Ball eject with pogo bounce — save pre-eject velocity for bounce formula
+                {
+                    int preEjectVelY = s.VelY_fixed;
+                    bool wasOnGround = s.OnGround;
+                    bool died = false;
+                    BallEject(ref s, input, out died);
+                    if (died)
+                    {
+                        s.DeathType = s.DeathType >= 11 ? s.DeathType : (byte)6;
+                        return false;
+                    }
+
+                    // Pogo bounce: if BallEject landed (OnGround became true and vel was zeroed),
+                    // apply bounce using pre-eject velocity
+                    if (s.OnGround && s.VelY_fixed == 0 && !s.Orbed)
+                    {
+                        int newVel = (-preEjectVelY / 3) * 2;
+                        // Minimum bounce = yellow pad velocity for swing column
+                        int yellowPadMin = s.Mini
+                            ? SharedPhysics.PadOrbHeights_Mini[1][7]
+                            : SharedPhysics.PadOrbHeights[1][7];
+                        if (s.GravFlipped)
+                        {
+                            // Inverted gravity: bounce downward (positive vel)
+                            if (newVel < yellowPadMin)
+                                newVel = yellowPadMin;
+                        }
+                        else
+                        {
+                            // Normal gravity: bounce upward (negative vel)
+                            int minVel = -yellowPadMin;
+                            if (newVel > minVel)
+                                newVel = minVel;
+                        }
+                        s.VelY_fixed = newVel;
+                        s.OnGround = false; // bouncing = airborne
+                    }
+                }
+                PfUpdateSlopeCounters_Fresh(ref s);
+
+                // Pogo black orb on press: input activates black orb velocity
+                if (input && !s.Orbed)
+                {
+                    int blackOrbVel = s.Mini
+                        ? SharedPhysics.PadOrbHeights_Mini[6][7]
+                        : SharedPhysics.PadOrbHeights[6][7];
+                    // Black orb vel is negative; apply in anti-gravity direction
+                    s.VelY_fixed = s.GravFlipped ? -blackOrbVel : blackOrbVel;
+                    s.Orbed = true;
+                }
+                else if (!input)
+                {
+                    s.Orbed = false;
+                }
+
+                if (CheckDeathCollision(ref s))
+                {
+                    s.DeathType = 3;
+                    return false;
+                }
+            }
 
             // -- STEP 6: (removed — SIM has no post-Y gravity portal check at OLD X;
             //    gravity portals after physics are detected at NEW X in Step 8b) --
@@ -7798,7 +7888,7 @@ namespace FamidashEditor
             }
 
             // -- STEP 7b: FORWARD COLLISION (bg_coll_R) --
-            if (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 6 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 10)
+            if (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 6 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode == 10)
             {
                 if (CheckForwardCollision(ref s))
                 {
@@ -8724,12 +8814,18 @@ namespace FamidashEditor
 
             // Compare teleport (input=true) vs stay (input=false)
             _speculativeDepth++;
-            int noPressSurv = SimulateForwardWithJumpAt(state, -1);
+            List<(int x, int y)>? noPressPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                ? new List<(int x, int y)>() : null;
+            int noPressSurv = SimulateForwardWithJumpAt(state, -1, pathPoints: noPressPath);
+            OnSpeculativePath?.Invoke(noPressPath, -1, noPressSurv, false);
 
             int bestPressSurv = 0;
             for (int delay = 0; delay < 20; delay++)
             {
-                int pressSurv = SimulateForwardWithJumpAt(state, delay);
+                List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                    ? new List<(int x, int y)>() : null;
+                int pressSurv = SimulateForwardWithJumpAt(state, delay, pathPoints: specPath);
+                OnSpeculativePath?.Invoke(specPath, delay, pressSurv, false);
                 if (pressSurv > bestPressSurv) bestPressSurv = pressSurv;
             }
             _speculativeDepth--;
@@ -8738,9 +8834,9 @@ namespace FamidashEditor
             PfLog($"[DECIDE_SPIDER] noPress={noPressSurv} bestPress={bestPressSurv}");
 #endif
             // Stay-bias: only teleport when staying is immediately dangerous (≤2 frames)
-            // or pressing survives substantially longer (by 3+ frames).
-            // Prevents needless oscillation between surfaces in safe corridors.
-            int stayBias = (noPressSurv <= 2) ? 0 : 3;
+            // or pressing survives substantially longer.
+            // Stronger walking bias reduces unnecessary clicks/teleports in safe corridors.
+            int stayBias = (noPressSurv <= 2) ? 0 : (noPressSurv <= 5) ? 3 : 6;
             if (bestPressSurv > noPressSurv + stayBias && bestPressSurv >= 2)
             {
                 _committedJumpDelay = -1;
@@ -8796,12 +8892,18 @@ namespace FamidashEditor
 
             // Compare flip (input=true) vs hold (input=false)
             _speculativeDepth++;
-            int noPressSurv = SimulateForwardWithJumpAt(state, -1);
+            List<(int x, int y)>? noPressSwingPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                ? new List<(int x, int y)>() : null;
+            int noPressSurv = SimulateForwardWithJumpAt(state, -1, pathPoints: noPressSwingPath);
+            OnSpeculativePath?.Invoke(noPressSwingPath, -1, noPressSurv, false);
 
             int bestPressSurv = 0;
             for (int delay = 0; delay < 25; delay++)
             {
-                int pressSurv = SimulateForwardWithJumpAt(state, delay);
+                List<(int x, int y)>? specSwingPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                    ? new List<(int x, int y)>() : null;
+                int pressSurv = SimulateForwardWithJumpAt(state, delay, pathPoints: specSwingPath);
+                OnSpeculativePath?.Invoke(specSwingPath, delay, pressSurv, false);
                 if (pressSurv > bestPressSurv) bestPressSurv = pressSurv;
             }
             _speculativeDepth--;
@@ -8813,6 +8915,87 @@ namespace FamidashEditor
             {
                 _committedJumpDelay = -1;
                 return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Pogo decision logic: decide when to activate the black orb press.
+        /// Pogo auto-bounces on surface contact; pressing input fires a black orb
+        /// velocity impulse (swing column). Strategy: compare no-press survival
+        /// (auto-bounce only) vs press at various delays.
+        /// </summary>
+        private bool DecidePogoInput(SimState state, bool isOverrideFrame)
+        {
+            // Orb decision (same as other modes)
+            if (!isOverrideFrame && !_btSuppressJumpUntilAirborne)
+            {
+                int orbSid = ScanForOrbOverlap(state, out int orbIndex);
+                if (orbSid >= 0)
+                {
+                    var orbState = state.Clone();
+                    bool orbAlive = StepFrame(ref orbState, true, out bool orbEnd);
+                    if (orbEnd) return true;
+                    int orbSurv = 0;
+                    if (orbAlive)
+                    {
+                        for (int od = -1; od < 15; od++)
+                        {
+                            int os = 1 + SimulateForwardWithJumpAt(orbState, od);
+                            if (os > orbSurv) orbSurv = os;
+                        }
+                    }
+
+                    var skipState = state.Clone();
+                    bool skipAlive = StepFrame(ref skipState, false, out _);
+                    skipState.ProcessedSprites.Add(orbIndex);
+                    int skipSurv = 0;
+                    if (skipAlive)
+                    {
+                        skipSurv = 1 + Math.Max(SimulateForwardWithJumpAt(skipState, -1),
+                                                 SimulateForwardWithJumpAt(skipState, 0));
+                    }
+                    if (orbSurv >= skipSurv) return true;
+                    state.ProcessedSprites.Add(orbIndex);
+                    return false;
+                }
+            }
+
+            // Don't press again while orbed (prevents double-activation)
+            if (state.Orbed) return false;
+            if (_speculativeDepth >= MAX_SPECULATIVE_DEPTH) return false;
+
+            // Compare no-press (auto-bounce only) vs press at various delays
+            _speculativeDepth++;
+            List<(int x, int y)>? noPressPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                ? new List<(int x, int y)>() : null;
+            int noPressSurv = SimulateForwardWithJumpAt(state, -1, pathPoints: noPressPath);
+            OnSpeculativePath?.Invoke(noPressPath, -1, noPressSurv, false);
+
+            int bestPressSurv = 0;
+            int bestDelay = -1;
+            for (int delay = 0; delay < 20; delay++)
+            {
+                List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                    ? new List<(int x, int y)>() : null;
+                int pressSurv = SimulateForwardWithJumpAt(state, delay, pathPoints: specPath);
+                OnSpeculativePath?.Invoke(specPath, delay, pressSurv, false);
+                if (pressSurv > bestPressSurv)
+                {
+                    bestPressSurv = pressSurv;
+                    bestDelay = delay;
+                }
+            }
+            _speculativeDepth--;
+
+#if !DISABLE_DEBUG_LOGGING
+            PfLog($"[DECIDE_POGO] noPress={noPressSurv} bestPress={bestPressSurv} bestDelay={bestDelay}");
+#endif
+            // Only press if it survives longer than auto-bounce alone
+            if (bestPressSurv > noPressSurv && bestPressSurv >= 2)
+            {
+                _committedJumpDelay = bestDelay;
+                return bestDelay == 0;
             }
             return false;
         }
@@ -9446,8 +9629,11 @@ namespace FamidashEditor
 
             // -- Evaluate: no-jump vs various hold durations --
             _speculativeDepth++;
-            int noJumpSurv = SimulateRobotForward(state, 0);
+            List<(int x, int y)>? noJumpPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                ? new List<(int x, int y)>() : null;
+            int noJumpSurv = SimulateRobotForward(state, 0, noJumpPath);
             _speculativeDepth--;
+            OnSpeculativePath?.Invoke(noJumpPath, -1, noJumpSurv, false);
 
             int bestSurv = noJumpSurv;
             int bestHold = 0; // 0 = don't jump
@@ -9458,7 +9644,10 @@ namespace FamidashEditor
             for (int hi = 0; hi < holdDurations.Length; hi++)
             {
                 int holdFrames = holdDurations[hi];
-                int survival = SimulateRobotForward(state, holdFrames);
+                List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                    ? new List<(int x, int y)>() : null;
+                int survival = SimulateRobotForward(state, holdFrames, specPath);
+                OnSpeculativePath?.Invoke(specPath, holdFrames, survival, true);
 
                 if (survival > bestSurv)
                 {
@@ -9511,9 +9700,10 @@ namespace FamidashEditor
         /// holdFrames=0 means no jump (just walk forward).
         /// holdFrames=N means press for N consecutive frames then release.
         /// </summary>
-        private int SimulateRobotForward(SimState state, int holdFrames)
+        private int SimulateRobotForward(SimState state, int holdFrames, List<(int x, int y)>? pathPoints = null)
         {
             var s = state.Clone();
+            { int _mo = (s.Mini && !s.GravFlipped) ? 4 : 0; pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + _mo + 8)); }
             for (int f = 0; f < LOOKAHEAD_HORIZON; f++)
             {
                 bool input;
@@ -9543,6 +9733,7 @@ namespace FamidashEditor
                 bool alive = StepFrame(ref s, input, out bool endLevel);
                 if (!alive) return f;
                 if (endLevel) return LOOKAHEAD_HORIZON;
+                { int _mo = (s.Mini && !s.GravFlipped) ? 4 : 0; pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + _mo + 8)); }
             }
             return LOOKAHEAD_HORIZON;
         }
@@ -9586,9 +9777,15 @@ namespace FamidashEditor
 
             // -- Survival check: reject directions that die quickly --
             _speculativeDepth++;
-            int holdSurv = SimulateWaveForward(state, true);
-            int releaseSurv = SimulateWaveForward(state, false);
+            List<(int x, int y)>? holdPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                ? new List<(int x, int y)>() : null;
+            int holdSurv = SimulateWaveForward(state, true, holdPath);
+            List<(int x, int y)>? releasePath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                ? new List<(int x, int y)>() : null;
+            int releaseSurv = SimulateWaveForward(state, false, releasePath);
             _speculativeDepth--;
+            OnSpeculativePath?.Invoke(holdPath, 0, holdSurv, true);
+            OnSpeculativePath?.Invoke(releasePath, -1, releaseSurv, false);
 
             // If one direction dies much sooner, pick the surviving one
             if (holdSurv > releaseSurv + 3) return true;
@@ -9669,9 +9866,10 @@ namespace FamidashEditor
         /// Simulate wave forward with a fixed input (hold or release).
         /// Returns number of frames survived.
         /// </summary>
-        private int SimulateWaveForward(SimState state, bool hold)
+        private int SimulateWaveForward(SimState state, bool hold, List<(int x, int y)>? pathPoints = null)
         {
             var s = state.Clone();
+            { int _mo = (s.Mini && !s.GravFlipped) ? 4 : 0; pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + _mo + 8)); }
             for (int f = 0; f < LOOKAHEAD_HORIZON; f++)
             {
                 bool input = hold;
@@ -9684,6 +9882,7 @@ namespace FamidashEditor
                 bool alive = StepFrame(ref s, input, out bool endLevel);
                 if (!alive) return f;
                 if (endLevel) return LOOKAHEAD_HORIZON;
+                { int _mo = (s.Mini && !s.GravFlipped) ? 4 : 0; pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + _mo + 8)); }
             }
             return LOOKAHEAD_HORIZON;
         }

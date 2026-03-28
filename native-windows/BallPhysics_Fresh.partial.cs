@@ -381,7 +381,7 @@ namespace FamidashEditor
                 if (currplayer == 0)
                     recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
                 else if (dual)
-                    recordedPlayer2Path.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                    RecordP2PathPoint(playerWorldCenterX_px, playerWorldCenterY_px);
             }
             catch { }
         }

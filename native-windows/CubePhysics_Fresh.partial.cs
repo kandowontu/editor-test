@@ -296,23 +296,16 @@ namespace FamidashEditor
                     // Mini mode: 8x7 hitbox at Y+9 (normal gravity) or Y+0 (inverted)
                     // So visual position is 8 pixels down from physics position in normal gravity
                     bool isMini = (currplayer_mini != 0);
-                    bool gravityInverted = (currplayer_gravity != 0);
-                    if (isMini && !gravityInverted)
+                    if (isMini)
                     {
-                        // Mini normal: hitbox at +9, center of visual is at Y+8+4=12, so add 4 more to 8 base
-                        playerWorldCenterY_px += 4;
-                    }
-                    else if (isMini && gravityInverted)
-                    {
-                        // Mini inverted: hitbox at top, center already accounts for this
-                        // No additional offset needed
+                        playerWorldCenterY_px += 4; // gravity-independent centering offset
                     }
                     
                     // Record to appropriate path list based on which player is active
                     if (currplayer == 0)
                         recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
                     else if (dual)
-                        recordedPlayer2Path.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                        RecordP2PathPoint(playerWorldCenterX_px, playerWorldCenterY_px);
                 }
                 catch { }
                 

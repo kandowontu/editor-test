@@ -175,11 +175,18 @@ namespace FamidashEditor
                             // Teleport player Y position only (keep X position unchanged)
                             playerY_fixed = exitY_px << 8;
 
-                            // Update camera to follow the teleport (center on player Y)
-                            int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                            cameraY_fixed = Math.Max(0, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
+                            // Only move camera if cam lock is NOT active.
+                            // When cam lock is on (!nocamlockforced), the camera stays
+                            // at its locked position and smooth-scrolls naturally.
+                            if (nocamlockforced)
+                            {
+                                int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                                int newCamY = Math.Max(0, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
+                                cameraY_fixed = newCamY;
+                                targetCameraY_fixed = newCamY;
+                            }
 
-                            AppendSimDebug($"[TELEPORT_PORTAL] Teleported to Y={exitY_px} (camera Y={cameraY_fixed >> 8})");
+                            AppendSimDebug($"[TELEPORT_PORTAL] Teleported to Y={exitY_px} (camera Y={cameraY_fixed >> 8}) camLock={!nocamlockforced}");
 
                             // Mark this entrance portal as processed
                             processedTeleportPortals.Add(idx);
