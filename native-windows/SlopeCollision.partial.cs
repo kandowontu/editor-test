@@ -362,24 +362,14 @@ namespace FamidashEditor
         
         /// <summary>
         /// Apply slope jump velocity bonus
-        /// Matches slope_jump_check() from gamemode_cube.h
+        /// Thin wrapper over SharedPhysics.SlopeJumpCheck.
         /// </summary>
         private void SlopeJumpCheck_Fresh()
         {
-            if (make_cube_jump_higher)
-            {
-                if ((currplayer_slope_type & SLOPE_DEGREES_MASK) != SLOPE_22DEG)
-                {
-                    // Add extra velocity for slope jumps (not on 22deg slopes)
-                    // MAKE_CUBE_JUMP_HIGHER is typically -0x100 to -0x200
-                    // NES uses MAKE_CUBE_JUMP_HIGHER(currplayer_table_idx) which is -0x1E00 (-30 in fxp8)
-                    // for normal size, -0x0F00 for mini
-                    int bonus = !miniMode ? -0x100 : -0xC0;
-                    playerVelY_fixed += bonus;
-                    AppendSimDebug($"[SLOPE] slope_jump_check: bonus={bonus}, velY now={playerVelY_fixed}");
-                }
-                make_cube_jump_higher = false;
-            }
+            bool sjh = make_cube_jump_higher;
+            SharedPhysics.SlopeJumpCheck(ref playerVelY_fixed, ref sjh,
+                currplayer_slope_type, currplayer_mini != 0);
+            make_cube_jump_higher = sjh;
         }
         
         // ========================================================================
@@ -449,19 +439,15 @@ namespace FamidashEditor
         /// Matches NES x_movement_coll() slope section:
         ///   - Only decrements slope_frames (NOT was_on_slope_counter)
         ///   - When slope_frames was >0 and slope_type is set: apply_slope_vel()
-        /// was_on_slope_counter is handled separately by UpdateSlopeCounters (in eject).
+        /// Thin wrapper over SharedPhysics.UpdateSlopeCountersFresh.
         /// </summary>
         private void UpdateSlopeCounters_Fresh()
         {
-            if (currplayer_slope_frames > 0)
-            {
-                currplayer_slope_frames--;
-                if (currplayer_slope_type != 0)
-                {
-                    apply_slope_vel();
-                    AppendSimDebug($"[SLOPE] slope_frames expired, apply_slope_vel applied");
-                }
-            }
+            int slopeFrames = currplayer_slope_frames;
+            SharedPhysics.UpdateSlopeCountersFresh(
+                ref slopeFrames, currplayer_slope_type,
+                ref playerVelY_fixed, velocityX);
+            currplayer_slope_frames = slopeFrames;
         }
         
         /// <summary>
@@ -1021,57 +1007,21 @@ namespace FamidashEditor
         ///   - Only decrements was_on_slope_counter (NOT slope_frames)
         ///   - When counter reaches 0: applies EXIT_SLOPE velocity tables, clears slope_type
         ///   - When already 0: clears last_slope_type and slope_type
-        /// slope_frames is handled separately by UpdateSlopeCounters_Fresh (post-eject).
+        /// Thin wrapper over SharedPhysics.UpdateSlopeCounters.
         /// </summary>
         private void UpdateSlopeCounters()
         {
-            if (currplayer_was_on_slope_counter > 0)
-            {
-                currplayer_was_on_slope_counter--;
-                if (currplayer_was_on_slope_counter == 0)
-                {
-                    // Counter just reached 0 — apply exit velocity for ball/cube
-                    // NES: uses currplayer_table_idx which encodes gravity + mini
-                    int tableIdx = currplayer_table_idx;
-                    if (tableIdx < 0 || tableIdx >= 8) tableIdx = 0;
-                    
-                    if (currentGameMode == 2 || currentGameMode == 9) // Ball or Pogo
-                    {
-                        switch (currplayer_slope_type)
-                        {
-                            case SLOPE_22DEG_UP:
-                            case SLOPE_22DEG_UP_UD:
-                                playerVelY_fixed += EXIT_SLOPE_BALL_22[tableIdx];
-                                AppendSimDebug($"[SLOPE] Exit velocity Ball 22°: +{EXIT_SLOPE_BALL_22[tableIdx]}, velY={playerVelY_fixed}");
-                                break;
-                            case SLOPE_66DEG_UP:
-                            case SLOPE_66DEG_UP_UD:
-                                playerVelY_fixed += EXIT_SLOPE_BALL_66[tableIdx];
-                                AppendSimDebug($"[SLOPE] Exit velocity Ball 66°: +{EXIT_SLOPE_BALL_66[tableIdx]}, velY={playerVelY_fixed}");
-                                break;
-                        }
-                    }
-                    else if (currentGameMode == 0 || currentGameMode == 11) // Cube or Football
-                    {
-                        switch (currplayer_slope_type)
-                        {
-                            case SLOPE_22DEG_UP:
-                            case SLOPE_22DEG_UP_UD:
-                                playerVelY_fixed += EXIT_SLOPE_CUBE_22[tableIdx];
-                                AppendSimDebug($"[SLOPE] Exit velocity Cube 22°: +{EXIT_SLOPE_CUBE_22[tableIdx]}, velY={playerVelY_fixed}");
-                                break;
-                        }
-                    }
-                    
-                    currplayer_slope_type = 0;
-                    AppendSimDebug($"[SLOPE] was_on_slope_counter expired, slope_type cleared");
-                }
-            }
-            else
-            {
-                currplayer_last_slope_type = 0;
-                currplayer_slope_type = 0;
-            }
+            int slopeWasOnCounter = currplayer_was_on_slope_counter;
+            int slopeType = currplayer_slope_type;
+            int lastSlopeType = currplayer_last_slope_type;
+            SharedPhysics.UpdateSlopeCounters(
+                ref slopeWasOnCounter, ref slopeType,
+                ref playerVelY_fixed, currentGameMode,
+                currplayer_gravity != 0, currplayer_mini != 0,
+                ref lastSlopeType);
+            currplayer_was_on_slope_counter = slopeWasOnCounter;
+            currplayer_slope_type = slopeType;
+            currplayer_last_slope_type = lastSlopeType;
         }
         
         /// <summary>

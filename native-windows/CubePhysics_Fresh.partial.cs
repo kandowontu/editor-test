@@ -400,109 +400,69 @@ namespace FamidashEditor
         }
         
         /// <summary>
-        /// cube_eject() from gamemode_cube.h lines 209-254
-        /// Collision detection and position/velocity correction
+        /// cube_eject() — thin wrapper over SharedPhysics.CubeEject.
+        /// Handles SIM-specific hblocked/fblocked head-bonk AFTER shared ejection.
         /// </summary>
         private void CubeEject_Fresh()
         {
-            // Calculate hitbox in pixels
-            int playerX_px = playerX_fixed >> 8;
-            int playerY_px = playerY_fixed >> 8;
-            
-            // Dynamic hitbox size based on mini mode
-            int hitboxW = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
-            int hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
-            
-            int hitboxOffsetX = 0;
-            int hitboxOffsetY = SharedPhysics.GetCubeHitboxOffsetY(currplayer_mini != 0, currplayer_gravity != 0);
-            
-            int collisionX = playerX_px + hitboxOffsetX;
-            int collisionY = playerY_px + hitboxOffsetY;
-            
-            // Update slope counters
-            UpdateSlopeCounters();
-            
-            // Cube collision detection based on gravity direction
-            if (currplayer_gravity == 0)
+            bool mini = currplayer_mini != 0;
+            bool gravFlipped = currplayer_gravity != 0;
+            bool inputHeld = IsXDownAsync() || keyXHeld || upHeld;
+
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
+
+            var r = SharedPhysics.CubeEject(in map,
+                playerX_fixed, playerY_fixed, playerVelY_fixed, velocityX,
+                gravFlipped, mini, currentGameMode, inputHeld,
+                currplayer_was_on_slope_counter, currplayer_slope_frames,
+                currplayer_slope_type, make_cube_jump_higher,
+                currplayer_last_slope_type);
+
+            playerY_fixed = r.NewY_fixed;
+            playerVelY_fixed = r.NewVelY_fixed;
+            onGround = r.OnGround;
+            wasZeroedByCollisionLastFrame = r.WasZeroed;
+            currplayer_slope_type = r.SlopeType;
+            currplayer_slope_frames = r.SlopeFrames;
+            currplayer_was_on_slope_counter = r.SlopeWasOnCounter;
+            make_cube_jump_higher = r.SlopeJumpHigher;
+            currplayer_last_slope_type = r.LastSlopeType;
+
+            if (r.Died && !MainWindow.Option_NoDeath)
             {
-                // Normal gravity: check slopes first (NES bg_coll_D slope section
-                // has NO velocity guard — slopes are always checked regardless of vel_y)
-                bool slopeHit = bg_coll_D_slopes();
-                // AppendSimDebug($"[CUBE]   Slope check result: slopeHit={slopeHit}, eject_D={eject_D}, counter={currplayer_was_on_slope_counter}");
-                if (slopeHit)
+                AppendSimDebug($"[DEATH] Floor spike detected (SharedPhysics.CubeEject)");
+                deathTriggered = true;
+                deathTileX = playerX_fixed >> 8;
+                deathTileY = (playerY_fixed >> 8) + SharedPhysics.GetCubeHitboxH(mini);
+                paused = true;
+                _ = StopMusicAsync();
+                try
                 {
-                    // Slope collision succeeded
-                    if (eject_D > 0)
+                    Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        // Apply slope ejection
-                        // From gamemode_cube.h line 236-240:
-                        // high_byte(currplayer_y) -= eject_D;
-                        // low_byte(currplayer_y) = 0;
-                        // This subtracts eject_D from pixel position and clears subpixels
-                        int oldY = playerY_fixed >> 8;
-                        // AppendSimDebug($"[CUBE]   BEFORE slope eject: playerY_fixed={playerY_fixed}, oldY={oldY}");
-                        
-                        // Get current pixel position, subtract eject_D, then clear subpixels
-                        int newPixelY = (playerY_fixed >> 8) - eject_D;
-                        playerY_fixed = newPixelY << 8;  // Clear subpixels by shifting back
-                        playerVelY_fixed = 0;
-                        wasZeroedByCollisionLastFrame = true;  // Signal that gravity should not re-apply next frame
-                        
-                        // AppendSimDebug($"[CUBE]   AFTER slope eject: eject_D={eject_D}, oldY={oldY}, newY={newPixelY}, playerY_fixed={playerY_fixed}");
-                        
-                        // CRITICAL FIX: Update playerY_px after slope ejection so subsequent code uses correct position
-                        playerY_px = newPixelY;
-                    }
-                    else
-                    {
-                        // eject_D=0 means player is at correct height, just stop velocity
-                        // AppendSimDebug($"[CUBE]   Slope hit with eject_D=0 - player at correct height");
-                        playerVelY_fixed = 0;
-                        wasZeroedByCollisionLastFrame = true;  // Signal that gravity should not re-apply next frame
-                    }
-                }
-                else if (playerVelY_fixed >= 0)
-                {
-                    // Flat floor check — NES bg_coll_D velocity guard:
-                    // if(!(high_byte(currplayer_vel_y) & 0x80))
-                    // Only runs when vel_y >= 0 (falling/grounded).
-                    // AppendSimDebug($"[CUBE]   Falling back to flat collision (slopeHit={slopeHit}, eject_D={eject_D})");
-                    // AppendSimDebug($"[CUBE]   Checking from: playerX={playerX_px}, playerY={playerY_px}, velY={playerVelY_fixed}");
-                    
-                    // Normal gravity: Bottom is for landing (always collide), top can passthrough
-                    // Check downward collision for landing
-                    var (collided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
-                    // AppendSimDebug($"[CUBE]   Collision check down: collided={collided}, collisionTop={collisionTopY}");
-                    if (collided)
-                    {
-                        // Only snap if falling/stationary (velY >= 0). Don't snap while jumping up (velY < 0).
-                        // This prevents snapping onto higher floors during upward jump arc.
-                        if (playerVelY_fixed >= 0)
+                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                        if (this.Owner is MainWindow mw)
                         {
-                            // Snap player to rest position above the collision surface
-                            int newY = collisionTopY - hitboxH - hitboxOffsetY;
-                            // AppendSimDebug($"[CUBE]     Eject down: collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
-                            playerY_fixed = newY << 8;
-                            playerVelY_fixed = 0;
-                            wasZeroedByCollisionLastFrame = true;  // Signal that gravity should not re-apply next frame
-                            onGround = true;  // Mark as grounded so main loop can check if still supported
-                            
-                            // CRITICAL: Update playerY_px and collisionY after floor snap
-                            // so ceiling death check uses the NEW position
-                            playerY_px = newY;
-                            collisionY = playerY_px + hitboxOffsetY;
+                            try { mw.PauseSimulatorPlayback(); } catch { }
+                            try { mw.AddDeathMarker(deathTileX, deathTileY); } catch { }
                         }
-                        else
-                        {
-                            // AppendSimDebug($"[CUBE]     Collision detected but NOT snapping (jumping up, velY={playerVelY_fixed})");
-                        }
-                    }
-                    else
-                    {
-                        // AppendSimDebug($"[CUBE]     NO COLLISION - falling! Y={playerY_px}");
-                    }
+                    }));
                 }
-                
+                catch { }
+                return;
+            }
+
+            // SIM-specific: hblocked/fblocked head-bonk handling (not in SharedPhysics)
+            int hitboxW = SharedPhysics.GetCubeHitboxW(mini);
+            int hitboxH = SharedPhysics.GetCubeHitboxH(mini);
+            int hitboxOffsetY = SharedPhysics.GetHitboxOffsetY(currentGameMode, mini, gravFlipped);
+            int playerY_px = playerY_fixed >> 8;
+            int collisionX = playerX_fixed >> 8;
+            int collisionY = playerY_px + hitboxOffsetY;
+
+            if (!gravFlipped)
+            {
                 // Normal gravity: Check TOP collision for hblocked/fblocked eject
                 if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (hblocked || fblocked))
                 {
@@ -512,17 +472,15 @@ namespace FamidashEditor
                         int newY = collisionBottomY - hitboxOffsetY;
                         AppendSimDebug($"[CUBE]     Eject up ({(hblocked ? "H BLOCK" : "F BLOCK")}): collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
                         playerY_fixed = newY << 8;
-                        
-                        // H block: headbonk - set velocity to 1 instead of 0 for instant ejection (gamemode_cube.h line 309)
+
                         if (!hblocked)
                             playerVelY_fixed = 0;
                         else
                             playerVelY_fixed = 1;
-                        
-                        // F block: flip gravity on ceiling hit (gamemode_cube.h line 312-315)
+
                         if (fblocked)
                         {
-                            currplayer_gravity = 0xFF; // GRAVITY_UP
+                            currplayer_gravity = 0xFF;
                             gravityFlipped = true;
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
                         }
@@ -531,64 +489,6 @@ namespace FamidashEditor
             }
             else
             {
-                // Reversed gravity: NES bg_coll_U checks ceiling slopes BEFORE flat ceiling.
-                bool ceilSlopeHit = bg_coll_U_slopes();
-                if (ceilSlopeHit)
-                {
-                    // NES: high_byte(Y) -= eject_U + 1; eject_U = -tmp8 → Y_px = Y_px + tmp8 - 1
-                    if (eject_U != 0)
-                    {
-                        int newPixelY = (playerY_fixed >> 8) - eject_U - 1;
-                        playerY_fixed = newPixelY << 8;
-                        playerY_px = newPixelY;
-                        collisionY = playerY_px + hitboxOffsetY;
-                    }
-                    playerVelY_fixed = 0;
-                    wasZeroedByCollisionLastFrame = true;
-                    onGround = true;
-                    AppendSimDebug($"[CUBE] Reversed gravity ceiling slope eject: eject_U={eject_U}");
-                }
-                else
-                {
-                // Check upward collision for landing (only when moving toward ceiling or grounded)
-                if (playerVelY_fixed <= 0) // Moving toward ceiling or stationary
-                {
-                    var (collided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-                    if (collided)
-                    {
-                        // Snap player to rest position below the collision surface
-                        // collisionBottomY is exclusive (one past last solid pixel)
-                        // NES bg_coll_U probes at Generic.y + miniOffset + 1 (1 pixel inside),
-                        // so resting position is 1 pixel closer to ceiling than collisionBottomY.
-                        int newY = collisionBottomY - hitboxOffsetY - 1;
-                        // AppendSimDebug($"[CUBE]     Eject up: collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
-                        playerY_fixed = newY << 8;
-                        
-                        // CRITICAL: Update playerY_px and collisionY after ceiling snap
-                        // so floor death check uses the NEW position
-                        playerY_px = newY;
-                        collisionY = playerY_px + hitboxOffsetY;
-                        
-                        // H block: headbonk - set velocity to 1 instead of 0 for instant ejection (gamemode_cube.h line 309)
-                        if (!hblocked)
-                        {
-                            playerVelY_fixed = 0;
-                            onGround = true;  // Mark as grounded so main loop can check if still supported
-                        }
-                        else
-                            playerVelY_fixed = 1;
-                        
-                        // F block: flip gravity on ceiling hit (gamemode_cube.h line 312-315)
-                        if (fblocked)
-                        {
-                            currplayer_gravity = 0xFF; // GRAVITY_UP
-                            gravityFlipped = true;
-                            currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
-                        }
-                    }
-                }
-                } // end else (flat ceiling when no ceiling slope hit)
-                
                 // Reversed gravity: Check BOTTOM collision for hblocked/fblocked eject
                 if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (hblocked || fblocked))
                 {
@@ -598,27 +498,21 @@ namespace FamidashEditor
                         int newY = collisionTopY - hitboxH - hitboxOffsetY;
                         AppendSimDebug($"[CUBE]     Eject down ({(hblocked ? "H BLOCK" : "F BLOCK")}): collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
                         playerY_fixed = newY << 8;
-                        
-                        // H block: headbonk for floor - set velocity to 0xffff instead of 0 (gamemode_cube.h line 291)
+
                         if (!hblocked)
                             playerVelY_fixed = 0;
                         else
-                            playerVelY_fixed = unchecked((int)0xffff); // -1 in signed 16-bit
-                        
-                        // F block: flip gravity on floor hit (gamemode_cube.h line 294-297)
+                            playerVelY_fixed = unchecked((int)0xffff);
+
                         if (fblocked)
                         {
-                            currplayer_gravity = 0; // GRAVITY_DOWN
+                            currplayer_gravity = 0;
                             gravityFlipped = false;
                             currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
                         }
                     }
                 }
             }
-            
-            // jblocked/fblocked/hblocked clearing moved to ProcessCubePhysics_Fresh
-            // AFTER the jump check, matching PF order where these flags persist
-            // through the jump check and are only cleared afterward.
         }
         
         /// <summary>

@@ -12557,6 +12557,8 @@ namespace FamidashEditor
                         bool started = false;
                         foreach (var p in pfPath.points)
                         {
+                            // Sentinel (-1,-1) = segment break (dual mode exit/re-entry)
+                            if (p.x == -1 && p.y == -1) { started = false; continue; }
                             double dx = pad + p.x * scale;
                             double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
                             if (!started)
@@ -12574,13 +12576,6 @@ namespace FamidashEditor
                                     lastDx = dx; lastDy = dy;
                                 }
                             }
-                        }
-                        if (started && pfPath.points.Count > 1)
-                        {
-                            var last = pfPath.points[pfPath.points.Count - 1];
-                            double dx = pad + last.x * scale;
-                            double dy = pad + (last.y + (3 * TileSize)) * scale + gridRenderShiftY;
-                            ctx.LineTo(new System.Windows.Point(dx, dy), true, false);
                         }
                     }
                     pfGeo.Freeze();

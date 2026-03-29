@@ -1374,20 +1374,60 @@ namespace FamidashEditor
 
         /// <summary>
         /// CheckFloorSpikes — 4-corner spike check matching NES bg_coll_floor_spikes.
+        /// Checks BL, BR, TL, TR (matching NES order).
+        /// Returns true if any corner hits a spike, with the killing corner coordinates.
         /// </summary>
         internal static bool CheckFloorSpikes(
-            in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, bool mini)
+            in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, bool mini,
+            out int deathX, out int deathY)
         {
+            deathX = 0;
+            deathY = 0;
+
             int miniOffY = mini ? ((0x10 - hbH) >> 1) : 0;
-            int topRowY = playerY_px + miniOffY + hbH - 2;
-            int botRowY = playerY_px + (mini ? miniOffY : 2);
+            int rowBottomY = playerY_px + miniOffY + hbH - 2;
+            int rowTopY = playerY_px + (mini ? miniOffY : 2);
             int leftX = playerX_px + 3;
             int rightX = playerX_px + hbW - 3;
 
-            if (PointKillsPlayer(map, leftX, topRowY)) return true;
-            if (PointKillsPlayer(map, rightX, topRowY)) return true;
-            if (PointKillsPlayer(map, leftX, botRowY)) return true;
-            if (PointKillsPlayer(map, rightX, botRowY)) return true;
+            // NES order: BL, BR, TL, TR
+            if (PointKillsPlayer(map, leftX, rowBottomY))  { deathX = leftX;  deathY = rowBottomY; return true; }
+            if (PointKillsPlayer(map, rightX, rowBottomY)) { deathX = rightX; deathY = rowBottomY; return true; }
+            if (PointKillsPlayer(map, leftX, rowTopY))     { deathX = leftX;  deathY = rowTopY;    return true; }
+            if (PointKillsPlayer(map, rightX, rowTopY))    { deathX = rightX; deathY = rowTopY;    return true; }
+
+            return false;
+        }
+
+        /// <summary>
+        /// CheckFloorSpikes overload with debug output for PF logging.
+        /// </summary>
+        internal static bool CheckFloorSpikes(
+            in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, bool mini,
+            out int deathX, out int deathY,
+            out string cornerName, out int dbg_tid, out int dbg_mappedTid,
+            out MetatileCollision dbg_col, out int dbg_localX, out int dbg_localY)
+        {
+            deathX = 0; deathY = 0;
+            cornerName = ""; dbg_tid = 0; dbg_mappedTid = 0;
+            dbg_col = 0; dbg_localX = 0; dbg_localY = 0;
+
+            int miniOffY = mini ? ((0x10 - hbH) >> 1) : 0;
+            int rowBottomY = playerY_px + miniOffY + hbH - 2;
+            int rowTopY = playerY_px + (mini ? miniOffY : 2);
+            int leftX = playerX_px + 3;
+            int rightX = playerX_px + hbW - 3;
+
+            int _tid, _mtid, _lx, _ly; MetatileCollision _col;
+
+            if (PointKillsPlayer(map, leftX, rowBottomY, out _tid, out _mtid, out _col, out _lx, out _ly))
+            { deathX = leftX; deathY = rowBottomY; cornerName = "BL"; dbg_tid = _tid; dbg_mappedTid = _mtid; dbg_col = _col; dbg_localX = _lx; dbg_localY = _ly; return true; }
+            if (PointKillsPlayer(map, rightX, rowBottomY, out _tid, out _mtid, out _col, out _lx, out _ly))
+            { deathX = rightX; deathY = rowBottomY; cornerName = "BR"; dbg_tid = _tid; dbg_mappedTid = _mtid; dbg_col = _col; dbg_localX = _lx; dbg_localY = _ly; return true; }
+            if (PointKillsPlayer(map, leftX, rowTopY, out _tid, out _mtid, out _col, out _lx, out _ly))
+            { deathX = leftX; deathY = rowTopY; cornerName = "TL"; dbg_tid = _tid; dbg_mappedTid = _mtid; dbg_col = _col; dbg_localX = _lx; dbg_localY = _ly; return true; }
+            if (PointKillsPlayer(map, rightX, rowTopY, out _tid, out _mtid, out _col, out _lx, out _ly))
+            { deathX = rightX; deathY = rowTopY; cornerName = "TR"; dbg_tid = _tid; dbg_mappedTid = _mtid; dbg_col = _col; dbg_localX = _lx; dbg_localY = _ly; return true; }
 
             return false;
         }
@@ -1439,10 +1479,8 @@ namespace FamidashEditor
             int localX = Math.Max(0, Math.Min(TILE - 1, rightEdge_px - tileWorldX));
             int localY = Math.Max(0, Math.Min(TILE - 1, centerY_px - tileWorldY));
 
-            if (TileOccupiesPixel(collision, localX, localY))
-                return true;
-
-            if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
+            if (TileOccupiesPixel(collision, localX, localY) ||
+                    MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
                 return true;
 
             return false;
@@ -1585,6 +1623,582 @@ namespace FamidashEditor
                 var (hit, _, spikeDeath) = CheckCeiling(map, playerX_px, playerTop - 2, hbW, 2);
                 return hit && !spikeDeath;
             }
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        //  SLOPE COLLISION SYSTEM
+        //  Shared between PF and SIM — eliminates drift in slope calculation,
+        //  direction filtering, and counter management.
+        // ════════════════════════════════════════════════════════════════════
+
+        internal const int SLOPE_22DEG      = 0b0010;
+        internal const int SLOPE_45DEG      = 0b0001;
+        internal const int SLOPE_66DEG      = 0b0011;
+        internal const int SLOPE_RISING     = 0b0100;
+        internal const int SLOPE_UD         = 0b1000;
+        internal const int SLOPE_DEGREES_MASK = 0b0011;
+
+        internal static readonly short[] EXIT_SLOPE_BALL_22 = { unchecked((short)0xFFA0), 0x0060, unchecked((short)0xFFA0), 0x0060, unchecked((short)0xFFB0), 0x0050, unchecked((short)0xFFB0), 0x0050 };
+        internal static readonly short[] EXIT_SLOPE_BALL_66 = { 0x016D, unchecked((short)0xFE93), 0x016D, unchecked((short)0xFE93), 0x01B0, unchecked((short)0xFE50), 0x01B0, unchecked((short)0xFE50) };
+        internal static readonly short[] EXIT_SLOPE_CUBE_22 = { unchecked((short)0xFECD), 0x0133, unchecked((short)0xFECD), 0x0133, unchecked((short)0xFF00), 0x0100, unchecked((short)0xFF00), 0x0100 };
+
+        /// <summary>
+        /// Per-tile slope surface calc — 1:1 port of NES bg_coll_slope().
+        /// </summary>
+        internal static (bool hit, int ejection, int slopeType) SlopeCalc(int temp_x, int temp_y, MetatileCollision collision)
+        {
+            if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_TOP)
+                return (false, 0, 0);
+
+            int tmp7, tmp4;
+            int slopeType;
+
+            switch (collision)
+            {
+                case MetatileCollision.COL_SLOPE_LU45:
+                    tmp7 = temp_x & 0x0f; tmp4 = (temp_y & 0x0f) ^ 0x0f; slopeType = 0b1001; break;
+                case MetatileCollision.COL_SLOPE_LD45:
+                    tmp7 = temp_x & 0x0f; tmp4 = temp_y & 0x0f; slopeType = 0b0001; break;
+                case MetatileCollision.COL_SLOPE_RU45:
+                    tmp7 = (temp_x & 0x0f) ^ 0x0f; tmp4 = (temp_y & 0x0f) ^ 0x0f; slopeType = 0b1101; break;
+                case MetatileCollision.COL_SLOPE_RD45:
+                    tmp7 = (temp_x & 0x0f) ^ 0x0f; tmp4 = temp_y & 0x0f; slopeType = 0b0101; break;
+
+                case MetatileCollision.COL_SLOPE_RU22_RIGHT:
+                    tmp7 = ((temp_x >> 1) & 0x07) ^ 0x0f; tmp4 = (temp_y & 0x0f) ^ 0x0f; slopeType = 0b1110; break;
+                case MetatileCollision.COL_SLOPE_RU22_LEFT:
+                    tmp7 = (((temp_x >> 1) | 0x8) & 0x0f) ^ 0x0f; tmp4 = (temp_y & 0x0f) ^ 0x0f; slopeType = 0b1110; break;
+                case MetatileCollision.COL_SLOPE_RD22_RIGHT:
+                    tmp7 = ((temp_x >> 1) & 0x07) ^ 0x0f; tmp4 = temp_y & 0x0f; slopeType = 0b0110; break;
+                case MetatileCollision.COL_SLOPE_RD22_LEFT:
+                    tmp7 = (((temp_x >> 1) | 0x8) & 0x0f) ^ 0x0f; tmp4 = temp_y & 0x0f; slopeType = 0b0110; break;
+                case MetatileCollision.COL_SLOPE_LU22_RIGHT:
+                    tmp7 = (temp_x >> 1) & 0x07; tmp4 = (temp_y & 0x0f) ^ 0x0f; slopeType = 0b1010; break;
+                case MetatileCollision.COL_SLOPE_LU22_LEFT:
+                    tmp7 = ((temp_x >> 1) | 0x8) & 0x0f; tmp4 = (temp_y & 0x0f) ^ 0x0f; slopeType = 0b1010; break;
+                case MetatileCollision.COL_SLOPE_LD22_RIGHT:
+                    tmp7 = (temp_x >> 1) & 0x07; tmp4 = temp_y & 0x0f; slopeType = 0b0010; break;
+                case MetatileCollision.COL_SLOPE_LD22_LEFT:
+                    tmp7 = ((temp_x >> 1) | 0x8) & 0x0f; tmp4 = temp_y & 0x0f; slopeType = 0b0010; break;
+
+                case MetatileCollision.COL_SLOPE_RD66_TOP:
+                    if ((temp_x & 0x0f) < 0x08) return (false, 0, 0);
+                    tmp7 = (((temp_x & 0x07) << 1) & 0x0f) ^ 0x0f; tmp4 = temp_y & 0x0f; slopeType = 0b0111; break;
+                case MetatileCollision.COL_SLOPE_RD66_BOT:
+                    if ((temp_x & 0x0f) >= 0x08) return (true, temp_y & 0x0f, 0b0111);
+                    tmp7 = (((temp_x & 0x0f) << 1) & 0x0f) ^ 0x0f; tmp4 = temp_y & 0x0f; slopeType = 0b0111; break;
+                case MetatileCollision.COL_SLOPE_LD66_TOP:
+                    if ((temp_x & 0x0f) >= 0x08) return (false, 0, 0);
+                    tmp7 = ((temp_x & 0x07) << 1) & 0x0f; tmp4 = temp_y & 0x0f; slopeType = 0b0011; break;
+                case MetatileCollision.COL_SLOPE_LD66_BOT:
+                    if ((temp_x & 0x0f) < 0x08) return (true, temp_y & 0x0f, 0b0011);
+                    tmp7 = ((temp_x & 0x0f) << 1) & 0x0f; tmp4 = temp_y & 0x0f; slopeType = 0b0011; break;
+                case MetatileCollision.COL_SLOPE_RU66_TOP:
+                    if ((temp_x & 0x0f) < 0x08) return (false, 0, 0);
+                    tmp7 = (((temp_x & 0x07) << 1) & 0x0f) ^ 0x0f; tmp4 = (temp_y & 0x0f) ^ 0x0f; slopeType = 0b1111; break;
+                case MetatileCollision.COL_SLOPE_RU66_BOT:
+                    if ((temp_x & 0x0f) >= 0x08) return (true, temp_y & 0x0f, 0b1111);
+                    tmp7 = (((temp_x & 0x0f) << 1) & 0x0f) ^ 0x0f; tmp4 = (temp_y & 0x0f) ^ 0x0f; slopeType = 0b1111; break;
+                case MetatileCollision.COL_SLOPE_LU66_TOP:
+                    if ((temp_x & 0x0f) >= 0x08) return (false, 0, 0);
+                    tmp7 = ((temp_x & 0x07) << 1) & 0x0f; tmp4 = (temp_y & 0x0f) ^ 0x0f; slopeType = 0b1011; break;
+                case MetatileCollision.COL_SLOPE_LU66_BOT:
+                    if ((temp_x & 0x0f) < 0x08) return (true, temp_y & 0x0f, 0b1011);
+                    tmp7 = ((temp_x & 0x0f) << 1) & 0x0f; tmp4 = (temp_y & 0x0f) ^ 0x0f; slopeType = 0b1011; break;
+
+                default: return (false, 0, 0);
+            }
+
+            if (tmp4 >= tmp7)
+                return (true, tmp4 - tmp7, slopeType);
+            return (false, 0, 0);
+        }
+
+        /// <summary>
+        /// Floor slope check at LEFT and RIGHT hitbox edges.
+        /// Mirrors NES bg_coll_D_slopes() with direction filtering.
+        /// </summary>
+        internal static (bool hit, int ejection, int slopeType) CheckSlopesDown(
+            in CollisionMap map,
+            int playerX_px, int checkBaseX, int checkBaseY, int checkWidth,
+            bool inputHeld, int gameMode, bool gravFlipped, int velX_fixed,
+            ref int lastSlopeType, ref bool slopeJumpHigher)
+        {
+            if (playerX_px < 0x10) return (false, 0, 0);
+
+            int bestEjection = 0, bestSlopeType = 0;
+            bool anyHit = false;
+
+            for (int probe = 0; probe < 2; probe++)
+            {
+                int temp_x = checkBaseX + (probe * checkWidth);
+                int tileX = temp_x / TILE;
+                int tileY = checkBaseY / TILE;
+
+                var collision = GetTileCollision(in map, tileX, tileY);
+                if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_TOP)
+                    continue;
+
+                var (hit, ejection, slopeType) = SlopeCalc(temp_x, checkBaseY, collision);
+
+                if (probe == 0 && (slopeType & SLOPE_RISING) != 0)
+                {
+                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                        slopeJumpHigher = true;
+                    continue;
+                }
+                if (probe == 1 && (slopeType & SLOPE_RISING) == 0)
+                {
+                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                        slopeJumpHigher = true;
+                    continue;
+                }
+
+                if (hit)
+                {
+                    if ((lastSlopeType & SLOPE_RISING) != 0 && (slopeType & SLOPE_RISING) == 0)
+                    {
+                        if (lastSlopeType != 0 && slopeType != 0)
+                        {
+                            slopeType = lastSlopeType;
+                            ejection = velX_fixed >> 8;
+                        }
+                    }
+                    if (slopeType != 0) lastSlopeType = slopeType;
+
+                    if (gameMode == 1 || gameMode == 3)
+                    {
+                        int aIdx = ((slopeType & SLOPE_RISING) != 0 ? 4 : 0)
+                                 | ((slopeType & SLOPE_UD) != 0 ? 2 : 0)
+                                 | (gravFlipped ? 1 : 0);
+                        bool aCheck = (aIdx == 0 || aIdx == 3 || aIdx == 4 || aIdx == 7);
+                        if (aCheck ? inputHeld : !inputHeld) ejection = 4;
+                    }
+
+                    bestEjection = ejection; bestSlopeType = slopeType; anyHit = true;
+                }
+            }
+
+            return (anyHit, bestEjection, bestSlopeType);
+        }
+
+        /// <summary>
+        /// Ceiling slope check at LEFT and RIGHT hitbox edges.
+        /// Mirrors NES bg_coll_U_slopes().
+        /// </summary>
+        internal static (bool hit, int ejection, int slopeType) CheckSlopesUp(
+            in CollisionMap map,
+            int playerX_px, int checkBaseX, int checkBaseY, int checkWidth,
+            bool inputHeld, int gameMode, bool gravFlipped, int velX_fixed,
+            ref int lastSlopeType, ref bool slopeJumpHigher)
+        {
+            if (playerX_px < 0x10) return (false, 0, 0);
+
+            int bestEjection = 0, bestSlopeType = 0;
+            bool anyHit = false;
+
+            for (int probe = 0; probe < 2; probe++)
+            {
+                int temp_x = checkBaseX + (probe * checkWidth);
+                int tileX = temp_x / TILE;
+                int tileY = checkBaseY / TILE;
+
+                var collision = GetTileCollision(in map, tileX, tileY);
+                if (collision < MetatileCollision.COL_SLOPE_RD45 || collision > MetatileCollision.COL_SLOPE_LU66_TOP)
+                    continue;
+
+                var (hit, ejection, slopeType) = SlopeCalc(temp_x, checkBaseY, collision);
+
+                if (probe == 0 && (slopeType & SLOPE_RISING) != 0)
+                {
+                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                        slopeJumpHigher = true;
+                    continue;
+                }
+                if (probe == 1 && (slopeType & SLOPE_RISING) == 0)
+                {
+                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                        slopeJumpHigher = true;
+                    continue;
+                }
+
+                if (hit)
+                {
+                    if ((lastSlopeType & SLOPE_RISING) != 0 && (slopeType & SLOPE_RISING) == 0)
+                    {
+                        if (lastSlopeType != 0 && slopeType != 0)
+                        {
+                            slopeType = lastSlopeType;
+                            ejection = velX_fixed >> 8;
+                        }
+                    }
+                    if (slopeType != 0) lastSlopeType = slopeType;
+
+                    if (gameMode == 1 || gameMode == 3)
+                    {
+                        int aIdx = ((slopeType & SLOPE_RISING) != 0 ? 4 : 0)
+                                 | ((slopeType & SLOPE_UD) != 0 ? 2 : 0)
+                                 | (gravFlipped ? 1 : 0);
+                        bool aCheck = (aIdx == 0 || aIdx == 3 || aIdx == 4 || aIdx == 7);
+                        if (aCheck ? inputHeld : !inputHeld) ejection = 4;
+                    }
+
+                    bestEjection = ejection; bestSlopeType = slopeType; anyHit = true;
+                }
+            }
+
+            return (anyHit, bestEjection, bestSlopeType);
+        }
+
+        /// <summary>
+        /// Slope counter decrement — called at START of eject.
+        /// Mirrors NES decrement_was_on_slope().
+        /// </summary>
+        internal static void UpdateSlopeCounters(
+            ref int slopeWasOnCounter, ref int slopeType, ref int velY_fixed,
+            int gameMode, bool gravFlipped, bool mini, ref int lastSlopeType)
+        {
+            if (slopeWasOnCounter > 0)
+            {
+                slopeWasOnCounter--;
+                if (slopeWasOnCounter == 0)
+                {
+                    int tableIdx = (gravFlipped ? 1 : 0) | (mini ? 4 : 0);
+                    if (gameMode == 2 || gameMode == 9)
+                    {
+                        int st = slopeType & 0b1111;
+                        if (st == 0b0110 || st == 0b1110)
+                            velY_fixed += EXIT_SLOPE_BALL_22[tableIdx];
+                        else if (st == 0b0111 || st == 0b1111)
+                            velY_fixed += EXIT_SLOPE_BALL_66[tableIdx];
+                    }
+                    else if (gameMode == 0 || gameMode == 11)
+                    {
+                        int st = slopeType & 0b1111;
+                        if (st == 0b0110 || st == 0b1110)
+                            velY_fixed += EXIT_SLOPE_CUBE_22[tableIdx];
+                    }
+                    slopeType = 0;
+                }
+            }
+            else
+            {
+                lastSlopeType = 0;
+                slopeType = 0;
+            }
+        }
+
+        /// <summary>
+        /// Post-eject slope counter (x_movement_coll).
+        /// </summary>
+        internal static void UpdateSlopeCountersFresh(
+            ref int slopeFrames, int slopeType, ref int velY_fixed, int velX_fixed)
+        {
+            if (slopeFrames > 0)
+            {
+                slopeFrames--;
+                if (slopeType != 0)
+                    ApplySlopeVelocity(ref velY_fixed, slopeType, velX_fixed);
+            }
+        }
+
+        /// <summary>apply_slope_vel() from x_movement.h.</summary>
+        internal static void ApplySlopeVelocity(ref int velY_fixed, int slopeType, int velX_fixed)
+        {
+            if (slopeType == 0) return;
+            int degrees = slopeType & SLOPE_DEGREES_MASK;
+            int velComponent;
+            switch (degrees)
+            {
+                case SLOPE_22DEG: velComponent = velX_fixed >> 1; break;
+                case SLOPE_45DEG: velComponent = velX_fixed; break;
+                case SLOPE_66DEG: velComponent = velX_fixed << 1; break;
+                default: return;
+            }
+            bool rising = (slopeType & SLOPE_RISING) != 0;
+            bool ud = (slopeType & SLOPE_UD) != 0;
+            velY_fixed = (rising == ud) ? velComponent : -velComponent;
+        }
+
+        /// <summary>slope_jump_check — bonus velocity when jumping off slopes.</summary>
+        internal static void SlopeJumpCheck(ref int velY_fixed, ref bool slopeJumpHigher, int slopeType, bool mini)
+        {
+            if (!slopeJumpHigher) return;
+            if ((slopeType & SLOPE_DEGREES_MASK) != SLOPE_22DEG)
+                velY_fixed += mini ? -0xC0 : -0x100;
+            slopeJumpHigher = false;
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        //  SHARED EJECTION SYSTEM
+        // ════════════════════════════════════════════════════════════════════
+
+        internal struct EjectResult
+        {
+            public int NewY_fixed;
+            public int NewVelY_fixed;
+            public bool OnGround;
+            public bool Died;
+            public bool WasZeroed;
+            public int SlopeType;
+            public int SlopeFrames;
+            public int SlopeWasOnCounter;
+            public bool SlopeJumpHigher;
+            public int LastSlopeType;
+        }
+
+        /// <summary>
+        /// Shared cube ejection — slope + flat floor/ceiling + position snap.
+        /// Used by cube(0), robot(4), ninja(8), football(11).
+        /// Caller handles hblocked/fblocked head-bonk AFTER this returns.
+        /// </summary>
+        internal static EjectResult CubeEject(
+            in CollisionMap map,
+            int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed,
+            bool gravFlipped, bool mini, int gameMode, bool inputHeld,
+            int slopeWasOnCounter, int slopeFrames, int slopeType,
+            bool slopeJumpHigher, int lastSlopeType)
+        {
+            var r = new EjectResult {
+                NewY_fixed = playerY_fixed, NewVelY_fixed = velY_fixed,
+                SlopeType = slopeType, SlopeFrames = slopeFrames,
+                SlopeWasOnCounter = slopeWasOnCounter,
+                SlopeJumpHigher = slopeJumpHigher, LastSlopeType = lastSlopeType,
+            };
+
+            int playerX_px = playerX_fixed >> 8;
+            int playerY_px = playerY_fixed >> 8;
+            int hbW = GetCubeHitboxW(mini);
+            int hbH = GetCubeHitboxH(mini);
+            int hbOffY = GetHitboxOffsetY(gameMode, mini, gravFlipped);
+
+            UpdateSlopeCounters(ref r.SlopeWasOnCounter, ref r.SlopeType,
+                                ref r.NewVelY_fixed, gameMode, gravFlipped, mini, ref r.LastSlopeType);
+
+            if (!gravFlipped)
+            {
+                int slopeHbOffY = mini ? ((0x10 - hbH) >> 1) : 0;
+                int slopeCheckY = playerY_px + slopeHbOffY + hbH - 2;
+
+                var (slopeHit, slopeEject, newSlopeType) = CheckSlopesDown(
+                    in map, playerX_px, playerX_px, slopeCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+
+                if (slopeHit)
+                {
+                    if (slopeEject > 0)
+                        r.NewY_fixed = ((r.NewY_fixed >> 8) - slopeEject) << 8;
+                    r.NewVelY_fixed = 0; r.WasZeroed = true;
+                    r.SlopeType = newSlopeType; r.OnGround = true;
+                    if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                        r.SlopeJumpHigher = true;
+                    else { r.SlopeFrames = 1; r.SlopeWasOnCounter = 3; }
+                }
+                else if (r.NewVelY_fixed >= 0)
+                {
+                    var (floorHit, floorTopY, spike) = CheckFloor(
+                        in map, playerX_px, playerY_px + hbOffY, hbW, hbH);
+                    if (spike) { r.Died = true; return r; }
+                    if (floorHit)
+                    {
+                        r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
+                        r.NewVelY_fixed = 0; r.WasZeroed = true; r.OnGround = true;
+                    }
+                }
+            }
+            else
+            {
+                int slopeHbOffY = mini ? ((0x10 - hbH) >> 1) : 0;
+                int slopeCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
+
+                var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
+                    in map, playerX_px, playerX_px, slopeCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+
+                if (ceilSlopeHit)
+                {
+                    r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
+                    r.NewVelY_fixed = 0; r.WasZeroed = true;
+                    r.OnGround = true; r.SlopeType = ceilSlopeType;
+                    if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                        r.SlopeJumpHigher = true;
+                    else { r.SlopeFrames = 1; r.SlopeWasOnCounter = 3; }
+                }
+                else if (r.NewVelY_fixed <= 0)
+                {
+                    var (ceilHit, ceilBotY, _) = CheckCeiling(
+                        in map, playerX_px, playerY_px + hbOffY, hbW, hbH);
+                    if (ceilHit)
+                    {
+                        r.NewY_fixed = (ceilBotY - hbOffY - 1) << 8;
+                        r.NewVelY_fixed = 0; r.WasZeroed = true; r.OnGround = true;
+                    }
+                }
+            }
+
+            return r;
+        }
+
+        /// <summary>
+        /// Shared ball ejection — 1px Y offset, slope + flat floor/ceiling.
+        /// Used by ball(2) and pogo(9) modes.
+        /// </summary>
+        internal static EjectResult BallEject(
+            in CollisionMap map,
+            int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed,
+            bool gravFlipped, bool mini, int gameMode, bool inputHeld,
+            int slopeWasOnCounter, int slopeFrames, int slopeType,
+            bool slopeJumpHigher, int lastSlopeType)
+        {
+            var r = new EjectResult {
+                NewY_fixed = playerY_fixed, NewVelY_fixed = velY_fixed,
+                SlopeType = slopeType, SlopeFrames = slopeFrames,
+                SlopeWasOnCounter = slopeWasOnCounter,
+                SlopeJumpHigher = slopeJumpHigher, LastSlopeType = lastSlopeType,
+            };
+
+            int playerX_px = playerX_fixed >> 8;
+            int playerY_px = playerY_fixed >> 8;
+            int hbW = GetCubeHitboxW(mini);
+            int hbH = GetCubeHitboxH(mini);
+            int miniOffset = GetMiniCenterOffsetY(mini);
+            int ballYOffset = gravFlipped ? -1 : 1;
+            int collisionY = playerY_px + miniOffset + ballYOffset;
+
+            UpdateSlopeCounters(ref r.SlopeWasOnCounter, ref r.SlopeType,
+                                ref r.NewVelY_fixed, gameMode, gravFlipped, mini, ref r.LastSlopeType);
+
+            if (gravFlipped)
+            {
+                if (r.NewVelY_fixed <= 0)
+                {
+                    var (hit, ceilBotY, _) = CheckCeiling(in map, playerX_px, collisionY, hbW, hbH);
+                    if (hit)
+                    {
+                        r.NewY_fixed = (ceilBotY - miniOffset) << 8;
+                        r.NewVelY_fixed = 0; r.OnGround = true;
+                    }
+                }
+            }
+            else
+            {
+                int slopeHbOffY = mini ? ((0x10 - hbH) >> 1) : 0;
+                int slopeCheckY = playerY_px + slopeHbOffY + hbH - 2;
+
+                var (slopeHit, slopeEject, newSlopeType) = CheckSlopesDown(
+                    in map, playerX_px, playerX_px, slopeCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+
+                if (slopeHit)
+                {
+                    if (slopeEject > 0)
+                        r.NewY_fixed = ((r.NewY_fixed >> 8) - slopeEject) << 8;
+                    r.NewVelY_fixed = 0;
+                    r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                    r.SlopeType = newSlopeType; r.OnGround = true;
+                }
+                else if (r.NewVelY_fixed >= 0)
+                {
+                    var (hit, surfY, spike) = CheckFloor(in map, playerX_px, collisionY, hbW, hbH);
+                    if (spike) { r.Died = true; return r; }
+                    if (hit)
+                    {
+                        r.NewY_fixed = (surfY - hbH - miniOffset - ballYOffset) << 8;
+                        r.NewVelY_fixed = 0; r.OnGround = true;
+                    }
+                }
+            }
+
+            return r;
+        }
+
+        /// <summary>
+        /// Shared ship/UFO ejection — checks BOTH ceiling AND floor, no velocity guard.
+        /// Used by ship(1), UFO(3), swingcopter(7).
+        /// </summary>
+        internal static EjectResult ShipUfoEject(
+            in CollisionMap map,
+            int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed,
+            bool gravFlipped, bool mini, int gameMode, bool inputHeld,
+            int slopeWasOnCounter, int slopeFrames, int slopeType,
+            bool slopeJumpHigher, int lastSlopeType)
+        {
+            var r = new EjectResult {
+                NewY_fixed = playerY_fixed, NewVelY_fixed = velY_fixed,
+                SlopeType = slopeType, SlopeFrames = slopeFrames,
+                SlopeWasOnCounter = slopeWasOnCounter,
+                SlopeJumpHigher = slopeJumpHigher, LastSlopeType = lastSlopeType,
+            };
+
+            int playerX_px = playerX_fixed >> 8;
+            int playerY_px = playerY_fixed >> 8;
+            int hbW = GetCubeHitboxW(mini);
+            int hbH = GetCubeHitboxH(mini);
+            int hbOffY = GetHitboxOffsetY(gameMode, mini, gravFlipped);
+            int collX = playerX_px;
+            int collY = playerY_px + hbOffY;
+
+            UpdateSlopeCounters(ref r.SlopeWasOnCounter, ref r.SlopeType,
+                                ref r.NewVelY_fixed, gameMode, gravFlipped, mini, ref r.LastSlopeType);
+
+            // Ceiling slopes first
+            int slopeHbOffY = mini ? ((0x10 - hbH) >> 1) : 0;
+            int ceilCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
+
+            var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
+                in map, playerX_px, playerX_px, ceilCheckY, hbW,
+                inputHeld, gameMode, gravFlipped, velX_fixed,
+                ref r.LastSlopeType, ref r.SlopeJumpHigher);
+
+            if (ceilSlopeHit)
+            {
+                r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
+                r.NewVelY_fixed = 0;
+                r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                r.SlopeType = ceilSlopeType;
+            }
+            else
+            {
+                var (ceilHit, ceilBotY, _) = CheckCeiling(in map, collX, collY, hbW, hbH);
+                if (ceilHit)
+                {
+                    r.NewY_fixed = (ceilBotY - hbOffY) << 8;
+                    r.NewVelY_fixed = 0;
+                }
+            }
+
+            // Floor slopes
+            int floorCheckY = playerY_px + slopeHbOffY + hbH - 2;
+
+            var (floorSlopeHit, floorSlopeEject, floorSlopeType) = CheckSlopesDown(
+                in map, playerX_px, playerX_px, floorCheckY, hbW,
+                inputHeld, gameMode, gravFlipped, velX_fixed,
+                ref r.LastSlopeType, ref r.SlopeJumpHigher);
+
+            if (floorSlopeHit)
+            {
+                if (floorSlopeEject > 0)
+                    r.NewY_fixed = ((r.NewY_fixed >> 8) - floorSlopeEject) << 8;
+                r.NewVelY_fixed = 0;
+                r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                r.SlopeType = floorSlopeType;
+            }
+            else
+            {
+                int updatedCollY = (r.NewY_fixed >> 8) + hbOffY;
+                var (floorHit, floorTopY, spike) = CheckFloor(in map, collX, updatedCollY, hbW, hbH);
+                if (spike) { r.Died = true; return r; }
+                if (floorHit)
+                {
+                    r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
+                    r.NewVelY_fixed = 0;
+                }
+            }
+
+            return r;
         }
     }
 }

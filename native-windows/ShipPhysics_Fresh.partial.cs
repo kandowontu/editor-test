@@ -121,62 +121,56 @@ namespace FamidashEditor
         }
         
         /// <summary>
-        /// ufo_ship_eject() from gamemode_ship.h
+        /// ufo_ship_eject() — thin wrapper over SharedPhysics.ShipUfoEject.
+        /// Handles SIM-specific trail recording AFTER shared ejection.
         /// </summary>
         private void UfoShipEject_Fresh()
         {
-            bool isMini = (currplayer_mini != 0);
-            int hitboxW = isMini ? 8 : 15;
-            int hitboxH = isMini ? 7 : 15;
-            int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-            int collisionX = (playerX_fixed >> 8);
-            int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
+            bool mini = currplayer_mini != 0;
+            bool gravFlipped = currplayer_gravity != 0;
+            bool inputHeld = IsXDownAsync() || keyXHeld || upHeld;
 
-            // Update slope counters each frame
-            UpdateSlopeCounters();
-            
-            // NES bg_coll_U: check ceiling slopes BEFORE flat ceiling collision
-            bool ceilingSlopeHit = bg_coll_U_slopes();
-            if (ceilingSlopeHit)
-            {
-                // NES: high_byte(Y) = high_byte(Y) - eject_U - 1
-                // eject_U = -tmp8, so this becomes Y_px = Y_px + tmp8 - 1 (push down, away from ceiling slope)
-                int newPixelY = (playerY_fixed >> 8) - eject_U - 1;
-                playerY_fixed = newPixelY << 8;
-                playerVelY_fixed = 0;
-                AppendSimDebug($"[SHIP] Ceiling slope eject: eject_U={eject_U}, newY={newPixelY}");
-            }
-            else
-            {
-                // NES ufo_ship_eject: flat ceiling check, NO velocity guard
-                var (collidedUp, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-                if (collidedUp) {
-                    playerY_fixed = ((collisionBottomY - hitboxOffsetY) << 8);
-                    playerVelY_fixed = 0;
-                }
-            }
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
 
-            // Check slopes BEFORE flat downward collision
-            bool slopeHit = bg_coll_D_slopes();
-            if (slopeHit)
+            var r = SharedPhysics.ShipUfoEject(in map,
+                playerX_fixed, playerY_fixed, playerVelY_fixed, velocityX,
+                gravFlipped, mini, currentGameMode, inputHeld,
+                currplayer_was_on_slope_counter, currplayer_slope_frames,
+                currplayer_slope_type, make_cube_jump_higher,
+                currplayer_last_slope_type);
+
+            playerY_fixed = r.NewY_fixed;
+            playerVelY_fixed = r.NewVelY_fixed;
+            currplayer_slope_type = r.SlopeType;
+            currplayer_slope_frames = r.SlopeFrames;
+            currplayer_was_on_slope_counter = r.SlopeWasOnCounter;
+            make_cube_jump_higher = r.SlopeJumpHigher;
+            currplayer_last_slope_type = r.LastSlopeType;
+            // NOTE: Ship does NOT set onGround or wasZeroedByCollisionLastFrame
+
+            if (r.Died && !MainWindow.Option_NoDeath)
             {
-                if (eject_D > 0)
+                AppendSimDebug($"[DEATH] Floor spike detected (SharedPhysics.ShipUfoEject)");
+                deathTriggered = true;
+                deathTileX = playerX_fixed >> 8;
+                deathTileY = (playerY_fixed >> 8) + SharedPhysics.GetCubeHitboxH(mini);
+                paused = true;
+                _ = StopMusicAsync();
+                try
                 {
-                    int newPixelY = (playerY_fixed >> 8) - eject_D;
-                    playerY_fixed = newPixelY << 8;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                        if (this.Owner is MainWindow mw)
+                        {
+                            try { mw.PauseSimulatorPlayback(); } catch { }
+                            try { mw.AddDeathMarker(deathTileX, deathTileY); } catch { }
+                        }
+                    }));
                 }
-                playerVelY_fixed = 0;
-                // NOTE: Ship does NOT set wasZeroedByCollisionLastFrame — GRAV_SKIP would block thrust
-            }
-            else
-            {
-                // NES ufo_ship_eject: NO velocity guard on floor eject
-                var (collidedDown, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
-                if (collidedDown) {
-                    playerY_fixed = ((collisionTopY - hitboxH - hitboxOffsetY) << 8);
-                    playerVelY_fixed = 0;
-                }
-                // NOTE: No wasZeroed changes — ship never managed this flag
+                catch { }
+                return;
             }
             
             // Record position for trail (skip during pathfinder speculative simulation)
@@ -185,15 +179,11 @@ namespace FamidashEditor
             {
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                 int playerY_px_trail = playerY_fixed >> 8;
-                // Apply mini mode offset for trail to match visual position
                 bool isMini_trail = (currplayer_mini != 0);
                 if (isMini_trail)
-                {
                     playerY_px_trail += 4;
-                }
                 int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
                 
-                // Record to appropriate path list based on which player is active
                 if (currplayer == 0)
                     recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
                 else if (dual)

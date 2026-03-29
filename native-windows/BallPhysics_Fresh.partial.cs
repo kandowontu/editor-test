@@ -355,7 +355,8 @@ namespace FamidashEditor
                 int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
                 bool pressedJump = pressCount > 0;
                 
-                if (pressedJump && !orbhitonthisframe[currplayer]) {
+                if (pressedJump && !orbhitonthisframe[currplayer]
+                    && !orbHoldConsumedKeyStillDown[currplayer] && !orbHoldSuppressing[currplayer]) {
                     // Black orb velocity: opposite direction to normal orbs
                     // Normal gravity: positive (downward), Inverted gravity: negative (upward)
                     bool isMini_orb = (currplayer_mini != 0);
@@ -363,7 +364,8 @@ namespace FamidashEditor
                     int orbGravityMult = (currplayer_gravity == 0) ? -1 : 1;  // Normal: negate, Inverted: keep
                     playerVelY_fixed = blackOrbVel * orbGravityMult;
                     AppendSimDebug($"[POGO_BLACKORB] X pressed! velY set to 0x{playerVelY_fixed:X4}");
-                    // Clear orb buffer on pogo activation (require fresh press for next orb)
+                    // Consume the press (require fresh press for next activation)
+                    orbHoldConsumedKeyStillDown[currplayer] = true;
                     ClearOrbBuffer();
                 }
             }
@@ -387,129 +389,78 @@ namespace FamidashEditor
         }
         
         /// <summary>
-        /// ball_eject() helper
+        /// ball_eject() — thin wrapper over SharedPhysics.BallEject.
+        /// Handles SIM-specific pogo bounce (mode 9) AFTER shared ejection.
         /// </summary>
         private void BallEject_Fresh()
         {
-            bool isMini = (currplayer_mini != 0);
-            int hitboxW = isMini ? 8 : 15;
-            int hitboxH = isMini ? 7 : 15;
-            int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-            int collisionX = (playerX_fixed >> 8);
-            // NES ball_movement: offsets collision 1 pixel to prevent every-other-frame oscillation
-            int ballYOffset = (currplayer_gravity == 0) ? 1 : -1;
-            int collisionY = (playerY_fixed >> 8) + hitboxOffsetY + ballYOffset;
+            bool mini = currplayer_mini != 0;
+            bool gravFlipped = currplayer_gravity != 0;
+            bool inputHeld = IsXDownAsync() || keyXHeld || upHeld;
 
-            // Update slope counters each frame
-            UpdateSlopeCounters();
-            
-            if (currplayer_gravity == 0) {
-                // Normal gravity: Check slopes FIRST
-                bool slopeHit = bg_coll_D_slopes();
-                if (slopeHit)
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
+
+            int oldVelY = playerVelY_fixed; // Save for pogo bounce calculation
+
+            var r = SharedPhysics.BallEject(in map,
+                playerX_fixed, playerY_fixed, playerVelY_fixed, velocityX,
+                gravFlipped, mini, currentGameMode, inputHeld,
+                currplayer_was_on_slope_counter, currplayer_slope_frames,
+                currplayer_slope_type, make_cube_jump_higher,
+                currplayer_last_slope_type);
+
+            playerY_fixed = r.NewY_fixed;
+            playerVelY_fixed = r.NewVelY_fixed;
+            onGround = r.OnGround;
+            currplayer_slope_type = r.SlopeType;
+            currplayer_slope_frames = r.SlopeFrames;
+            currplayer_was_on_slope_counter = r.SlopeWasOnCounter;
+            make_cube_jump_higher = r.SlopeJumpHigher;
+            currplayer_last_slope_type = r.LastSlopeType;
+
+            if (r.Died && !MainWindow.Option_NoDeath)
+            {
+                AppendSimDebug($"[DEATH] Floor spike detected (SharedPhysics.BallEject)");
+                deathTriggered = true;
+                deathTileX = playerX_fixed >> 8;
+                deathTileY = (playerY_fixed >> 8) + SharedPhysics.GetCubeHitboxH(mini);
+                paused = true;
+                _ = StopMusicAsync();
+                try
                 {
-                    if (eject_D > 0)
+                    Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        int newPixelY = (playerY_fixed >> 8) - eject_D;
-                        playerY_fixed = newPixelY << 8;
-                    }
-                    // Pogo mode: bounce off slopes
-                    if (currentGameMode == 9 && !orbhitonthisframe[currplayer])
-                    {
-                        int newVel = (-playerVelY_fixed / 3) * 2;
-                        int yellowPadMin = isMini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
-                        int minVel = yellowPadMin * -1;
-                        if (newVel > minVel)
-                            newVel = minVel;
-                        playerVelY_fixed = newVel;
-                        pogoBounceAnimationCounter = 8;
-                    }
-                    else
-                    {
-                        playerVelY_fixed = 0;
-                    }
+                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                        if (this.Owner is MainWindow mw)
+                        {
+                            try { mw.PauseSimulatorPlayback(); } catch { }
+                            try { mw.AddDeathMarker(deathTileX, deathTileY); } catch { }
+                        }
+                    }));
+                }
+                catch { }
+                return;
+            }
+
+            // Pogo mode (9): override zeroed velocity with bounce
+            if (currentGameMode == 9 && r.OnGround && !orbhitonthisframe[currplayer])
+            {
+                int newVel = (-oldVelY / 3) * 2;
+                int yellowPadMin = mini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
+                if (!gravFlipped)
+                {
+                    int minVel = yellowPadMin * -1;
+                    if (newVel > minVel) newVel = minVel;
                 }
                 else
                 {
-                // No slope hit - fall through to flat collision
-                // NOTE: NES ball_eject does NOT have right-side pixel death here;
-                // death is handled separately by bg_coll_death / forward collision (bg_coll_R).
-                // Removed false-positive right-side pixel death check that triggered
-                // before eject could correct the player position.
-                
-                // Skip downward collision if we just flipped and are moving up
-                if (playerVelY_fixed >= 0) {
-                    var (collided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
-                    if (collided) {
-                        int newY = collisionTopY - hitboxH - hitboxOffsetY - ballYOffset;
-                        int oldY = playerY_fixed >> 8;
-                        AppendSimDebug($"[BALL_EJECT_D] collisionTopY={collisionTopY}, hitboxH={hitboxH}, hitboxOffsetY={hitboxOffsetY}, oldY={oldY}, newY={newY}");
-                        playerY_fixed = (newY << 8);
-                        
-                        // Pogo mode: bounce instead of zero velocity
-                        if (currentGameMode == 9)
-                        {
-                            if (!orbhitonthisframe[currplayer])
-                            {
-                                int newVel = (-playerVelY_fixed / 3) * 2;
-                                // Bounce minimum = yellow pad velocity for swing (mode 7, col index 7)
-                                int yellowPadMin = isMini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
-                                int minVel = yellowPadMin * -1;
-                                // For downward bounce (normal gravity): check if vel > min (more negative)
-                                if (newVel > minVel)
-                                    newVel = minVel;
-                                playerVelY_fixed = newVel;
-                                pogoBounceAnimationCounter = 8; // Show pogo2.png for 8 frames
-                                AppendSimDebug($"[POGO_BOUNCE_D] velY: old=0x{playerVelY_fixed:X4} -> new=0x{newVel:X4}, min=0x{minVel:X4}");
-                            }
-                        }
-                        else
-                        {
-                            playerVelY_fixed = 0;
-                        }
-                    }
+                    int minVel = yellowPadMin;
+                    if (newVel < minVel) newVel = minVel;
                 }
-                } // close slope else branch
-            } else {
-                // Inverted gravity
-                // NOTE: NES ball_eject does NOT have right-side pixel death here;
-                // death is handled by bg_coll_death / forward collision (bg_coll_R).
-                // Removed false-positive right-side pixel death check that fired
-                // BEFORE eject could correct position, causing spurious deaths.
-                
-                // Skip upward collision if we just flipped and are moving down
-                if (playerVelY_fixed <= 0) {
-                    var (collided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-                    if (collided) {
-                        // Place player directly at collision surface
-                        int newY = collisionBottomY - hitboxOffsetY;
-                        int oldY = playerY_fixed >> 8;
-                        AppendSimDebug($"[BALL_EJECT_U] collisionBottomY={collisionBottomY}, hitboxOffsetY={hitboxOffsetY}, oldY={oldY}, newY={newY}");
-                        playerY_fixed = (newY << 8);
-                        
-                        // Pogo mode: bounce instead of zero velocity
-                        if (currentGameMode == 9)
-                        {
-                            if (!orbhitonthisframe[currplayer])
-                            {
-                                int newVel = (-playerVelY_fixed / 3) * 2;
-                                // Bounce minimum = yellow pad velocity for swing (mode 7, col index 7)
-                                int yellowPadMin = isMini ? PadOrbHeights_Mini[1][7] : PadOrbHeights[1][7];
-                                int minVel = yellowPadMin;
-                                // For upward bounce (inverted gravity): check if vel < min (more positive)
-                                if (newVel < minVel)
-                                    newVel = minVel;
-                                playerVelY_fixed = newVel;
-                                pogoBounceAnimationCounter = 8; // Show pogo2.png for 8 frames
-                                AppendSimDebug($"[POGO_BOUNCE_U] velY: old=0x{playerVelY_fixed:X4} -> new=0x{newVel:X4}, min=0x{minVel:X4}");
-                            }
-                        }
-                        else
-                        {
-                            playerVelY_fixed = 0;
-                        }
-                    }
-                }
+                playerVelY_fixed = newVel;
+                pogoBounceAnimationCounter = 8;
+                AppendSimDebug($"[POGO_BOUNCE] velY: old=0x{oldVelY:X4} -> new=0x{newVel:X4}");
             }
         }
         

@@ -102,7 +102,8 @@ namespace FamidashEditor
             try
             {
                 startingSpeedUiIndex = idx;
-                try { Dispatcher.BeginInvoke(new Action(() => { try { RenderFrame(); } catch { } })); } catch { }
+                speed = idx;
+                try { Dispatcher.BeginInvoke(new Action(() => { try { UpdateSpeedDisplay(); } catch { } try { RenderFrame(); } catch { } })); } catch { }
             }
             catch { }
         }
@@ -122,9 +123,10 @@ namespace FamidashEditor
         {
             try
             {
-                // Minimal safe implementation: respect the `hideTriggerSprites` flag but
-                // avoid hiding anything by default to prevent accidental visual regressions.
-                // If needed, this can be expanded to check `s` against known trigger IDs.
+                // Always hide freecam portal sprites (they are invisible triggers)
+                if (s == 0xDD || s == 0xED) return true;
+                // Always hide wrap mode portal sprites (they are invisible triggers)
+                if (s == 0x8E || s == 0x9E) return true;
                 if (!hideTriggerSprites) return false;
                 return false;
             }
@@ -1716,51 +1718,22 @@ namespace FamidashEditor
         /// </summary>
         private bool CheckFloorSpikes(int playerX_px, int playerY_px, out int deathX, out int deathY)
         {
-            deathX = 0;
-            deathY = 0;
-
             bool isMini = (currplayer_mini != 0);
             int hitboxW = isMini ? 8 : 15;
             int hitboxH = isMini ? 7 : 15;
 
-            // NES mini centering offset
-            int miniOffY = SharedPhysics.GetMiniCenterOffsetY(isMini);
-
-            // commonly_used_store — near bottom of hitbox
-            int rowBottomY = playerY_px + miniOffY + hitboxH - 2;
-            // commonly_stored_routine_2 — near top of hitbox
-            int rowTopY = playerY_px + (isMini ? miniOffY : 2);
-
-            // X inset: +3 from left, width-3 from left
-            int leftX = playerX_px + 3;
-            int rightX = playerX_px + hitboxW - 3;
-
             int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsLocal);
 
-            // Check all 4 corners — same order as NES bg_coll_floor_spikes:
-            // 1. Bottom-left, 2. Bottom-right, 3. Top-left, 4. Top-right
-            if (PointHitsSpikeFloor(leftX, rowBottomY, groundRowsLocal))
+            bool killed = SharedPhysics.CheckFloorSpikes(in map, playerX_px, playerY_px, hitboxW, hitboxH, isMini,
+                out deathX, out deathY);
+
+            if (killed)
             {
-                AppendSimDebug($"[FLOOR_SPIKE] Death at bottom-left corner ({leftX},{rowBottomY})");
-                deathX = leftX; deathY = rowBottomY; return true;
-            }
-            if (PointHitsSpikeFloor(rightX, rowBottomY, groundRowsLocal))
-            {
-                AppendSimDebug($"[FLOOR_SPIKE] Death at bottom-right corner ({rightX},{rowBottomY})");
-                deathX = rightX; deathY = rowBottomY; return true;
-            }
-            if (PointHitsSpikeFloor(leftX, rowTopY, groundRowsLocal))
-            {
-                AppendSimDebug($"[FLOOR_SPIKE] Death at top-left corner ({leftX},{rowTopY})");
-                deathX = leftX; deathY = rowTopY; return true;
-            }
-            if (PointHitsSpikeFloor(rightX, rowTopY, groundRowsLocal))
-            {
-                AppendSimDebug($"[FLOOR_SPIKE] Death at top-right corner ({rightX},{rowTopY})");
-                deathX = rightX; deathY = rowTopY; return true;
+                AppendSimDebug($"[FLOOR_SPIKE] Death at ({deathX},{deathY})");
             }
 
-            return false;
+            return killed;
         }
 
         /// <summary>
@@ -2389,16 +2362,33 @@ namespace FamidashEditor
 
                     bool isCamLockOn = (sid == 0xDD);
                     bool isCamLockOff = (sid == 0xED);
-                    if (!isCamLockOn && !isCamLockOff) continue;
+                    bool isWrapOn = (sid == 0x8E);
+                    bool isWrapOff = (sid == 0x9E);
+                    if (!isCamLockOn && !isCamLockOff && !isWrapOn && !isWrapOff) continue;
 
-                    if (processedCamLockPortals.Contains(idx)) continue;
-
-                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                    if (isCamLockOn || isCamLockOff)
                     {
-                        nocamlockforced = isCamLockOn;
-                        processedCamLockPortals.Add(idx);
-                        AppendSimDebug($"[CAM_LOCK] nocamlockforced={nocamlockforced} at idx={idx}");
-                        break;
+                        if (processedCamLockPortals.Contains(idx)) continue;
+
+                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                        {
+                            nocamlockforced = isCamLockOn;
+                            processedCamLockPortals.Add(idx);
+                            AppendSimDebug($"[CAM_LOCK] nocamlockforced={nocamlockforced} at idx={idx}");
+                            continue;
+                        }
+                    }
+                    else // isWrapOn || isWrapOff
+                    {
+                        if (processedWrapPortals.Contains(idx)) continue;
+
+                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                        {
+                            wrapMode = isWrapOn;
+                            processedWrapPortals.Add(idx);
+                            AppendSimDebug($"[WRAP] wrapMode={wrapMode} at idx={idx}");
+                            continue;
+                        }
                     }
                 }
             }
@@ -3409,6 +3399,9 @@ namespace FamidashEditor
         // Cam lock portals: 0xDD = cam lock ON (freeze camera Y), 0xED = cam lock OFF (resume auto-follow)
         private System.Collections.Generic.HashSet<int> processedCamLockPortals = new System.Collections.Generic.HashSet<int>();
         private bool nocamlockforced = false;
+        // Wrap mode: 0x8E = wrap ON, 0x9E = wrap OFF (NES x_movement wrap_mode)
+        private bool wrapMode = false;
+        private System.Collections.Generic.HashSet<int> processedWrapPortals = new System.Collections.Generic.HashSet<int>();
         // Smooth camera Y target for non-cube modes (ship/ball/UFO/spider/wave/swing)
         // Matches Famidash target_scroll_y: camera scrolls smoothly toward this value
         private int targetCameraY_fixed = 0;
@@ -4092,6 +4085,7 @@ namespace FamidashEditor
                 int? lastSpeedIdx = null, lastSpeedSid = null, lastSpeedX = null;
                 int? lastBluePadIdx = null, lastBluePadSid = null, lastBluePadX = null;
                 int? lastCamLockIdx = null, lastCamLockSid = null, lastCamLockX = null;
+                int? lastWrapSid = null, lastWrapX = null;
                 
                 // Find the last portal of each type before target position (by X coordinate, not array order)
                 for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
@@ -4164,6 +4158,15 @@ namespace FamidashEditor
                                 lastCamLockIdx = idx;
                                 lastCamLockSid = sid;
                                 lastCamLockX = anchorX_px;
+                            }
+                        }
+                        // Wrap mode portals: 0x8E=wrap ON, 0x9E=wrap OFF
+                        else if (sid == 0x8E || sid == 0x9E)
+                        {
+                            if (!lastWrapX.HasValue || anchorX_px > lastWrapX.Value)
+                            {
+                                lastWrapSid = sid;
+                                lastWrapX = anchorX_px;
                             }
                         }
                     }
@@ -4250,13 +4253,20 @@ namespace FamidashEditor
                         speed = speedIndex;
                         try { UpdateSpeedDisplay(); } catch { }
                     }
-                    // Don't add to processed set - let collision detection handle it during gameplay
+                    // Mark as processed so collision detection doesn't re-apply it
+                    processedSpeedPortals.Add(lastSpeedIdx.Value);
                 }
                 
                 // Apply cam lock portal
                 if (lastCamLockIdx.HasValue && lastCamLockSid.HasValue)
                 {
                     nocamlockforced = (lastCamLockSid.Value == 0xDD);
+                }
+
+                // Apply wrap mode portal
+                if (lastWrapSid.HasValue)
+                {
+                    wrapMode = (lastWrapSid.Value == 0x8E);
                 }
 
                 // Set targetCameraY_fixed for the last game mode portal (for smooth cam scroll)
@@ -4558,24 +4568,21 @@ namespace FamidashEditor
                     {
                         if (camFollowsY)
                         {
-                            int playerCenterScreenY_post = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
-                            int topThreshold_post = 5 * TILE;
-                            int bottomThreshold_post = NES_H * TILE - 5 * TILE;
-
-                            if (playerCenterScreenY_post <= topThreshold_post)
+                            // Match NES process_y_scroll: top threshold 0x4000 (64px), bottom 0xA0 (160px)
+                            int grReserved_cam = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int minCamY_reserved = -(grReserved_cam * TILE) << 8;
+                            int screenY_fixed_post = playerY_fixed - cameraY_fixed;
+                            if (screenY_fixed_post < 0x4000)
                             {
-                                int need = topThreshold_post - playerCenterScreenY_post;
-                                int camMove = Math.Min(need, (cameraY_fixed >> 8));
-                                cameraY_fixed -= (camMove << 8);
-                                if (cameraY_fixed < 0) cameraY_fixed = 0;
+                                int need_fixed = 0x4000 - screenY_fixed_post;
+                                cameraY_fixed -= need_fixed;
+                                if (cameraY_fixed < minCamY_reserved) cameraY_fixed = minCamY_reserved;
                             }
-                            else if (playerCenterScreenY_post >= bottomThreshold_post)
+                            else if ((screenY_fixed_post >> 8) >= 0xA0)
                             {
-                                int need = playerCenterScreenY_post - bottomThreshold_post;
+                                int need_fixed = screenY_fixed_post - 0xA000;
                                 int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                                int camAvail = (maxCameraY_fixed - cameraY_fixed) >> 8;
-                                int camMove = Math.Min(need, camAvail);
-                                cameraY_fixed += (camMove << 8);
+                                cameraY_fixed += need_fixed;
                                 if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
                             }
                         }
@@ -4594,8 +4601,58 @@ namespace FamidashEditor
                             }
                             // Clamp to valid range
                             int maxCamY = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            int minCamY_ship = -(((hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0) * TILE) << 8;
+                            if (cameraY_fixed < minCamY_ship) cameraY_fixed = minCamY_ship;
                             if (cameraY_fixed > maxCamY) cameraY_fixed = maxCamY;
+                        }
+                    }
+                }
+                catch { }
+
+                // OOB death / wrap mode: NES x_movement checks screen-relative Y
+                // Conditions: NOT dual, NOT twoplayer
+                try
+                {
+                    if (physicsEnabled && jumpedOnce && !deathTriggered && !MainWindow.Option_NoDeath
+                        && !dual && !twoplayer)
+                    {
+                        int screenRelY = playerY_fixed - cameraY_fixed;
+                        if (!wrapMode)
+                        {
+                            if (screenRelY < 0x0600)
+                            {
+                                AppendSimDebug($"[DEATH] OOB top: screenRelY=0x{screenRelY:X4}");
+                                deathTriggered = true;
+                                paused = true;
+                                _ = StopMusicAsync();
+                                try
+                                {
+                                    Dispatcher?.BeginInvoke(new Action(() =>
+                                    {
+                                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                        if (this.Owner is MainWindow mw)
+                                        {
+                                            try { mw.PauseSimulatorPlayback(); } catch { }
+                                            try { mw.AddDeathMarker(playerX_fixed >> 8, playerY_fixed >> 8); } catch { }
+                                        }
+                                    }));
+                                }
+                                catch { }
+                            }
+                        }
+                        else
+                        {
+                            // Wrap mode: wrap Y between 0x0600 and 0xF900 (screen-relative)
+                            if (screenRelY < 0x0600)
+                            {
+                                playerY_fixed = cameraY_fixed + 0xF900;
+                                AppendSimDebug($"[WRAP] top->bottom: newY=0x{playerY_fixed:X4}");
+                            }
+                            else if (screenRelY > 0xF900)
+                            {
+                                playerY_fixed = cameraY_fixed + 0x0600;
+                                AppendSimDebug($"[WRAP] bottom->top: newY=0x{playerY_fixed:X4}");
+                            }
                         }
                     }
                 }
@@ -6258,7 +6315,9 @@ namespace FamidashEditor
                 try { processedMiniPortals.Clear(); } catch { }  // Reset dual/single portal tracking
                 try { processedTeleportPortals.Clear(); } catch { }  // Reset teleport portal tracking
                 try { processedCamLockPortals.Clear(); } catch { }
+                try { processedWrapPortals.Clear(); } catch { }
                 nocamlockforced = false;
+                wrapMode = false;
                 targetCameraY_fixed = 0;
                 
                 // Reset dual mode state
@@ -6485,6 +6544,7 @@ namespace FamidashEditor
                                 2 => CUBE_SPEED_X2,   // 2x
                                 3 => CUBE_SPEED_X3,   // 3x
                                 4 => CUBE_SPEED_X4,   // 4x
+                                5 => CUBE_SPEED_SLOW, // 0.1x
                                 _ => CUBE_SPEED_X1
                             };
                             playerVelX_fixed = speedFixed;
@@ -6869,24 +6929,21 @@ namespace FamidashEditor
                     {
                         if (camFollowsY_2)
                         {
-                            int playerCenterScreenY_post = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
-                            int topThreshold_post = 5 * TILE;
-                            int bottomThreshold_post = NES_H * TILE - 5 * TILE;
-
-                            if (playerCenterScreenY_post <= topThreshold_post)
+                            // Match NES process_y_scroll: top threshold 0x4000 (64px), bottom 0xA0 (160px)
+                            int grReserved_cam2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int minCamY_reserved2 = -(grReserved_cam2 * TILE) << 8;
+                            int screenY_fixed_2 = playerY_fixed - cameraY_fixed;
+                            if (screenY_fixed_2 < 0x4000)
                             {
-                                int need = topThreshold_post - playerCenterScreenY_post;
-                                int camMove = Math.Min(need, (cameraY_fixed >> 8));
-                                cameraY_fixed -= (camMove << 8);
-                                if (cameraY_fixed < 0) cameraY_fixed = 0;
+                                int need_fixed = 0x4000 - screenY_fixed_2;
+                                cameraY_fixed -= need_fixed;
+                                if (cameraY_fixed < minCamY_reserved2) cameraY_fixed = minCamY_reserved2;
                             }
-                            else if (playerCenterScreenY_post >= bottomThreshold_post)
+                            else if ((screenY_fixed_2 >> 8) >= 0xA0)
                             {
-                                int need = playerCenterScreenY_post - bottomThreshold_post;
+                                int need_fixed = screenY_fixed_2 - 0xA000;
                                 int maxCameraY_fixed_local = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                                int camAvail = (maxCameraY_fixed_local - cameraY_fixed) >> 8;
-                                int camMove = Math.Min(need, camAvail);
-                                cameraY_fixed += (camMove << 8);
+                                cameraY_fixed += need_fixed;
                                 if (cameraY_fixed > maxCameraY_fixed_local) cameraY_fixed = maxCameraY_fixed_local;
                             }
                         }
@@ -6904,7 +6961,8 @@ namespace FamidashEditor
                                 if (cameraY_fixed < targetCameraY_fixed) cameraY_fixed = targetCameraY_fixed;
                             }
                             int maxCamY_2 = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                            if (cameraY_fixed < 0) cameraY_fixed = 0;
+                            int minCamY_2 = -(((hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0) * TILE) << 8;
+                            if (cameraY_fixed < minCamY_2) cameraY_fixed = minCamY_2;
                             if (cameraY_fixed > maxCamY_2) cameraY_fixed = maxCamY_2;
                         }
                     }
@@ -7024,11 +7082,14 @@ namespace FamidashEditor
 
                     // integrate velocity
                     playerY_fixed += playerVelY_fixed;
-                    // Prevent the player's world Y from going negative (above map top).
-                    // The simulation uses pixel Y coordinates where 0 is the top of the world
-                    // and increasing values go downwards; negative fixed-point Y can cause
-                    // out-of-bounds tile lookups and incorrect floor detection.
-                    if (playerY_fixed < 0) playerY_fixed = 0;
+                    // Prevent the player's world Y from going above the reserved rows.
+                    // With groundRowsToReserve, game Y can be negative (TMX rows 0-2 = Y -48 to -1).
+                    // Minimum valid Y = -(groundRowsToReserve * TILE) in fixed-point.
+                    {
+                        int grToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                        int minY_fixed = -(grToReserve * TILE) << 8;
+                        if (playerY_fixed < minY_fixed) playerY_fixed = minY_fixed;
+                    }
 
                     // Ceiling collision (UI-path): if moving up, check for tiles above player's head that should block upward movement.
                     try
@@ -7493,6 +7554,13 @@ namespace FamidashEditor
                         
                         // Speed portal handling
                         if (!speedPortalMap.ContainsKey(sid)) continue;
+
+                        // When physics is active, SPEED_P1/SPEED_P2 in sprite
+                        // interactions handle speed portals at the correct NES
+                        // timing (OLD X, before X advance).  Skip the legacy
+                        // camera-path detection to avoid double-application and
+                        // wrong-timing speed changes.
+                        if (physicsEnabled) continue;
 
                         int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
                         int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
@@ -9654,6 +9722,10 @@ namespace FamidashEditor
                     // Visual alias: make sprite 0x7B render identically to 0x05
                     int s_vis = (s == 0x7B) ? 0x05 : s;
 
+                    // Always hide freecam portal sprites (invisible triggers)
+                    if (s == 0xDD || s == 0xED) continue;
+                    if (s == 0x8E || s == 0x9E) continue;
+
                     // If the global 'hide trigger sprites' option is enabled, skip drawing
                     // these specific trigger sprite images while still allowing them to
                     // function (triggers remain active in the simulation logic).
@@ -10541,6 +10613,44 @@ namespace FamidashEditor
 
                         // Check for coin collection
                         CheckCoinCollision();
+
+                        // === SPEED PORTAL CHECK (at OLD X, before X advance) ===
+                        // NES detects speed portals during sprite_collide at OLD X
+                        // before x_movement.  PF matches this via ProcessSprites at
+                        // old X with velXForAdvance captured before detection.
+                        // attemptedPlayerX_fixed was already computed before sprite
+                        // interactions, so changing currentSpeed_fixed here does NOT
+                        // affect this frame's X advance — matching PF's velXForAdvance.
+                        {
+                            int hitboxW_sp1 = miniMode ? 8 : 15;
+                            int hitboxH_sp1 = miniMode ? 7 : 15;
+                            int pLeft_sp1 = (playerX_fixed >> 8) + 1;
+                            int pRight_sp1 = pLeft_sp1 + hitboxW_sp1 - 1;
+                            int pTop_sp1 = (playerY_fixed >> 8) + GetMiniSpriteOffsetY();
+                            int pBottom_sp1 = pTop_sp1 + hitboxH_sp1 - 1;
+                            for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                            {
+                                int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                                if (sid < 0) continue;
+                                if (!speedPortalMap.ContainsKey(sid)) continue;
+                                if (processedSpeedPortals.Contains(idx)) continue;
+                                if (SpriteIntersectsPlayer(idx, sid, pLeft_sp1, pRight_sp1,
+                                                          pTop_sp1, pBottom_sp1))
+                                {
+                                    int spd = speedPortalMap[sid];
+                                    currentSpeed_fixed = spd;
+                                    playerVelX_fixed = spd;
+                                    if (spd == CUBE_SPEED_X05) speed = 0;
+                                    else if (spd == CUBE_SPEED_X1) speed = 1;
+                                    else if (spd == CUBE_SPEED_X2) speed = 2;
+                                    else if (spd == CUBE_SPEED_X3) speed = 3;
+                                    else if (spd == CUBE_SPEED_X4) speed = 4;
+                                    processedSpeedPortals.Add(idx);
+                                    AppendSimDebug($"[SPEED_P1] sid=0x{sid:X2} VelX -> 0x{spd:X4}");
+                                    break; // one per frame, matching PF
+                                }
+                            }
+                        }
                     }
                     catch { }
                 }
@@ -11116,41 +11226,14 @@ namespace FamidashEditor
                         // Dashing and orbed are now cleared before sprite interactions
                         // (matching NES state_game.h lines 372-374 and 557-559)
                         
-                        // === SPEED PORTAL CHECK BEFORE P2 (Fix 17) ===
-                        // The PF's CheckSpeedPortalsAtNewX runs during P1's StepFrame
-                        // (step 8c), so P2 sees the updated speed on the same frame.
-                        // The SIM's main speed portal detection runs after P2, so P2
-                        // would use the stale speed. Check here to match PF timing.
-                        try
-                        {
-                            // PF uses: center = X_fixed + 0x3000 ((NES_W*TILE/2 - 80) << 8)
-                            const int PF_SPEED_CENTER_OFFSET = 0x3000;
-                            int speedCenter_fixed = playerX_fixed + PF_SPEED_CENTER_OFFSET;
-                            for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
-                            {
-                                int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
-                                if (sid < 0) continue;
-                                if (!speedPortalMap.ContainsKey(sid)) continue;
-                                if (processedSpeedPortals.Contains(idx)) continue;
-                                int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var a)) ? a.anchorTileX : idx % mapWidth;
-                                int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
-                                if (anchorX_center_fixed <= speedCenter_fixed)
-                                {
-                                    int spd = speedPortalMap[sid];
-                                    currentSpeed_fixed = spd;
-                                    playerVelX_fixed = spd;
-                                    if (spd == CUBE_SPEED_X05) speed = 0;
-                                    else if (spd == CUBE_SPEED_X1) speed = 1;
-                                    else if (spd == CUBE_SPEED_X2) speed = 2;
-                                    else if (spd == CUBE_SPEED_X3) speed = 3;
-                                    else if (spd == CUBE_SPEED_X4) speed = 4;
-                                    processedSpeedPortals.Add(idx);
-                                    AppendSimDebug($"[SPEED_PRE_P2] sid=0x{sid:X2} VelX -> 0x{spd:X4}");
-                                    break; // one per frame, matching PF
-                                }
-                            }
-                        }
-                        catch { }
+                        // === SPEED_PRE_P2 DISABLED (Fix 17b) ===
+                        // Speed portal detection has been moved to P1 sprite interactions
+                        // (before X advance) to match NES/PF timing.  Detecting at NEW X
+                        // here caused a 1-frame timing mismatch: SIM changed speed at
+                        // end of frame N (after advancing), while PF detected at start
+                        // of frame N+1 (before advancing).  The new [SPEED_P1] check
+                        // in sprite interactions handles this correctly, and
+                        // processedSpeedPortals prevents any re-detection.
                         
                         // === PLAYER 2 PROCESSING IN DUAL MODE ===
                         if (dual && !twoplayer)
@@ -11297,6 +11380,41 @@ namespace FamidashEditor
                                 CheckDashOrbCollision();
                                 CheckAlphabetBlocks();
                                 CheckBluePadCollision();
+
+                                // Speed portal check for P2 — if P2's hitbox overlaps a
+                                // speed portal that P1 missed (different Y), the shared
+                                // speed must still update, matching PF's recursive StepFrame
+                                // which runs ProcessSprites for P2 at P2's Y.
+                                {
+                                    int hitboxW_sp2 = miniMode ? 8 : 15;
+                                    int hitboxH_sp2 = miniMode ? 7 : 15;
+                                    int pLeft_sp2 = (playerX_fixed >> 8) + 1;
+                                    int pRight_sp2 = pLeft_sp2 + hitboxW_sp2 - 1;
+                                    int pTop_sp2 = (playerY_fixed >> 8) + GetMiniSpriteOffsetY();
+                                    int pBottom_sp2 = pTop_sp2 + hitboxH_sp2 - 1;
+                                    for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                                    {
+                                        int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                                        if (sid < 0) continue;
+                                        if (!speedPortalMap.ContainsKey(sid)) continue;
+                                        if (processedSpeedPortals.Contains(idx)) continue;
+                                        if (SpriteIntersectsPlayer(idx, sid, pLeft_sp2, pRight_sp2,
+                                                                  pTop_sp2, pBottom_sp2))
+                                        {
+                                            int spd = speedPortalMap[sid];
+                                            currentSpeed_fixed = spd;
+                                            playerVelX_fixed = spd;
+                                            if (spd == CUBE_SPEED_X05) speed = 0;
+                                            else if (spd == CUBE_SPEED_X1) speed = 1;
+                                            else if (spd == CUBE_SPEED_X2) speed = 2;
+                                            else if (spd == CUBE_SPEED_X3) speed = 3;
+                                            else if (spd == CUBE_SPEED_X4) speed = 4;
+                                            processedSpeedPortals.Add(idx);
+                                            AppendSimDebug($"[SPEED_P2] sid=0x{sid:X2} VelX -> 0x{spd:X4}");
+                                            break;
+                                        }
+                                    }
+                                }
                             }
                             catch { }
                             
@@ -11788,6 +11906,11 @@ namespace FamidashEditor
                 // Detect speed portals between prevCameraCenter_fixed and current center
                 int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
                 int? newSpeed_fixed = null;
+                // When physics is active, SPEED_P1/SPEED_P2 in sprite interactions
+                // handle speed portals at correct NES timing (OLD X, before advance).
+                // Skip legacy detection to avoid wrong-timing speed changes.
+                if (!physicsEnabled)
+                {
                 for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
@@ -11878,6 +12001,7 @@ namespace FamidashEditor
                     }
                     catch { }
                 }
+                } // end if (!physicsEnabled) — legacy speed portal detection
 
                 // Detect color triggers; instead of sampling/pixel work here, record pending triggers
                 int bestBg_fixed = int.MaxValue; int? bgIdxLocal = null; int? bgSidLocal = null;
@@ -12006,6 +12130,9 @@ namespace FamidashEditor
                 {
                     try
                     {
+                        // Skip mini coins (0x6E) — only show regular coins on level complete screen
+                        if (SharedPhysics.IsMiniCoinSprite(spriteId)) continue;
+
                         // Get the sprite image for this coin
                         ImageSource? coinImage = null;
                         if (spriteImages != null && spriteId >= 0 && spriteId < spriteImages.Length)
