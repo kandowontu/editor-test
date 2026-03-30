@@ -446,7 +446,7 @@ namespace FamidashEditor
             int slopeFrames = currplayer_slope_frames;
             SharedPhysics.UpdateSlopeCountersFresh(
                 ref slopeFrames, currplayer_slope_type,
-                ref playerVelY_fixed, velocityX);
+                ref playerVelY_fixed, playerVelX_fixed);
             currplayer_slope_frames = slopeFrames;
         }
         

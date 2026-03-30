@@ -8265,6 +8265,7 @@ namespace FamidashEditor
                     try { if (famiIntegration != null) famiIntegration.SetPlaybackRate(1.0); } catch { }
                     // Pass current simulator-related options into the window
                     try { sim.ShowSpriteHitboxes = (MenuOptionShowSpriteHitboxes.IsChecked == true); } catch { }
+                    try { sim.LevelName = currentFilePath ?? ""; } catch { }
                     sim.Owner = this;
                     // Set starting speed before ApplyStartPosMarker so it's available during initialization
                     try { sim.SetStartingSpeedUiIndex(loadedStartingSpeedUiIndex); } catch { }
@@ -21368,6 +21369,7 @@ namespace FamidashEditor
                             hasGround, groundTileRows,
                             loadedMaxFallSpeed,
                             spritePixelOffsets);
+                        engine.LevelName = currentFilePath ?? "";
                         engine.JumpTimingBias = jumpTimingBias;
                         engine.PreferCoins = preferCoins;
                         engine.UseBFS = preferCoins; // BFS always runs first; UseBFS=true prevents heuristic fallback

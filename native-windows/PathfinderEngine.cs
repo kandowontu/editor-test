@@ -383,7 +383,7 @@ namespace FamidashEditor
         [ThreadStatic]
         private static bool _dualP2Guard; // true during P2's StepFrame call (prevents infinite recursion)
         [ThreadStatic]
-        private static bool _p2OrbFlippedOtherGrav; // set when P2's blue/green orb needs to flip P1's gravity + halve vel
+        private static bool _p2OrbFlippedOtherGrav; // set by P2's blue/green orb to flip P1's gravity
         private static int _fwdDiagCount; // counter for FWD dual diagnostic output
 
         // -- Debug logging ---------------------------------------------------
@@ -405,8 +405,13 @@ namespace FamidashEditor
 
         /// <summary>Path to the pathfinder debug log (in %TEMP%). Empty if logging compiled out.</summary>
         public string DebugLogPath => pfDebugLogPath;
+
+        /// <summary>Optional level/TMX name written to the log header for identification.</summary>
+        public string LevelName { get; set; } = "";
 #else
         public string DebugLogPath => string.Empty;
+        /// <summary>Optional level/TMX name (no-op when logging disabled).</summary>
+        public string LevelName { get; set; } = "";
 #endif
 
         // -- Frame trace for diagnostics ---------------------------------
@@ -1628,6 +1633,7 @@ namespace FamidashEditor
             _speculativeDepth = 0;
             TraceFrameOpen();
 #if !DISABLE_DEBUG_LOGGING
+            PfLog($"[LEVEL] {LevelName}");
             PfLog($"[RUN_START] startX={startX_px} startY={startY_px} speed={startSpeedUiIndex} mode={startGameMode} gravFlipped={startGravFlipped} mini={startMini}");
             PfLog($"[RUN_STATE] X_fixed=0x{state.X_fixed:X4} Y_fixed=0x{state.Y_fixed:X4} VelX=0x{state.VelX_fixed:X4} VelY=0x{state.VelY_fixed:X4} gravMul={state.GravMul} gravMod={state.GravityMod:F3} onGround={state.OnGround}");
             PfLog($"[RUN_MAP] mapWidth={mapWidth} mapHeight={mapHeight} groundRowsToReserve={groundRowsToReserve} maxFallSpeed=0x{maxFallSpeed:X4} sprites={allSprites.Count}");
@@ -7161,6 +7167,16 @@ namespace FamidashEditor
             // -- STEP 1b: ORB ACTIVATION at OLD X --
             if (s.PendingOrbIndex >= 0 && input)
             {
+                // Save pre-activation state for the overlapping-tile sweep below.
+                int activatedSid = s.PendingOrbSpriteId;
+                int sweepNesX = oldX_px + 1;
+                int sweepHbW = GetHitboxW(s.Mini);
+                int sweepHbH = GetHitboxH(s.Mini);
+                int sweepOrbOffY = (s.Mini && !s.GravFlipped) ? SharedPhysics.GetMiniCenterOffsetY(true) : 0;
+                int sweepPlayerTop = (s.Y_fixed >> 8) + sweepOrbOffY;
+                int sweepPlayerBottom = sweepPlayerTop + sweepHbH;
+                int sweepPlayerRight = sweepNesX + sweepHbW;
+
 #if !DISABLE_DEBUG_LOGGING
                 PfLog($"[ORB_ACTIVATE] sid=0x{s.PendingOrbSpriteId:X2} gravFlipped={s.GravFlipped} mini={s.Mini}");
 #endif
@@ -7189,6 +7205,24 @@ namespace FamidashEditor
                     if (!isMultiOrb)
                         s.ProcessedSprites.Add(s.PendingOrbIndex);
                 }
+
+                // Mark ALL other overlapping tiles of the same orb type as processed.
+                // Multi-tile orbs that lack spriteAnchors entries appear as independent
+                // tiles; without this sweep the player could re-trigger the same physical
+                // orb on an adjacent tile in a later frame.
+                bool isMultiOrbSweep = (activatedSid == 0x7B || activatedSid == 0x7C);
+                if (!isMultiOrbSweep)
+                {
+                    foreach (var sp in allSprites)
+                    {
+                        if (sp.SpriteId != activatedSid) continue;
+                        if (s.ProcessedSprites.Contains(sp.Index)) continue;
+                        bool xO = !(sweepPlayerRight < sp.HitLeft || sp.HitRight < sweepNesX);
+                        bool yO = !(sweepPlayerBottom < sp.HitTop || sp.HitBottom < sweepPlayerTop);
+                        if (xO && yO) s.ProcessedSprites.Add(sp.Index);
+                    }
+                }
+
                 s.PendingOrbIndex = -1;
                 s.PendingOrbSpriteId = -1;
                 orbHitThisFrame = true;
@@ -8220,18 +8254,21 @@ namespace FamidashEditor
                 bool p2Input = input && !p1ConsumedPress;
 
                 // Run P2's StepFrame (recursion guard prevents infinite dual loop)
-                _dualP2Guard = true;
                 _p2OrbFlippedOtherGrav = false;
+                _dualP2Guard = true;
                 bool p2Alive = StepFrame(ref s, p2Input, out bool p2EndLevel);
                 _dualP2Guard = false;
 
-                // NES dual_cap_check: if P2 hit a blue/green orb, flip P1's gravity + halve vel
+                // dual_cap_check: P2 hit blue/green orb → flip P1's gravity + halve velocity
                 if (_p2OrbFlippedOtherGrav)
                 {
                     p1_GravFlipped = !p1_GravFlipped;
                     p1_GravMul = p1_GravFlipped ? -1 : 1;
                     p1_VelY /= 2;
                     _p2OrbFlippedOtherGrav = false;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DUAL_CAP_CHECK] P2 orb flipped P1 grav→{p1_GravFlipped} velY→0x{p1_VelY:X4}");
+#endif
                 }
 
                 // Save P2 state back from s
@@ -11458,22 +11495,27 @@ namespace FamidashEditor
                 // Flip gravity first, then launch TOWARD new ground
                 s.GravFlipped = !s.GravFlipped;
                 s.GravMul = s.GravFlipped ? -1 : 1;
-                // NES dual_cap_check: flip OTHER player's gravity + halve their vel
+
+                // dual_cap_check: blue orb flips BOTH players' gravity
                 if (s.DualActive)
                 {
-                    if (!_dualP2Guard)
+                    if (_dualP2Guard)
                     {
-                        // P1 hitting orb: flip P2's stored state directly
-                        s.P2_GravFlipped = !s.P2_GravFlipped;
-                        s.P2_GravMul = s.P2_GravFlipped ? -1 : 1;
-                        s.P2_VelY_fixed /= 2;
+                        // P2 is running — signal caller to flip P1's saved gravity + halve vel
+                        _p2OrbFlippedOtherGrav = true;
                     }
                     else
                     {
-                        // P2 hitting orb: flag so P1's saved state gets flipped after return
-                        _p2OrbFlippedOtherGrav = true;
+                        // P1 is running — directly flip P2's stored gravity and halve velocity
+                        s.P2_GravFlipped = !s.P2_GravFlipped;
+                        s.P2_GravMul = s.P2_GravFlipped ? -1 : 1;
+                        s.P2_VelY_fixed /= 2;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[DUAL_CAP_CHECK] P1 blue orb flipped P2 grav→{s.P2_GravFlipped} velY→0x{s.P2_VelY_fixed:X4}");
+#endif
                     }
                 }
+
                 // Sim uses hardcoded constants (NOT PadOrbHeights):
                 //   PAD_HEIGHT_BLUE_normal = -0x3A0, PAD_HEIGHT_BLUE_mini = -0x160
                 //   Ball mode uses smaller vel: ORB_BALL_HEIGHT_BLUE_normal = -0x1A0, mini = -0x60
@@ -11489,20 +11531,25 @@ namespace FamidashEditor
                 // Flip gravity, then bounce AGAINST new gravity (yellow-orb-strength)
                 s.GravFlipped = !s.GravFlipped;
                 s.GravMul = s.GravFlipped ? -1 : 1;
-                // NES dual_cap_check: flip OTHER player's gravity + halve their vel
+
+                // dual_cap_check: green orb flips BOTH players' gravity
                 if (s.DualActive)
                 {
-                    if (!_dualP2Guard)
+                    if (_dualP2Guard)
+                    {
+                        _p2OrbFlippedOtherGrav = true;
+                    }
+                    else
                     {
                         s.P2_GravFlipped = !s.P2_GravFlipped;
                         s.P2_GravMul = s.P2_GravFlipped ? -1 : 1;
                         s.P2_VelY_fixed /= 2;
-                    }
-                    else
-                    {
-                        _p2OrbFlippedOtherGrav = true;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[DUAL_CAP_CHECK] P1 green orb flipped P2 grav→{s.P2_GravFlipped} velY→0x{s.P2_VelY_fixed:X4}");
+#endif
                     }
                 }
+
                 int greenOrbGravSign = s.GravFlipped ? 1 : -1;
                 s.VelY_fixed = GetPadOrbVel(0, s.Mini, s.GameMode) * greenOrbGravSign;
                 s.OnGround = false;

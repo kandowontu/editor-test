@@ -393,7 +393,7 @@ namespace FamidashEditor
                 gravityMultiplier,
                 simTimeScale,
                 isFullSpeed,
-                velocityX,
+                playerVelX_fixed,
                 clampMaxY);
 
             AppendSimDebug($"[GRAV_POS] posY: 0x{posBefore:X4} ({posBefore >> 8}px) -> 0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), velY: 0x{velBefore:X4} -> 0x{playerVelY_fixed:X4}");
@@ -413,7 +413,7 @@ namespace FamidashEditor
             var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
 
             var r = SharedPhysics.CubeEject(in map,
-                playerX_fixed, playerY_fixed, playerVelY_fixed, velocityX,
+                playerX_fixed, playerY_fixed, playerVelY_fixed, playerVelX_fixed,
                 gravFlipped, mini, currentGameMode, inputHeld,
                 currplayer_was_on_slope_counter, currplayer_slope_frames,
                 currplayer_slope_type, make_cube_jump_higher,

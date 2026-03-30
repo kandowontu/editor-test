@@ -247,6 +247,26 @@ namespace FamidashEditor
                     {
                         playerProcessedOrbs[currplayer].Add(idx);
                         if (!dual) orbActivated[idx] = true;
+
+                        // Also mark all OTHER currently-overlapping tiles of the same
+                        // sprite type as processed.  Multi-tile orbs that lack
+                        // spriteAnchors entries appear as independent tiles; without
+                        // this sweep the player would re-trigger the same physical
+                        // orb on adjacent tiles in a later frame (matching PF, which
+                        // adds every overlapping tile's index to ProcessedSprites).
+                        for (int _si2 = 0; _si2 < nonEmptySpriteIndices.Length; _si2++)
+                        {
+                            if (_si2 == _si) continue;
+                            int idx2 = nonEmptySpriteIndices[_si2];
+                            if (sprites[idx2] != spriteType) continue;
+                            if (spriteAnchors != null && spriteAnchors.ContainsKey(idx2)) continue;
+                            if (playerProcessedOrbs[currplayer].Contains(idx2)) continue;
+                            if (CheckOrbCollision(idx2, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                            {
+                                playerProcessedOrbs[currplayer].Add(idx2);
+                                if (!dual) orbActivated[idx2] = true;
+                            }
+                        }
                     }
                     
                     orbActivatedThisFrame = true;
@@ -327,6 +347,16 @@ namespace FamidashEditor
                     currplayer_gravity = (byte)(gravityInverted ? 0xFF : 0x00);
                     UpdateEffectiveGravity();
                     UpdatePlayerIconFlip();
+
+                    // dual_cap_check: NES flips player_gravity[0] and [1], halves other player's vel
+                    if (dual)
+                    {
+                        player_gravity[0] ^= 0xFF;
+                        player_gravity[1] ^= 0xFF;
+                        int otherPlayer = currplayer ^ 1;
+                        player_vel_y_fixed[otherPlayer] /= 2;
+                        AppendSimDebug($"[DUAL_CAP_CHECK] Blue orb: flipped both gravs, halved player[{otherPlayer}] vel to 0x{player_vel_y_fixed[otherPlayer]:X4}");
+                    }
                     
                     // Wave and Snake: no velocity change, just reverse gravity
                     if (isWaveOrSnake)
@@ -443,6 +473,16 @@ namespace FamidashEditor
                     currplayer_gravity = (byte)(gravityInverted ? 0xFF : 0x00);
                     UpdateEffectiveGravity();
                     UpdatePlayerIconFlip();
+
+                    // dual_cap_check: NES flips player_gravity[0] and [1], halves other player's vel
+                    if (dual)
+                    {
+                        player_gravity[0] ^= 0xFF;
+                        player_gravity[1] ^= 0xFF;
+                        int otherPlayerG = currplayer ^ 1;
+                        player_vel_y_fixed[otherPlayerG] /= 2;
+                        AppendSimDebug($"[DUAL_CAP_CHECK] Green orb: flipped both gravs, halved player[{otherPlayerG}] vel to 0x{player_vel_y_fixed[otherPlayerG]:X4}");
+                    }
                     
                     // Use yellow orb row (0) from PadOrbHeights
                     int greenBaseVel = mini ? PadOrbHeights_Mini[0][modeCol] : PadOrbHeights[0][modeCol];
@@ -672,28 +712,28 @@ namespace FamidashEditor
                 else if (spriteType == DASH_ORB_45DEG_UP || spriteType == DASH_GRAVITY_ORB_45DEG_UP)
                 {
                     // 45 degree upward dash
-                    velocityY = -velocityX;  // currplayer_vel_y = -currplayer_vel_x
+                    velocityY = -playerVelX_fixed;  // currplayer_vel_y = -currplayer_vel_x
                     dashing[currplayer] = 2;
                     AppendSimDebug($"[DASH_ORB] 45deg upward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_45DEG_DOWN || spriteType == DASH_GRAVITY_ORB_45DEG_DOWN)
                 {
                     // 45 degree downward dash
-                    velocityY = velocityX;  // currplayer_vel_y = currplayer_vel_x
+                    velocityY = playerVelX_fixed;  // currplayer_vel_y = currplayer_vel_x
                     dashing[currplayer] = 3;
                     AppendSimDebug($"[DASH_ORB] 45deg downward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_UPWARDS || spriteType == DASH_GRAVITY_ORB_UPWARDS)
                 {
                     // Upward dash (vertical)
-                    velocityY = velocityX * 4;  // currplayer_vel_y = currplayer_vel_x * 4
+                    velocityY = playerVelX_fixed * 4;  // currplayer_vel_y = currplayer_vel_x * 4
                     dashing[currplayer] = 4;
                     AppendSimDebug($"[DASH_ORB] Upward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }
                 else if (spriteType == DASH_ORB_DOWNWARDS || spriteType == DASH_GRAVITY_ORB_DOWNWARDS)
                 {
                     // Downward dash (vertical)
-                    velocityY = -velocityX * 4;  // currplayer_vel_y = -currplayer_vel_x * 4
+                    velocityY = -playerVelX_fixed * 4;  // currplayer_vel_y = -currplayer_vel_x * 4
                     dashing[currplayer] = 5;
                     AppendSimDebug($"[DASH_ORB] Downward dash activated (0x{spriteType:X2}), vely={velocityY}");
                 }

@@ -134,7 +134,7 @@ namespace FamidashEditor
             var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
 
             var r = SharedPhysics.ShipUfoEject(in map,
-                playerX_fixed, playerY_fixed, playerVelY_fixed, velocityX,
+                playerX_fixed, playerY_fixed, playerVelY_fixed, playerVelX_fixed,
                 gravFlipped, mini, currentGameMode, inputHeld,
                 currplayer_was_on_slope_counter, currplayer_slope_frames,
                 currplayer_slope_type, make_cube_jump_higher,

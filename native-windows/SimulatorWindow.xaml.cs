@@ -148,6 +148,10 @@ namespace FamidashEditor
 #pragma warning restore CS0414
         private readonly string simDebugLogPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"famidash_sim_debug_{System.DateTime.UtcNow:yyyyMMdd_HHmmss}.txt");
 
+        private string _levelName = "";
+        private bool _levelNameLogged;
+        public string LevelName { get => _levelName; set { _levelName = value ?? ""; } }
+
         private void AppendSimDebug(string msg)
         {
 #if !DISABLE_DEBUG_LOGGING
@@ -10567,6 +10571,11 @@ namespace FamidashEditor
                 // === SPRITE INTERACTIONS (BEFORE MOVEMENT) ===
                 // Check sprite interactions with the player's CURRENT position before moving
                 // This ensures portals/pads/orbs are detected before the player moves past them
+                // Capture entry mini state for SPEED_P1 — PF's ProcessSprites computes
+                // playerRight once at entry using the ENTRY mini state. If a growth portal
+                // changes mini mid-loop, PF still uses the old hitbox size for speed portal
+                // overlap. SIM must match by snapshotting mini here.
+                bool entryMiniMode_sp = miniMode;
                 if (physicsEnabled)
                 {
                     try
@@ -10621,21 +10630,68 @@ namespace FamidashEditor
                         // attemptedPlayerX_fixed was already computed before sprite
                         // interactions, so changing currentSpeed_fixed here does NOT
                         // affect this frame's X advance — matching PF's velXForAdvance.
+                        //
+                        // CRITICAL: Use NES-style collision (sprite table dimensions only),
+                        // NOT SpriteIntersectsPlayer which expands TILE-sized hitboxes to
+                        // match rendered image sizes.  PF uses pure table dimensions via
+                        // pre-computed HitLeft/HitRight, so SIM must match to avoid
+                        // detecting speed portals 1 frame early (causing permanent X offset).
                         {
-                            int hitboxW_sp1 = miniMode ? 8 : 15;
-                            int hitboxH_sp1 = miniMode ? 7 : 15;
-                            int pLeft_sp1 = (playerX_fixed >> 8) + 1;
-                            int pRight_sp1 = pLeft_sp1 + hitboxW_sp1 - 1;
-                            int pTop_sp1 = (playerY_fixed >> 8) + GetMiniSpriteOffsetY();
-                            int pBottom_sp1 = pTop_sp1 + hitboxH_sp1 - 1;
+                            int hitboxW_sp1 = entryMiniMode_sp ? 8 : 15;
+                            int hitboxH_sp1 = entryMiniMode_sp ? 7 : 15;
+                            // Use EXCLUSIVE player bounds (matching PF ProcessSprites exactly)
+                            // PF: nesX = currentX_px + 1; playerRight = nesX + hbW (exclusive)
+                            // PF overlap: !(playerRight < sp.HitLeft || sp.HitRight < nesX)
+                            int nesX_sp1 = (playerX_fixed >> 8) + 1;
+                            int playerRight_sp1 = nesX_sp1 + hitboxW_sp1;  // exclusive
+                            // Use entry mini state for Y offset (PF computes hbOffY at ProcessSprites entry)
+                            int miniOffY_sp1 = entryMiniMode_sp ? ((0x10 - 7) >> 1) : 0;
+                            int playerTop_sp1 = (playerY_fixed >> 8) + miniOffY_sp1;
+                            int playerBottom_sp1 = playerTop_sp1 + hitboxH_sp1;  // exclusive
+                            int groundRowsToReserve_sp1 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                             {
                                 int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                                 if (sid < 0) continue;
                                 if (!speedPortalMap.ContainsKey(sid)) continue;
                                 if (processedSpeedPortals.Contains(idx)) continue;
-                                if (SpriteIntersectsPlayer(idx, sid, pLeft_sp1, pRight_sp1,
-                                                          pTop_sp1, pBottom_sp1))
+
+                                // Compute sprite hitbox using NES table dimensions only
+                                // (matching PF's SpriteEntry pre-computation, no image expansion)
+                                int storageTileX_sp1 = idx % mapWidth;
+                                int storageTileY_sp1 = idx / mapWidth;
+                                int id_for_geom_sp1 = sid & 0xFF;
+                                int anchorKey_sp1 = -1;
+                                if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor_sp1))
+                                {
+                                    anchorKey_sp1 = anchor_sp1.anchorTileY * mapWidth + anchor_sp1.anchorTileX;
+                                    if (anchorKey_sp1 >= 0 && anchorKey_sp1 < sprites.Length)
+                                    {
+                                        int anchoredId_sp1 = sprites[anchorKey_sp1];
+                                        if (anchoredId_sp1 >= 0 && anchoredId_sp1 < 256) id_for_geom_sp1 = anchoredId_sp1 & 0xFF;
+                                    }
+                                }
+                                int hw_sp1 = (id_for_geom_sp1 >= 0 && id_for_geom_sp1 < sprite_widths.Length) ? sprite_widths[id_for_geom_sp1] : TILE;
+                                int hh_sp1 = (id_for_geom_sp1 >= 0 && id_for_geom_sp1 < sprite_heights.Length) ? sprite_heights[id_for_geom_sp1] : TILE;
+                                if (hh_sp1 >= 0xFC) continue; // skip DECO/COLR/OUTL/SPBH sentinels
+                                int hxoff_sp1 = (id_for_geom_sp1 >= 0 && id_for_geom_sp1 < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom_sp1] : 0;
+                                int hyoff_sp1 = (id_for_geom_sp1 >= 0 && id_for_geom_sp1 < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom_sp1] : 0;
+                                int pxOff_sp1 = 0, pyOff_sp1 = 0;
+                                if (anchorKey_sp1 >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey_sp1, out var aoffs_sp1))
+                                { pxOff_sp1 = aoffs_sp1.offsetX; pyOff_sp1 = aoffs_sp1.offsetY; }
+                                else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs_sp1))
+                                { pxOff_sp1 = offs_sp1.offsetX; pyOff_sp1 = offs_sp1.offsetY; }
+
+                                int sLeft_sp1 = storageTileX_sp1 * TILE + hxoff_sp1 + pxOff_sp1;
+                                int sTop_sp1 = (storageTileY_sp1 - groundRowsToReserve_sp1) * TILE + hyoff_sp1 + pyOff_sp1 - 1;
+                                int sRight_sp1 = sLeft_sp1 + Math.Max(1, hw_sp1);   // exclusive (NES-style)
+                                int sBottom_sp1 = sTop_sp1 + Math.Max(1, hh_sp1);   // exclusive (NES-style)
+
+                                // NES overlap: all bounds exclusive, use < (matching PF ProcessSprites exactly)
+                                // NES check_collision: (x1+w1 >= x2) && (x2+w2 >= x1) — touching = overlap
+                                bool xOverlap_sp1 = !(playerRight_sp1 < sLeft_sp1 || sRight_sp1 < nesX_sp1);
+                                bool yOverlap_sp1 = !(playerBottom_sp1 < sTop_sp1 || sBottom_sp1 < playerTop_sp1);
+                                if (xOverlap_sp1 && yOverlap_sp1)
                                 {
                                     int spd = speedPortalMap[sid];
                                     currentSpeed_fixed = spd;
@@ -10914,6 +10970,7 @@ namespace FamidashEditor
                         currplayer_mini = (byte)(miniMode ? 1 : 0);
                         currplayer_gravity = (byte)(gravityFlipped ? 0xFF : 0);
                         currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                        if (!_levelNameLogged) { _levelNameLogged = true; AppendSimDebug($"[LEVEL] {_levelName}"); }
                         if (gravityFlipped) AppendSimDebug($"[PHYSICS] FLIPPED! Mode={currentGameMode}, gravity={currplayer_gravity:X2}, mini={currplayer_mini}, table_idx={currplayer_table_idx}, gravityFlipped={gravityFlipped}, gravityReversed={gravityReversed}");
                         else AppendSimDebug($"[PHYSICS] Mode={currentGameMode}, gravity={currplayer_gravity:X2}, mini={currplayer_mini}, table_idx={currplayer_table_idx}");
                         
@@ -11385,21 +11442,56 @@ namespace FamidashEditor
                                 // speed portal that P1 missed (different Y), the shared
                                 // speed must still update, matching PF's recursive StepFrame
                                 // which runs ProcessSprites for P2 at P2's Y.
+                                // Uses NES table dimensions + PF-matching exclusive overlap
+                                // (same formula as SPEED_P1, no SpriteIntersectsPlayer
+                                // image expansion).
                                 {
                                     int hitboxW_sp2 = miniMode ? 8 : 15;
                                     int hitboxH_sp2 = miniMode ? 7 : 15;
-                                    int pLeft_sp2 = (playerX_fixed >> 8) + 1;
-                                    int pRight_sp2 = pLeft_sp2 + hitboxW_sp2 - 1;
-                                    int pTop_sp2 = (playerY_fixed >> 8) + GetMiniSpriteOffsetY();
-                                    int pBottom_sp2 = pTop_sp2 + hitboxH_sp2 - 1;
+                                    int nesX_sp2 = (playerX_fixed >> 8) + 1;
+                                    int playerRight_sp2 = nesX_sp2 + hitboxW_sp2;  // exclusive
+                                    int playerTop_sp2 = (playerY_fixed >> 8) + GetMiniSpriteOffsetY();
+                                    int playerBottom_sp2 = playerTop_sp2 + hitboxH_sp2;  // exclusive
+                                    int groundRowsToReserve_sp2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                                     for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                                     {
                                         int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                                         if (sid < 0) continue;
                                         if (!speedPortalMap.ContainsKey(sid)) continue;
                                         if (processedSpeedPortals.Contains(idx)) continue;
-                                        if (SpriteIntersectsPlayer(idx, sid, pLeft_sp2, pRight_sp2,
-                                                                  pTop_sp2, pBottom_sp2))
+
+                                        int storageTileX_sp2 = idx % mapWidth;
+                                        int storageTileY_sp2 = idx / mapWidth;
+                                        int id_for_geom_sp2 = sid & 0xFF;
+                                        int anchorKey_sp2 = -1;
+                                        if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor_sp2))
+                                        {
+                                            anchorKey_sp2 = anchor_sp2.anchorTileY * mapWidth + anchor_sp2.anchorTileX;
+                                            if (anchorKey_sp2 >= 0 && anchorKey_sp2 < sprites.Length)
+                                            {
+                                                int anchoredId_sp2 = sprites[anchorKey_sp2];
+                                                if (anchoredId_sp2 >= 0 && anchoredId_sp2 < 256) id_for_geom_sp2 = anchoredId_sp2 & 0xFF;
+                                            }
+                                        }
+                                        int hw_sp2 = (id_for_geom_sp2 >= 0 && id_for_geom_sp2 < sprite_widths.Length) ? sprite_widths[id_for_geom_sp2] : TILE;
+                                        int hh_sp2 = (id_for_geom_sp2 >= 0 && id_for_geom_sp2 < sprite_heights.Length) ? sprite_heights[id_for_geom_sp2] : TILE;
+                                        if (hh_sp2 >= 0xFC) continue;
+                                        int hxoff_sp2 = (id_for_geom_sp2 >= 0 && id_for_geom_sp2 < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom_sp2] : 0;
+                                        int hyoff_sp2 = (id_for_geom_sp2 >= 0 && id_for_geom_sp2 < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom_sp2] : 0;
+                                        int pxOff_sp2 = 0, pyOff_sp2 = 0;
+                                        if (anchorKey_sp2 >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey_sp2, out var aoffs_sp2))
+                                        { pxOff_sp2 = aoffs_sp2.offsetX; pyOff_sp2 = aoffs_sp2.offsetY; }
+                                        else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs_sp2))
+                                        { pxOff_sp2 = offs_sp2.offsetX; pyOff_sp2 = offs_sp2.offsetY; }
+
+                                        int sLeft_sp2 = storageTileX_sp2 * TILE + hxoff_sp2 + pxOff_sp2;
+                                        int sTop_sp2 = (storageTileY_sp2 - groundRowsToReserve_sp2) * TILE + hyoff_sp2 + pyOff_sp2 - 1;
+                                        int sRight_sp2 = sLeft_sp2 + Math.Max(1, hw_sp2);
+                                        int sBottom_sp2 = sTop_sp2 + Math.Max(1, hh_sp2);
+
+                                        bool xOverlap_sp2 = !(playerRight_sp2 < sLeft_sp2 || sRight_sp2 < nesX_sp2);
+                                        bool yOverlap_sp2 = !(playerBottom_sp2 < sTop_sp2 || sBottom_sp2 < playerTop_sp2);
+                                        if (xOverlap_sp2 && yOverlap_sp2)
                                         {
                                             int spd = speedPortalMap[sid];
                                             currentSpeed_fixed = spd;
