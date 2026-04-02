@@ -680,12 +680,8 @@ namespace FamidashEditor
                 if (frameIndex > 0x07) frameIndex = 0x07;
                 if (frameIndex < 0x00) frameIndex = 0x00;
                 
-                // If gravity is inverted, reverse the frame
-                if (currplayer_gravity != 0)
-                {
-                    frameIndex = 7 - frameIndex;
-                }
-                
+                // NES uses 0x0400 - player_vel_y regardless of gravity.
+                // Visual flip is handled by UpdatePlayerIconFlip() ScaleTransform.
                 return frameIndex;
             }
             catch { return 0; }
@@ -10625,11 +10621,10 @@ namespace FamidashEditor
 
                         // === SPEED PORTAL CHECK (at OLD X, before X advance) ===
                         // NES detects speed portals during sprite_collide at OLD X
-                        // before x_movement.  PF matches this via ProcessSprites at
-                        // old X with velXForAdvance captured before detection.
-                        // attemptedPlayerX_fixed was already computed before sprite
-                        // interactions, so changing currentSpeed_fixed here does NOT
-                        // affect this frame's X advance — matching PF's velXForAdvance.
+                        // before x_movement.  PF applies the new VelX for this frame's
+                        // X advance (ProcessSprites runs before X = X + VelX).
+                        // After detection we recompute attemptedPlayerX_fixed so this
+                        // frame's advance uses the new speed — matching PF.
                         //
                         // CRITICAL: Use NES-style collision (sprite table dimensions only),
                         // NOT SpriteIntersectsPlayer which expands TILE-sized hitboxes to
@@ -10703,6 +10698,12 @@ namespace FamidashEditor
                                     else if (spd == CUBE_SPEED_X4) speed = 4;
                                     processedSpeedPortals.Add(idx);
                                     AppendSimDebug($"[SPEED_P1] sid=0x{sid:X2} VelX -> 0x{spd:X4}");
+                                    // Recompute X advance with new speed so this frame uses it (matching PF)
+                                    if (isFullSpeed)
+                                        attemptedPlayerX_fixed = playerX_fixed + (currentSpeed_fixed * speedMultiplierLocal);
+                                    else
+                                        attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplierLocal) * simTimeScale);
+                                    attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
                                     break; // one per frame, matching PF
                                 }
                             }

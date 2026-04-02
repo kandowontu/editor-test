@@ -1,0 +1,92 @@
+TERRAIN cols 1828-1850 rows 18-27
+r18 wY=240| NONE NONE NONE NONE NONE LEFT NONE NONE NONE NONE NONE  ALL  ALL  ALL  ALL  ALL NONE NONE NONE  ALL NONE NONE NONE
+r19 wY=256| NONE NONE NONE DECO NONE  ALL NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE  ALL NONE NONE NONE
+r20 wY=272| NONE NONE NONE NONE NONE  ALL NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE DTOP NONE NONE NONE
+r21 wY=288| NONE NONE HALF NONE NONEDEATH NONE NONE NONE NONE NONE DECO NONE NONE DECO NONE NONE NONE NONE NONE NONE NONE NONE
+r22 wY=304|  ALL  ALL  ALL NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE  ALL  ALL  ALL  ALL  ALL NONE
+r23 wY=320| NONE NONE  ALL NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE  SBL NONE NONE NONE NONE NONE
+r24 wY=336| NONE NONE  ALL  ALL  ALL  ALL  ALL  ALL NONE NONE NONE NONE NONE NONE NONE NONE NONE  SBR NONE NONE NONE NONE NONE
+r25 wY=352| NONE NONE NONE NONE NONE NONE NONERIGHT NONE NONE NONE NONE NONE NONE NONE NONE NONE LEFT NONE NONE NONE NONE NONE
+r26 wY=368| NONE NONE NONE NONE NONE NONE NONE  CUR  TOP  TOP  TOP  TOP  TOP  TOP  TOP  TOP  TOP  CUL NONE NONE NONE NONE NONE
+r27 wY=384| NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE NONE
+
+SPRITES cols 1828-1850 rows 18-27
+r18 wY=240|    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+r19 wY=256|    .    .    .SP_DN    .    .    .    .    .    .    .H_BLKH_BLKH_BLKH_BLKH_BLK    .    .    .    .    .    .    .
+r20 wY=272|    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+r21 wY=288|    .    .    .    .    .    .    .    .    .    .    .Y_ORB    .    .Y_ORB    .    .    .    .    .    .    .    .
+r22 wY=304|    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+r23 wY=320|    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+r24 wY=336|    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+r25 wY=352|    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+r26 wY=368|    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+r27 wY=384|    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+
+FWD COLLISION AT COL 1847
+  Y=270 cY=276 aR=20 ed= 30(  DTOP) lY= 4 DPOSS
+  Y=272 cY=278 aR=20 ed= 30(  DTOP) lY= 6 PASS
+  Y=274 cY=280 aR=20 ed= 30(  DTOP) lY= 8 PASS
+  Y=276 cY=282 aR=20 ed= 30(  DTOP) lY=10 PASS
+  Y=278 cY=284 aR=20 ed= 30(  DTOP) lY=12 PASS
+  Y=280 cY=286 aR=20 ed= 30(  DTOP) lY=14 PASS
+  Y=282 cY=288 aR=21 ed=  0(  NONE) lY= 0 PASS
+  Y=284 cY=290 aR=21 ed=  0(  NONE) lY= 2 PASS
+  Y=286 cY=292 aR=21 ed=  0(  NONE) lY= 4 PASS
+  Y=288 cY=294 aR=21 ed=  0(  NONE) lY= 6 PASS
+  Y=290 cY=296 aR=21 ed=  0(  NONE) lY= 8 PASS
+  Y=292 cY=298 aR=21 ed=  0(  NONE) lY=10 PASS
+  Y=294 cY=300 aR=21 ed=  0(  NONE) lY=12 PASS
+  Y=296 cY=302 aR=21 ed=  0(  NONE) lY=14 PASS
+  Y=298 cY=304 aR=22 ed= 16(   ALL) lY= 0 KILL
+  Y=300 cY=306 aR=22 ed= 16(   ALL) lY= 2 KILL
+  Y=302 cY=308 aR=22 ed= 16(   ALL) lY= 4 KILL
+  Y=304 cY=310 aR=22 ed= 16(   ALL) lY= 6 KILL
+  Y=306 cY=312 aR=22 ed= 16(   ALL) lY= 8 KILL
+  Y=308 cY=314 aR=22 ed= 16(   ALL) lY=10 KILL
+  Y=310 cY=316 aR=22 ed= 16(   ALL) lY=12 KILL
+  Y=312 cY=318 aR=22 ed= 16(   ALL) lY=14 KILL
+  Y=314 cY=320 aR=23 ed=  0(  NONE) lY= 0 PASS
+  Y=316 cY=322 aR=23 ed=  0(  NONE) lY= 2 PASS
+  Y=318 cY=324 aR=23 ed=  0(  NONE) lY= 4 PASS
+  Y=320 cY=326 aR=23 ed=  0(  NONE) lY= 6 PASS
+  Y=322 cY=328 aR=23 ed=  0(  NONE) lY= 8 PASS
+  Y=324 cY=330 aR=23 ed=  0(  NONE) lY=10 PASS
+  Y=326 cY=332 aR=23 ed=  0(  NONE) lY=12 PASS
+  Y=328 cY=334 aR=23 ed=  0(  NONE) lY=14 PASS
+  Y=330 cY=336 aR=24 ed=  0(  NONE) lY= 0 PASS
+  Y=332 cY=338 aR=24 ed=  0(  NONE) lY= 2 PASS
+  Y=334 cY=340 aR=24 ed=  0(  NONE) lY= 4 PASS
+  Y=336 cY=342 aR=24 ed=  0(  NONE) lY= 6 PASS
+  Y=338 cY=344 aR=24 ed=  0(  NONE) lY= 8 PASS
+
+FWD COLLISION AT COL 1833
+  Y=280 cY=286 aR=20 ed= 16(   ALL) lY=14 KILL
+  Y=282 cY=288 aR=21 ed= 27( DEATH) lY= 0 PASS
+  Y=284 cY=290 aR=21 ed= 27( DEATH) lY= 2 PASS
+  Y=286 cY=292 aR=21 ed= 27( DEATH) lY= 4 DPOSS
+  Y=288 cY=294 aR=21 ed= 27( DEATH) lY= 6 DPOSS
+  Y=290 cY=296 aR=21 ed= 27( DEATH) lY= 8 DPOSS
+  Y=292 cY=298 aR=21 ed= 27( DEATH) lY=10 DPOSS
+  Y=294 cY=300 aR=21 ed= 27( DEATH) lY=12 PASS
+  Y=296 cY=302 aR=21 ed= 27( DEATH) lY=14 PASS
+  Y=298 cY=304 aR=22 ed=  0(  NONE) lY= 0 PASS
+  Y=300 cY=306 aR=22 ed=  0(  NONE) lY= 2 PASS
+  Y=302 cY=308 aR=22 ed=  0(  NONE) lY= 4 PASS
+  Y=304 cY=310 aR=22 ed=  0(  NONE) lY= 6 PASS
+  Y=306 cY=312 aR=22 ed=  0(  NONE) lY= 8 PASS
+  Y=308 cY=314 aR=22 ed=  0(  NONE) lY=10 PASS
+  Y=310 cY=316 aR=22 ed=  0(  NONE) lY=12 PASS
+  Y=312 cY=318 aR=22 ed=  0(  NONE) lY=14 PASS
+  Y=314 cY=320 aR=23 ed=  0(  NONE) lY= 0 PASS
+  Y=316 cY=322 aR=23 ed=  0(  NONE) lY= 2 PASS
+  Y=318 cY=324 aR=23 ed=  0(  NONE) lY= 4 PASS
+  Y=320 cY=326 aR=23 ed=  0(  NONE) lY= 6 PASS
+  Y=322 cY=328 aR=23 ed=  0(  NONE) lY= 8 PASS
+  Y=324 cY=330 aR=23 ed=  0(  NONE) lY=10 PASS
+  Y=326 cY=332 aR=23 ed=  0(  NONE) lY=12 PASS
+  Y=328 cY=334 aR=23 ed=  0(  NONE) lY=14 PASS
+  Y=330 cY=336 aR=24 ed= 16(   ALL) lY= 0 KILL
+  Y=332 cY=338 aR=24 ed= 16(   ALL) lY= 2 KILL
+  Y=334 cY=340 aR=24 ed= 16(   ALL) lY= 4 KILL
+  Y=336 cY=342 aR=24 ed= 16(   ALL) lY= 6 KILL
+  Y=338 cY=344 aR=24 ed= 16(   ALL) lY= 8 KILL
