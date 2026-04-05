@@ -968,6 +968,8 @@ namespace FamidashEditor
                         bool startGravFlipped, bool startMini)
         {
             _log = Verbose ? Console.Error : System.IO.TextWriter.Null;
+            for (int ci = 0; ci < allCoins.Count; ci++)
+                _log.WriteLine($"[COIN_INFO] coin#{ci} idx={allCoins[ci].Index} sid=0x{allCoins[ci].SpriteId:X2} pos=({allCoins[ci].AnchorX_px},{allCoins[ci].AnchorY_px}) hit=({allCoins[ci].HitLeft},{allCoins[ci].HitTop})-({allCoins[ci].HitRight},{allCoins[ci].HitBottom})");
             var sw = System.Diagnostics.Stopwatch.StartNew();
             double originalBias = JumpTimingBias;
             _autoForgivenCoins.Clear();
@@ -2294,6 +2296,11 @@ namespace FamidashEditor
                         }
                         FinalCollectedCoinIndices = collectedCoinIndices;
                         _log.WriteLine($"[RUN_COMPLETE] coins={collectedCoinIndices.Count}/{allCoins.Count} forgiven={_forgivenCoins.Count} collected=[{string.Join(",", collectedCoinIndices)}]");
+                        foreach (var coin in allCoins)
+                        {
+                            bool hit = collectedCoinIndices.Contains(coin.Index);
+                            _log.WriteLine($"[COIN_RESULT] idx={coin.Index} sid=0x{coin.SpriteId:X2} pos=({coin.AnchorX_px},{coin.AnchorY_px}) hit=({coin.HitLeft},{coin.HitTop})-({coin.HitRight},{coin.HitBottom}) {(hit ? "COLLECTED" : "MISSED")}");
+                        }
                         successMsg += $" [{collectedCoinIndices.Count}/{allCoins.Count} coins]";
                         if (_forgivenCoins.Count > 0) successMsg += $" ({_forgivenCoins.Count} unreachable)";
                     }
@@ -3272,6 +3279,13 @@ namespace FamidashEditor
                         collected.Add(coin.Index);
                 }
                 FinalCollectedCoinIndices = collected;
+                _log.WriteLine($"[COIN_STATUS] collected_count={collected.Count} total={allCoins.Count} collected_indices=[{string.Join(",", collected)}]");
+                foreach (var coin in allCoins)
+                {
+                    bool hit = collected.Contains(coin.Index);
+                    string status = hit ? "YES" : "NO";
+                    _log.WriteLine($"[COIN_RESULT] idx={coin.Index} status={status}");
+                }
             }
 
             ExtractSkippedPads(state);
@@ -12326,6 +12340,49 @@ namespace FamidashEditor
             bool result = SharedPhysics.CheckForwardCollision(_collisionMap,
                 playerX_px, playerY_px, hbW, hbH, hbOffY,
                 s.GameMode, s.Mini, s.GravFlipped, skipSlopeCheck: true);
+
+            // BFS override: COL_FLOOR_CEIL and COL_NO_SIDE tiles don't block
+            // sideways in the NES (bg_coll_sides returns 0).  SharedPhysics
+            // correctly returns false for these.  However, treating them as
+            // non-blocking in BFS creates a much larger state space that
+            // overwhelms the frontier cap, causing coin-path states to be
+            // lost during dedup/pruning.  Re-check these tiles here so the
+            // BFS prunes states at floor/ceiling tiles (the winning path
+            // never actually collides with these tiles sideways, so the
+            // pruned states are on suboptimal trajectories anyway).
+            if (!result && _speculativeDepth > 0)
+            {
+                int rightEdge_px = playerX_px + hbW;
+                int centerY_px;
+                if (s.Mini)
+                {
+                    int miniTopOffset = (0x10 - hbH) >> 1;
+                    centerY_px = playerY_px + miniTopOffset + (hbH >> 1);
+                    if (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8)
+                        centerY_px += s.GravFlipped ? 3 : -2;
+                }
+                else
+                    centerY_px = playerY_px + (hbH >> 1);
+
+                int tileX = rightEdge_px / TILE;
+                int tileY = centerY_px / TILE;
+                int tileArrY = tileY + _collisionMap.GroundRowsToReserve;
+                if (tileX >= 0 && tileX < _collisionMap.MapWidth &&
+                    tileArrY >= 0 && tileArrY < _collisionMap.MapHeight)
+                {
+                    int tid = _collisionMap.Tiles[tileArrY * _collisionMap.MapWidth + tileX];
+                    int mapped = MapTileForCollision(tid);
+                    var col = MetatileCollisionTable.GetCollision((byte)mapped);
+                    if (col == MetatileCollision.COL_FLOOR_CEIL || col == MetatileCollision.COL_NO_SIDE)
+                    {
+                        int twX = tileX * TILE, twY = tileY * TILE;
+                        int lx = Math.Max(0, Math.Min(15, rightEdge_px - twX));
+                        int ly = Math.Max(0, Math.Min(15, centerY_px - twY));
+                        if (SharedPhysics.TileOccupiesPixel(col, lx, ly))
+                            result = true;
+                    }
+                }
+            }
 
             // Targeted FWD diagnostic for gap-range states near collapse
             if (result && _frameCounter >= 2020 && _frameCounter <= 2042 && playerY_px >= 288 && playerY_px <= 350)
