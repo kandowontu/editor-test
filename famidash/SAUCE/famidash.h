@@ -432,6 +432,7 @@ uint8_t songplaying;
 uint8_t tempsong;
 uint8_t temptemp6;
 uint8_t make_cube_jump_higher;
+uint8_t fartmode;
 
 uint8_t animating;
 uint8_t coin1_timer;
@@ -464,6 +465,8 @@ uint8_t minicoins;
 #if !__VS_SYSTEM
 uint16_t auto_practicepoint_timer;
 #endif
+
+uint8_t cheated;
 
 // Sprite Storage
 lohi_arr16_decl(activesprites_x, max_loaded_sprites);

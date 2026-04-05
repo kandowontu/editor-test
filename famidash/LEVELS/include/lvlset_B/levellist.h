@@ -7,6 +7,7 @@ const uint8_t difficulty_list[] = {
 	EASY,	// darkparadise
 	EASY,	// xmaschallenge
 	NORMAL,	// ninox
+	NORMAL,	// somewhereinaforest
 	HARD,	// lookatthislevel
 	HARD,	// ajollyretrochristmas
 	HARD,	// ultiatedestruction
@@ -25,15 +26,15 @@ const uint8_t difficulty_list[] = {
 	HARDER,	// thesteamworks
 	INSANE,	// rainingtacos
 	INSANE,	// dorabaebasic10
+	INSANE,	// offtomars
+	INSANE,	// akrile
 	INSANE,	// subtleoddities
 	INSANE,	// powertrip
 	INSANE,	// danceofviolins
+	INSANE,	// birdbrain
 	INSANE,	// aprettyeasylevel
+	INSANE,	// tetrix
 	INSANE,	// highlife
-	DEMON,	// infinitecircles
-	DEMON,	// decode
-	DEMON,	// clutterfunk2
-	DEMON,	// skeletalshenanigans
 };
 
 const uint8_t stars_list[] = {
@@ -42,6 +43,7 @@ const uint8_t stars_list[] = {
 	2,	// darkparadise
 	2,	// xmaschallenge
 	3,	// ninox
+	3,	// somewhereinaforest
 	4,	// lookatthislevel
 	5,	// ajollyretrochristmas
 	5,	// ultiatedestruction
@@ -60,13 +62,13 @@ const uint8_t stars_list[] = {
 	7,	// thesteamworks
 	8,	// rainingtacos
 	8,	// dorabaebasic10
+	8,	// offtomars
+	8,	// akrile
 	8,	// subtleoddities
 	8,	// powertrip
 	8,	// danceofviolins
+	9,	// birdbrain
 	9,	// aprettyeasylevel
+	9,	// tetrix
 	9,	// highlife
-	10,	// infinitecircles
-	10,	// decode
-	10,	// clutterfunk2
-	10,	// skeletalshenanigans
 };

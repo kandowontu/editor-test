@@ -32,8 +32,8 @@
 #define song_stereo_madness 31
 #define song_dry_out 32
 #define song_xstep 33
-#define song_scheming_weasel 34
-#define song_retray 35
-#define song_jumper 36
+#define song_retray 34
+#define song_jumper 35
+#define song_scheming_weasel 36
 #define song_the_challenge 37
 #define song_max 38

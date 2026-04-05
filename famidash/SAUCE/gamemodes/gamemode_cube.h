@@ -33,7 +33,7 @@ void cube_movement(){
 	Generic.x = high_byte(currplayer_x); // the rest should be the same
 	Generic.y = high_byte(currplayer_y); // the rest should be the same
 
-
+	update_currplayer_table_idx();
 
 
 	if ((gamemode == GAMEMODE_CUBE && currplayer_vel_y == 0 && dashing[currplayer] == 0) || (gamemode == GAMEMODE_CUBE && (kandokidshack == 9 && dashing[currplayer] == 0)) || (gamemode == GAMEMODE_NINJA && !retro_mode)){		//cube
@@ -140,7 +140,7 @@ void cube_movement(){
 	else if (gamemode == GAMEMODE_FOOTBALL) {
 		
 		if (controllingplayer->hold & (PAD_A | PAD_UP) && !orbed[currplayer]) { chargepower[currplayer]++; }
-		if (chargepower[currplayer] >= 45) { chargepower[currplayer] = 0; orbed[currplayer] = 1; }
+		if (chargepower[currplayer] >= 50) { chargepower[currplayer] = 0; orbed[currplayer] = 1; }
 		
 	}
 	
@@ -148,9 +148,11 @@ void cube_movement(){
 		
 		orbed[currplayer] = 0;
 		
-		tmp3 = chargepower[currplayer];
+		tmp3 = (chargepower[currplayer] > 45 ? 45 : chargepower[currplayer]);
 		
-		tmpA = (tmp3 * (currplayer_gravity ? 0x004C : -0x004C));
+		tmpA = tmp3 * 0x004C;
+		
+		if (!currplayer_gravity) tmpA = -tmpA;
 		
 		if (chargepower[currplayer] && currplayer_vel_y == 0) { currplayer_vel_y = tmpA; }
 		

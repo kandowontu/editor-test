@@ -8398,9 +8398,7 @@ namespace FamidashEditor
                 }
 
                 // OOB top / wrap mode: NES x_movement checks screen-relative Y.
-                // NES has a bug where dual disables OOB death (!dual guard), but
-                // for correctness we enforce OOB death even during dual so players
-                // that fly out of the cam-locked viewport are killed.
+                // NES enforces OOB death even during dual mode.
                 {
                     int screenRelY = s.Y_fixed - s.CameraY_fixed;
                     if (!s.WrapMode)
@@ -11044,6 +11042,8 @@ namespace FamidashEditor
                     if (dsid == 0x22 && !s.DualActive)
                     {
                         s.DualActive = true;
+                        // NES sets target_scroll_y from the dual portal's Y (spcl_dual_pt)
+                        s.TargetCameraY_fixed = Math.Max(0, (sp.AnchorY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
                         s.P2_Y_fixed = s.Y_fixed;
                         s.P2_VelY_fixed = -s.VelY_fixed;
                         s.P2_GravFlipped = !s.GravFlipped;

@@ -28,7 +28,7 @@
 		.incbin "EXPORTS/extraordinaryexcitement.lz.0.bin" ; Size: 8134
 
 
-.segment "DAT_BANK_01"	; Total bank size: 8191 bytes
+.segment "DAT_BANK_01"	; Total bank size: 8150 bytes
 	.export level_data_dash
 	level_data_dash:
 	; Header
@@ -106,7 +106,7 @@
 		.incbin "EXPORTS/rainbowtylenol.lz.0.bin" ; Size: 8017
 
 
-.segment "DAT_BANK_04"	; Total bank size: 7792 bytes
+.segment "DAT_BANK_04"	; Total bank size: 7781 bytes
 	.export level_data_groundtospace
 	level_data_groundtospace:
 	; Header
@@ -129,7 +129,7 @@
 		.byte $00 ;___________________________________ Starting ground color
 		.byte 27 ;____________________________________ Level height
 	; Level data
-		.incbin "EXPORTS/groundtospace.lz.bin" ; Size: 7774
+		.incbin "EXPORTS/groundtospace.lz.bin" ; Size: 7763
 
 
 .segment "DAT_BANK_05"	; Total bank size: 8192 bytes
@@ -218,7 +218,7 @@
 		.incbin "EXPORTS/polargeist.lz.bin" ; Size: 1743
 
 
-.segment "DAT_BANK_07"	; Total bank size: 8171 bytes
+.segment "DAT_BANK_07"	; Total bank size: 8166 bytes
 	.export level_data_bloodbathbutno
 	level_data_bloodbathbutno:
 	; Header
@@ -265,7 +265,7 @@
 		.byte $13 ;____________________________ Starting ground color
 		.byte 27 ;_____________________________ Level height
 	; Level data
-		.incbin "EXPORTS/jumper.lz.bin" ; Size: 1905
+		.incbin "EXPORTS/jumper.lz.bin" ; Size: 1900
 
 
 .segment "DAT_BANK_09"	; Total bank size: 8186 bytes
@@ -938,7 +938,7 @@
 		.incbin "EXPORTS/thelightningroad.lz.bin" ; Size: 2765
 
 
-.segment "DAT_BANK_1D"	; Total bank size: 7794 bytes
+.segment "DAT_BANK_1D"	; Total bank size: 8135 bytes
 	.export level_data_subzero
 	level_data_subzero:
 	; Header
@@ -1040,7 +1040,7 @@
 		.incbin "EXPORTS/stereomadness.lz.bin" ; Size: 1846
 
 
-.segment "DAT_BANK_21"	; Total bank size: 8183 bytes
+.segment "DAT_BANK_21"	; Total bank size: 8166 bytes
 	.export level_data_dryout
 	level_data_dryout:
 	; Header
@@ -1089,8 +1089,6 @@
 	; Level data
 		.incbin "EXPORTS/backontrack.lz.bin" ; Size: 1382
 
-
-.segment "DAT_BANK_22"	; Total bank size: 7684 bytes
 	.export level_data_thetower
 	level_data_thetower:
 	; Header
@@ -1105,12 +1103,36 @@
 		.byte ($80) ;____________________________ Y Scroll Position (low byte)
 		.byte ($07) ;____________________________ Max Fall Speed (high byte)
 		.byte (1 << 0) | (1 << 1) ;______________ Force platformer, Disable parallax
-		.byte _DECO1 ;___________________________ Deco type
+		.byte _EXTRASPRITES1 ;___________________ Deco type
 		.byte _SPIKESA ;_________________________ Spike set
 		.byte _BLOCKSB ;_________________________ Block set
 		.byte _SAWBLADESA ;______________________ Sawblade set
 		.byte $03 ;______________________________ Starting background color
-		.byte $02 ;______________________________ Starting ground color
+		.byte $0F ;______________________________ Starting ground color
 		.byte 32 ;_______________________________ Level height
 	; Level data
-		.incbin "EXPORTS/thetower.lz.bin" ; Size: 985
+		.incbin "EXPORTS/thetower.lz.bin" ; Size: 1354
+
+	.export level_data_thesewers
+	level_data_thesewers:
+	; Header
+		.byte <sprite_data_thesewers ;____________ Sprite data ptr, low byte
+		.byte >sprite_data_thesewers ;____________ Sprite data ptr, high byte
+		.byte <(.bank(sprite_data_thesewers)) ;___ Sprite data bank
+		.byte song_scheming_weasel ;______________ Song ID
+		.byte (0 << 4) | 0 ;______________________ Starting game mode and speed
+		.byte ($A0) ;_____________________________ Spawn Y Position (high byte)
+		.byte ($00) ;_____________________________ Spawn Y Position (low byte)
+		.byte ($02) ;_____________________________ Y Scroll Position (high byte)
+		.byte ($80) ;_____________________________ Y Scroll Position (low byte)
+		.byte ($07) ;_____________________________ Max Fall Speed (high byte)
+		.byte (1 << 0) | (1 << 1) ;_______________ Force platformer, Disable parallax
+		.byte _EXTRASPRITES1 ;____________________ Deco type
+		.byte _SPIKESA ;__________________________ Spike set
+		.byte _BLOCKSB ;__________________________ Block set
+		.byte _SAWBLADESA ;_______________________ Sawblade set
+		.byte $1A ;_______________________________ Starting background color
+		.byte $0F ;_______________________________ Starting ground color
+		.byte 48 ;________________________________ Level height
+	; Level data
+		.incbin "EXPORTS/thesewers.lz.bin" ; Size: 940

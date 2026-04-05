@@ -57,6 +57,8 @@ void state_game(){
 	#ifdef level_luckydraw
 	if (level == level_luckydraw && (options & platformer) ) { options ^= platformer; tempplat = 1; }
 	#endif
+	fartmode = 0;
+	fartmode = (newrand() & 0xFF);
 	coin1_timer = 0;
 	coin2_timer = 0;
 	coin3_timer = 0;
@@ -65,10 +67,14 @@ void state_game(){
 	kandokidshack3 = 0;
 	kandokidshack4 = 0;
 	animating = 0;
+	orbactive = 0;
+	nocamlock = 0;
+	currplayer = 0;
+	END_LEVEL_TIMER = 0;
+	kandoframecnt = 0;
+	practice_point_count = 0;
 	memfill(trail_sprites_visible, 0, sizeof(trail_sprites_visible));
 	memfill(attemptCounter, 0, sizeof(attemptCounter));
-	practice_point_count = 0;
-	orbactive = 0;
 	
 	outline_color = 0x30;
 
@@ -82,7 +88,6 @@ void state_game(){
 
 	// set_tile_banks();
 	
-	nocamlock = 0;
 	use_auto_chrswitch = 1;
 
 	pal_bg(paletteDefault);
@@ -92,7 +97,6 @@ void state_game(){
 
 	oam_clear();
     
-	currplayer = 0;
 	controllingplayer = &joypad1;
 //	current_transition_timer_length = 0;
 	mmc3_set_prg_bank_1(GET_BANK(reset_level));
@@ -108,8 +112,6 @@ void state_game(){
 	
 	update_currplayer_table_idx();
 
-	END_LEVEL_TIMER = 0;
-	kandoframecnt = 0;
 
 	
 	iconbank = (icon<<1) + 40;
@@ -295,10 +297,10 @@ void set_player_banks() {
 			iconbank1 = 22; iconbank2 = 26; iconbank3 = 18;
 		}
 		
-		if ((gamemode == GAMEMODE_NINJA && !retro_mode) || gamemode == GAMEMODE_SNAKE) mmc3_set_2kb_chr_bank_0(NINJABANK);
+		if ((gamemode == GAMEMODE_NINJA && !retro_mode) || (gamemode == GAMEMODE_SNAKE && fartmode)) mmc3_set_2kb_chr_bank_0(NINJABANK);
 		else if ((currplayer_mini && (gamemode != GAMEMODE_CUBE && gamemode != GAMEMODE_BALL && gamemode != GAMEMODE_ROBOT && gamemode != GAMEMODE_FOOTBALL)) || (gamemode == GAMEMODE_SWING) || (gamemode == GAMEMODE_WAVE || gamemode == GAMEMODE_SNAKE || gamemode == GAMEMODE_POGO)) mmc3_set_2kb_chr_bank_0(iconbank2);
 		else if (gamemode == GAMEMODE_CUBE || gamemode == GAMEMODE_SHIP || gamemode == GAMEMODE_UFO) mmc3_set_2kb_chr_bank_0(iconbank3);
-		else if (gamemode == GAMEMODE_FOOTBALL) mmc3_set_2kb_chr_bank_0(FOOTBALLBANK);
+		else if (gamemode == GAMEMODE_FOOTBALL || (gamemode == GAMEMODE_SNAKE && !fartmode)) mmc3_set_2kb_chr_bank_0(FOOTBALLBANK);
 		else mmc3_set_2kb_chr_bank_0(iconbank1);
 
 }
@@ -489,10 +491,10 @@ void everything_else() {
 				famistudio_music_pause(0);
 				if (kandokidshack != 9) kandokidshack = 0;
 				if (kandokidshack2 != 7) kandokidshack2 = 0;
-				if ((DEBUG_MODE != 2 && DEBUG_MODE != 3) && kandokidshack3 == 12) DEBUG_MODE = !DEBUG_MODE;
+				if ((DEBUG_MODE != 2 && DEBUG_MODE != 3) && kandokidshack3 == 12) { DEBUG_MODE = !DEBUG_MODE; cheated = 1; }
 				if ((DEBUG_MODE == 1) && kandokidshack3 == (0b00010010 + 0b00001100)) DEBUG_MODE = 2;
 				if ((DEBUG_MODE == 2) && kandokidshack4 == (0b00001001 + 0b00011010 + 0b01000111 - 0b01000000)) DEBUG_MODE = 3;
-				else if (kandokidshack3 == 20) kandodebugmode ^= 1;
+				else if (kandokidshack3 == 20) { kandodebugmode ^= 1; cheated = 1; }
 				else kandokidshack3 = 0;
 			}
 			#endif	// No pause in arcade
@@ -502,6 +504,7 @@ void everything_else() {
 			if (joypad1.press_select && practice_point_count == 0)
 				{ 
 					DEBUG_MODE = !DEBUG_MODE; 
+					cheated = 1;
 					cube_data[0] &= 2; 
 					cube_data[1] &= 2; 
 					//if (!DEBUG_MODE) nocamlock = 0;
@@ -510,6 +513,7 @@ void everything_else() {
 		if (practice_point_count > 1 && (joypad1.press_select || (mouse.left && mouse.right_press)) && !(joypad1.hold & (PAD_UP | PAD_DOWN))) {
 			curr_practice_point--;
 			if (latest_practice_point) latest_practice_point--;
+			// TODO for alex: "cc65 what the fuck"
 			if (curr_practice_point >= practice_point_count)
 				curr_practice_point = practice_point_count - 1;
 		}

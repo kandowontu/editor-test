@@ -57,6 +57,12 @@
 			originalArtistText: "ELITEFERREX",
 		},
 		{
+			fmsSongName: "Birdbrain",
+			upperText: "BIRDBRAIN",
+			lowerText: "HEV MIX",
+			originalArtistText: "JAMIE PAIGE",
+		},
+		{
 			fmsSongName: "Chaoz Fantasy Extended",
 			lowerText: "CHAOZ FANTASY",
 			originalArtistText: "PARAGONX9",
@@ -65,12 +71,6 @@
 			fmsSongName: "Check Out",
 			lowerText: "CHECK OUT",
 			originalArtistText: "MADHOUSEDUDE",
-		},
-		{
-			fmsSongName: "clutterfunk 2",
-			lowerText: "CLUTTERFUNK 2",
-			originalArtistText: "WATERFLAME",
-			/* no vs system to speak of */
 		},
 		{
 			fmsSongName: "Cryogenic",
@@ -88,21 +88,6 @@
 			upperText: "DRIVING BY",
 			lowerText: "NIGHT",
 			originalArtistText: "REINNBOW",
-		},
-		{
-			fmsSongName: "endgame",
-			lowerText: "ENDGAME",
-			originalArtistText: "WATERFLAME",
-			vsSystemEnabled: true,
-			nsfData: {
-				trackLabel: "Decode ~ Endgame",
-				trackAuthor: {
-					original: "Waterflame",
-					cover: "Vikrinox"
-				},
-				durationNTSC: 79283,
-				durationPAL: 95280
-			}
 		},
 		{
 			fmsSongName: "Factory Time",
@@ -132,12 +117,6 @@
 			originalArtistText: "PARAGONX9",
 		},	
 		{
-			fmsSongName: "Infinite Power",
-			upperText: "INFINITE",
-			lowerText: "POWER",
-			originalArtistText: "THEFATRAT",
-		},	
-		{
 			fmsSongName: "kesobomb",
 			lowerText: "KESOBOMB",
 			originalArtistText: "RYMDKRAFT",
@@ -157,12 +136,17 @@
 			fmsSongName: "Meowstuff",
 			lowerText: "MEOWSTUFF",
 			originalArtistText: "DAVINCE",
-		},	
+		},
 		{
 			fmsSongName: "Ninox",
 			lowerText: "NINOX",
 			originalArtistText: "MEGANEKO",
 		},
+		{
+        	fmsSongName: "Off to Mars",
+	        lowerText: "OFF TO MARS",
+        	originalArtistText: "COSMICSPACE33",
+        },
 		{
 			fmsSongName: "Power Trip",
 			lowerText: "POWER TRIP",
@@ -185,16 +169,16 @@
 			originalArtistText: "CRAFTY JUMPER"
 		},
 		{
-			fmsSongName: "Slash Inferno",
-			upperText: "SLASH",
-			lowerText: "INFERNO",
-			originalArtistText: "WF TEM BKIT"
-		},
-		{
 			fmsSongName: "Snow!",
 			lowerText: "SNOW",
 			originalArtistText: "WATERFLAME"
 		},
+		{
+			fmsSongName: "Somewhere in a Forest",
+			upperText: "SOMEWHERE",
+			lowerText: "IN A FOREST",
+			originalArtistText: "CAM TOBY TEM",
+		},	
 		{
 			fmsSongName: "Stereo madness 2",
 			upperText: "STEREO ",
@@ -206,6 +190,11 @@
 			upperText: "SUBTLE",
 			lowerText: "ODDITIES",
 			originalArtistText: "LEMON DEMON",
+		},
+		{
+			fmsSongName: "The Explorer",
+			lowerText: "THE EXPLORER",
+			originalArtistText: "SPAZEMUSIC",
 		},
 		{
 			fmsSongName: "Tiny Tunes",

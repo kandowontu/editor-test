@@ -1587,7 +1587,7 @@ const unsigned char Mini_Spider_3_ALT[]={
 	 -4,  -4,0x27,3,
 	0x80
 };
-const unsigned char * const MINI_SPIDER[]={Mini_Spider_0, Mini_Spider_0, Mini_Spider_0, Mini_Spider_0, Mini_Spider_1, Mini_Spider_1, Mini_Spider_1, Mini_Spider_1, Mini_Spider_2, Mini_Spider_2, Mini_Spider_2, Mini_Spider_2, Mini_Spider_3, Mini_Spider_3, Mini_Spider_3, Mini_Spider_3, Mini_Spider_0, Mini_Spider_0, Mini_Spider_0, Mini_Spider_0};
+const unsigned char * const MINI_SPIDER[]={Mini_Spider_0, Mini_Spider_0, Mini_Spider_0, Mini_Spider_0, Mini_Spider_1, Mini_Spider_1, Mini_Spider_1, Mini_Spider_1, Mini_Spider_0, Mini_Spider_0, Mini_Spider_0, Mini_Spider_0, Mini_Spider_2, Mini_Spider_2, Mini_Spider_2, Mini_Spider_2, Mini_Spider_3, Mini_Spider_3, Mini_Spider_3, Mini_Spider_3};
 const unsigned char * const MINI_SPIDER_ALT[]={Mini_Spider_0_ALT, Mini_Spider_0_ALT, Mini_Spider_0_ALT, Mini_Spider_0_ALT, Mini_Spider_1_ALT, Mini_Spider_1_ALT, Mini_Spider_1_ALT, Mini_Spider_1_ALT, Mini_Spider_2_ALT, Mini_Spider_2_ALT, Mini_Spider_2_ALT, Mini_Spider_2_ALT, Mini_Spider_3_ALT, Mini_Spider_3_ALT, Mini_Spider_3_ALT, Mini_Spider_3_ALT, Mini_Spider_0_ALT, Mini_Spider_0_ALT, Mini_Spider_0_ALT, Mini_Spider_0_ALT};
 const unsigned char * const MINI_SPIDER_JUMP[]={Mini_Spider_3};
 
@@ -1615,7 +1615,7 @@ const unsigned char Mini_Spider2_3[]={
 	0x80
 };
 
-const unsigned char * const MINI_SPIDER2[]={Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_1, Mini_Spider2_1, Mini_Spider2_1, Mini_Spider2_1, Mini_Spider2_2, Mini_Spider2_2, Mini_Spider2_2, Mini_Spider2_2, Mini_Spider2_3, Mini_Spider2_3, Mini_Spider2_3, Mini_Spider2_3, Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_0};
+const unsigned char * const MINI_SPIDER2[]={Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_1, Mini_Spider2_1, Mini_Spider2_1, Mini_Spider2_1, Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_0, Mini_Spider2_2, Mini_Spider2_2, Mini_Spider2_2, Mini_Spider2_2, Mini_Spider2_3, Mini_Spider2_3, Mini_Spider2_3, Mini_Spider2_3};
 
 const unsigned char * const MINI_SPIDER_JUMP2[]={Mini_Spider2_3};
 
@@ -3018,6 +3018,21 @@ const struct SpriteFrame RANDOM_GAMEMODE_PORTAL[]={
 	{10, Portal_Gamemode_Swing},
 };
 
+const struct SpriteFrame SUPER_RANDOM_GAMEMODE_PORTAL[]={
+	{10, Portal_Gamemode_Cube},
+	{10, Portal_Gamemode_Ship},
+	{10, Portal_Gamemode_Ball},
+	{10, Portal_Gamemode_UFO},
+	{10, Portal_Gamemode_Robot},
+	{10, Portal_Gamemode_Spider},
+	{10, Portal_Gamemode_Wave},
+	{10, Portal_Gamemode_Swing},
+	{10, Portal_Gamemode_Ninja},
+	{10, Portal_Gamemode_Pogo},
+	{10, Portal_Gamemode_Snake},
+	{10, Portal_Gamemode_Football},
+};
+
 const struct SpriteFrame MINI_COIN_SPRITES[]={
 	{5, MINICOIN_SPRITE1},
 	{5, MINICOIN_SPRITE2},
@@ -3394,6 +3409,8 @@ const unsigned char * const Metasprites[]={
 	WHITE_ORB1,
 	Blue_Jump_Orb,
 	Green_Jump_Orb,
+	nometa,
+	Portal_Gamemode_Cube
 	};
 
 
@@ -3528,6 +3545,8 @@ const void* const animation_frame_list[] = {
 	WHITE_ORB_SPRITES,
 	BLUE_ORB_SPRITES,
 	GREEN_ORB_SPRITES,
+	NULL,
+	SUPER_RANDOM_GAMEMODE_PORTAL,
 };
 
 // Number of UNIQUE animation frames
@@ -3661,6 +3680,8 @@ const unsigned char animation_frame_length[] = {
 	sizeof(WHITE_ORB_SPRITES) / sizeof(struct SpriteFrame),
 	sizeof(BLUE_ORB_SPRITES) / sizeof(struct SpriteFrame),
 	sizeof(GREEN_ORB_SPRITES) / sizeof(struct SpriteFrame), 
+	0,
+	sizeof(SUPER_RANDOM_GAMEMODE_PORTAL) / sizeof(struct SpriteFrame), 
 };
 
 #pragma rodata-name (pop)
