@@ -471,6 +471,7 @@ namespace FamidashEditor
 
         // Pre-sorted sprite list for efficient processing
         private readonly List<SpriteEntry> allSprites;
+        private SpriteEntry[] _spritesArr; // array view for indexed access + binary search
 
         // Coin-specific list (subset of allSprites with coin sprite IDs)
         private readonly List<SpriteEntry> allCoins;
@@ -863,6 +864,7 @@ namespace FamidashEditor
             }
 
             allSprites.Sort((a, b) => a.AnchorX_px.CompareTo(b.AnchorX_px));
+            _spritesArr = allSprites.ToArray();
 
             // Build mode portal position list (reserved for future use)
             _modePortalPositions = new List<(int X, int Y)>();
@@ -2330,6 +2332,20 @@ namespace FamidashEditor
         private const int BFS_MAX_FRONTIER = 60000;
 
         /// <summary>
+        /// Binary search: find first index in _spritesArr with AnchorX_px >= targetX_px.
+        /// </summary>
+        private int SpriteLowerBound(int targetX_px)
+        {
+            int lo = 0, hi = _spritesArr.Length;
+            while (lo < hi)
+            {
+                int mid = (lo + hi) >> 1;
+                if (_spritesArr[mid].AnchorX_px < targetX_px) lo = mid + 1; else hi = mid;
+            }
+            return lo;
+        }
+
+        /// <summary>
         /// Quantize a SimState into a 64-bit key for deduplication.
         /// Two states with the same key are considered equivalent �
         /// keeping only the one with the better score.
@@ -2513,6 +2529,17 @@ namespace FamidashEditor
                 // Best partial tracking (for incomplete runs)
                 int bestFrame = -1, bestIdx = -1, bestX = startX_px;
 
+                // Pre-allocate expansion arrays and candidate lists (reused each frame)
+                int maxExpand = BFS_MAX_FRONTIER * 2;
+                var rState = new SimState[maxExpand];
+                var rAlive = new bool[maxExpand];
+                var rEnd   = new bool[maxExpand];
+                var candState  = new List<SimState>(maxExpand);
+                var candParent = new List<int>(maxExpand);
+                var candInput  = new List<bool>(maxExpand);
+                var candCoins  = new List<int>(maxExpand);
+                var candScore  = new List<int>(maxExpand);
+
                 for (int frame = 0; frame < MAX_FRAMES && frontier.Count > 0; frame++)
                 {
                     if (CancelRequested) break;
@@ -2530,10 +2557,7 @@ namespace FamidashEditor
                     }
                     // -- Expand all frontier states with both inputs (PARALLEL) --
                     int expandCount = frontier.Count * 2;
-                    // Pre-allocate flat arrays � each slot is independent, no locking needed
-                    var rState = new SimState[expandCount];
-                    var rAlive = new bool[expandCount];
-                    var rEnd   = new bool[expandCount];
+                    // Reuse pre-allocated arrays (only first expandCount slots used)
 
                     Parallel.For(0, expandCount, k =>
                     {
@@ -2548,11 +2572,11 @@ namespace FamidashEditor
 
                     // Sequential post-processing of parallel results
 
-                    var candState  = new List<SimState>(expandCount);
-                    var candParent = new List<int>(expandCount);
-                    var candInput  = new List<bool>(expandCount);
-                    var candCoins  = new List<int>(expandCount);
-                    var candScore  = new List<int>(expandCount);
+                    candState.Clear();
+                    candParent.Clear();
+                    candInput.Clear();
+                    candCoins.Clear();
+                    candScore.Clear();
                     int deathCount = 0;
                     bool trackDeathTypes = (frame >= 2000 && frame <= 2070);
                     int[]? frameDtCounts = trackDeathTypes ? new int[13] : null;
@@ -2583,6 +2607,7 @@ namespace FamidashEditor
                             // Track death types per frame for detailed logging
                             if (frameDtCounts != null) frameDtCounts[rState[k].DeathType]++;
                             // Track deaths of Y=260-290 reversed-grav states near death zone
+#if !DISABLE_DEBUG_LOGGING
                             if (frame >= 2020 && frame <= 2040)
                             {
                                 int pi3 = k >> 1;
@@ -2597,6 +2622,7 @@ namespace FamidashEditor
                                     Console.Error.WriteLine($"[GAP_DEATH] f={frame} parentY={py3} parentVelY=0x{ps3.VelY_fixed:X} parentX={ps3.X_fixed>>8} childY={dy3} childVelY=0x{ds3.VelY_fixed:X} childX={ds3.X_fixed>>8} dt={dtN} inp={(k&1)==1}");
                                 }
                             }
+#endif
                             rState[k].ProcessedSprites.Return(); deathCount++; continue;
                         }
 
@@ -2611,6 +2637,7 @@ namespace FamidashEditor
                     }
 
                     // Death zone orb tracking: how many candidates processed each green orb
+#if !DISABLE_DEBUG_LOGGING
                     if (frame >= 1930 && frame <= 2050 && frame % 10 == 0)
                     {
                         // Green orb indices from DZ_SPRITE dump
@@ -2629,8 +2656,10 @@ namespace FamidashEditor
                         }
                         Console.Error.WriteLine($"[ORB_TRACK] f={frame} cands={candState.Count} green392={orbCount[0]} green394={orbCount[1]} green396={orbCount[2]} green398={orbCount[3]} green412={orbCount[4]} red401={redOrbCount} blue414={blueOrbCount} gravPortal401={gravPortalCount}");
                     }
+#endif
 
                     // Y-bin histogram at critical frames
+#if !DISABLE_DEBUG_LOGGING
                     if (frame >= 1990 && frame <= 2040 && frame % 5 == 0)
                     {
                         // Bins: <240, 240-255, 256-271, 272-287, 288-303, 304-319, 320-335, 336-351, >=352
@@ -2646,6 +2675,7 @@ namespace FamidashEditor
                             $"N:<240={binsN[0]} 240={binsN[1]} 256={binsN[2]} 272={binsN[3]} 288={binsN[4]} 304={binsN[5]} 320={binsN[6]} 336={binsN[7]} 352+={binsN[8]} " +
                             $"R:<240={binsR[0]} 240={binsR[1]} 256={binsR[2]} 272={binsR[3]} 288={binsR[4]} 304={binsR[5]} 320={binsR[6]} 336={binsR[7]} 352+={binsR[8]}");
                     }
+#endif
 
                     if (candState.Count == 0)
                     {
@@ -2824,6 +2854,7 @@ namespace FamidashEditor
                     histInput.Add(frameI.ToArray());
 
                     // Log frontier Y distribution near 45% zone
+#if !DISABLE_DEBUG_LOGGING
                     if (nextFrontier.Count > 0)
                     {
                         int fx = nextFrontier[0].X_fixed >> 8;
@@ -2849,6 +2880,7 @@ namespace FamidashEditor
                             System.Console.Error.WriteLine($"[BFS_FRON45] f={frame} X={fx} sz={nextFrontier.Count} Y=[{yMin}..{yMax}] yHigh={yHigh} yLow={yLow} gap={yGapSafe} yOrb={yOrbPending} mode={fMode}");
                         }
                     }
+#endif
 
                     // Track best partial result
                     for (int i = 0; i < nextFrontier.Count; i++)
@@ -7478,8 +7510,11 @@ namespace FamidashEditor
                 bool isMultiOrbSweep = (activatedSid == 0x7B || activatedSid == 0x7C);
                 if (!isMultiOrbSweep)
                 {
-                    foreach (var sp in allSprites)
+                    int orbSweepStart = SpriteLowerBound(oldX_px - 4 * TILE);
+                    for (int _oi = orbSweepStart; _oi < _spritesArr.Length; _oi++)
                     {
+                        ref readonly var sp = ref _spritesArr[_oi];
+                        if (sp.AnchorX_px - TILE > sweepPlayerRight + TILE) break;
                         if (sp.SpriteId != activatedSid) continue;
                         if (s.ProcessedSprites.Contains(sp.Index)) continue;
                         bool xO = !(sweepPlayerRight < sp.HitLeft || sp.HitRight < sweepNesX);
@@ -10991,8 +11026,12 @@ namespace FamidashEditor
             // first). PF iterates sprites by index, so a gamemode portal at a lower
             // index can halve VelY before the dual portal captures it for P2.  Fix:
             // process dual/single portals in an earlier pass, matching SIM order.
-            foreach (var sp in allSprites)
+            var sprArr = _spritesArr;
+            int sprLen = sprArr.Length;
+            int sprStart = SpriteLowerBound(currentX_px - 4 * TILE);
+            for (int _si = sprStart; _si < sprLen; _si++)
             {
+                ref readonly var sp = ref sprArr[_si];
                 if (s.ProcessedSprites.Contains(sp.Index)) continue;
                 if (sp.HitRight < currentX_px) continue;
                 if (sp.AnchorX_px - TILE > playerRight + TILE) break;
@@ -11043,8 +11082,9 @@ namespace FamidashEditor
                 }
             }
 
-            foreach (var sp in allSprites)
+            for (int _si = sprStart; _si < sprLen; _si++)
             {
+                ref readonly var sp = ref sprArr[_si];
                 if (s.ProcessedSprites.Contains(sp.Index)) continue;
                 // Use strict < (not <=) because blue pads use padLeft = currentX_px
                 // (no +1 offset). NES check_collision treats exclusive-bound == start
@@ -11406,8 +11446,10 @@ namespace FamidashEditor
             // Gravity portal checks are logged individually inside the loop
 #endif
 
-            foreach (var sp in allSprites)
+            int gmStart = SpriteLowerBound(prevX_px - 4 * TILE);
+            for (int _gm = gmStart; _gm < _spritesArr.Length; _gm++)
             {
+                ref readonly var sp = ref _spritesArr[_gm];
                 if (s.ProcessedSprites.Contains(sp.Index)) continue;
                 if (sp.HitRight <= prevX_px) continue;
                 if (sp.AnchorX_px - TILE > playerRight + TILE) break;
@@ -11453,8 +11495,10 @@ namespace FamidashEditor
             int playerTop = (s.Y_fixed >> 8) + SharedPhysics.GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
             int playerBottom = playerTop + hitboxH - 1;
 
-            foreach (var sp in allSprites)
+            int gmStart = SpriteLowerBound(playerX_px - 4 * TILE);
+            for (int _gm = gmStart; _gm < _spritesArr.Length; _gm++)
             {
+                ref readonly var sp = ref _spritesArr[_gm];
                 if (s.ProcessedSprites.Contains(sp.Index)) continue;
                 if (sp.HitRight <= playerLeft) continue;
                 if (sp.AnchorX_px - TILE > playerRight + TILE) break;
@@ -11521,8 +11565,10 @@ namespace FamidashEditor
             const int CAMERA_CENTER_OFFSET = 0x3000; // (NES_W*TILE/2 - 80) << 8
             int center_fixed = s.X_fixed + CAMERA_CENTER_OFFSET;
 
-            foreach (var sp in allSprites)
+            int spStart = SpriteLowerBound((s.X_fixed >> 8) - 4 * TILE);
+            for (int _si = spStart; _si < _spritesArr.Length; _si++)
             {
+                ref readonly var sp = ref _spritesArr[_si];
                 if (s.ProcessedSprites.Contains(sp.Index)) continue;
                 int sid = sp.SpriteId;
                 if (!IsSpeedPortal(sid)) continue;
@@ -11550,8 +11596,10 @@ namespace FamidashEditor
             const int CAMERA_CENTER_OFFSET = 0x3000;
             int center_fixed = s.X_fixed + CAMERA_CENTER_OFFSET;
 
-            foreach (var sp in allSprites)
+            int gmtStart = SpriteLowerBound((s.X_fixed >> 8) - 4 * TILE);
+            for (int _si = gmtStart; _si < _spritesArr.Length; _si++)
             {
+                ref readonly var sp = ref _spritesArr[_si];
                 if (s.ProcessedSprites.Contains(sp.Index)) continue;
                 int sid = sp.SpriteId;
                 if (sid < 0x70 || sid > 0x74) continue;
