@@ -99,20 +99,8 @@ namespace FamidashEditor
                     gravityReversed = true;
                     UpdateCurrplayerTableIdx_Fresh();
                     
-                    // Scan upward for ceiling
+                    // Scan upward for ceiling (positions player at ceiling surface)
                     SpiderUpWait_Fresh();
-                    
-                    // Apply eject to position correctly (matching famidash: scan then eject)
-                    int groundRowsToReserve_up = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                    int hitboxH_up = (miniMode) ? 8 : 15;
-                    int hitboxW_up = (miniMode) ? 8 : 15;
-                    int hitboxOffsetY_up = (miniMode) ? 8 : 0;  // Was normal gravity before flip
-                    int playerX_up = playerX_fixed >> 8;
-                    int playerY_up = playerY_fixed >> 8;
-                    var (collided_up, ejectAmount_up) = BgCollU_Spider(playerX_up, playerY_up + hitboxOffsetY_up, hitboxW_up, hitboxH_up, groundRowsToReserve_up);
-                    if (collided_up) {
-                        playerY_fixed = ((playerY_up - ejectAmount_up) << 8);
-                    }
                     
                     playerVelY_fixed = 0;
                     try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
@@ -139,21 +127,8 @@ namespace FamidashEditor
                     gravityReversed = false;
                     UpdateCurrplayerTableIdx_Fresh();
                     
-                    // Scan downward for floor
+                    // Scan downward for floor (positions player at floor surface)
                     SpiderDownWait_Fresh();
-                    
-                    // Apply eject to position correctly (matching famidash: scan then eject)
-                    int groundRowsToReserve_down = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                    bool isMini_down = (miniMode);
-                    int hitboxW_down = isMini_down ? 8 : 15;
-                    int hitboxH_down = isMini_down ? 7 : 15;
-                    int hitboxOffsetY_down = isMini_down ? ((0x10 - hitboxH_down) >> 1) : 0;
-                    int playerX_down = playerX_fixed >> 8;
-                    int playerY_down = playerY_fixed >> 8;
-                    var (collided_down, ejectAmount_down) = BgCollD_Spider(playerX_down, playerY_down + hitboxOffsetY_down, hitboxW_down, hitboxH_down, groundRowsToReserve_down);
-                    if (collided_down) {
-                        playerY_fixed = ((playerY_down - ejectAmount_down) << 8);
-                    }
                     
                     playerVelY_fixed = 0;
                     try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }

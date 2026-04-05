@@ -2524,16 +2524,33 @@ namespace FamidashEditor
                     // Check for collision
                     if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     {
-                        // Defer dual exit: keep dual=true so P2 still runs physics
-                        // this frame. The actual sync + dual=false happens after P2's
-                        // physics completes (see PLAYER2_END section).
-                        singlePortalExitPending = true;
+                        // NES spcl_sngl_pt: dual=0, player_y[0]=currplayer_y,
+                        // player_gravity[0]=currplayer_gravity, player_vel_y[0]=currplayer_vel_y.
+                        // Whichever player hits the portal copies its state to player_*[0].
+                        if (currplayer == 0)
+                        {
+                            // P1 hits portal: exit dual immediately.  NES sets dual=0
+                            // during P1's sprite_collide; the unconditional player_*[0]
+                            // save after physics means P1 keeps its own state.  P2 won't
+                            // run because the dual block checks `if (dual)`.
+                            dual = false;
+                            _prevDualActiveForP2Path = false;
+                            AppendSimDebug($"[SINGLE_PORTAL] P1 hit portal — immediate dual=false idx={idx}");
+                        }
+                        else
+                        {
+                            // P2 hits portal: NES copies currplayer's (P2's) Y/gravity/vel
+                            // to player_*[0], overwriting P1's saved state.  P2 continues
+                            // physics this frame.  Deferred exit sets dual=false after P2.
+                            player_y_fixed[0] = playerY_fixed;
+                            player_gravity[0] = currplayer_gravity;
+                            player_vel_y_fixed[0] = playerVelY_fixed;
+                            singlePortalExitPending = true;
+                            AppendSimDebug($"[SINGLE_PORTAL] P2 hit portal — synced P2 state to P1: Y={playerY_fixed>>8} vel=0x{playerVelY_fixed:X4} grav={currplayer_gravity:X2} idx={idx}");
+                        }
                         
-                        AppendSimDebug($"[SINGLE_PORTAL] Player {checkPlayer + 1} hit portal (deferred exit) idx={idx}");
-                        
-                        // Mark as activated so neither player re-detects it
                         processedMiniPortals.Add(idx);
-                        return; // Exit after first collision
+                        return;
                     }
                 }
             }
@@ -3054,16 +3071,12 @@ namespace FamidashEditor
                                 UpdateCurrplayerTableIdx_Fresh();
                                 
                                 // Scan upward for ceiling
+                                // NES spider_up_wait() scans in 8px steps, bg_coll_U_spider()
+                                // detects collision and sets eject_U. The scan applies the eject
+                                // internally to position player at ceiling surface. The NES orb
+                                // handler's "high_byte(y) -= eject_U" uses the SAME eject_U
+                                // already consumed by the scan, so no second eject is needed.
                                 SpiderUpWait_Fresh();
-                                
-                                // Apply final eject (eject_U in famidash)
-                                int finalY = playerY_fixed >> 8;
-                                var (collided_final, eject_final) = BgCollU_Spider(playerX_px, finalY, hitboxW, hitboxH, groundRowsToReserve);
-                                if (collided_final)
-                                {
-                                    playerY_fixed -= (eject_final << 8);
-                                    AppendSimDebug($"[SPIDER_ORB/PAD] Ejected from ceiling by {eject_final}px");
-                                }
                                 playerVelY_fixed = 0;
                                 
                                 // Set orbed flag
@@ -3094,19 +3107,8 @@ namespace FamidashEditor
                                 UpdateCurrplayerTableIdx_Fresh();
                                 
                                 // Scan downward for floor
+                                // Same as UP: scan already positions player at floor surface.
                                 SpiderDownWait_Fresh();
-                                
-                                // Apply final eject (eject_D in famidash)
-                                int finalY = playerY_fixed >> 8;
-                                bool isMiniLocal = (currplayer_mini != 0);
-                                int hitboxHLocal = isMiniLocal ? 7 : 15;
-                                hitboxOffsetY = isMiniLocal ? ((0x10 - hitboxHLocal) >> 1) : 0;
-                                var (collided_final, eject_final) = BgCollD_Spider(playerX_px, finalY + hitboxOffsetY, hitboxW, hitboxH, groundRowsToReserve);
-                                if (collided_final)
-                                {
-                                    playerY_fixed -= (eject_final << 8);
-                                    AppendSimDebug($"[SPIDER_ORB/PAD] Ejected from floor by {eject_final}px");
-                                }
                                 playerVelY_fixed = 0;
                                 
                                 // Set orbed flag
@@ -4609,12 +4611,13 @@ namespace FamidashEditor
                 }
                 catch { }
 
-                // OOB death / wrap mode: NES x_movement checks screen-relative Y
-                // Conditions: NOT dual, NOT twoplayer
+                // OOB death / wrap mode: NES x_movement checks screen-relative Y.
+                // NES has a bug where dual disables OOB death (!dual guard), but
+                // for correctness we enforce OOB death even during dual so players
+                // that fly out of the cam-locked viewport are killed.
                 try
                 {
-                    if (physicsEnabled && jumpedOnce && !deathTriggered && !MainWindow.Option_NoDeath
-                        && !dual && !twoplayer)
+                    if (physicsEnabled && jumpedOnce && !deathTriggered && !MainWindow.Option_NoDeath)
                     {
                         int screenRelY = playerY_fixed - cameraY_fixed;
                         if (!wrapMode)
@@ -11082,7 +11085,7 @@ namespace FamidashEditor
                         // currplayer_was_on_slope_counter or currplayer_slope_frames is non-zero
                         // (collision.h line 405-407). This prevents false wall-deaths when
                         // the player recently left a slope.
-                        if (!MainWindow.Option_NoDeath && !hblocked && !deathTriggered && !ShouldSkipSideCollisionForSlope())
+                        if (!MainWindow.Option_NoDeath && !deathTriggered && !ShouldSkipSideCollisionForSlope())
                         {
                             bool needsForwardCheck = currentGameMode == 0 || // Cube
                                                     currentGameMode == 1 || // Ship
@@ -11144,6 +11147,22 @@ namespace FamidashEditor
                                 }
                                 
                                 bool middlePixelBlocked = CheckPixelCollision(playerRightEdge_fwd, playerCenterY_fwd, groundRowsToReserve_fwd);
+                                // NES bg_coll_sides: COL_FLOOR_CEIL and COL_NO_SIDE never block side collision.
+                                // CheckPixelCollision treats them as solid (correct for floor/ceiling),
+                                // but they must be excluded for forward/side collision.
+                                if (middlePixelBlocked)
+                                {
+                                    int fwdTX = playerRightEdge_fwd / TILE;
+                                    int fwdTY = playerCenterY_fwd / TILE;
+                                    int fwdTIY = fwdTY + groundRowsToReserve_fwd;
+                                    if (fwdTX >= 0 && fwdTX < mapWidth && fwdTIY >= 0 && fwdTIY < mapHeight)
+                                    {
+                                        int fwdTid = tiles[fwdTIY * mapWidth + fwdTX];
+                                        var fwdCol = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(fwdTid));
+                                        if (fwdCol == MetatileCollision.COL_FLOOR_CEIL || fwdCol == MetatileCollision.COL_NO_SIDE)
+                                            middlePixelBlocked = false;
+                                    }
+                                }
                                 
                                 // NES bg_side_coll_common calls bg_coll_spikes() at the forward
                                 // probe, setting cube_data |= 1 for spike death.  The death is
@@ -11624,18 +11643,16 @@ namespace FamidashEditor
                             
                             AppendSimDebug($"[PLAYER2_END] Player 2 final state: X={player_x_fixed[1]>>8} Y={player_y_fixed[1]>>8}");
                             
-                            // --- Deferred single portal exit (Fix 30: match PF behavior) ---
-                            // The PF simply sets DualActive=false; P1 keeps its own state.
-                            // Previously we synced P1 to P2's post-physics state, which
-                            // clobbered P1's gravity/position when the two players had
-                            // different gravity states (e.g. reversed vs normal).
+                            // --- Deferred single portal exit (NES match) ---
+                            // Only fires when P2 hit the portal (P1 case exits immediately).
+                            // P2's CheckSinglePortal already overwrote player_*[0] with
+                            // P2's pre-physics Y/gravity/vel (matching NES spcl_sngl_pt).
                             if (singlePortalExitPending)
                             {
                                 singlePortalExitPending = false;
                                 dual = false;
                                 _prevDualActiveForP2Path = false;
-                                // P1 keeps its own saved state from P1_SAVE — no sync needed.
-                                AppendSimDebug($"[SINGLE_PORTAL_EXIT] dual=false, P1 keeps own state: Y={player_y_fixed[0]>>8}, velY={player_vel_y_fixed[0]:X4}, grav={player_gravity[0]:X2}");
+                                AppendSimDebug($"[SINGLE_PORTAL_EXIT] dual=false, P1 gets P2's state: Y={player_y_fixed[0]>>8}, velY={player_vel_y_fixed[0]:X4}, grav={player_gravity[0]:X2}");
                             }
                             
                             // Capture P2 state needed for sprite update before switching back to P1.

@@ -72,9 +72,13 @@ namespace FamidashEditor
                     {
                         playerVelY_fixed = tempVelY;
                         
-                        // Consume the X press if it was used for orb
-                        if (pressJump_orb)
-                            Interlocked.Exchange(ref keyXPressedCount, 0);
+                        // NES does NOT consume the press/hold flags after orb activation.
+                        // Both sprite_gamemode_main (orb) and cube_movement (jump) share
+                        // the same input for the entire frame.  If the orb bounces the
+                        // player into a surface and CubeEject zeros velocity, the jump
+                        // check must still see the press so it can fire (matching PF
+                        // which uses a single 'input' boolean for both).
+                        // orbHoldConsumedKeyStillDown already prevents orb re-activation.
                     }
                     
                     // Clear orb buffer when X is released
@@ -277,6 +281,8 @@ namespace FamidashEditor
                 // ProcessSprites sets jblocked → gravity → eject → jump check reads jblocked → clear)
                 // Previously these were cleared inside CubeEject_Fresh, BEFORE the jump check,
                 // which caused Path 2 (pressJump && jblocked) to never fire.
+                // hblocked is also cleared here — it was consumed during CubeEject_Fresh
+                // for the ceiling eject.  Forward collision does NOT check hblocked.
                 jblocked = false;
                 fblocked = false;
                 hblocked = false;
@@ -453,62 +459,88 @@ namespace FamidashEditor
                 return;
             }
 
-            // SIM-specific: hblocked/fblocked head-bonk handling (not in SharedPhysics)
-            int hitboxW = SharedPhysics.GetCubeHitboxW(mini);
-            int hitboxH = SharedPhysics.GetCubeHitboxH(mini);
-            int hitboxOffsetY = SharedPhysics.GetHitboxOffsetY(currentGameMode, mini, gravFlipped);
-            int playerY_px = playerY_fixed >> 8;
-            int collisionX = playerX_fixed >> 8;
-            int collisionY = playerY_px + hitboxOffsetY;
-
-            if (!gravFlipped)
+            // NES cube_eject() hblocked/fblocked handling (gamemode_cube.h lines 201-237).
+            // SharedPhysics.CubeEject already handled the normal direction (floor for
+            // normal grav, ceiling for reversed grav).  When hblocked||fblocked, the
+            // NES code ALSO checks the opposite direction.  Both can fire in one frame.
+            //
+            // After the normal-direction eject:
+            //   hblocked → velocity = 0xFFFF (floor) or 1 (ceiling) instead of 0
+            // Opposite-direction eject:
+            //   Enabled when hblocked||fblocked
+            //   bg_coll_U guard: vel < 0  |  bg_coll_D guard: vel >= 0
+            //   hblocked → velocity = 1 (ceiling) or 0xFFFF (floor) instead of 0
+            //   fblocked → flip gravity
+            if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 11) && (hblocked || fblocked))
             {
-                // Normal gravity: Check TOP collision for hblocked/fblocked eject
-                if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (hblocked || fblocked))
+                int hitboxW = SharedPhysics.GetCubeHitboxW(mini);
+                int hitboxH = SharedPhysics.GetCubeHitboxH(mini);
+                int hitboxOffsetY = SharedPhysics.GetHitboxOffsetY(currentGameMode, mini, gravFlipped);
+
+                // NES cube_eject() inline behavior:
+                //   Primary eject (bg_coll_D for normal grav) sets vel=0xFFFF when hblocked.
+                //   Then secondary eject (bg_coll_U) sees vel=0xFFFF → guard (vel<0) passes.
+                // SharedPhysics.CubeEject sets vel=0 (WasZeroed). Fix velocity BEFORE
+                // the opposite-direction check so the guard evaluates correctly.
+
+                // Step 1: WasZeroed velocity fix (matches NES inline vel assignment).
+                if (hblocked && wasZeroedByCollisionLastFrame)
                 {
-                    var (topCollided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
-                    if (topCollided)
+                    if (!gravFlipped)
                     {
-                        int newY = collisionBottomY - hitboxOffsetY;
-                        AppendSimDebug($"[CUBE]     Eject up ({(hblocked ? "H BLOCK" : "F BLOCK")}): collisionBottom={collisionBottomY}, newY={newY} (was {playerY_px})");
-                        playerY_fixed = newY << 8;
+                        AppendSimDebug($"[CUBE]     H_BLOCK normal-dir fix: velY 0 -> -1");
+                        playerVelY_fixed = -1;  // NES 0xFFFF = -1 signed 16-bit
+                    }
+                    else
+                    {
+                        AppendSimDebug($"[CUBE]     H_BLOCK normal-dir fix: velY 0 -> 1");
+                        playerVelY_fixed = 1;
+                    }
+                }
 
-                        if (!hblocked)
-                            playerVelY_fixed = 0;
-                        else
-                            playerVelY_fixed = 1;
-
-                        if (fblocked)
+                // Step 2: Opposite-direction eject (NES secondary bg_coll_U / bg_coll_D).
+                int collisionX = playerX_fixed >> 8;
+                if (!gravFlipped)
+                {
+                    // Normal grav → opposite = ceiling (bg_coll_U).  Guard: vel < 0.
+                    if ((short)(playerVelY_fixed & 0xFFFF) < 0)
+                    {
+                        int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
+                        var (topCollided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
+                        if (topCollided)
                         {
-                            currplayer_gravity = 0xFF;
-                            gravityFlipped = true;
-                            currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            int newY = collisionBottomY - hitboxOffsetY;
+                            AppendSimDebug($"[CUBE]     H/F_BLOCK ceiling eject: Y {playerY_fixed >> 8} -> {newY}, velY -> {(hblocked ? "1" : "0")}");
+                            playerY_fixed = newY << 8;
+                            playerVelY_fixed = hblocked ? 1 : 0;
+                            if (fblocked)
+                            {
+                                currplayer_gravity = 0xFF;
+                                gravityFlipped = true;
+                                currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            }
                         }
                     }
                 }
-            }
-            else
-            {
-                // Reversed gravity: Check BOTTOM collision for hblocked/fblocked eject
-                if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8) && (hblocked || fblocked))
+                else
                 {
-                    var (bottomCollided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
-                    if (bottomCollided)
+                    // Reversed grav → opposite = floor (bg_coll_D).  Guard: vel >= 0.
+                    if ((short)(playerVelY_fixed & 0xFFFF) >= 0)
                     {
-                        int newY = collisionTopY - hitboxH - hitboxOffsetY;
-                        AppendSimDebug($"[CUBE]     Eject down ({(hblocked ? "H BLOCK" : "F BLOCK")}): collisionTop={collisionTopY}, newY={newY} (was {playerY_px})");
-                        playerY_fixed = newY << 8;
-
-                        if (!hblocked)
-                            playerVelY_fixed = 0;
-                        else
-                            playerVelY_fixed = unchecked((int)0xffff);
-
-                        if (fblocked)
+                        int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
+                        var (bottomCollided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
+                        if (bottomCollided)
                         {
-                            currplayer_gravity = 0;
-                            gravityFlipped = false;
-                            currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            int newY = collisionTopY - hitboxH - hitboxOffsetY;
+                            AppendSimDebug($"[CUBE]     H/F_BLOCK floor eject: Y {playerY_fixed >> 8} -> {newY}, velY -> {(hblocked ? "-1" : "0")}");
+                            playerY_fixed = newY << 8;
+                            playerVelY_fixed = hblocked ? -1 : 0;  // NES 0xFFFF = -1 signed 16-bit
+                            if (fblocked)
+                            {
+                                currplayer_gravity = 0;
+                                gravityFlipped = false;
+                                currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            }
                         }
                     }
                 }

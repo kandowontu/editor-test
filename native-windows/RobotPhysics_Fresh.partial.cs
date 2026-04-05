@@ -39,9 +39,11 @@ namespace FamidashEditor
                     playerVelY_fixed = tempVelY;
                     AppendSimDebug($"[ROBOT] Orb activated! New velY={playerVelY_fixed}");
                     
-                    // Consume the X press if it was used for orb
-                    if (pressJump_orb)
-                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                    // NES does NOT consume the press after orb activation in robot mode.
+                    // cube_data is read once at the top of cube_movement() and both orb
+                    // activation and robot jump-start use the same snapshot.  After a
+                    // gravity-flip orb, CubeEject can zero velY, and the robot jump-start
+                    // check (press && velY==0) legitimately fires on the same frame.
                 }
                 
                 // Clear orb buffer when X is released
@@ -130,6 +132,14 @@ namespace FamidashEditor
             
             // NES x_movement_coll: decrement slope_frames + apply_slope_vel
             UpdateSlopeCounters_Fresh();
+            
+            // Clear alphabet block flags at end of movement (gamemode_cube.h line 161-163).
+            // These are set by ProcessSprites each frame and consumed during physics.
+            // Must clear here — cube mode clears in CubePhysics_Fresh but robot mode
+            // needs its own clearing since it's a separate function.
+            jblocked = false;
+            fblocked = false;
+            hblocked = false;
             
             // Record trail (skip during pathfinder speculative simulation)
             if (!pfSimulating)

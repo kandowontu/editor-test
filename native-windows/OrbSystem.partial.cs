@@ -625,6 +625,12 @@ namespace FamidashEditor
 
                 if (!isDashOrb) continue;
 
+                // Skip dash orbs while already dashing (matches PF and NES behavior).
+                // NES sprite_gamemode_main() requires a fresh press (cube_data & 2 || press)
+                // to activate — during continuous hold (dashing), the inner condition fails
+                // so the orb is NOT consumed.  PF skips with: if (s.Dashing != 0) continue;
+                if (dashing[currplayer] != 0) continue;
+
                 // Check for collision
                 if (!CheckOrbCollision(idx, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     continue;

@@ -1474,6 +1474,13 @@ namespace FamidashEditor
             int mappedTid = MapTileForCollision(tileId);
             var collision = MetatileCollisionTable.GetCollision((byte)mappedTid);
 
+            // NES bg_coll_sides() returns 0 for COL_FLOOR_CEIL (falls through switch)
+            // and COL_NO_SIDE has no case in bg_coll_sides or bg_coll_mini_blocks.
+            // These tiles only block vertically, never horizontally.
+            if (collision == MetatileCollision.COL_FLOOR_CEIL ||
+                collision == MetatileCollision.COL_NO_SIDE)
+                return false;
+
             int tileWorldX = tileX * TILE;
             int tileWorldY = tileY * TILE;
             int localX = Math.Max(0, Math.Min(TILE - 1, rightEdge_px - tileWorldX));

@@ -61,6 +61,9 @@ namespace FamidashEditor
                 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x10,0x10, // F0-F7
                 0x10,0x10,0x1F,0x10,0x10,0x03,0x03,0x00  // F8-FF
             };
+            // Trigger sprites (e.g. 0x0F level end) have height 0xFF but must
+            // be treated as interactive so they survive load/save collision resolution.
+            if (IsTriggerSprite(sid)) return true;
             int h = heights[sid];
             // Interactive = height < 0xFC (real collision geometry)
             return h < 0xFC;
