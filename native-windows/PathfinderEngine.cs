@@ -11133,11 +11133,13 @@ namespace FamidashEditor
 #endif
                         if (applied)
                             s.ProcessedSprites.Add(sp.Index);
-                        // Update camera target when entering a non-following mode
-                        if (IsGameModePortal(sid) && s.GameMode != prevMode)
+                        // Update camera target on ANY game mode portal hit
+                        // (matching NES: target_scroll_y is set unconditionally
+                        // for ship/UFO/ball/wave/etc portals, even same-mode).
+                        if (IsGameModePortal(sid) && applied)
                         {
-                            bool newModeFollowsY = (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9);
-                            if (!newModeFollowsY)
+                            bool modeFollowsY = (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9);
+                            if (!modeFollowsY)
                             {
                                 int portalWorldY_px = sp.AnchorY_px;
                                 s.TargetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
@@ -11490,6 +11492,17 @@ namespace FamidashEditor
 #endif
                     if (applied)
                         s.ProcessedSprites.Add(sp.Index);
+                    // Update camera target on ANY game mode portal hit (NES sets
+                    // target_scroll_y unconditionally, even for same-mode portals).
+                    if (IsGameModePortal(sid) && applied)
+                    {
+                        bool modeFollowsY = (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9);
+                        if (!modeFollowsY)
+                        {
+                            int portalWorldY_px = sp.AnchorY_px;
+                            s.TargetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                        }
+                    }
                     break; // only one portal per frame (matching sim's break)
                 }
             }
