@@ -7,7 +7,9 @@ namespace FamidashEditor
     public partial class SimulatorWindow
     {
         // ===== PATHFINDER STATE =====
-        private bool pathfinderEnabled = false;
+        private volatile bool pathfinderEnabled = false;
+        // Remember user's explicit preference across sim open/close (static survives window re-creation)
+        private static bool? _pathfinderUserPref = null;
         private volatile bool pfSimulating = false; // kept for compatibility with physics guards (always false now)
 
         // Precomputed input sequence from editor's PathfinderEngine

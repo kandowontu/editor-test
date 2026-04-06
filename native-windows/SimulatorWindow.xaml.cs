@@ -127,6 +127,12 @@ namespace FamidashEditor
                 if (s == 0xDD || s == 0xED) return true;
                 // Always hide wrap mode portal sprites (they are invisible triggers)
                 if (s == 0x8E || s == 0x9E) return true;
+                // Always hide timewarp triggers
+                if (s == 0xF4 || s == 0xF5) return true;
+                // Always hide player visibility triggers
+                if (s == 0x6F || s == 0x7F) return true;
+                // Always hide player trail triggers
+                if (s == 0xF2 || s == 0xF3) return true;
                 if (!hideTriggerSprites) return false;
                 return false;
             }
@@ -1035,7 +1041,7 @@ namespace FamidashEditor
             catch { return false; }
         }
 
-        private bool SpriteIntersectsPlayer(int idx, int sid, int playerLeft_px, int playerRight_px, int playerTop_px, int playerBottom_px)
+        private bool SpriteIntersectsPlayer(int idx, int sid, int playerLeft_px, int playerRight_px, int playerTop_px, int playerBottom_px, bool ignoreSentinels = false)
         {
             try
             {
@@ -1065,7 +1071,9 @@ namespace FamidashEditor
                 int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
                 int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
                 // NES sprite_collide() skips DECO/COLR/OUTL/SPBH sentinels (height >= 0xFC)
-                if (hh >= 0xFC) return false;
+                // But trigger/portal sprites (timewarp, trails, hide, freecam) are SPBH and
+                // need collision detection — callers pass ignoreSentinels=true for those.
+                if (!ignoreSentinels && hh >= 0xFC) return false;
                 int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
                 // Use SharedPhysics.sprite_y_offset (same as PF) — SIM's local table has +8
                 // globalObjectOffset baked into bottom pad entries, causing hitbox mismatch
@@ -1273,6 +1281,9 @@ namespace FamidashEditor
         private System.Windows.Shapes.Rectangle? playerRect = null;
         private System.Windows.Controls.Image? player2Image = null;  // Player 2 visual for dual mode
         private System.Windows.Shapes.Rectangle? player2Rect = null;  // Player 2 rectangle fallback
+        
+        // Trail ghost images (3 ghost copies rendered behind the player)
+        private System.Windows.Controls.Image?[] trailGhosts = new System.Windows.Controls.Image?[3];
         
         // When player crosses interaction line, remember the screen pixel offset where the crossing occurred
         // so the camera can follow the player while keeping them at that screen X.
@@ -2370,7 +2381,7 @@ namespace FamidashEditor
                     {
                         if (processedCamLockPortals.Contains(idx)) continue;
 
-                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px, true))
                         {
                             nocamlockforced = isCamLockOn;
                             processedCamLockPortals.Add(idx);
@@ -2382,7 +2393,7 @@ namespace FamidashEditor
                     {
                         if (processedWrapPortals.Contains(idx)) continue;
 
-                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px, true))
                         {
                             wrapMode = isWrapOn;
                             processedWrapPortals.Add(idx);
@@ -2396,6 +2407,66 @@ namespace FamidashEditor
             {
                 AppendSimDebug($"[CAM_LOCK] Error: {ex.Message}");
             }
+        }
+
+        // Check for timewarp (0xF4=slowmode ON, 0xF5=slowmode OFF),
+        // hide player (0x6F=hide, 0x7F=show), and trail triggers (0xF2=trails ON, 0xF3=trails OFF)
+        private void CheckMiscTriggers()
+        {
+            try
+            {
+                int playerX_px = (playerX_fixed >> 8) + 1;
+                int playerY_px = playerY_fixed >> 8;
+                bool isMini = (currplayer_mini != 0);
+                int hitboxW = isMini ? 8 : 15;
+                int hitboxH = isMini ? 7 : 15;
+                playerY_px += GetMiniSpriteOffsetY();
+                int playerLeft_px = playerX_px;
+                int playerRight_px = playerX_px + hitboxW - 1;
+                int playerTop_px = playerY_px;
+                int playerBottom_px = playerY_px + hitboxH - 1;
+
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                {
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    if (sid < 0) continue;
+
+                    // Timewarp
+                    if (sid == 0xF4 || sid == 0xF5)
+                    {
+                        if (processedTimewarpTriggers.Contains(idx)) continue;
+                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px, true))
+                        {
+                            slowMode = (sid == 0xF4);
+                            processedTimewarpTriggers.Add(idx);
+                            continue;
+                        }
+                    }
+                    // Hide player
+                    else if (sid == 0x6F || sid == 0x7F)
+                    {
+                        if (processedPlayerInvisTriggers.Contains(idx)) continue;
+                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px, true))
+                        {
+                            playerInvis = (sid == 0x6F);
+                            processedPlayerInvisTriggers.Add(idx);
+                            continue;
+                        }
+                    }
+                    // Player trails
+                    else if (sid == 0xF2 || sid == 0xF3)
+                    {
+                        if (processedTrailTriggers.Contains(idx)) continue;
+                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px, true))
+                        {
+                            forcedTrails = (sid == 0xF2) ? 2 : 0;
+                            processedTrailTriggers.Add(idx);
+                            continue;
+                        }
+                    }
+                }
+            }
+            catch { }
         }
 
         /// <summary>
@@ -2527,6 +2598,18 @@ namespace FamidashEditor
                         // NES spcl_sngl_pt: dual=0, player_y[0]=currplayer_y,
                         // player_gravity[0]=currplayer_gravity, player_vel_y[0]=currplayer_vel_y.
                         // Whichever player hits the portal copies its state to player_*[0].
+
+                        // Set target_scroll_y from the portal's Y position (matching dual portal behavior)
+                        try
+                        {
+                            int storageTileY = idx / mapWidth;
+                            int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
+                            targetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                            AppendSimDebug($"[SINGLE_PORTAL] Set targetCameraY={targetCameraY_fixed >> 8}px from portal at tileY={storageTileY}");
+                        }
+                        catch { }
+
                         if (currplayer == 0)
                         {
                             // P1 hits portal: exit dual immediately.  NES sets dual=0
@@ -3404,6 +3487,18 @@ namespace FamidashEditor
         // Wrap mode: 0x8E = wrap ON, 0x9E = wrap OFF (NES x_movement wrap_mode)
         private bool wrapMode = false;
         private System.Collections.Generic.HashSet<int> processedWrapPortals = new System.Collections.Generic.HashSet<int>();
+        // Timewarp: 0xF4 = slowmode ON (0.5x), 0xF5 = slowmode OFF (NES: slowmode / kandoframecnt)
+        private bool slowMode = false;
+        private System.Collections.Generic.HashSet<int> processedTimewarpTriggers = new System.Collections.Generic.HashSet<int>();
+        // Hide player: 0x6F = hide, 0x7F = show (NES: player_invis)
+        private bool playerInvis = false;
+        private System.Collections.Generic.HashSet<int> processedPlayerInvisTriggers = new System.Collections.Generic.HashSet<int>();
+        // Player trails: 0xF2 = trails ON (forced_trails=2), 0xF3 = trails OFF (NES: forced_trails)
+        private int forcedTrails = 0;
+        private System.Collections.Generic.HashSet<int> processedTrailTriggers = new System.Collections.Generic.HashSet<int>();
+        private int[] playerOldPosY = new int[9]; // sliding window of old Y positions (index 0 = newest)
+        // Simulation tick counter (incremented every SimulateNumericStep call), used for trails flicker
+        private int simTickCount = 0;
         // Smooth camera Y target for non-cube modes (ship/ball/UFO/spider/wave/swing)
         // Matches Famidash target_scroll_y: camera scrolls smoothly toward this value
         private int targetCameraY_fixed = 0;
@@ -4074,225 +4169,6 @@ namespace FamidashEditor
             catch { }
         }
 
-        // Scan for last gamemode/mini/gravity/speed portals before target position and apply them
-        private void ApplyPortalStatesUpToPosition(int targetX_px)
-        {
-            try
-            {
-                if (sprites == null || spriteAnchors == null) return;
-                
-                int? lastGamemodeIdx = null, lastGamemodeSid = null, lastGamemodeX = null;
-                int? lastMiniIdx = null, lastMiniSid = null, lastMiniX = null;
-                int? lastGravityIdx = null, lastGravitySid = null, lastGravityX = null;
-                int? lastSpeedIdx = null, lastSpeedSid = null, lastSpeedX = null;
-                int? lastBluePadIdx = null, lastBluePadSid = null, lastBluePadX = null;
-                int? lastCamLockIdx = null, lastCamLockSid = null, lastCamLockX = null;
-                int? lastWrapSid = null, lastWrapX = null;
-                
-                // Find the last portal of each type before target position (by X coordinate, not array order)
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
-                {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
-                    if (sid == -1) continue;
-                    
-                    // Get anchor position
-                    int anchorTileX = spriteAnchors.TryGetValue(idx, out var a) ? a.anchorTileX : idx % mapWidth;
-                    int anchorX_px = anchorTileX * TILE + (TILE / 2);
-                    
-                    // Only consider portals before target
-                    if (anchorX_px <= targetX_px)
-                    {
-                        // Gamemode portals: 0x00=Cube, 0x01=Ship, 0x02=Ball, 0x03=UFO, 0x04=Robot, 0x17=Spider, 0x24=Wave, 0x4B=Swing, 0x58=Ninja, 0x6A=Pogo, 0x6B=Snake, 0x6C=Football
-                        if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58 || sid == 0x6A || sid == 0x6B || sid == 0x6C)
-                        {
-                            if (!lastGamemodeX.HasValue || anchorX_px > lastGamemodeX.Value)
-                            {
-                                lastGamemodeIdx = idx;
-                                lastGamemodeSid = sid;
-                                lastGamemodeX = anchorX_px;
-                            }
-                        }
-                        // Mini/Growth portals: 0x18=Mini, 0x19=Growth
-                        else if (sid == 0x18 || sid == 0x19)
-                        {
-                            if (!lastMiniX.HasValue || anchorX_px > lastMiniX.Value)
-                            {
-                                lastMiniIdx = idx;
-                                lastMiniSid = sid;
-                                lastMiniX = anchorX_px;
-                            }
-                        }
-                        // Gravity portals: 0x08=Down, 0x09=Up, 0x10-0x13=Directional, 0xFB=Down, 0xFC=Up
-                        else if (sid == 0x08 || sid == 0x09 || sid == 0x10 || sid == 0x11 || sid == 0x12 || sid == 0x13 || sid == 0xFB || sid == 0xFC)
-                        {
-                            if (!lastGravityX.HasValue || anchorX_px > lastGravityX.Value)
-                            {
-                                lastGravityIdx = idx;
-                                lastGravitySid = sid;
-                                lastGravityX = anchorX_px;
-                            }
-                        }
-                        // Blue pads: 0x0D=Bottom (flip to up), 0x0E=Top (flip to down), 0xFD=Bottom multi, 0xFE=Top multi
-                        else if (sid == 0x0D || sid == 0x0E || sid == 0xFD || sid == 0xFE)
-                        {
-                            if (!lastBluePadX.HasValue || anchorX_px > lastBluePadX.Value)
-                            {
-                                lastBluePadIdx = idx;
-                                lastBluePadSid = sid;
-                                lastBluePadX = anchorX_px;
-                            }
-                        }
-                        // Speed portals: 0x14=0.5x, 0x15=1x, 0x16=2x, 0x20=3x, 0x21=4x
-                        else if (speedPortalMap.ContainsKey(sid))
-                        {
-                            if (!lastSpeedX.HasValue || anchorX_px > lastSpeedX.Value)
-                            {
-                                lastSpeedIdx = idx;
-                                lastSpeedSid = sid;
-                                lastSpeedX = anchorX_px;
-                            }
-                        }
-                        // Cam lock portals: 0xDD=lock ON, 0xED=lock OFF
-                        else if (sid == 0xDD || sid == 0xED)
-                        {
-                            if (!lastCamLockX.HasValue || anchorX_px > lastCamLockX.Value)
-                            {
-                                lastCamLockIdx = idx;
-                                lastCamLockSid = sid;
-                                lastCamLockX = anchorX_px;
-                            }
-                        }
-                        // Wrap mode portals: 0x8E=wrap ON, 0x9E=wrap OFF
-                        else if (sid == 0x8E || sid == 0x9E)
-                        {
-                            if (!lastWrapX.HasValue || anchorX_px > lastWrapX.Value)
-                            {
-                                lastWrapSid = sid;
-                                lastWrapX = anchorX_px;
-                            }
-                        }
-                    }
-                }
-                
-                // Apply gamemode portal
-                if (lastGamemodeIdx.HasValue && lastGamemodeSid.HasValue)
-                {
-                    int newMode = lastGamemodeSid.Value switch {
-                        0x00 => 0, // Cube
-                        0x01 => 1, // Ship
-                        0x02 => 2, // Ball
-                        0x03 => 3, // UFO
-                        0x04 => 4, // Robot
-                        0x17 => 5, // Spider
-                        0x24 => 6, // Wave
-                        0x4B => 7, // Swing
-                        0x58 => 8, // Ninja
-                        _ => 0
-                    };
-                    currentGameMode = newMode;
-                    try { UpdatePlayerImageForMode(); } catch { }
-                    try { UpdatePlayerVisualSizeForMode(); } catch { }
-                    try { UpdateGameModeDisplay(); } catch { }
-                    // Don't add to processed set - let collision detection handle it during gameplay
-                }
-                
-                // Apply mini/growth portal
-                if (lastMiniIdx.HasValue && lastMiniSid.HasValue)
-                {
-                    bool newMini = (lastMiniSid.Value == 0x18);
-                    miniMode = newMini;
-                    currplayer_mini = (byte)(newMini ? 1 : 0);
-                    try { Dispatcher.BeginInvoke(new Action(() => { if (MiniCheckBox != null) MiniCheckBox.IsChecked = miniMode; })); } catch { }
-                    try { UpdatePlayerImageForMode(); } catch { }
-                    try { UpdatePlayerVisualSizeForMode(); } catch { }
-                    // Don't add to processed set - let collision detection handle it during gameplay
-                }
-                
-                // Apply gravity portal
-                if (lastGravityIdx.HasValue && lastGravitySid.HasValue)
-                {
-                    int sid = lastGravitySid.Value;
-                    // 0x09, 0x12, 0x13, 0xFB = Reverse (up), 0x08, 0x10, 0x11, 0xFC = Normal (down)
-                    bool newGravity = (sid == 0x09 || sid == 0x12 || sid == 0x13 || sid == 0xFB);
-                    gravityReversed = newGravity;
-                    gravityFlipped = newGravity;
-                    currplayer_gravity = (byte)(newGravity ? 0xFF : 0x00);
-                    try { UpdatePlayerIconFlip(); } catch { }
-                    // Don't add to processed set - let collision detection handle it during gameplay
-                }
-                
-                // Apply blue pad (blue pads flip gravity when landed on)
-                // Blue pads take priority over gravity portals if they're at a later X position
-                if (lastBluePadIdx.HasValue && lastBluePadSid.HasValue)
-                {
-                    int sid = lastBluePadSid.Value;
-                    // 0x0D, 0xFD = Bottom blue pad (flip to up/inverted), 0x0E, 0xFE = Top blue pad (flip to down/normal)
-                    bool isBottomPad = (sid == 0x0D || sid == 0xFD);
-                    bool newGravity = isBottomPad; // Bottom pad = inverted gravity
-                    gravityReversed = newGravity;
-                    gravityFlipped = newGravity;
-                    currplayer_gravity = (byte)(newGravity ? 0xFF : 0x00);
-                    try { UpdatePlayerIconFlip(); } catch { }
-                    try { Dispatcher.BeginInvoke(new Action(() => { if (InvertedCheckBox != null) InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
-                    // Don't add to processed set - let collision detection handle it during gameplay
-                }
-                
-                // Apply speed portal
-                if (lastSpeedIdx.HasValue && lastSpeedSid.HasValue)
-                {
-                    if (speedPortalMap.TryGetValue(lastSpeedSid.Value, out int speedFixed))
-                    {
-                        playerVelX_fixed = speedFixed;
-                        // Update speed UI index to match
-                        int speedIndex = lastSpeedSid.Value switch {
-                            0x14 => 0, // 0.5x
-                            0x15 => 1, // 1x
-                            0x16 => 2, // 2x
-                            0x20 => 3, // 3x
-                            0x21 => 4, // 4x
-                            _ => 1
-                        };
-                        speed = speedIndex;
-                        try { UpdateSpeedDisplay(); } catch { }
-                    }
-                    // Mark as processed so collision detection doesn't re-apply it
-                    processedSpeedPortals.Add(lastSpeedIdx.Value);
-                }
-                
-                // Apply cam lock portal
-                if (lastCamLockIdx.HasValue && lastCamLockSid.HasValue)
-                {
-                    nocamlockforced = (lastCamLockSid.Value == 0xDD);
-                }
-
-                // Apply wrap mode portal
-                if (lastWrapSid.HasValue)
-                {
-                    wrapMode = (lastWrapSid.Value == 0x8E);
-                }
-
-                // Set targetCameraY_fixed for the last game mode portal (for smooth cam scroll)
-                if (lastGamemodeIdx.HasValue && lastGamemodeSid.HasValue)
-                {
-                    int gmSid = lastGamemodeSid.Value;
-                    // Non-cube/robot/ninja modes set target_scroll_y
-                    if (gmSid != 0x00 && gmSid != 0x04 && gmSid != 0x58)
-                    {
-                        try
-                        {
-                            int gmIdx = lastGamemodeIdx.Value;
-                            int storageTileY = gmIdx / mapWidth;
-                            int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                            int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
-                            targetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
-        }
-
         private readonly System.Windows.Threading.DispatcherTimer timer;
         // Dedicated background simulation timer to keep simulation at a steady 60Hz
         private System.Threading.Timer? simTimer;
@@ -4549,10 +4425,13 @@ namespace FamidashEditor
                 while (simAccumulatedMs >= SIM_STEP_MS)
                 {
                     stepsThisTick++;
-                    // When pathfinder replay is active, skip catch-up steps to prevent
-                    // consuming multiple PF inputs per timer tick (which desynchronizes replay).
-                    // The sim falls behind by at most 1 frame on lag spikes but stays in sync.
-                    if (pathfinderEnabled && stepsThisTick > 1)
+                    // Limit to one physics step per timer tick to prevent double-advancing
+                    // on lag spikes. pathfinderEnabled was previously checked here but that
+                    // field is written on the UI thread and read here on the threadpool;
+                    // the non-volatile read could cache a stale 'false', disabling the guard
+                    // and causing sporadic 2x/3x X advances that desync PF replay.
+                    // Limiting to 1 step per tick is always correct for a 60Hz simulation.
+                    if (stepsThisTick > 1)
                     {
                         simAccumulatedMs = 0;
                         break;
@@ -5137,6 +5016,16 @@ namespace FamidashEditor
                 System.Windows.Controls.Canvas.SetZIndex(playerImage, 1000);
                 RenderCanvas.Children.Add(playerImage);
 
+                // Create trail ghost images (rendered behind player at lower Z-index)
+                for (int tg = 0; tg < 3; tg++)
+                {
+                    trailGhosts[tg] = new System.Windows.Controls.Image { Stretch = Stretch.None, Opacity = 0.5 };
+                    System.Windows.Media.RenderOptions.SetBitmapScalingMode(trailGhosts[tg], BitmapScalingMode.NearestNeighbor);
+                    System.Windows.Controls.Canvas.SetZIndex(trailGhosts[tg], 997 - tg); // behind player (1000) and P2 (999)
+                    trailGhosts[tg].Visibility = Visibility.Collapsed;
+                    RenderCanvas.Children.Add(trailGhosts[tg]);
+                }
+
                 // Resolve cube.png relative to executable directory (project root is four levels up from bin)
                 try
                 {
@@ -5286,12 +5175,20 @@ namespace FamidashEditor
                 // Auto-enable pathfinder when precomputed inputs exist
                 try
                 {
-                    if (this.Owner is MainWindow mw && mw.PrecomputedPathfinderInputs != null && mw.PrecomputedPathfinderInputs.Count > 0)
+                    bool hasInputs = this.Owner is MainWindow mw && mw.PrecomputedPathfinderInputs != null && mw.PrecomputedPathfinderInputs.Count > 0;
+                    // Use saved user preference if set, otherwise auto-enable when inputs exist
+                    bool shouldEnable = _pathfinderUserPref.HasValue ? _pathfinderUserPref.Value : hasInputs;
+                    if (shouldEnable && hasInputs)
                     {
                         pathfinderEnabled = true;
                         PF_LoadPrecomputedInputs();
                         try { PathfinderCheckBox.IsChecked = true; } catch { }
-                        AppendSimDebug($"[PATHFINDER] Auto-enabled with {mw.PrecomputedPathfinderInputs.Count} inputs");
+                        AppendSimDebug($"[PATHFINDER] Auto-enabled with {((MainWindow)this.Owner!).PrecomputedPathfinderInputs!.Count} inputs");
+                    }
+                    else
+                    {
+                        pathfinderEnabled = false;
+                        try { PathfinderCheckBox.IsChecked = false; } catch { }
                     }
                 }
                 catch { }
@@ -6060,6 +5957,7 @@ namespace FamidashEditor
             lock (simLock)
             {
                 pathfinderEnabled = PathfinderCheckBox.IsChecked == true;
+                _pathfinderUserPref = pathfinderEnabled;
                 if (pathfinderEnabled)
                 {
                     // Load precomputed inputs from editor
@@ -6323,6 +6221,18 @@ namespace FamidashEditor
                 wrapMode = false;
                 targetCameraY_fixed = 0;
                 
+                // Reset timewarp, player visibility, and trail state
+                slowMode = false;
+                playerInvis = false;
+                forcedTrails = 0;
+                simTickCount = 0;
+                Array.Clear(playerOldPosY, 0, playerOldPosY.Length);
+                try { processedTimewarpTriggers.Clear(); } catch { }
+                try { processedPlayerInvisTriggers.Clear(); } catch { }
+                try { processedTrailTriggers.Clear(); } catch { }
+                // Hide trail ghosts on restart
+                try { for (int tg = 0; tg < 3; tg++) { if (trailGhosts[tg] != null) trailGhosts[tg].Visibility = Visibility.Collapsed; } } catch { }
+                
                 // Reset dual mode state
                 dual = false;
                 _prevDualActiveForP2Path = false;
@@ -6330,12 +6240,9 @@ namespace FamidashEditor
                 currplayer = 0;
                 twoplayer = false;
 
-                // Apply portal states and color triggers if using START POS
+                // Apply color triggers if using START POS
                 if (hasStartPos)
                 {
-                    // Scan for last gamemode/mini/gravity/speed portals before START POS
-                    try { ApplyPortalStatesUpToPosition(startX_px); } catch { }
-                    // Apply color triggers (already done earlier, but clear processed list first)
                     try { processedColorTriggers.Clear(); } catch { }
                     try { ApplyColorTriggersUpToPosition(startX_px); } catch { }
                 }
@@ -6537,7 +6444,7 @@ namespace FamidashEditor
                         hasAppliedStartPos = true;
                         startPosX_forMusicSeek = startX_px;
                         
-                        // Apply starting speed from level config before scanning portals
+                        // Apply starting speed from level config
                         try
                         {
                             int speedFixed = startingSpeedUiIndex switch
@@ -6555,10 +6462,6 @@ namespace FamidashEditor
                             try { UpdateSpeedDisplay(); } catch { }
                         }
                         catch { }
-                        
-                        // Apply portals (gamemode, mini, gravity, speed) up to START POS
-                        // Speed portals will override the starting speed if present
-                        try { ApplyPortalStatesUpToPosition(startX_px); } catch { }
                         
                         // Apply color triggers up to this position
                         ApplyColorTriggersUpToPosition(startX_px);
@@ -9728,6 +9631,10 @@ namespace FamidashEditor
                     // Always hide freecam portal sprites (invisible triggers)
                     if (s == 0xDD || s == 0xED) continue;
                     if (s == 0x8E || s == 0x9E) continue;
+                    // Always hide timewarp, player visibility, and trail triggers
+                    if (s == 0xF4 || s == 0xF5) continue;
+                    if (s == 0x6F || s == 0x7F) continue;
+                    if (s == 0xF2 || s == 0xF3) continue;
 
                     // If the global 'hide trigger sprites' option is enabled, skip drawing
                     // these specific trigger sprite images while still allowing them to
@@ -10215,8 +10122,8 @@ namespace FamidashEditor
 
                 // Path recording moved to SimulateNumericStep for better performance (60Hz instead of 144Hz+)
 
-                // Hide player completely in cam mode
-                if (camModeActive)
+                // Hide player completely in cam mode or when player is invisible
+                if (camModeActive || playerInvis)
                 {
                     if (playerImage != null) playerImage.Visibility = Visibility.Collapsed;
                     if (playerRect != null) playerRect.Visibility = Visibility.Collapsed;
@@ -10234,6 +10141,42 @@ namespace FamidashEditor
                     System.Windows.Controls.Canvas.SetTop(playerRect, playerPixelY);
                     playerRect.Visibility = Visibility.Visible;
                 }
+
+                // Render trail ghosts when forcedTrails is active
+                // NES trails=2: 3 ghost copies, each offset backwards by vel_x*2 pixels,
+                // Y from playerOldPosY sliding window, only on even sim ticks (flicker effect)
+                try
+                {
+                    bool showTrails = forcedTrails > 0 && !camModeActive && !playerInvis && (simTickCount & 1) == 0;
+                    for (int tg = 0; tg < 3; tg++)
+                    {
+                        if (trailGhosts[tg] == null) continue;
+                        if (!showTrails)
+                        {
+                            trailGhosts[tg].Visibility = Visibility.Collapsed;
+                            continue;
+                        }
+                        // Copy current player sprite to ghost
+                        if (playerImage != null && playerImage.Source != null)
+                        {
+                            trailGhosts[tg].Source = playerImage.Source;
+                            trailGhosts[tg].Width = playerImage.Width;
+                            trailGhosts[tg].Height = playerImage.Height;
+                        }
+                        // Position: offset backwards by vel_x*2 per ghost index
+                        int velXPx = playerVelX_fixed >> 8;
+                        int ghostX = playerPixelX - (velXPx * 2 * (tg + 1));
+                        // Y from old position history (index 0=newest; use tg*2 for spacing)
+                        int histIdx = Math.Min((tg + 1) * 2, playerOldPosY.Length - 1);
+                        int ghostY = (playerOldPosY[histIdx] >> 8) - (snapCameraY >> 8) + gridRenderShiftYPx;
+                        if (snapMiniMode) ghostY += 4;
+                        System.Windows.Controls.Canvas.SetLeft(trailGhosts[tg], ghostX);
+                        System.Windows.Controls.Canvas.SetTop(trailGhosts[tg], ghostY);
+                        trailGhosts[tg].Opacity = 0.4 - (tg * 0.1); // fading opacity: 0.4, 0.3, 0.2
+                        trailGhosts[tg].Visibility = Visibility.Visible;
+                    }
+                }
+                catch { }
             }
             catch { }
 
@@ -10516,6 +10459,14 @@ namespace FamidashEditor
                 // Respect pause: do not advance numeric simulation when paused.
                 if (paused) return;
                 
+                // Increment simulation tick counter (used for timewarp and trail timing)
+                simTickCount++;
+                
+                // Timewarp (slowMode): skip every other physics frame, matching NES behavior
+                // On skipped frames, just return — no physics, no rendering update needed
+                if (slowMode && (simTickCount & 1) != 0)
+                    return;
+                
                 AppendSimDebug($"[STEP_START] playerX_fixed=0x{playerX_fixed:X4} ({playerX_fixed >> 8}px), playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
 
                 // === PATHFINDER AI INPUT INJECTION ===
@@ -10575,6 +10526,7 @@ namespace FamidashEditor
                 // changes mini mid-loop, PF still uses the old hitbox size for speed portal
                 // overlap. SIM must match by snapshotting mini here.
                 bool entryMiniMode_sp = miniMode;
+                int entryPlayerY_fixed_sp = playerY_fixed; // Snapshot Y for speed portal overlap (PF caches Y at ProcessSprites entry)
                 if (physicsEnabled)
                 {
                     try
@@ -10610,6 +10562,9 @@ namespace FamidashEditor
                         // Check for cam lock portal activation (0xDD=lock, 0xED=unlock)
                         CheckCamLockPortals();
                         
+                        // Check for timewarp, hide player, and trail triggers
+                        CheckMiscTriggers();
+                        
                         // Check for pad collision
                         CheckPadCollision();
                         CheckSpiderOrbPadCollision();
@@ -10644,7 +10599,7 @@ namespace FamidashEditor
                             int playerRight_sp1 = nesX_sp1 + hitboxW_sp1;  // exclusive
                             // Use entry mini state for Y offset (PF computes hbOffY at ProcessSprites entry)
                             int miniOffY_sp1 = entryMiniMode_sp ? ((0x10 - 7) >> 1) : 0;
-                            int playerTop_sp1 = (playerY_fixed >> 8) + miniOffY_sp1;
+                            int playerTop_sp1 = (entryPlayerY_fixed_sp >> 8) + miniOffY_sp1;
                             int playerBottom_sp1 = playerTop_sp1 + hitboxH_sp1;  // exclusive
                             int groundRowsToReserve_sp1 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
@@ -12214,6 +12169,15 @@ namespace FamidashEditor
                         }
                     }
                 }
+            }
+
+            // Update trail Y position history (sliding window)
+            // Shift old positions down and store current Y at index 0
+            if (forcedTrails > 0)
+            {
+                for (int ti = playerOldPosY.Length - 1; ti > 0; ti--)
+                    playerOldPosY[ti] = playerOldPosY[ti - 1];
+                playerOldPosY[0] = player_y_fixed[0];
             }
 
             // If we have pending tints, schedule application on UI thread for heavier image work

@@ -380,8 +380,7 @@ namespace FamidashEditor
         // -- Speculative depth / frame counter (needed in both debug and release) ---
         private int _speculativeDepth; // >0 means we're inside lookahead � suppress logging
         private int _frameCounter;     // current frame in the main Run() loop
-        [ThreadStatic]
-        private static bool _dualP2Guard; // true during P2's StepFrame call (prevents infinite recursion)
+        [ThreadStatic] private static bool _dualP2Guard; // true during P2's StepFrame call (prevents infinite recursion)
         [ThreadStatic] private static List<int> _p1OrbIndicesThisFrame; // orb indices P1 added to ProcessedSprites this frame (temporarily removed for P2)
         [ThreadStatic]
         private static bool _p2OrbFlippedOtherGrav; // set by P2's blue/green orb to flip P1's gravity
@@ -2546,6 +2545,7 @@ namespace FamidashEditor
                 var candInput  = new List<bool>(maxExpand);
                 var candCoins  = new List<int>(maxExpand);
                 var candScore  = new List<int>(maxExpand);
+                var deduped = new Dictionary<long, int>(maxExpand);
 
                 for (int frame = 0; frame < MAX_FRAMES && frontier.Count > 0; frame++)
                 {
@@ -2770,7 +2770,7 @@ namespace FamidashEditor
                     }
 
                     // -- Deduplicate by quantized key --
-                    var deduped = new Dictionary<long, int>(candState.Count);
+                    deduped.Clear();
                     for (int i = 0; i < candState.Count; i++)
                     {
                         var s = candState[i];
@@ -7544,7 +7544,7 @@ namespace FamidashEditor
                 s.PendingOrbIndex = -1;
                 s.PendingOrbSpriteId = -1;
                 orbHitThisFrame = true;
-                _cubeJumpedThisStep = true; // Fix 23: orb activation consumes input — preserve True
+                if (_speculativeDepth == 0) _cubeJumpedThisStep = true; // Fix 23: orb activation consumes input — preserve True
             }
 
             // -- STEP 2: Compute new X (applied at the end, matching NES
@@ -7643,7 +7643,7 @@ namespace FamidashEditor
                     {
                         s.VelY_fixed = GetJumpVel(s.Mini) * s.GravMul;
                         s.OnGround = false;
-                        _cubeJumpedThisStep = true;
+                        if (_speculativeDepth == 0) _cubeJumpedThisStep = true;
                         // NES slope_jump_check: add extra velocity when jumping off a slope
                         PfSlopeJumpCheck(ref s);
 #if !DISABLE_DEBUG_LOGGING
@@ -8442,17 +8442,19 @@ namespace FamidashEditor
                 }
             }
 
+            // Gravity modifier triggers (0x70-0x74) use camera-center-based
+            // activation, same as speed portals.  Only P1 checks these in SIM.
+            // CRITICAL: Check BEFORE advancing X to match SIM which uses the
+            // pre-advance camera position (oldX + 48px as center).
+            if (!_dualP2Guard)
+                CheckGravityModTriggersAtNewX(ref s);
+
             // -- STEP 8: RESTORE NEW X --
             s.X_fixed = newX_fixed;
 
             // -- STEP 8c: SPEED PORTAL CHECK --
             // Speed portals are now detected via collision overlap in ProcessSprites
             // (matching SIM's cam-OFF behavior). No separate check needed here.
-
-            // Gravity modifier triggers (0x70-0x74) use camera-center-based
-            // activation, same as speed portals.  Only P1 checks these in SIM.
-            if (!_dualP2Guard)
-                CheckGravityModTriggersAtNewX(ref s);
 
             // -- STEP 10: MAP BOUNDS CHECK --
             int playerY_px = s.Y_fixed >> 8;
@@ -8830,7 +8832,7 @@ namespace FamidashEditor
                 // Step 1: WasZeroed velocity fix (matches NES inline vel assignment).
                 if (s.HBlocked && r.WasZeroed)
                 {
-                    _step1FireCount++;
+                    if (_speculativeDepth == 0) _step1FireCount++;
                     if (!s.GravFlipped)
                         s.VelY_fixed = -1;  // NES 0xFFFF = -1 signed 16-bit
                     else
@@ -8860,7 +8862,7 @@ namespace FamidashEditor
                             }
                             s.Step2Ejected = true;
                             s.Step2Ever = true;
-                            _step2FireCount++;
+                            if (_speculativeDepth == 0) _step2FireCount++;
                         }
                     }
                 }
@@ -8882,7 +8884,7 @@ namespace FamidashEditor
                             }
                             s.Step2Ejected = true;
                             s.Step2Ever = true;
-                            _step2FireCount++;
+                            if (_speculativeDepth == 0) _step2FireCount++;
                         }
                     }
                 }
@@ -11088,8 +11090,10 @@ namespace FamidashEditor
                     else if (dsid == 0x23 && s.DualActive)
                     {
                         s.DualActive = false;
+                        // Set target_scroll_y from the portal's Y position (matching dual portal behavior)
+                        s.TargetCameraY_fixed = Math.Max(0, (sp.AnchorY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[SINGLE_ACTIVATE] idx={sp.Index}");
+                        PfLog($"[SINGLE_ACTIVATE] idx={sp.Index} targetCamY={s.TargetCameraY_fixed >> 8}");
 #endif
                     }
                     s.ProcessedSprites.Add(sp.Index);
@@ -12385,6 +12389,7 @@ namespace FamidashEditor
             }
 
             // Targeted FWD diagnostic for gap-range states near collapse
+#if !DISABLE_DEBUG_LOGGING
             if (result && _frameCounter >= 2020 && _frameCounter <= 2042 && playerY_px >= 288 && playerY_px <= 350)
             {
                 int dbgRightEdge = playerX_px + hbW;
@@ -12407,6 +12412,7 @@ namespace FamidashEditor
                 // Log gap-range states that SURVIVE forward collision (to confirm they exist)
                 Console.Error.WriteLine($"[FWD_SURV] f={_frameCounter} X={playerX_px} Y={playerY_px} mode={s.GameMode}");
             }
+#endif
 
 #if !DISABLE_DEBUG_LOGGING
             // Diagnostic: always log forward check near the problem area
