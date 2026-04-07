@@ -1878,11 +1878,11 @@ namespace FamidashEditor
                 try { if (config.StartingBackgroundColor.HasValue) merged.StartingBackgroundColor = config.StartingBackgroundColor; } catch { }
                 try { if (config.StartingGameMode.HasValue) merged.StartingGameMode = config.StartingGameMode; } catch { }
                 try { if (config.StartingGroundColor.HasValue) merged.StartingGroundColor = config.StartingGroundColor; } catch { }
-                // Spawn/Scroll Y positions: overwrite if present
-                try { if (config.SpawnYPositionHi.HasValue) merged.SpawnYPositionHi = config.SpawnYPositionHi; } catch { }
-                try { if (config.SpawnYPositionLow.HasValue) merged.SpawnYPositionLow = config.SpawnYPositionLow; } catch { }
-                try { if (config.ScrollYPositionHi.HasValue) merged.ScrollYPositionHi = config.ScrollYPositionHi; } catch { }
-                try { if (config.ScrollYPositionLow.HasValue) merged.ScrollYPositionLow = config.ScrollYPositionLow; } catch { }
+                // Spawn/Scroll Y positions: always overwrite (including null to clear)
+                try { merged.SpawnYPositionHi = config.SpawnYPositionHi; } catch { }
+                try { merged.SpawnYPositionLow = config.SpawnYPositionLow; } catch { }
+                try { merged.ScrollYPositionHi = config.ScrollYPositionHi; } catch { }
+                try { merged.ScrollYPositionLow = config.ScrollYPositionLow; } catch { }
                 try { if (config.Difficulty.HasValue) merged.Difficulty = config.Difficulty; } catch { }
                 try { if (config.Stars.HasValue) merged.Stars = config.Stars; } catch { }
                 try { if (!string.IsNullOrEmpty(config.LowerText)) merged.LowerText = config.LowerText; } catch { }
@@ -2274,6 +2274,11 @@ namespace FamidashEditor
                 loadedDecoSet = "DECO1";
                 loadedBlockSet = "BLOCKSA";
                 loadedSpikeSet = "SPIKESA";
+                // Clear per-level spawn/scroll Y so they don't leak from previous level
+                loadedSpawnYPositionHi = null;
+                loadedSpawnYPositionLow = null;
+                loadedScrollYPositionHi = null;
+                loadedScrollYPositionLow = null;
                 // Don't auto-save config here - let user make changes first
                 // Config will be saved when user changes settings or saves the TMX
                 // Update sprite locking since 0x17, 0x4B, 0x58, 0x64 depend on parallax state

@@ -716,7 +716,7 @@ namespace FamidashEditor
         {
             switch (tid)
             {
-                case 0xFC: case 0xDF: case 0xE3: case 0xFE: case 0xFF: return 0x00;
+                case 0xDF: case 0xE3: case 0xFE: case 0xFF: return 0x00;
                 case 0xFD: return 0x26;
                 default: return tid;
             }
