@@ -2151,57 +2151,115 @@ namespace FamidashEditor
             UpdateSlopeCounters(ref r.SlopeWasOnCounter, ref r.SlopeType,
                                 ref r.NewVelY_fixed, gameMode, gravFlipped, mini, ref r.LastSlopeType);
 
-            // Ceiling slopes first
             int slopeHbOffY = mini ? ((0x10 - hbH) >> 1) : 0;
-            int ceilCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
 
-            var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
-                in map, playerX_px, playerX_px, ceilCheckY, hbW,
-                inputHeld, gameMode, gravFlipped, velX_fixed,
-                ref r.LastSlopeType, ref r.SlopeJumpHigher);
+            if (!gravFlipped)
+            {
+                // Normal gravity: ceiling first (secondary), floor last (primary landing surface).
+                // Floor eject runs last and takes priority — keeps player on the floor.
 
-            if (ceilSlopeHit)
-            {
-                r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
-                r.NewVelY_fixed = 0;
-                r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
-                r.SlopeType = ceilSlopeType;
-            }
-            else
-            {
-                var (ceilHit, ceilBotY, _) = CheckCeiling(in map, collX, collY, hbW, hbH);
-                if (ceilHit)
+                // Ceiling slopes
+                int ceilCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
+                var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
+                    in map, playerX_px, playerX_px, ceilCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+                if (ceilSlopeHit)
                 {
-                    r.NewY_fixed = (ceilBotY - hbOffY) << 8;
+                    r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
                     r.NewVelY_fixed = 0;
+                    r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                    r.SlopeType = ceilSlopeType;
+                }
+                else
+                {
+                    var (ceilHit, ceilBotY, _) = CheckCeiling(in map, collX, collY, hbW, hbH);
+                    if (ceilHit)
+                    {
+                        r.NewY_fixed = (ceilBotY - hbOffY) << 8;
+                        r.NewVelY_fixed = 0;
+                    }
+                }
+
+                // Floor slopes (primary)
+                int floorCheckY = playerY_px + slopeHbOffY + hbH - 2;
+                var (floorSlopeHit, floorSlopeEject, floorSlopeType) = CheckSlopesDown(
+                    in map, playerX_px, playerX_px, floorCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+                if (floorSlopeHit)
+                {
+                    if (floorSlopeEject > 0)
+                        r.NewY_fixed = ((r.NewY_fixed >> 8) - floorSlopeEject) << 8;
+                    r.NewVelY_fixed = 0;
+                    r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                    r.SlopeType = floorSlopeType;
+                }
+                else
+                {
+                    int updatedCollY = (r.NewY_fixed >> 8) + hbOffY;
+                    var (floorHit, floorTopY, spike) = CheckFloor(in map, collX, updatedCollY, hbW, hbH);
+                    if (spike) { r.Died = true; return r; }
+                    if (floorHit)
+                    {
+                        r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
+                        r.NewVelY_fixed = 0;
+                    }
                 }
             }
-
-            // Floor slopes
-            int floorCheckY = playerY_px + slopeHbOffY + hbH - 2;
-
-            var (floorSlopeHit, floorSlopeEject, floorSlopeType) = CheckSlopesDown(
-                in map, playerX_px, playerX_px, floorCheckY, hbW,
-                inputHeld, gameMode, gravFlipped, velX_fixed,
-                ref r.LastSlopeType, ref r.SlopeJumpHigher);
-
-            if (floorSlopeHit)
-            {
-                if (floorSlopeEject > 0)
-                    r.NewY_fixed = ((r.NewY_fixed >> 8) - floorSlopeEject) << 8;
-                r.NewVelY_fixed = 0;
-                r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
-                r.SlopeType = floorSlopeType;
-            }
             else
             {
-                int updatedCollY = (r.NewY_fixed >> 8) + hbOffY;
-                var (floorHit, floorTopY, spike) = CheckFloor(in map, collX, updatedCollY, hbW, hbH);
-                if (spike) { r.Died = true; return r; }
-                if (floorHit)
+                // Flipped gravity: floor first (secondary), ceiling last (primary landing surface).
+                // Ceiling eject runs last and takes priority — keeps player on the ceiling.
+                // Mirrors CubeEject which also swaps direction based on gravFlipped.
+
+                // Floor slopes (secondary)
+                int floorCheckY = playerY_px + slopeHbOffY + hbH - 2;
+                var (floorSlopeHit, floorSlopeEject, floorSlopeType) = CheckSlopesDown(
+                    in map, playerX_px, playerX_px, floorCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+                if (floorSlopeHit)
                 {
-                    r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
+                    if (floorSlopeEject > 0)
+                        r.NewY_fixed = ((r.NewY_fixed >> 8) - floorSlopeEject) << 8;
                     r.NewVelY_fixed = 0;
+                    r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                    r.SlopeType = floorSlopeType;
+                }
+                else
+                {
+                    var (floorHit, floorTopY, spike) = CheckFloor(in map, collX, collY, hbW, hbH);
+                    if (spike) { r.Died = true; return r; }
+                    if (floorHit)
+                    {
+                        r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
+                        r.NewVelY_fixed = 0;
+                    }
+                }
+
+                // Ceiling slopes (primary for flipped gravity)
+                int ceilCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
+                var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
+                    in map, playerX_px, playerX_px, ceilCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+                if (ceilSlopeHit)
+                {
+                    r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
+                    r.NewVelY_fixed = 0;
+                    r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                    r.SlopeType = ceilSlopeType;
+                }
+                else
+                {
+                    int updatedCollY = (r.NewY_fixed >> 8) + hbOffY;
+                    var (ceilHit, ceilBotY, _) = CheckCeiling(in map, collX, updatedCollY, hbW, hbH);
+                    if (ceilHit)
+                    {
+                        r.NewY_fixed = (ceilBotY - hbOffY) << 8;
+                        r.NewVelY_fixed = 0;
+                    }
                 }
             }
 

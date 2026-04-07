@@ -862,7 +862,22 @@ namespace FamidashEditor
                 });
             }
 
-            allSprites.Sort((a, b) => a.AnchorX_px.CompareTo(b.AnchorX_px));
+            // Sort sprites by X, with a tiebreaker that places gravity portals
+            // before orbs at the same X.  The SIM processes gravity portals
+            // (CheckGravityPortals) before orbs (UpdateOrbSystem) in separate
+            // passes, so gravity is always flipped before orb collision is
+            // tested.  Without the tiebreak, unstable sort can place an orb
+            // before its co-located gravity portal, causing the mini-ship
+            // centering offset to use the pre-flip state and miss the orb.
+            allSprites.Sort((a, b) =>
+            {
+                int cmp = a.AnchorX_px.CompareTo(b.AnchorX_px);
+                if (cmp != 0) return cmp;
+                // Gravity portals sort first (priority 0), everything else after (1)
+                int pa = IsGravityPortal(a.SpriteId) ? 0 : 1;
+                int pb = IsGravityPortal(b.SpriteId) ? 0 : 1;
+                return pa.CompareTo(pb);
+            });
             _spritesArr = allSprites.ToArray();
 
             // Build mode portal position list (reserved for future use)
@@ -7682,15 +7697,8 @@ namespace FamidashEditor
                 // Step 5: UpdateSlopeCounters_Fresh — decrement counters, fire apply_slope_vel
                 PfUpdateSlopeCounters_Fresh(ref s);
 
-                if (CheckDeathCollision(ref s))
-                {
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[CENTER_DEATH] ship X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-#endif
-                    if (_speculativeDepth == 0) { _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
-                    s.DeathType = 3;
-                    return false;
-                }
+                // NO center death check here — NES ship_movement does NOT run
+                // bg_coll_death inside the mode handler.  Step 7c handles it.
             }
             else if (s.GameMode == 2) // Ball mode
             {
@@ -7838,15 +7846,8 @@ namespace FamidashEditor
                     PfUpdateSlopeCounters_Fresh(ref s);
                 }
 
-                if (CheckDeathCollision(ref s))
-                {
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[CENTER_DEATH] ball X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                    _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
-#endif
-                    s.DeathType = 3;
-                    return false;
-                }
+                // NO center death check here — NES ball_movement does NOT run
+                // bg_coll_death inside the mode handler.  Step 7c handles it.
             }
             else if (s.GameMode == 3) // UFO mode
             {
@@ -7902,15 +7903,10 @@ namespace FamidashEditor
 #endif
                 }
 
-                if (CheckDeathCollision(ref s))
-                {
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[CENTER_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                    _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
-#endif
-                    s.DeathType = 3;
-                    return false;
-                }
+                // NO center death check here — NES ufo_movement does NOT run
+                // bg_coll_death inside the mode handler.  The common post-physics
+                // path (Step 7c) handles it for all modes, matching the SIM's
+                // UfoPhysics_Fresh which also has no death check in the UFO block.
             }
             else if (s.GameMode == 4) // Robot mode
             {
@@ -8338,33 +8334,9 @@ namespace FamidashEditor
                 }
             }
 
-            // -- STEP 7c: DEATH CHECK at OLD X, post-eject Y (matching NES bg_coll_death) --
-            // NES bg_coll_death uses Generic.x/y which are set by cube_movement
-            // from post-eject currplayer_y and pre-x_movement currplayer_x (stale).
-            // x_movement() sets Generic.x BEFORE advancing currplayer_x, so
-            // Generic.x is still the OLD X value when bg_coll_death runs.
-            if (CheckDeathCollision(ref s))
-            {
-#if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DEATH_COLL] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-#endif
-                if (_speculativeDepth == 0) { _lastDeathReason = "DEATH_COLL"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
-                s.DeathType = 9;
-                return false;
-            }
-
-            // -- STEP 7d: SLOPE PENETRATION DEATH (NES bg_coll_death's bg_coll_slope()) --
-            // NES bg_coll_death kills when center pixel is inside a slope surface.
-            // Without this, BFS can find paths that pass through slope terrain.
-            if (CheckSlopePenetrationDeath(ref s))
-            {
-#if !DISABLE_DEBUG_LOGGING
-                PfLog($"[SLOPE_PENETRATION_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-#endif
-                if (_speculativeDepth == 0) { _lastDeathReason = "SLOPE_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
-                s.DeathType = 9;
-                return false;
-            }
+            // -- STEP 7c/7d: Center death + slope penetration moved to after X advance --
+            // NES bg_coll_death runs inside x_movement AFTER advancing currplayer_x,
+            // using the NEW X position. Reference: "bg_coll_death() — death check at new X".
 
             // -- STEP 7e: CAMERA FOLLOW + OOB DEATH (matching NES x_movement Y bounds) --
             {
@@ -8394,6 +8366,14 @@ namespace FamidashEditor
                 }
                 else
                 {
+                    // Ship-style smooth scroll toward target.
+                    // NES process_y_scroll updates target_scroll_y every frame from
+                    // the player's Y: target = playerY - 0x3A.  Without this per-frame
+                    // update the camera only moves toward the portal-set target and
+                    // cannot follow the player when they rise (gravity-flipped UFO/ship).
+                    int playerY_pxCam = s.Y_fixed >> 8;
+                    s.TargetCameraY_fixed = Math.Max(0, (playerY_pxCam - PORTAL_TO_TOP_DIFF_PX) << 8);
+
                     // Ship-style smooth scroll toward target
                     if (s.TargetCameraY_fixed > s.CameraY_fixed)
                     {
@@ -8451,6 +8431,30 @@ namespace FamidashEditor
 
             // -- STEP 8: RESTORE NEW X --
             s.X_fixed = newX_fixed;
+
+            // -- STEP 8b: DEATH CHECK at NEW X (matching NES bg_coll_death) --
+            // NES bg_coll_death runs INSIDE x_movement, AFTER advancing currplayer_x.
+            // Reference: "bg_coll_death() — death check at new X".
+            if (CheckDeathCollision(ref s))
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[DEATH_COLL] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                if (_speculativeDepth == 0) { _lastDeathReason = "DEATH_COLL"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                s.DeathType = 9;
+                return false;
+            }
+
+            // -- STEP 8b2: SLOPE PENETRATION DEATH at NEW X --
+            if (CheckSlopePenetrationDeath(ref s))
+            {
+#if !DISABLE_DEBUG_LOGGING
+                PfLog($"[SLOPE_PENETRATION_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                if (_speculativeDepth == 0) { _lastDeathReason = "SLOPE_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                s.DeathType = 9;
+                return false;
+            }
 
             // -- STEP 8c: SPEED PORTAL CHECK --
             // Speed portals are now detected via collision overlap in ProcessSprites
