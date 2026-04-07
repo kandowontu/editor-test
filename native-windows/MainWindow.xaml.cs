@@ -2429,6 +2429,10 @@ namespace FamidashEditor
     private System.Windows.UIElement? startPosMarker = null;
     private int? startPosMarkerX = null; // World pixel X
     private int? startPosMarkerY = null; // World pixel Y
+
+    // Spawn/Camera Y overlay markers (from NES config)
+    private System.Windows.UIElement? spawnYOverlayMarker = null;
+    private System.Windows.UIElement? cameraYOverlayMarker = null;
     
     // Public accessors for START POS marker
     public int? StartPosMarkerX { get { return startPosMarkerX; } }
@@ -8269,8 +8273,12 @@ namespace FamidashEditor
                     sim.Owner = this;
                     // Set starting speed before ApplyStartPosMarker so it's available during initialization
                     try { sim.SetStartingSpeedUiIndex(loadedStartingSpeedUiIndex); } catch { }
+                    // Pass NES spawn/scroll Y config to the simulator
+                    try { sim.SetSpawnScrollConfig(loadedSpawnYPositionHi, loadedSpawnYPositionLow, loadedScrollYPositionHi, loadedScrollYPositionLow); } catch { }
                     // Apply START POS marker position now that Owner is set
                     try { sim.ApplyStartPosMarker(); } catch { }
+                    // Apply spawn/scroll Y from level config if no START POS marker was used
+                    try { sim.ApplySpawnScrollIfNoStartPos(); } catch { }
                     // Force an initial render while the simulator is still paused so
                     // starting background/ground tints are applied to the cached tile layer
                     // before the window becomes visible.
@@ -8794,6 +8802,11 @@ namespace FamidashEditor
                     try { loadedStartingBackgroundColor = tabData.LoadedStartingBackgroundColor; } catch { loadedStartingBackgroundColor = null; }
                     try { loadedStartingGameMode = tabData.LoadedStartingGameMode; } catch { loadedStartingGameMode = null; }
                     try { loadedStartingGroundColor = tabData.LoadedStartingGroundColor; } catch { loadedStartingGroundColor = null; }
+                    try { loadedSpawnYPositionHi = tabData.LoadedSpawnYPositionHi; } catch { loadedSpawnYPositionHi = null; }
+                    try { loadedSpawnYPositionLow = tabData.LoadedSpawnYPositionLow; } catch { loadedSpawnYPositionLow = null; }
+                    try { loadedScrollYPositionHi = tabData.LoadedScrollYPositionHi; } catch { loadedScrollYPositionHi = null; }
+                    try { loadedScrollYPositionLow = tabData.LoadedScrollYPositionLow; } catch { loadedScrollYPositionLow = null; }
+                    try { loadedForcePlatformer = tabData.LoadedForcePlatformer; } catch { loadedForcePlatformer = null; }
                     noParallaxBg = tabData.NoParallaxBg;
                     backgroundTint = tabData.BackgroundTint;
                     groundTint = tabData.GroundTint;
@@ -12395,6 +12408,7 @@ namespace FamidashEditor
             }
             try { UpdateIncompatibleOverlay(); } catch { }
             try { UpdatePlayerPathOverlay(); } catch { }
+            try { UpdateSpawnScrollOverlay(); } catch { }
 
             // Status messages removed (collapsed by XAML). No diagnostics shown here.
         }
@@ -12408,6 +12422,102 @@ namespace FamidashEditor
             // The tint operations (UpdateParallaxTint, UpdateGroundTint, UpdateTileTint)
             // already set backgroundDirty = true, so DrawMap will rebuild the layers
             DrawMap();
+        }
+
+        /// <summary>
+        /// Draw or update the spawn Y and camera Y overlay markers on the editor canvas.
+        /// Shows a small player icon at the configured spawn position and a viewport
+        /// rectangle for the configured camera position, with tooltips on hover.
+        /// </summary>
+        private void UpdateSpawnScrollOverlay()
+        {
+            try
+            {
+                if (CanvasHost == null) return;
+
+                // Remove previous markers
+                if (spawnYOverlayMarker != null)
+                {
+                    try { CanvasHost.Children.Remove(spawnYOverlayMarker); } catch { }
+                    spawnYOverlayMarker = null;
+                }
+                if (cameraYOverlayMarker != null)
+                {
+                    try { CanvasHost.Children.Remove(cameraYOverlayMarker); } catch { }
+                    cameraYOverlayMarker = null;
+                }
+
+                double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
+                double pad = mapViewportPadding;
+                const int NES_H_TILES = 15;
+                const int TILE_PX = 16;
+
+                // Spawn Y marker: small filled rectangle at the player spawn position
+                if (loadedSpawnYPositionHi.HasValue)
+                {
+                    int hi = loadedSpawnYPositionHi.Value & 0xFF;
+                    int lo = (loadedSpawnYPositionLow.HasValue ? loadedSpawnYPositionLow.Value : 0) & 0xFF;
+                    int nesSpawnY = (hi << 8) | lo;
+                    int worldOffset = (mapHeight - NES_H_TILES) * TILE_PX;
+                    int spawnY_px = (nesSpawnY >> 8) + worldOffset;
+
+                    double x = pad + 0 * scale; // X=0 (default spawn X)
+                    double y = pad + (spawnY_px + (3 * TileSize)) * scale + gridRenderShiftY;
+                    double w = TILE_PX * scale;
+                    double h = TILE_PX * scale;
+
+                    var rect = new Shapes.Rectangle
+                    {
+                        Width = w,
+                        Height = h,
+                        Fill = new SolidColorBrush(Color.FromArgb(0x60, 0x00, 0xFF, 0x00)),
+                        Stroke = new SolidColorBrush(Color.FromArgb(0xC0, 0x00, 0xFF, 0x00)),
+                        StrokeThickness = Math.Max(1.0, 1.5 * scale),
+                        IsHitTestVisible = true
+                    };
+                    rect.ToolTip = $"Spawn Y: Hi=0x{hi:X2} Lo=0x{lo:X2}\nTMX pixel Y={spawnY_px}";
+                    Canvas.SetLeft(rect, x);
+                    Canvas.SetTop(rect, y);
+                    Canvas.SetZIndex(rect, 2200);
+                    CanvasHost.Children.Add(rect);
+                    spawnYOverlayMarker = rect;
+                }
+
+                // Camera viewport marker: semi-transparent rectangle showing the configured camera view
+                if (loadedScrollYPositionHi.HasValue)
+                {
+                    int hi = loadedScrollYPositionHi.Value & 0xFF;
+                    int lo = (loadedScrollYPositionLow.HasValue ? loadedScrollYPositionLow.Value : 0) & 0xFF;
+                    int linearScroll = hi * 240 + lo;
+                    int linearMax = 2 * 240 + 239;
+                    int pixelsFromBottom = linearMax - linearScroll;
+                    int maxCamY = (mapHeight - NES_H_TILES) * TILE_PX;
+                    int camY_px = Math.Max(0, maxCamY - pixelsFromBottom);
+
+                    double x = pad + 0 * scale;
+                    double y = pad + (camY_px + (3 * TileSize)) * scale + gridRenderShiftY;
+                    double w = (NES_H_TILES + 1) * TILE_PX * scale; // NES_W = 16 tiles wide (approximate viewport width)
+                    double h = NES_H_TILES * TILE_PX * scale;
+
+                    var rect = new Shapes.Rectangle
+                    {
+                        Width = w,
+                        Height = h,
+                        Fill = System.Windows.Media.Brushes.Transparent,
+                        Stroke = new SolidColorBrush(Color.FromArgb(0xA0, 0xFF, 0xFF, 0x00)),
+                        StrokeThickness = Math.Max(1.0, 2.0 * scale),
+                        StrokeDashArray = new DoubleCollection { 4, 2 },
+                        IsHitTestVisible = true
+                    };
+                    rect.ToolTip = $"Camera Scroll Y: Hi=0x{hi:X2} Lo=0x{lo:X2}\nTMX camera top={camY_px}px";
+                    Canvas.SetLeft(rect, x);
+                    Canvas.SetTop(rect, y);
+                    Canvas.SetZIndex(rect, 2190);
+                    CanvasHost.Children.Add(rect);
+                    cameraYOverlayMarker = rect;
+                }
+            }
+            catch { }
         }
 
         private static Color GetPathfinderBiasColor(double bias)
@@ -21330,6 +21440,18 @@ namespace FamidashEditor
                     startX_px = startPosMarkerX.Value;
                     startY_px = startPosMarkerY.Value;
                 }
+                else if (loadedSpawnYPositionHi.HasValue)
+                {
+                    // Use NES spawn Y config: convert hi/lo bytes to TMX pixel Y
+                    int hi = loadedSpawnYPositionHi.Value & 0xFF;
+                    int lo = (loadedSpawnYPositionLow.HasValue ? loadedSpawnYPositionLow.Value : 0) & 0xFF;
+                    int nesSpawnY = (hi << 8) | lo; // NES 16-bit fixed-point (8 frac bits)
+                    int worldOffset = (mapHeight - 15) * 16; // NES_H=15, TILE=16
+                    startY_px = (nesSpawnY >> 8) + worldOffset;
+                    int maxY = Math.Max(0, (mapHeight * 16 - 16));
+                    if (startY_px > maxY) startY_px = maxY;
+                    if (startY_px < 0) startY_px = 0;
+                }
                 else
                 {
                     // Default: start on the ground at X=0
@@ -21374,6 +21496,8 @@ namespace FamidashEditor
                         engine.PreferCoins = preferCoins;
                         engine.UseBFS = preferCoins; // BFS always runs first; UseBFS=true prevents heuristic fallback
                         engine.Progress = progress;
+                        engine.ConfigScrollYHi = loadedScrollYPositionHi;
+                        engine.ConfigScrollYLo = loadedScrollYPositionLow;
                         _activePathfinderEngine = engine;
 
                         // Real-time speculative path visualization callback.
@@ -22896,6 +23020,7 @@ namespace FamidashEditor
             SaveCurrentTabState();
         }
         catch { }
+        try { UpdateSpawnScrollOverlay(); } catch { }
     }
     
     // Helper method to find a child of a specific type in the visual tree

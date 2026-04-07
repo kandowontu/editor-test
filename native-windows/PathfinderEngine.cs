@@ -115,6 +115,7 @@ namespace FamidashEditor
         private static int GetJumpVel(bool mini) => SharedPhysics.GetCubeJumpVel(mini);
         private const int ROBOT_JUMP_VEL = -0x2B0;   // Robot jump velocity (reapplied each held frame)
         private const int ROBOT_JUMP_TIME = 19;       // Max hold frames for robot jump
+        private const int NINJA_MAX_JUMPS = 3;        // Triple jump for ninja mode (resets on ground)
         private static int GetHitboxW(bool mini) => SharedPhysics.GetCubeHitboxW(mini);
         private static int GetHitboxH(bool mini) => SharedPhysics.GetCubeHitboxH(mini);
         /// <summary>
@@ -301,6 +302,8 @@ namespace FamidashEditor
         private int _cubeHoldDelay = 0;    // frames to wait before first jump in hold mode
         private int _committedJumpDelay = -1; // when >= 0, counting down to a committed single-jump
         private int _committedRobotHold = 0; // remaining frames to hold robot jump button
+        private Queue<int> _committedNinjaJumps = new Queue<int>(); // queued air jump delays for ninja
+        private int _ninjaWaitFrames = 0; // countdown to next committed ninja jump
         private bool _prevFrameWasGrounded = true; // tracks whether PREVIOUS frame started grounded; used to gate hold-jump fast path
 
         // -- Backtracking state -------------------------------------------
@@ -413,6 +416,32 @@ namespace FamidashEditor
         /// <summary>Optional level/TMX name (no-op when logging disabled).</summary>
         public string LevelName { get; set; } = "";
 #endif
+
+        /// <summary>NES scroll Y config hi byte (optional).</summary>
+        public int? ConfigScrollYHi { get; set; }
+        /// <summary>NES scroll Y config lo byte (optional).</summary>
+        public int? ConfigScrollYLo { get; set; }
+
+        /// <summary>
+        /// Compute initial camera Y (fixed-point) for BFS/simulation start.
+        /// Uses NES scroll Y config when available, otherwise centers on player.
+        /// </summary>
+        private int ComputeInitCameraY(int startY_px)
+        {
+            int maxCamY = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+            if (ConfigScrollYHi.HasValue)
+            {
+                int hi = ConfigScrollYHi.Value & 0xFF;
+                int lo = (ConfigScrollYLo.HasValue ? ConfigScrollYLo.Value : 0) & 0xFF;
+                int linearScroll = hi * 240 + lo;
+                int linearMax = 2 * 240 + 239; // 719 = linearize(0x02EF)
+                int pixelsFromBottom = linearMax - linearScroll;
+                int maxCamPx = (mapHeight - NES_H) * TILE;
+                int tmxCamY = Math.Max(0, maxCamPx - pixelsFromBottom);
+                return Math.Min(maxCamY, tmxCamY << 8);
+            }
+            return Math.Max(0, Math.Min(maxCamY, (startY_px << 8) - ((SCREEN_H_PX / 2) << 8)));
+        }
 
         // -- Frame trace for diagnostics ---------------------------------
         // Writes a CSV to %TEMP%\famidash_pf_trace.csv on every frame of the
@@ -595,6 +624,7 @@ namespace FamidashEditor
             public int BallInputBuffer;          // remaining frames to try buffered flip (0 = inactive)
             public int BallCooldownFrames;       // 2-frame cooldown after flip: skip velocity zeroing and eject
             public int RobotJumpTime;            // remaining frames robot can hold jump (0 = not jumping, max 19)
+            public int NinjaJumps;               // remaining air jumps for ninja mode (max 3, resets on ground)
             public SpriteSet ProcessedSprites;
 
             // Orb system: pending orb that overlaps the player (activation requires input)
@@ -642,6 +672,7 @@ namespace FamidashEditor
             public int P2_BallInputBuffer;
             public int P2_BallCooldownFrames;
             public int P2_RobotJumpTime;
+            public int P2_NinjaJumps;
             public int P2_SlopeWasOnCounter;
             public int P2_SlopeFrames;
             public int P2_SlopeType;
@@ -1462,8 +1493,7 @@ namespace FamidashEditor
             out List<(int x, int y)> pathPoints)
         {
             pathPoints = new List<(int x, int y)>();
-            int maxCamY_ri = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-            int initCamY_ri = Math.Max(0, Math.Min(maxCamY_ri, (startY_px << 8) - ((SCREEN_H_PX / 2) << 8)));
+            int initCamY_ri = ComputeInitCameraY(startY_px);
             var state = new SimState
             {
                 X_fixed = startX_px << 8,
@@ -1480,6 +1510,7 @@ namespace FamidashEditor
                 ProcessedSprites = NewSpriteSet(),
                 PendingOrbIndex = -1,
                 PendingOrbSpriteId = -1,
+                NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
                 CameraY_fixed = initCamY_ri,
                 TargetCameraY_fixed = initCamY_ri
             };
@@ -1638,8 +1669,7 @@ namespace FamidashEditor
         private void RunSingleAttempt(int startX_px, int startY_px, int startSpeedUiIndex,
                                        int startGameMode, bool startGravFlipped, bool startMini)
         {
-            int maxCameraY_init = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-            int initCameraY = Math.Max(0, Math.Min(maxCameraY_init, (startY_px << 8) - ((SCREEN_H_PX / 2) << 8)));
+            int initCameraY = ComputeInitCameraY(startY_px);
             var state = new SimState
             {
                 X_fixed = startX_px << 8,
@@ -1656,6 +1686,7 @@ namespace FamidashEditor
                 ProcessedSprites = NewSpriteSet(),
                 PendingOrbIndex = -1,
                 PendingOrbSpriteId = -1,
+                NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
                 CameraY_fixed = initCameraY,
                 TargetCameraY_fixed = initCameraY
             };
@@ -1670,6 +1701,8 @@ namespace FamidashEditor
             _cubeHoldDelay = 0;
             _committedJumpDelay = -1;
             _committedRobotHold = 0;
+            _committedNinjaJumps.Clear();
+            _ninjaWaitFrames = 0;
             _backtrackCheckpoints = new List<BacktrackCheckpoint>();
             _lastCubeToShipCheckpoint = null;
             _shipEntryRecoveryCheckpoint = null;
@@ -2500,8 +2533,7 @@ namespace FamidashEditor
             try
             {
                 // Initialize starting state
-                int maxCameraY_bfs = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                int initCamY_bfs = Math.Max(0, Math.Min(maxCameraY_bfs, (startY_px << 8) - ((SCREEN_H_PX / 2) << 8)));
+                int initCamY_bfs = ComputeInitCameraY(startY_px);
                 var initialState = new SimState
                 {
                     X_fixed = startX_px << 8,
@@ -2518,6 +2550,7 @@ namespace FamidashEditor
                     ProcessedSprites = NewSpriteSet(),
                     PendingOrbIndex = -1,
                     PendingOrbSpriteId = -1,
+                    NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
                     CameraY_fixed = initCamY_bfs,
                     TargetCameraY_fixed = initCamY_bfs
                 };
@@ -3206,8 +3239,7 @@ namespace FamidashEditor
                                     int startSpeedUiIndex, int startGameMode,
                                     bool startGravFlipped, bool startMini)
         {
-            int maxCamY_rbp = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-            int initCamY_rbp = Math.Max(0, Math.Min(maxCamY_rbp, (startY_px << 8) - ((SCREEN_H_PX / 2) << 8)));
+            int initCamY_rbp = ComputeInitCameraY(startY_px);
             var state = new SimState
             {
                 X_fixed = startX_px << 8,
@@ -3224,6 +3256,7 @@ namespace FamidashEditor
                 ProcessedSprites = NewSpriteSet(),
                 PendingOrbIndex = -1,
                 PendingOrbSpriteId = -1,
+                NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
                 CameraY_fixed = initCamY_rbp,
                 TargetCameraY_fixed = initCamY_rbp
             };
@@ -3645,6 +3678,8 @@ namespace FamidashEditor
                 _cubeHoldDelay = cp.HoldDelayState;
                 _committedJumpDelay = cp.CommittedDelayState; // restore committed delay state
                 _committedRobotHold = 0; // reset robot hold on backtrack
+                _committedNinjaJumps.Clear(); // reset ninja jump plan on backtrack
+                _ninjaWaitFrames = 0;
                 JumpTimingBias = cp.UsedBias; // restore bias so stage-3 flip doesn't permanently mutate it
                 _shipCorridorBias = cp.ShipBias; // restore ship bias
                 _shipForceHoldFrames = cp.ShipForceHold;
@@ -4239,6 +4274,7 @@ namespace FamidashEditor
             if (state.GameMode == 5) return DecideSpiderInput(state, isOverrideFrame);
             if (state.GameMode == 6) return DecideWithBiasFallback(state, isOverrideFrame);
             if (state.GameMode == 7) return DecideSwingInput(state, isOverrideFrame);
+            if (state.GameMode == 8) return DecideNinjaInput(state, isOverrideFrame);
             if (state.GameMode != 0) return false;
 
             // ---------------------------------------------------------------
@@ -5793,6 +5829,7 @@ namespace FamidashEditor
                 case 5: return DecideSpiderInput(state, isOverrideFrame);
                 case 6: return DecideWaveInput(state, isOverrideFrame);
                 case 7: return DecideSwingInput(state, isOverrideFrame);
+                case 8: return DecideNinjaInput(state, isOverrideFrame);
                 case 9: return DecidePogoInput(state, isOverrideFrame);
                 default: return false;
             }
@@ -8220,6 +8257,80 @@ namespace FamidashEditor
                     return false;
                 }
             }
+            else if (s.GameMode == 8) // Ninja mode — cube physics with triple jump
+            {
+                // Ninja uses cube gravity, cube eject, cube center death — identical to cube/robot.
+                // Key difference: ninja can jump up to 3 times in the air (ninjajumps counter).
+                // Jump count resets when grounded (VelY == 0). Input is press-only (tap, no hold buffer).
+                // Uses cube jump velocity (not robot); shares cube pad/orb column.
+
+                // 1. Reset ninja jumps if grounded (NES: ninjajumps = 3 when vel_y == 0)
+                if (s.VelY_fixed == 0)
+                    s.NinjaJumps = NINJA_MAX_JUMPS;
+
+                // 2. Gravity (same as cube)
+                CubeGravity(ref s);
+
+                // 3. Ceiling proximity check (needed for flipped gravity — same as cube/robot)
+                if (s.GravFlipped)
+                {
+                    int hbW_chk = GetHitboxW(s.Mini);
+                    int hbH_chk = GetHitboxH(s.Mini);
+                    int hbOffY_chk = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
+                    int collX_chk = s.X_fixed >> 8;
+                    int testY_chk = (s.Y_fixed >> 8) + hbOffY_chk - 1;
+                    var (ceilHit, ceilBotY_prox, _) = CheckCeiling(collX_chk, testY_chk, hbW_chk, hbH_chk);
+                    if (ceilHit && s.VelY_fixed < 0)
+                    {
+                        int newY_prox = ceilBotY_prox - hbOffY_chk - 1;
+                        s.Y_fixed = newY_prox << 8;
+                        s.VelY_fixed = 0;
+                        s.OnGround = true;
+                        s.WasZeroedByCollision = true;
+                    }
+                }
+
+                // 4. Eject (same as cube)
+                bool ninjaEjectDied = false;
+                CubeEject(ref s, input, out ninjaEjectDied);
+                if (ninjaEjectDied)
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[EJECT_DEATH] ninja X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 2;
+                    return false;
+                }
+
+                // 5. Center death check (same as cube)
+                if (CheckCenterPointDeath(ref s))
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[CENTER_DEATH] ninja X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "CENTER_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 3;
+                    return false;
+                }
+
+                // 6. Jump — press-only (no hold buffer). Can jump while airborne if jumps remain.
+                // NES: ninja checks press (not hold), ninjajumps > 0, !orbhitonthisframe, !hblocked, dashing==0
+                if (pressInput && s.NinjaJumps > 0 && !orbHitThisFrame && !s.HBlocked && s.Dashing == 0)
+                {
+                    s.VelY_fixed = GetJumpVel(s.Mini) * s.GravMul;
+                    s.NinjaJumps--;
+                    s.OnGround = false;
+                    // NES slope_jump_check: add extra velocity when jumping off a slope
+                    PfSlopeJumpCheck(ref s);
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[NINJA_JUMP] VelY=0x{s.VelY_fixed:X4} jumpsLeft={s.NinjaJumps} gravMul={s.GravMul} mini={s.Mini}");
+#endif
+                }
+
+                // 7. UpdateSlopeCounters — AFTER jump check (matching NES/SIM order)
+                PfUpdateSlopeCounters_Fresh(ref s);
+            }
             else if (s.GameMode == 9) // Pogo mode
             {
                 // Pogo uses swing gravity + ball-style (velocity-gated) eject + auto-bounce
@@ -10145,6 +10256,237 @@ namespace FamidashEditor
         }
 
         // -------------------------------------------------------------------
+        //  NINJA INPUT DECISION
+        // -------------------------------------------------------------------
+
+        // Committed ninja jump sequence: when a multi-jump plan is chosen,
+        // _committedNinjaJumps holds a queue of frame delays for upcoming air jumps.
+        // Each entry is the number of frames to WAIT before the next tap.
+        // 0 means jump immediately on this frame.
+
+        /// <summary>
+        /// Ninja decision: tap-to-jump with up to 3 air jumps.
+        /// Strategy: evaluate single, double, and triple jump sequences at various
+        /// timing offsets, comparing survival distances. The jump timing bias
+        /// adjusts how aggressively the ninja uses its air jumps.
+        /// </summary>
+        private bool DecideNinjaInput(SimState state, bool isOverrideFrame)
+        {
+            // -- Orb decision (same as cube — orbs apply to all modes) --
+            if (!isOverrideFrame && !_btSuppressJumpUntilAirborne)
+            {
+                int orbSid = ScanForOrbOverlap(state, out int orbIndex);
+                if (orbSid >= 0)
+                {
+                    var orbState = state.Clone();
+                    bool orbAlive = StepFrame(ref orbState, true, out bool orbEnd);
+                    if (orbEnd) return true;
+
+                    int orbSurv = 0;
+                    if (orbAlive)
+                        orbSurv = 1 + SimulateNinjaForward(orbState, null);
+
+                    var skipState = state.Clone();
+                    skipState.ProcessedSprites.Add(orbIndex);
+                    bool skipAlive = StepFrame(ref skipState, false, out bool skipEnd);
+                    if (skipEnd) return false;
+
+                    int skipSurv = 0;
+                    if (skipAlive)
+                        skipSurv = 1 + SimulateNinjaForward(skipState, null);
+
+                    bool useOrb = orbSurv >= skipSurv;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DECIDE_NINJA_ORB] orbSurv={orbSurv} skipSurv={skipSurv} → {(useOrb ? "ACTIVATE" : "SKIP")}");
+#endif
+                    return useOrb;
+                }
+            }
+
+            // If we have committed jumps from a previous plan, execute them
+            if (_committedNinjaJumps.Count > 0)
+            {
+                if (_ninjaWaitFrames > 0)
+                {
+                    _ninjaWaitFrames--;
+                    return false;
+                }
+                // Time to jump
+                _ninjaWaitFrames = _committedNinjaJumps.Dequeue();
+                return true;
+            }
+
+            // Grounded: evaluate whether to jump vs wait
+            // Airborne with jumps left: handled by committed plan
+            bool grounded = state.VelY_fixed == 0;
+
+            if (!grounded && state.NinjaJumps <= 0)
+                return false; // Airborne with no jumps left — nothing to do
+
+            if (_speculativeDepth >= MAX_SPECULATIVE_DEPTH) return false;
+
+            // -- Evaluate: no-jump vs various jump plans --
+            _speculativeDepth++;
+
+            // No-jump baseline
+            List<(int x, int y)>? noJumpPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                ? new List<(int x, int y)>() : null;
+            int noJumpSurv = SimulateNinjaForward(state, null, noJumpPath);
+            _speculativeDepth--;
+            OnSpeculativePath?.Invoke(noJumpPath, -1, noJumpSurv, false);
+
+            int bestSurv = noJumpSurv;
+            int[]? bestPlan = null;
+
+            // Generate candidate jump plans: single, double, and triple jumps
+            // with varying inter-jump delays (0 = immediate, up to 15 frame gaps)
+            int jumpsAvailable = grounded ? NINJA_MAX_JUMPS : state.NinjaJumps;
+
+            _speculativeDepth++;
+
+            // Single jump plans
+            {
+                List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                    ? new List<(int x, int y)>() : null;
+                int surv = SimulateNinjaForward(state, new int[0], specPath);
+                OnSpeculativePath?.Invoke(specPath, 0, surv, true);
+                if (surv > bestSurv) { bestSurv = surv; bestPlan = new int[0]; }
+            }
+
+            // Double jump plans (if we have 2+ jumps)
+            if (jumpsAvailable >= 2)
+            {
+                int[] delays = { 3, 6, 10, 15, 20 };
+                for (int di = 0; di < delays.Length; di++)
+                {
+                    int delay = delays[di];
+                    List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                        ? new List<(int x, int y)>() : null;
+                    int surv = SimulateNinjaForward(state, new int[] { delay }, specPath);
+                    OnSpeculativePath?.Invoke(specPath, delay, surv, true);
+                    if (surv > bestSurv) { bestSurv = surv; bestPlan = new int[] { delay }; }
+                }
+            }
+
+            // Triple jump plans (if we have 3 jumps)
+            if (jumpsAvailable >= 3)
+            {
+                int[] delays = { 3, 6, 10, 15 };
+                for (int d1i = 0; d1i < delays.Length; d1i++)
+                {
+                    for (int d2i = 0; d2i < delays.Length; d2i++)
+                    {
+                        int d1 = delays[d1i], d2 = delays[d2i];
+                        List<(int x, int y)>? specPath = (_speculativeDepth == 1 && OnSpeculativePath != null)
+                            ? new List<(int x, int y)>() : null;
+                        int surv = SimulateNinjaForward(state, new int[] { d1, d2 }, specPath);
+                        OnSpeculativePath?.Invoke(specPath, d1 * 100 + d2, surv, true);
+                        if (surv > bestSurv) { bestSurv = surv; bestPlan = new int[] { d1, d2 }; }
+                    }
+                }
+            }
+
+            _speculativeDepth--;
+
+            // No improvement → don't jump
+            if (bestPlan == null)
+                return false;
+
+            // Commit the plan — queue follow-up jumps
+            _committedNinjaJumps.Clear();
+            _ninjaWaitFrames = 0;
+            for (int i = 0; i < bestPlan.Length; i++)
+                _committedNinjaJumps.Enqueue(bestPlan[i]);
+
+#if !DISABLE_DEBUG_LOGGING
+            PfLog($"[NINJA_DECIDE] noJumpSurv={noJumpSurv} bestSurv={bestSurv} plan=[{string.Join(",", bestPlan)}] jumpsAvail={jumpsAvailable}");
+#endif
+            return true; // Execute first jump now
+        }
+
+        /// <summary>
+        /// Simulate ninja forward with a specific jump plan.
+        /// jumpDelays=null means no jumping at all (walk baseline).
+        /// jumpDelays=int[0] means single jump (frame 0 only).
+        /// jumpDelays=int[]{N} means double jump: jump at frame 0, then wait N frames and jump again.
+        /// jumpDelays=int[]{N,M} means triple jump: jump at frame 0, wait N, jump, wait M, jump.
+        /// </summary>
+        private int SimulateNinjaForward(SimState state, int[]? jumpDelays, List<(int x, int y)>? pathPoints = null)
+        {
+            var s = state.Clone();
+            { int _mo = (s.Mini && !s.GravFlipped) ? 4 : 0; pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + _mo + 8)); }
+
+            // Build a simple per-frame input schedule from the jump plan
+            // Frame 0: always jump (first jump)
+            // Frame (delay1): second jump
+            // Frame (delay1+delay2): third jump
+            // Between jumps and after all jumps: no input (unless danger-based re-jump)
+            int nextJumpFrame = -1; // -1 = first jump already at frame 0
+            int jumpScheduleIdx = 0;
+            int jumpAccum = 0; // accumulates delays to find absolute frame of next jump
+            if (jumpDelays != null && jumpDelays.Length > 0)
+            {
+                jumpAccum = jumpDelays[0];
+                nextJumpFrame = jumpAccum;
+                jumpScheduleIdx = 1;
+            }
+
+            bool planDone = (jumpDelays == null); // null = no jumps at all
+            int jumpsUsed = 0; // track how many jumps we've used
+
+            for (int f = 0; f < LOOKAHEAD_HORIZON; f++)
+            {
+                bool input = false;
+
+                if (!planDone)
+                {
+                    if (f == 0)
+                    {
+                        // First jump
+                        input = true;
+                        jumpsUsed++;
+                    }
+                    else if (nextJumpFrame >= 0 && f == nextJumpFrame)
+                    {
+                        // Scheduled air jump
+                        input = true;
+                        jumpsUsed++;
+                        // Queue next jump if available
+                        if (jumpDelays != null && jumpScheduleIdx < jumpDelays.Length)
+                        {
+                            jumpAccum += jumpDelays[jumpScheduleIdx];
+                            nextJumpFrame = jumpAccum;
+                            jumpScheduleIdx++;
+                        }
+                        else
+                        {
+                            nextJumpFrame = -1; // no more scheduled jumps
+                        }
+                    }
+                }
+
+                // After plan exhausted and grounded again, use danger check for re-jumps
+                if (!input && s.VelY_fixed == 0 && s.OnGround && (planDone || jumpsUsed > 0))
+                {
+                    input = QuickDangerCheck(s);
+                }
+
+                // Auto-activate orbs encountered during simulation
+                if (!input && s.PendingOrbIndex >= 0
+                    && !_btSkipSpecificOrbs.Contains(s.PendingOrbIndex))
+                {
+                    input = true;
+                }
+
+                bool alive = StepFrame(ref s, input, out bool endLevel);
+                if (!alive) return f;
+                if (endLevel) return LOOKAHEAD_HORIZON;
+                { int _mo = (s.Mini && !s.GravFlipped) ? 4 : 0; pathPoints?.Add(((s.X_fixed >> 8) + 8, (s.Y_fixed >> 8) + _mo + 8)); }
+            }
+            return LOOKAHEAD_HORIZON;
+        }
+
+        // -------------------------------------------------------------------
         //  WAVE INPUT DECISION (heuristic mode)
         // -------------------------------------------------------------------
 
@@ -10966,7 +11308,11 @@ namespace FamidashEditor
             if (lastGameModeSid.HasValue)
             {
                 int mode = SpriteIdToGameMode(lastGameModeSid.Value);
-                if (mode >= 0) s.GameMode = mode;
+                if (mode >= 0)
+                {
+                    s.GameMode = mode;
+                    if (mode == 8) s.NinjaJumps = NINJA_MAX_JUMPS;
+                }
             }
             if (lastMiniSid.HasValue)
                 s.Mini = (lastMiniSid.Value == 0x18);
@@ -11741,6 +12087,23 @@ namespace FamidashEditor
                     // Clear ball input buffer — a buffered flip from a previous
                     // ball segment shouldn't leak through other modes.
                     s.BallInputBuffer = 0;
+                    // Initialize ninja jump count on entering ninja mode
+                    // NES sprite_loading.h: clearrobotjumpframes() on ninja portal
+                    if (mode == 8)
+                    {
+                        s.NinjaJumps = NINJA_MAX_JUMPS;
+                        s.RobotJumpTime = 0;
+                        if (_speculativeDepth == 0)
+                        {
+                            _committedNinjaJumps.Clear();
+                            _ninjaWaitFrames = 0;
+                        }
+                    }
+                    else if (mode == 4)
+                    {
+                        // Entering robot — clear ninja state
+                        s.RobotJumpTime = 0;
+                    }
                     // Ball?ship/UFO stabilization: suppress coin-seeking for
                     // a limited window so the ship navigates initial obstacles with
                     // pure survival + corridorCenter PD (matching no-coin

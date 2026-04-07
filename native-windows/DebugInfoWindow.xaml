@@ -26,6 +26,7 @@
             <TextBlock x:Name="DbgRobotJumpTimeText" Text="Robot jump time: 0" Foreground="White" FontSize="11" Margin="0,2"/>
             <TextBlock x:Name="DbgPlayerYVelText" Text="Player Y vel: 0" Foreground="White" FontSize="11" Margin="0,2"/>
             <TextBlock x:Name="DbgBufferActiveText" Text="Buffer active: False" Foreground="White" FontSize="11" Margin="0,2"/>
+            <TextBlock x:Name="DbgFreeCamText" Text="FreeCam: False" Foreground="White" FontSize="11" Margin="0,2"/>
         </StackPanel>
     </Border>
 </Window>

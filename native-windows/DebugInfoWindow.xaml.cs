@@ -16,7 +16,7 @@ namespace FamidashEditor
             int xPos, int yPos, string xSpeed, int ninjaJumps,
             bool dBlocked, bool hBlocked, bool fBlocked, bool jBlocked,
             bool orbed, bool blackOrbed, int dashing, int robotJumpTime,
-            int playerYVel, bool bufferActive)
+            int playerYVel, bool bufferActive, bool freeCam)
         {
             try
             {
@@ -39,6 +39,7 @@ namespace FamidashEditor
                     if (DbgRobotJumpTimeText != null) DbgRobotJumpTimeText.Text = $"Robot jump time: {robotJumpTime}";
                     if (DbgPlayerYVelText != null) DbgPlayerYVelText.Text = $"Player Y vel: {playerYVel} (0x{playerYVel:X})";
                     if (DbgBufferActiveText != null) DbgBufferActiveText.Text = $"Buffer active: {bufferActive}";
+                    if (DbgFreeCamText != null) DbgFreeCamText.Text = $"FreeCam: {freeCam}";
                 });
             }
             catch { }

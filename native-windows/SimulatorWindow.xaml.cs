@@ -1332,6 +1332,57 @@ namespace FamidashEditor
         private const int NES_H = 15; // vertical tiles (was 16)
         private const int TILE = 16;
 
+        // NES spawn/scroll Y config (set from MainWindow before use)
+        private int? configSpawnYHi = null;
+        private int? configSpawnYLo = null;
+        private int? configScrollYHi = null;
+        private int? configScrollYLo = null;
+
+        /// <summary>
+        /// Apply NES spawn Y / scroll Y config values.
+        /// Call after construction and before ApplyStartPosMarker.
+        /// These values are used when no START POS marker is set.
+        /// </summary>
+        public void SetSpawnScrollConfig(int? spawnHi, int? spawnLo, int? scrollHi, int? scrollLo)
+        {
+            configSpawnYHi = spawnHi;
+            configSpawnYLo = spawnLo;
+            configScrollYHi = scrollHi;
+            configScrollYLo = scrollLo;
+        }
+
+        /// <summary>
+        /// Convert NES spawn Y hi/lo bytes to TMX pixel Y (fixed-point).
+        /// Returns null if no config is set.
+        /// </summary>
+        private int? ComputeSpawnYFixed()
+        {
+            if (!configSpawnYHi.HasValue) return null;
+            int hi = configSpawnYHi.Value & 0xFF;
+            int lo = (configSpawnYLo.HasValue ? configSpawnYLo.Value : 0) & 0xFF;
+            int nesSpawnY = (hi << 8) | lo; // NES 16-bit fixed-point (8 frac bits)
+            int worldOffset = (mapHeight - NES_H) * TILE; // TMX offset for NES world origin
+            return nesSpawnY + (worldOffset << 8);
+        }
+
+        /// <summary>
+        /// Convert NES scroll Y hi/lo bytes to TMX camera Y (fixed-point).
+        /// Returns null if no config is set.
+        /// </summary>
+        private int? ComputeScrollYFixed()
+        {
+            if (!configScrollYHi.HasValue) return null;
+            int hi = configScrollYHi.Value & 0xFF;
+            int lo = (configScrollYLo.HasValue ? configScrollYLo.Value : 0) & 0xFF;
+            // Linearize NES nametable scroll (each 0x100 block = 240 valid pixels, F0-FF skipped)
+            int linearScroll = hi * 240 + lo;
+            int linearMax = 2 * 240 + 239; // 719 = linearize(0x02EF), the default bottom scroll
+            int pixelsFromBottom = linearMax - linearScroll;
+            int maxCameraY = (mapHeight - NES_H) * TILE;
+            int tmxCamY = Math.Max(0, maxCameraY - pixelsFromBottom);
+            return Math.Min(maxCameraY, tmxCamY) << 8;
+        }
+
         // Centralized helper for determining whether a collision category provides
         // a floor at a given local tile column (0..15). Returns true and sets
         // `topOffsetPx` to the Y offset (0..15) of the floor within the tile
@@ -2345,14 +2396,79 @@ namespace FamidashEditor
         }
 
         /// <summary>
-        /// Check for cam lock portal collision.
-        /// 0xDD = cam lock ON (freeze camera Y auto-follow)
-        /// 0xED = cam lock OFF (resume camera Y auto-follow)
+        /// Check for cam lock triggers and wrap portal collision.
+        /// 0xDD = freecam ON (camera follows player Y freely)
+        /// 0xED = freecam OFF (resume locked camera Y)
+        /// Cam lock triggers use X-crossing detection (same as gravity mod triggers):
+        ///   before the player reaches the interaction line, activate when trigger X
+        ///   is at or behind the camera center; after crossing the interaction line,
+        ///   activate when trigger X falls between prevCenter and the interaction line.
+        /// Wrap portals (0x8E/0x9E) still use hitbox collision.
         /// </summary>
-        private void CheckCamLockPortals()
+        private void CheckCamLockPortals(int prevPlayerCenter_fixed, int attemptedPlayerCenter_fixed)
         {
             try
             {
+                // --- Cam lock triggers (0xDD / 0xED): X-crossing detection ---
+                int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
+                bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
+
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                {
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    if (sid < 0) continue;
+
+                    bool isCamLockOn = (sid == 0xDD);
+                    bool isCamLockOff = (sid == 0xED);
+                    if (!isCamLockOn && !isCamLockOff) continue;
+
+                    int anchorTileX;
+                    if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
+                        anchorTileX = anchor.anchorTileX;
+                    else
+                        anchorTileX = idx % mapWidth;
+
+                    int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
+
+                    if (crossedInteraction)
+                    {
+                        // Player is crossing from pre-interaction to post-interaction this frame.
+                        // Activate any cam lock trigger whose X is between prev center and the line.
+                        if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
+                        {
+                            if (!processedCamLockPortals.Contains(idx))
+                            {
+                                nocamlockforced = isCamLockOn;
+                                processedCamLockPortals.Add(idx);
+                                AppendSimDebug($"[CAM_LOCK] nocamlockforced={nocamlockforced} at idx={idx} (crossing)");
+                            }
+                        }
+                        else if (anchorX_center_fixed > INTERACTION_LINE_FIXED)
+                        {
+                            // Trigger is ahead of the interaction line; clear so it can re-fire later
+                            processedCamLockPortals.Remove(idx);
+                        }
+                    }
+                    else
+                    {
+                        // Normal scrolling: activate when trigger X reaches camera center
+                        if (anchorX_center_fixed <= center_fixed)
+                        {
+                            if (!processedCamLockPortals.Contains(idx))
+                            {
+                                nocamlockforced = isCamLockOn;
+                                processedCamLockPortals.Add(idx);
+                                AppendSimDebug($"[CAM_LOCK] nocamlockforced={nocamlockforced} at idx={idx} (center)");
+                            }
+                        }
+                        else
+                        {
+                            processedCamLockPortals.Remove(idx);
+                        }
+                    }
+                }
+
+                // --- Wrap portals (0x8E / 0x9E): hitbox collision ---
                 int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = playerY_fixed >> 8;
 
@@ -2371,35 +2487,17 @@ namespace FamidashEditor
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
 
-                    bool isCamLockOn = (sid == 0xDD);
-                    bool isCamLockOff = (sid == 0xED);
                     bool isWrapOn = (sid == 0x8E);
                     bool isWrapOff = (sid == 0x9E);
-                    if (!isCamLockOn && !isCamLockOff && !isWrapOn && !isWrapOff) continue;
+                    if (!isWrapOn && !isWrapOff) continue;
 
-                    if (isCamLockOn || isCamLockOff)
+                    if (processedWrapPortals.Contains(idx)) continue;
+
+                    if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px, true))
                     {
-                        if (processedCamLockPortals.Contains(idx)) continue;
-
-                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px, true))
-                        {
-                            nocamlockforced = isCamLockOn;
-                            processedCamLockPortals.Add(idx);
-                            AppendSimDebug($"[CAM_LOCK] nocamlockforced={nocamlockforced} at idx={idx}");
-                            continue;
-                        }
-                    }
-                    else // isWrapOn || isWrapOff
-                    {
-                        if (processedWrapPortals.Contains(idx)) continue;
-
-                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px, true))
-                        {
-                            wrapMode = isWrapOn;
-                            processedWrapPortals.Add(idx);
-                            AppendSimDebug($"[WRAP] wrapMode={wrapMode} at idx={idx}");
-                            continue;
-                        }
+                        wrapMode = isWrapOn;
+                        processedWrapPortals.Add(idx);
+                        AppendSimDebug($"[WRAP] wrapMode={wrapMode} at idx={idx}");
                     }
                 }
             }
@@ -6105,17 +6203,29 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    try
+                    // Try NES spawn Y config first, fall back to ground-based default
+                    int? cfgSpawnY = ComputeSpawnYFixed();
+                    if (cfgSpawnY.HasValue)
                     {
-                        int groundRowsToReserve = 0;
-                        try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
-                        int groundSurface_px = (mapHeight - groundRowsToReserve) * TILE;
-                        int cubeHitboxH = 15; // normal cube hitbox height
-                        playerY_fixed = Math.Max(0, groundSurface_px - cubeHitboxH) << 8;
+                        playerY_fixed = cfgSpawnY.Value;
                         int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
                         if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                        if (playerY_fixed < 0) playerY_fixed = 0;
                     }
-                    catch { playerY_fixed = 0; }
+                    else
+                    {
+                        try
+                        {
+                            int groundRowsToReserve = 0;
+                            try { if (hasGroundLayer && groundTileRows > 0) groundRowsToReserve = Math.Min(3, groundTileRows); } catch { groundRowsToReserve = 0; }
+                            int groundSurface_px = (mapHeight - groundRowsToReserve) * TILE;
+                            int cubeHitboxH = 15; // normal cube hitbox height
+                            playerY_fixed = Math.Max(0, groundSurface_px - cubeHitboxH) << 8;
+                            int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                            if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                        }
+                        catch { playerY_fixed = 0; }
+                    }
                 }
 
                 // Reset velocity and physics state
@@ -6201,8 +6311,17 @@ namespace FamidashEditor
                 else
                 {
                     cameraX_fixed = 0;
-                    int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                    cameraY_fixed = maxY_fixed;
+                    // Try NES scroll Y config first, fall back to map-bottom default
+                    int? cfgScrollY = ComputeScrollYFixed();
+                    if (cfgScrollY.HasValue)
+                    {
+                        cameraY_fixed = cfgScrollY.Value;
+                    }
+                    else
+                    {
+                        int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                        cameraY_fixed = maxY_fixed;
+                    }
                 }
 
                 // Clear paths and processed portals
@@ -6336,6 +6455,33 @@ namespace FamidashEditor
                         // Small delay to ensure seek completes
                         await System.Threading.Tasks.Task.Delay(100).ConfigureAwait(false);
                     }
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Apply spawn/scroll Y from NES level config when no START POS
+        /// marker is active. Called after ApplyStartPosMarker().
+        /// </summary>
+        public void ApplySpawnScrollIfNoStartPos()
+        {
+            if (hasAppliedStartPos) return;
+            try
+            {
+                int? spawnY = ComputeSpawnYFixed();
+                if (spawnY.HasValue)
+                {
+                    playerY_fixed = spawnY.Value;
+                    int maxPlayerY_fixed = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+                    if (playerY_fixed > maxPlayerY_fixed) playerY_fixed = maxPlayerY_fixed;
+                    if (playerY_fixed < 0) playerY_fixed = 0;
+                }
+
+                int? scrollY = ComputeScrollYFixed();
+                if (scrollY.HasValue)
+                {
+                    cameraY_fixed = scrollY.Value;
                 }
             }
             catch { }
@@ -10316,7 +10462,8 @@ namespace FamidashEditor
                         dashing[currplayer],
                         robotJumpTime[0],
                         snapPlayerVelY,
-                        orbBufferActive[currplayer]
+                        orbBufferActive[currplayer],
+                        nocamlockforced
                     );
                 }
             }
@@ -10560,7 +10707,7 @@ namespace FamidashEditor
                         CheckMiniGrowthPortals();
                         
                         // Check for cam lock portal activation (0xDD=lock, 0xED=unlock)
-                        CheckCamLockPortals();
+                        CheckCamLockPortals(prevPlayerCenter_fixed, attemptedPlayerCenter_fixed);
                         
                         // Check for timewarp, hide player, and trail triggers
                         CheckMiscTriggers();
