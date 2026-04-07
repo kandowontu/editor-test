@@ -11301,32 +11301,6 @@ namespace FamidashEditor
                         }
                         // === END FORWARD COLLISION CHECK ===
                         
-                        // Check for death collision at OLD X (matches NES: bg_coll_death
-                        // reads Generic.x which was set BEFORE x_movement advances currplayer_x)
-                        if (!camModeActive && CheckDeathCollision(out int deathX_px, out int deathY_px))
-                        {
-                            AppendSimDebug($"[DEATH] Death tile collision at ({deathX_px},{deathY_px})");
-                            deathTriggered = true;
-                            deathTileX = deathX_px;
-                            deathTileY = deathY_px;
-                            paused = true;
-                            _ = StopMusicAsync();
-                            
-                            try
-                            {
-                                Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
-                                    if (this.Owner is MainWindow mw)
-                                    {
-                                        try { mw.PauseSimulatorPlayback(); } catch { }
-                                        try { mw.AddDeathMarker(deathX_px, deathY_px); } catch { }
-                                    }
-                                }));
-                            }
-                            catch { }
-                        }
-                        
                         // --- Wave-specific slope death checks (NES bg_coll_death + bg_coll_R) ---
                         // NES bg_coll_death calls bg_coll_slope at the center point.
                         // NES bg_coll_R → bg_side_coll_common calls bg_coll_slope at the right edge.
@@ -11393,8 +11367,34 @@ namespace FamidashEditor
                             }
                         }
                         
-                        // Restore NEW X after physics+forward collision+death check ran at OLD X
+                        // Restore NEW X after physics+forward collision ran at OLD X
                         playerX_fixed = attemptedPlayerX_fixed;
+                        
+                        // Check for death collision at NEW X (matches NES: bg_coll_death
+                        // runs INSIDE x_movement AFTER advancing currplayer_x)
+                        if (!deathTriggered && !camModeActive && CheckDeathCollision(out int deathX_px, out int deathY_px))
+                        {
+                            AppendSimDebug($"[DEATH] Death tile collision at ({deathX_px},{deathY_px})");
+                            deathTriggered = true;
+                            deathTileX = deathX_px;
+                            deathTileY = deathY_px;
+                            paused = true;
+                            _ = StopMusicAsync();
+                            
+                            try
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    if (this.Owner is MainWindow mw)
+                                    {
+                                        try { mw.PauseSimulatorPlayback(); } catch { }
+                                        try { mw.AddDeathMarker(deathX_px, deathY_px); } catch { }
+                                    }
+                                }));
+                            }
+                            catch { }
+                        }
                         
                         // Reset gravity flip flag now that physics has processed it
                         gravityFlippedThisFrame = false;
