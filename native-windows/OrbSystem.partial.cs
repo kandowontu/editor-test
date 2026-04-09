@@ -326,9 +326,10 @@ namespace FamidashEditor
             bool isWaveOrSnake = (gamemode == 6 || gamemode == 11);
             if (isWaveOrSnake && orbType != BLUE_ORB && orbType != BLUE_ORB_MULTI && 
                 orbType != SPIDER_ORB_UP && orbType != SPIDER_ORB_DOWN && 
-                orbType != SPIDER_PAD_UP && orbType != SPIDER_PAD_DOWN)
+                orbType != SPIDER_PAD_UP && orbType != SPIDER_PAD_DOWN &&
+                orbType != GREEN_ORB && orbType != GREEN_ORB_MULTI)
             {
-                // Wave/Snake ignore non-blue, non-spider orbs
+                // Wave/Snake ignore non-blue, non-spider, non-green orbs
                 return;
             }
             
@@ -482,6 +483,12 @@ namespace FamidashEditor
                         int otherPlayerG = currplayer ^ 1;
                         player_vel_y_fixed[otherPlayerG] /= 2;
                         AppendSimDebug($"[DUAL_CAP_CHECK] Green orb: flipped both gravs, halved player[{otherPlayerG}] vel to 0x{player_vel_y_fixed[otherPlayerG]:X4}");
+                    }
+                    
+                    // Wave and Snake: no velocity change, just reverse gravity
+                    if (isWaveOrSnake)
+                    {
+                        break;
                     }
                     
                     // Use yellow orb row (0) from PadOrbHeights

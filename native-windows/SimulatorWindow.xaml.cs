@@ -4317,6 +4317,7 @@ namespace FamidashEditor
         private int cachedStartTileX = int.MinValue;
         private int cachedStartTileY = int.MinValue;
         private System.Windows.Controls.Image? tileLayerImage = null;
+        private System.Windows.Controls.Image? spriteLayerImage = null;
         private System.Windows.Shapes.Rectangle? bgRectPersistent = null;
         private System.Windows.Shapes.Rectangle? groundRectPersistent = null;
         // Cached parallax brush — reuse per frame, only recreate when source image changes
@@ -4599,9 +4600,9 @@ namespace FamidashEditor
                         int screenRelY = playerY_fixed - cameraY_fixed;
                         if (!wrapMode)
                         {
-                            if (screenRelY < 0x0600)
+                            if (screenRelY < 0x0600 || screenRelY > 0xF900)
                             {
-                                AppendSimDebug($"[DEATH] OOB top: screenRelY=0x{screenRelY:X4}");
+                                AppendSimDebug($"[DEATH] OOB {(screenRelY < 0x0600 ? "top" : "bottom")}: screenRelY=0x{screenRelY:X4}");
                                 deathTriggered = true;
                                 paused = true;
                                 _ = StopMusicAsync();
@@ -5317,6 +5318,20 @@ namespace FamidashEditor
                 System.Windows.Media.RenderOptions.SetEdgeMode(tileLayerImage, EdgeMode.Aliased);
                 RenderCanvas.Children.Add(tileLayerImage);
                 try { System.Windows.Controls.Canvas.SetZIndex(tileLayerImage, 0); } catch { }
+
+                // Sprite layer image: all sprites rendered into a single RTB each frame
+                spriteLayerImage = new System.Windows.Controls.Image
+                {
+                    Width = (NES_W + 1) * TILE,
+                    Height = (NES_H + 1) * TILE,
+                    Stretch = Stretch.None,
+                    IsHitTestVisible = false
+                };
+                System.Windows.Media.RenderOptions.SetBitmapScalingMode(spriteLayerImage, BitmapScalingMode.NearestNeighbor);
+                spriteLayerImage.SnapsToDevicePixels = true;
+                System.Windows.Media.RenderOptions.SetEdgeMode(spriteLayerImage, EdgeMode.Aliased);
+                RenderCanvas.Children.Add(spriteLayerImage);
+                try { System.Windows.Controls.Canvas.SetZIndex(spriteLayerImage, 1); } catch { }
 
                 groundRectPersistent = new System.Windows.Shapes.Rectangle
                 {
@@ -9050,7 +9065,6 @@ namespace FamidashEditor
                                         if (gimg == null && groundImages != null && arrIdx >= 0 && arrIdx < groundImages.Length) gimg = groundImages[arrIdx];
                                         if (gimg != null)
                                         {
-                                            var gdraw = App.EnsureUnfrozenForRender(gimg) ?? gimg;
                                             if (gimg is BitmapSource gbs)
                                             {
                                                 double imgW = Math.Max(1.0, gbs.PixelWidth);
@@ -9059,16 +9073,16 @@ namespace FamidashEditor
                                                 {
                                                     double x = dest.X + (TILE - imgW) / 2.0;
                                                     double y = dest.Y + (TILE - imgH);
-                                                    dc.DrawImage(gdraw, new Rect(x, y, imgW, imgH));
+                                                    dc.DrawImage(gimg, new Rect(x, y, imgW, imgH));
                                                 }
                                                 else
                                                 {
-                                                    dc.DrawImage(gdraw, dest);
+                                                    dc.DrawImage(gimg, dest);
                                                 }
                                             }
                                             else
                                             {
-                                                dc.DrawImage(gdraw, dest);
+                                                dc.DrawImage(gimg, dest);
                                             }
                                         }
                                         else
@@ -9468,20 +9482,17 @@ namespace FamidashEditor
                                                 }
                                                 catch { }
 
-                                            var drawTile = App.EnsureUnfrozenForRender(chosenTile) ?? chosenTile;
-                                            dc.DrawImage(drawTile, new Rect(x, y, imgW, imgH));
+                                            dc.DrawImage(chosenTile, new Rect(x, y, imgW, imgH));
                                         }
                                         else
                                         {
                                             // image larger than tile: fall back to scaling to tile
-                                            var drawTile = App.EnsureUnfrozenForRender(chosenTile) ?? chosenTile;
-                                            dc.DrawImage(drawTile, dest);
+                                            dc.DrawImage(chosenTile, dest);
                                         }
                                     }
                                     else
                                     {
-                                        var drawTile = App.EnsureUnfrozenForRender(chosenTile) ?? chosenTile;
-                                        dc.DrawImage(drawTile, dest);
+                                        dc.DrawImage(chosenTile, dest);
                                     }
                                 }
                                 else
@@ -9506,7 +9517,7 @@ namespace FamidashEditor
                     lastCacheAnimationFrame = animationFrame;
                     cachedStartTileX = startTileX;
                     cachedStartTileY = startTileY;
-                    tileLayerImage!.Source = App.EnsureUnfrozenForRender(tileLayerCache) ?? tileLayerCache;
+                    tileLayerImage!.Source = tileLayerCache;
                     try { AppendSimDebug($"Assigned tileLayerImage.Source={(tileLayerImage.Source==null?"null":tileLayerImage.Source.GetType().Name)}"); } catch { }
                     tileLayerImage!.Width = pxW;
                     tileLayerImage!.Height = pxH;
@@ -9747,12 +9758,15 @@ namespace FamidashEditor
             }
             catch { }
 
-            // Render sprites using pooled Image controls
+            // Render sprites into a single RenderTargetBitmap instead of individual Image
+            // controls. This avoids WPF compositor issues with many Image children.
             spritesInUse = 0;
-            for (int vx = 0; vx < NES_W; vx++)
+            var spriteDv = new DrawingVisual();
+            var spriteDc = spriteDv.RenderOpen();
+            for (int vx = 0; vx <= NES_W; vx++)
             {
                 int mapX = startTileX + vx;
-                for (int vy = 0; vy < NES_H; vy++)
+                for (int vy = 0; vy <= NES_H; vy++)
                 {
                     int mapY = startTileY + groundRowsToReserve + vy;
                     if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) continue;
@@ -9781,6 +9795,8 @@ namespace FamidashEditor
                     if (s == 0xF4 || s == 0xF5) continue;
                     if (s == 0x6F || s == 0x7F) continue;
                     if (s == 0xF2 || s == 0xF3) continue;
+                    // Hide gravity portals (normal/reversed) that are invisible triggers
+                    if (s == 0xEE || s == 0xEF || s == 0xFB || s == 0xFC) continue;
 
                     // If the global 'hide trigger sprites' option is enabled, skip drawing
                     // these specific trigger sprite images while still allowing them to
@@ -9957,17 +9973,17 @@ namespace FamidashEditor
                     if (s >= 0x70 && s <= 0x74) continue;
                     if (hideColorTriggers && IsColorTriggerSprite(s)) continue;
 
-                    // Calculate position early for bounds checking
-                    double px = (mapX - startTileX) * TILE - offsetX;
-                    double py = (vy * TILE) - offsetY + gridRenderShiftYPx;
+                    // Calculate position in RTB-local coordinates (spriteLayerImage positioned at -offsetX,-offsetY)
+                    double px = (mapX - startTileX) * TILE;
+                    double py = (vy * TILE) + gridRenderShiftYPx;
                     if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
                     {
                         int storageTileX = idx % mapWidth;
                         int storageTileY = idx / mapWidth;
                         int tileDeltaX = storageTileX - anchor.anchorTileX;
                         int tileDeltaY = storageTileY - anchor.anchorTileY;
-                        double anchorDisplayX = (anchor.anchorTileX - startTileX) * TILE - offsetX;
-                        double anchorDisplayY = (anchor.anchorTileY - (startTileY + groundRowsToReserve)) * TILE - offsetY;
+                        double anchorDisplayX = (anchor.anchorTileX - startTileX) * TILE;
+                        double anchorDisplayY = (anchor.anchorTileY - (startTileY + groundRowsToReserve)) * TILE;
                         px = anchorDisplayX + tileDeltaX * TILE;
                         py = anchorDisplayY + tileDeltaY * TILE + gridRenderShiftYPx;
                     }
@@ -9980,8 +9996,8 @@ namespace FamidashEditor
                         spriteWidth = bs.PixelWidth;
                         spriteHeight = bs.PixelHeight;
                     }
-                    // Check if completely off-screen (with margin for sprites that extend beyond)
-                    if (px + spriteWidth < -16 || px > NES_W * TILE + 16 || py + spriteHeight < -16 || py > NES_H * TILE + 16)
+                    // Check if completely off the RTB (with margin for sprites that extend beyond)
+                    if (px + spriteWidth < -16 || px > (NES_W + 1) * TILE + 16 || py + spriteHeight < -16 || py > (NES_H + 1) * TILE + 16)
                     {
                         // Off-screen: skip expensive tinting and compositing operations
                         continue;
@@ -10042,41 +10058,13 @@ namespace FamidashEditor
                     }
                     catch { }
 
-                    // get pooled image
-                    System.Windows.Controls.Image simg;
-                    if (spritesInUse < spritePool.Count)
-                    {
-                        simg = spritePool[spritesInUse];
-                        simg.Visibility = Visibility.Visible;
-                    }
-                    else
-                    {
-                        simg = new System.Windows.Controls.Image { Stretch = Stretch.None };
-                        System.Windows.Media.RenderOptions.SetBitmapScalingMode(simg, BitmapScalingMode.NearestNeighbor);
-                        spritePool.Add(simg);
-                        RenderCanvas.Children.Add(simg);
-                    }
-                    // Source is set below — no need to null-reset (avoids double WPF invalidation)
                     ImageSource? finalSprite = chosenSprite;
-                    try
-                    {
-                        // For decoration sprites, composite the sprite over the rendered tile layer
-                        // (or fallback to the flat background tint) so semi-transparent edges blend
-                        // seamlessly with the exact underlying pixels instead of a flat color.
-                        if (chosenSprite is BitmapSource cbs && decorationSpriteIds.Contains(s) && backgroundTint.A > 0)
-                        {
-                            int ix = (int)Math.Round(px);
-                            int iy = (int)Math.Round(py);
-                            var comp = CompositeSpriteOverBackgroundAt(chosenSprite, backgroundTint, ix, iy);
-                            if (comp != null) finalSprite = comp;
-                        }
-                    }
-                    catch { }
 
-                    simg.Source = App.EnsureUnfrozenForRender(finalSprite) ?? finalSprite;
-                    if (finalSprite is BitmapSource fbs) { simg.Width = fbs.PixelWidth; simg.Height = fbs.PixelHeight; }
-                    System.Windows.Controls.Canvas.SetLeft(simg, px);
-                    System.Windows.Controls.Canvas.SetTop(simg, py);
+                    // Draw sprite into the sprite layer DrawingVisual
+                    if (finalSprite is BitmapSource fbs)
+                    {
+                        spriteDc.DrawImage(finalSprite, new Rect(px, py, fbs.PixelWidth, fbs.PixelHeight));
+                    }
                     spritesInUse++;
 
                     // Cache the world-space hitbox rect derived from the same values the renderer
@@ -10112,8 +10100,9 @@ namespace FamidashEditor
                         }
                         catch { }
 
-                        double hx_screen = (int)Math.Round(px) + hxoff_o;
-                        double hy_screen = (int)Math.Round(py) + hyoff_o;
+                        // Convert RTB-local px/py to canvas-space for world coordinate computation
+                        double hx_screen = (int)Math.Round(px - offsetX) + hxoff_o;
+                        double hy_screen = (int)Math.Round(py - offsetY) + hyoff_o;
                         if (s_padDownIds.Contains(id_for_overlay)) hy_screen += 8;
 
                         int pixelX_now2 = snapCameraX >> 8;
@@ -10152,10 +10141,10 @@ namespace FamidashEditor
 
                             // Determine hitbox from sprite tables; prefer anchor's sprite id for geometry when anchored
                             int id = s & 0xFF;
-                            // Use the rendered `px`/`py` (which already include anchor tileDelta adjustments)
+                            // Use the rendered `px`/`py` converted to canvas-space
                             // as the hitbox base so the overlay aligns with the visible sprite instance.
-                            int hitbase_px_x = (int)Math.Round(px);
-                            int hitbase_px_y = (int)Math.Round(py);
+                            int hitbase_px_x = (int)Math.Round(px - offsetX);
+                            int hitbase_px_y = (int)Math.Round(py - offsetY);
                             if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anch))
                             {
                                 int anchorKey = anch.anchorTileY * mapWidth + anch.anchorTileX;
@@ -10209,8 +10198,28 @@ namespace FamidashEditor
                 }
             }
 
-            // Hide remaining pooled images
-            for (int i = spritesInUse; i < spritePool.Count; i++) spritePool[i].Visibility = Visibility.Collapsed;
+            // Close sprite DrawingContext and render to RTB
+            spriteDc.Close();
+            try
+            {
+                int sprRtbW = (NES_W + 1) * TILE;
+                int sprRtbH = (NES_H + 1) * TILE;
+                var spriteRtb = new RenderTargetBitmap(sprRtbW, sprRtbH, 96, 96, PixelFormats.Pbgra32);
+                spriteRtb.Render(spriteDv);
+                try { spriteRtb.Freeze(); } catch { }
+                if (spriteLayerImage != null)
+                {
+                    spriteLayerImage.Source = spriteRtb;
+                    spriteLayerImage.Width = sprRtbW;
+                    spriteLayerImage.Height = sprRtbH;
+                    System.Windows.Controls.Canvas.SetLeft(spriteLayerImage, -offsetX);
+                    System.Windows.Controls.Canvas.SetTop(spriteLayerImage, -offsetY);
+                }
+            }
+            catch { }
+
+            // Hide all old pooled sprite images (no longer used — sprites rendered via RTB)
+            for (int i = 0; i < spritePool.Count; i++) spritePool[i].Visibility = Visibility.Collapsed;
 
             // Hide remaining hitboxes
             for (int i = hitboxesInUse; i < hitboxPool.Count; i++) hitboxPool[i].Visibility = Visibility.Collapsed;
@@ -12320,11 +12329,13 @@ namespace FamidashEditor
 
             // Update trail Y position history (sliding window)
             // Shift old positions down and store current Y at index 0
+            // Use playerY_fixed (the active player's Y) rather than player_y_fixed[0],
+            // which is only synced during dual mode transitions and stays 0 in single-player.
             if (forcedTrails > 0)
             {
                 for (int ti = playerOldPosY.Length - 1; ti > 0; ti--)
                     playerOldPosY[ti] = playerOldPosY[ti - 1];
-                playerOldPosY[0] = player_y_fixed[0];
+                playerOldPosY[0] = playerY_fixed;
             }
 
             // If we have pending tints, schedule application on UI thread for heavier image work

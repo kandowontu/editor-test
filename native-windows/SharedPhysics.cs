@@ -134,9 +134,9 @@ namespace FamidashEditor
         //  BLUE PAD / ORB CONSTANTS  (from pad_orb_defines.h)
         // ════════════════════════════════════════════════════════════════════
         internal const int PAD_HEIGHT_BLUE_NORMAL = 0x3A0;   // magnitude (unsigned)
-        internal const int PAD_HEIGHT_BLUE_MINI   = 0x160;
+        internal const int PAD_HEIGHT_BLUE_MINI   = 0x3A0;   // NES: [g] = gravity-only, same for mini & normal
         internal const int ORB_BALL_HEIGHT_BLUE_NORMAL = 0x1A0;
-        internal const int ORB_BALL_HEIGHT_BLUE_MINI   = 0x60;
+        internal const int ORB_BALL_HEIGHT_BLUE_MINI   = 0x1A0;   // NES: [g] = gravity-only, same for mini & normal
 
         /// <summary>Blue pad velocity magnitude for normal vs mini.</summary>
         internal static int BluePadVel(bool mini) => mini ? PAD_HEIGHT_BLUE_MINI : PAD_HEIGHT_BLUE_NORMAL;

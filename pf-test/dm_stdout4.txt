@@ -1,0 +1,11 @@
+Loading ..\famidash\LEVELS\LEVEL DATA\lvlset_HUGE\deathmoon.tmx...
+Map: 1828x57  tiles=104196  sprites=104196
+Config: C:\Users\kando\Documents\Famidash Editor\deathmoon.tmx.cfg (67 offsets, 0 anchors)
+Start: (0, 849)  speed=1  maxFall=0x6  bias=0.50
+Coin collection mode ENABLED
+  Progress: 0%     Progress: 1%     Progress: 2%     Progress: 3%     Progress: 4%     Progress: 5%     Progress: 6%     Progress: 7%     Progress: 8%     Progress: 9%     Progress: 10%     Progress: 11%     Progress: 12%     Progress: 13%     Progress: 14%     Progress: 15%     Progress: 16%     Progress: 17%     Progress: 18%     Progress: 19%     Progress: 20%     Progress: 21%     Progress: 22%     Progress: 23%     Progress: 24%     Progress: 25%     Progress: 26%     Progress: 27%     Progress: 28%     Progress: 29%     Progress: 30%     Progress: 31%     Progress: 32%     Progress: 33%     Progress: 34%     Progress: 35%     Progress: 37%     Progress: 38%     Progress: 39%     Progress: 40%     Progress: 42%     Progress: 43%     Progress: 44%     Progress: 45%     Progress: 46%     Progress: 47%     Progress: 48%     Progress: 50%     Progress: 51%     Progress: 52%     Progress: 53%     Progress: 55%     Progress: 56%     Progress: 57%     Progress: 58%     Progress: 59%     Progress: 60%     Progress: 61%   
+Result: FAILED
+Message: BFS failed ~ best path to X=18034px (61%) [126.4s]
+Time: 126.4s
+Path points: 6123
+Trace: 

@@ -1,0 +1,336 @@
+"""Dump terrain collision grid for the death wall area in deathmoon.tmx"""
+import xml.etree.ElementTree as ET
+import sys
+
+TMX = r"C:\Editor Test\famidash\LEVELS\LEVEL DATA\lvlset_HUGE\deathmoon.tmx"
+GROUND_ROWS = 3
+TILE = 16
+
+# Collision table (matching MetatileCollision.cs)
+COL_TABLE_STR = """COL_NONE
+COL_FLOOR_CEIL
+COL_FLOOR_CEIL
+COL_BOTTOM
+COL_DEATH_TOP
+COL_FLOOR_CEIL
+COL_FLOOR_CEIL
+COL_NONE
+COL_DEATH_BOTTOM
+COL_DEATH_BOTTOM
+COL_DEATH_TOP
+COL_DEATH_TOP
+COL_DEATH_BOTTOM
+COL_DEATH_TOP
+COL_DEATH_LEFT
+COL_DEATH_RIGHT
+COL_ALL
+COL_DEATH
+COL_DEATH_BOTTOM
+COL_DEATH_BOTTOM
+COL_DEATH_TOP
+COL_TOP_CENTER_SPIKE
+COL_ALL
+COL_DEATH_TOP
+COL_DEATH_BOTTOM
+COL_TOP
+COL_DEATH
+COL_DEATH
+COL_DEATH
+COL_DEATH_LEFT
+COL_DEATH_TOP
+COL_DEATH_RIGHT
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_NONE
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_NONE
+COL_NONE
+COL_NONE
+COL_TOP_CENTER_SPIKE
+COL_ALL
+COL_ALL
+COL_ALL
+COL_DEATH_BOTTOM
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_NONE
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_TOP
+COL_TOP
+COL_TOP
+COL_TOP
+COL_TOP
+COL_BOTTOM
+COL_BOTTOM
+COL_BOTTOM
+COL_DEATH
+COL_DEATH_BOTTOM
+COL_DEATH_TOP
+COL_DEATH_RIGHT
+COL_DEATH_LEFT
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_NONE
+COL_ALL
+COL_ALL
+COL_ALL
+COL_ALL
+COL_DOWN_RIGHT_SPIKE
+COL_DEATH_BOTTOM
+COL_DOWN_LEFT_SPIKE
+COL_DEATH_RIGHT
+COL_NONE
+COL_DEATH_LEFT
+COL_UP_RIGHT_SPIKE
+COL_DEATH_TOP
+COL_UP_LEFT_SPIKE
+COL_DEATH
+COL_ALL
+COL_DEATH_BOTTOM
+COL_NONE
+COL_NONE
+COL_DEATH
+COL_DEATH
+COL_DEATH_BOTTOM
+COL_DEATH_TOP
+COL_DEATH_BOTTOM
+COL_DEATH_TOP
+COL_FLOOR_CEIL
+COL_FLOOR_CEIL
+COL_RIGHT
+COL_LEFT
+COL_RIGHT
+COL_LEFT
+COL_NONE
+COL_NO_SIDE
+COL_SLOPE_RD45
+COL_SLOPE_LD45
+COL_SLOPE_RU45
+COL_SLOPE_LU45
+COL_SLOPE_RD22_RIGHT
+COL_SLOPE_RD22_LEFT
+COL_SLOPE_LD22_RIGHT
+COL_SLOPE_LD22_LEFT
+COL_SLOPE_RU22_RIGHT
+COL_SLOPE_RU22_LEFT
+COL_SLOPE_LU22_RIGHT
+COL_SLOPE_LU22_LEFT
+COL_SLOPE_RD66_TOP
+COL_SLOPE_RD66_BOT
+COL_SLOPE_LD66_BOT
+COL_SLOPE_LD66_TOP
+COL_SLOPE_RU66_TOP
+COL_SLOPE_RU66_BOT
+COL_SLOPE_LU66_BOT
+COL_SLOPE_LU66_TOP
+COL_NO_SIDE
+COL_NO_SIDE
+COL_NO_SIDE
+COL_NO_SIDE
+COL_LEFT_SPIKE_BLOCK
+COL_RIGHT_SPIKE_BLOCK
+COL_BOTTOM_LEFT_SPIKE
+COL_BOTTOM_RIGHT_SPIKE
+COL_BOTTOM_SPIKES
+COL_DOWN_LEFT_SPIKE
+COL_DOWN_RIGHT_SPIKE
+COL_DOWN_BOTH_SPIKES
+COL_UP_LEFT
+COL_UP_RIGHT
+COL_DOWN_LEFT
+COL_DOWN_RIGHT
+COL_TOP
+COL_BOTTOM
+COL_LEFT
+COL_RIGHT
+COL_TOP_LEFT_STAIRS
+COL_TOP_RIGHT_STAIRS
+COL_BOTTOM_LEFT_STAIRS
+COL_BOTTOM_RIGHT_STAIRS
+COL_TOP_LEFT_BOTTOM_RIGHT
+COL_TOP_RIGHT_BOTTOM_LEFT
+COL_UP_LEFT_SPIKE
+COL_UP_RIGHT_SPIKE
+COL_UP_BOTH_SPIKES
+COL_DEATH_TOP_RIGHT
+COL_DEATH_TOP_LEFT
+COL_DEATH_BOTTOM_RIGHT
+COL_DEATH_BOTTOM_LEFT
+COL_NONE
+COL_NONE
+COL_BOTTOM_CENTER_SPIKE
+COL_BOTTOM_CENTER_SPIKE
+COL_TOP
+COL_BOTTOM
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_ALL
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_DOWN_RIGHT_SPIKE
+COL_DOWN_LEFT_SPIKE
+COL_UP_LEFT_SPIKE
+COL_UP_RIGHT_SPIKE
+COL_LEFT
+COL_RIGHT
+COL_UP_RIGHT
+COL_RIGHT
+COL_TOP
+COL_TOP
+COL_UP_LEFT
+COL_TOP
+COL_RIGHT
+COL_BOTTOM
+COL_TOP
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_NONE
+COL_DOWN_RIGHT_SPIKE
+COL_DOWN_LEFT_SPIKE
+COL_UP_RIGHT_SPIKE
+COL_UP_LEFT_SPIKE
+COL_DOWN_RIGHT_SPIKE
+COL_DOWN_LEFT_SPIKE
+COL_DEATH
+COL_RIGHT
+COL_LEFT
+COL_UP_RIGHT_SPIKE
+COL_UP_LEFT_SPIKE
+COL_DEATH
+COL_ALL
+COL_LEFT
+COL_DOWN_RIGHT
+COL_DOWN_LEFT"""
+
+# Map special tiles
+def map_tile(tid):
+    if tid in (0xDF, 0xE3, 0xFE, 0xFF): return 0x00
+    if tid == 0xFD: return 0x26
+    return tid
+
+# Parse collision table
+col_entries = [e.strip() for e in COL_TABLE_STR.strip().split('\n') if e.strip().startswith('COL_')]
+collision_table = ['COL_NONE'] * 256
+for i, name in enumerate(col_entries):
+    if i < 256:
+        collision_table[i] = name
+
+# Parse TMX
+tree = ET.parse(TMX)
+root = tree.getroot()
+width = int(root.attrib['width'])
+height = int(root.attrib['height'])
+print(f"Map: {width}x{height}, ground_rows={GROUND_ROWS}")
+
+# Get tile data from first layer
+layer = root.find('.//layer')
+data = layer.find('data')
+encoding = data.attrib.get('encoding', '')
+
+if encoding == 'csv':
+    tiles_raw = [int(x.strip()) for x in data.text.strip().split(',') if x.strip()]
+else:
+    raise ValueError(f"Unsupported encoding: {encoding}")
+
+print(f"Total tiles: {len(tiles_raw)}")
+
+# Columns to check (from FWD_DM data)
+check_cols = list(range(1095, 1135))  # Wide range around death wall
+# Rows to check: Y=700-860 → tileY = 43-53, arrY = tileY + 3 = 46-56
+check_rows_tile = list(range(40, 56))  # Wide Y range
+
+# Side collision relevance flags
+SIDE_BLOCKING = {'COL_ALL', 'COL_TOP', 'COL_BOTTOM', 'COL_RIGHT', 'COL_LEFT',
+    'COL_UP_LEFT', 'COL_UP_RIGHT', 'COL_DOWN_LEFT', 'COL_DOWN_RIGHT',
+    'COL_TOP_LEFT_STAIRS', 'COL_TOP_RIGHT_STAIRS', 'COL_BOTTOM_LEFT_STAIRS',
+    'COL_BOTTOM_RIGHT_STAIRS', 'COL_TOP_LEFT_BOTTOM_RIGHT', 'COL_TOP_RIGHT_BOTTOM_LEFT',
+    'COL_LEFT_SPIKE_BLOCK', 'COL_RIGHT_SPIKE_BLOCK', 'COL_BOTTOM_LEFT_SPIKE',
+    'COL_BOTTOM_RIGHT_SPIKE', 'COL_BOTTOM_SPIKES', 'COL_BOTTOM_CENTER_SPIKE'}
+
+# Non-blocking for forward: COL_FLOOR_CEIL, COL_NO_SIDE, COL_NONE, death types, slopes
+SKIP_FORWARD = {'COL_NONE', 'COL_FLOOR_CEIL', 'COL_NO_SIDE'}
+
+print(f"\n{'Col':>5} {'Row':>4} {'ArrY':>5} {'PxY':>6} {'TID':>5} {'Mapped':>7} {'Collision':<30} {'FwdBlock'}")
+print("-" * 100)
+
+for col in check_cols:
+    for tileY in check_rows_tile:
+        arrY = tileY + GROUND_ROWS
+        if arrY < 0 or arrY >= height: continue
+        idx = arrY * width + col
+        if idx < 0 or idx >= len(tiles_raw): continue
+        tid = tiles_raw[idx]
+        if tid == 0: continue  # Empty tile
+        tid_idx = tid - 1  # TMX GID 1-based → 0-based collision index
+        mapped = map_tile(tid_idx)
+        collision = collision_table[mapped] if mapped < 256 else 'COL_NONE'
+        if collision == 'COL_NONE': continue  # Skip empty
+        pxY = tileY * TILE  # World pixel Y of tile top
+        
+        # Check if this tile blocks forward collision at the right edge
+        fwd_block = collision not in SKIP_FORWARD and not collision.startswith('COL_DEATH') and not collision.startswith('COL_SLOPE')
+        
+        print(f"{col:>5} {tileY:>4} {arrY:>5} {pxY:>6}  0x{tid_idx:02X}  0x{mapped:02X} {collision:<30} {'YES' if fwd_block else 'no'}")

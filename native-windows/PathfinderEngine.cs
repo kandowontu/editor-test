@@ -639,6 +639,7 @@ namespace FamidashEditor
             public bool JBlocked;               // J block press-to-jump gate (cleared each frame after movement)
             public bool FBlocked;               // F block press-to-jump gate (cleared each frame after movement)
             public bool HBlocked;               // H block headbonk gate (ceiling ejection, cleared each frame after movement)
+            public bool Dblocked;               // D block wave walkable gate (cleared each frame after movement)
             public bool Step2Ejected;            // Set when H/F_BLOCK Step 2 (opposite-dir eject) fired this frame; used to coarsen BFS dedup
             public bool Step2Ever;               // Sticky: set once Step 2 fires; never cleared. Descendants inherit via struct copy.
 
@@ -657,6 +658,7 @@ namespace FamidashEditor
             public int TargetCameraY_fixed;     // smooth-scroll target Y (ship/ball/UFO etc)
             public bool NoCamLockForced;        // true = freecam (camera follows player freely)
             public bool WrapMode;               // true = wrap Y instead of OOB death (0x8E on, 0x9E off)
+            public int RainbowMaxMode;          // >0 = rainbow portal active: BFS must survive modes 0..RainbowMaxMode-1 (cleared on next game-mode portal)
 
             // ---- Dual portal state ----
             public bool DualActive;             // true when in dual mode (two players)
@@ -684,6 +686,7 @@ namespace FamidashEditor
             public bool P2_JBlocked;
             public bool P2_FBlocked;
             public bool P2_HBlocked;
+            public bool P2_Dblocked;
             public int P2_PendingOrbIndex;
             public int P2_PendingOrbSpriteId;
 
@@ -2620,6 +2623,34 @@ namespace FamidashEditor
                         bool inp = (k & 1) == 1; // input: 0=release, 1=press
                         var sim = frontier[pi].Clone();
                         bool alive = StepFrame(ref sim, inp, out bool endLevel);
+
+                        // Rainbow multi-mode verification: when RainbowMaxMode>0,
+                        // the BFS must prove that ALL possible random modes survive
+                        // this frame (with the same input).  We speculatively run
+                        // StepFrame for every alternative mode from the parent state.
+                        if (alive && !endLevel && sim.RainbowMaxMode > 0)
+                        {
+                            int maxMode = sim.RainbowMaxMode;
+                            for (int m = 0; m < maxMode && alive; m++)
+                            {
+                                if (m == sim.GameMode) continue; // already verified
+                                var shadow = frontier[pi].Clone();
+                                shadow.GameMode = m;
+                                // Set flag so ProcessSprites won't re-trigger rainbow
+                                // detection — it only applies vel-zero & sets the flag
+                                // when RainbowMaxMode==0 (first hit).
+                                shadow.RainbowMaxMode = maxMode;
+                                // On the portal frame (parent wasn't in rainbow yet),
+                                // apply NES wave/swing vel-zero based on entry mode.
+                                if (frontier[pi].RainbowMaxMode == 0 &&
+                                    (frontier[pi].GameMode == 6 || frontier[pi].GameMode == 10))
+                                    shadow.VelY_fixed = 0;
+                                bool shadowAlive = StepFrame(ref shadow, inp, out _);
+                                shadow.ProcessedSprites.Return();
+                                if (!shadowAlive) alive = false;
+                            }
+                        }
+
                         rState[k] = sim;
                         rAlive[k] = alive;
                         rEnd[k]   = endLevel;
@@ -8212,6 +8243,8 @@ namespace FamidashEditor
                     }
                     s.BlackOrbed = false;
                     s.Orbed = true; // Prevent immediate re-teleport
+                    // Snap camera to new position (NES calls process_y_scroll in scan loop)
+                    SnapCameraToPlayerY(ref s);
                 }
                 else if (!input)
                 {
@@ -8264,8 +8297,9 @@ namespace FamidashEditor
                 // Jump count resets when grounded (VelY == 0). Input is press-only (tap, no hold buffer).
                 // Uses cube jump velocity (not robot); shares cube pad/orb column.
 
-                // 1. Reset ninja jumps if grounded (NES: ninjajumps = 3 when vel_y == 0)
-                if (s.VelY_fixed == 0)
+                // 1. Reset ninja jumps if grounded and not pressing jump
+                // (NES: ninjajumps = 3 when onGround && !pressJump — matching SIM)
+                if (s.OnGround && !pressInput)
                     s.NinjaJumps = NINJA_MAX_JUMPS;
 
                 // 2. Gravity (same as cube)
@@ -8455,7 +8489,7 @@ namespace FamidashEditor
                 // ship-style smooth scroll toward target_scroll_y (set by the dual
                 // portal).  It never tracks the player's Y directly.
                 bool camFollowsY = (!s.DualActive) &&
-                    (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9 || s.NoCamLockForced);
+                    (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 8 || s.GameMode == 9 || s.NoCamLockForced);
                 if (camFollowsY)
                 {
                     // Match NES process_y_scroll: top threshold 0x4000 (64px), bottom 0xA0 (160px)
@@ -8478,12 +8512,10 @@ namespace FamidashEditor
                 else
                 {
                     // Ship-style smooth scroll toward target.
-                    // NES process_y_scroll updates target_scroll_y every frame from
-                    // the player's Y: target = playerY - 0x3A.  Without this per-frame
-                    // update the camera only moves toward the portal-set target and
-                    // cannot follow the player when they rise (gravity-flipped UFO/ship).
-                    int playerY_pxCam = s.Y_fixed >> 8;
-                    s.TargetCameraY_fixed = Math.Max(0, (playerY_pxCam - PORTAL_TO_TOP_DIFF_PX) << 8);
+                    // NES process_y_scroll does NOT update target_scroll_y per-frame;
+                    // target is set only by portal hits.  The camera scrolls toward
+                    // the portal-set target at a fixed speed, enforcing OOB death
+                    // when the player flies too far from the locked camera.
 
                     // Ship-style smooth scroll toward target
                     if (s.TargetCameraY_fixed > s.CameraY_fixed)
@@ -8502,7 +8534,10 @@ namespace FamidashEditor
                     if (s.CameraY_fixed > maxCamY2) s.CameraY_fixed = maxCamY2;
                 }
 
-                // OOB top / wrap mode: NES x_movement checks screen-relative Y.
+                // OOB top/bottom / wrap mode: NES x_movement checks screen-relative Y.
+                // NES currplayer_y is uint16_t — going past 0xFFFF wraps to 0x0000,
+                // triggering the < 0x0600 death.  PF uses 32-bit Y so we must check
+                // both top (< 0x0600) and bottom (> 0xF900) explicitly.
                 // NES enforces OOB death even during dual mode.
                 {
                     int screenRelY = s.Y_fixed - s.CameraY_fixed;
@@ -8514,6 +8549,18 @@ namespace FamidashEditor
                             PfLog($"[OOB_TOP] screenRelY=0x{screenRelY:X4} camY={s.CameraY_fixed >> 8}");
 #endif
                             if (_speculativeDepth == 0) { _lastDeathReason = "OOB_TOP"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                            s.DeathType = 11;
+                            return false;
+                        }
+                        // Bottom OOB: NES uint16_t wraps past 0xFFFF→0x0000, hitting < 0x0600
+                        // next frame.  In PF the 32-bit screenRelY just keeps growing, so
+                        // check explicitly at the same 0xF900 boundary used by wrap mode.
+                        if (screenRelY > 0xF900)
+                        {
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[OOB_BOTTOM] screenRelY=0x{screenRelY:X4} camY={s.CameraY_fixed >> 8}");
+#endif
+                            if (_speculativeDepth == 0) { _lastDeathReason = "OOB_BOTTOM"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                             s.DeathType = 11;
                             return false;
                         }
@@ -8585,10 +8632,11 @@ namespace FamidashEditor
                 return false;
             }
 
-            // Clear jblocked/fblocked/hblocked at end of movement (gamemode_cube.h line 162)
+            // Clear jblocked/fblocked/hblocked/dblocked at end of movement (gamemode_cube.h line 162)
             s.JBlocked = false;
             s.FBlocked = false;
             s.HBlocked = false;
+            s.Dblocked = false;
 
             // Orbed clear now happens before ProcessSprites (matching NES order)
             s.PrevInputHeld = input;
@@ -8622,6 +8670,7 @@ namespace FamidashEditor
                 bool p1_JBlocked = s.JBlocked;
                 bool p1_FBlocked = s.FBlocked;
                 bool p1_HBlocked = s.HBlocked;
+                int p1_NinjaJumps = s.NinjaJumps;
                 int p1_PendingOrbIndex = s.PendingOrbIndex;
                 int p1_PendingOrbSpriteId = s.PendingOrbSpriteId;
 
@@ -8654,6 +8703,8 @@ namespace FamidashEditor
                 s.JBlocked = s.P2_JBlocked;
                 s.FBlocked = s.P2_FBlocked;
                 s.HBlocked = s.P2_HBlocked;
+                s.Dblocked = s.P2_Dblocked;
+                s.NinjaJumps = s.P2_NinjaJumps;
                 s.PendingOrbIndex = s.P2_PendingOrbIndex;
                 s.PendingOrbSpriteId = s.P2_PendingOrbSpriteId;
 
@@ -8724,6 +8775,8 @@ namespace FamidashEditor
                 s.P2_JBlocked = s.JBlocked;
                 s.P2_FBlocked = s.FBlocked;
                 s.P2_HBlocked = s.HBlocked;
+                s.P2_Dblocked = s.Dblocked;
+                s.P2_NinjaJumps = s.NinjaJumps;
                 s.P2_PendingOrbIndex = s.PendingOrbIndex;
                 s.P2_PendingOrbSpriteId = s.PendingOrbSpriteId;
 
@@ -8793,6 +8846,7 @@ namespace FamidashEditor
                 s.JBlocked = p1_JBlocked;
                 s.FBlocked = p1_FBlocked;
                 s.HBlocked = p1_HBlocked;
+                s.NinjaJumps = p1_NinjaJumps;
                 s.PendingOrbIndex = p1_PendingOrbIndex;
                 s.PendingOrbSpriteId = p1_PendingOrbSpriteId;
 
@@ -10709,6 +10763,22 @@ namespace FamidashEditor
                             if (probe == 0 && isRising) continue;
                             if (probe == 1 && !isRising) continue;
 
+                            if (s.Dblocked)
+                            {
+                                // dblocked: eject instead of dying
+                                if (sEject > 0)
+                                {
+                                    int curY = s.Y_fixed >> 8;
+                                    curY -= sEject;
+                                    s.Y_fixed = curY << 8;
+                                }
+                                s.VelY_fixed = 0;
+                                s.WasZeroedByCollision = true;
+#if !DISABLE_DEBUG_LOGGING
+                                PfLog($"[WAVE_EJECT] D slope eject dblocked Y={s.Y_fixed >> 8}");
+#endif
+                                return;
+                            }
 #if !DISABLE_DEBUG_LOGGING
                             PfLog($"[WAVE_DEATH] D slope death X={playerX_px} Y={playerY_px} slopeTile=({tileX},{tileY}) col={sCol} probe={probe}");
 #endif
@@ -10751,6 +10821,19 @@ namespace FamidashEditor
                             if (probe == 0 && isRising) continue;
                             if (probe == 1 && !isRising) continue;
 
+                            if (s.Dblocked)
+                            {
+                                // dblocked: eject instead of dying
+                                int curY = s.Y_fixed >> 8;
+                                curY -= sEject;
+                                s.Y_fixed = curY << 8;
+                                s.VelY_fixed = 0;
+                                s.WasZeroedByCollision = true;
+#if !DISABLE_DEBUG_LOGGING
+                                PfLog($"[WAVE_EJECT] U slope eject dblocked Y={s.Y_fixed >> 8}");
+#endif
+                                return;
+                            }
 #if !DISABLE_DEBUG_LOGGING
                             PfLog($"[WAVE_DEATH] U slope death X={playerX_px} Y={playerY_px} slopeTile=({tileX},{tileY}) col={sCol} probe={probe}");
 #endif
@@ -10774,18 +10857,17 @@ namespace FamidashEditor
                 }
                 if (ceilHit)
                 {
-                    // NES: only COL_FLOOR_CEIL allows wave eject — all other solids kill
+                    // NES: COL_FLOOR_CEIL sets dblocked; dblocked allows eject on any solid
                     int tileX = collX / TILE;
                     int tileY = (collY - 1) / TILE;
                     var col = GetTileCollision(tileX, tileY);
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[WAVE_EJECT] coll_U hit tile={col} eject ceilBotY={ceilBotY}");
-#endif
                     if (col == MetatileCollision.COL_FLOOR_CEIL)
+                        s.Dblocked = true;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[WAVE_EJECT] coll_U hit tile={col} dblocked={s.Dblocked} ceilBotY={ceilBotY}");
+#endif
+                    if (s.Dblocked)
                     {
-                        // Eject: snap 1 px below ceiling surface (matches SIM wave_coll_U
-                        // which probes at Generic_y-1 and computes eject_U = -(bottom - probe),
-                        // then Y -= eject_U → Y = ceilBotY + 1).
                         int newY = ceilBotY + 1 - miniOffset;
                         s.Y_fixed = newY << 8;
                         s.VelY_fixed = 0;
@@ -10799,7 +10881,6 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[WAVE_DEATH] UP non-walkable tile={col} X={playerX_px} Y={playerY_px} probe=({collX},{collY - 1})");
 #endif
-                        // Non-walkable solid — death
                         died = true;
                         return;
                     }
@@ -10818,16 +10899,17 @@ namespace FamidashEditor
                 }
                 if (floorHit)
                 {
-                    // NES: only COL_FLOOR_CEIL allows wave eject — all other solids kill
+                    // NES: COL_FLOOR_CEIL sets dblocked; dblocked allows eject on any solid
                     int tileX = collX / TILE;
                     int tileY = (collY + waveH) / TILE;
                     var col = GetTileCollision(tileX, tileY);
-#if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[WAVE_EJECT] coll_D hit tile={col} eject floorTopY={floorTopY}");
-#endif
                     if (col == MetatileCollision.COL_FLOOR_CEIL)
+                        s.Dblocked = true;
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[WAVE_EJECT] coll_D hit tile={col} dblocked={s.Dblocked} floorTopY={floorTopY}");
+#endif
+                    if (s.Dblocked)
                     {
-                        // Eject: snap to floor surface
                         int newY = floorTopY - waveH - miniOffset;
                         s.Y_fixed = newY << 8;
                         s.VelY_fixed = 0;
@@ -10841,7 +10923,6 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[WAVE_DEATH] DOWN non-walkable tile={col} X={playerX_px} Y={playerY_px} probe=({collX},{collY + waveH})");
 #endif
-                        // Non-walkable solid — death
                         died = true;
                         return;
                     }
@@ -11431,6 +11512,8 @@ namespace FamidashEditor
                         s.P2_JBlocked = false;
                         s.P2_FBlocked = false;
                         s.P2_HBlocked = false;
+                        s.P2_Dblocked = false;
+                        s.P2_NinjaJumps = 0;
                         s.P2_PendingOrbIndex = -1;
                         s.P2_PendingOrbSpriteId = -1;
 #if !DISABLE_DEBUG_LOGGING
@@ -11509,6 +11592,38 @@ namespace FamidashEditor
                     continue;
                 }
 
+                // Rainbow portals (0x64 = random mode 0-7, 0x7E = random mode 0-11)
+                // NES spcl_rndmode / spcl_suprrnd — picks a random game mode.
+                // PF can't do randomness; instead we set RainbowMaxMode so the BFS
+                // verifies survival in ALL possible modes each frame.
+                if ((sid == 0x64 || sid == 0x7E) && !_dualP2Guard)
+                {
+                    bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < nesX);
+                    bool yOverlap = !((playerBottom) < sp.HitTop || sp.HitBottom < playerTop);
+                    if (xOverlap && yOverlap)
+                    {
+                        if (s.RainbowMaxMode == 0)
+                        {
+                            // NES: if (gamemode == 0x06 || gamemode == 0x0A) currplayer_vel_y = 0;
+                            if (s.GameMode == 6 || s.GameMode == 10) s.VelY_fixed = 0;
+                            s.RainbowMaxMode = (sid == 0x64) ? 8 : 12;
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[RAINBOW_PORTAL] sid=0x{sid:X2} idx={sp.Index} maxMode={s.RainbowMaxMode} entryMode={s.GameMode}");
+#endif
+                        }
+                        // NES gamemode_stuff: clearrobotjumpframes + set target_scroll_y
+                        s.RobotJumpTime = 0;
+                        bool modeFollowsY = (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9);
+                        if (!modeFollowsY && !s.DualActive)
+                        {
+                            int portalWorldY_px = sp.AnchorY_px - TILE / 2;
+                            s.TargetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                        }
+                        s.ProcessedSprites.Add(sp.Index);
+                    }
+                    continue;
+                }
+
                 // Game mode portals, gravity portals, mini/growth portals, and end-level
                 // are all handled in sprite_collide at OLD X (matching NES).
                 // SIM skips CheckGameModePortals() for P2 in dual mode — only P1
@@ -11547,9 +11662,9 @@ namespace FamidashEditor
                         if (IsGameModePortal(sid) && applied)
                         {
                             bool modeFollowsY = (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9);
-                            if (!modeFollowsY)
+                            if (!modeFollowsY && !s.DualActive)
                             {
-                                int portalWorldY_px = sp.AnchorY_px;
+                                int portalWorldY_px = sp.AnchorY_px - TILE / 2;
                                 s.TargetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
                             }
                         }
@@ -11760,6 +11875,21 @@ namespace FamidashEditor
                     continue;
                 }
 
+                // D_BLOCK detection: sets dblocked (wave walks on surfaces instead of dying)
+                if (sid == 0xFA)
+                {
+                    bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < nesX);
+                    bool yOverlap = !((playerBottom) < sp.HitTop || sp.HitBottom < playerTop);
+                    if (xOverlap && yOverlap)
+                    {
+                        s.Dblocked = true;
+#if !DISABLE_DEBUG_LOGGING
+                        PfLog($"[D_BLOCK] Set dblocked at idx={sp.Index}");
+#endif
+                    }
+                    continue;
+                }
+
                 // Teleport portal entrance detection
                 if (IsTeleportPortalEntrance(sid))
                 {
@@ -11909,9 +12039,9 @@ namespace FamidashEditor
                     if (IsGameModePortal(sid) && applied)
                     {
                         bool modeFollowsY = (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9);
-                        if (!modeFollowsY)
+                        if (!modeFollowsY && !s.DualActive)
                         {
-                            int portalWorldY_px = sp.AnchorY_px;
+                            int portalWorldY_px = sp.AnchorY_px - TILE / 2;
                             s.TargetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
                         }
                     }
@@ -12076,6 +12206,8 @@ namespace FamidashEditor
                     }
                     int prevMode = s.GameMode;
                     s.GameMode = mode;
+                    // Real game-mode portal ends rainbow multi-mode verification
+                    s.RainbowMaxMode = 0;
                     // NES: unconditionally halve velocity on mode change
                     // (sprite_loading.h line 764: currplayer_vel_y /= 2)
                     s.VelY_fixed /= 2;
@@ -12448,9 +12580,39 @@ namespace FamidashEditor
             s.Orbed = true;
             s.SlopeFrames = 0;
             s.SlopeWasOnCounter = 0;
+
+            // NES spider_up_wait/spider_down_wait call process_y_scroll in a
+            // loop during the scan.  Since spider is NOT in the follow-Y mode
+            // list, the smooth-scroll branch runs many times, effectively
+            // snapping the camera to the new player Y.  Simulate this by
+            // applying cube-style instant camera follow at the final position.
+            SnapCameraToPlayerY(ref s);
+
 #if !DISABLE_DEBUG_LOGGING
-            PfLog($"[SPIDER_TELEPORT] result Y={s.Y_fixed >> 8} gravFlipped={s.GravFlipped}");
+            PfLog($"[SPIDER_TELEPORT] result Y={s.Y_fixed >> 8} gravFlipped={s.GravFlipped} camY={s.CameraY_fixed >> 8}");
 #endif
+        }
+
+        /// <summary>
+        /// Snap camera Y to match the player's current Y using cube-style
+        /// threshold logic (top=0x4000, bottom=0xA0).  Used after spider
+        /// teleport to simulate NES's process_y_scroll loop during the scan.
+        /// </summary>
+        private void SnapCameraToPlayerY(ref SimState s)
+        {
+            int minCamY = -(groundRowsToReserve * TILE) << 8;
+            int maxCamY = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+            int screenY = s.Y_fixed - s.CameraY_fixed;
+            if (screenY < 0x4000)
+            {
+                s.CameraY_fixed -= (0x4000 - screenY);
+                if (s.CameraY_fixed < minCamY) s.CameraY_fixed = minCamY;
+            }
+            else if ((screenY >> 8) >= 0xA0)
+            {
+                s.CameraY_fixed += (screenY - 0xA000);
+                if (s.CameraY_fixed > maxCamY) s.CameraY_fixed = maxCamY;
+            }
         }
 
         /// <summary>
