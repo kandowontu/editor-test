@@ -513,10 +513,13 @@ namespace FamidashEditor
                             AppendSimDebug($"[CUBE]     H/F_BLOCK ceiling eject: Y {playerY_fixed >> 8} -> {newY}, velY -> {(hblocked ? "1" : "0")}");
                             playerY_fixed = newY << 8;
                             playerVelY_fixed = hblocked ? 1 : 0;
+                            if (!hblocked) onGround = true;
+                            orbed[currplayer] = false; // NES: orbactive = 0
                             if (fblocked)
                             {
                                 currplayer_gravity = 0xFF;
                                 gravityFlipped = true;
+                                gravityReversed = true;
                                 currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
                             }
                         }
@@ -535,10 +538,13 @@ namespace FamidashEditor
                             AppendSimDebug($"[CUBE]     H/F_BLOCK floor eject: Y {playerY_fixed >> 8} -> {newY}, velY -> {(hblocked ? "-1" : "0")}");
                             playerY_fixed = newY << 8;
                             playerVelY_fixed = hblocked ? -1 : 0;  // NES 0xFFFF = -1 signed 16-bit
+                            if (!hblocked) onGround = true;
+                            orbed[currplayer] = false; // NES: orbactive = 0
                             if (fblocked)
                             {
                                 currplayer_gravity = 0;
                                 gravityFlipped = false;
+                                gravityReversed = false;
                                 currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
                             }
                         }

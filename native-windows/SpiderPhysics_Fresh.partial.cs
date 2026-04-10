@@ -202,8 +202,8 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    // No slope - fall back to flat collision
-                    var (collided, ejectAmount) = BgCollD_Spider(collisionX, collisionY, hitboxW, hitboxH, groundRowsToReserve);
+                    // spider_eject calls bg_coll_D (3 probes, no inset), not bg_coll_D_spider.
+                    var (collided, ejectAmount) = BgCollD_Spider(collisionX, collisionY, hitboxW, hitboxH, groundRowsToReserve, useEjectProbes: true);
                     if (collided)
                     {
                         int currentY_px = playerY_fixed >> 8;
@@ -223,16 +223,17 @@ namespace FamidashEditor
             else
             {
                 // Inverted gravity - check ceiling collision
-                var (collided, ejectAmount) = BgCollU_Spider(collisionX, collisionY, hitboxW, hitboxH, groundRowsToReserve);
+                // spider_eject calls bg_coll_U (3 probes, no inset), not bg_coll_U_spider.
+                var (collided, ejectAmount) = BgCollU_Spider(collisionX, collisionY, hitboxW, hitboxH, groundRowsToReserve, useEjectProbes: true);
                 if (collided)
                 {
-                    // Eject downward from ceiling - use minimal adjustment
-                    int currentY_px = playerY_fixed >> 8;
-                    int newY_px = currentY_px + ejectAmount;
+                    // NES eject lands at exactly surfaceBottom via byte-wrap math.
+                    // collisionY + ejectAmount == surfaceBottom (the offset cancels out).
+                    int newY_px = collisionY + ejectAmount;
                     playerY_fixed = newY_px << 8;
                     playerVelY_fixed = 0;
                     wasZeroedByCollisionLastFrame = true;  // Signal gravity not to re-apply next frame
-                    AppendSimDebug($"[SPIDER_EJECT] Ceiling collision: eject={ejectAmount}, Y {currentY_px} -> {newY_px}");
+                    AppendSimDebug($"[SPIDER_EJECT] Ceiling collision: eject={ejectAmount}, Y -> {newY_px}");
                 }
                 else
                 {
@@ -353,16 +354,13 @@ namespace FamidashEditor
         }
         
         /// <summary>
-        /// bg_coll_D_spider() - Spider-specific floor collision check
-        /// Uses LEFT_POS and RIGHT_POS with 3-pixel inset from edges
+        /// Spider floor collision check.
+        /// useEjectProbes=false: bg_coll_D_spider style (2 probes, 3px inset) — for scan.
+        /// useEjectProbes=true:  bg_coll_D style (3 probes, no inset) — for spider_eject.
         /// Returns (collided, ejectAmount) where ejectAmount is pixels to move up
         /// </summary>
-        private (bool collided, int ejectAmount) BgCollD_Spider(int playerX_px, int playerY_px, int width, int height, int groundRowsToReserve)
+        private (bool collided, int ejectAmount) BgCollD_Spider(int playerX_px, int playerY_px, int width, int height, int groundRowsToReserve, bool useEjectProbes = false)
         {
-            // LEFT_POS and RIGHT_POS with 3-pixel inset
-            int leftX = playerX_px + 3;
-            int rightX = playerX_px + width - 3;
-            
             // Check bottom of hitbox
             int checkY_px = playerY_px + height;
             
@@ -378,62 +376,41 @@ namespace FamidashEditor
             }
             
             if (tileY < 0) return (false, 0);
-            
-            // Check left position
-            int leftTileX = leftX / TILE;
-            if (leftTileX >= 0 && leftTileX < mapWidth)
+
+            int[] probes;
+            if (useEjectProbes)
             {
-                int tileIdx = tileY * mapWidth + leftTileX;
-                if (tileIdx >= 0 && tileIdx < tiles.Length)
-                {
-                    int tileId = tiles[tileIdx];
-                    var collision = MetatileCollisionTable.GetCollision((byte)tileId);
-                    
-                    if (IsSolidCollisionForSpider(collision))
-                    {
-                        // Get collision bounds for this tile type
-                        var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType(collision);
-                        
-                        // Calculate tile top in world coordinates
-                        int tileTopLeft_world = (tileY - groundRowsToReserve) * TILE;
-                        // Add the collision top offset to get actual collision surface
-                        int collisionTop_world = tileTopLeft_world + colTop;
-                        
-                        // Only collide if checkY has reached or passed the collision surface
-                        if (checkY_px >= collisionTop_world)
-                        {
-                            int eject = checkY_px - collisionTop_world;
-                            return (true, eject);
-                        }
-                    }
-                }
+                // NES bg_coll_D: 3 probes at X, X+width/2, X+width (no inset)
+                probes = new[] { playerX_px, playerX_px + (width >> 1), playerX_px + width };
+            }
+            else
+            {
+                // NES bg_coll_D_spider: 2 probes with 3px inset
+                probes = new[] { playerX_px + 3, playerX_px + width - 3 };
             }
             
-            // Check right position
-            int rightTileX = rightX / TILE;
-            if (rightTileX >= 0 && rightTileX < mapWidth)
+            foreach (int probeX in probes)
             {
-                int tileIdx = tileY * mapWidth + rightTileX;
-                if (tileIdx >= 0 && tileIdx < tiles.Length)
+                int probeTileX = probeX / TILE;
+                if (probeTileX >= 0 && probeTileX < mapWidth)
                 {
-                    int tileId = tiles[tileIdx];
-                    var collision = MetatileCollisionTable.GetCollision((byte)tileId);
-                    
-                    if (IsSolidCollisionForSpider(collision))
+                    int tileIdx = tileY * mapWidth + probeTileX;
+                    if (tileIdx >= 0 && tileIdx < tiles.Length)
                     {
-                        // Get collision bounds for this tile type
-                        var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType(collision);
+                        int tileId = tiles[tileIdx];
+                        var collision = MetatileCollisionTable.GetCollision((byte)tileId);
                         
-                        // Calculate tile top in world coordinates
-                        int tileTopLeft_world = (tileY - groundRowsToReserve) * TILE;
-                        // Add the collision top offset to get actual collision surface
-                        int collisionTop_world = tileTopLeft_world + colTop;
-                        
-                        // Only collide if checkY has reached or passed the collision surface
-                        if (checkY_px >= collisionTop_world)
+                        if (IsSolidCollisionForSpider(collision))
                         {
-                            int eject = checkY_px - collisionTop_world;
-                            return (true, eject);
+                            var (colLeft, colTop, colRight, colBottom) = SharedPhysics.GetCollisionBounds(collision);
+                            int tileTopLeft_world = (tileY - groundRowsToReserve) * TILE;
+                            int collisionTop_world = tileTopLeft_world + colTop;
+                            
+                            if (checkY_px >= collisionTop_world)
+                            {
+                                int eject = checkY_px - collisionTop_world;
+                                return (true, eject);
+                            }
                         }
                     }
                 }
@@ -443,16 +420,13 @@ namespace FamidashEditor
         }
         
         /// <summary>
-        /// bg_coll_U_spider() - Spider-specific ceiling collision check
-        /// Uses LEFT_POS and RIGHT_POS with 3-pixel inset from edges
+        /// Spider ceiling collision check.
+        /// useEjectProbes=false: bg_coll_U_spider style (2 probes, 3px inset) — for scan.
+        /// useEjectProbes=true:  bg_coll_U style (3 probes, no inset) — for spider_eject.
         /// Returns (collided, ejectAmount) where ejectAmount is pixels to move down
         /// </summary>
-        private (bool collided, int ejectAmount) BgCollU_Spider(int playerX_px, int playerY_px, int width, int height, int groundRowsToReserve)
+        private (bool collided, int ejectAmount) BgCollU_Spider(int playerX_px, int playerY_px, int width, int height, int groundRowsToReserve, bool useEjectProbes = false)
         {
-            // LEFT_POS and RIGHT_POS with 3-pixel inset
-            int leftX = playerX_px + 3;
-            int rightX = playerX_px + width - 3;
-            
             // Check top of hitbox
             int checkY_px = playerY_px;
             
@@ -462,60 +436,44 @@ namespace FamidashEditor
             // Check if above map top (solid ceiling)
             if (tileY < 0)
             {
-                int eject = 0 - checkY_px; // Distance from checkY to world Y=0
+                int eject = 0 - checkY_px;
                 return (true, eject);
             }
             
             if (tileY >= mapHeight) return (false, 0);
-            
-            // Check left position
-            int leftTileX = leftX / TILE;
-            if (leftTileX >= 0 && leftTileX < mapWidth)
+
+            int[] probes;
+            if (useEjectProbes)
             {
-                int tileIdx = tileY * mapWidth + leftTileX;
-                if (tileIdx >= 0 && tileIdx < tiles.Length)
-                {
-                    int tileId = tiles[tileIdx];
-                    var collision = MetatileCollisionTable.GetCollision((byte)tileId);
-                    
-                    if (IsSolidCollisionForSpider(collision))
-                    {
-                        // Get collision bounds for this tile type
-                        var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType(collision);
-                        
-                        // Calculate tile top in world coordinates
-                        int tileTopLeft_world = (tileY - groundRowsToReserve) * TILE;
-                        // Add the collision bottom offset to get actual collision surface
-                        int collisionBottom_world = tileTopLeft_world + colBottom;
-                        
-                        int eject = collisionBottom_world - checkY_px;
-                        return (true, eject);
-                    }
-                }
+                // NES bg_coll_U: 3 probes at X, X+width/2, X+width (no inset)
+                probes = new[] { playerX_px, playerX_px + (width >> 1), playerX_px + width };
+            }
+            else
+            {
+                // NES bg_coll_U_spider: 2 probes with 3px inset
+                probes = new[] { playerX_px + 3, playerX_px + width - 3 };
             }
             
-            // Check right position
-            int rightTileX = rightX / TILE;
-            if (rightTileX >= 0 && rightTileX < mapWidth)
+            foreach (int probeX in probes)
             {
-                int tileIdx = tileY * mapWidth + rightTileX;
-                if (tileIdx >= 0 && tileIdx < tiles.Length)
+                int probeTileX = probeX / TILE;
+                if (probeTileX >= 0 && probeTileX < mapWidth)
                 {
-                    int tileId = tiles[tileIdx];
-                    var collision = MetatileCollisionTable.GetCollision((byte)tileId);
-                    
-                    if (IsSolidCollisionForSpider(collision))
+                    int tileIdx = tileY * mapWidth + probeTileX;
+                    if (tileIdx >= 0 && tileIdx < tiles.Length)
                     {
-                        // Get collision bounds for this tile type
-                        var (colLeft, colTop, colRight, colBottom) = GetCollisionBoundsForType(collision);
+                        int tileId = tiles[tileIdx];
+                        var collision = MetatileCollisionTable.GetCollision((byte)tileId);
                         
-                        // Calculate tile top in world coordinates
-                        int tileTopLeft_world = (tileY - groundRowsToReserve) * TILE;
-                        // Add the collision bottom offset to get actual collision surface
-                        int collisionBottom_world = tileTopLeft_world + colBottom;
-                        
-                        int eject = collisionBottom_world - checkY_px;
-                        return (true, eject);
+                        if (IsSolidCollisionForSpider(collision))
+                        {
+                            var (colLeft, colTop, colRight, colBottom) = SharedPhysics.GetCollisionBounds(collision);
+                            int tileTopLeft_world = (tileY - groundRowsToReserve) * TILE;
+                            int collisionBottom_world = tileTopLeft_world + colBottom;
+                            
+                            int eject = collisionBottom_world - checkY_px;
+                            return (true, eject);
+                        }
                     }
                 }
             }

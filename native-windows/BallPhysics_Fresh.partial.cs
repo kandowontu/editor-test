@@ -293,8 +293,16 @@ namespace FamidashEditor
             else
                 BallEject_Fresh();
 
+            // Center-point death check AFTER eject (matches NES bg_coll_death in runthecolls)
+            CheckCenterPointDeath_Fresh();
+
             // Update slope exit velocity counters
             UpdateSlopeCounters_Fresh();
+
+            // Save pre-flip gravity for orb processing below.
+            // NES: sprite_collide (orb activation) runs BEFORE ball_movement (gravity flip),
+            // so the orb sees the pre-flip gravity direction when computing launch velocity.
+            bool preFlipGravityInverted = (currplayer_gravity != 0);
 
             // Swing gravity flip logic
             if (currentGameMode == 7) { // GAMEMODE_SWING
@@ -315,7 +323,9 @@ namespace FamidashEditor
                 bool holdJump_orb = IsXDownAsync() || keyXHeld;
                 int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
                 bool pressJump_orb = pressCount_orb > 0;
-                bool gravityInverted_orb = (currplayer_gravity != 0);
+                // Use pre-flip gravity: NES activates orbs (sprite_collide) BEFORE
+                // ball_movement which contains the gravity flip.
+                bool gravityInverted_orb = preFlipGravityInverted;
                 int playerX_px_orb = (playerX_fixed >> 8) + 1;
                 int playerY_px_orb = playerY_fixed >> 8;
                 int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;

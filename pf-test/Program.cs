@@ -21,6 +21,12 @@ bool useBfs = args.Any(a => a.Equals("--bfs", StringComparison.OrdinalIgnoreCase
 bool verbose = args.Any(a => a.Equals("--verbose", StringComparison.OrdinalIgnoreCase) || a.Equals("-v", StringComparison.OrdinalIgnoreCase));
 // Filter out named flags before positional parsing
 var positionalArgs = args.Where(a => !a.StartsWith("--") && !a.Equals("-v", StringComparison.OrdinalIgnoreCase)).ToArray();
+int? cliStartMode = null;
+foreach (var a in args)
+{
+    if (a.StartsWith("--mode=", StringComparison.OrdinalIgnoreCase))
+        cliStartMode = int.Parse(a.Substring(7));
+}
 
 string tmxPath = positionalArgs.Length > 0 ? positionalArgs[0] : @"..\famidash\LEVELS\LEVEL DATA\lvlset_HUGE\everyend.tmx";
 double jumpTimingBias = positionalArgs.Length > 1 ? double.Parse(positionalArgs[1]) : 0.5; // default middle
@@ -28,12 +34,16 @@ double jumpTimingBias = positionalArgs.Length > 1 ? double.Parse(positionalArgs[
 // Read startingSpeed and maxFallSpeed from lvlset_HUGE_metadata.json5 for this level
 int maxFallSpeed = 0x06; // default
 int startSpeedUiIndex = 1;  // default: 1 = 1x speed (index 0 = 0.5x)
+int startGameMode = 0; // default: cube mode
 {
     string lvlName = Path.GetFileNameWithoutExtension(tmxPath).ToLowerInvariant();
     string? metaFile = FindMetadataFile(tmxPath);
+    Console.WriteLine($"Metadata file: {metaFile ?? "NOT FOUND"} (level: {lvlName})");
     if (metaFile != null)
     {
-        var (metaSpeed, metaMaxFall) = ParseMetadataLevelProperties(metaFile, lvlName);
+        try
+        {
+        var (metaSpeed, metaMaxFall, metaGameMode) = ParseMetadataLevelProperties(metaFile, lvlName);
         if (metaSpeed.HasValue)
         {
             // NES/metadata convention: 0=1x, 1=0.5x, 2+=same
@@ -47,7 +57,23 @@ int startSpeedUiIndex = 1;  // default: 1 = 1x speed (index 0 = 0.5x)
             maxFallSpeed = metaMaxFall.Value;
             Console.WriteLine($"Metadata: maxFallSpeed=0x{metaMaxFall.Value:X} for '{lvlName}'");
         }
+        if (metaGameMode.HasValue)
+        {
+            startGameMode = metaGameMode.Value;
+            Console.WriteLine($"Metadata: startingGameMode={startGameMode} for '{lvlName}'");
+        }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Metadata parse error: {ex.GetType().Name}: {ex.Message}");
+        }
     }
+}
+// CLI override for start game mode
+if (cliStartMode.HasValue)
+{
+    startGameMode = cliStartMode.Value;
+    Console.WriteLine($"CLI override: startGameMode={startGameMode}");
 }
 
 if (!File.Exists(tmxPath))
@@ -175,7 +201,7 @@ int startY_px = Math.Max(0, groundSurface_px - 15); // 15 = cube hitbox height
 int maxY = Math.Max(0, level.Height * 16 - 16);
 if (startY_px > maxY) startY_px = maxY;
 
-Console.WriteLine($"Start: ({startX_px}, {startY_px})  speed={startSpeedUiIndex}  maxFall=0x{maxFallSpeed:X}  bias={jumpTimingBias:F2}");
+Console.WriteLine($"Start: ({startX_px}, {startY_px})  speed={startSpeedUiIndex}  maxFall=0x{maxFallSpeed:X}  bias={jumpTimingBias:F2}  mode={startGameMode}");
 
 var engine = new PathfinderEngine(
     tiles, sprites, spriteAnchors,
@@ -199,7 +225,7 @@ engine.Progress = new Progress<int>(pct =>
 });
 
 var sw = System.Diagnostics.Stopwatch.StartNew();
-engine.Run(startX_px, startY_px, startSpeedUiIndex, 0, false, false);
+engine.Run(startX_px, startY_px, startSpeedUiIndex, startGameMode, false, false);
 sw.Stop();
 
 Console.WriteLine();
@@ -229,6 +255,9 @@ static string? FindMetadataFile(string tmxPath)
         {
             string candidate = Path.Combine(dir, "lvlset_HUGE_metadata.json5");
             if (File.Exists(candidate)) return candidate;
+            // Also check metadata/ subdirectory
+            string metaSubDir = Path.Combine(dir, "metadata", "lvlset_HUGE_metadata.json5");
+            if (File.Exists(metaSubDir)) return metaSubDir;
             var parent = Directory.GetParent(dir);
             dir = parent?.FullName;
         }
@@ -304,7 +333,7 @@ static string Json5ToJson(string json5)
 // ══════════════════════════════════════════════════════════════
 // Helper: read startingSpeed and maxFallSpeed for a level from metadata
 // ══════════════════════════════════════════════════════════════
-static (int? startingSpeed, int? maxFallSpeed) ParseMetadataLevelProperties(string metaPath, string levelName)
+static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode) ParseMetadataLevelProperties(string metaPath, string levelName)
 {
     string raw = File.ReadAllText(metaPath);
     string json = Json5ToJson(raw);
@@ -314,21 +343,34 @@ static (int? startingSpeed, int? maxFallSpeed) ParseMetadataLevelProperties(stri
 
     if (root.TryGetProperty("official_levels", out var levelsArray) && levelsArray.ValueKind == JsonValueKind.Array)
     {
+        int count = 0;
         foreach (var entry in levelsArray.EnumerateArray())
         {
-            if (entry.TryGetProperty("level", out var lvlProp)
-                && lvlProp.GetString()?.Equals(levelName, StringComparison.OrdinalIgnoreCase) == true)
+            count++;
+            if (entry.TryGetProperty("level", out var lvlProp))
             {
-                int? speed = null, maxFall = null;
-                if (entry.TryGetProperty("startingSpeed", out var sp) && sp.ValueKind == JsonValueKind.Number)
-                    speed = sp.GetInt32();
-                if (entry.TryGetProperty("maxFallSpeed", out var mf) && mf.ValueKind == JsonValueKind.Number)
-                    maxFall = mf.GetInt32();
-                return (speed, maxFall);
+                string? lvl = lvlProp.GetString();
+                if (lvl?.Equals(levelName, StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    int? speed = null, maxFall = null, gameMode = null;
+                    if (entry.TryGetProperty("startingSpeed", out var sp) && sp.ValueKind == JsonValueKind.Number)
+                        speed = sp.GetInt32();
+                    if (entry.TryGetProperty("maxFallSpeed", out var mf) && mf.ValueKind == JsonValueKind.Number)
+                        maxFall = mf.GetInt32();
+                    if (entry.TryGetProperty("startingGameMode", out var gm) && gm.ValueKind == JsonValueKind.Number)
+                        gameMode = gm.GetInt32();
+                    Console.WriteLine($"  Found level '{lvl}' at index {count}: speed={speed} maxFall={maxFall} gameMode={gameMode}");
+                    return (speed, maxFall, gameMode);
+                }
             }
         }
+        Console.WriteLine($"  Searched {count} levels, '{levelName}' not found");
     }
-    return (null, null);
+    else
+    {
+        Console.WriteLine($"  No 'official_levels' array found in metadata");
+    }
+    return (null, null, null);
 }
 
 // ══════════════════════════════════════════════════════════════

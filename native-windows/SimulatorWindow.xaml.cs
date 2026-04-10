@@ -1184,6 +1184,12 @@ namespace FamidashEditor
         private int swingcopterRotate_fixed = 0;  // 16-bit fixed point for swingcopter velocity-based animation
         private int footballRotate_fixed = 0;  // 16-bit fixed point for football cube-style rotation with flip table
 
+        // Per-player rotation state for dual mode (index 0 = P1, 1 = P2)
+        private int[] player_cubeRotate = new int[2];
+        private int[] player_cubeRotateMini = new int[2];
+        private int[] player_shipRotate = new int[2];
+        private int[] player_swingRotate = new int[2];
+        private int[] player_footballRotate = new int[2];
         
         // Rounding table for snapping cube to nearest 90° when velocity = 0
         // Maps rotation values to rounding adjustments
@@ -2641,8 +2647,27 @@ namespace FamidashEditor
                         orbHoldConsumedKeyStillDown[1] = false;
                         p2BallHoldCounter = 0;
                         
+                        // Initialize player 2 rotation state (start upright, same as P1 portal entry)
+                        player_cubeRotate[1] = cubeRotate_fixed;
+                        player_cubeRotateMini[1] = cubeRotateMini_fixed;
+                        player_shipRotate[1] = shipRotate_fixed;
+                        player_swingRotate[1] = swingcopterRotate_fixed;
+                        player_footballRotate[1] = footballRotate_fixed;
+                        
                         AppendSimDebug($"[DUAL_PORTAL] Activated! Player 2 spawned: X={player_x_fixed[1]>>8} Y={player_y_fixed[1]>>8} velY={player_vel_y_fixed[1]:X4} gravity={player_gravity[1]:X2}");
                         
+                        // NES spcl_dual_pt: target_scroll_y = portal_y - PORTAL_TO_TOP_DIFF
+                        // Always set regardless of dual/twoplayer (unlike gamemode portals).
+                        try
+                        {
+                            int storageTileY = idx / mapWidth;
+                            int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
+                            targetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                            AppendSimDebug($"[DUAL_PORTAL] Set targetCameraY={targetCameraY_fixed >> 8}px from portal at tileY={storageTileY}");
+                        }
+                        catch { }
+
                         // Mark as activated
                         processedMiniPortals.Add(idx);
                         break;
@@ -4544,9 +4569,9 @@ namespace FamidashEditor
                 {
                     // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9), or when nocamlockforced
                     bool camFollowsY = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
-                    if (physicsEnabled && jumpedOnce && (!dual || twoplayer))
+                    if (physicsEnabled && jumpedOnce)
                     {
-                        if (camFollowsY)
+                        if ((!dual || twoplayer) && camFollowsY)
                         {
                             // Match NES process_y_scroll: top threshold 0x4000 (64px), bottom 0xA0 (160px)
                             int grReserved_cam = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
@@ -6992,9 +7017,9 @@ namespace FamidashEditor
                 try
                 {
                     bool camFollowsY_2 = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
-                    if (physicsEnabled && jumpedOnce && (!dual || twoplayer))
+                    if (physicsEnabled && jumpedOnce)
                     {
-                        if (camFollowsY_2)
+                        if ((!dual || twoplayer) && camFollowsY_2)
                         {
                             // Match NES process_y_scroll: top threshold 0x4000 (64px), bottom 0xA0 (160px)
                             int grReserved_cam2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
@@ -9786,7 +9811,8 @@ namespace FamidashEditor
                     }
 
                     // Visual alias: make sprite 0x7B render identically to 0x05
-                    int s_vis = (s == 0x7B) ? 0x05 : s;
+                    // Visual alias: make sprite 0x7C (multi-hit green orb) render identically to 0x27 (green orb)
+                    int s_vis = (s == 0x7B) ? 0x05 : (s == 0x7C) ? 0x27 : s;
 
                     // Always hide freecam portal sprites (invisible triggers)
                     if (s == 0xDD || s == 0xED) continue;
@@ -10311,12 +10337,14 @@ namespace FamidashEditor
                             trailGhosts[tg].Visibility = Visibility.Collapsed;
                             continue;
                         }
-                        // Copy current player sprite to ghost
+                        // Copy current player sprite to ghost (including gravity flip)
                         if (playerImage != null && playerImage.Source != null)
                         {
                             trailGhosts[tg].Source = playerImage.Source;
                             trailGhosts[tg].Width = playerImage.Width;
                             trailGhosts[tg].Height = playerImage.Height;
+                            trailGhosts[tg].RenderTransformOrigin = playerImage.RenderTransformOrigin;
+                            trailGhosts[tg].RenderTransform = playerImage.RenderTransform;
                         }
                         // Position: offset backwards by vel_x*2 per ghost index
                         int velXPx = playerVelX_fixed >> 8;
@@ -11203,7 +11231,10 @@ namespace FamidashEditor
                                                     currentGameMode == 2 || // Ball (NES x_movement_coll runs unconditionally)
                                                     currentGameMode == 3 || // UFO (NES x_movement_coll runs unconditionally)
                                                     currentGameMode == 4 || // Robot
+                                                    currentGameMode == 5 || // Spider
+                                                    currentGameMode == 7 || // Swing
                                                     currentGameMode == 8 || // Ninja
+                                                    currentGameMode == 9 || // Pogo
                                                     currentGameMode == 10;  // Football
                             
                             if (needsForwardCheck)
@@ -11457,6 +11488,13 @@ namespace FamidashEditor
                             player_ballFlipCooldown[0] = ballFlipCooldown;
                             player_ballWasGroundedBeforeFlip[0] = ballWasGroundedBeforeFlip;
                             
+                            // Save player 1 rotation state
+                            player_cubeRotate[0] = cubeRotate_fixed;
+                            player_cubeRotateMini[0] = cubeRotateMini_fixed;
+                            player_shipRotate[0] = shipRotate_fixed;
+                            player_swingRotate[0] = swingcopterRotate_fixed;
+                            player_footballRotate[0] = footballRotate_fixed;
+                            
                             // Save player 1 slope state
                             SaveSlopeStateForPlayer(0);
                             
@@ -11553,6 +11591,14 @@ namespace FamidashEditor
                             // Load player 2 ball flip state
                             ballFlipCooldown = player_ballFlipCooldown[1];
                             ballWasGroundedBeforeFlip = player_ballWasGroundedBeforeFlip[1];
+                            
+                            // Load player 2 rotation state
+                            cubeRotate_fixed = player_cubeRotate[1];
+                            cubeRotateMini_fixed = player_cubeRotateMini[1];
+                            shipRotate_fixed = player_shipRotate[1];
+                            swingcopterRotate_fixed = player_swingRotate[1];
+                            footballRotate_fixed = player_footballRotate[1];
+                            
                             // === SPRITE INTERACTIONS FOR PLAYER 2 ===
                             try
                             {
@@ -11749,6 +11795,13 @@ namespace FamidashEditor
                             player_ballFlipCooldown[1] = ballFlipCooldown;
                             player_ballWasGroundedBeforeFlip[1] = ballWasGroundedBeforeFlip;
                             
+                            // Save player 2 rotation state
+                            player_cubeRotate[1] = cubeRotate_fixed;
+                            player_cubeRotateMini[1] = cubeRotateMini_fixed;
+                            player_shipRotate[1] = shipRotate_fixed;
+                            player_swingRotate[1] = swingcopterRotate_fixed;
+                            player_footballRotate[1] = footballRotate_fixed;
+                            
                             // Save player 2 slope state
                             SaveSlopeStateForPlayer(1);
                             
@@ -11798,6 +11851,13 @@ namespace FamidashEditor
                             ballFlipCooldown = player_ballFlipCooldown[0];
                             ballWasGroundedBeforeFlip = player_ballWasGroundedBeforeFlip[0];
                             
+                            // Load player 1 rotation state
+                            cubeRotate_fixed = player_cubeRotate[0];
+                            cubeRotateMini_fixed = player_cubeRotateMini[0];
+                            shipRotate_fixed = player_shipRotate[0];
+                            swingcopterRotate_fixed = player_swingRotate[0];
+                            footballRotate_fixed = player_footballRotate[0];
+                            
                             // Load player 1 slope state
                             LoadSlopeStateForPlayer(0);
                             
@@ -11817,15 +11877,74 @@ namespace FamidashEditor
                                             bool save_mini = miniMode;
                                             int save_velY = playerVelY_fixed;
                                             bool save_gravRev = gravityReversed;
+                                            bool save_gravFlip = gravityFlipped;
+                                            int save_cubeRot = cubeRotate_fixed;
+                                            int save_cubeRotMini = cubeRotateMini_fixed;
+                                            int save_shipRot = shipRotate_fixed;
+                                            int save_swingRot = swingcopterRotate_fixed;
+                                            int save_footballRot = footballRotate_fixed;
                                             
                                             // Temporarily set P2's captured state
                                             currentGameMode = p2_gameMode;
                                             miniMode = p2_mini;
                                             playerVelY_fixed = p2_velY;
                                             gravityReversed = p2_gravReversed;
+                                            gravityFlipped = p2_gravReversed;
+                                            cubeRotate_fixed = player_cubeRotate[1];
+                                            cubeRotateMini_fixed = player_cubeRotateMini[1];
+                                            shipRotate_fixed = player_shipRotate[1];
+                                            swingcopterRotate_fixed = player_swingRotate[1];
+                                            footballRotate_fixed = player_footballRotate[1];
                                             applyPlayer2Colors = true;
                                             
                                             UpdatePlayerImageForMode();
+                                            
+                                            // For cube/robot/ninja modes, also select the correct
+                                            // rotation frame (UpdatePlayerImageForMode only loads
+                                            // the base image; rotation frames are normally applied
+                                            // in the render loop for P1 only).
+                                            if (p2_gameMode == 0 || p2_gameMode == 4 || p2_gameMode == 8)
+                                            {
+                                                try
+                                                {
+                                                    if (!p2_mini)
+                                                    {
+                                                        int p2Frame = (cubeRotate_fixed >> 8) & 0xFF;
+                                                        p2Frame = p2Frame % 7;
+                                                        string[] p2FrameNames = (p2_gameMode == 8) ? s_ninjaFrameNames : s_cubeFrameNames;
+                                                        string p2ChosenFrame = p2FrameNames[p2Frame];
+                                                        var p2RotImg = LoadCachedResourceImage(p2ChosenFrame);
+                                                        if (p2RotImg != null && playerImage != null)
+                                                        {
+                                                            playerImage.Source = App.EnsureUnfrozenForRender(p2RotImg) ?? p2RotImg;
+                                                            playerImage.Tag = p2ChosenFrame;
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        int p2MiniFrame = GetCubeSpriteMiniFrame();
+                                                        string[] p2MiniFrameNames = (p2_gameMode == 8) ? new string[]
+                                                        {
+                                                            "ninja_mini_00_frame_0.png", "ninja_mini_01_frame_1.png",
+                                                            "ninja_mini_02_frame_2.png", "ninja_mini_03_frame_3.png",
+                                                            "ninja_mini_04_frame_4.png"
+                                                        } : new string[]
+                                                        {
+                                                            "cube_mini_00_frame_0.png", "cube_mini_01_frame_1.png",
+                                                            "cube_mini_02_frame_2.png", "cube_mini_03_frame_3.png",
+                                                            "cube_mini_04_frame_4.png"
+                                                        };
+                                                        string p2ChosenMini = p2MiniFrameNames[p2MiniFrame];
+                                                        var p2MiniImg = LoadCachedResourceImage(p2ChosenMini);
+                                                        if (p2MiniImg != null && playerImage != null)
+                                                        {
+                                                            playerImage.Source = App.EnsureUnfrozenForRender(p2MiniImg) ?? p2MiniImg;
+                                                            playerImage.Tag = p2ChosenMini;
+                                                        }
+                                                    }
+                                                }
+                                                catch { }
+                                            }
                                             
                                             if (player2Image != null && playerImage != null && playerImage.Source != null)
                                             {
@@ -11841,6 +11960,12 @@ namespace FamidashEditor
                                             miniMode = save_mini;
                                             playerVelY_fixed = save_velY;
                                             gravityReversed = save_gravRev;
+                                            gravityFlipped = save_gravFlip;
+                                            cubeRotate_fixed = save_cubeRot;
+                                            cubeRotateMini_fixed = save_cubeRotMini;
+                                            shipRotate_fixed = save_shipRot;
+                                            swingcopterRotate_fixed = save_swingRot;
+                                            footballRotate_fixed = save_footballRot;
                                             applyPlayer2Colors = false;
                                             
                                             // Now update playerImage with P1's correct sprite

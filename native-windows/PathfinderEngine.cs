@@ -659,6 +659,7 @@ namespace FamidashEditor
             public bool NoCamLockForced;        // true = freecam (camera follows player freely)
             public bool WrapMode;               // true = wrap Y instead of OOB death (0x8E on, 0x9E off)
             public int RainbowMaxMode;          // >0 = rainbow portal active: BFS must survive modes 0..RainbowMaxMode-1 (cleared on next game-mode portal)
+            public SimState[]? RainbowShadows;   // persistent shadow states for rainbow multi-mode verification (one per alternative mode)
 
             // ---- Dual portal state ----
             public bool DualActive;             // true when in dual mode (two players)
@@ -694,7 +695,27 @@ namespace FamidashEditor
             {
                 var c = this;
                 c.ProcessedSprites = ProcessedSprites.Clone();
+                if (RainbowShadows != null)
+                {
+                    c.RainbowShadows = new SimState[RainbowShadows.Length];
+                    for (int i = 0; i < RainbowShadows.Length; i++)
+                    {
+                        c.RainbowShadows[i] = RainbowShadows[i];
+                        c.RainbowShadows[i].ProcessedSprites = RainbowShadows[i].ProcessedSprites.Clone();
+                    }
+                }
                 return c;
+            }
+
+            public void ReturnAllSpriteResources()
+            {
+                ProcessedSprites.Return();
+                if (RainbowShadows != null)
+                {
+                    for (int i = 0; i < RainbowShadows.Length; i++)
+                        RainbowShadows[i].ProcessedSprites.Return();
+                    RainbowShadows = null;
+                }
             }
         }
 
@@ -2624,30 +2645,70 @@ namespace FamidashEditor
                         var sim = frontier[pi].Clone();
                         bool alive = StepFrame(ref sim, inp, out bool endLevel);
 
-                        // Rainbow multi-mode verification: when RainbowMaxMode>0,
-                        // the BFS must prove that ALL possible random modes survive
-                        // this frame (with the same input).  We speculatively run
-                        // StepFrame for every alternative mode from the parent state.
-                        if (alive && !endLevel && sim.RainbowMaxMode > 0)
+                        // Rainbow multi-mode verification: persistent shadow states
+                        // evolve independently with their own physics each frame.
+                        // This ensures the input sequence survives ALL possible random
+                        // mode outcomes, not just one frame at a time.
+                        if (alive && !endLevel)
                         {
-                            int maxMode = sim.RainbowMaxMode;
-                            for (int m = 0; m < maxMode && alive; m++)
+                            bool portalFrame = sim.RainbowMaxMode > 0 && frontier[pi].RainbowMaxMode == 0;
+                            bool hasShadows = sim.RainbowShadows != null;
+
+                            if (portalFrame)
                             {
-                                if (m == sim.GameMode) continue; // already verified
-                                var shadow = frontier[pi].Clone();
-                                shadow.GameMode = m;
-                                // Set flag so ProcessSprites won't re-trigger rainbow
-                                // detection — it only applies vel-zero & sets the flag
-                                // when RainbowMaxMode==0 (first hit).
-                                shadow.RainbowMaxMode = maxMode;
-                                // On the portal frame (parent wasn't in rainbow yet),
-                                // apply NES wave/swing vel-zero based on entry mode.
-                                if (frontier[pi].RainbowMaxMode == 0 &&
-                                    (frontier[pi].GameMode == 6 || frontier[pi].GameMode == 10))
-                                    shadow.VelY_fixed = 0;
-                                bool shadowAlive = StepFrame(ref shadow, inp, out _);
-                                shadow.ProcessedSprites.Return();
-                                if (!shadowAlive) alive = false;
+                                // Portal frame: create persistent shadows, one per alternative mode
+                                int maxMode = sim.RainbowMaxMode;
+                                var shadows = new SimState[maxMode - 1];
+                                int idx = 0;
+                                for (int m = 0; m < maxMode && alive; m++)
+                                {
+                                    if (m == sim.GameMode) continue;
+                                    var shadow = frontier[pi].Clone();
+                                    shadow.GameMode = m;
+                                    shadow.RainbowMaxMode = maxMode;
+                                    shadow.RainbowShadows = null; // shadows don't nest
+                                    // NES: VelY zeroed based on entry mode (before randomization)
+                                    if (frontier[pi].GameMode == 6 || frontier[pi].GameMode == 10)
+                                        shadow.VelY_fixed = 0;
+                                    bool shadowAlive = StepFrame(ref shadow, inp, out _);
+                                    if (!shadowAlive)
+                                    {
+                                        shadow.ProcessedSprites.Return();
+                                        alive = false;
+                                        for (int j = 0; j < idx; j++)
+                                            shadows[j].ProcessedSprites.Return();
+                                    }
+                                    else
+                                    {
+                                        shadows[idx++] = shadow;
+                                    }
+                                }
+                                if (alive) sim.RainbowShadows = shadows;
+                            }
+                            else if (hasShadows)
+                            {
+                                // Subsequent frames: step existing persistent shadows
+                                var shadows = sim.RainbowShadows!;
+                                for (int si = 0; si < shadows.Length && alive; si++)
+                                {
+                                    bool shadowAlive = StepFrame(ref shadows[si], inp, out _);
+                                    if (!shadowAlive)
+                                    {
+                                        alive = false;
+                                        shadows[si].ProcessedSprites.Return();
+                                        for (int sj = si + 1; sj < shadows.Length; sj++)
+                                            shadows[sj].ProcessedSprites.Return();
+                                        sim.RainbowShadows = null;
+                                    }
+                                }
+                                // Rainbow ended this frame (real mode portal cleared it):
+                                // step already done, now discard shadows
+                                if (alive && sim.RainbowMaxMode == 0 && sim.RainbowShadows != null)
+                                {
+                                    for (int si = 0; si < sim.RainbowShadows.Length; si++)
+                                        sim.RainbowShadows[si].ProcessedSprites.Return();
+                                    sim.RainbowShadows = null;
+                                }
                             }
                         }
 
@@ -2709,7 +2770,7 @@ namespace FamidashEditor
                                 }
                             }
 #endif
-                            rState[k].ProcessedSprites.Return(); deathCount++; continue;
+                            rState[k].ReturnAllSpriteResources(); deathCount++; continue;
                         }
 
                         var st = rState[k];
@@ -2931,8 +2992,13 @@ namespace FamidashEditor
                         var keptRefs = new HashSet<object>(nextFrontier.Count);
                         foreach (var s in nextFrontier) keptRefs.Add(s.ProcessedSprites);
                         for (int i = 0; i < candState.Count; i++)
+                        {
                             if (!keptRefs.Contains(candState[i].ProcessedSprites))
-                                candState[i].ProcessedSprites.Return();
+                            {
+                                var tmp = candState[i];
+                                tmp.ReturnAllSpriteResources();
+                            }
+                        }
                     }
 
                     // Store history for path reconstruction
@@ -2982,7 +3048,10 @@ namespace FamidashEditor
 
                     // Return old frontier SpriteSets before replacing
                     foreach (var old in frontier)
-                        old.ProcessedSprites.Return();
+                    {
+                        var tmp = old;
+                        tmp.ReturnAllSpriteResources();
+                    }
                     frontier = nextFrontier;
 
                     // -- Periodic logging + speculative path visualization --
@@ -3146,7 +3215,7 @@ namespace FamidashEditor
                                 if (!StepFrame(ref traceSim, false, out bool endT) || endT) break;
                                 traceSurv = tf + 1;
                             }
-                            traceSim.ProcessedSprites.Return();
+                            traceSim.ReturnAllSpriteResources();
                             if (tracePath.Count >= 2)
                                 OnSpeculativePath(tracePath, 0, traceSurv, false);
 
@@ -3163,7 +3232,7 @@ namespace FamidashEditor
                                 if (!StepFrame(ref traceSimJ, inp, out bool endTJ) || endTJ) break;
                                 traceSurvJ = tf + 1;
                             }
-                            traceSimJ.ProcessedSprites.Return();
+                            traceSimJ.ReturnAllSpriteResources();
                             if (tracePathJ.Count >= 2)
                                 OnSpeculativePath(tracePathJ, 0, traceSurvJ, true);
                         }
@@ -6703,7 +6772,7 @@ namespace FamidashEditor
             int bestH = 0;
             if (endH) bestH = depthRemaining; // reached end
             else if (aliveH) bestH = 1 + ShipTreeSearch(sH, depthRemaining - 1);
-            sH.ProcessedSprites.Return(); // recycle array to pool
+            sH.ReturnAllSpriteResources(); // recycle array to pool
 
             // Early exit: if hold already achieves max depth, no need to try release
             if (bestH >= depthRemaining)
@@ -6719,7 +6788,7 @@ namespace FamidashEditor
             int bestR = 0;
             if (endR) bestR = depthRemaining;
             else if (aliveR) bestR = 1 + ShipTreeSearch(sR, depthRemaining - 1);
-            sR.ProcessedSprites.Return(); // recycle array to pool
+            sR.ReturnAllSpriteResources(); // recycle array to pool
 
             _speculativeDepth--;
             return Math.Max(bestH, bestR);
@@ -7357,7 +7426,8 @@ namespace FamidashEditor
             bool initialJumpDone = (jumpFrame < 0);
             bool chainJumps = (jumpFrame >= 0) && !singleJumpOnly;
             bool startGravFlipped = s.GravFlipped; // track gravity portal hits
-            bool isBallMode = (s.GameMode == 2); // ball flips change GravFlipped � don't confuse with portal hits
+            bool isBallMode = (s.GameMode == 2); // ball flips change GravFlipped — don't confuse with portal hits
+            bool isSpiderMode = (s.GameMode == 5); // spider teleport flips GravFlipped — not a portal event
 #if !DISABLE_DEBUG_LOGGING
             var trajLog = logTrajectory ? new System.Text.StringBuilder() : null;
 #endif
@@ -7457,15 +7527,16 @@ namespace FamidashEditor
 #endif
                     // Bonus for paths that went through a gravity portal:
                     // these paths are structurally important for level progression.
-                    // Ball mode: flips change GravFlipped every time � not a portal event.
-                    int portalBonus = (!isBallMode && s.GravFlipped != startGravFlipped) ? LOOKAHEAD_HORIZON : 0;
+                    // Ball mode: flips change GravFlipped every time — not a portal event.
+                    // Spider mode: teleport flips GravFlipped — not a portal event.
+                    int portalBonus = (!isBallMode && !isSpiderMode && s.GravFlipped != startGravFlipped) ? LOOKAHEAD_HORIZON : 0;
                     return f + portalBonus;
                 }
                 if (endLevel) return LOOKAHEAD_HORIZON;
             }
 
             // Bonus for paths that went through a gravity portal
-            int finalPortalBonus = (!isBallMode && s.GravFlipped != startGravFlipped) ? LOOKAHEAD_HORIZON : 0;
+            int finalPortalBonus = (!isBallMode && !isSpiderMode && s.GravFlipped != startGravFlipped) ? LOOKAHEAD_HORIZON : 0;
             return LOOKAHEAD_HORIZON + finalPortalBonus;
         }
 
@@ -8211,17 +8282,12 @@ namespace FamidashEditor
                 }
                 PfUpdateSlopeCounters_Fresh(ref s);
 
-                if (CheckDeathCollision(ref s))
-                {
-                    s.DeathType = 3;
-                    return false;
-                }
-
                 // Spider grounded = velY == 0
                 s.OnGround = (s.VelY_fixed == 0);
 
                 // Teleport input: when grounded and not orbed, flip gravity and scan to opposite surface
                 // BlackOrbed allows teleport even while Orbed (hold-to-teleport after black orb)
+                // NES order: gravity → eject → teleport → death check (death check is AFTER spider_movement returns)
                 bool canTeleport = (s.VelY_fixed == 0) && (!s.Orbed || s.BlackOrbed);
                 if (input && canTeleport)
                 {
@@ -8251,6 +8317,14 @@ namespace FamidashEditor
                     s.BlackOrbed = false;
                     s.Orbed = false;
                 }
+
+                // Death check AFTER teleport to match NES order
+                // (NES checks death after spider_movement() returns, which includes teleport)
+                if (CheckDeathCollision(ref s))
+                {
+                    s.DeathType = 3;
+                    return false;
+                }
             }
             else if (s.GameMode == 7) // Swingcopter mode
             {
@@ -8272,17 +8346,17 @@ namespace FamidashEditor
                 }
                 PfUpdateSlopeCounters_Fresh(ref s);
 
-                // Swing gravity flip: press → flip gravity (no velocity impulse, no grounded requirement)
-                if (input && !s.Orbed)
+                // Swing gravity flip: press (rising edge) → flip gravity
+                // NES uses controllingplayer->press (rising edge, not hold).
+                // Use PrevInputHeld for edge detection so a held button from a
+                // previous mode (e.g. robot) doesn't cause a spurious flip.
+                if (input && !s.PrevInputHeld && !s.Orbed)
                 {
                     s.GravFlipped = !s.GravFlipped;
                     s.GravMul = s.GravFlipped ? -1 : 1;
-                    s.Orbed = true; // Prevent double-flip while held
                 }
-                else if (!input)
-                {
-                    s.Orbed = false;
-                }
+                // NES: ufo_orbed is cleared every frame at end of ball_movement
+                s.Orbed = false;
 
                 if (CheckDeathCollision(ref s))
                 {
@@ -8448,11 +8522,15 @@ namespace FamidashEditor
             // -- STEP 6: (removed — SIM has no post-Y gravity portal check at OLD X;
             //    gravity portals after physics are detected at NEW X in Step 8b) --
 
-            // -- STEP 7: FORWARD COLLISION at OLD X, post-eject Y --
-            // NES x_movement_coll runs bg_coll_floor_spikes (4-corner) then bg_coll_R
-            // at the same OLD X, post-eject Y coordinates.
+            // -- STEP 7: FLOOR SPIKES + FORWARD COLLISION at OLD X, post-eject Y --
+            // NES runthecolls() calls x_movement_coll() BEFORE x_movement().
+            // x_movement_coll() loads Generic.x = high_byte(currplayer_x) (OLD X)
+            // and Generic.y = high_byte(currplayer_y) (post-eject Y).
+            // Then bg_coll_floor_spikes() + bg_coll_R() run at OLD X.
+            // x_movement() advances X AFTER these checks.
+            // bg_coll_death() runs after x_movement(), at NEW X.
 
-            // -- STEP 7a: 4-CORNER SPIKE CHECK (bg_coll_floor_spikes) --
+            // -- STEP 7a: 4-CORNER SPIKE CHECK (bg_coll_floor_spikes) at OLD X --
             if (CheckFloorSpikes(ref s))
             {
 #if !DISABLE_DEBUG_LOGGING
@@ -8463,7 +8541,7 @@ namespace FamidashEditor
                 return false;
             }
 
-            // -- STEP 7b: FORWARD COLLISION (bg_coll_R) --
+            // -- STEP 7b: FORWARD COLLISION (bg_coll_R) at OLD X --
             // Forward collision (bg_coll_R) — runs for all game modes.
             // H_BLOCK does NOT skip forward collision; it only enables ceiling eject.
             if (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 6 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode == 10)
@@ -8480,8 +8558,8 @@ namespace FamidashEditor
             }
 
             // -- STEP 7c/7d: Center death + slope penetration moved to after X advance --
-            // NES bg_coll_death runs inside x_movement AFTER advancing currplayer_x,
-            // using the NEW X position. Reference: "bg_coll_death() — death check at new X".
+            // NES bg_coll_death runs inside runthecolls() AFTER x_movement() advances
+            // currplayer_x, using the NEW X position.
 
             // -- STEP 7e: CAMERA FOLLOW + OOB DEATH (matching NES x_movement Y bounds) --
             {
@@ -9025,9 +9103,13 @@ namespace FamidashEditor
                             int newY = collisionBottomY - hitboxOffsetY;
                             s.Y_fixed = newY << 8;
                             s.VelY_fixed = s.HBlocked ? 1 : 0;
+                            s.OnGround = !s.HBlocked; // landed on ceiling surface
+                            s.WasZeroedByCollision = !s.HBlocked;
+                            s.Orbed = false; // NES: orbactive = 0
                             if (s.FBlocked)
                             {
                                 s.GravFlipped = true;
+                                s.GravMul = -1;
                             }
                             s.Step2Ejected = true;
                             s.Step2Ever = true;
@@ -9047,9 +9129,13 @@ namespace FamidashEditor
                             int newY = collisionTopY - hitboxH - hitboxOffsetY;
                             s.Y_fixed = newY << 8;
                             s.VelY_fixed = s.HBlocked ? -1 : 0;  // NES 0xFFFF = -1 signed 16-bit
+                            s.OnGround = !s.HBlocked; // landed on floor surface
+                            s.WasZeroedByCollision = !s.HBlocked;
+                            s.Orbed = false; // NES: orbactive = 0
                             if (s.FBlocked)
                             {
                                 s.GravFlipped = false;
+                                s.GravMul = 1;
                             }
                             s.Step2Ejected = true;
                             s.Step2Ever = true;
@@ -9404,10 +9490,18 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
             PfLog($"[DECIDE_SPIDER] noPress={noPressSurv} bestPress={bestPressSurv}");
 #endif
-            // Stay-bias: only teleport when staying is immediately dangerous (≤2 frames)
-            // or pressing survives substantially longer.
-            // Stronger walking bias reduces unnecessary clicks/teleports in safe corridors.
-            int stayBias = (noPressSurv <= 2) ? 0 : (noPressSurv <= 8) ? 6 : 12;
+            // Walking survives the full lookahead horizon — no reason to
+            // teleport now.  The BFS re-evaluates every grounded frame, so
+            // as the spider approaches real danger noPressSurv will drop and
+            // teleport will be reconsidered at the proper time.
+            if (noPressSurv >= LOOKAHEAD_HORIZON) return false;
+
+            // Stay-bias: scale with walking survival so the spider waits
+            // until danger is genuinely close before teleporting.
+            // At noPressSurv=50 → stayBias=47, need bestPressSurv>97 (won't fire)
+            // At noPressSurv=20 → stayBias=17, need bestPressSurv>37 (fires if ceiling is safe)
+            // At noPressSurv=5  → stayBias=2,  need bestPressSurv>7  (easy, emergency teleport)
+            int stayBias = Math.Max(0, noPressSurv - 3);
             if (bestPressSurv > noPressSurv + stayBias && bestPressSurv >= 2)
             {
                 _committedJumpDelay = -1;
@@ -10980,7 +11074,8 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    var (hit, ejectAmt) = BgCollD_Spider(collisionX, collisionY, hbW, hbH);
+                    // spider_eject calls bg_coll_D (3 probes, no inset), not bg_coll_D_spider.
+                    var (hit, ejectAmt) = BgCollD_Spider(collisionX, collisionY, hbW, hbH, useEjectProbes: true);
                     if (hit)
                     {
                         s.Y_fixed = ((s.Y_fixed >> 8) - ejectAmt) << 8;
@@ -10996,10 +11091,13 @@ namespace FamidashEditor
             else
             {
                 // Inverted gravity: ceiling check
-                var (hit, ejectAmt) = BgCollU_Spider(collisionX, collisionY, hbW, hbH);
+                // spider_eject calls bg_coll_U (3 probes, no inset), not bg_coll_U_spider.
+                var (hit, ejectAmt) = BgCollU_Spider(collisionX, collisionY, hbW, hbH, useEjectProbes: true);
                 if (hit)
                 {
-                    s.Y_fixed = ((s.Y_fixed >> 8) + ejectAmt) << 8;
+                    // NES eject lands at exactly surfaceBottom via byte-wrap math.
+                    // collisionY + ejectAmt == surfaceBottom (the offset cancels out).
+                    s.Y_fixed = (collisionY + ejectAmt) << 8;
                     s.VelY_fixed = 0;
                     s.WasZeroedByCollision = true;
                 }
@@ -11062,11 +11160,12 @@ namespace FamidashEditor
             s.Y_fixed = scanY << 8;
         }
 
-        /// <summary>Spider-specific floor collision (2-probe, 3px inset).</summary>
-        private (bool hit, int ejectAmount) BgCollD_Spider(int playerX_px, int playerY_px, int width, int height)
+        /// <summary>Spider floor collision.
+        /// useEjectProbes=false: bg_coll_D_spider style (2 probes, 3px inset) — for scan.
+        /// useEjectProbes=true:  bg_coll_D style (3 probes, no inset) — for spider_eject.
+        /// </summary>
+        private (bool hit, int ejectAmount) BgCollD_Spider(int playerX_px, int playerY_px, int width, int height, bool useEjectProbes = false)
         {
-            int leftX = playerX_px + 3;
-            int rightX = playerX_px + width - 3;
             int checkY = playerY_px + height;
 
             int tileY = checkY / TILE;
@@ -11080,7 +11179,19 @@ namespace FamidashEditor
             }
             if (tileArrayY < 0) return (false, 0);
 
-            foreach (int probeX in new[] { leftX, rightX })
+            int[] probes;
+            if (useEjectProbes)
+            {
+                // NES bg_coll_D: 3 probes at X, X+width/2, X+width (no inset)
+                probes = new[] { playerX_px, playerX_px + (width >> 1), playerX_px + width };
+            }
+            else
+            {
+                // NES bg_coll_D_spider: 2 probes with 3px inset
+                probes = new[] { playerX_px + 3, playerX_px + width - 3 };
+            }
+
+            foreach (int probeX in probes)
             {
                 int tx = probeX / TILE;
                 if (tx < 0 || tx >= _collisionMap.MapWidth) continue;
@@ -11100,11 +11211,12 @@ namespace FamidashEditor
             return (false, 0);
         }
 
-        /// <summary>Spider-specific ceiling collision (2-probe, 3px inset).</summary>
-        private (bool hit, int ejectAmount) BgCollU_Spider(int playerX_px, int playerY_px, int width, int height)
+        /// <summary>Spider ceiling collision.
+        /// useEjectProbes=false: bg_coll_U_spider style (2 probes, 3px inset) — for scan.
+        /// useEjectProbes=true:  bg_coll_U style (3 probes, no inset) — for spider_eject.
+        /// </summary>
+        private (bool hit, int ejectAmount) BgCollU_Spider(int playerX_px, int playerY_px, int width, int height, bool useEjectProbes = false)
         {
-            int leftX = playerX_px + 3;
-            int rightX = playerX_px + width - 3;
             int checkY = playerY_px;
 
             int tileY = checkY / TILE;
@@ -11115,7 +11227,19 @@ namespace FamidashEditor
                 return (true, -checkY);
             if (tileArrayY >= _collisionMap.MapHeight) return (false, 0);
 
-            foreach (int probeX in new[] { leftX, rightX })
+            int[] probes;
+            if (useEjectProbes)
+            {
+                // NES bg_coll_U: 3 probes at X, X+width/2, X+width (no inset)
+                probes = new[] { playerX_px, playerX_px + (width >> 1), playerX_px + width };
+            }
+            else
+            {
+                // NES bg_coll_U_spider: 2 probes with 3px inset
+                probes = new[] { playerX_px + 3, playerX_px + width - 3 };
+            }
+
+            foreach (int probeX in probes)
             {
                 int tx = probeX / TILE;
                 if (tx < 0 || tx >= _collisionMap.MapWidth) continue;
@@ -12208,6 +12332,9 @@ namespace FamidashEditor
                     s.GameMode = mode;
                     // Real game-mode portal ends rainbow multi-mode verification
                     s.RainbowMaxMode = 0;
+                    // Shadow cleanup is handled by the BFS expansion loop after
+                    // StepFrame returns (it detects RainbowMaxMode==0 with non-null
+                    // RainbowShadows and returns their resources there).
                     // NES: unconditionally halve velocity on mode change
                     // (sprite_loading.h line 764: currplayer_vel_y /= 2)
                     s.VelY_fixed /= 2;
@@ -12769,6 +12896,7 @@ namespace FamidashEditor
                 PfLog($"[FLOOR_SPIKE_DEATH] corner {cornerName} ({deathX},{deathY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} localXY=({_lx},{_ly})");
                 _lastDeathReason = $"FLOOR_SPIKE:{cornerName}({deathX},{deathY})";
                 _lastDeathX = playerX; _lastDeathY = playerY;
+                System.Console.WriteLine($"[DBG_SPIKE_DETAIL] pX={playerX} pY={playerY} corner={cornerName} deathPt=({deathX},{deathY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} local=({_lx},{_ly})");
             }
             return killed;
 #else
