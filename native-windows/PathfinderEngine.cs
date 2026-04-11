@@ -2902,6 +2902,27 @@ namespace FamidashEditor
                         {
                             if (candCoins[i] > winCoins) { anyBetter = true; break; }
                         }
+                        // Even if no candidate currently has more coins, there may be
+                        // uncollected coins AHEAD of the current frontier X.  Live
+                        // candidates might still reach those coins and complete via a
+                        // different end-level trigger, so don't exit early.
+                        if (!anyBetter && PreferCoins && allCoins.Count > 0 && candState.Count > 0)
+                        {
+                            int frontierMaxX = 0;
+                            for (int i = 0; i < candState.Count; i++)
+                            {
+                                int cx = candState[i].X_fixed >> 8;
+                                if (cx > frontierMaxX) frontierMaxX = cx;
+                            }
+                            foreach (var coin in allCoins)
+                            {
+                                if (coin.HitRight > frontierMaxX && !winState.ProcessedSprites.Contains(coin.Index))
+                                {
+                                    anyBetter = true;
+                                    break;
+                                }
+                            }
+                        }
                         if (!anyBetter)
                         {
                             _log.WriteLine($"[BFS] Optimal � winning path at frame {winFrame} with {winCoins} coins, no better candidates");
@@ -11760,9 +11781,21 @@ namespace FamidashEditor
                     bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < nesX);
                     bool yOverlap = !((playerBottom) < sp.HitTop || sp.HitBottom < playerTop);
 
-                    // End-level trigger (0x0F) fires on X overlap only (full-screen height),
-                    // matching the simulator's X-position-only detection.
-                    bool hit = IsEndLevel(sid) ? xOverlap : (xOverlap && yOverlap);
+                    // End-level trigger (0x0F) fires on X overlap only, but must be
+                    // vertically on-screen (NES only processes on-screen activesprites).
+                    bool hit;
+                    if (IsEndLevel(sid))
+                    {
+                        int screenTopY = s.CameraY_fixed >> 8;
+                        int screenBottomY = screenTopY + SCREEN_H_PX;
+                        int spriteWorldY = sp.AnchorY_px - TILE / 2;
+                        bool onScreenY = !(spriteWorldY + TILE <= screenTopY || spriteWorldY >= screenBottomY);
+                        hit = xOverlap && onScreenY;
+                    }
+                    else
+                    {
+                        hit = xOverlap && yOverlap;
+                    }
 
 #if !DISABLE_DEBUG_LOGGING
                     if (IsGravityPortal(sid) || IsEndLevel(sid))

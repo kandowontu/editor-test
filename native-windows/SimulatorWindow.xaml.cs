@@ -12430,15 +12430,36 @@ namespace FamidashEditor
                 if (tileIdxLocal.HasValue) { pendingTileIdx = tileIdxLocal ?? -1; pendingTileSid = tileSidLocal ?? -1; pendingTintChange = true; }
                 if (groundIdxLocal.HasValue) { pendingGroundIdx = groundIdxLocal ?? -1; pendingGroundSid = groundSidLocal ?? -1; pendingTintChange = true; }
 
-                // Detect end-level trigger (sprite 0x0F) using the same X position logic as color triggers
+                // Detect end-level trigger (sprite 0x0F) using the same X position logic as color triggers.
+                // NES only processes sprites that are loaded into activesprites slots, which requires
+                // them to be on-screen. Add a Y visibility check so off-screen triggers don't fire.
                 if (!levelCompleteTriggered && !deathTriggered)
                 {
+                    int screenTopY = cameraY_fixed >> 8;
+                    int screenBottomY = screenTopY + NES_H * TILE;
+
                     for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
                     {
                         int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                         if (sid != 0x0F) continue;
                         if (processedEndLevelTriggers.Contains(idx)) continue;
-                        int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var aEnd)) ? aEnd.anchorTileX : idx % mapWidth;
+                        int anchorTileX, anchorTileY;
+                        if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var aEnd))
+                        {
+                            anchorTileX = aEnd.anchorTileX;
+                            anchorTileY = aEnd.anchorTileY;
+                        }
+                        else
+                        {
+                            anchorTileX = idx % mapWidth;
+                            anchorTileY = idx / mapWidth;
+                        }
+
+                        // Skip if sprite is not vertically on-screen
+                        int spriteWorldY = anchorTileY * TILE;
+                        if (spriteWorldY + TILE <= screenTopY || spriteWorldY >= screenBottomY)
+                            continue;
+
                         int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
 
                         bool activated = false;
