@@ -6139,6 +6139,27 @@
 			startingGroundColor: 0x0F,
 			parallaxDisable: true
 		},		
+		{
+			level: "thetriplespike",
+			upperText: "THE TRIPLE",
+			lowerText: "SPIKE",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "B",
+			sawSet: "A",
+			difficulty: "AUTO",
+			stars: 3,
+			songID: "song_scheming_weasel",
+			startingGameMode: 0,
+			startingSpeed: 1,
+			startingBackgroundColor: 0x12,
+			startingGroundColor: 0x02,
+			maxFallSpeed: 0x07,
+			parallaxDisable: true,
+			forcePlatformer: false,
+			objectOffsets: [
+			]
+		},		
 //		{
 //			level: "test8",
 //			lowerText: "TEST8",

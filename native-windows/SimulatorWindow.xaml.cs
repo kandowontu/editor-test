@@ -3817,8 +3817,8 @@ namespace FamidashEditor
                     });
                 }
                 else if (currentGameMode == 2) {
-                    // Ball animation alternates every 3 frames
-                    if (ballAnimationFrameCounter < 3) {
+                    // Ball animation alternates every 6 frames
+                    if (ballAnimationFrameCounter < 6) {
                         choice = "ball.png";
                     } else {
                         choice = "ball2.png";
@@ -8538,12 +8538,12 @@ namespace FamidashEditor
                     // Only animate if not paused
                     if (!paused)
                     {
-                        // Increment accumulator and cycle counter (0-5 cycle: 3 frames ball.png, 3 frames ball2.png)
+                        // Increment accumulator and cycle counter (0-11 cycle: 6 frames ball.png, 6 frames ball2.png)
                         ballAnimationFrameAccum += simTimeScale;
                         if (ballAnimationFrameAccum >= 1.0)
                         {
                             ballAnimationFrameCounter++;
-                            if (ballAnimationFrameCounter >= 6)  // 6-frame cycle (0-5)
+                            if (ballAnimationFrameCounter >= 12)  // 12-frame cycle (0-11)
                             {
                                 ballAnimationFrameCounter = 0;
                             }
@@ -8551,7 +8551,7 @@ namespace FamidashEditor
                         }
                     }
                     
-                    string ballChoice = (ballAnimationFrameCounter < 3) ? "ball.png" : "ball2.png";
+                    string ballChoice = (ballAnimationFrameCounter < 6) ? "ball.png" : "ball2.png";
                     AppendSimDebug($"[BALL_ANIM] counter={ballAnimationFrameCounter}, accum={ballAnimationFrameAccum:F2}, simTimeScale={simTimeScale}, choice={ballChoice}");
                     
                     // Track current image name via a tag property
@@ -8623,12 +8623,12 @@ namespace FamidashEditor
                     
                     if (robotIsStationary && !paused)
                     {
-                        // Increment accumulator and cycle counter (0-19 cycle: 5 frames per frame state, 4 frames total)
+                        // Increment accumulator and cycle counter (0-39 cycle: 10 frames per frame state, 4 frames total)
                         robotAnimationFrameAccum += simTimeScale;
                         if (robotAnimationFrameAccum >= 1.0)
                         {
                             robotAnimationFrameCounter++;
-                            if (robotAnimationFrameCounter >= 20)  // 20-frame cycle (0-19)
+                            if (robotAnimationFrameCounter >= 40)  // 40-frame cycle (0-39)
                             {
                                 robotAnimationFrameCounter = 0;
                             }
@@ -8647,8 +8647,8 @@ namespace FamidashEditor
                     
                     if (robotIsStationary)
                     {
-                        // Frame mapping: 0-4=robot.png, 5-9=robot2.png, 10-14=robot3.png, 15-19=robot4.png
-                        int frameIndex = robotAnimationFrameCounter / 5;
+                        // Frame mapping: 0-9=robot.png, 10-19=robot2.png, 20-29=robot3.png, 30-39=robot4.png
+                        int frameIndex = robotAnimationFrameCounter / 10;
                         robotChoice = frameIndex switch
                         {
                             0 => miniMode ? "robot-mini.png" : "robot.png",
@@ -8759,12 +8759,12 @@ namespace FamidashEditor
                     
                     if (spiderIsGrounded && !paused)
                     {
-                        // Increment accumulator and cycle counter (0-19 cycle: 5 frames per frame state, 4 frames total)
+                        // Increment accumulator and cycle counter (0-39 cycle: 10 frames per frame state, 4 frames total)
                         spiderAnimationFrameAccum += simTimeScale;
                         if (spiderAnimationFrameAccum >= 1.0)
                         {
                             spiderAnimationFrameCounter++;
-                            if (spiderAnimationFrameCounter >= 20)  // 20-frame cycle (0-19)
+                            if (spiderAnimationFrameCounter >= 40)  // 40-frame cycle (0-39)
                             {
                                 spiderAnimationFrameCounter = 0;
                             }
@@ -8786,8 +8786,8 @@ namespace FamidashEditor
                     
                     if (spiderIsGrounded && !spiderHasVerticalVelocity)
                     {
-                        // Frame mapping: 0-4=spider.png, 5-9=spider2.png, 10-14=spider3.png, 15-19=spider4.png
-                        int frameIndex = spiderAnimationFrameCounter / 5;
+                        // Frame mapping: 0-9=spider.png, 10-19=spider2.png, 20-29=spider3.png, 30-39=spider4.png
+                        int frameIndex = spiderAnimationFrameCounter / 10;
                         spiderChoice = frameIndex switch
                         {
                             0 => miniMode ? "spider-mini.png" : "spider.png",

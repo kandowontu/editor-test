@@ -460,14 +460,14 @@ namespace FamidashEditor
             }
 
             // NES cube_eject() hblocked/fblocked handling (gamemode_cube.h lines 201-237).
-            // SharedPhysics.CubeEject already handled the normal direction (floor for
-            // normal grav, ceiling for reversed grav).  When hblocked||fblocked, the
-            // NES code ALSO checks the opposite direction.  Both can fire in one frame.
+            // SharedPhysics.CubeEject already handled the primary direction (floor for
+            // normal grav, ceiling for reversed grav) and sets vel=0, WasZeroed=true.
+            // With the hblocked fix, primary-direction hblocked also produces vel=0
+            // (gravity ? 0xFFFF : 0 for floor, !gravity ? 1 : 0 for ceiling), so
+            // SharedPhysics.CubeEject's vel=0 is already correct — no override needed.
             //
-            // After the normal-direction eject:
-            //   hblocked → velocity = 0xFFFF (floor) or 1 (ceiling) instead of 0
+            // When hblocked||fblocked, the NES code ALSO checks the opposite direction.
             // Opposite-direction eject:
-            //   Enabled when hblocked||fblocked
             //   bg_coll_U guard: vel < 0  |  bg_coll_D guard: vel >= 0
             //   hblocked → velocity = 1 (ceiling) or 0xFFFF (floor) instead of 0
             //   fblocked → flip gravity
@@ -477,28 +477,7 @@ namespace FamidashEditor
                 int hitboxH = SharedPhysics.GetCubeHitboxH(mini);
                 int hitboxOffsetY = SharedPhysics.GetHitboxOffsetY(currentGameMode, mini, gravFlipped);
 
-                // NES cube_eject() inline behavior:
-                //   Primary eject (bg_coll_D for normal grav) sets vel=0xFFFF when hblocked.
-                //   Then secondary eject (bg_coll_U) sees vel=0xFFFF → guard (vel<0) passes.
-                // SharedPhysics.CubeEject sets vel=0 (WasZeroed). Fix velocity BEFORE
-                // the opposite-direction check so the guard evaluates correctly.
-
-                // Step 1: WasZeroed velocity fix (matches NES inline vel assignment).
-                if (hblocked && wasZeroedByCollisionLastFrame)
-                {
-                    if (!gravFlipped)
-                    {
-                        AppendSimDebug($"[CUBE]     H_BLOCK normal-dir fix: velY 0 -> -1");
-                        playerVelY_fixed = -1;  // NES 0xFFFF = -1 signed 16-bit
-                    }
-                    else
-                    {
-                        AppendSimDebug($"[CUBE]     H_BLOCK normal-dir fix: velY 0 -> 1");
-                        playerVelY_fixed = 1;
-                    }
-                }
-
-                // Step 2: Opposite-direction eject (NES secondary bg_coll_U / bg_coll_D).
+                // Opposite-direction eject (NES secondary bg_coll_U / bg_coll_D).
                 int collisionX = playerX_fixed >> 8;
                 if (!gravFlipped)
                 {

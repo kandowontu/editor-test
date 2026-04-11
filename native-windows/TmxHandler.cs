@@ -105,20 +105,27 @@ namespace FamidashEditor
 
             // Collect all tileset firstgid values that should be treated as sprite tilesets.
             // TMX files sometimes include the same sprite image as multiple tilesets
-            // (e.g. firstgid=257 and firstgid=513). Treat any tileset with firstgid >= SpriteFirstGid
-            // as a sprite tileset so that GIDs from those ranges are converted correctly.
+            // (e.g. firstgid=257 and firstgid=513). Use the tileset name to distinguish:
+            // tilesets named "famidash" are tile tilesets, all others (typically "sprites")
+            // are sprite tilesets.
             var spriteFirstGids = new System.Collections.Generic.List<int>();
+            var tileFirstGids = new System.Collections.Generic.List<int>();
 
             foreach (var tileset in tilesets)
             {
                 int firstgid = (int?)tileset.Attribute("firstgid") ?? 0;
+                string? tilesetName = (string?)tileset.Attribute("name");
                 var imageElem = tileset.Element("image");
                 if (imageElem != null)
                 {
                     string? source = (string?)imageElem.Attribute("source");
-                    if (firstgid == TilesFirstGid) tilesetSource = source;
-                    // Prefer to remember the primary spriteset source (first encountered)
-                    if (firstgid >= SpriteFirstGid)
+                    // A tileset named "famidash" is a tile tileset regardless of firstgid
+                    if (string.Equals(tilesetName, "famidash", StringComparison.OrdinalIgnoreCase))
+                    {
+                        tileFirstGids.Add(firstgid);
+                        if (tilesetSource == null) tilesetSource = source;
+                    }
+                    else
                     {
                         spriteFirstGids.Add(firstgid);
                         if (spritesetSource == null) spritesetSource = source;
@@ -126,10 +133,13 @@ namespace FamidashEditor
                 }
             }
 
-            // Ensure there is at least the configured SpriteFirstGid in the list so
-            // old TMX files without extra tileset declarations still convert correctly.
-            if (!spriteFirstGids.Contains(SpriteFirstGid))
-                spriteFirstGids.Insert(0, SpriteFirstGid);
+            // Fallback: if no "famidash" tileset was found, treat firstgid=TilesFirstGid as tiles
+            if (tileFirstGids.Count == 0)
+                tileFirstGids.Add(TilesFirstGid);
+
+            // Fallback: if no sprite tilesets were found at all, assume old-style layout
+            if (spriteFirstGids.Count == 0)
+                spriteFirstGids.Add(SpriteFirstGid);
             
             // Initialize separate tiles and sprites arrays with -1 (empty)
             int[] tiles = Enumerable.Repeat(-1, totalTiles).ToArray();
@@ -201,11 +211,18 @@ namespace FamidashEditor
                                     }
                                 }
 
-                                // If no sprite-firstgid matched, treat as a tile if it falls in the tile range
-                                if (!handled && gid >= TilesFirstGid && gid < TilesFirstGid + TilesCount)
+                                // If no sprite-firstgid matched, treat as a tile if it falls in any tile tileset range
+                                if (!handled)
                                 {
-                                    // Tile layer: GID TilesFirstGid..TilesFirstGid+TilesCount-1 → editor index 0..TilesCount-1
-                                    tiles[i] = gid - TilesFirstGid;
+                                    foreach (var tileFg in tileFirstGids)
+                                    {
+                                        if (gid >= tileFg && gid < tileFg + TilesCount)
+                                        {
+                                            tiles[i] = gid - tileFg;
+                                            handled = true;
+                                            break;
+                                        }
+                                    }
                                 }
                                 // else: GID is outside recognized ranges; ignore
                             }
