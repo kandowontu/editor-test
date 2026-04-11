@@ -293,8 +293,9 @@ namespace FamidashEditor
             else
                 BallEject_Fresh();
 
-            // Center-point death check AFTER eject (matches NES bg_coll_death in runthecolls)
-            CheckCenterPointDeath_Fresh();
+            // NES ball_movement does NOT run bg_coll_death inside the mode handler.
+            // Center death runs AFTER x_movement advances currplayer_x (at NEW X).
+            // The main loop's CheckDeathCollision (Step 8b) handles it for all modes.
 
             // Update slope exit velocity counters
             UpdateSlopeCounters_Fresh();

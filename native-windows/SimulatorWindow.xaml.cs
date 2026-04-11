@@ -337,7 +337,9 @@ namespace FamidashEditor
                 else
                 {
                     // Velocity is non-zero: accumulate gravity increment
+                    // NES: when gravity is inverted, subtract CUBE_GRAVITY (rotate backwards)
                     int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
+                    if (gravityFlipped) gravityIncrement = -gravityIncrement;
                     subFrame += gravityIncrement;
                     
                     AppendSimDebug($"[CUBE_ROT] gravityFlipped={gravityFlipped} increment={gravityIncrement:X2} subFrame={subFrame} frameIndex={frameIndex}");
@@ -568,12 +570,8 @@ namespace FamidashEditor
             {
                 int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;  // Extract frame 0-6
                 
-                // When gravity is inverted, mirror the frame around the centerline
-                // to show rotation in opposite visual direction
-                if (gravityFlipped)
-                {
-                    frameIndex = 6 - frameIndex;  // 0↔6, 1↔5, 2↔4, 3 stays 3
-                }
+                // NES reversal is handled in UpdateCubeRotation by negating gravity
+                // increment when flipped — no display-time mirror needed.
                 
                 if (frameIndex >= 0 && frameIndex < 7)
                 {
@@ -610,7 +608,9 @@ namespace FamidashEditor
                 else
                 {
                     // Velocity is non-zero: accumulate gravity increment
+                    // NES: when gravity is inverted, subtract CUBE_GRAVITY (rotate backwards)
                     int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
+                    if (gravityFlipped) gravityIncrement = -gravityIncrement;
                     subFrame += gravityIncrement;
                     
                     // Handle overflow/underflow in low byte
@@ -654,11 +654,8 @@ namespace FamidashEditor
             {
                 int frameIndex = (cubeRotateMini_fixed >> 8) & 0xFF;
                 
-                // When gravity is inverted, mirror the frame to show opposite visual rotation
-                if (gravityFlipped)
-                {
-                    frameIndex = 6 - frameIndex;
-                }
+                // NES reversal is handled in UpdateCubeRotationMini by negating gravity
+                // increment when flipped — no display-time mirror needed.
                 
                 if (frameIndex < 0 || frameIndex >= 7)
                     return 0;
@@ -686,8 +683,13 @@ namespace FamidashEditor
                 if (frameIndex > 0x07) frameIndex = 0x07;
                 if (frameIndex < 0x00) frameIndex = 0x00;
                 
-                // NES uses 0x0400 - player_vel_y regardless of gravity.
-                // Visual flip is handled by UpdatePlayerIconFlip() ScaleTransform.
+                // NES does 7 - frame at display time when gravity is flipped,
+                // reversing the tilt direction to match inverted flight.
+                if (currplayer_gravity != 0)
+                {
+                    frameIndex = 7 - frameIndex;
+                }
+                
                 return frameIndex;
             }
             catch { return 0; }
@@ -2083,6 +2085,18 @@ namespace FamidashEditor
                             // Clear ballToggleRequested — a press during the old ball mode
                             // that wasn't consumed must not carry into the next ball segment.
                             Interlocked.Exchange(ref ballToggleRequested, 0);
+                            // NES sprite_gamemode_main calls clear_slope_stuff() on mode
+                            // change — slope counters must not leak across game modes
+                            // (e.g. ship slope counter causing wave SLOPE_FREEZE).
+                            ClearSlopeStuff();
+                            // NOTE: Do NOT clear keyXPressedCount here.
+                            // PF_InjectInput already clears pressCount at the start
+                            // of every frame, so all presses are fresh.  The PF's
+                            // input decision accounts for the mode change — if it
+                            // sends inp=1 on a frame where a portal changes mode,
+                            // the press is intended for the NEW mode (e.g. ship
+                            // frame with inp=1 → cube jump, ball inp=1 → ship orb).
+                            // Clearing it here destroyed legitimate cross-mode input.
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
@@ -2127,6 +2141,9 @@ namespace FamidashEditor
                             ballFlipBuffer[0] = 0;
                             ballFlipBuffer[1] = 0;
                             Interlocked.Exchange(ref ballToggleRequested, 0);
+                            // NES sprite_gamemode_main calls clear_slope_stuff() on mode change
+                            ClearSlopeStuff();
+                            // NOTE: Do NOT clear keyXPressedCount — see main portal block.
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
                             try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
@@ -2543,17 +2560,6 @@ namespace FamidashEditor
                         {
                             slowMode = (sid == 0xF4);
                             processedTimewarpTriggers.Add(idx);
-                            continue;
-                        }
-                    }
-                    // Hide player
-                    else if (sid == 0x6F || sid == 0x7F)
-                    {
-                        if (processedPlayerInvisTriggers.Contains(idx)) continue;
-                        if (SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px, true))
-                        {
-                            playerInvis = (sid == 0x6F);
-                            processedPlayerInvisTriggers.Add(idx);
                             continue;
                         }
                     }
@@ -3564,6 +3570,8 @@ namespace FamidashEditor
 
         // Current player game mode: 0 = cube, 1 = ship, etc. Defaults to cube.
         private int currentGameMode = 0;
+        // Level settings starting game mode (set once in constructor, used on restart)
+        private int _levelStartGameMode = 0;
         
         // Unified physics state variables (shared across all modes)
         private int velocityY = 0;         // Vertical velocity (8.8 fixed point)
@@ -3742,7 +3750,7 @@ namespace FamidashEditor
         private int[] robotJumpFrame = new int[2];
         private int[] chargepower = new int[2];  // Football charge accumulation
 #pragma warning restore CS0414
-        private bool robotJumpPressed = false;
+        private bool[] robotJumpPressed = new bool[2];
 #pragma warning disable CS0414
         private int ninjaJumps = 3;
 #pragma warning restore CS0414
@@ -4814,7 +4822,7 @@ namespace FamidashEditor
             }
             // Simulator-specific tweak: shift sprite 0x2B and 0x2C up 8 pixels to match editor preview
             // Initialize starting game mode
-            try { currentGameMode = startingGameMode; } catch { currentGameMode = 0; }
+            try { currentGameMode = startingGameMode; _levelStartGameMode = startingGameMode; } catch { currentGameMode = 0; }
             // try { ModeDispatch_ApplyModeState(); } catch { } // REMOVED - fresh port
             try { UpdatePlayerImageForMode(); } catch { }
             try
@@ -5078,6 +5086,14 @@ namespace FamidashEditor
             if (!hasAppliedStartPos)
             {
                 cameraY_fixed = maxY_fixed;
+            }
+
+            // If starting in a camlock game mode (ship/ball/UFO/spider/wave/swing/snake/football),
+            // initialize targetCameraY to match the initial camera Y so the camera doesn't
+            // snap wildly to 0 on the first frame.
+            if (currentGameMode != 0 && currentGameMode != 4 && currentGameMode != 8 && currentGameMode != 9)
+            {
+                targetCameraY_fixed = cameraY_fixed;
             }
 
             // Setup a high-precision render loop using CompositionTarget and a stopwatch
@@ -6311,23 +6327,28 @@ namespace FamidashEditor
                 }
                 else
                 {
-                    // Without START POS: restore the saved Set Options settings
-                    currentGameMode = savedGameMode;
-                    miniMode = savedMiniMode;
-                    currplayer_mini = savedMiniMode ? (byte)1 : (byte)0;
-                    currplayer_gravity = savedGravity;
-                    gravityReversed = savedGravityReversed;
-                    gravityFlipped = savedGravityReversed;
+                    // Without START POS: reset to level settings starting game mode
+                    // and clear mini/inverted to match initial level state.
+                    currentGameMode = _levelStartGameMode;
+                    miniMode = false;
+                    currplayer_mini = 0;
+                    currplayer_gravity = 0;
+                    gravityReversed = false;
+                    gravityFlipped = false;
                     gravityMultiplier = 1.0;  // Reset gravity modifier
                     speed = savedSpeed;
                     playerVelX_fixed = savedPlayerVelX;
 
-                    // Update UI to match restored settings
+                    // Update UI to match reset settings
+                    try { UpdateGameModeDisplay(); } catch { }
+                    try { UpdatePlayerImageForMode(); } catch { }
+                    try { UpdatePlayerVisualSizeForMode(); } catch { }
                     try { UpdatePlayerIconFlip(); } catch { }
                     try { UpdateEffectiveGravity(); } catch { }
 #pragma warning disable CS4014
                     try { Dispatcher.BeginInvoke(new Action(() => { 
-                        if (InvertedCheckBox != null) InvertedCheckBox.IsChecked = gravityReversed;
+                        if (MiniCheckBox != null) MiniCheckBox.IsChecked = false;
+                        if (InvertedCheckBox != null) InvertedCheckBox.IsChecked = false;
                     })); } catch { }
 #pragma warning restore CS4014
                 }
@@ -6378,7 +6399,12 @@ namespace FamidashEditor
                 try { processedWrapPortals.Clear(); } catch { }
                 nocamlockforced = false;
                 wrapMode = false;
-                targetCameraY_fixed = 0;
+                // For camlock game modes, initialize targetCameraY to match current
+                // cameraY so the camera doesn't snap wildly on the first frame.
+                if (currentGameMode != 0 && currentGameMode != 4 && currentGameMode != 8 && currentGameMode != 9)
+                    targetCameraY_fixed = cameraY_fixed;
+                else
+                    targetCameraY_fixed = 0;
                 
                 // Reset timewarp, player visibility, and trail state
                 slowMode = false;
@@ -10497,7 +10523,7 @@ namespace FamidashEditor
                         orbed[currplayer],
                         blackOrbed,
                         dashing[currplayer],
-                        robotJumpTime[0],
+                        robotJumpTime[currplayer],
                         snapPlayerVelY,
                         orbBufferActive[currplayer],
                         nocamlockforced
@@ -10727,6 +10753,14 @@ namespace FamidashEditor
                         // Check for gamemode/random portal activation during sprite_collide
                         CheckGameModePortals();
                         
+                        // Blue pads must run BEFORE gravity portals: PF processes
+                        // sprites in spatial X order within a single loop, so a blue
+                        // pad to the LEFT of a gravity portal activates first (while
+                        // gravity is still in the pre-pad state).  If gravity portals
+                        // ran first, they'd flip gravity before the blue pad's gravity
+                        // gate fires, causing the pad to be skipped.
+                        CheckBluePadCollision();
+                        
                         // Check for gravity portal activation
                         CheckGravityPortals();
                         AppendSimDebug($"[GRAV_PRE_MOVEMENT] currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed}");
@@ -10754,9 +10788,6 @@ namespace FamidashEditor
                         CheckSpiderOrbPadCollision();
                         CheckDashOrbCollision();
                         CheckAlphabetBlocks();
-                        
-                        // Check for blue pad collision
-                        CheckBluePadCollision();
 
                         // Check for coin collection
                         CheckCoinCollision();
@@ -11606,6 +11637,8 @@ namespace FamidashEditor
                                 // Check for single portal activation (sprite 0x23) - exits dual mode
                                 CheckSinglePortal();
                                 // Dual portal check is not needed here (only one-way into dual mode)
+                                // Blue pads before gravity portals (matching PF spatial order)
+                                CheckBluePadCollision();
                                 CheckGravityPortals();
                                 CheckGravityModPortals();
                                 CheckMiniGrowthPortals();
@@ -11613,7 +11646,7 @@ namespace FamidashEditor
                                 CheckSpiderOrbPadCollision();
                                 CheckDashOrbCollision();
                                 CheckAlphabetBlocks();
-                                CheckBluePadCollision();
+                                CheckCoinCollision();
 
                                 // Speed portal check for P2 — if P2's hitbox overlaps a
                                 // speed portal that P1 missed (different Y), the shared
@@ -12448,6 +12481,41 @@ namespace FamidashEditor
                             if (anchorX_center_fixed > center_fixed && processedEndLevelTriggers.Contains(idx))
                                 processedEndLevelTriggers.Remove(idx);
                         }
+                    }
+                }
+
+                // Detect hide/show player triggers (0x6F=hide, 0x7F=show) using
+                // the same X-crossing logic as end-level/color triggers.
+                // NES activates these on X threshold crossing, not hitbox overlap.
+                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                {
+                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    if (sid != 0x6F && sid != 0x7F) continue;
+                    if (processedPlayerInvisTriggers.Contains(idx)) continue;
+                    int anchorTileX = (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var aVis)) ? aVis.anchorTileX : idx % mapWidth;
+                    int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;
+
+                    bool activated = false;
+                    if (crossedInteraction)
+                    {
+                        if (anchorX_center_fixed > prevPlayerCenter_fixed && anchorX_center_fixed <= INTERACTION_LINE_FIXED)
+                            activated = true;
+                    }
+                    else
+                    {
+                        if (anchorX_center_fixed <= center_fixed)
+                            activated = true;
+                    }
+
+                    if (activated)
+                    {
+                        playerInvis = (sid == 0x6F);
+                        processedPlayerInvisTriggers.Add(idx);
+                    }
+                    else
+                    {
+                        if (anchorX_center_fixed > center_fixed && processedPlayerInvisTriggers.Contains(idx))
+                            processedPlayerInvisTriggers.Remove(idx);
                     }
                 }
             }
