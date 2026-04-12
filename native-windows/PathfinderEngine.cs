@@ -13291,7 +13291,7 @@ namespace FamidashEditor
         /// </summary>
         private static void PfSlopeJumpCheck(ref SimState s)
         {
-            SharedPhysics.SlopeJumpCheck(ref s.VelY_fixed, ref s.SlopeJumpHigher, s.SlopeType, s.Mini);
+            SharedPhysics.SlopeJumpCheck(ref s.VelY_fixed, ref s.SlopeJumpHigher, s.SlopeType, s.Mini, s.GravFlipped);
         }
 
         private const int PF_SLOPE_UD = 0b1000;

@@ -1925,12 +1925,16 @@ namespace FamidashEditor
             velY_fixed = (rising == ud) ? velComponent : -velComponent;
         }
 
-        /// <summary>slope_jump_check — bonus velocity when jumping off slopes.</summary>
-        internal static void SlopeJumpCheck(ref int velY_fixed, ref bool slopeJumpHigher, int slopeType, bool mini)
+        /// <summary>slope_jump_check — bonus velocity when jumping off slopes.
+        /// NES MAKE_CUBE_JUMP_HIGHER table: normal=-0x9A/+0x9A, mini=-0x80/+0x80 (sign flips with gravity).</summary>
+        internal static void SlopeJumpCheck(ref int velY_fixed, ref bool slopeJumpHigher, int slopeType, bool mini, bool gravFlipped)
         {
             if (!slopeJumpHigher) return;
             if ((slopeType & SLOPE_DEGREES_MASK) != SLOPE_22DEG)
-                velY_fixed += mini ? -0xC0 : -0x100;
+            {
+                int boost = mini ? 0x80 : 0x9A;
+                velY_fixed += gravFlipped ? boost : -boost;
+            }
             slopeJumpHigher = false;
         }
 

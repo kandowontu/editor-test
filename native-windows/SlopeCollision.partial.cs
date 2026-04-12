@@ -368,7 +368,7 @@ namespace FamidashEditor
         {
             bool sjh = make_cube_jump_higher;
             SharedPhysics.SlopeJumpCheck(ref playerVelY_fixed, ref sjh,
-                currplayer_slope_type, currplayer_mini != 0);
+                currplayer_slope_type, currplayer_mini != 0, currplayer_gravity != 0);
             make_cube_jump_higher = sjh;
         }
         
