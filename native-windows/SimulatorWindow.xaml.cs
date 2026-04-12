@@ -2112,7 +2112,7 @@ namespace FamidashEditor
                                 int storageTileY = idx / mapWidth;
                                 int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                                 int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
-                                targetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                                targetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
                             }
                             catch { }
                         }
@@ -2669,7 +2669,7 @@ namespace FamidashEditor
                             int storageTileY = idx / mapWidth;
                             int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
-                            targetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                            targetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
                             AppendSimDebug($"[DUAL_PORTAL] Set targetCameraY={targetCameraY_fixed >> 8}px from portal at tileY={storageTileY}");
                         }
                         catch { }
@@ -2734,7 +2734,7 @@ namespace FamidashEditor
                             int storageTileY = idx / mapWidth;
                             int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
-                            targetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                            targetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
                             AppendSimDebug($"[SINGLE_PORTAL] Set targetCameraY={targetCameraY_fixed >> 8}px from portal at tileY={storageTileY}");
                         }
                         catch { }
@@ -3635,6 +3635,21 @@ namespace FamidashEditor
         private int targetCameraY_fixed = 0;
         private const int PORTAL_TO_TOP_DIFF_PX = 0x3A; // 58px offset from portal Y to screen top
         private const int SHIP_SCROLL_SPEED_FIXED = 0x0266; // 8.8 fixed-point ~2.4 px/frame
+        private int _sim_nesCoordOffset; // PF→NES linear-Y offset for nametable distortion
+
+        private int NesNtCameraTarget_fixed(int portalWorldY_px)
+        {
+            int rawTarget = portalWorldY_px - PORTAL_TO_TOP_DIFF_PX;
+            int nesLinear = rawTarget + _sim_nesCoordOffset;
+            if (nesLinear < 0x100)
+                return Math.Max(0, rawTarget << 8);
+            if ((nesLinear & 0xFF) >= 0xF0) nesLinear += 0x10;
+            int hi = nesLinear >> 8;
+            int lo = nesLinear & 0xFF;
+            int physicalNES = hi * 240 + lo;
+            int effectivePF = physicalNES - _sim_nesCoordOffset;
+            return Math.Max(0, effectivePF << 8);
+        }
         private bool _suppressDebugBarEvents = false;
         // Track orbs that have been activated so they only fire once
         private System.Collections.Generic.HashSet<int> processedOrbs = new System.Collections.Generic.HashSet<int>();
@@ -4577,7 +4592,7 @@ namespace FamidashEditor
                 {
                     // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9), or when nocamlockforced
                     bool camFollowsY = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
-                    if (physicsEnabled && jumpedOnce)
+                    if (physicsEnabled && jumpedOnce && !paused)
                     {
                         if ((!dual || twoplayer) && camFollowsY)
                         {
@@ -4922,6 +4937,10 @@ namespace FamidashEditor
             this.groundRepeatX = groundRepeatX;
             this.hasGroundLayer = hasGroundLayer;
             this.groundTileRows = groundTileRows;
+            {
+                int gRTR = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                _sim_nesCoordOffset = (57 - mapHeight + gRTR) * 16;
+            }
 
             // If caller supplied per-level starting color codes, map them to trigger IDs and
             // apply the resulting tints immediately so the simulator starts with those colors.
@@ -7043,7 +7062,7 @@ namespace FamidashEditor
                 try
                 {
                     bool camFollowsY_2 = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
-                    if (physicsEnabled && jumpedOnce)
+                    if (physicsEnabled && jumpedOnce && !paused)
                     {
                         if ((!dual || twoplayer) && camFollowsY_2)
                         {

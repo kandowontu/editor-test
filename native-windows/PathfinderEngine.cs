@@ -443,6 +443,30 @@ namespace FamidashEditor
             return Math.Max(0, Math.Min(maxCamY, (startY_px << 8) - ((SCREEN_H_PX / 2) << 8)));
         }
 
+        /// <summary>
+        /// Compute the NES-effective camera target in 8.8 fixed PF coordinates.
+        /// NES scroll_y uses nametable encoding (low byte wraps at 0xEF, blocks
+        /// of 240px) but target_scroll_y is set from linear sprite Y coordinates.
+        /// The comparison target==scroll_y matches raw 16-bit values, so the camera
+        /// settles at physical position hi*240+lo instead of hi*256+lo — a
+        /// discrepancy of hi*16 pixels.
+        /// </summary>
+        private int NesNtCameraTarget_fixed(int portalWorldY_px)
+        {
+            int rawTarget = portalWorldY_px - PORTAL_TO_TOP_DIFF_PX;
+            int nesLinear = rawTarget + _nesCoordOffset;
+            if (nesLinear < 0x100) // high byte = 0 → no distortion
+                return Math.Max(0, rawTarget << 8);
+            // NES process_y_scroll: if (low_byte(target) >= 0xF0) target += 0x10
+            if ((nesLinear & 0xFF) >= 0xF0) nesLinear += 0x10;
+            // Nametable linearization: physical = hi*240 + lo
+            int hi = nesLinear >> 8;
+            int lo = nesLinear & 0xFF;
+            int physicalNES = hi * 240 + lo;
+            int effectivePF = physicalNES - _nesCoordOffset;
+            return Math.Max(0, effectivePF << 8);
+        }
+
         // -- Frame trace for diagnostics ---------------------------------
         // Writes a CSV to %TEMP%\famidash_pf_trace.csv on every frame of the
         // main run to enable comparing with NES emulator / simulator output.
@@ -496,6 +520,7 @@ namespace FamidashEditor
         private readonly int groundRowsToReserve;
         private readonly int maxFallSpeed;
         private readonly SharedPhysics.CollisionMap _collisionMap;
+        private readonly int _nesCoordOffset; // PF→NES linear-Y offset: (57 - mapHeight + groundRowsToReserve) * TILE
 
         // Pre-sorted sprite list for efficient processing
         private readonly List<SpriteEntry> allSprites;
@@ -842,6 +867,7 @@ namespace FamidashEditor
             this.mapWidth = mapWidth;
             this.mapHeight = mapHeight;
             this.groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            this._nesCoordOffset = (57 - this.mapHeight + this.groundRowsToReserve) * TILE;
 
             // Build collision map for SharedPhysics tile access
             _collisionMap = new SharedPhysics.CollisionMap(this.tiles, this.mapWidth, this.mapHeight, this.groundRowsToReserve);
@@ -1112,14 +1138,14 @@ namespace FamidashEditor
 
             if (Success || UseBFS)
             {
-                // BFS completed the level, or explicit BFS-only mode � done
+                // BFS completed the level, or explicit BFS-only mode — done
                 sw.Stop();
                 if (!string.IsNullOrEmpty(ResultMessage))
                     ResultMessage += $" [{sw.Elapsed.TotalSeconds:F1}s]";
                 return;
             }
 
-            // BFS failed � save its partial result
+            // BFS failed — save its partial result
             var bfsInputs = Inputs != null ? new List<bool>(Inputs) : null;
             var bfsPath = PathPoints != null ? new List<(int x, int y)>(PathPoints) : null;
             string bfsMsg = ResultMessage;
@@ -2530,13 +2556,43 @@ namespace FamidashEditor
                 yBias = -(s.Y_fixed >> 8) / 4; // negative = better score for low-altitude
             }
 
+            // Coin proximity steering for continuous-Y modes (ship/UFO/wave/swing/snake).
+            // In these modes the BFS frontier can drift away from uncollected coins'
+            // Y positions because score-equal pruning and dedup don't prioritize
+            // coin altitude.  Add a Y-proximity penalty so candidates closer to the
+            // next uncollected coin are retained during frontier selection.
+            // The penalty scales with Y distance and ramps up as the player
+            // approaches the coin.  Max penalty ~500, well under the 1M coin bonus.
+            int coinProximity = 0;
+            bool continuousMode = (s.GameMode == 1 || s.GameMode == 3 || s.GameMode == 6
+                                || s.GameMode == 7 || s.GameMode == 10);
+            if (continuousMode && PreferCoins && allCoins != null)
+            {
+                int playerX = s.X_fixed >> 8;
+                for (int ci = 0; ci < allCoins.Count; ci++)
+                {
+                    var coin = allCoins[ci];
+                    if (coin.HitRight < playerX) continue;
+                    if (s.ProcessedSprites.Contains(coin.Index)) continue;
+                    if (_forgivenCoins.Contains(coin.Index)) continue;
+                    int distX = coin.HitLeft - playerX;
+                    if (distX > 1500) break;
+                    int coinCY = (coin.HitTop + coin.HitBottom) / 2;
+                    int playerY = s.Y_fixed >> 8;
+                    int distY = Math.Abs(playerY - coinCY);
+                    // Strong proximity: 3× Y distance, ramped by X closeness
+                    coinProximity = distY * 3 * (1500 - distX) / 1500;
+                    break;
+                }
+            }
+
             // Step2Ever penalty: states whose lineage was altered by H/F_BLOCK
             // opposite-direction eject get deprioritized in frontier selection.
             // This preserves non-Step2 states (correct trajectories for narrow
             // gaps) in the main slots while Step2 states survive via diversity.
             int step2Penalty = 0; // disabled after fixing eject execution order
 
-            return coinBonus + yBias + step2Penalty;
+            return coinBonus + yBias + coinProximity + step2Penalty;
         }
 
         /// <summary>
@@ -2613,7 +2669,8 @@ namespace FamidashEditor
                 int bestFrame = -1, bestIdx = -1, bestX = startX_px;
 
                 // Pre-allocate expansion arrays and candidate lists (reused each frame)
-                int maxExpand = BFS_MAX_FRONTIER * 2;
+                // Use 2× the adaptive max cap (BFS_MAX_FRONTIER * 2 when near coins)
+                int maxExpand = BFS_MAX_FRONTIER * 4;
                 var rState = new SimState[maxExpand];
                 var rAlive = new bool[maxExpand];
                 var rEnd   = new bool[maxExpand];
@@ -2732,8 +2789,9 @@ namespace FamidashEditor
                     int deathCount = 0;
                     int gravFDeathCount = 0;
                     var gravFDeathTypes = new int[13];
-                    bool trackDeathTypes = (frame >= 2000 && frame <= 2070);
+                    bool trackDeathTypes = (frame >= 2000 && frame <= 2070) || (frame >= 3550 && frame <= 3850);
                     int[]? frameDtCounts = trackDeathTypes ? new int[13] : null;
+                    int coinRangeDeaths = 0; // deaths where parent Y <= 167 (coin range)
 
                     for (int k = 0; k < expandCount; k++)
                     {
@@ -2760,6 +2818,13 @@ namespace FamidashEditor
                         {
                             // Track death types per frame for detailed logging
                             if (frameDtCounts != null) frameDtCounts[rState[k].DeathType]++;
+                            // Track low-Y deaths near coin 2
+                            if (trackDeathTypes && frame >= 3550)
+                            {
+                                int pi_d = k >> 1;
+                                int parentY = frontier[pi_d].Y_fixed >> 8;
+                                if (parentY <= 200) coinRangeDeaths++; // near coin Y range
+                            }
                             // Track deaths of gravity-flipped states (summary)
                             {
                                 int pi3 = k >> 1;
@@ -2978,11 +3043,37 @@ namespace FamidashEditor
                     var frameP = new List<int>();
                     var frameI = new List<bool>();
 
+                    // Adaptive frontier cap: expand near uncollected coins in
+                    // continuous-Y modes (ship/UFO/wave) where the BFS frontier
+                    // needs more Y diversity to reach the coin's altitude.
+                    int effectiveCap = BFS_MAX_FRONTIER;
+                    if (PreferCoins && allCoins.Count > 0 && candState.Count > 0)
+                    {
+                        int frontX = candState[0].X_fixed >> 8;
+                        int frontMode = candState[0].GameMode;
+                        bool contMode = (frontMode == 1 || frontMode == 3 || frontMode == 6
+                                      || frontMode == 7 || frontMode == 10);
+                        if (contMode)
+                        {
+                            for (int ci = 0; ci < allCoins.Count; ci++)
+                            {
+                                var coin = allCoins[ci];
+                                if (coin.HitRight < frontX) continue;
+                                if (candState[0].ProcessedSprites.Contains(coin.Index)) continue;
+                                int distX = coin.HitLeft - frontX;
+                                if (distX > 1500) break;
+                                // Double the cap near uncollected coins
+                                effectiveCap = BFS_MAX_FRONTIER * 2;
+                                break;
+                            }
+                        }
+                    }
+
                     // Main slots: 75% by score
-                    int mainSlots = BFS_MAX_FRONTIER * 3 / 4;
+                    int mainSlots = effectiveCap * 3 / 4;
 
                     int mainKeep = Math.Min(mainSlots, sortedIdx.Count);
-                    for (int i = 0; i < mainKeep && nextFrontier.Count < BFS_MAX_FRONTIER; i++)
+                    for (int i = 0; i < mainKeep && nextFrontier.Count < effectiveCap; i++)
                     {
                         int ci = sortedIdx[i];
                         nextFrontier.Add(candState[ci]);
@@ -3012,7 +3103,7 @@ namespace FamidashEditor
                         int gravMinority = Math.Min(gravNCount, gravFCount);
                         bool needGravDiversity = gravMinority < nextFrontier.Count / 20; // < 5%
 
-                        for (int i = mainKeep; i < sortedIdx.Count && nextFrontier.Count < BFS_MAX_FRONTIER; i++)
+                        for (int i = mainKeep; i < sortedIdx.Count && nextFrontier.Count < effectiveCap; i++)
                         {
                             int ci = sortedIdx[i];
                             int yBin = (candState[ci].Y_fixed >> 8) / Y_BIN_SIZE;
@@ -3118,7 +3209,7 @@ namespace FamidashEditor
 
                     // -- Periodic logging + speculative path visualization --
                     bool hasDual = frontier.Count > 0 && frontier[0].DualActive;
-                    bool shouldLog = (frame % 100 == 0) || (frontier.Count < 100) || (frame >= 700 && frame <= 810) || hasDual || (frame >= 2000 && frame <= 2070);
+                    bool shouldLog = (frame % 100 == 0) || (frontier.Count < 100) || (frame >= 700 && frame <= 810) || hasDual || (frame >= 2000 && frame <= 2070) || (frame >= 3550 && frame <= 3850);
                     if (shouldLog)
                     {
                         int minY = int.MaxValue, maxY = int.MinValue;
@@ -3154,6 +3245,23 @@ namespace FamidashEditor
                                 $"deaths={deathCount} Y=[{minY}..{maxY}] " +
                                 $"mode={frontier[0].GameMode} gravN={gravN} gravF={gravF} " +
                                 $"X~{highWaterX}px pct={pct}% ms/f={ms:F1}{dualStr} modes:{modeStr}");
+                        // Coin-range Y histogram for ship section near coin 2
+                        if (Verbose && frame >= 3550 && frame <= 3850 && frame % 10 == 0)
+                        {
+                            int yLt135 = 0, y135_150 = 0, y151_167 = 0, y168_200 = 0, y201_250 = 0, y251p = 0;
+                            int coinHitCount = 0;
+                            foreach (var s in frontier)
+                            {
+                                int fy = s.Y_fixed >> 8;
+                                if (fy < 135) yLt135++;
+                                else if (fy <= 150) y135_150++;
+                                else if (fy <= 167) { y151_167++; coinHitCount++; }
+                                else if (fy <= 200) y168_200++;
+                                else if (fy <= 250) y201_250++;
+                                else y251p++;
+                            }
+                            _log.WriteLine($"[BFS_COIN_YHIST] f={frame} X~{highWaterX}px <135={yLt135} 135-150={y135_150} 151-167={y151_167} 168-200={y168_200} 201-250={y201_250} 251+={y251p} coinHitY={coinHitCount}");
+                        }
                         // Step2Ever diagnostic at interesting frames
                         if (Verbose && (frame == 700 || frame == 710 || frame == 720 || frame == 800 || frame == 900 || frame == 1500 || frame == 2020 || frame == 2035 || frame == 2040))
                         {
@@ -3233,6 +3341,8 @@ namespace FamidashEditor
                             var vdtParts = new System.Collections.Generic.List<string>();
                             for (int d = 0; d < vdtNames.Length && d < frameDtCounts.Length; d++)
                                 if (frameDtCounts[d] > 0) vdtParts.Add($"{vdtNames[d]}={frameDtCounts[d]}");
+                            string coinYStr = (frame >= 3550 && frame <= 3850) ? $" lowYDeaths={coinRangeDeaths}" : "";
+                            _log.WriteLine($"[BFS_DT] f={frame} DEATH_TYPES: {string.Join(" ", vdtParts)}{coinYStr}");
                             _log.WriteLine($"[BFS_DT] f={frame} DEATH_TYPES: {string.Join(" ", vdtParts)}");
                         }
 #if !DISABLE_DEBUG_LOGGING
@@ -3335,10 +3445,25 @@ namespace FamidashEditor
                     ReplayBfsPath(inputs, startX_px, startY_px, startSpeedUiIndex,
                                   startGameMode, startGravFlipped, startMini);
 
+                    // --- Post-BFS coin splice: beam search for missed coins ---
                     int coinTotal = allCoins.Count;
+                    if (PreferCoins && coinTotal > 0 && FinalCollectedCoinIndices != null
+                        && FinalCollectedCoinIndices.Count < coinTotal)
+                    {
+                        var splicedInputs = TryCoinBeamSplice(inputs,
+                            startX_px, startY_px, startSpeedUiIndex,
+                            startGameMode, startGravFlipped, startMini);
+                        if (splicedInputs != null)
+                        {
+                            inputs = splicedInputs;
+                            ReplayBfsPath(inputs, startX_px, startY_px, startSpeedUiIndex,
+                                          startGameMode, startGravFlipped, startMini);
+                        }
+                    }
+
                     double elapsed = bfsSw.Elapsed.TotalSeconds;
                     string msg = $"Completed in {inputs.Count} frames ({PathPoints.Count} path points)";
-                    if (PreferCoins && coinTotal > 0) msg += $" [{winCoins}/{coinTotal} coins]";
+                    if (PreferCoins && coinTotal > 0) msg += $" [{FinalCollectedCoinIndices?.Count ?? winCoins}/{coinTotal} coins]";
                     msg += $" [{elapsed:F1}s BFS]";
                     ResultMessage = msg;
                     Success = true;
@@ -3512,6 +3637,417 @@ namespace FamidashEditor
 
             ExtractSkippedPads(state);
             TraceFrameClose();
+        }
+
+        // -------------------------------------------------------------------
+        //  POST-BFS COIN BEAM SPLICE
+        // -------------------------------------------------------------------
+        /// <summary>
+        /// After BFS finds a level-completing path that misses one or more coins
+        /// in a continuous-Y mode (ship/UFO/wave/swing/snake), attempt to splice
+        /// in a beam-search segment that steers toward the coin's Y position.
+        /// Returns the modified input sequence if successful, null otherwise.
+        /// </summary>
+        private List<bool> TryCoinBeamSplice(List<bool> originalInputs,
+            int startX_px, int startY_px, int startSpeedUiIndex,
+            int startGameMode, bool startGravFlipped, bool startMini)
+        {
+            // Identify missed coins in continuous-Y modes
+            var missedCoins = new List<SpriteEntry>();
+            foreach (var coin in allCoins)
+            {
+                if (FinalCollectedCoinIndices.Contains(coin.Index)) continue;
+                missedCoins.Add(coin);
+            }
+            if (missedCoins.Count == 0) return null;
+
+            _log.WriteLine($"[COIN_SPLICE] Attempting beam splice for {missedCoins.Count} missed coin(s)");
+
+            // Replay original path to map frame→state and frame→X
+            var replayState = new SimState
+            {
+                X_fixed = startX_px << 8,
+                Y_fixed = startY_px << 8,
+                VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex),
+                VelY_fixed = 0,
+                GameMode = startGameMode,
+                GravFlipped = startGravFlipped,
+                Mini = startMini,
+                GravMul = startGravFlipped ? -1 : 1,
+                GravityMod = 1.0,
+                WasZeroedByCollision = true,
+                OnGround = true,
+                ProcessedSprites = NewSpriteSet(),
+                PendingOrbIndex = -1,
+                PendingOrbSpriteId = -1,
+                NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
+                CameraY_fixed = ComputeInitCameraY(startY_px),
+                TargetCameraY_fixed = ComputeInitCameraY(startY_px)
+            };
+            ApplyPortalsUpTo(ref replayState, startX_px);
+
+            // For each missed coin, find splice point and attempt beam search
+            foreach (var coin in missedCoins)
+            {
+                int coinCX = (coin.HitLeft + coin.HitRight) / 2;
+                int coinCY = (coin.HitTop + coin.HitBottom) / 2;
+                int spliceStartX = coinCX - 2000; // Start beam 2000px before coin for runway
+                int splicePassX = coin.HitRight + 100; // just past the coin
+
+                // Replay to find splice-start frame
+                var rs = replayState.Clone();
+                int spliceFrame = -1;
+                SimState spliceState = default;
+                _speculativeDepth = 1; // prevent side effects
+
+                for (int f = 0; f < originalInputs.Count; f++)
+                {
+                    _frameCounter = f;
+                    int px = rs.X_fixed >> 8;
+                    if (px >= spliceStartX && spliceFrame < 0)
+                    {
+                        // Check if this is a continuous-Y mode
+                        bool isContinuous = (rs.GameMode == 1 || rs.GameMode == 3 ||
+                                             rs.GameMode == 6 || rs.GameMode == 7 ||
+                                             rs.GameMode == 10);
+                        if (!isContinuous)
+                        {
+                            _log.WriteLine($"[COIN_SPLICE] Coin idx={coin.Index} at X={coinCX}: mode={rs.GameMode} is not continuous-Y, skipping");
+                            break;
+                        }
+                        spliceFrame = f;
+                        spliceState = rs.Clone();
+                        _log.WriteLine($"[COIN_SPLICE] Coin idx={coin.Index}: splice at f={f} X={px} Y={rs.Y_fixed >> 8} mode={rs.GameMode}");
+                        break;
+                    }
+                    bool alive = StepFrame(ref rs, originalInputs[f], out bool endLevel);
+                    if (!alive || endLevel) break;
+                }
+
+                _speculativeDepth = 0;
+
+                if (spliceFrame < 0) continue;
+
+                // Beam search from spliceState toward coin using parent-chain reconstruction
+                int beamWidth = 8192;
+                int maxBeamFrames = 800;
+
+                // Parent-chain arrays for input reconstruction (like BFS)
+                var beamHist = new List<(int[] parentIdx, bool[] input)>();
+                var beamStates = new List<SimState> { spliceState };
+
+                int bestCollectFrame = -1;
+                int bestCollectIdx = -1;
+
+                for (int bf = 0; bf < maxBeamFrames && beamStates.Count > 0; bf++)
+                {
+                    _frameCounter = spliceFrame + bf;
+                    _speculativeDepth = 1;
+
+                    var nextStates = new List<SimState>();
+                    var nextParents = new List<int>();
+                    var nextInputVals = new List<bool>();
+                    var nextScores = new List<int>();
+
+                    for (int bi = 0; bi < beamStates.Count; bi++)
+                    {
+                        for (int inp = 0; inp <= 1; inp++)
+                        {
+                            var sim = beamStates[bi].Clone();
+                            bool alive = StepFrame(ref sim, inp == 1, out bool endLevel);
+
+                            if (!alive) { sim.ReturnAllSpriteResources(); continue; }
+                            if (endLevel)
+                            {
+                                // Reached level end; if coin collected, immediate success
+                                if (sim.ProcessedSprites.Contains(coin.Index))
+                                {
+                                    // Reconstruct inputs via parent chain
+                                    var chainInputs = new List<bool> { inp == 1 };
+                                    int ci = bi;
+                                    for (int hf = beamHist.Count - 1; hf >= 0; hf--)
+                                    {
+                                        chainInputs.Add(beamHist[hf].input[ci]);
+                                        ci = beamHist[hf].parentIdx[ci];
+                                    }
+                                    chainInputs.Reverse();
+                                    var result = SpliceInputs(originalInputs, spliceFrame, chainInputs);
+                                    _log.WriteLine($"[COIN_SPLICE] Beam reached level end with coin! splice_f={spliceFrame} beam_len={chainInputs.Count}");
+                                    _speculativeDepth = 0;
+                                    foreach (var s in beamStates) s.ReturnAllSpriteResources();
+                                    foreach (var s in nextStates) s.ReturnAllSpriteResources();
+                                    return result;
+                                }
+                                sim.ReturnAllSpriteResources();
+                                continue;
+                            }
+
+                            // Score: prioritize coin collection, then proximity
+                            int px = sim.X_fixed >> 8;
+                            int py = sim.Y_fixed >> 8;
+                            int score;
+                            bool collected = sim.ProcessedSprites.Contains(coin.Index);
+                            if (collected)
+                            {
+                                score = -1_000_000; // collected: best possible
+                            }
+                            else
+                            {
+                                int distY = Math.Abs(py - coinCY);
+                                int distX = px - coinCX;
+                                if (distX > 100)
+                                {
+                                    // Past coin without collecting — heavily penalized
+                                    score = 500_000 + distX;
+                                }
+                                else
+                                {
+                                    score = distY * 10; // drive toward coin Y
+                                }
+                            }
+
+                            nextStates.Add(sim);
+                            nextParents.Add(bi);
+                            nextInputVals.Add(inp == 1);
+                            nextScores.Add(score);
+                        }
+                    }
+
+                    // Return old beam sprite resources
+                    foreach (var s in beamStates) s.ReturnAllSpriteResources();
+
+                    if (nextStates.Count == 0) break;
+
+                    // Select top beamWidth by score
+                    var sortIdx = Enumerable.Range(0, nextStates.Count).ToArray();
+                    Array.Sort(sortIdx, (a, b) => nextScores[a].CompareTo(nextScores[b]));
+
+                    var newBeamStates = new List<SimState>(Math.Min(beamWidth, sortIdx.Length));
+                    var frameParents = new int[Math.Min(beamWidth, sortIdx.Length)];
+                    var frameInputs = new bool[Math.Min(beamWidth, sortIdx.Length)];
+
+                    for (int i = 0; i < frameParents.Length; i++)
+                    {
+                        int si = sortIdx[i];
+                        newBeamStates.Add(nextStates[si]);
+                        frameParents[i] = nextParents[si];
+                        frameInputs[i] = nextInputVals[si];
+                    }
+                    // Return unselected states
+                    for (int i = frameParents.Length; i < sortIdx.Length; i++)
+                        nextStates[sortIdx[i]].ReturnAllSpriteResources();
+
+                    beamHist.Add((frameParents, frameInputs));
+                    beamStates = newBeamStates;
+
+                    // Check if we have coin-collecting states past the coin
+                    if (beamStates[0].ProcessedSprites.Contains(coin.Index))
+                    {
+                        int bpx = beamStates[0].X_fixed >> 8;
+                        if (bpx > splicePassX)
+                        {
+                            bestCollectIdx = 0;
+                            bestCollectFrame = bf;
+                            _log.WriteLine($"[COIN_SPLICE] Beam collected coin at bf={bf} X={bpx} Y={beamStates[0].Y_fixed >> 8}");
+                            break;
+                        }
+                    }
+
+                    // Log progress every 20 frames
+                    if (bf % 20 == 0)
+                    {
+                        int bMinY = int.MaxValue, bMaxY = int.MinValue;
+                        int bCollected = 0;
+                        foreach (var s in beamStates)
+                        {
+                            int y = s.Y_fixed >> 8;
+                            if (y < bMinY) bMinY = y;
+                            if (y > bMaxY) bMaxY = y;
+                            if (s.ProcessedSprites.Contains(coin.Index)) bCollected++;
+                        }
+                        _log.WriteLine($"[COIN_SPLICE] bf={bf} beam={beamStates.Count} Y=[{bMinY}..{bMaxY}] collected={bCollected} X~{beamStates[0].X_fixed >> 8}");
+                    }
+                }
+
+                _speculativeDepth = 0;
+
+                if (bestCollectIdx < 0)
+                {
+                    _log.WriteLine($"[COIN_SPLICE] Beam failed to collect coin idx={coin.Index}");
+                    foreach (var s in beamStates) s.ReturnAllSpriteResources();
+                    continue;
+                }
+
+                // Reconstruct beam inputs via parent chain
+                var coinBeamInputs = new List<bool>();
+                {
+                    int ci = bestCollectIdx;
+                    for (int hf = beamHist.Count - 1; hf >= 0; hf--)
+                    {
+                        coinBeamInputs.Add(beamHist[hf].input[ci]);
+                        ci = beamHist[hf].parentIdx[ci];
+                    }
+                    coinBeamInputs.Reverse();
+                }
+                var coinBeamState = beamStates[bestCollectIdx];
+                int beamEndFrame = spliceFrame + coinBeamInputs.Count;
+
+                _log.WriteLine($"[COIN_SPLICE] Trying tail with original inputs from f={beamEndFrame} (total={originalInputs.Count})");
+
+                // Try continuing with original inputs
+                bool tailWorks = false;
+                {
+                    var tailState = coinBeamState.Clone();
+                    _speculativeDepth = 1;
+
+                    bool reachedEnd = false;
+                    for (int f = beamEndFrame; f < originalInputs.Count; f++)
+                    {
+                        _frameCounter = f;
+                        bool alive = StepFrame(ref tailState, originalInputs[f], out bool endLevel);
+                        if (endLevel) { reachedEnd = true; break; }
+                        if (!alive)
+                        {
+                            _log.WriteLine($"[COIN_SPLICE] Tail died at f={f} (df={f - beamEndFrame}) X={tailState.X_fixed >> 8} Y={tailState.Y_fixed >> 8} dt={tailState.DeathType}");
+                            break;
+                        }
+                    }
+                    _speculativeDepth = 0;
+
+                    if (reachedEnd)
+                    {
+                        tailWorks = true;
+                        _log.WriteLine($"[COIN_SPLICE] Tail reached level end! Splicing...");
+                    }
+                    tailState.ReturnAllSpriteResources();
+                }
+
+                if (!tailWorks)
+                {
+                    // Tail with original inputs failed. Try a survival beam search
+                    // from the coin-beam end state to level end.
+                    _log.WriteLine($"[COIN_SPLICE] Trying survival beam from f={beamEndFrame}...");
+                    var survBeamResult = RunSurvivalBeam(coinBeamState, beamEndFrame, originalInputs.Count + 3000);
+
+                    if (survBeamResult != null)
+                    {
+                        _log.WriteLine($"[COIN_SPLICE] Survival beam succeeded! len={survBeamResult.Count}");
+                        var splicedInputs = new List<bool>(spliceFrame + coinBeamInputs.Count + survBeamResult.Count);
+                        for (int i = 0; i < spliceFrame; i++) splicedInputs.Add(originalInputs[i]);
+                        splicedInputs.AddRange(coinBeamInputs);
+                        splicedInputs.AddRange(survBeamResult);
+                        // Return sprite resources
+                        foreach (var s in beamStates) s.ReturnAllSpriteResources();
+                        return splicedInputs;
+                    }
+                    _log.WriteLine($"[COIN_SPLICE] Survival beam also failed");
+                }
+
+                // Return sprite resources
+                foreach (var s in beamStates) s.ReturnAllSpriteResources();
+
+                if (tailWorks)
+                {
+                    return SpliceInputs(originalInputs, spliceFrame, coinBeamInputs);
+                }
+            }
+
+            return null;
+        }
+
+        private List<bool> SpliceInputs(List<bool> original, int spliceFrame, List<bool> beamInputs)
+        {
+            var result = new List<bool>(original.Count);
+            for (int i = 0; i < spliceFrame; i++) result.Add(original[i]);
+            result.AddRange(beamInputs);
+            int tailStart = spliceFrame + beamInputs.Count;
+            for (int i = tailStart; i < original.Count; i++) result.Add(original[i]);
+            return result;
+        }
+
+        /// <summary>
+        /// Run a survival-focused beam search from a given state to level end.
+        /// Returns the input sequence if successful, null otherwise.
+        /// Uses a wider beam and scores purely by survival (forward progress).
+        /// </summary>
+        private List<bool> RunSurvivalBeam(SimState startState, int startFrame, int maxFrames)
+        {
+            int beamWidth = 2048;
+            var beamStates = new List<SimState> { startState.Clone() };
+            var beamHist = new List<(int[] parentIdx, bool[] input)>();
+
+            for (int bf = 0; bf < maxFrames && beamStates.Count > 0; bf++)
+            {
+                _frameCounter = startFrame + bf;
+                _speculativeDepth = 1;
+
+                var nextStates = new List<SimState>();
+                var nextParents = new List<int>();
+                var nextInputVals = new List<bool>();
+                var nextScores = new List<int>();
+
+                for (int bi = 0; bi < beamStates.Count; bi++)
+                {
+                    for (int inp = 0; inp <= 1; inp++)
+                    {
+                        var sim = beamStates[bi].Clone();
+                        bool alive = StepFrame(ref sim, inp == 1, out bool endLevel);
+
+                        if (!alive) { sim.ReturnAllSpriteResources(); continue; }
+                        if (endLevel)
+                        {
+                            // Reconstruct inputs via parent chain
+                            var result = new List<bool> { inp == 1 };
+                            int ci = bi;
+                            for (int hf = beamHist.Count - 1; hf >= 0; hf--)
+                            {
+                                result.Add(beamHist[hf].input[ci]);
+                                ci = beamHist[hf].parentIdx[ci];
+                            }
+                            result.Reverse();
+                            _speculativeDepth = 0;
+                            foreach (var s in beamStates) s.ReturnAllSpriteResources();
+                            foreach (var s in nextStates) s.ReturnAllSpriteResources();
+                            return result;
+                        }
+
+                        int score = -(sim.X_fixed >> 8); // prefer forward progress
+                        nextStates.Add(sim);
+                        nextParents.Add(bi);
+                        nextInputVals.Add(inp == 1);
+                        nextScores.Add(score);
+                    }
+                }
+
+                foreach (var s in beamStates) s.ReturnAllSpriteResources();
+
+                if (nextStates.Count == 0) break;
+
+                var sortIdx = Enumerable.Range(0, nextStates.Count).ToArray();
+                Array.Sort(sortIdx, (a, b) => nextScores[a].CompareTo(nextScores[b]));
+
+                int keep = Math.Min(beamWidth, sortIdx.Length);
+                var newBeamStates = new List<SimState>(keep);
+                var frameParents = new int[keep];
+                var frameInputs = new bool[keep];
+
+                for (int i = 0; i < keep; i++)
+                {
+                    int si = sortIdx[i];
+                    newBeamStates.Add(nextStates[si]);
+                    frameParents[i] = nextParents[si];
+                    frameInputs[i] = nextInputVals[si];
+                }
+                for (int i = keep; i < sortIdx.Length; i++)
+                    nextStates[sortIdx[i]].ReturnAllSpriteResources();
+
+                beamHist.Add((frameParents, frameInputs));
+                beamStates = newBeamStates;
+            }
+
+            foreach (var s in beamStates) s.ReturnAllSpriteResources();
+            _speculativeDepth = 0;
+            return null;
         }
 
         // -------------------------------------------------------------------
@@ -11693,7 +12229,7 @@ namespace FamidashEditor
                     {
                         s.DualActive = true;
                         // NES sets target_scroll_y from the dual portal's Y (spcl_dual_pt)
-                        s.TargetCameraY_fixed = Math.Max(0, (sp.AnchorY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                        s.TargetCameraY_fixed = NesNtCameraTarget_fixed(sp.AnchorY_px);
                         s.P2_Y_fixed = s.Y_fixed;
                         s.P2_VelY_fixed = -s.VelY_fixed;
                         s.P2_GravFlipped = !s.GravFlipped;
@@ -11727,7 +12263,7 @@ namespace FamidashEditor
                     {
                         s.DualActive = false;
                         // Set target_scroll_y from the portal's Y position (matching dual portal behavior)
-                        s.TargetCameraY_fixed = Math.Max(0, (sp.AnchorY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                        s.TargetCameraY_fixed = NesNtCameraTarget_fixed(sp.AnchorY_px);
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[SINGLE_ACTIVATE] idx={sp.Index} targetCamY={s.TargetCameraY_fixed >> 8}");
 #endif
@@ -11820,7 +12356,7 @@ namespace FamidashEditor
                         if (!modeFollowsY && !s.DualActive)
                         {
                             int portalWorldY_px = sp.AnchorY_px - TILE / 2;
-                            s.TargetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                            s.TargetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
                         }
                         s.ProcessedSprites.Add(sp.Index);
                     }
@@ -11880,7 +12416,7 @@ namespace FamidashEditor
                             if (!modeFollowsY && !s.DualActive)
                             {
                                 int portalWorldY_px = sp.AnchorY_px - TILE / 2;
-                                s.TargetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                                s.TargetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
                             }
                         }
                         if (IsEndLevel(sid)) return true;
@@ -12257,7 +12793,7 @@ namespace FamidashEditor
                         if (!modeFollowsY && !s.DualActive)
                         {
                             int portalWorldY_px = sp.AnchorY_px - TILE / 2;
-                            s.TargetCameraY_fixed = Math.Max(0, (portalWorldY_px - PORTAL_TO_TOP_DIFF_PX) << 8);
+                            s.TargetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
                         }
                     }
                     break; // only one portal per frame (matching sim's break)
@@ -12987,7 +13523,7 @@ namespace FamidashEditor
                 PfLog($"[FLOOR_SPIKE_DEATH] corner {cornerName} ({deathX},{deathY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} localXY=({_lx},{_ly})");
                 _lastDeathReason = $"FLOOR_SPIKE:{cornerName}({deathX},{deathY})";
                 _lastDeathX = playerX; _lastDeathY = playerY;
-                System.Console.WriteLine($"[DBG_SPIKE_DETAIL] pX={playerX} pY={playerY} corner={cornerName} deathPt=({deathX},{deathY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} local=({_lx},{_ly})");
+                // System.Console.WriteLine($"[DBG_SPIKE_DETAIL] pX={playerX} pY={playerY} corner={cornerName} deathPt=({deathX},{deathY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} local=({_lx},{_ly})");
             }
             return killed;
 #else
