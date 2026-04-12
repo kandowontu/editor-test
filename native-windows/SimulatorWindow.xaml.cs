@@ -5160,10 +5160,10 @@ namespace FamidashEditor
                 for (int tg = 0; tg < 3; tg++)
                 {
                     trailGhosts[tg] = new System.Windows.Controls.Image { Stretch = Stretch.None, Opacity = 0.5 };
-                    System.Windows.Media.RenderOptions.SetBitmapScalingMode(trailGhosts[tg], BitmapScalingMode.NearestNeighbor);
-                    System.Windows.Controls.Canvas.SetZIndex(trailGhosts[tg], 997 - tg); // behind player (1000) and P2 (999)
-                    trailGhosts[tg].Visibility = Visibility.Collapsed;
-                    RenderCanvas.Children.Add(trailGhosts[tg]);
+                    System.Windows.Media.RenderOptions.SetBitmapScalingMode(trailGhosts[tg]!, BitmapScalingMode.NearestNeighbor);
+                    System.Windows.Controls.Canvas.SetZIndex(trailGhosts[tg]!, 997 - tg); // behind player (1000) and P2 (999)
+                    trailGhosts[tg]!.Visibility = Visibility.Collapsed;
+                    RenderCanvas.Children.Add(trailGhosts[tg]!);
                 }
 
                 // Resolve cube.png relative to executable directory (project root is four levels up from bin)
@@ -6416,7 +6416,7 @@ namespace FamidashEditor
                 try { processedPlayerInvisTriggers.Clear(); } catch { }
                 try { processedTrailTriggers.Clear(); } catch { }
                 // Hide trail ghosts on restart
-                try { for (int tg = 0; tg < 3; tg++) { if (trailGhosts[tg] != null) trailGhosts[tg].Visibility = Visibility.Collapsed; } } catch { }
+                try { for (int tg = 0; tg < 3; tg++) { if (trailGhosts[tg] != null) trailGhosts[tg]!.Visibility = Visibility.Collapsed; } } catch { }
                 
                 // Reset dual mode state
                 dual = false;
@@ -8623,12 +8623,12 @@ namespace FamidashEditor
                     
                     if (robotIsStationary && !paused)
                     {
-                        // Increment accumulator and cycle counter (0-39 cycle: 10 frames per frame state, 4 frames total)
+                        // Increment accumulator and cycle counter (0-79 cycle: 20 frames per frame state, 4 frames total — half speed)
                         robotAnimationFrameAccum += simTimeScale;
                         if (robotAnimationFrameAccum >= 1.0)
                         {
                             robotAnimationFrameCounter++;
-                            if (robotAnimationFrameCounter >= 40)  // 40-frame cycle (0-39)
+                            if (robotAnimationFrameCounter >= 80)  // 80-frame cycle (0-79)
                             {
                                 robotAnimationFrameCounter = 0;
                             }
@@ -8647,8 +8647,8 @@ namespace FamidashEditor
                     
                     if (robotIsStationary)
                     {
-                        // Frame mapping: 0-9=robot.png, 10-19=robot2.png, 20-29=robot3.png, 30-39=robot4.png
-                        int frameIndex = robotAnimationFrameCounter / 10;
+                        // Frame mapping: 0-19=robot.png, 20-39=robot2.png, 40-59=robot3.png, 60-79=robot4.png
+                        int frameIndex = robotAnimationFrameCounter / 20;
                         robotChoice = frameIndex switch
                         {
                             0 => miniMode ? "robot-mini.png" : "robot.png",
@@ -8759,12 +8759,12 @@ namespace FamidashEditor
                     
                     if (spiderIsGrounded && !paused)
                     {
-                        // Increment accumulator and cycle counter (0-39 cycle: 10 frames per frame state, 4 frames total)
+                        // Increment accumulator and cycle counter (0-79 cycle: 20 frames per frame state, 4 frames total — half speed)
                         spiderAnimationFrameAccum += simTimeScale;
                         if (spiderAnimationFrameAccum >= 1.0)
                         {
                             spiderAnimationFrameCounter++;
-                            if (spiderAnimationFrameCounter >= 40)  // 40-frame cycle (0-39)
+                            if (spiderAnimationFrameCounter >= 80)  // 80-frame cycle (0-79)
                             {
                                 spiderAnimationFrameCounter = 0;
                             }
@@ -8786,8 +8786,8 @@ namespace FamidashEditor
                     
                     if (spiderIsGrounded && !spiderHasVerticalVelocity)
                     {
-                        // Frame mapping: 0-9=spider.png, 10-19=spider2.png, 20-29=spider3.png, 30-39=spider4.png
-                        int frameIndex = spiderAnimationFrameCounter / 10;
+                        // Frame mapping: 0-19=spider.png, 20-39=spider2.png, 40-59=spider3.png, 60-79=spider4.png
+                        int frameIndex = spiderAnimationFrameCounter / 20;
                         spiderChoice = frameIndex switch
                         {
                             0 => miniMode ? "spider-mini.png" : "spider.png",
@@ -9937,8 +9937,8 @@ namespace FamidashEditor
                             }
                             else
                             {
-                                // Pads and other sprites - slowed down from /20 to /40 for half speed
-                                frame = (((GetEditorAnimationFrameValue() * 9) / 40) + offset) % Math.Max(1, frames.Length);
+                                // Pads and other sprites - normal speed
+                                frame = (((GetEditorAnimationFrameValue() * 9) / 20) + offset) % Math.Max(1, frames.Length);
                             }
                         }
                         chosenSprite = frames[frame];
@@ -10360,17 +10360,17 @@ namespace FamidashEditor
                         if (trailGhosts[tg] == null) continue;
                         if (!showTrails)
                         {
-                            trailGhosts[tg].Visibility = Visibility.Collapsed;
+                            trailGhosts[tg]!.Visibility = Visibility.Collapsed;
                             continue;
                         }
                         // Copy current player sprite to ghost (including gravity flip)
                         if (playerImage != null && playerImage.Source != null)
                         {
-                            trailGhosts[tg].Source = playerImage.Source;
-                            trailGhosts[tg].Width = playerImage.Width;
-                            trailGhosts[tg].Height = playerImage.Height;
-                            trailGhosts[tg].RenderTransformOrigin = playerImage.RenderTransformOrigin;
-                            trailGhosts[tg].RenderTransform = playerImage.RenderTransform;
+                            trailGhosts[tg]!.Source = playerImage.Source;
+                            trailGhosts[tg]!.Width = playerImage.Width;
+                            trailGhosts[tg]!.Height = playerImage.Height;
+                            trailGhosts[tg]!.RenderTransformOrigin = playerImage.RenderTransformOrigin;
+                            trailGhosts[tg]!.RenderTransform = playerImage.RenderTransform;
                         }
                         // Position: offset backwards by vel_x*2 per ghost index
                         int velXPx = playerVelX_fixed >> 8;
@@ -10379,10 +10379,10 @@ namespace FamidashEditor
                         int histIdx = Math.Min((tg + 1) * 2, playerOldPosY.Length - 1);
                         int ghostY = (playerOldPosY[histIdx] >> 8) - (snapCameraY >> 8) + gridRenderShiftYPx;
                         if (snapMiniMode) ghostY += 4;
-                        System.Windows.Controls.Canvas.SetLeft(trailGhosts[tg], ghostX);
-                        System.Windows.Controls.Canvas.SetTop(trailGhosts[tg], ghostY);
-                        trailGhosts[tg].Opacity = 0.4 - (tg * 0.1); // fading opacity: 0.4, 0.3, 0.2
-                        trailGhosts[tg].Visibility = Visibility.Visible;
+                        System.Windows.Controls.Canvas.SetLeft(trailGhosts[tg]!, ghostX);
+                        System.Windows.Controls.Canvas.SetTop(trailGhosts[tg]!, ghostY);
+                        trailGhosts[tg]!.Opacity = 0.4 - (tg * 0.1); // fading opacity: 0.4, 0.3, 0.2
+                        trailGhosts[tg]!.Visibility = Visibility.Visible;
                     }
                 }
                 catch { }
@@ -12457,7 +12457,7 @@ namespace FamidashEditor
 
                         // Skip if sprite is not vertically on-screen
                         int spriteWorldY = anchorTileY * TILE;
-                        if (spriteWorldY + TILE <= screenTopY || spriteWorldY >= screenBottomY)
+                        if (spriteWorldY + TILE < screenTopY || spriteWorldY >= screenBottomY)
                             continue;
 
                         int anchorX_center_fixed = ((anchorTileX * TILE) + (TILE / 2)) << 8;

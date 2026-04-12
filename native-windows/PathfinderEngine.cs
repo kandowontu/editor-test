@@ -384,7 +384,7 @@ namespace FamidashEditor
         private int _speculativeDepth; // >0 means we're inside lookahead � suppress logging
         private int _frameCounter;     // current frame in the main Run() loop
         [ThreadStatic] private static bool _dualP2Guard; // true during P2's StepFrame call (prevents infinite recursion)
-        [ThreadStatic] private static List<int> _p1OrbIndicesThisFrame; // orb indices P1 added to ProcessedSprites this frame (temporarily removed for P2)
+        [ThreadStatic] private static List<int>? _p1OrbIndicesThisFrame; // orb indices P1 added to ProcessedSprites this frame (temporarily removed for P2)
         [ThreadStatic]
         private static bool _p2OrbFlippedOtherGrav; // set by P2's blue/green orb to flip P1's gravity
 
@@ -679,7 +679,9 @@ namespace FamidashEditor
             public int P2_SlopeWasOnCounter;
             public int P2_SlopeFrames;
             public int P2_SlopeType;
+            #pragma warning disable CS0649
             public int P2_LastSlopeType;
+            #pragma warning restore CS0649
             public bool P2_Orbed;
             public bool P2_BlackOrbed;
             public bool P2_PrevInputHeld;
@@ -758,6 +760,7 @@ namespace FamidashEditor
 
             public bool Contains(int tileIndex)
             {
+                if ((uint)tileIndex >= (uint)_map.Length) return false;
                 int c = _map[tileIndex];
                 if (c < 0) return false;
                 return (Bits[c >> 6] & (1UL << (c & 63))) != 0;
@@ -968,6 +971,7 @@ namespace FamidashEditor
                 _log.WriteLine(diagMsg);
                 _log.Flush();
                 // Dump collision map at death zone (cols 385-420, rows 15-25)
+                #pragma warning disable CS8602
                 if (mapWidth > 400)
                 {
                     for (int dumpR = 15; dumpR <= 25; dumpR++)
@@ -990,6 +994,7 @@ namespace FamidashEditor
                     }
                     Console.Error.Flush();
                 }
+                #pragma warning restore CS8602
                 // Dump all game-mode portals in allSprites
                 {
                     int portalCount = 0;
@@ -2725,6 +2730,8 @@ namespace FamidashEditor
                     candCoins.Clear();
                     candScore.Clear();
                     int deathCount = 0;
+                    int gravFDeathCount = 0;
+                    var gravFDeathTypes = new int[13];
                     bool trackDeathTypes = (frame >= 2000 && frame <= 2070);
                     int[]? frameDtCounts = trackDeathTypes ? new int[13] : null;
 
@@ -2753,23 +2760,26 @@ namespace FamidashEditor
                         {
                             // Track death types per frame for detailed logging
                             if (frameDtCounts != null) frameDtCounts[rState[k].DeathType]++;
-                            // Track deaths of Y=260-290 reversed-grav states near death zone
-#if !DISABLE_DEBUG_LOGGING
-                            if (frame >= 2020 && frame <= 2040)
+                            // Track deaths of gravity-flipped states (summary)
                             {
                                 int pi3 = k >> 1;
                                 var ps3 = frontier[pi3];
-                                int py3 = ps3.Y_fixed >> 8;
-                                if (py3 >= 260 && py3 <= 290 && ps3.GravFlipped)
+                                if (ps3.GravFlipped)
                                 {
-                                    var ds3 = rState[k];
-                                    int dy3 = ds3.Y_fixed >> 8;
-                                    var dtNames3 = new[]{"UNK","CEIL_SPIKE","EJECT","CENTER","BALL_PROBE","BALL_VELZERO","BALL_EJECT","FLOOR_SPIKE","FWD","DEATH_COLL","BOUNDS","BALL_EJECT_CEIL","BALL_EJECT_FLOOR"};
-                                    string dtN = ds3.DeathType < dtNames3.Length ? dtNames3[ds3.DeathType] : "?";
-                                    Console.Error.WriteLine($"[GAP_DEATH] f={frame} parentY={py3} parentVelY=0x{ps3.VelY_fixed:X} parentX={ps3.X_fixed>>8} childY={dy3} childVelY=0x{ds3.VelY_fixed:X} childX={ds3.X_fixed>>8} dt={dtN} inp={(k&1)==1}");
+                                    gravFDeathCount++;
+                                    var dt = rState[k].DeathType;
+                                    if (dt >= 0 && dt < gravFDeathTypes.Length) gravFDeathTypes[dt]++;
+                                    if (_gravFDeathCounts == null) _gravFDeathCounts = new int[13];
+                                    if (dt < _gravFDeathCounts.Length) _gravFDeathCounts[dt]++;
+                                    _gravFDeathFrame = frame;
+                                    // Log first 3 samples per frame
+                                    if (gravFDeathCount <= 3 && frame >= 1890)
+                                    {
+                                        var ds3 = rState[k];
+                                        _log.WriteLine($"[GF_DEAD] f={frame} pX={ps3.X_fixed>>8} pY={ps3.Y_fixed>>8} pVelY=0x{ps3.VelY_fixed:X} | cX={ds3.X_fixed>>8} cY={ds3.Y_fixed>>8} dt={dt} inp={(k&1)==1}");
+                                    }
                                 }
                             }
-#endif
                             rState[k].ReturnAllSpriteResources(); deathCount++; continue;
                         }
 
@@ -2916,7 +2926,7 @@ namespace FamidashEditor
                             }
                             foreach (var coin in allCoins)
                             {
-                                if (coin.HitRight > frontierMaxX && !winState.ProcessedSprites.Contains(coin.Index))
+                                if (coin.HitRight > frontierMaxX && !winState.ProcessedSprites!.Contains(coin.Index))
                                 {
                                     anyBetter = true;
                                     break;
@@ -2938,6 +2948,26 @@ namespace FamidashEditor
                         long key = BfsQuantizeKey(ref s);
                         if (!deduped.TryGetValue(key, out int ex) || candScore[i] < candScore[ex])
                             deduped[key] = i;
+                    }
+
+                    // -- GRAVF pipeline diagnostic --
+                    {
+                        int gfCand = 0, gfDedup = 0;
+                        for (int i = 0; i < candState.Count; i++) if (candState[i].GravFlipped) gfCand++;
+                        foreach (var di in deduped.Values) if (candState[di].GravFlipped) gfDedup++;
+                        int gfFront = 0;
+                        foreach (var s in frontier) if (s.GravFlipped) gfFront++;
+                        if (gfFront > 0 || gfCand > 0)
+                        {
+                            int gfMinY = int.MaxValue, gfMaxY = int.MinValue;
+                            for (int i = 0; i < candState.Count; i++) if (candState[i].GravFlipped) { int y = candState[i].Y_fixed >> 8; if (y < gfMinY) gfMinY = y; if (y > gfMaxY) gfMaxY = y; }
+                            string dtStr = "";
+                            if (gravFDeathCount > 0) {
+                                var dtN = new[]{"UNK","CEIL","EJT","CTR","BPR","BVZ","BEJ","FLR","FWD","DCL","BND","OOT","OOB"};
+                                for (int d = 0; d < gravFDeathTypes.Length; d++) if (gravFDeathTypes[d] > 0) dtStr += $" {(d<dtN.Length?dtN[d]:$"d{d}")}={gravFDeathTypes[d]}";
+                            }
+                            _log.WriteLine($"[GF_PIPE] f={frame} frontGF={gfFront} gfDied={gravFDeathCount}{dtStr} candGF={gfCand} dedupGF={gfDedup} gfY=[{(gfMinY==int.MaxValue?"N/A":gfMinY.ToString())}..{(gfMaxY==int.MinValue?"N/A":gfMaxY.ToString())}]");
+                        }
                     }
 
                     // -- Sort by score, prune to cap with diversity --
@@ -3006,6 +3036,17 @@ namespace FamidashEditor
                                 needGravDiversity = gravMinority < nextFrontier.Count / 20;
                             }
                         }
+                    }
+
+                    // -- GRAVF: count after selection --
+                    {
+                        int gfNext = 0;
+                        foreach (var s in nextFrontier) if (s.GravFlipped) gfNext++;
+                        // Only log if dedup count was > 0 but next count differs
+                        int gfDedup2 = 0;
+                        foreach (var di in deduped.Values) if (candState[di].GravFlipped) gfDedup2++;
+                        if (gfDedup2 > 0 && gfNext != gfDedup2)
+                            _log.WriteLine($"[GF_SELECT] f={frame} dedupGF={gfDedup2} selectedGF={gfNext} totalNext={nextFrontier.Count}");
                     }
 
                     // Return SpriteSets for candidates not kept in nextFrontier
@@ -3206,6 +3247,18 @@ namespace FamidashEditor
                             BfsLog($"f={frame} DEATH_TYPES: {string.Join(" ", fdtParts)}");
                         }
 #endif
+                        // GravF death summary
+                        if (_gravFDeathCounts != null && _gravFDeathFrame == frame)
+                        {
+                            var gdtNames = new[]{"UNK","CEIL_SPIKE","EJECT","CENTER","BALL_PROBE","BALL_VELZERO","BALL_EJECT","FLOOR_SPIKE","FWD","DEATH_COLL","BOUNDS","OOB_TOP","OOB_BOT"};
+                            var gdtParts = new System.Collections.Generic.List<string>();
+                            int gdtTotal = 0;
+                            for (int d = 0; d < _gravFDeathCounts.Length; d++)
+                                if (_gravFDeathCounts[d] > 0) { gdtParts.Add($"{gdtNames[d]}={_gravFDeathCounts[d]}"); gdtTotal += _gravFDeathCounts[d]; }
+                            _log.WriteLine($"[GRAVF_SUMMARY] f={frame} total={gdtTotal} {string.Join(" ", gdtParts)}");
+                            _gravFDeathCounts = null;
+                            _gravFDeathSamples = 0;
+                        }
 
                         // Emit speculative paths for live visualization
                         // Forward-simulate a sample of frontier states for ~30 frames
@@ -7668,7 +7721,7 @@ namespace FamidashEditor
                 {
                     ApplyDashOrb(ref s, s.PendingOrbSpriteId);
                     s.ProcessedSprites.Add(s.PendingOrbIndex);
-                    if (!_dualP2Guard) _p1OrbIndicesThisFrame.Add(s.PendingOrbIndex);
+                    if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(s.PendingOrbIndex);
                 }
                 else if (IsSpiderOrb(s.PendingOrbSpriteId))
                 {
@@ -7676,7 +7729,7 @@ namespace FamidashEditor
                     ApplySpiderTeleport(ref s, goUp);
                     s.Orbed = true; // NES sets orbed after spider orb teleport (blocks immediate jump)
                     s.ProcessedSprites.Add(s.PendingOrbIndex);
-                    if (!_dualP2Guard) _p1OrbIndicesThisFrame.Add(s.PendingOrbIndex);
+                    if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(s.PendingOrbIndex);
                 }
                 else
                 {
@@ -7688,7 +7741,7 @@ namespace FamidashEditor
                     if (!isMultiOrb)
                     {
                         s.ProcessedSprites.Add(s.PendingOrbIndex);
-                        if (!_dualP2Guard) _p1OrbIndicesThisFrame.Add(s.PendingOrbIndex);
+                        if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(s.PendingOrbIndex);
                     }
                 }
 
@@ -7711,7 +7764,7 @@ namespace FamidashEditor
                         if (xO && yO)
                         {
                             s.ProcessedSprites.Add(sp.Index);
-                            if (!_dualP2Guard) _p1OrbIndicesThisFrame.Add(sp.Index);
+                            if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(sp.Index);
                         }
                     }
                 }
@@ -8831,13 +8884,13 @@ namespace FamidashEditor
                 // Temporarily remove P1's orb additions from ProcessedSprites so
                 // P2 can independently detect and activate the same orb (matching
                 // SIM where both players process sprites independently).
-                foreach (var idx in _p1OrbIndicesThisFrame)
+                foreach (var idx in _p1OrbIndicesThisFrame!)
                     s.ProcessedSprites.Remove(idx);
                 _p2OrbFlippedOtherGrav = false;
                 _dualP2Guard = true;
                 bool p2Alive = StepFrame(ref s, p2Input, out bool p2EndLevel);
                 _dualP2Guard = false;
-                foreach (var idx in _p1OrbIndicesThisFrame)
+                foreach (var idx in _p1OrbIndicesThisFrame!)
                     s.ProcessedSprites.Add(idx);
 
                 // dual_cap_check: P2 hit blue/green orb → flip P1's gravity + halve velocity
@@ -9295,9 +9348,14 @@ namespace FamidashEditor
         /// Generic.y = high_byte(currplayer_y) + 1 (normal) or -1 (inverted).
         /// No spike death � bg_coll_U_D_checks returns 0 for spike tiles in eject context.
         /// </summary>
+        #pragma warning disable CS0414
         private int _ballEjectTraceCount = 0;
+        #pragma warning restore CS0414
         private int _step1FireCount = 0;
         private int _step2FireCount = 0;
+        private int[]? _gravFDeathCounts;
+        private int _gravFDeathFrame = -1;
+        private int _gravFDeathSamples = 0;
         private void BallEject(ref SimState s, bool input, out bool died)
         {
             died = false;
@@ -11789,7 +11847,7 @@ namespace FamidashEditor
                         int screenTopY = s.CameraY_fixed >> 8;
                         int screenBottomY = screenTopY + SCREEN_H_PX;
                         int spriteWorldY = sp.AnchorY_px - TILE / 2;
-                        bool onScreenY = !(spriteWorldY + TILE <= screenTopY || spriteWorldY >= screenBottomY);
+                        bool onScreenY = !(spriteWorldY + TILE < screenTopY || spriteWorldY >= screenBottomY);
                         hit = xOverlap && onScreenY;
                     }
                     else

@@ -806,7 +806,6 @@ namespace FamidashEditor
                 int headY_px = playerY_px + hbOffY;
                 int valGS = headY_px - 1;
                 int tileAboveY = valGS >= 0 ? valGS / TILE : (valGS - TILE + 1) / TILE;
-                if (tileAboveY < 0) return false;
 
                 int tileArrayY = tileAboveY + map.GroundRowsToReserve;
                 if (tileArrayY < 0 || tileArrayY >= map.MapHeight) return false;
@@ -856,7 +855,7 @@ namespace FamidashEditor
                 int tileX = px / TILE;
                 int tileY = checkY / TILE;
 
-                if (tileX < 0 || tileX >= map.MapWidth || tileY < 0 || tileY >= map.MapHeight) continue;
+                if (tileX < 0 || tileX >= map.MapWidth) continue;
 
                 int tileArrayY = tileY + map.GroundRowsToReserve;
                 if (tileArrayY < 0 || tileArrayY >= map.MapHeight) continue;
@@ -1054,9 +1053,8 @@ namespace FamidashEditor
             int playerLeft_px = collX;
             int playerRight_px = collX + collW;
 
-            if (tileBelowY < 0 || tileBelowY >= map.MapHeight) return (false, 0, false);
-
             int tileArrayYFloor = tileBelowY + map.GroundRowsToReserve;
+            if (tileArrayYFloor < 0) return (false, 0, false);
 
             // Ground layer is always solid (clears any pending death)
             if (tileArrayYFloor >= map.MapHeight)
@@ -1193,7 +1191,7 @@ namespace FamidashEditor
                     int tileX = px / TILE;
                     int tileY = checkY / TILE;
 
-                    if (tileX < 0 || tileX >= map.MapWidth || tileY < 0 || tileY >= map.MapHeight) continue;
+                    if (tileX < 0 || tileX >= map.MapWidth) continue;
 
                     int checkTileArrayY = tileY + map.GroundRowsToReserve;
                     if (checkTileArrayY < 0 || checkTileArrayY >= map.MapHeight) continue;
@@ -1221,8 +1219,8 @@ namespace FamidashEditor
                 ? (playerTop_px - 1) / TILE
                 : ((playerTop_px - 1) - TILE + 1) / TILE;
 
-            if (tileAboveY < 0 || tileAboveY >= map.MapHeight) return (false, 0, spikeFound);
-
+            // Validate using array Y (world Y + groundRowsToReserve), not raw world Y,
+            // because negative world tile rows are valid when groundRowsToReserve > 0.
             int tileArrayY = tileAboveY + map.GroundRowsToReserve;
             if (tileArrayY < 0 || tileArrayY >= map.MapHeight) return (false, 0, spikeFound);
 
@@ -1319,7 +1317,7 @@ namespace FamidashEditor
             int tileX = centerX_px / TILE;
             int tileY = centerY_px / TILE;
 
-            if (tileX < 0 || tileX >= map.MapWidth || tileY < 0 || tileY >= map.MapHeight) return false;
+            if (tileX < 0 || tileX >= map.MapWidth) return false;
 
             int tileArrayY = tileY + map.GroundRowsToReserve;
             if (tileArrayY < 0 || tileArrayY >= map.MapHeight) return false;
