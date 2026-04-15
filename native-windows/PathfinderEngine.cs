@@ -2438,7 +2438,7 @@ namespace FamidashEditor
         // -------------------------------------------------------------------
 
         /// <summary>Maximum frontier size for BFS exploration.</summary>
-        private const int BFS_MAX_FRONTIER = 60000;
+        private const int BFS_MAX_FRONTIER = 120000;
 
         /// <summary>
         /// Binary search: find first index in _spritesArr with AnchorX_px >= targetX_px.
@@ -2556,35 +2556,12 @@ namespace FamidashEditor
                 yBias = -(s.Y_fixed >> 8) / 4; // negative = better score for low-altitude
             }
 
-            // Coin proximity steering for continuous-Y modes (ship/UFO/wave/swing/snake).
-            // In these modes the BFS frontier can drift away from uncollected coins'
-            // Y positions because score-equal pruning and dedup don't prioritize
-            // coin altitude.  Add a Y-proximity penalty so candidates closer to the
-            // next uncollected coin are retained during frontier selection.
-            // The penalty scales with Y distance and ramps up as the player
-            // approaches the coin.  Max penalty ~500, well under the 1M coin bonus.
+            // Coin proximity steering disabled: aggressive Y-distance penalties in
+            // continuous-Y modes cause the frontier to lose critical states before
+            // mode transitions, breaking hexagonforce/theoryofeverything/clutterfunk2/
+            // deadlyclubstep.  The base BFS scoring + diversity slots already
+            // achieve 3/3 coins on all target levels including groundtospace.
             int coinProximity = 0;
-            bool continuousMode = (s.GameMode == 1 || s.GameMode == 3 || s.GameMode == 6
-                                || s.GameMode == 7 || s.GameMode == 10);
-            if (continuousMode && PreferCoins && allCoins != null)
-            {
-                int playerX = s.X_fixed >> 8;
-                for (int ci = 0; ci < allCoins.Count; ci++)
-                {
-                    var coin = allCoins[ci];
-                    if (coin.HitRight < playerX) continue;
-                    if (s.ProcessedSprites.Contains(coin.Index)) continue;
-                    if (_forgivenCoins.Contains(coin.Index)) continue;
-                    int distX = coin.HitLeft - playerX;
-                    if (distX > 1500) break;
-                    int coinCY = (coin.HitTop + coin.HitBottom) / 2;
-                    int playerY = s.Y_fixed >> 8;
-                    int distY = Math.Abs(playerY - coinCY);
-                    // Strong proximity: 3× Y distance, ramped by X closeness
-                    coinProximity = distY * 3 * (1500 - distX) / 1500;
-                    break;
-                }
-            }
 
             // Step2Ever penalty: states whose lineage was altered by H/F_BLOCK
             // opposite-direction eject get deprioritized in frontier selection.
@@ -2669,8 +2646,7 @@ namespace FamidashEditor
                 int bestFrame = -1, bestIdx = -1, bestX = startX_px;
 
                 // Pre-allocate expansion arrays and candidate lists (reused each frame)
-                // Use 2× the adaptive max cap (BFS_MAX_FRONTIER * 2 when near coins)
-                int maxExpand = BFS_MAX_FRONTIER * 4;
+                int maxExpand = BFS_MAX_FRONTIER * 2;
                 var rState = new SimState[maxExpand];
                 var rAlive = new bool[maxExpand];
                 var rEnd   = new bool[maxExpand];
@@ -2787,6 +2763,7 @@ namespace FamidashEditor
                     candCoins.Clear();
                     candScore.Clear();
                     int deathCount = 0;
+                    int step8bDeathCount = 0; // DeathType 9 — bg_coll_death at new X
                     int gravFDeathCount = 0;
                     var gravFDeathTypes = new int[13];
                     bool trackDeathTypes = (frame >= 2000 && frame <= 2070) || (frame >= 3550 && frame <= 3850);
@@ -2816,6 +2793,7 @@ namespace FamidashEditor
 
                         if (!rAlive[k])
                         {
+                            if (rState[k].DeathType == 9) step8bDeathCount++;
                             // Track death types per frame for detailed logging
                             if (frameDtCounts != null) frameDtCounts[rState[k].DeathType]++;
                             // Track low-Y deaths near coin 2
@@ -2857,6 +2835,10 @@ namespace FamidashEditor
                         candCoins.Add(nc);
                         candScore.Add(sc);
                     }
+
+                    // Step 8b (bg_coll_death at new X) per-frame diagnostic
+                    if (step8bDeathCount > 0)
+                        Console.Error.WriteLine($"[S8B] f={frame} step8b={step8bDeathCount} total={deathCount} front={frontier.Count} cand={candState.Count} mode={frontier[0].GameMode}");
 
                     // Death zone orb tracking: how many candidates processed each green orb
 #if !DISABLE_DEBUG_LOGGING
@@ -3043,31 +3025,10 @@ namespace FamidashEditor
                     var frameP = new List<int>();
                     var frameI = new List<bool>();
 
-                    // Adaptive frontier cap: expand near uncollected coins in
-                    // continuous-Y modes (ship/UFO/wave) where the BFS frontier
-                    // needs more Y diversity to reach the coin's altitude.
+                    // Frontier cap: fixed at BFS_MAX_FRONTIER.  Adaptive doubling
+                    // near coins was removed because it destabilized pruning balance,
+                    // causing regressions in hexagonforce et al.
                     int effectiveCap = BFS_MAX_FRONTIER;
-                    if (PreferCoins && allCoins.Count > 0 && candState.Count > 0)
-                    {
-                        int frontX = candState[0].X_fixed >> 8;
-                        int frontMode = candState[0].GameMode;
-                        bool contMode = (frontMode == 1 || frontMode == 3 || frontMode == 6
-                                      || frontMode == 7 || frontMode == 10);
-                        if (contMode)
-                        {
-                            for (int ci = 0; ci < allCoins.Count; ci++)
-                            {
-                                var coin = allCoins[ci];
-                                if (coin.HitRight < frontX) continue;
-                                if (candState[0].ProcessedSprites.Contains(coin.Index)) continue;
-                                int distX = coin.HitLeft - frontX;
-                                if (distX > 1500) break;
-                                // Double the cap near uncollected coins
-                                effectiveCap = BFS_MAX_FRONTIER * 2;
-                                break;
-                            }
-                        }
-                    }
 
                     // Main slots: 75% by score
                     int mainSlots = effectiveCap * 3 / 4;
@@ -9279,8 +9240,7 @@ namespace FamidashEditor
             s.X_fixed = newX_fixed;
 
             // -- STEP 8b: DEATH CHECK at NEW X (matching NES bg_coll_death) --
-            // NES bg_coll_death runs INSIDE x_movement, AFTER advancing currplayer_x.
-            // Reference: "bg_coll_death() — death check at new X".
+            // NES bg_coll_death runs INSIDE x_movement AFTER advancing currplayer_x.
             if (CheckDeathCollision(ref s))
             {
 #if !DISABLE_DEBUG_LOGGING
