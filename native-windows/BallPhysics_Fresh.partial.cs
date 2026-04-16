@@ -50,6 +50,7 @@ namespace FamidashEditor
                     if (orbActivated)
                     {
                         playerVelY_fixed = tempVelY;
+                        orbhitonthisframe[currplayer] = true;
                         AppendSimDebug($"[BALL] Orb activated! New velY={playerVelY_fixed}");
                         
                         // Consume the X press if it was used for orb
@@ -164,7 +165,8 @@ namespace FamidashEditor
                 AppendSimDebug($"[BALL_FLIP_CHECK] pressJump={pressJump} holdJump={holdJump} isGrounded={isGrounded} currplayer={currplayer} orbHoldConsumed={orbHoldConsumedKeyStillDown[currplayer]} orbHoldSuppress={orbHoldSuppressing[currplayer]} ballSwitched={ballSwitched[currplayer]} ballFlipBuffer={ballFlipBuffer[currplayer]}");
                 
                 // Path 1: Fresh press — flip directly if grounded, otherwise buffer for landing
-                if (pressJump && !orbHoldConsumedKeyStillDown[currplayer] && !orbHoldSuppressing[currplayer])
+                // NES: orbhitonthisframe suppresses ball flip when an orb was activated this frame
+                if (pressJump && !orbhitonthisframe[currplayer] && !orbHoldConsumedKeyStillDown[currplayer] && !orbHoldSuppressing[currplayer])
                 {
                     if (isGrounded)
                     {
@@ -179,7 +181,7 @@ namespace FamidashEditor
                     orbBufferActive[currplayer] = true; // Keep for orb system
                 }
                 // Path 2: Buffered landing flip — countdown-based, matching PF's BallInputBuffer
-                else if (ballFlipBuffer[currplayer] > 0 && !ballSwitched[currplayer] && isGrounded)
+                else if (ballFlipBuffer[currplayer] > 0 && !orbhitonthisframe[currplayer] && !ballSwitched[currplayer] && isGrounded)
                 {
                     shouldFlip = true;
                 }

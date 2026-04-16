@@ -171,6 +171,17 @@ namespace FamidashEditor
             int playerTop_px = playerY_px;
             int playerBottom_px = playerY_px + playerH - 1;
 
+            // PF-matching "last wins" orb selection: when multiple orbs overlap
+            // the player simultaneously, PF's ProcessSprites overwrites the
+            // pending orb with each subsequent overlap, so the LAST sprite
+            // (highest index) wins.  Record the candidate here and activate
+            // after the full scan to match that behavior.
+            int pendingOrbIdx = -1;
+            int pendingOrbSi = -1;
+            int pendingOrbType = -1;
+            bool pendingIsMulti = false;
+            bool pendingShouldActivate = false;
+
             // Scan all sprites for orb collisions
             for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
             {
@@ -207,18 +218,15 @@ namespace FamidashEditor
                     if (xPressed && !orbHoldConsumedKeyStillDown[currplayer] && !orbHoldSuppressing[currplayer])
                     {
                         shouldActivate = true;
-                        orbBufferActive[currplayer] = true;
                     }
                     // While X is held and buffer is active, continue activating orbs
                     else if (xHeld && orbBufferActive[currplayer] && !orbHoldSuppressing[currplayer])
                     {
                         shouldActivate = true;
-                        // Keep buffer active - will be cleared on activation or release
                     }
                     // If X is held but buffer not active yet, set it
                     else if (xHeld && !orbBufferActive[currplayer] && !orbHoldSuppressing[currplayer] && !orbHoldConsumedKeyStillDown[currplayer])
                     {
-                        orbBufferActive[currplayer] = true;
                         shouldActivate = true;
                     }
                 }
@@ -233,56 +241,67 @@ namespace FamidashEditor
                 
                 if (shouldActivate)
                 {
-                    try { AppendSimDebug($"[ORB] ACTIVATING orb 0x{spriteType:X2}!"); } catch { }
-                    
-                    // NES sprite_gamemode_main() calls clear_slope_stuff() before orb activation
-                    // This prevents residual slope exit velocity from corrupting the orb velocity
-                    ClearSlopeStuff();
-                    
-                    // Activate the orb!
-                    ActivateOrb(spriteType, gamemode, gravityInverted, mini, ref velocityY);
-                    
-                    // Mark as activated per-player (prevents same player re-activating)
-                    if (!isMultiOrb)
-                    {
-                        playerProcessedOrbs[currplayer].Add(idx);
-                        if (!dual) orbActivated[idx] = true;
+                    // Record this as the pending orb — later overlapping orbs
+                    // will overwrite it, matching PF's "last wins" behavior.
+                    pendingOrbIdx = idx;
+                    pendingOrbSi = _si;
+                    pendingOrbType = spriteType;
+                    pendingIsMulti = isMultiOrb;
+                    pendingShouldActivate = true;
+                }
+            }
+            
+            // Activate the last (highest-index) overlapping orb, matching PF
+            if (pendingShouldActivate)
+            {
+                try { AppendSimDebug($"[ORB] ACTIVATING orb 0x{pendingOrbType:X2}!"); } catch { }
+                
+                // NES sprite_gamemode_main() calls clear_slope_stuff() before orb activation
+                // This prevents residual slope exit velocity from corrupting the orb velocity
+                ClearSlopeStuff();
+                
+                // Activate the orb!
+                ActivateOrb(pendingOrbType, gamemode, gravityInverted, mini, ref velocityY);
+                
+                // Set buffer state that would have been set during the scan
+                if (canBuffer)
+                    orbBufferActive[currplayer] = true;
+                
+                // Mark as activated per-player (prevents same player re-activating)
+                if (!pendingIsMulti)
+                {
+                    playerProcessedOrbs[currplayer].Add(pendingOrbIdx);
+                    if (!dual) orbActivated[pendingOrbIdx] = true;
 
-                        // Also mark all OTHER currently-overlapping tiles of the same
-                        // sprite type as processed.  Multi-tile orbs that lack
-                        // spriteAnchors entries appear as independent tiles; without
-                        // this sweep the player would re-trigger the same physical
-                        // orb on adjacent tiles in a later frame (matching PF, which
-                        // adds every overlapping tile's index to ProcessedSprites).
-                        for (int _si2 = 0; _si2 < nonEmptySpriteIndices.Length; _si2++)
+                    // Also mark all OTHER currently-overlapping tiles of the same
+                    // sprite type as processed.  Multi-tile orbs that lack
+                    // spriteAnchors entries appear as independent tiles; without
+                    // this sweep the player would re-trigger the same physical
+                    // orb on adjacent tiles in a later frame (matching PF, which
+                    // adds every overlapping tile's index to ProcessedSprites).
+                    for (int _si2 = 0; _si2 < nonEmptySpriteIndices.Length; _si2++)
+                    {
+                        if (_si2 == pendingOrbSi) continue;
+                        int idx2 = nonEmptySpriteIndices[_si2];
+                        if (sprites[idx2] != pendingOrbType) continue;
+                        if (spriteAnchors != null && spriteAnchors.ContainsKey(idx2)) continue;
+                        if (playerProcessedOrbs[currplayer].Contains(idx2)) continue;
+                        if (CheckOrbCollision(idx2, pendingOrbType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                         {
-                            if (_si2 == _si) continue;
-                            int idx2 = nonEmptySpriteIndices[_si2];
-                            if (sprites[idx2] != spriteType) continue;
-                            if (spriteAnchors != null && spriteAnchors.ContainsKey(idx2)) continue;
-                            if (playerProcessedOrbs[currplayer].Contains(idx2)) continue;
-                            if (CheckOrbCollision(idx2, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
-                            {
-                                playerProcessedOrbs[currplayer].Add(idx2);
-                                if (!dual) orbActivated[idx2] = true;
-                            }
+                            playerProcessedOrbs[currplayer].Add(idx2);
+                            if (!dual) orbActivated[idx2] = true;
                         }
                     }
-                    
-                    orbActivatedThisFrame = true;
-                    activatedOrbType = spriteType;
-                    orbHoldConsumedKeyStillDown[currplayer] = true;
-                    // Clear buffer on orb activation - require fresh press/hold for next orb
-                    orbBufferActive[currplayer] = false;
-                    ballInputBufferCountdown[currplayer] = 0;
-                    
-                    // Only one orb per frame
-                    return (true, activatedOrbType);
                 }
-                else
-                {
-                    try { AppendSimDebug($"[ORB] Orb NOT activated (collision but no input): xPressed={xPressed}, xHeld={xHeld}, canBuffer={canBuffer}, orbBufferActive[currplayer] ={orbBufferActive}, orbHoldSuppressing[currplayer] ={orbHoldSuppressing}, orbHoldConsumedKeyStillDown[currplayer] ={orbHoldConsumedKeyStillDown}, alreadyActivated={orbActivated[idx]}"); } catch { }
-                }
+                
+                orbActivatedThisFrame = true;
+                activatedOrbType = pendingOrbType;
+                orbHoldConsumedKeyStillDown[currplayer] = true;
+                // Clear buffer on orb activation - require fresh press/hold for next orb
+                orbBufferActive[currplayer] = false;
+                ballInputBufferCountdown[currplayer] = 0;
+                
+                return (true, activatedOrbType);
             }
             
             return (orbActivatedThisFrame, activatedOrbType);

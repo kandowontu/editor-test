@@ -153,6 +153,7 @@ namespace FamidashEditor
         private readonly bool simDebugWriteToFile = true;
 #pragma warning restore CS0414
         private readonly string simDebugLogPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"famidash_sim_debug_{System.DateTime.UtcNow:yyyyMMdd_HHmmss}.txt");
+        private static readonly object simDebugFileLock = new object();
 
         private string _levelName = "";
         private bool _levelNameLogged;
@@ -191,11 +192,14 @@ namespace FamidashEditor
 #if !DISABLE_DEBUG_LOGGING
                 if (simDebugWriteToFile)
                 {
-                    try
+                    lock (simDebugFileLock)
                     {
-                        System.IO.File.AppendAllText(simDebugLogPath, t + System.Environment.NewLine);
+                        try
+                        {
+                            System.IO.File.AppendAllText(simDebugLogPath, t + System.Environment.NewLine);
+                        }
+                        catch { }
                     }
-                    catch { }
                 }
             }
             catch { }
@@ -481,18 +485,12 @@ namespace FamidashEditor
                 }
                 else if (playerVelY_fixed == 0)
                 {
-                    // Check if actively charging - if so, use charge-based rotation
+                    // NES football: when vel==0, always reset high byte to 0 first (upright),
+                    // then check chargepower for backward tilt override.
                     if (footballChargeFrames > 0)
                     {
-                        // While charging on ground, rotate backwards based on charge power (matches NES cube behavior)
-                        // chargepower < 10:  frame 23
-                        // chargepower < 20:  frame 22
-                        // chargepower < 30:  frame 21
-                        // chargepower < 38:  frame 20
-                        // chargepower < 50:  frame 20
-                        // chargepower >= 50: frame 6
-                        
-                        int frameToSet = 0;
+                        // While charging on ground, rotate backwards based on charge power
+                        int frameToSet;
                         if (footballChargeFrames < 10)
                             frameToSet = 23;
                         else if (footballChargeFrames < 20)
@@ -506,55 +504,44 @@ namespace FamidashEditor
                         else
                             frameToSet = 6;
                         
-                        footballRotate_fixed = (frameToSet << 8) | 0;  // Set frame, zero accumulator
+                        footballRotate_fixed = frameToSet << 8;
                         AppendSimDebug($"[FOOTBALL_ROT] CHARGE: chargeFrames={footballChargeFrames} -> frame={frameToSet}");
                     }
                     else
                     {
-                        // No charge power - static at frame 0 (upright)
+                        // No charge — static at frame 0 (upright)
                         footballRotate_fixed = 0;
-                        AppendSimDebug($"[FOOTBALL_ROT] GROUND: Reset to frame 0");
                     }
                 }
                 else
                 {
-                    // Velocity is non-zero: accumulate gravity increment (use CUBE_GRAVITY like cube mode)
-                    int frameIndex = (footballRotate_fixed >> 8) & 0xFF;  // Extract high byte
-                    int subFrame = footballRotate_fixed & 0xFF;            // Extract low byte (accumulator)
+                    // Velocity is non-zero (airborne): accumulate gravity like cube rotation
+                    int frameIndex = (footballRotate_fixed >> 8) & 0xFF;
+                    int subFrame = footballRotate_fixed & 0xFF;
                     
                     int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
+                    // NES: when gravity flipped, subtract instead of add (rotate backwards)
+                    if (gravityFlipped) gravityIncrement = -gravityIncrement;
                     
-                    // Add gravity to low byte, detect overflow using simple comparison
-                    int result = subFrame + gravityIncrement;
-                    bool overflowed = result >= 256;
+                    subFrame += gravityIncrement;
                     
-                    if (overflowed)
+                    // Handle overflow (positive wrap)
+                    if (subFrame >= 256)
                     {
-                        // Low byte overflowed - advance frame and wrap low byte
-                        subFrame = result - 256;
                         frameIndex++;
-                        
-                        // Wrap at 24 frames (0-23) for full 360-degree rotation
-                        if (frameIndex >= 24)
-                        {
-                            frameIndex = 0;
-                        }
+                        subFrame -= 256;
+                        if (frameIndex >= 24) frameIndex = 0;
                     }
-                    else
+                    // Handle underflow (negative wrap)
+                    else if (subFrame < 0)
                     {
-                        // No overflow - just update low byte
-                        subFrame = result;
+                        frameIndex--;
+                        subFrame += 256;
+                        if (frameIndex < 0) frameIndex = 23;
                     }
                     
-                    AppendSimDebug($"[FOOTBALL_ROT] frame={frameIndex} sub={subFrame} (added 0x{gravityIncrement:X2})");
-                    
-                    // Ensure subFrame is properly masked to low byte (0-255) and frameIndex to 0-23
-                    subFrame = subFrame & 0xFF;
-                    frameIndex = frameIndex % 24;
-                    if (frameIndex < 0) frameIndex += 24;
-                    
-                    // Recombine into 16-bit value: (frame << 8) | accumulator
-                    footballRotate_fixed = (frameIndex << 8) | subFrame;
+                    footballRotate_fixed = (frameIndex << 8) | (subFrame & 0xFF);
+                    AppendSimDebug($"[FOOTBALL_ROT] AIR: frame={frameIndex} sub={subFrame & 0xFF} (grav=0x{gravityIncrement:X2})");
                 }
             }
             catch { }
@@ -751,7 +738,7 @@ namespace FamidashEditor
                 // Apply flip table based on frame index
                 // Flip table maps 24 frames with flip flags for 360-degree rotation
                 
-                return s_footballFlipTable[frameIndex & 0x17];  // Return frame (low 3 bits) + flip flags (high bits)
+                return s_footballFlipTable[frameIndex];  // Return frame (low 3 bits) + flip flags (high bits)
             }
             catch { return 0; }
         }
@@ -1672,6 +1659,75 @@ namespace FamidashEditor
                 default:
                     return 0; // Fallback
             }
+        }
+
+        /// <summary>
+        /// Returns true when the given local pixel (0..15, 0..15) is inside the solid
+        /// region of a slope tile.  Uses the same tmp7/tmp4 formula as the NES
+        /// bg_coll_slope() routine so the visualisation exactly matches collision.
+        /// </summary>
+        private static bool IsSlopeSolidAtPixel(MetatileCollision col, int localX, int localY)
+        {
+            int tmp7, tmp4;
+            switch (col)
+            {
+                // 45-degree
+                case MetatileCollision.COL_SLOPE_RD45:
+                    tmp7 = (localX & 0x0f) ^ 0x0f; tmp4 = localY & 0x0f; break;
+                case MetatileCollision.COL_SLOPE_LD45:
+                    tmp7 = localX & 0x0f; tmp4 = localY & 0x0f; break;
+                case MetatileCollision.COL_SLOPE_RU45:
+                    tmp7 = (localX & 0x0f) ^ 0x0f; tmp4 = (localY & 0x0f) ^ 0x0f; break;
+                case MetatileCollision.COL_SLOPE_LU45:
+                    tmp7 = localX & 0x0f; tmp4 = (localY & 0x0f) ^ 0x0f; break;
+
+                // 22-degree
+                case MetatileCollision.COL_SLOPE_RD22_RIGHT:
+                    tmp7 = ((localX >> 1) & 0x07) ^ 0x0f; tmp4 = localY & 0x0f; break;
+                case MetatileCollision.COL_SLOPE_RD22_LEFT:
+                    tmp7 = (((localX >> 1) | 0x8) & 0x0f) ^ 0x0f; tmp4 = localY & 0x0f; break;
+                case MetatileCollision.COL_SLOPE_LD22_RIGHT:
+                    tmp7 = (localX >> 1) & 0x07; tmp4 = localY & 0x0f; break;
+                case MetatileCollision.COL_SLOPE_LD22_LEFT:
+                    tmp7 = ((localX >> 1) | 0x8) & 0x0f; tmp4 = localY & 0x0f; break;
+                case MetatileCollision.COL_SLOPE_RU22_RIGHT:
+                    tmp7 = ((localX >> 1) & 0x07) ^ 0x0f; tmp4 = (localY & 0x0f) ^ 0x0f; break;
+                case MetatileCollision.COL_SLOPE_RU22_LEFT:
+                    tmp7 = (((localX >> 1) | 0x8) & 0x0f) ^ 0x0f; tmp4 = (localY & 0x0f) ^ 0x0f; break;
+                case MetatileCollision.COL_SLOPE_LU22_RIGHT:
+                    tmp7 = (localX >> 1) & 0x07; tmp4 = (localY & 0x0f) ^ 0x0f; break;
+                case MetatileCollision.COL_SLOPE_LU22_LEFT:
+                    tmp7 = ((localX >> 1) | 0x8) & 0x0f; tmp4 = (localY & 0x0f) ^ 0x0f; break;
+
+                // 66-degree (steep) — some columns are unconditionally empty or solid
+                case MetatileCollision.COL_SLOPE_RD66_TOP:
+                    if ((localX & 0x0f) < 8) return false;
+                    tmp7 = (((localX & 0x07) << 1) & 0x0f) ^ 0x0f; tmp4 = localY & 0x0f; break;
+                case MetatileCollision.COL_SLOPE_RD66_BOT:
+                    if ((localX & 0x0f) >= 8) return true;
+                    tmp7 = (((localX & 0x0f) << 1) & 0x0f) ^ 0x0f; tmp4 = localY & 0x0f; break;
+                case MetatileCollision.COL_SLOPE_LD66_TOP:
+                    if ((localX & 0x0f) >= 8) return false;
+                    tmp7 = ((localX & 0x07) << 1) & 0x0f; tmp4 = localY & 0x0f; break;
+                case MetatileCollision.COL_SLOPE_LD66_BOT:
+                    if ((localX & 0x0f) < 8) return true;
+                    tmp7 = ((localX & 0x0f) << 1) & 0x0f; tmp4 = localY & 0x0f; break;
+                case MetatileCollision.COL_SLOPE_RU66_TOP:
+                    if ((localX & 0x0f) < 8) return false;
+                    tmp7 = (((localX & 0x07) << 1) & 0x0f) ^ 0x0f; tmp4 = (localY & 0x0f) ^ 0x0f; break;
+                case MetatileCollision.COL_SLOPE_RU66_BOT:
+                    if ((localX & 0x0f) >= 8) return true;
+                    tmp7 = (((localX & 0x0f) << 1) & 0x0f) ^ 0x0f; tmp4 = (localY & 0x0f) ^ 0x0f; break;
+                case MetatileCollision.COL_SLOPE_LU66_TOP:
+                    if ((localX & 0x0f) >= 8) return false;
+                    tmp7 = ((localX & 0x07) << 1) & 0x0f; tmp4 = (localY & 0x0f) ^ 0x0f; break;
+                case MetatileCollision.COL_SLOPE_LU66_BOT:
+                    if ((localX & 0x0f) < 8) return true;
+                    tmp7 = ((localX & 0x0f) << 1) & 0x0f; tmp4 = (localY & 0x0f) ^ 0x0f; break;
+
+                default: return false;
+            }
+            return (byte)tmp4 >= (byte)tmp7;
         }
 
         /// <summary>
@@ -4590,8 +4646,8 @@ namespace FamidashEditor
                 // Automatic camera-follow while physics is active: ensure player stays within vertical thresholds
                 try
                 {
-                    // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9), or when nocamlockforced
-                    bool camFollowsY = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
+                    // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9)/football(11), or when nocamlockforced
+                    bool camFollowsY = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || currentGameMode == 11 || nocamlockforced);
                     if (physicsEnabled && jumpedOnce && !paused)
                     {
                         if ((!dual || twoplayer) && camFollowsY)
@@ -4643,7 +4699,7 @@ namespace FamidashEditor
                 // that fly out of the cam-locked viewport are killed.
                 try
                 {
-                    if (physicsEnabled && jumpedOnce && !deathTriggered && !MainWindow.Option_NoDeath)
+                    if (physicsEnabled && jumpedOnce && !paused && !deathTriggered && !MainWindow.Option_NoDeath)
                     {
                         int screenRelY = playerY_fixed - cameraY_fixed;
                         if (!wrapMode)
@@ -5107,10 +5163,10 @@ namespace FamidashEditor
                 cameraY_fixed = maxY_fixed;
             }
 
-            // If starting in a camlock game mode (ship/ball/UFO/spider/wave/swing/snake/football),
+            // If starting in a camlock game mode (ship/ball/UFO/spider/wave/swing/snake),
             // initialize targetCameraY to match the initial camera Y so the camera doesn't
             // snap wildly to 0 on the first frame.
-            if (currentGameMode != 0 && currentGameMode != 4 && currentGameMode != 8 && currentGameMode != 9)
+            if (currentGameMode != 0 && currentGameMode != 4 && currentGameMode != 8 && currentGameMode != 9 && currentGameMode != 11)
             {
                 targetCameraY_fixed = cameraY_fixed;
             }
@@ -5780,16 +5836,39 @@ namespace FamidashEditor
                 {
                     if (!e.IsRepeat)
                     {
+                        bool newState = !ShowTileHitboxes;
+                        ShowTileHitboxes = newState;
+                        try
+                        {
+                            MainWindow.Option_ShowTileHitboxes = newState;
+                            if (Application.Current != null)
+                            {
+                                try { if (Application.Current.MainWindow is MainWindow mw && mw.MenuOptionTileHitboxes != null) mw.MenuOptionTileHitboxes.IsChecked = newState; } catch { }
+                                foreach (Window w2 in Application.Current.Windows)
+                                {
+                                    try { if (w2 is SimulatorWindow sw2) sw2.ShowTileHitboxes = newState; } catch { }
+                                }
+                            }
+                        }
+                        catch { }
+                        try { MainWindow.ShowTransientInfo($"Show Tile Hitboxes: {(newState ? "ON" : "OFF")}", this, 1500); } catch { }
+                    }
+                }
+                catch { }
+            }
+            if (e.Key == Key.F3)
+            {
+                try
+                {
+                    if (!e.IsRepeat)
+                    {
                         ShowSpriteHitboxes = !ShowSpriteHitboxes;
-                        // Mirror the editor's canonical option so F2 in simulator updates visuals everywhere
                         try
                         {
                             MainWindow.Option_ShowSimulatorSpriteHitboxes = ShowSpriteHitboxes;
                             if (Application.Current != null)
                             {
-                                // Update the main menu item's checked state if present
                                 try { if (Application.Current.MainWindow is MainWindow mw && mw.MenuOptionShowSpriteHitboxes != null) mw.MenuOptionShowSpriteHitboxes.IsChecked = ShowSpriteHitboxes; } catch { }
-                                // Propagate to any other open simulators
                                 foreach (Window w2 in Application.Current.Windows)
                                 {
                                     try { if (w2 is SimulatorWindow sw2) sw2.ShowSpriteHitboxes = ShowSpriteHitboxes; } catch { }
@@ -5836,6 +5915,9 @@ namespace FamidashEditor
                             try { if (this.Owner is MainWindow mw) { var t = mw.StartSimulatorPlaybackAsync(); if (t != null) await t; } } catch { }
                             try { SimulateNumericStep(); } catch { }
                             try { RenderFrame(); } catch { }
+                            // Reset time accumulator so the timer loop doesn't double-step
+                            simAccumulatedMs = 0;
+                            simLastMs = simStopwatch.Elapsed.TotalMilliseconds;
                         }
                         finally
                         {
@@ -6042,6 +6124,9 @@ namespace FamidashEditor
                         }
                         try { SimulateNumericStep(); } catch { }
                         try { RenderFrame(); } catch { }
+                        // Reset time accumulator so the timer loop doesn't double-step
+                        simAccumulatedMs = 0;
+                        simLastMs = simStopwatch.Elapsed.TotalMilliseconds;
                     }
                     finally
                     {
@@ -6077,6 +6162,10 @@ namespace FamidashEditor
                 if (GameModeComboBox.SelectedIndex >= 0)
                 {
                     currentGameMode = GameModeComboBox.SelectedIndex;
+                    // If switching to a camlock mode, sync targetCameraY to current
+                    // camera so the camera stays stable instead of scrolling to 0.
+                    if (currentGameMode != 0 && currentGameMode != 4 && currentGameMode != 8 && currentGameMode != 9 && currentGameMode != 11)
+                        targetCameraY_fixed = cameraY_fixed;
                     try { UpdatePlayerSpeed(); } catch { }
                     try { UpdateEffectiveGravity(); } catch { }
                     try { UpdatePlayerImageForMode(); } catch { }
@@ -6386,12 +6475,14 @@ namespace FamidashEditor
                         cameraX_fixed = 0;
                     }
                     int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                    cameraY_fixed = Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8));
+                    int grReserved_sp = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                    int minCameraY_fixed = -(grReserved_sp * TILE) << 8;
+                    cameraY_fixed = Math.Max(minCameraY_fixed, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
                 }
                 else
                 {
                     cameraX_fixed = 0;
-                    // Try NES scroll Y config first, fall back to map-bottom default
+                    // Try NES scroll Y config first, fall back to centering on player
                     int? cfgScrollY = ComputeScrollYFixed();
                     if (cfgScrollY.HasValue)
                     {
@@ -6400,7 +6491,9 @@ namespace FamidashEditor
                     else
                     {
                         int maxY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                        cameraY_fixed = maxY_fixed;
+                        int grReserved = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                        int minY_fixed = -(grReserved * TILE) << 8;
+                        cameraY_fixed = Math.Max(minY_fixed, Math.Min(maxY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
                     }
                 }
 
@@ -6420,7 +6513,7 @@ namespace FamidashEditor
                 wrapMode = false;
                 // For camlock game modes, initialize targetCameraY to match current
                 // cameraY so the camera doesn't snap wildly on the first frame.
-                if (currentGameMode != 0 && currentGameMode != 4 && currentGameMode != 8 && currentGameMode != 9)
+                if (currentGameMode != 0 && currentGameMode != 4 && currentGameMode != 8 && currentGameMode != 9 && currentGameMode != 11)
                     targetCameraY_fixed = cameraY_fixed;
                 else
                     targetCameraY_fixed = 0;
@@ -6568,6 +6661,14 @@ namespace FamidashEditor
                 {
                     cameraY_fixed = scrollY.Value;
                 }
+                else if (spawnY.HasValue)
+                {
+                    // Center camera on spawn position when no scroll config
+                    int maxCamY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                    int grReserved = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                    int minCamY_fixed = -(grReserved * TILE) << 8;
+                    cameraY_fixed = Math.Max(minCamY_fixed, Math.Min(maxCamY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
+                }
             }
             catch { }
         }
@@ -6670,7 +6771,9 @@ namespace FamidashEditor
                         
                         // Position camera Y centered on player
                         int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                        cameraY_fixed = Math.Max(0, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
+                        int grReserved_spm = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                        int minCameraY_fixed = -(grReserved_spm * TILE) << 8;
+                        cameraY_fixed = Math.Max(minCameraY_fixed, Math.Min(maxCameraY_fixed, playerY_fixed - ((NES_H * TILE / 2) << 8)));
                         
                         hasAppliedStartPos = true;
                         startPosX_forMusicSeek = startX_px;
@@ -6780,7 +6883,14 @@ namespace FamidashEditor
             int attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
 
             // Move the player forward in world coordinates first
-            playerX_fixed = attemptedPlayerX_fixed;
+            // CRITICAL: Skip the write-back when pathfinder is active. Even though
+            // attemptedPlayerX_fixed == playerX_fixed in that case, the read above
+            // is NOT under simLock, so SimulateNumericStep (threadpool) can change
+            // playerX_fixed between the read and this write, and writing back the
+            // stale value reverts one frame of X advancement, causing a double-step
+            // divergence on the next physics frame.
+            if (!pathfinderEnabled)
+                playerX_fixed = attemptedPlayerX_fixed;
             // When player moves horizontally while considered grounded, clear the
             // stabilization counter so walking off platforms causes immediate fall.
             // Skip this when pathfinder is active — SimulateNumericStep handles
@@ -7058,10 +7168,10 @@ namespace FamidashEditor
             }
 
                 // Automatic camera-follow while physics is active in numeric path
-                // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9), or when nocamlockforced
+                // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9)/football(11), or when nocamlockforced
                 try
                 {
-                    bool camFollowsY_2 = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
+                    bool camFollowsY_2 = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || currentGameMode == 11 || nocamlockforced);
                     if (physicsEnabled && jumpedOnce && !paused)
                     {
                         if ((!dual || twoplayer) && camFollowsY_2)
@@ -8299,28 +8409,20 @@ namespace FamidashEditor
                         }
                     }
                     
-                    // Apply flip flags if needed
-                    if (flipFlags != 0)
+                    // Apply flip flags (rotation + gravity)
+                    if (playerImage != null)
                     {
-                        if (playerImage != null)
-                        {
-                            // Apply H_FLIP and/or V_FLIP
-                            bool hFlip = (flipFlags & 0x40) != 0;
-                            bool vFlip = (flipFlags & 0x80) != 0;
-                            playerImage.RenderTransform = new ScaleTransform(
-                                hFlip ? -1 : 1,
-                                vFlip ? -1 : 1
-                            );
-                            playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                        }
-                    }
-                    else
-                    {
-                        // Reset flip
-                        if (playerImage != null)
-                        {
-                            playerImage.RenderTransform = new ScaleTransform(1, 1);
-                        }
+                        bool hFlip = (flipFlags & 0x40) != 0;
+                        bool vFlip = (flipFlags & 0x80) != 0;
+                        // NES: gravity flip is handled by the flip table (cube uses drawcube_sprite_table
+                        // which already encodes the rotation direction via H/V flags).
+                        // But we also need to visually flip when gravity is reversed.
+                        if (gravityReversed) vFlip = !vFlip;
+                        playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                        playerImage.RenderTransform = new ScaleTransform(
+                            hFlip ? -1 : 1,
+                            vFlip ? -1 : 1
+                        );
                     }
                 }
                 catch { }
@@ -9684,8 +9786,11 @@ namespace FamidashEditor
                                            col == MetatileCollision.COL_BOTTOM_RIGHT_SPIKE ||
                                            col == MetatileCollision.COL_BOTTOM_SPIKES;
 
-                            // Also do pixel-by-pixel for any tile with death collision
-                            bool needsPixelByPixel = isComplex || hasDeath;
+                            // Slopes need pixel-by-pixel rendering for their diagonal surfaces
+                            bool isSlope = IsSlopeTile(col);
+
+                            // Also do pixel-by-pixel for any tile with death collision or slopes
+                            bool needsPixelByPixel = isComplex || hasDeath || isSlope;
 
                             if (needsPixelByPixel)
                             {
@@ -9717,9 +9822,10 @@ namespace FamidashEditor
                                     {
                                         bool hasCollision = TileOccupiesPixel(col, lx, ly);
                                         bool isDeathPixel = MetatileCollisionTable.TileKillsAtPixel(col, lx, ly);
+                                        bool isSlopePixel = isSlope && IsSlopeSolidAtPixel(col, lx, ly);
                                         
-                                        // Skip pixels that have neither collision nor death
-                                        if (!hasCollision && !isDeathPixel) continue;
+                                        // Skip pixels that have neither collision, death, nor slope
+                                        if (!hasCollision && !isDeathPixel && !isSlopePixel) continue;
                                         
                                         // For pure death tiles, only render death pixels
                                         // For mixed tiles, render both collision (red) and death (pink)
@@ -9742,8 +9848,8 @@ namespace FamidashEditor
                                         }
 
                                         r.Fill = isDeathPixel
-                                            ? new SolidColorBrush(Color.FromArgb(160, 0xFF, 0x50, 0xC8)) // Magenta/pink for death
-                                            : new SolidColorBrush(Color.FromArgb(160, 0xFF, 0x00, 0x00)); // Red for collision
+                                                ? new SolidColorBrush(Color.FromArgb(160, 0xFF, 0x50, 0xC8)) // Magenta/pink for death
+                                                : new SolidColorBrush(Color.FromArgb(160, 0xFF, 0x00, 0x00)); // Red for collision/slope
 
                                         r.Width = 1;
                                         r.Height = 1;
@@ -10696,7 +10802,7 @@ namespace FamidashEditor
                 if (slowMode && (simTickCount & 1) != 0)
                     return;
                 
-                AppendSimDebug($"[STEP_START] playerX_fixed=0x{playerX_fixed:X4} ({playerX_fixed >> 8}px), playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
+                AppendSimDebug($"[STEP_START] step={simTickCount} pfFrame={pfFrameIndex} playerX_fixed=0x{playerX_fixed:X4} ({playerX_fixed >> 8}px), playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
 
                 // === PATHFINDER AI INPUT INJECTION ===
                 if (pathfinderEnabled)

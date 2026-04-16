@@ -17,8 +17,10 @@ namespace FamidashEditor
             if (pressCount > 0)
             {
                 // On X press: invert gravity once and activate dash
-                gravityReversed = !gravityReversed;
-                gravityFlipped = !gravityFlipped;
+                // NES: common_dash_orb_routine() flips currplayer_gravity
+                currplayer_gravity = (byte)(currplayer_gravity == 0 ? 0xFF : 0);
+                gravityReversed = (currplayer_gravity != 0);
+                gravityFlipped = gravityReversed;
                 dashing[currplayer] = 1;  // Set to 1 for gravity dash
                 Interlocked.Exchange(ref keyXPressedCount, 0);  // Consume the press
                 
@@ -35,18 +37,19 @@ namespace FamidashEditor
                 case 0:
                     // Normal wave movement - convert horizontal velocity to vertical
                     // vel_y = !mini ? (gravity ? -vel_x : vel_x) : (gravity ? -(vel_x << 1) : (vel_x << 1))
-                    if (!miniMode)
+                    if (currplayer_mini == 0)
                     {
-                        playerVelY_fixed = gravityFlipped ? -playerVelX_fixed : playerVelX_fixed;
+                        playerVelY_fixed = currplayer_gravity != 0 ? -playerVelX_fixed : playerVelX_fixed;
                     }
                     else
                     {
-                        playerVelY_fixed = gravityFlipped ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
+                        playerVelY_fixed = currplayer_gravity != 0 ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
                     }
                     
-                    // If holding X, invert velocity (when holding, go opposite of default direction)
+                    // Invert velocity if not holding X (normal snake behavior)
+                    // NES: wave inverts on hold, but snake does NOT invert on hold
                     bool holding = IsXDownAsync() || keyXHeld;
-                    if (holding)
+                    if (!holding)
                     {
                         playerVelY_fixed = -playerVelY_fixed;
                     }

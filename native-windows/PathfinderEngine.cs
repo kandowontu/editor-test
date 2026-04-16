@@ -429,6 +429,9 @@ namespace FamidashEditor
         private int ComputeInitCameraY(int startY_px)
         {
             int maxCamY = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+            // Allow negative camera Y matching the runtime clamp so high-spawn
+            // levels (e.g. rainingtacos Y=0) aren't immediately OOB_TOP.
+            int minCamY = -(groundRowsToReserve * TILE) << 8;
             if (ConfigScrollYHi.HasValue)
             {
                 int hi = ConfigScrollYHi.Value & 0xFF;
@@ -438,9 +441,9 @@ namespace FamidashEditor
                 int pixelsFromBottom = linearMax - linearScroll;
                 int maxCamPx = (mapHeight - NES_H) * TILE;
                 int tmxCamY = Math.Max(0, maxCamPx - pixelsFromBottom);
-                return Math.Min(maxCamY, tmxCamY << 8);
+                return Math.Max(minCamY, Math.Min(maxCamY, tmxCamY << 8));
             }
-            return Math.Max(0, Math.Min(maxCamY, (startY_px << 8) - ((SCREEN_H_PX / 2) << 8)));
+            return Math.Max(minCamY, Math.Min(maxCamY, (startY_px << 8) - ((SCREEN_H_PX / 2) << 8)));
         }
 
         /// <summary>
@@ -2839,6 +2842,24 @@ namespace FamidashEditor
                     // Step 8b (bg_coll_death at new X) per-frame diagnostic
                     if (step8bDeathCount > 0)
                         Console.Error.WriteLine($"[S8B] f={frame} step8b={step8bDeathCount} total={deathCount} front={frontier.Count} cand={candState.Count} mode={frontier[0].GameMode}");
+
+                    // Ship ceiling-stuck diagnostic: dump candidate details when frontier is tiny
+                    if (Verbose && frontier.Count <= 10 && frontier.Count > 0 && frontier[0].GameMode == 1 && candState.Count > 0)
+                    {
+                        _log.WriteLine($"[SHIP_DIAG] f={frame} front={frontier.Count} cands={candState.Count} deaths={deathCount}");
+                        for (int di = 0; di < Math.Min(candState.Count, 20); di++)
+                        {
+                            var ds = candState[di];
+                            long dk = BfsQuantizeKey(ref ds);
+                            _log.WriteLine($"  cand[{di}] inp={candInput[di]} Y={ds.Y_fixed>>8} Yfx=0x{ds.Y_fixed:X} VelY=0x{ds.VelY_fixed:X} X={ds.X_fixed>>8} key=0x{dk:X16} score={candScore[di]} grav={ds.GravFlipped} mode={ds.GameMode}");
+                        }
+                        // Also dump parent states
+                        for (int di = 0; di < Math.Min(frontier.Count, 10); di++)
+                        {
+                            var ps = frontier[di];
+                            _log.WriteLine($"  parent[{di}] Y={ps.Y_fixed>>8} Yfx=0x{ps.Y_fixed:X} VelY=0x{ps.VelY_fixed:X} X={ps.X_fixed>>8}");
+                        }
+                    }
 
                     // Death zone orb tracking: how many candidates processed each green orb
 #if !DISABLE_DEBUG_LOGGING
@@ -8456,7 +8477,7 @@ namespace FamidashEditor
 
                 {
                     bool shouldFlip = false;
-                    if (input && s.BallFlipCooldown == 0)
+                    if (input && !orbHitThisFrame && s.BallFlipCooldown == 0)
                     {
                         // BallIsGrounded uses CheckFloor which doesn't detect slopes.
                         // NES ball_eject sets OnGround when on a slope, so use that
@@ -8470,7 +8491,7 @@ namespace FamidashEditor
                             s.BallInputBuffer = 8; // PF_BALL_HOLD_FRAMES
                         }
                     }
-                    else if (s.BallInputBuffer > 0 && s.BallFlipCooldown == 0 && (BallIsGrounded(ref s) || s.OnGround))
+                    else if (s.BallInputBuffer > 0 && !orbHitThisFrame && s.BallFlipCooldown == 0 && (BallIsGrounded(ref s) || s.OnGround))
                     {
                         shouldFlip = true;
                     }
