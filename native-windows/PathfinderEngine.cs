@@ -12634,6 +12634,65 @@ namespace FamidashEditor
 #endif
                         ApplyTeleportPortal(ref s, sp, sid, currentX_px);
                         s.ProcessedSprites.Add(sp.Index);
+                        // Refresh collision bounds — teleport changed s.Y_fixed, so
+                        // subsequent pad/orb checks must use the new position (matches
+                        // SIM where CheckPadCollision runs after CheckTeleportPortals
+                        // and recomputes bounds from the updated Y).
+                        playerY_px = s.Y_fixed >> 8;
+                        playerTop = playerY_px + hbOffY;
+                        playerBottom = playerTop + hbH;
+                        // SIM checks pads/orbs AFTER teleport portals in separate
+                        // passes, so all pads/orbs are tested against the post-teleport
+                        // position. In the PF's single-loop design, pads/orbs with a
+                        // lower sprite index were already checked at the old Y and missed.
+                        // Re-scan from the beginning for pads and orbs only.
+                        for (int _ri = sprStart; _ri < sprLen; _ri++)
+                        {
+                            ref readonly var rsp = ref sprArr[_ri];
+                            if (rsp.HitRight < currentX_px) continue;
+                            if (rsp.AnchorX_px - TILE > playerRight + TILE) break;
+                            int rsid = rsp.SpriteId;
+                            // Only re-check pads (not added to ProcessedSprites, so may fire again)
+                            if (IsYellowPad(rsid) || IsPinkPad(rsid) || IsRedPad(rsid) || IsBluePad(rsid) || IsGreenPad(rsid))
+                            {
+                                if (IsBluePad(rsid))
+                                {
+                                    bool isBottomBluePad = (rsid == 0x0D || rsid == 0xFD);
+                                    if (isBottomBluePad && s.GravFlipped) continue;
+                                    if (!isBottomBluePad && !s.GravFlipped) continue;
+                                }
+                                int padXOffset = IsBluePad(rsid) ? 0 : 1;
+                                int rPadLeft = currentX_px + padXOffset;
+                                int rPadRight = rPadLeft + hbW;
+                                bool rxOverlap = !((rPadRight) < rsp.HitLeft || rsp.HitRight < rPadLeft);
+                                bool ryOverlap = !((playerBottom) < rsp.HitTop || rsp.HitBottom < playerTop);
+                                if (rxOverlap && ryOverlap)
+                                {
+#if !DISABLE_DEBUG_LOGGING
+                                    PfLog($"[PAD_POST_TELEPORT] sid=0x{rsid:X2} idx={rsp.Index} pad=({rPadLeft},{playerTop})-({rPadRight},{playerBottom}) spr=({rsp.HitLeft},{rsp.HitTop})-({rsp.HitRight},{rsp.HitBottom})");
+#endif
+                                    ApplyPadSprite(ref s, rsid);
+                                    orbHitThisFrame = true;
+                                }
+                                continue;
+                            }
+                            // Re-check spider pads (also fire immediately, not tracked in ProcessedSprites)
+                            if (IsSpiderPad(rsid))
+                            {
+                                int orbOffY2 = (s.Mini && !s.GravFlipped) ? SharedPhysics.GetMiniCenterOffsetY(true) : 0;
+                                int orbPlayerTop2 = playerY_px + orbOffY2;
+                                int orbPlayerBottom2 = orbPlayerTop2 + hbH;
+                                bool rxOverlap = !((playerRight) < rsp.HitLeft || rsp.HitRight < nesX);
+                                bool ryOverlap = !((orbPlayerBottom2) < rsp.HitTop || rsp.HitBottom < orbPlayerTop2);
+                                if (rxOverlap && ryOverlap)
+                                {
+                                    bool goUp = (rsid == 0x56);
+                                    ApplySpiderTeleport(ref s, goUp);
+                                    orbHitThisFrame = true;
+                                }
+                                continue;
+                            }
+                        }
                     }
                     continue;
                 }

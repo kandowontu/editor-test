@@ -2157,9 +2157,16 @@ namespace FamidashEditor
 
             int slopeHbOffY = mini ? ((0x10 - hbH) >> 1) : 0;
 
-            // NES velocity gates (world-space direction, independent of gravity flip):
-            //   bg_coll_U (ceiling): only when high_byte(vel_y) & 0x80 → VelY < 0
-            //   bg_coll_D (floor):   only when !(high_byte(vel_y) & 0x80) → VelY >= 0
+            // NES velocity gates: inside bg_coll_U / bg_coll_D the SLOPE phase
+            // always runs regardless of velocity, but the TILE collision phase
+            // is gated:
+            //   bg_coll_U tile phase: only when high_byte(vel_y) & 0x80 → VelY < 0
+            //   bg_coll_D tile phase: only when !(high_byte(vel_y) & 0x80) → VelY >= 0
+            // NES ufo_ship_eject runs bg_coll_U then bg_coll_D sequentially.
+            // If bg_coll_U zeros currplayer_vel_y, bg_coll_D sees the ZEROED
+            // velocity (>= 0) and runs its tile phase.  Must re-derive the
+            // gate booleans after each phase so the second check uses live
+            // velocity, exactly as the NES does.
             bool velMovingUp   = velY_fixed < 0;
             bool velMovingDown = velY_fixed >= 0;
 
@@ -2167,58 +2174,59 @@ namespace FamidashEditor
             {
                 // Normal gravity: ceiling first (secondary), floor last (primary landing surface).
 
-                // Ceiling slopes — only when moving up
-                if (velMovingUp)
+                // Ceiling slopes (always run, no velocity gate — matches NES)
+                int ceilCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
+                var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
+                    in map, playerX_px, playerX_px, ceilCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+                if (ceilSlopeHit)
                 {
-                    int ceilCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
-                    var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
-                        in map, playerX_px, playerX_px, ceilCheckY, hbW,
-                        inputHeld, gameMode, gravFlipped, velX_fixed,
-                        ref r.LastSlopeType, ref r.SlopeJumpHigher);
-                    if (ceilSlopeHit)
+                    r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
+                    r.NewVelY_fixed = 0;
+                    r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                    r.SlopeType = ceilSlopeType;
+                }
+                else if (velMovingUp)
+                {
+                    // Ceiling tile collision — only when moving up
+                    var (ceilHit, ceilBotY, _) = CheckCeiling(in map, collX, collY, hbW, hbH);
+                    if (ceilHit)
                     {
-                        r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
+                        r.NewY_fixed = (ceilBotY - hbOffY) << 8;
                         r.NewVelY_fixed = 0;
-                        r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
-                        r.SlopeType = ceilSlopeType;
-                    }
-                    else
-                    {
-                        var (ceilHit, ceilBotY, _) = CheckCeiling(in map, collX, collY, hbW, hbH);
-                        if (ceilHit)
-                        {
-                            r.NewY_fixed = (ceilBotY - hbOffY) << 8;
-                            r.NewVelY_fixed = 0;
-                        }
                     }
                 }
 
-                // Floor slopes / flat floor — only when moving down
-                if (velMovingDown)
+                // Re-derive velocity gates from (potentially zeroed) velocity
+                // so bg_coll_D sees the live value just as NES does.
+                velMovingUp   = r.NewVelY_fixed < 0;
+                velMovingDown = r.NewVelY_fixed >= 0;
+
+                // Floor slopes (always run, no velocity gate — matches NES)
+                int floorCheckY = playerY_px + slopeHbOffY + hbH - 2;
+                var (floorSlopeHit, floorSlopeEject, floorSlopeType) = CheckSlopesDown(
+                    in map, playerX_px, playerX_px, floorCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+                if (floorSlopeHit)
                 {
-                    int floorCheckY = playerY_px + slopeHbOffY + hbH - 2;
-                    var (floorSlopeHit, floorSlopeEject, floorSlopeType) = CheckSlopesDown(
-                        in map, playerX_px, playerX_px, floorCheckY, hbW,
-                        inputHeld, gameMode, gravFlipped, velX_fixed,
-                        ref r.LastSlopeType, ref r.SlopeJumpHigher);
-                    if (floorSlopeHit)
+                    if (floorSlopeEject > 0)
+                        r.NewY_fixed = ((r.NewY_fixed >> 8) - floorSlopeEject) << 8;
+                    r.NewVelY_fixed = 0;
+                    r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                    r.SlopeType = floorSlopeType;
+                }
+                else if (velMovingDown)
+                {
+                    // Floor tile collision — only when moving down
+                    int updatedCollY = (r.NewY_fixed >> 8) + hbOffY;
+                    var (floorHit, floorTopY, spike) = CheckFloor(in map, collX, updatedCollY, hbW, hbH);
+                    if (spike) { r.Died = true; return r; }
+                    if (floorHit)
                     {
-                        if (floorSlopeEject > 0)
-                            r.NewY_fixed = ((r.NewY_fixed >> 8) - floorSlopeEject) << 8;
+                        r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
                         r.NewVelY_fixed = 0;
-                        r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
-                        r.SlopeType = floorSlopeType;
-                    }
-                    else
-                    {
-                        int updatedCollY = (r.NewY_fixed >> 8) + hbOffY;
-                        var (floorHit, floorTopY, spike) = CheckFloor(in map, collX, updatedCollY, hbW, hbH);
-                        if (spike) { r.Died = true; return r; }
-                        if (floorHit)
-                        {
-                            r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
-                            r.NewVelY_fixed = 0;
-                        }
                     }
                 }
             }
@@ -2226,58 +2234,58 @@ namespace FamidashEditor
             {
                 // Flipped gravity: floor first (secondary), ceiling last (primary landing surface).
 
-                // Floor slopes / flat floor — only when moving down (secondary for flipped)
-                if (velMovingDown)
+                // Floor slopes (always run, no velocity gate — matches NES)
+                int floorCheckY = playerY_px + slopeHbOffY + hbH - 2;
+                var (floorSlopeHit, floorSlopeEject, floorSlopeType) = CheckSlopesDown(
+                    in map, playerX_px, playerX_px, floorCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+                if (floorSlopeHit)
                 {
-                    int floorCheckY = playerY_px + slopeHbOffY + hbH - 2;
-                    var (floorSlopeHit, floorSlopeEject, floorSlopeType) = CheckSlopesDown(
-                        in map, playerX_px, playerX_px, floorCheckY, hbW,
-                        inputHeld, gameMode, gravFlipped, velX_fixed,
-                        ref r.LastSlopeType, ref r.SlopeJumpHigher);
-                    if (floorSlopeHit)
+                    if (floorSlopeEject > 0)
+                        r.NewY_fixed = ((r.NewY_fixed >> 8) - floorSlopeEject) << 8;
+                    r.NewVelY_fixed = 0;
+                    r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                    r.SlopeType = floorSlopeType;
+                }
+                else if (velMovingDown)
+                {
+                    // Floor tile collision — only when moving down (secondary for flipped)
+                    var (floorHit, floorTopY, spike) = CheckFloor(in map, collX, collY, hbW, hbH);
+                    if (spike) { r.Died = true; return r; }
+                    if (floorHit)
                     {
-                        if (floorSlopeEject > 0)
-                            r.NewY_fixed = ((r.NewY_fixed >> 8) - floorSlopeEject) << 8;
+                        r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
                         r.NewVelY_fixed = 0;
-                        r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
-                        r.SlopeType = floorSlopeType;
-                    }
-                    else
-                    {
-                        var (floorHit, floorTopY, spike) = CheckFloor(in map, collX, collY, hbW, hbH);
-                        if (spike) { r.Died = true; return r; }
-                        if (floorHit)
-                        {
-                            r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
-                            r.NewVelY_fixed = 0;
-                        }
                     }
                 }
 
-                // Ceiling slopes / flat ceiling — only when moving up (primary for flipped)
-                if (velMovingUp)
+                // Re-derive velocity gates from (potentially zeroed) velocity
+                velMovingUp   = r.NewVelY_fixed < 0;
+                velMovingDown = r.NewVelY_fixed >= 0;
+
+                // Ceiling slopes (always run, no velocity gate — matches NES)
+                int ceilCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
+                var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
+                    in map, playerX_px, playerX_px, ceilCheckY, hbW,
+                    inputHeld, gameMode, gravFlipped, velX_fixed,
+                    ref r.LastSlopeType, ref r.SlopeJumpHigher);
+                if (ceilSlopeHit)
                 {
-                    int ceilCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
-                    var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
-                        in map, playerX_px, playerX_px, ceilCheckY, hbW,
-                        inputHeld, gameMode, gravFlipped, velX_fixed,
-                        ref r.LastSlopeType, ref r.SlopeJumpHigher);
-                    if (ceilSlopeHit)
+                    r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
+                    r.NewVelY_fixed = 0;
+                    r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
+                    r.SlopeType = ceilSlopeType;
+                }
+                else if (velMovingUp)
+                {
+                    // Ceiling tile collision — only when moving up (primary for flipped)
+                    int updatedCollY = (r.NewY_fixed >> 8) + hbOffY;
+                    var (ceilHit, ceilBotY, _) = CheckCeiling(in map, collX, updatedCollY, hbW, hbH);
+                    if (ceilHit)
                     {
-                        r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
+                        r.NewY_fixed = (ceilBotY - hbOffY) << 8;
                         r.NewVelY_fixed = 0;
-                        r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
-                        r.SlopeType = ceilSlopeType;
-                    }
-                    else
-                    {
-                        int updatedCollY = (r.NewY_fixed >> 8) + hbOffY;
-                        var (ceilHit, ceilBotY, _) = CheckCeiling(in map, collX, updatedCollY, hbW, hbH);
-                        if (ceilHit)
-                        {
-                            r.NewY_fixed = (ceilBotY - hbOffY) << 8;
-                            r.NewVelY_fixed = 0;
-                        }
                     }
                 }
             }
