@@ -35,6 +35,7 @@ double jumpTimingBias = positionalArgs.Length > 1 ? double.Parse(positionalArgs[
 int maxFallSpeed = 0x06; // default
 int startSpeedUiIndex = 1;  // default: 1 = 1x speed (index 0 = 0.5x)
 int startGameMode = 0; // default: cube mode
+int? metaSpawnYHi = null, metaSpawnYLo = null;
 {
     string lvlName = Path.GetFileNameWithoutExtension(tmxPath).ToLowerInvariant();
     string? metaFile = FindMetadataFile(tmxPath);
@@ -43,7 +44,7 @@ int startGameMode = 0; // default: cube mode
     {
         try
         {
-        var (metaSpeed, metaMaxFall, metaGameMode) = ParseMetadataLevelProperties(metaFile, lvlName);
+        var (metaSpeed, metaMaxFall, metaGameMode, mSpawnHi, mSpawnLo) = ParseMetadataLevelProperties(metaFile, lvlName);
         if (metaSpeed.HasValue)
         {
             // NES/metadata convention: 0=1x, 1=0.5x, 2+=same
@@ -62,6 +63,10 @@ int startGameMode = 0; // default: cube mode
             startGameMode = metaGameMode.Value;
             Console.WriteLine($"Metadata: startingGameMode={startGameMode} for '{lvlName}'");
         }
+        metaSpawnYHi = mSpawnHi;
+        metaSpawnYLo = mSpawnLo;
+        if (mSpawnHi.HasValue)
+            Console.WriteLine($"Metadata: spawnY=0x{mSpawnHi.Value:X2}{(mSpawnLo ?? 0):X2} for '{lvlName}'");
         }
         catch (Exception ex)
         {
@@ -201,6 +206,20 @@ int startY_px = Math.Max(0, groundSurface_px - 15); // 15 = cube hitbox height
 int maxY = Math.Max(0, level.Height * 16 - 16);
 if (startY_px > maxY) startY_px = maxY;
 
+// Override start Y from metadata spawnYPositionHi/Low if present
+// Conversion matches SimulatorWindow.ComputeSpawnYFixed():
+//   nesSpawnY = (hi << 8) | lo       (8.8 fixed point)
+//   worldOffset = (mapHeight - NES_H) * TILE   (NES_H = 15)
+//   spawnY_px = (nesSpawnY >> 8) + worldOffset
+if (metaSpawnYHi.HasValue)
+{
+    const int NES_H = 15;
+    int hi = metaSpawnYHi.Value & 0xFF;
+    int worldOffset = (level.Height - NES_H) * 16;
+    startY_px = hi + worldOffset;
+    Console.WriteLine($"Spawn Y override: hi=0x{hi:X2} worldOffset={worldOffset} → startY_px={startY_px}");
+}
+
 Console.WriteLine($"Start: ({startX_px}, {startY_px})  speed={startSpeedUiIndex}  maxFall=0x{maxFallSpeed:X}  bias={jumpTimingBias:F2}  mode={startGameMode}");
 
 var engine = new PathfinderEngine(
@@ -333,7 +352,7 @@ static string Json5ToJson(string json5)
 // ══════════════════════════════════════════════════════════════
 // Helper: read startingSpeed and maxFallSpeed for a level from metadata
 // ══════════════════════════════════════════════════════════════
-static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode) ParseMetadataLevelProperties(string metaPath, string levelName)
+static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawnYHi, int? spawnYLo) ParseMetadataLevelProperties(string metaPath, string levelName)
 {
     string raw = File.ReadAllText(metaPath);
     string json = Json5ToJson(raw);
@@ -341,36 +360,40 @@ static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode) ParseMetad
     using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = true });
     var root = doc.RootElement;
 
-    if (root.TryGetProperty("official_levels", out var levelsArray) && levelsArray.ValueKind == JsonValueKind.Array)
+    // Search both official_levels and community_levels arrays
+    foreach (var arrayName in new[] { "official_levels", "community_levels" })
     {
-        int count = 0;
-        foreach (var entry in levelsArray.EnumerateArray())
+        if (root.TryGetProperty(arrayName, out var levelsArray) && levelsArray.ValueKind == JsonValueKind.Array)
         {
-            count++;
-            if (entry.TryGetProperty("level", out var lvlProp))
+            int count = 0;
+            foreach (var entry in levelsArray.EnumerateArray())
             {
-                string? lvl = lvlProp.GetString();
-                if (lvl?.Equals(levelName, StringComparison.OrdinalIgnoreCase) == true)
+                count++;
+                if (entry.TryGetProperty("level", out var lvlProp))
                 {
-                    int? speed = null, maxFall = null, gameMode = null;
-                    if (entry.TryGetProperty("startingSpeed", out var sp) && sp.ValueKind == JsonValueKind.Number)
-                        speed = sp.GetInt32();
-                    if (entry.TryGetProperty("maxFallSpeed", out var mf) && mf.ValueKind == JsonValueKind.Number)
-                        maxFall = mf.GetInt32();
-                    if (entry.TryGetProperty("startingGameMode", out var gm) && gm.ValueKind == JsonValueKind.Number)
-                        gameMode = gm.GetInt32();
-                    Console.WriteLine($"  Found level '{lvl}' at index {count}: speed={speed} maxFall={maxFall} gameMode={gameMode}");
-                    return (speed, maxFall, gameMode);
+                    string? lvl = lvlProp.GetString();
+                    if (lvl?.Equals(levelName, StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        int? speed = null, maxFall = null, gameMode = null, spawnHi = null, spawnLo = null;
+                        if (entry.TryGetProperty("startingSpeed", out var sp) && sp.ValueKind == JsonValueKind.Number)
+                            speed = sp.GetInt32();
+                        if (entry.TryGetProperty("maxFallSpeed", out var mf) && mf.ValueKind == JsonValueKind.Number)
+                            maxFall = mf.GetInt32();
+                        if (entry.TryGetProperty("startingGameMode", out var gm) && gm.ValueKind == JsonValueKind.Number)
+                            gameMode = gm.GetInt32();
+                        if (entry.TryGetProperty("spawnYPositionHi", out var syh) && syh.ValueKind == JsonValueKind.Number)
+                            spawnHi = syh.GetInt32();
+                        if (entry.TryGetProperty("spawnYPositionLow", out var syl) && syl.ValueKind == JsonValueKind.Number)
+                            spawnLo = syl.GetInt32();
+                        Console.WriteLine($"  Found level '{lvl}' in {arrayName} at index {count}: speed={speed} maxFall={maxFall} gameMode={gameMode} spawnYHi={spawnHi} spawnYLo={spawnLo}");
+                        return (speed, maxFall, gameMode, spawnHi, spawnLo);
+                    }
                 }
             }
+            Console.WriteLine($"  Searched {count} levels in {arrayName}, '{levelName}' not found");
         }
-        Console.WriteLine($"  Searched {count} levels, '{levelName}' not found");
     }
-    else
-    {
-        Console.WriteLine($"  No 'official_levels' array found in metadata");
-    }
-    return (null, null, null);
+    return (null, null, null, null, null);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -386,9 +409,11 @@ static Dictionary<int, (int, int)> ParseMetadataOffsets(string metaPath, string 
     using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = true });
     var root = doc.RootElement;
 
-    JsonElement levelsArray;
-    if (root.TryGetProperty("official_levels", out levelsArray) && levelsArray.ValueKind == JsonValueKind.Array)
+    // Search both official_levels and community_levels arrays
+    foreach (var arrayName in new[] { "official_levels", "community_levels" })
     {
+        if (!root.TryGetProperty(arrayName, out var levelsArray) || levelsArray.ValueKind != JsonValueKind.Array)
+            continue;
         foreach (var entry in levelsArray.EnumerateArray())
         {
             if (entry.TryGetProperty("level", out var lvlProp)
@@ -396,7 +421,7 @@ static Dictionary<int, (int, int)> ParseMetadataOffsets(string metaPath, string 
             {
                 if (!entry.TryGetProperty("objectOffsets", out var ooArray)
                     || ooArray.ValueKind != JsonValueKind.Array)
-                    break;
+                    return offsets; // found level but no offsets
 
                 // Process each offset entry (same logic as editor's ApplySpriteOffsets)
                 foreach (var ooEntry in ooArray.EnumerateArray())
@@ -438,7 +463,7 @@ static Dictionary<int, (int, int)> ParseMetadataOffsets(string metaPath, string 
                         }
                     }
                 }
-                break; // Found the level
+                return offsets; // Found the level
             }
         }
     }

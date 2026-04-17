@@ -8623,9 +8623,11 @@ namespace FamidashEditor
                 PfUpdateSlopeCounters_Fresh(ref s);
 
                 // -- UFO JUMP (tap-to-jump, can jump mid-air) --
-                // NES: orb activation consumes the press, so UFO jump doesn't fire
+                // NES uses controllingplayer->press (rising edge) — only fires on
+                // a NEW press, not a continued hold from the previous frame.
+                // orb activation consumes the press, so UFO jump doesn't fire
                 // on the same frame an orb was hit.
-                if (input && !orbHitThisFrame)
+                if (pressInput && !orbHitThisFrame)
                 {
                     int jumpVel = (int)UfoJumpVel(s.Mini) * -s.GravMul; // against gravity
                     s.VelY_fixed = jumpVel;
@@ -11395,24 +11397,19 @@ namespace FamidashEditor
             int playerX_px = s.X_fixed >> 8;
             int playerY_px = s.Y_fixed >> 8;
             
-            // Wave X-offset based on velocity direction
-            int xOffset = (s.VelY_fixed < 0) ? 10 : 4;
-            int collX = playerX_px + xOffset;
+            // NES: Generic.x = high_byte(currplayer_x) + 4 (always +4)
+            int collX = playerX_px + 4;
             
-            // Mini wave: use top 8×8 when moving up, bottom 8×8 when moving down
-            int miniOffset = 0;
-            if (s.Mini)
-            {
-                bool isMovingUp = s.GravFlipped ? (s.VelY_fixed > 0) : (s.VelY_fixed < 0);
-                miniOffset = isMovingUp ? 0 : 8;
-            }
-            int collY = playerY_px + miniOffset;
+            // NES: Generic.y = high_byte(currplayer_y) + ((vel < 0) ? 2 : -2)
+            // NES: WAVE_HEIGHT = 0x08 (always 8)
+            int yAdj = (s.VelY_fixed < 0) ? 2 : -2;
+            int collY = playerY_px + yAdj;
             
             const int waveW = 8;
-            int waveH = s.Mini ? 8 : 16;
+            const int waveH = 8;
             
 #if !DISABLE_DEBUG_LOGGING
-            PfLog($"[WAVE_EJECT] Generic=({collX},{collY}) {waveW}x{waveH} velY=0x{s.VelY_fixed:X4} miniOff={miniOffset}");
+            PfLog($"[WAVE_EJECT] Generic=({collX},{collY}) {waveW}x{waveH} velY=0x{s.VelY_fixed:X4} yAdj={yAdj}");
 #endif
             // -- Slope checks (NES: bg_coll_U/bg_coll_D both contain slope sections) --
             // NES wave_eject calls bg_coll_U when velY<0 and bg_coll_D when velY>=0.
@@ -11558,7 +11555,7 @@ namespace FamidashEditor
 #endif
                     if (s.Dblocked)
                     {
-                        int newY = ceilBotY + 1 - miniOffset;
+                        int newY = ceilBotY + 1 - yAdj;
                         s.Y_fixed = newY << 8;
                         s.VelY_fixed = 0;
                         s.WasZeroedByCollision = true;
@@ -11600,7 +11597,7 @@ namespace FamidashEditor
 #endif
                     if (s.Dblocked)
                     {
-                        int newY = floorTopY - waveH - miniOffset;
+                        int newY = floorTopY - waveH - yAdj;
                         s.Y_fixed = newY << 8;
                         s.VelY_fixed = 0;
                         s.WasZeroedByCollision = true;
@@ -13661,9 +13658,23 @@ namespace FamidashEditor
 
             int playerX_px = s.X_fixed >> 8;
             int playerY_px = s.Y_fixed >> 8;
-            int hbW = GetHitboxW(s.Mini);
-            int hbH = GetHitboxH(s.Mini);
-            int hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
+
+            // NES sprite_collide sets Generic.width/height BEFORE movement and
+            // x_movement_coll.  For wave/snake: WAVE_WIDTH=8, WAVE_HEIGHT=8.
+            // For all other modes: CUBE_WIDTH/CUBE_HEIGHT.
+            int hbW, hbH, hbOffY;
+            if (s.GameMode == 6 || s.GameMode == 10) // wave or snake
+            {
+                hbW = 8;
+                hbH = 8;
+                hbOffY = 0;
+            }
+            else
+            {
+                hbW = GetHitboxW(s.Mini);
+                hbH = GetHitboxH(s.Mini);
+                hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
+            }
 
             bool result = SharedPhysics.CheckForwardCollision(_collisionMap,
                 playerX_px, playerY_px, hbW, hbH, hbOffY,

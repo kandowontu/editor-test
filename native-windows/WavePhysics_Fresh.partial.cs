@@ -276,24 +276,16 @@ namespace FamidashEditor
             }
 
             // Set up Generic struct for collision detection
-            // Wave has special X offsets: +10 when moving UP, +4 when moving DOWN
-            // X offset is based on raw velocity sign
-            int xOffset = (playerVelY_fixed < 0) ? 10 : 4;
-            Generic_x = (playerX_fixed >> 8) + xOffset;
-            
-            // For mini wave: adjust hitbox based on DIRECTION (relative to gravity)
-            int miniOffset = 0;
-            if (isMini)
-            {
-                bool isMovingUp = gravityInverted ? (playerVelY_fixed > 0) : (playerVelY_fixed < 0);
-                miniOffset = isMovingUp ? 0 : 8;
-            }
-            
-            Generic_y = (playerY_fixed >> 8) + miniOffset;
+            // NES: Generic.x = high_byte(currplayer_x) + 4 (always +4)
+            // NES: Generic.y = high_byte(currplayer_y) + ((vel < 0) ? 2 : -2)
+            // NES: WAVE_WIDTH = 0x08, WAVE_HEIGHT = 0x08 (always 8×8)
+            Generic_x = (playerX_fixed >> 8) + 4;
+            int yAdj = (playerVelY_fixed < 0) ? 2 : -2;
+            Generic_y = (playerY_fixed >> 8) + yAdj;
             Generic_width = 8;
-            Generic_height = isMini ? 8 : 16;
+            Generic_height = 8;
             
-            AppendSimDebug($"[WAVE_EJECT] Generic=({Generic_x},{Generic_y}) {Generic_width}x{Generic_height} velY=0x{playerVelY_fixed:X} miniOff={miniOffset}");
+            AppendSimDebug($"[WAVE_EJECT] Generic=({Generic_x},{Generic_y}) {Generic_width}x{Generic_height} velY=0x{playerVelY_fixed:X} yAdj={yAdj}");
             
             // Check collision based on VELOCITY direction
             // When velY == 0 (wasZeroed frame), skip collision — wave is resting on surface

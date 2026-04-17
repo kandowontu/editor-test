@@ -11388,6 +11388,7 @@ namespace FamidashEditor
                                                     currentGameMode == 3 || // UFO (NES x_movement_coll runs unconditionally)
                                                     currentGameMode == 4 || // Robot
                                                     currentGameMode == 5 || // Spider
+                                                    currentGameMode == 6 || // Wave (NES uses WAVE_WIDTH/WAVE_HEIGHT)
                                                     currentGameMode == 7 || // Swing
                                                     currentGameMode == 8 || // Ninja
                                                     currentGameMode == 9 || // Pogo
@@ -11399,9 +11400,19 @@ namespace FamidashEditor
                                 // Generic.y from currplayer_y (post-eject) before calling bg_coll_R
                                 int playerX_px_fwd = preAdvancePlayerX_fixed >> 8;
                                 int playerY_px_fwd = playerY_fixed >> 8;
-                                int hitboxW_fwd = (currplayer_mini != 0) ? 8 : 15;
-                                int hitboxH_fwd = (currplayer_mini != 0) ? 7 : 15;
-                                int hitboxOffsetY_fwd = (currplayer_mini != 0 && currplayer_gravity == 0) ? 9 : 0;
+                                int hitboxW_fwd, hitboxH_fwd, hitboxOffsetY_fwd;
+                                if (currentGameMode == 6) // Wave: NES WAVE_WIDTH=8, WAVE_HEIGHT=8
+                                {
+                                    hitboxW_fwd = 8;
+                                    hitboxH_fwd = 8;
+                                    hitboxOffsetY_fwd = 0;
+                                }
+                                else
+                                {
+                                    hitboxW_fwd = (currplayer_mini != 0) ? 8 : 15;
+                                    hitboxH_fwd = (currplayer_mini != 0) ? 7 : 15;
+                                    hitboxOffsetY_fwd = (currplayer_mini != 0 && currplayer_gravity == 0) ? 9 : 0;
+                                }
                                 
                                 int collisionX_fwd = playerX_px_fwd;
                                 int collisionY_fwd = playerY_px_fwd + hitboxOffsetY_fwd;
