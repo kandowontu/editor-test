@@ -1008,64 +1008,6 @@ namespace FamidashEditor
                 var diagMsg = $"[PF_DIAG] tiles={this.tiles.Length} tileHash=0x{tileHash:X8} sprites={this.sprites.Length} sprHash=0x{sprHash:X8} offsets={this.spritePixelOffsets.Count} offHash=0x{offHash:X8} anchors={this.spriteAnchors.Count} anchHash=0x{anchHash:X8} w={mapWidth} h={mapHeight} ground={groundRowsToReserve} maxFall=0x{this.maxFallSpeed:X} spriteEntries={allSprites.Count}";
                 _log.WriteLine(diagMsg);
                 _log.Flush();
-                // Dump collision map at death zone (cols 385-420, rows 15-25)
-                #pragma warning disable CS8602
-                if (mapWidth > 400)
-                {
-                    for (int dumpR = 15; dumpR <= 25; dumpR++)
-                    {
-                        var sb = new System.Text.StringBuilder();
-                        sb.Append($"[TILE_MAP] row={dumpR} Y={dumpR*16}:");
-                        for (int dumpC = 385; dumpC <= 435; dumpC++)
-                        {
-                            int dumpArrY = dumpR + groundRowsToReserve;
-                            if (dumpArrY >= 0 && dumpArrY < mapHeight && dumpC >= 0 && dumpC < mapWidth)
-                            {
-                                int dumpTid = tiles[dumpArrY * mapWidth + dumpC];
-                                int dumpMapped = SharedPhysics.MapTileForCollision(dumpTid);
-                                var dumpCol = MetatileCollisionTable.GetCollision((byte)dumpMapped);
-                                sb.Append($" c{dumpC}=0x{dumpTid:X2}({dumpCol})");
-                            }
-                            else sb.Append($" c{dumpC}=OOB");
-                        }
-                        Console.Error.WriteLine(sb.ToString());
-                    }
-                    Console.Error.Flush();
-                }
-                #pragma warning restore CS8602
-                // Dump all game-mode portals in allSprites
-                {
-                    int portalCount = 0;
-                    foreach (var sp in allSprites)
-                    {
-                        if (IsGameModePortal(sp.SpriteId))
-                        {
-                            int targetMode = SharedPhysics.SpriteIdToGameMode(sp.SpriteId);
-                            Console.Error.WriteLine($"[MODE_PORTAL] idx={sp.Index} sid=0x{sp.SpriteId:X2} mode={targetMode} col={sp.AnchorX_px/16} hitBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom})");
-                            portalCount++;
-                        }
-                    }
-                    Console.Error.WriteLine($"[MODE_PORTAL] total={portalCount}");
-                    Console.Error.Flush();
-                }
-                // Dump all orbs/pads/gravity portals in death zone (cols 385-430)
-                {
-                    foreach (var sp in allSprites)
-                    {
-                        int col = sp.AnchorX_px / 16;
-                        if (col < 385 || col > 430) continue;
-                        int sid = sp.SpriteId;
-                        bool isOrb = IsOrbSprite(sid) || IsDashOrb(sid);
-                        bool isPad = IsAnyPad(sid);
-                        bool isGrav = IsGravityPortal(sid);
-                        if (isOrb || isPad || isGrav)
-                        {
-                            string kind = isOrb ? "ORB" : isPad ? "PAD" : "GRAV";
-                            Console.Error.WriteLine($"[DZ_SPRITE] {kind} idx={sp.Index} sid=0x{sid:X2} col={col} hitBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom})");
-                        }
-                    }
-                    Console.Error.Flush();
-                }
 #if !DISABLE_DEBUG_LOGGING
                 try { System.IO.File.AppendAllText(pfDebugLogPath, diagMsg + System.Environment.NewLine); } catch { }
 #endif
@@ -3084,7 +3026,7 @@ namespace FamidashEditor
                         frameI.Add(candInput[ci]);
                     }
 
-                    // Diversity slots: remaining capacity from underrepresented Y bins + gravity diversity
+                    // Diversity slots: remaining capacity from underrepresented Y bins + gravity diversity + mode diversity
                     if (sortedIdx.Count > mainKeep)
                     {
                         int Y_BIN_SIZE = 16;
@@ -3106,6 +3048,33 @@ namespace FamidashEditor
                         int gravMinority = Math.Min(gravNCount, gravFCount);
                         bool needGravDiversity = gravMinority < nextFrontier.Count / 20; // < 5%
 
+                        // Count game mode distribution to ensure minority mode survives.
+                        // When ship and cube coexist, the minority mode (often cube after
+                        // portal transitions) can be starved by score-based selection.
+                        var modeCounts = new Dictionary<int, int>();
+                        foreach (var s in nextFrontier)
+                        {
+                            modeCounts.TryGetValue(s.GameMode, out int mc);
+                            modeCounts[s.GameMode] = mc + 1;
+                        }
+                        // Determine if any mode is critically underrepresented
+                        int totalModes = modeCounts.Count;
+                        bool needModeDiversity = false;
+                        int minorityMode = -1;
+                        if (totalModes > 1)
+                        {
+                            int minModeCount = int.MaxValue;
+                            foreach (var kv in modeCounts)
+                            {
+                                if (kv.Value < minModeCount)
+                                {
+                                    minModeCount = kv.Value;
+                                    minorityMode = kv.Key;
+                                }
+                            }
+                            needModeDiversity = minModeCount < nextFrontier.Count / 10; // < 10%
+                        }
+
                         for (int i = mainKeep; i < sortedIdx.Count && nextFrontier.Count < effectiveCap; i++)
                         {
                             int ci = sortedIdx[i];
@@ -3119,7 +3088,11 @@ namespace FamidashEditor
                                 ((candState[ci].GravFlipped && gravFCount < gravNCount) ||
                                  (!candState[ci].GravFlipped && gravNCount < gravFCount));
 
-                            if (yUnderrepresented || gravUnderrepresented)
+                            // Also admit game-mode-minority states
+                            bool modeUnderrepresented = needModeDiversity &&
+                                candState[ci].GameMode == minorityMode;
+
+                            if (yUnderrepresented || gravUnderrepresented || modeUnderrepresented)
                             {
                                 nextFrontier.Add(candState[ci]);
                                 frameP.Add(candParent[ci]);
@@ -3128,6 +3101,14 @@ namespace FamidashEditor
                                 if (candState[ci].GravFlipped) gravFCount++; else gravNCount++;
                                 gravMinority = Math.Min(gravNCount, gravFCount);
                                 needGravDiversity = gravMinority < nextFrontier.Count / 20;
+                                // Update mode counts
+                                modeCounts.TryGetValue(candState[ci].GameMode, out int curCnt);
+                                modeCounts[candState[ci].GameMode] = curCnt + 1;
+                                if (candState[ci].GameMode == minorityMode)
+                                {
+                                    int newMinCount = curCnt + 1;
+                                    needModeDiversity = newMinCount < nextFrontier.Count / 10;
+                                }
                             }
                         }
                     }

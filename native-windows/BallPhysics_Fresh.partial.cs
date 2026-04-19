@@ -36,7 +36,7 @@ namespace FamidashEditor
                     int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
                     int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
                     // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
-                    if (currplayer_mini != 0 && !gravityInverted_orb)
+                    if (currplayer_mini != 0)
                     {
                         playerY_px_orb += 4;
                     }
@@ -238,7 +238,7 @@ namespace FamidashEditor
                 int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
                 
                 // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
-                if ((currplayer_mini != 0) && !gravityInverted_orb)
+                if (currplayer_mini != 0)
                 {
                     playerY_px_orb += 4;
                 }

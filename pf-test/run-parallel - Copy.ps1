@@ -13,7 +13,7 @@ $exe = "$PSScriptRoot\bin\Release\net8.0-windows\win-x64\PfTest.exe"
 if (!(Test-Path $exe)) { Write-Error "Build output not found: $exe"; exit 1 }
 
 $levels = @(
-	"akrile","gameover","icdx","jawbreaker","shardscapes","silentcircles","tetrix","madness"
+	"highlife","aftercatabath","element111rg","bloodbath","icdx","eon","sonicwave"
 )
 
 $tmxDir = "C:\Editor Test\famidash\LEVELS\LEVEL DATA\lvlset_HUGE"

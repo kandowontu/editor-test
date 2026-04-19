@@ -1366,7 +1366,6 @@
 				},
 			],
 		},
-		/*
 		{ 
 			level: "explorers",
 			lowerText: "EXPLORERS",
@@ -1375,7 +1374,7 @@
 			blockSet: "B",
 			sawSet: "A",
 			difficulty: "DEMON",
-			stars: 15,
+			stars: 10,
 			songID: "song_explorers",
 			startingGameMode: 0,
 			startingSpeed: 0,
@@ -1384,39 +1383,67 @@
 			parallaxDisable: true,
 			maxFallSpeed: 0x07,
 			objectOffsets: [
-				{
-					coordinates: [
-						[107, 18],
-						[33, 17],
-						[39, 17],
-						[110, 18],
-						[130, 18],
-						[134, 18],
-						[36, 20],
-						[42, 20],
-						[151, 19],
-						[157, 19],
-						[154, 23],
-						[160, 23],
-						[176, 19]
-					],
-					offsetY: +8 
-				},
-				{
-					coordinates: [
-						[175, 26],
-						[175, 17],
-						[175, 18],
-						[175, 19],
-						[178, 16],
-						[178, 17],
-						[178, 18]
-					],
-					offsetX: -8
-				}
-			]
+                {
+                    coordinates: [
+                        [107, 18],
+                        [33, 17],
+                        [39, 17],
+                        [110, 18],
+                        [130, 18],
+                        [134, 18],
+                        [36, 20],
+                        [42, 20],
+                        [151, 19],
+                        [157, 19],
+                        [154, 23],
+                        [160, 23],
+                        [176, 19]
+                    ],
+                    offsetY: +8 
+                },
+                {
+                    coordinates: [
+                        [175, 26],
+                        [175, 17],
+                        [175, 18],
+                        [175, 19],
+                        [178, 16],
+                        [178, 17],
+                        [178, 18],
+                        [266, 18]
+                    ],
+                    offsetX: -8
+                },
+                {
+                    coordinates: [
+                        [235, 18],
+                        [250, 18]
+                    ],
+                    offsetY: -8 
+                },
+                {
+                    coordinates: [
+                        [234, 18],
+                        [249, 18]
+                    ],
+                    offsetY: -8, 
+                    offsetX: +16
+                },
+                {
+                    coordinates: [235, 16],
+                    offsetY: +24 
+                },
+                {
+                    coordinates: [249, 17],
+                    offsetY: +8, 
+                    offsetX: +16
+                },
+                {
+                    coordinates: [298, 18],
+                    offsetX: +16
+                }
+			],
 		},
-		*/
 		{
 			level: "thetower",
             lowerText: "THE TOWER",
@@ -1450,7 +1477,6 @@
                 }
             ]
 		},
-		/*
 		{
 			level: "thesewers",
 			lowerText: "THE SEWERS",
@@ -1519,7 +1545,6 @@
 				},
 			]
 		},
-		*/
 		{
 			level: "thechallenge",
 			upperText: "THE",
@@ -1641,6 +1666,54 @@
 				},
 			]
 		},
+		{ 
+			level: "groundtoretray",
+			upperText: "GROUND TO",
+			lowerText: "RETRAY",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "B",
+			sawSet: "A",
+			difficulty: "EASY",
+			stars: 2,
+			songID: "song_ground_to_retray",
+			startingGameMode: 0,
+			startingSpeed: 1,
+			maxFallSpeed: 0x07,
+			startingBackgroundColor: 0x03,
+			startingGroundColor: 0x00,
+			parallaxDisable: true,
+			objectOffsets: [
+				{
+					coordinates: [
+						[171, 20],		//ball portal
+						[477, 25],	[498, 22],	[499, 22],		//speed portal
+					],
+					offsetY: -8
+				},
+				{
+					coordinates: [212, 19],		//gravity portal
+					offsetX: +16,
+				},
+				{
+					coordinates: [
+						[213, 19],		//ship portal
+						[212, 19],		//gravity portal
+						[227, 19],	[234, 19],	[301, 19],	[306, 19],		//speed portal
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [214, 19],		//speed portal
+					offsetY: +14,
+					offsetX: -12
+				},
+				{
+					coordinates: [308, 19],		//wave portal
+					offsetX: -8
+				},
+			]
+		},
 		{
 			level: "sonar",
 			lowerText: "SONAR",
@@ -1681,7 +1754,6 @@
 			startingGroundColor: 0x01,
 			parallaxDisable: true
 		},
-		/*
 		{
 			level: "madness",
 			lowerText: "MADNESS^",
@@ -1708,7 +1780,6 @@
 				},
 			]	
 		},
-		*/
 		{
 			level: "xmaschallenge",
 			upperText: "XMAS",
@@ -2955,6 +3026,51 @@
 				{
 					coordinates: [
 						[70, 22],	[73, 24],	[76, 22],		//deco
+					],
+					offsetY: +8
+				},
+			]
+		},
+		{
+			level: "wintherace",
+			upperText: "WIN",
+			lowerText: "THE RACE",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "A",
+			sawSet: "A",
+			difficulty: "HARDER",
+			stars: 7,
+			songID: "song_win_the_race",
+			startingGameMode: 0,
+			startingSpeed: 0,
+			startingBackgroundColor: 0x0F,
+			startingGroundColor: 0x0F,
+			parallaxDisable: true,
+			maxFallSpeed: 0x07,
+			objectOffsets: [
+				{
+					coordinates: [
+						[65, 17], [96, 21], [143, 23], [187, 18], [320, 20], [376, 20], [481, 16], [500, 18], [502, 21], [503, 21], [504, 21], [505, 21], [511, 21], [513, 21], [647, 21], [735, 22],
+						[839, 20], [843, 24],
+					],
+					offsetY: -8
+				},
+				{
+					coordinates: [
+						[128, 21], [182, 22], [187, 18], [217, 18], [217, 19], [217, 20], [320, 20], [414, 21], [433, 14], [470, 26], [472, 16], [480, 20], [513, 21], [679, 21],
+					],
+					offsetX: -8
+				},
+				{
+					coordinates: [
+						[477, 20], [478, 24], [626, 20], [678, 21],
+					],
+					offsetX: +16
+				},
+				{
+					coordinates: [
+						[519, 19],
 					],
 					offsetY: +8
 				},
@@ -4916,6 +5032,66 @@
 			],
 		},
 		{
+			level: "demonpyrophoric",
+			upperText: "DEMON",
+			lowerText: "PYROPHORIC",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "B",
+			sawSet: "A",
+			difficulty: "MEDIUMDEMON",
+			stars: 10,
+			songID: "song_pyrophoric_xl",
+			startingGameMode: 0,
+			startingSpeed: 0,
+			startingBackgroundColor: 0x06,
+			startingGroundColor: 0x0F,
+			parallaxDisable: true,
+			maxFallSpeed: 0x07,
+			objectOffsets: [
+				{
+					coordinates: [
+						[42, 21], [96, 22], [127, 21], [153, 22], [214, 21], [227, 19], [234, 21], [259, 21], [274, 23], [299, 23], [301, 22], [341, 22], [406, 22],
+						[728, 22], [763, 22], [771, 19], [807, 20], [813, 21], [814, 21], [862, 21], [866, 22], [899, 21], [905, 23], [920, 23], [108, 22], [914, 22], 
+						[180, 22], [689, 21], [522, 23], [528, 24], [538, 24], [544, 23],
+					],
+					offsetY: -8
+				},
+				{
+					coordinates: [
+						[20, 20], [35, 24], [42, 20], [308, 21], [395, 22], [439, 23], [565, 22], [625, 16], [646, 21], [771, 19], [795, 22], [807, 20], [814, 21],
+						[894, 21], [897, 20], [903, 21], [45, 24], [3, 26], [45, 20], [172, 21], [844, 19],
+					],
+					offsetX: -8
+				},
+				{
+					coordinates: [
+						[264, 20], [317, 21], [484, 22],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[285, 22], [762, 21], [786, 21],
+					],
+					offsetX: +16
+				},
+				{
+					coordinates: [
+						[916, 22], [549, 21],
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [
+						[770, 23], [775, 22], [790, 23], [798, 24], [794, 19], [813, 25], [813, 17], [822, 21], [825, 24], [833, 21], [836, 18], [843, 22], [850, 18], [853, 21], [858, 24], [806, 23],
+					],
+					offsetY: +8,
+					offsetX: +8
+				},
+			]
+		},
+		{
             level: "toeiiv2",
             lowerText: "TOE II V2",
             decoType: "DECO1",
@@ -6117,6 +6293,22 @@
 			startingGroundColor: 0x0F,
 			parallaxDisable: true
 		},
+		{ 
+            level: "usepinpad",
+            lowerText: "USE PIN PAD",
+            decoType: "DECO1",
+            spikeSet: "A",
+            blockSet: "D",
+            sawSet: "A",
+            difficulty: "HARDER",
+            stars: 6,
+            songID: "song_use_pin_pad",
+            startingGameMode: 8,
+            startingSpeed: 0,
+            startingBackgroundColor: 0x0F,
+            startingGroundColor: 0x0F,
+            parallaxDisable: true,
+        },		
 //		{
 //			level: "test8",
 //			lowerText: "TEST8",
