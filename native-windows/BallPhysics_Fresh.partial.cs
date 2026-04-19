@@ -224,6 +224,49 @@ namespace FamidashEditor
                 }
             }
             
+            // Pogo and Swing: Check for orb/pad activations BEFORE gravity.
+            // NES: sprite_collide (orb activation) runs BEFORE ball_movement (gravity/eject),
+            // so the orb sees the pre-movement position and pre-flip gravity.
+            if (currentGameMode == 7 || currentGameMode == 9) { // GAMEMODE_SWING or GAMEMODE_POGO
+                bool holdJump_orb = IsXDownAsync() || keyXHeld;
+                int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
+                bool pressJump_orb = pressCount_orb > 0;
+                bool gravityInverted_orb = (currplayer_gravity != 0);
+                int playerX_px_orb = (playerX_fixed >> 8) + 1;
+                int playerY_px_orb = playerY_fixed >> 8;
+                int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
+                
+                // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
+                if ((currplayer_mini != 0) && !gravityInverted_orb)
+                {
+                    playerY_px_orb += 4;
+                }
+                
+                int scrollX_px_orb = 0;
+                
+                int tempVelY = playerVelY_fixed;
+                // Pogo uses Swing (7) interactions, not its own gamemode
+                int orbGamemode = (currentGameMode == 9) ? 7 : currentGameMode;
+                var (orbActivated, _) = UpdateOrbSystem(orbGamemode, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
+                                                   scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
+                                                   (currplayer_mini != 0), ref tempVelY);
+                if (orbActivated)
+                {
+                    playerVelY_fixed = tempVelY;
+                    orbhitonthisframe[currplayer] = true;
+                    AppendSimDebug($"[SWING/POGO] Orb/Pad activated! New velY={playerVelY_fixed}");
+                    
+                    // Consume the X press if it was used for orb
+                    if (pressJump_orb)
+                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                }
+                
+                // Clear orb buffer when X is released
+                if (!holdJump_orb)
+                    ClearOrbBuffer();
+            }
+
             CommonGravityRoutine_Fresh();
             
             // Skip velocity zeroing AND collision ejection during flip cooldown
@@ -238,7 +281,7 @@ namespace FamidashEditor
             }
             
             // Prevent velocity accumulation when grounded (only runs when cooldown == 0)
-            if (currentGameMode == 2) {
+            if (currentGameMode == 2 || currentGameMode == 9) { // BALL or POGO
                 bool isMini = (currplayer_mini != 0);
                 int hitboxW = isMini ? 8 : 15;
                 int hitboxH = isMini ? 7 : 15;
@@ -302,11 +345,6 @@ namespace FamidashEditor
             // Update slope exit velocity counters
             UpdateSlopeCounters_Fresh();
 
-            // Save pre-flip gravity for orb processing below.
-            // NES: sprite_collide (orb activation) runs BEFORE ball_movement (gravity flip),
-            // so the orb sees the pre-flip gravity direction when computing launch velocity.
-            bool preFlipGravityInverted = (currplayer_gravity != 0);
-
             // Swing gravity flip logic
             if (currentGameMode == 7) { // GAMEMODE_SWING
                 int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
@@ -321,48 +359,6 @@ namespace FamidashEditor
                     // Swing does NOT apply velocity like Ball does - just flips gravity
                 }
             }
-            // Pogo and Swing: Check for orb/pad activations
-            if (currentGameMode == 7 || currentGameMode == 9) { // GAMEMODE_SWING or GAMEMODE_POGO
-                bool holdJump_orb = IsXDownAsync() || keyXHeld;
-                int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
-                bool pressJump_orb = pressCount_orb > 0;
-                // Use pre-flip gravity: NES activates orbs (sprite_collide) BEFORE
-                // ball_movement which contains the gravity flip.
-                bool gravityInverted_orb = preFlipGravityInverted;
-                int playerX_px_orb = (playerX_fixed >> 8) + 1;
-                int playerY_px_orb = playerY_fixed >> 8;
-                int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
-                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
-                
-                // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
-                if ((currplayer_mini != 0) && !gravityInverted_orb)
-                {
-                    playerY_px_orb += 4;
-                }
-                
-                int scrollX_px_orb = 0;
-                
-                int tempVelY = playerVelY_fixed;
-                // Pogo uses Swing (7) interactions, not its own gamemode
-                int orbGamemode = (currentGameMode == 9) ? 7 : currentGameMode;
-                var (orbActivated, _) = UpdateOrbSystem(orbGamemode, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
-                                                   scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
-                                                   (currplayer_mini != 0), ref tempVelY);
-                if (orbActivated)
-                {
-                    playerVelY_fixed = tempVelY;
-                    AppendSimDebug($"[SWING/POGO] Orb/Pad activated! New velY={playerVelY_fixed}");
-                    
-                    // Consume the X press if it was used for orb
-                    if (pressJump_orb)
-                        Interlocked.Exchange(ref keyXPressedCount, 0);
-                }
-                
-                // Clear orb buffer when X is released
-                if (!holdJump_orb)
-                    ClearOrbBuffer();
-            }
-            
             // Pogo black orb X press activation (in addition to regular orb/pad checks)
             if (currentGameMode == 9) { // GAMEMODE_POGO
                 int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);

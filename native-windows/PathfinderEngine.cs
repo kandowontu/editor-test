@@ -655,9 +655,14 @@ namespace FamidashEditor
             public int NinjaJumps;               // remaining air jumps for ninja mode (max 3, resets on ground)
             public SpriteSet ProcessedSprites;
 
-            // Orb system: pending orb that overlaps the player (activation requires input)
-            public int PendingOrbIndex;         // -1 = no pending orb
-            public int PendingOrbSpriteId;      // sprite ID of pending orb
+            // Orb system: pending orbs that overlap the player (activation requires input)
+            // NES activates ALL overlapping orbs in one frame; slots 0-2 support up to 3.
+            public int PendingOrbIndex;         // -1 = no pending orb (slot 0)
+            public int PendingOrbSpriteId;      // sprite ID of pending orb (slot 0)
+            public int PendingOrbExtra1Index;   // -1 = no extra pending orb (slot 1)
+            public int PendingOrbExtra1SpriteId;
+            public int PendingOrbExtra2Index;   // -1 = no extra pending orb (slot 2)
+            public int PendingOrbExtra2SpriteId;
 
             // Dash state
             public int Dashing;                 // 0=none, 1=horiz, 2=45up, 3=45down, 4=up, 5=down
@@ -720,6 +725,10 @@ namespace FamidashEditor
             public bool P2_Dblocked;
             public int P2_PendingOrbIndex;
             public int P2_PendingOrbSpriteId;
+            public int P2_PendingOrbExtra1Index;
+            public int P2_PendingOrbExtra1SpriteId;
+            public int P2_PendingOrbExtra2Index;
+            public int P2_PendingOrbExtra2SpriteId;
 
             public SimState Clone()
             {
@@ -1568,6 +1577,10 @@ namespace FamidashEditor
                 ProcessedSprites = NewSpriteSet(),
                 PendingOrbIndex = -1,
                 PendingOrbSpriteId = -1,
+                PendingOrbExtra1Index = -1,
+                PendingOrbExtra1SpriteId = -1,
+                PendingOrbExtra2Index = -1,
+                PendingOrbExtra2SpriteId = -1,
                 NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
                 CameraY_fixed = initCamY_ri,
                 TargetCameraY_fixed = initCamY_ri
@@ -1744,6 +1757,10 @@ namespace FamidashEditor
                 ProcessedSprites = NewSpriteSet(),
                 PendingOrbIndex = -1,
                 PendingOrbSpriteId = -1,
+                PendingOrbExtra1Index = -1,
+                PendingOrbExtra1SpriteId = -1,
+                PendingOrbExtra2Index = -1,
+                PendingOrbExtra2SpriteId = -1,
                 NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
                 CameraY_fixed = initCameraY,
                 TargetCameraY_fixed = initCameraY
@@ -2615,6 +2632,10 @@ namespace FamidashEditor
                     ProcessedSprites = NewSpriteSet(),
                     PendingOrbIndex = -1,
                     PendingOrbSpriteId = -1,
+                    PendingOrbExtra1Index = -1,
+                    PendingOrbExtra1SpriteId = -1,
+                    PendingOrbExtra2Index = -1,
+                    PendingOrbExtra2SpriteId = -1,
                     NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
                     CameraY_fixed = initCamY_bfs,
                     TargetCameraY_fixed = initCamY_bfs
@@ -3537,6 +3558,10 @@ namespace FamidashEditor
                 ProcessedSprites = NewSpriteSet(),
                 PendingOrbIndex = -1,
                 PendingOrbSpriteId = -1,
+                PendingOrbExtra1Index = -1,
+                PendingOrbExtra1SpriteId = -1,
+                PendingOrbExtra2Index = -1,
+                PendingOrbExtra2SpriteId = -1,
                 NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
                 CameraY_fixed = initCamY_rbp,
                 TargetCameraY_fixed = initCamY_rbp
@@ -3662,6 +3687,10 @@ namespace FamidashEditor
                 ProcessedSprites = NewSpriteSet(),
                 PendingOrbIndex = -1,
                 PendingOrbSpriteId = -1,
+                PendingOrbExtra1Index = -1,
+                PendingOrbExtra1SpriteId = -1,
+                PendingOrbExtra2Index = -1,
+                PendingOrbExtra2SpriteId = -1,
                 NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
                 CameraY_fixed = ComputeInitCameraY(startY_px),
                 TargetCameraY_fixed = ComputeInitCameraY(startY_px)
@@ -4967,6 +4996,7 @@ namespace FamidashEditor
             if (state.GameMode == 6) return DecideWithBiasFallback(state, isOverrideFrame);
             if (state.GameMode == 7) return DecideSwingInput(state, isOverrideFrame);
             if (state.GameMode == 8) return DecideNinjaInput(state, isOverrideFrame);
+            if (state.GameMode == 9) return DecidePogoInput(state, isOverrideFrame);
             if (state.GameMode != 0) return false;
 
             // ---------------------------------------------------------------
@@ -5036,8 +5066,7 @@ namespace FamidashEditor
                         // Evaluate "skip orb" path � never jump, orb pre-skipped.
                         var skipState = state.Clone();
                         skipState.ProcessedSprites.Add(cubeOrbIndex);
-                        skipState.PendingOrbIndex = -1;
-                        skipState.PendingOrbSpriteId = -1;
+                        ClearPendingOrbs(ref skipState);
                         int orbSkipBestSurv = SimulateForwardWithJumpAt(skipState, -1, out int orbSkipBestX,
                             singleJumpOnly: true);
 
@@ -5901,8 +5930,10 @@ namespace FamidashEditor
                         {
                             varState = node.s.Clone();
                             varState.ProcessedSprites.Add(orbSkipTarget);
-                            varState.PendingOrbIndex = -1;
-                            varState.PendingOrbSpriteId = -1;
+                            // Also skip any other pending orbs
+                            if (varState.PendingOrbExtra1Index >= 0) varState.ProcessedSprites.Add(varState.PendingOrbExtra1Index);
+                            if (varState.PendingOrbExtra2Index >= 0) varState.ProcessedSprites.Add(varState.PendingOrbExtra2Index);
+                            ClearPendingOrbs(ref varState);
                         }
                         // Track orb-skip lineage: true if this variant or any ancestor was orb-skipped
                         bool isOS = node.os || ov == 1;
@@ -5935,8 +5966,9 @@ namespace FamidashEditor
                             if (sw.PendingOrbIndex >= 0 && _btSkipSpecificOrbs.Contains(sw.PendingOrbIndex))
                             {
                                 sw.ProcessedSprites.Add(sw.PendingOrbIndex);
-                                sw.PendingOrbIndex = -1;
-                                sw.PendingOrbSpriteId = -1;
+                                if (sw.PendingOrbExtra1Index >= 0) sw.ProcessedSprites.Add(sw.PendingOrbExtra1Index);
+                                if (sw.PendingOrbExtra2Index >= 0) sw.ProcessedSprites.Add(sw.PendingOrbExtra2Index);
+                                ClearPendingOrbs(ref sw);
                             }
                             bool aliveW = StepFrame(ref sw, orbForce, out bool endW);
                             bool j0 = (f == 0) ? false : node.j0;
@@ -5964,8 +5996,9 @@ namespace FamidashEditor
                                 if (sa.PendingOrbIndex >= 0 && _btSkipSpecificOrbs.Contains(sa.PendingOrbIndex))
                                 {
                                     sa.ProcessedSprites.Add(sa.PendingOrbIndex);
-                                    sa.PendingOrbIndex = -1;
-                                    sa.PendingOrbSpriteId = -1;
+                                    if (sa.PendingOrbExtra1Index >= 0) sa.ProcessedSprites.Add(sa.PendingOrbExtra1Index);
+                                    if (sa.PendingOrbExtra2Index >= 0) sa.ProcessedSprites.Add(sa.PendingOrbExtra2Index);
+                                    ClearPendingOrbs(ref sa);
                                 }
                                 bool aliveA = StepFrame(ref sa, bfsInput, out bool endA);
                                 bool j0 = (f == 0) ? bfsInput : node.j0;
@@ -5985,8 +6018,9 @@ namespace FamidashEditor
                             if (sa.PendingOrbIndex >= 0 && _btSkipSpecificOrbs.Contains(sa.PendingOrbIndex))
                             {
                                 sa.ProcessedSprites.Add(sa.PendingOrbIndex);
-                                sa.PendingOrbIndex = -1;
-                                sa.PendingOrbSpriteId = -1;
+                                if (sa.PendingOrbExtra1Index >= 0) sa.ProcessedSprites.Add(sa.PendingOrbExtra1Index);
+                                if (sa.PendingOrbExtra2Index >= 0) sa.ProcessedSprites.Add(sa.PendingOrbExtra2Index);
+                                ClearPendingOrbs(ref sa);
                             }
                             bool aliveA = StepFrame(ref sa, orbInput, out bool endA);
                             int aMinY = sa.Y_fixed >> 8;
@@ -7783,8 +7817,9 @@ namespace FamidashEditor
                                 && _btSkipSpecificOrbs.Contains(sb.PendingOrbIndex))
                             {
                                 sb.ProcessedSprites.Add(sb.PendingOrbIndex);
-                                sb.PendingOrbIndex = -1;
-                                sb.PendingOrbSpriteId = -1;
+                                if (sb.PendingOrbExtra1Index >= 0) sb.ProcessedSprites.Add(sb.PendingOrbExtra1Index);
+                                if (sb.PendingOrbExtra2Index >= 0) sb.ProcessedSprites.Add(sb.PendingOrbExtra2Index);
+                                ClearPendingOrbs(ref sb);
                             }
                             bool aliveB = StepFrame(ref sb, bfsInput, out bool endB);
                             if (endB)
@@ -7819,8 +7854,9 @@ namespace FamidashEditor
                                     && _btSkipSpecificOrbs.Contains(sa.PendingOrbIndex))
                                 {
                                     sa.ProcessedSprites.Add(sa.PendingOrbIndex);
-                                    sa.PendingOrbIndex = -1;
-                                    sa.PendingOrbSpriteId = -1;
+                                    if (sa.PendingOrbExtra1Index >= 0) sa.ProcessedSprites.Add(sa.PendingOrbExtra1Index);
+                                    if (sa.PendingOrbExtra2Index >= 0) sa.ProcessedSprites.Add(sa.PendingOrbExtra2Index);
+                                    ClearPendingOrbs(ref sa);
                                 }
                                 bool aliveA = StepFrame(ref sa, bfsInput, out bool endA);
                                 if (endA)
@@ -7848,8 +7884,9 @@ namespace FamidashEditor
                                 && _btSkipSpecificOrbs.Contains(sa.PendingOrbIndex))
                             {
                                 sa.ProcessedSprites.Add(sa.PendingOrbIndex);
-                                sa.PendingOrbIndex = -1;
-                                sa.PendingOrbSpriteId = -1;
+                                if (sa.PendingOrbExtra1Index >= 0) sa.ProcessedSprites.Add(sa.PendingOrbExtra1Index);
+                                if (sa.PendingOrbExtra2Index >= 0) sa.ProcessedSprites.Add(sa.PendingOrbExtra2Index);
+                                ClearPendingOrbs(ref sa);
                             }
                             bool aliveA = StepFrame(ref sa, orbInput, out bool endA);
                             if (endA)
@@ -7981,8 +8018,9 @@ namespace FamidashEditor
                     if (_btSkipSpecificOrbs.Contains(s.PendingOrbIndex))
                     {
                         s.ProcessedSprites.Add(s.PendingOrbIndex);
-                        s.PendingOrbIndex = -1;
-                        s.PendingOrbSpriteId = -1;
+                        if (s.PendingOrbExtra1Index >= 0) s.ProcessedSprites.Add(s.PendingOrbExtra1Index);
+                        if (s.PendingOrbExtra2Index >= 0) s.ProcessedSprites.Add(s.PendingOrbExtra2Index);
+                        ClearPendingOrbs(ref s);
                     }
                     else
                         input = true;
@@ -8091,8 +8129,9 @@ namespace FamidashEditor
                     if (_btSkipSpecificOrbs.Contains(s.PendingOrbIndex))
                     {
                         s.ProcessedSprites.Add(s.PendingOrbIndex);
-                        s.PendingOrbIndex = -1;
-                        s.PendingOrbSpriteId = -1;
+                        if (s.PendingOrbExtra1Index >= 0) s.ProcessedSprites.Add(s.PendingOrbExtra1Index);
+                        if (s.PendingOrbExtra2Index >= 0) s.ProcessedSprites.Add(s.PendingOrbExtra2Index);
+                        ClearPendingOrbs(ref s);
                     }
                     else
                         input = true;
@@ -8186,8 +8225,7 @@ namespace FamidashEditor
             s.Step2Ejected = false;
 
             // -- Clear pending orb from previous frame --
-            s.PendingOrbIndex = -1;
-            s.PendingOrbSpriteId = -1;
+            ClearPendingOrbs(ref s);
 
             int oldX_fixed = s.X_fixed;
             int oldX_px = oldX_fixed >> 8;
@@ -8215,80 +8253,83 @@ namespace FamidashEditor
             if (endLevel) return true;
 
             // -- STEP 1b: ORB ACTIVATION at OLD X --
+            // NES activates ALL overlapping orbs in one frame — iterate all pending slots.
             if (!_dualP2Guard) { _p1OrbIndicesThisFrame ??= new(); _p1OrbIndicesThisFrame.Clear(); }
             if (s.PendingOrbIndex >= 0 && input)
             {
-                // Save pre-activation state for the overlapping-tile sweep below.
-                int activatedSid = s.PendingOrbSpriteId;
                 int sweepNesX = oldX_px + 1;
                 int sweepHbW = GetHitboxW(s.Mini);
                 int sweepHbH = GetHitboxH(s.Mini);
-                int sweepOrbOffY = (s.Mini && !s.GravFlipped) ? SharedPhysics.GetMiniCenterOffsetY(true) : 0;
+                int sweepOrbOffY = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
                 int sweepPlayerTop = (s.Y_fixed >> 8) + sweepOrbOffY;
                 int sweepPlayerBottom = sweepPlayerTop + sweepHbH;
                 int sweepPlayerRight = sweepNesX + sweepHbW;
 
+                // Process all pending orb slots (0, 1, 2)
+                for (int _orbSlot = 0; _orbSlot < 3; _orbSlot++)
+                {
+                    int pendIdx, pendSid;
+                    if (_orbSlot == 0) { pendIdx = s.PendingOrbIndex; pendSid = s.PendingOrbSpriteId; }
+                    else if (_orbSlot == 1) { pendIdx = s.PendingOrbExtra1Index; pendSid = s.PendingOrbExtra1SpriteId; }
+                    else { pendIdx = s.PendingOrbExtra2Index; pendSid = s.PendingOrbExtra2SpriteId; }
+                    if (pendIdx < 0) continue;
+
 #if !DISABLE_DEBUG_LOGGING
-                PfLog($"[ORB_ACTIVATE] sid=0x{s.PendingOrbSpriteId:X2} gravFlipped={s.GravFlipped} mini={s.Mini}");
+                    PfLog($"[ORB_ACTIVATE] slot={_orbSlot} sid=0x{pendSid:X2} idx={pendIdx} gravFlipped={s.GravFlipped} mini={s.Mini}");
 #endif
-                // Record orb hit for targeted backtrack (only during real execution)
-                if (_speculativeDepth == 0)
-                    _hitOrbHistory.Add(s.PendingOrbIndex);
+                    if (_speculativeDepth == 0)
+                        _hitOrbHistory.Add(pendIdx);
 
-                if (IsDashOrb(s.PendingOrbSpriteId))
-                {
-                    ApplyDashOrb(ref s, s.PendingOrbSpriteId);
-                    s.ProcessedSprites.Add(s.PendingOrbIndex);
-                    if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(s.PendingOrbIndex);
-                }
-                else if (IsSpiderOrb(s.PendingOrbSpriteId))
-                {
-                    bool goUp = (s.PendingOrbSpriteId == 0x54);
-                    ApplySpiderTeleport(ref s, goUp);
-                    s.Orbed = true; // NES sets orbed after spider orb teleport (blocks immediate jump)
-                    s.ProcessedSprites.Add(s.PendingOrbIndex);
-                    if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(s.PendingOrbIndex);
-                }
-                else
-                {
-                    ApplyOrbSprite(ref s, s.PendingOrbSpriteId);
-                    // Black orb in spider mode: enable hold-to-teleport
-                    if (IsBlackOrb(s.PendingOrbSpriteId) && s.GameMode == 5)
-                        s.BlackOrbed = true;
-                    bool isMultiOrb = (s.PendingOrbSpriteId == 0x7B || s.PendingOrbSpriteId == 0x7C);
-                    if (!isMultiOrb)
+                    if (IsDashOrb(pendSid))
                     {
-                        s.ProcessedSprites.Add(s.PendingOrbIndex);
-                        if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(s.PendingOrbIndex);
+                        ApplyDashOrb(ref s, pendSid);
+                        s.ProcessedSprites.Add(pendIdx);
+                        if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(pendIdx);
                     }
-                }
-
-                // Mark ALL other overlapping tiles of the same orb type as processed.
-                // Multi-tile orbs that lack spriteAnchors entries appear as independent
-                // tiles; without this sweep the player could re-trigger the same physical
-                // orb on an adjacent tile in a later frame.
-                bool isMultiOrbSweep = (activatedSid == 0x7B || activatedSid == 0x7C);
-                if (!isMultiOrbSweep)
-                {
-                    int orbSweepStart = SpriteLowerBound(oldX_px - 4 * TILE);
-                    for (int _oi = orbSweepStart; _oi < _spritesArr.Length; _oi++)
+                    else if (IsSpiderOrb(pendSid))
                     {
-                        ref readonly var sp = ref _spritesArr[_oi];
-                        if (sp.AnchorX_px - TILE > sweepPlayerRight + TILE) break;
-                        if (sp.SpriteId != activatedSid) continue;
-                        if (s.ProcessedSprites.Contains(sp.Index)) continue;
-                        bool xO = !(sweepPlayerRight < sp.HitLeft || sp.HitRight < sweepNesX);
-                        bool yO = !(sweepPlayerBottom < sp.HitTop || sp.HitBottom < sweepPlayerTop);
-                        if (xO && yO)
+                        bool goUp = (pendSid == 0x54);
+                        ApplySpiderTeleport(ref s, goUp);
+                        s.Orbed = true;
+                        s.ProcessedSprites.Add(pendIdx);
+                        if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(pendIdx);
+                    }
+                    else
+                    {
+                        ApplyOrbSprite(ref s, pendSid);
+                        if (IsBlackOrb(pendSid) && s.GameMode == 5)
+                            s.BlackOrbed = true;
+                        bool isMultiOrb = (pendSid == 0x7B || pendSid == 0x7C);
+                        if (!isMultiOrb)
                         {
-                            s.ProcessedSprites.Add(sp.Index);
-                            if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(sp.Index);
+                            s.ProcessedSprites.Add(pendIdx);
+                            if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(pendIdx);
+                        }
+                    }
+
+                    // Sweep overlapping tiles of same type as processed (multi-tile dedup)
+                    bool isMultiOrbSweep = (pendSid == 0x7B || pendSid == 0x7C);
+                    if (!isMultiOrbSweep)
+                    {
+                        int orbSweepStart = SpriteLowerBound(oldX_px - 4 * TILE);
+                        for (int _oi = orbSweepStart; _oi < _spritesArr.Length; _oi++)
+                        {
+                            ref readonly var sp = ref _spritesArr[_oi];
+                            if (sp.AnchorX_px - TILE > sweepPlayerRight + TILE) break;
+                            if (sp.SpriteId != pendSid) continue;
+                            if (s.ProcessedSprites.Contains(sp.Index)) continue;
+                            bool xO = !(sweepPlayerRight < sp.HitLeft || sp.HitRight < sweepNesX);
+                            bool yO = !(sweepPlayerBottom < sp.HitTop || sp.HitBottom < sweepPlayerTop);
+                            if (xO && yO)
+                            {
+                                s.ProcessedSprites.Add(sp.Index);
+                                if (!_dualP2Guard) _p1OrbIndicesThisFrame!.Add(sp.Index);
+                            }
                         }
                     }
                 }
 
-                s.PendingOrbIndex = -1;
-                s.PendingOrbSpriteId = -1;
+                ClearPendingOrbs(ref s);
                 orbHitThisFrame = true;
                 if (_speculativeDepth == 0) _cubeJumpedThisStep = true; // Fix 23: orb activation consumes input — preserve True
             }
@@ -9064,8 +9105,10 @@ namespace FamidashEditor
                     }
 
                     // Pogo bounce: if BallEject landed (OnGround became true and vel was zeroed),
-                    // apply bounce using pre-eject velocity
-                    if (s.OnGround && s.VelY_fixed == 0 && !s.Orbed)
+                    // apply bounce using pre-eject velocity.
+                    // NES: bounce only occurs when moving toward the surface matching
+                    // current gravity direction, and NOT when orbhitonthisframe is set.
+                    if (s.OnGround && s.VelY_fixed == 0 && !orbHitThisFrame)
                     {
                         int newVel = (-preEjectVelY / 3) * 2;
                         // Minimum bounce = yellow pad velocity for swing column
@@ -9091,14 +9134,17 @@ namespace FamidashEditor
                 }
                 PfUpdateSlopeCounters_Fresh(ref s);
 
-                // Pogo black orb on press: input activates black orb velocity
-                if (input && !s.Orbed)
+                // Pogo black orb on press: input activates black orb velocity.
+                // NES: controllingplayer->press (not hold), gated by !orbhitonthisframe.
+                if (pressInput && !orbHitThisFrame && !s.Orbed)
                 {
                     int blackOrbVel = s.Mini
                         ? SharedPhysics.PadOrbHeights_Mini[6][7]
                         : SharedPhysics.PadOrbHeights[6][7];
-                    // Black orb vel is negative; apply in anti-gravity direction
-                    s.VelY_fixed = s.GravFlipped ? -blackOrbVel : blackOrbVel;
+                    // Black orb vel is negative in table; negate for normal gravity
+                    // (slam downward), keep as-is for inverted gravity (push upward).
+                    // Matches SIM: orbGravityMult = (gravity==0) ? -1 : 1
+                    s.VelY_fixed = s.GravFlipped ? blackOrbVel : -blackOrbVel;
                     s.Orbed = true;
                 }
                 else if (!input)
@@ -9123,6 +9169,12 @@ namespace FamidashEditor
             // Then bg_coll_floor_spikes() + bg_coll_R() run at OLD X.
             // x_movement() advances X AFTER these checks.
             // bg_coll_death() runs after x_movement(), at NEW X.
+            //
+            // EXCEPTION: For P2 in dual mode, NES syncs currplayer_x = player_x[0]
+            // (P1's post-advance X) BEFORE runthecolls(). So P2's floor spikes and
+            // forward collision use P1's NEW X, not OLD X.
+            if (_dualP2Guard)
+                s.X_fixed = newX_fixed;
 
             // -- STEP 7a: 4-CORNER SPIKE CHECK (bg_coll_floor_spikes) at OLD X --
             if (CheckFloorSpikes(ref s))
@@ -9148,6 +9200,22 @@ namespace FamidashEditor
                     if (_speculativeDepth == 0) { _lastDeathReason = "FWD_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                     s.DeathType = 8;
                     return false;
+                }
+
+                // NES bg_side_coll_common: when forward probe hits a slope, Y is
+                // nudged ±2 to help player slide past.  Only when not already on a
+                // slope (wasOnSlopeCounter == 0).  Wave/snake handle slopes as death
+                // elsewhere, so skip nudge for them.
+                if (s.SlopeWasOnCounter == 0 && s.GameMode != 6 && s.GameMode != 10)
+                {
+                    int hbW_n = (s.GameMode == 6 || s.GameMode == 10) ? 8 : GetHitboxW(s.Mini);
+                    int hbH_n = (s.GameMode == 6 || s.GameMode == 10) ? 8 : GetHitboxH(s.Mini);
+                    int hbOffY_n = (s.GameMode == 6 || s.GameMode == 10) ? 0 : GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
+                    int nudge = SharedPhysics.GetForwardSlopeNudge(_collisionMap,
+                        s.X_fixed >> 8, s.Y_fixed >> 8, hbW_n, hbH_n, hbOffY_n,
+                        s.GameMode, s.Mini, s.GravFlipped);
+                    if (nudge != 0)
+                        s.Y_fixed += nudge << 8;  // NES: high_byte(currplayer_y) += nudge
                 }
             }
 
@@ -9378,6 +9446,10 @@ namespace FamidashEditor
                 s.NinjaJumps = s.P2_NinjaJumps;
                 s.PendingOrbIndex = s.P2_PendingOrbIndex;
                 s.PendingOrbSpriteId = s.P2_PendingOrbSpriteId;
+                s.PendingOrbExtra1Index = s.P2_PendingOrbExtra1Index;
+                s.PendingOrbExtra1SpriteId = s.P2_PendingOrbExtra1SpriteId;
+                s.PendingOrbExtra2Index = s.P2_PendingOrbExtra2Index;
+                s.PendingOrbExtra2SpriteId = s.P2_PendingOrbExtra2SpriteId;
 
                 // FAMIDASH shared-press model: both players read from the same
                 // NES button press counter.  P1 runs first and may consume it;
@@ -9450,6 +9522,10 @@ namespace FamidashEditor
                 s.P2_NinjaJumps = s.NinjaJumps;
                 s.P2_PendingOrbIndex = s.PendingOrbIndex;
                 s.P2_PendingOrbSpriteId = s.PendingOrbSpriteId;
+                s.P2_PendingOrbExtra1Index = s.PendingOrbExtra1Index;
+                s.P2_PendingOrbExtra1SpriteId = s.PendingOrbExtra1SpriteId;
+                s.P2_PendingOrbExtra2Index = s.PendingOrbExtra2Index;
+                s.P2_PendingOrbExtra2SpriteId = s.PendingOrbExtra2SpriteId;
 
                 // SIM syncs mini globally — if P2 hit a mini portal, propagate to P1
                 if (s.P2_Mini != p1_Mini)
@@ -12154,6 +12230,10 @@ namespace FamidashEditor
                     s.P2_OnGround = true;
                     s.P2_PendingOrbIndex = -1;
                     s.P2_PendingOrbSpriteId = -1;
+                    s.P2_PendingOrbExtra1Index = -1;
+                    s.P2_PendingOrbExtra1SpriteId = -1;
+                    s.P2_PendingOrbExtra2Index = -1;
+                    s.P2_PendingOrbExtra2SpriteId = -1;
                 }
                 else
                 {
@@ -12168,6 +12248,26 @@ namespace FamidashEditor
             {
                 s.WrapMode = (lastWrapSid.Value == 0x8E);
             }
+        }
+
+        /// <summary>
+        /// Accumulate a pending orb into the next available slot (NES activates all overlapping orbs).
+        /// </summary>
+        private static void AddPendingOrb(ref SimState s, int index, int spriteId)
+        {
+            if (s.PendingOrbIndex < 0) { s.PendingOrbIndex = index; s.PendingOrbSpriteId = spriteId; }
+            else if (s.PendingOrbExtra1Index < 0) { s.PendingOrbExtra1Index = index; s.PendingOrbExtra1SpriteId = spriteId; }
+            else if (s.PendingOrbExtra2Index < 0) { s.PendingOrbExtra2Index = index; s.PendingOrbExtra2SpriteId = spriteId; }
+        }
+
+        /// <summary>
+        /// Clear all pending orb slots.
+        /// </summary>
+        private static void ClearPendingOrbs(ref SimState s)
+        {
+            s.PendingOrbIndex = -1; s.PendingOrbSpriteId = -1;
+            s.PendingOrbExtra1Index = -1; s.PendingOrbExtra1SpriteId = -1;
+            s.PendingOrbExtra2Index = -1; s.PendingOrbExtra2SpriteId = -1;
         }
 
         private bool ProcessSprites(ref SimState s, int currentX_px, out bool orbHitThisFrame)
@@ -12233,6 +12333,10 @@ namespace FamidashEditor
                         s.P2_NinjaJumps = 0;
                         s.P2_PendingOrbIndex = -1;
                         s.P2_PendingOrbSpriteId = -1;
+                        s.P2_PendingOrbExtra2Index = -1;
+                        s.P2_PendingOrbExtra2SpriteId = -1;
+                        s.P2_PendingOrbExtra1Index = -1;
+                        s.P2_PendingOrbExtra1SpriteId = -1;
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[DUAL_ACTIVATE] idx={sp.Index} P2_Y={s.P2_Y_fixed >> 8} P2_VelY=0x{s.P2_VelY_fixed:X4} P2_GravFlipped={s.P2_GravFlipped}");
 #endif
@@ -12473,8 +12577,8 @@ namespace FamidashEditor
                 {
                     if (s.Dashing != 0) continue; // block orbs while dashing (matches SIM/NES)
                     // NES orb check uses sprite centering (Generic.y += (0x10-h)>>1 = +4 for mini),
-                    // distinct from floor-collision offset (+9) used by pads/portals.
-                    int orbOffY = (s.Mini && !s.GravFlipped) ? SharedPhysics.GetMiniCenterOffsetY(true) : 0;
+                    // unconditionally applied regardless of gravity direction.
+                    int orbOffY = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
                     int orbPlayerTop = playerY_px + orbOffY;
                     int orbPlayerBottom = orbPlayerTop + hbH;
                     bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < nesX);
@@ -12482,10 +12586,9 @@ namespace FamidashEditor
 
                     if (xOverlap && yOverlap)
                     {
-                        s.PendingOrbIndex = sp.Index;
-                        s.PendingOrbSpriteId = sid;
+                        AddPendingOrb(ref s, sp.Index, sid);
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[ORB_PENDING] sid=0x{sid:X2} idx={sp.Index} playerBox=({nesX},{orbPlayerTop})-({playerRight},{orbPlayerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom})");
+                        PfLog($"[ORB_PENDING] sid=0x{sid:X2} idx={sp.Index} playerBox=({nesX},{orbPlayerTop})-({playerRight},{orbPlayerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom})");;
 #endif
                     }
                     continue;
@@ -12495,15 +12598,14 @@ namespace FamidashEditor
                 if (IsDashOrb(sid))
                 {
                     if (s.Dashing != 0) continue; // block orbs while dashing
-                    int orbOffY = (s.Mini && !s.GravFlipped) ? SharedPhysics.GetMiniCenterOffsetY(true) : 0;
+                    int orbOffY = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
                     int orbPlayerTop = playerY_px + orbOffY;
                     int orbPlayerBottom = orbPlayerTop + hbH;
                     bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < nesX);
                     bool yOverlap = !((orbPlayerBottom) < sp.HitTop || sp.HitBottom < orbPlayerTop);
                     if (xOverlap && yOverlap)
                     {
-                        s.PendingOrbIndex = sp.Index;
-                        s.PendingOrbSpriteId = sid;
+                        AddPendingOrb(ref s, sp.Index, sid);
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[DASH_ORB_PENDING] sid=0x{sid:X2} idx={sp.Index}");
 #endif
@@ -12514,7 +12616,7 @@ namespace FamidashEditor
                 // Spider orb/pad detection
                 if (IsSpiderOrb(sid) || IsSpiderPad(sid))
                 {
-                    int orbOffY = (s.Mini && !s.GravFlipped) ? SharedPhysics.GetMiniCenterOffsetY(true) : 0;
+                    int orbOffY = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
                     int orbPlayerTop = playerY_px + orbOffY;
                     int orbPlayerBottom = orbPlayerTop + hbH;
                     bool xOverlap = !((playerRight) < sp.HitLeft || sp.HitRight < nesX);
@@ -12525,8 +12627,7 @@ namespace FamidashEditor
                         if (isOrb)
                         {
                             // Spider orbs require input — store as pending
-                            s.PendingOrbIndex = sp.Index;
-                            s.PendingOrbSpriteId = sid;
+                            AddPendingOrb(ref s, sp.Index, sid);
                         }
                         else
                         {
@@ -12676,7 +12777,7 @@ namespace FamidashEditor
                             // Re-check spider pads (also fire immediately, not tracked in ProcessedSprites)
                             if (IsSpiderPad(rsid))
                             {
-                                int orbOffY2 = (s.Mini && !s.GravFlipped) ? SharedPhysics.GetMiniCenterOffsetY(true) : 0;
+                                int orbOffY2 = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
                                 int orbPlayerTop2 = playerY_px + orbOffY2;
                                 int orbPlayerBottom2 = orbPlayerTop2 + hbH;
                                 bool rxOverlap = !((playerRight) < rsp.HitLeft || rsp.HitRight < nesX);

@@ -1479,6 +1479,13 @@ namespace FamidashEditor
                 collision == MetatileCollision.COL_NO_SIDE)
                 return false;
 
+            // NES bg_coll_sides/bg_coll_mini_blocks never return 1 for slope tiles.
+            // Slopes only affect floor/ceiling collision, not side/forward collision.
+            // NES bg_side_coll_common applies a ±2 Y nudge when a slope is detected
+            // at the forward probe (handled by caller via slopeNudgeY out param).
+            if (IsSlopeTile(collision))
+                return false;
+
             int tileWorldX = tileX * TILE;
             int tileWorldY = tileY * TILE;
             int localX = Math.Max(0, Math.Min(TILE - 1, rightEdge_px - tileWorldX));
@@ -1489,6 +1496,57 @@ namespace FamidashEditor
                 return true;
 
             return false;
+        }
+
+        /// <summary>
+        /// NES bg_side_coll_common slope nudge: when the forward probe hits a slope tile,
+        /// Y is adjusted by ±2 to help the player navigate past slopes.
+        /// Returns the Y nudge to apply (0 if no slope at probe, +2 for upside-down slopes, -2 for normal).
+        /// Only call when slopeWasOnCounter == 0 (NES skips nudge if already on a slope).
+        /// </summary>
+        internal static int GetForwardSlopeNudge(
+            in CollisionMap map, int playerX_px, int playerY_px,
+            int hbW, int hbH, int hbOffY, int gameMode, bool mini, bool gravFlipped)
+        {
+            int rightEdge_px = playerX_px + hbW;
+            int centerY_px;
+            if (mini)
+            {
+                int miniTopOffset = (0x10 - hbH) >> 1;
+                centerY_px = playerY_px + miniTopOffset + (hbH >> 1);
+                if (gameMode == 0 || gameMode == 4 || gameMode == 8)
+                    centerY_px += gravFlipped ? 3 : -2;
+            }
+            else
+            {
+                centerY_px = playerY_px + (hbH >> 1);
+            }
+
+            int tileX = rightEdge_px / TILE;
+            int tileY = centerY_px / TILE;
+            int tileArrayY = tileY + map.GroundRowsToReserve;
+
+            if (tileX < 0 || tileX >= map.MapWidth) return 0;
+            if (tileArrayY < 0 || tileArrayY >= map.MapHeight) return 0;
+
+            int tileIdx = tileArrayY * map.MapWidth + tileX;
+            if (tileIdx < 0 || tileIdx >= map.Tiles.Length) return 0;
+
+            int tileId = map.Tiles[tileIdx];
+            int mappedTid = MapTileForCollision(tileId);
+            var collision = MetatileCollisionTable.GetCollision((byte)mappedTid);
+
+            if (!IsSlopeTile(collision)) return 0;
+
+            // NES: SLOPE_UPSIDEDOWN slopes nudge +2 (push away from ceiling slope),
+            // regular (floor) slopes nudge -2 (push away from floor slope).
+            bool isUpsideDown = (collision == MetatileCollision.COL_SLOPE_RU45 ||
+                                 collision == MetatileCollision.COL_SLOPE_LU45) ||
+                                (collision >= MetatileCollision.COL_SLOPE_RU22_RIGHT &&
+                                 collision <= MetatileCollision.COL_SLOPE_LU22_LEFT) ||
+                                (collision >= MetatileCollision.COL_SLOPE_RU66_TOP &&
+                                 collision <= MetatileCollision.COL_SLOPE_LU66_TOP);
+            return isUpsideDown ? 2 : -2;
         }
 
         // ════════════════════════════════════════════════════════════════════

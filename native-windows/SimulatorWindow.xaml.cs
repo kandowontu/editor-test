@@ -133,6 +133,8 @@ namespace FamidashEditor
                 if (s == 0x6F || s == 0x7F) return true;
                 // Always hide player trail triggers
                 if (s == 0xF2 || s == 0xF3) return true;
+                // Always hide invisible teleport portals (0x75-0x78)
+                if (s >= 0x75 && s <= 0x78) return true;
                 if (!hideTriggerSprites) return false;
                 return false;
             }
@@ -310,9 +312,26 @@ namespace FamidashEditor
             catch { }
         }
 
+        // NES drawcube_sprite_table: 24 entries mapping rotation frame to tile index (bits 0-2) + flip (bits 6-7).
+        // NOFLIP=0x00, H_FLIP=0x40, V_FLIP=0x80, HVFLIP=0xC0
+        private static readonly byte[] drawcube_sprite_table = new byte[24]
+        {
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05,   // Frames  0- 5: NOFLIP | tile 0-5
+            0x06, 0x85, 0x84, 0x83, 0x82, 0x81,   // Frames  6-11: tile 6 noflip, then V_FLIP | tile 5-1
+            0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5,   // Frames 12-17: HVFLIP | tile 0-5
+            0xC6, 0x45, 0x44, 0x43, 0x42, 0x41     // Frames 18-23: tile 6 HV, then H_FLIP | tile 5-1
+        };
+
+        // NES rounding table: snaps frame to nearest 90° (0, 6, 12, 18)
+        private static readonly int[] drawcube_rounding_table = new int[13]
+        {
+            0, -1, -2, 3, 2, 1, 0, -1, -2, 3, 2, 1, -24
+        };
+
         /// <summary>
         /// Update cube rotation state based on velocity and gravity.
         /// Implements the cube animation logic from nesdash.s drawplayerone/cube routine.
+        /// Uses 24-frame cycle (0-23) matching NES, with drawcube_sprite_table for tile+flip.
         /// 
         /// When velocity == 0: snap to nearest 90° (0, 6, 12, 18)
         /// When velocity != 0: rotate based on gravity direction
@@ -321,22 +340,30 @@ namespace FamidashEditor
         {
             try
             {
-                int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;  // Extract high byte (current frame 0-6)
+                int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;  // Extract high byte (frame 0-23)
                 int subFrame = cubeRotate_fixed & 0xFF;            // Extract low byte (accumulator)
                 
                 // NES: BIT _cube_data; BMI @round — if on slope, ALWAYS use rounding
                 // regardless of velocity (skip velocity-based rotation entirely)
                 bool onSlope = (currplayer_slope_frames > 0 || currplayer_slope_type != 0);
                 
-                if (onSlope && currplayer_slope_type > 0 && currplayer_slope_type < slopeRotationFrame_7.Length)
+                if (onSlope && currplayer_slope_type > 0 && currplayer_slope_type < slopeRotationFrame_24.Length)
                 {
-                    int slopeFrame = slopeRotationFrame_7[currplayer_slope_type];
+                    int slopeFrame = slopeRotationFrame_24[currplayer_slope_type];
                     cubeRotate_fixed = slopeFrame << 8;
                     AppendSimDebug($"[CUBE_ROT] Slope rotation: slope_type=0x{currplayer_slope_type:X2} -> frame {slopeFrame}");
                 }
                 else if (playerVelY_fixed == 0)
                 {
-                    cubeRotate_fixed = 0;
+                    // NES: round to nearest 90° using drawcube_rounding_table
+                    int idx = frameIndex;
+                    if (idx >= 12) idx -= 12;
+                    if (idx < 0) idx = 0;
+                    if (idx > 12) idx = 12;
+                    int rounded = frameIndex + drawcube_rounding_table[idx];
+                    if (rounded >= 24) rounded -= 24;
+                    if (rounded < 0) rounded += 24;
+                    cubeRotate_fixed = rounded << 8;
                 }
                 else
                 {
@@ -354,8 +381,8 @@ namespace FamidashEditor
                         frameIndex++;
                         subFrame -= 256;
                         
-                        // Wrap at 7 frames (0-6)
-                        if (frameIndex >= 7)
+                        // Wrap at 24 frames (0-23)
+                        if (frameIndex >= 24)
                         {
                             frameIndex = 0;
                         }
@@ -365,10 +392,10 @@ namespace FamidashEditor
                         frameIndex--;
                         subFrame += 256;
                         
-                        // Wrap backward: 0 -> 6
+                        // Wrap backward: 0 -> 23
                         if (frameIndex < 0)
                         {
-                            frameIndex = 6;
+                            frameIndex = 23;
                         }
                     }
                     
@@ -549,22 +576,17 @@ namespace FamidashEditor
 
         /// <summary>
         /// Get the sprite frame and flip flags for the current cube rotation.
-        /// Returns the frame index (0-6) in the low 3 bits and flip flags in bits 6-7.
+        /// Returns the NES drawcube_sprite_table entry:
+        ///   bits 0-2: tile index (0-6), bits 6-7: flip flags (00=NONE, 40=H, 80=V, C0=HV).
         /// </summary>
         private int GetCubeSpriteFrame()
         {
             try
             {
-                int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;  // Extract frame 0-6
-                
-                // NES reversal is handled in UpdateCubeRotation by negating gravity
-                // increment when flipped — no display-time mirror needed.
-                
-                if (frameIndex >= 0 && frameIndex < 7)
-                {
-                    return frameIndex;
-                }
-                return 0;
+                int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;
+                if (frameIndex < 0 || frameIndex >= 24)
+                    frameIndex = 0;
+                return drawcube_sprite_table[frameIndex];
             }
             catch { return 0; }
         }
@@ -577,25 +599,32 @@ namespace FamidashEditor
         {
             try
             {
-                int frameIndex = (cubeRotateMini_fixed >> 8) & 0xFF;  // Extract high byte (current frame 0-6)
+                int frameIndex = (cubeRotateMini_fixed >> 8) & 0xFF;  // Extract high byte (frame 0-23)
                 int subFrame = cubeRotateMini_fixed & 0xFF;            // Extract low byte (accumulator)
                 
                 // NES: BIT _cube_data; BMI @round — if on slope, ALWAYS use rounding
                 bool onSlope = (currplayer_slope_frames > 0 || currplayer_slope_type != 0);
                 
-                if (onSlope && currplayer_slope_type > 0 && currplayer_slope_type < slopeRotationFrame_7.Length)
+                if (onSlope && currplayer_slope_type > 0 && currplayer_slope_type < slopeRotationFrame_24.Length)
                 {
-                    int slopeFrame = slopeRotationFrame_7[currplayer_slope_type];
+                    int slopeFrame = slopeRotationFrame_24[currplayer_slope_type];
                     cubeRotateMini_fixed = slopeFrame << 8;
                 }
                 else if (playerVelY_fixed == 0)
                 {
-                    cubeRotateMini_fixed = 0;
+                    // Round to nearest 90° using drawcube_rounding_table
+                    int idx = frameIndex;
+                    if (idx >= 12) idx -= 12;
+                    if (idx < 0) idx = 0;
+                    if (idx > 12) idx = 12;
+                    int rounded = frameIndex + drawcube_rounding_table[idx];
+                    if (rounded >= 24) rounded -= 24;
+                    if (rounded < 0) rounded += 24;
+                    cubeRotateMini_fixed = rounded << 8;
                 }
                 else
                 {
                     // Velocity is non-zero: accumulate gravity increment
-                    // NES: when gravity is inverted, subtract CUBE_GRAVITY (rotate backwards)
                     int gravityIncrement = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
                     if (gravityFlipped) gravityIncrement = -gravityIncrement;
                     subFrame += gravityIncrement;
@@ -605,23 +634,13 @@ namespace FamidashEditor
                     {
                         frameIndex++;
                         subFrame -= 256;
-                        
-                        // Wrap at 7 frames (0-6)
-                        if (frameIndex >= 7)
-                        {
-                            frameIndex = 0;
-                        }
+                        if (frameIndex >= 24) frameIndex = 0;
                     }
                     else if (subFrame < 0)
                     {
                         frameIndex--;
                         subFrame += 256;
-                        
-                        // Wrap backward: 0 -> 6
-                        if (frameIndex < 0)
-                        {
-                            frameIndex = 6;
-                        }
+                        if (frameIndex < 0) frameIndex = 23;
                     }
                     
                     // Recombine into 16-bit value
@@ -633,25 +652,22 @@ namespace FamidashEditor
 
         /// <summary>
         /// Get the sprite frame index for the current mini cube rotation.
-        /// Maps the 24-frame rotation indices to the 5 available mini frames.
+        /// Maps the 24-frame rotation indices to the 5 available mini frames using drawcube_sprite_table.
         /// </summary>
         private int GetCubeSpriteMiniFrame()
         {
             try
             {
                 int frameIndex = (cubeRotateMini_fixed >> 8) & 0xFF;
-                
-                // NES reversal is handled in UpdateCubeRotationMini by negating gravity
-                // increment when flipped — no display-time mirror needed.
-                
-                if (frameIndex < 0 || frameIndex >= 7)
-                    return 0;
-                // Map 7 frames to 5 mini frames: 0->0, 1->1, 2->1, 3->2, 4->2, 5->3, 6->3
-                if (frameIndex == 0) return 0;
-                if (frameIndex == 1 || frameIndex == 2) return 1;
-                if (frameIndex == 3 || frameIndex == 4) return 2;
-                if (frameIndex == 5 || frameIndex == 6) return 3;
-                return 0;
+                if (frameIndex < 0 || frameIndex >= 24)
+                    frameIndex = 0;
+                // Get tile index (0-6) from sprite table
+                int tileIdx = drawcube_sprite_table[frameIndex] & 0x07;
+                // Map 7 tiles to 5 mini frames: 0->0, 1->1, 2->1, 3->2, 4->2, 5->3, 6->3
+                if (tileIdx == 0) return 0;
+                if (tileIdx <= 2) return 1;
+                if (tileIdx <= 4) return 2;
+                return 3;
             }
             catch { return 0; }
         }
@@ -2105,8 +2121,13 @@ namespace FamidashEditor
 
                     if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58 || sid == 0x6A || sid == 0x6B || sid == 0x6C)
                     {
+                        if (processedGameModePortals.Contains(idx)) continue;
+
                         if (!SpriteIntersectsPlayer(idx, sid, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                             continue;
+
+                        // Mark as processed so we don't re-check this portal
+                        processedGameModePortals.Add(idx);
 
                         int oldMode = currentGameMode;
                         int newMode = sid switch {
@@ -2174,7 +2195,10 @@ namespace FamidashEditor
                         }
 
                         try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
-                        break;
+                        if (newMode != oldMode)
+                            break;  // Mode changed — stop scanning
+                        // Same mode — continue scanning for other portals at different Y
+                        continue;
                     }
 
                     if (sid == 0x64 || sid == 0x7E)
@@ -3663,6 +3687,7 @@ namespace FamidashEditor
         // portal activates only once per crossing.
         private System.Collections.Generic.HashSet<int> processedGravityPortals = new System.Collections.Generic.HashSet<int>();
         private System.Collections.Generic.HashSet<int> processedGravityModPortals = new System.Collections.Generic.HashSet<int>();
+        private System.Collections.Generic.HashSet<int> processedGameModePortals = new System.Collections.Generic.HashSet<int>();
         private System.Collections.Generic.HashSet<int> processedMiniPortals = new System.Collections.Generic.HashSet<int>();
         // Track random portals (0x64 and 0x7E) we've already activated so each only activates once
         private System.Collections.Generic.HashSet<int> processedRandomPortals = new System.Collections.Generic.HashSet<int>();
@@ -4143,6 +4168,13 @@ namespace FamidashEditor
                 
                 if (playerImage != null && playerImage.Source != null)
                 {
+                    // Cube/ninja/football modes handle flip via rotation sprite table — skip here
+                    if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 11)
+                    {
+                        // Don't touch RenderTransform; the per-frame rotation rendering handles it
+                        return;
+                    }
+                    
                     // Wave special handling: flip based on velocity direction (moving UP = flip)
                     if (currentGameMode == 6)
                     {
@@ -6505,6 +6537,7 @@ namespace FamidashEditor
                 try { processedGravityModPortals.Clear(); } catch { }
                 try { processedSpeedPortals.Clear(); } catch { }
                 try { processedRandomPortals.Clear(); } catch { }
+                try { processedGameModePortals.Clear(); } catch { }
                 try { processedMiniPortals.Clear(); } catch { }  // Reset dual/single portal tracking
                 try { processedTeleportPortals.Clear(); } catch { }  // Reset teleport portal tracking
                 try { processedCamLockPortals.Clear(); } catch { }
@@ -7959,6 +7992,7 @@ namespace FamidashEditor
                             if (processedColorTriggers.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedColorTriggers.Remove(idx);
                             if (processedGravityPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityPortals.Remove(idx);
                             if (processedGravityModPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGravityModPortals.Remove(idx);
+                            if (processedGameModePortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedGameModePortals.Remove(idx);
                             if (processedOrbs.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedOrbs.Remove(idx);
                             // Speed portals stay permanently processed (no Remove) to prevent re-triggering.
                             if (processedTeleportPortals.Contains(idx) && anchorX_center_fixed > INTERACTION_LINE_FIXED) processedTeleportPortals.Remove(idx);
@@ -8427,6 +8461,16 @@ namespace FamidashEditor
                 }
                 catch { }
             }
+
+            // Update pogo icon flip (every frame for gravity changes)
+            if (currentGameMode == 9)
+            {
+                try
+                {
+                    UpdatePlayerIconFlip();
+                }
+                catch { }
+            }
             
             // Update cube icon based on rotation animation (every frame for modes 0, 4, 8)
             if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8)
@@ -8435,13 +8479,16 @@ namespace FamidashEditor
                 {
                     if (!miniMode)  // Only animate non-mini
                     {
-                        // Extract actual frame index (high byte of cubeRotate_fixed)
-                        int frameIndex = (cubeRotate_fixed >> 8) & 0xFF;
-                        frameIndex = frameIndex % 7;  // Map to 0-6 (we have 7 base frames)
+                        // Get sprite table entry: bits 0-2 = tile index (0-6), bits 6-7 = flip flags
+                        int spriteEntry = GetCubeSpriteFrame();
+                        int tileIdx = spriteEntry & 0x07;
+                        bool cubeHFlip = (spriteEntry & 0x40) != 0;
+                        bool cubeVFlip = (spriteEntry & 0x80) != 0;
                         
                         // Choose frame names based on mode (static to avoid per-frame allocation)
                         string[] frameNames = (currentGameMode == 8) ? s_ninjaFrameNames : s_cubeFrameNames;
-                        string chosenFrame = frameNames[frameIndex];
+                        if (tileIdx >= frameNames.Length) tileIdx = 0;
+                        string chosenFrame = frameNames[tileIdx];
                         
                         // Track current image name via a tag property
                         string currentImageName = playerImage?.Tag as string ?? "";
@@ -8490,11 +8537,32 @@ namespace FamidashEditor
                                 }
                             }
                         }
+                        
+                        // Apply flip flags from sprite table (handles all 4 quadrants of rotation)
+                        if (playerImage != null)
+                        {
+                            if (cubeHFlip || cubeVFlip)
+                            {
+                                playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                                playerImage.RenderTransform = new ScaleTransform(cubeHFlip ? -1 : 1, cubeVFlip ? -1 : 1);
+                            }
+                            else
+                            {
+                                playerImage.RenderTransform = Transform.Identity;
+                            }
+                        }
                     }
                     else  // Mini mode animation
                     {
                         // Extract actual frame index (high byte of cubeRotateMini_fixed)
-                        int miniFrameIndex = GetCubeSpriteMiniFrame();  // Returns 0-4
+                        int miniFrameIndex = GetCubeSpriteMiniFrame();  // Returns 0-3
+                        
+                        // Get flip flags from sprite table for mini rotation
+                        int miniRawFrame = (cubeRotateMini_fixed >> 8) & 0xFF;
+                        if (miniRawFrame < 0 || miniRawFrame >= 24) miniRawFrame = 0;
+                        int miniSpriteEntry = drawcube_sprite_table[miniRawFrame];
+                        bool miniHFlip = (miniSpriteEntry & 0x40) != 0;
+                        bool miniVFlip = (miniSpriteEntry & 0x80) != 0;
                         
                         // Choose frame names based on mode
                         string[] miniFrameNames = (currentGameMode == 8) ? new string[]
@@ -8560,6 +8628,20 @@ namespace FamidashEditor
                                         playerImage.Tag = chosenFrame;
                                     }
                                 }
+                            }
+                        }
+                        
+                        // Apply flip flags from sprite table for mini cube
+                        if (playerImage != null)
+                        {
+                            if (miniHFlip || miniVFlip)
+                            {
+                                playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                                playerImage.RenderTransform = new ScaleTransform(miniHFlip ? -1 : 1, miniVFlip ? -1 : 1);
+                            }
+                            else
+                            {
+                                playerImage.RenderTransform = Transform.Identity;
                             }
                         }
                     }
@@ -11459,6 +11541,7 @@ namespace FamidashEditor
                                 // NES bg_coll_sides: COL_FLOOR_CEIL and COL_NO_SIDE never block side collision.
                                 // CheckPixelCollision treats them as solid (correct for floor/ceiling),
                                 // but they must be excluded for forward/side collision.
+                                // NES bg_coll_sides/bg_coll_mini_blocks also never block on slope tiles.
                                 if (middlePixelBlocked)
                                 {
                                     int fwdTX = playerRightEdge_fwd / TILE;
@@ -11468,7 +11551,8 @@ namespace FamidashEditor
                                     {
                                         int fwdTid = tiles[fwdTIY * mapWidth + fwdTX];
                                         var fwdCol = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(fwdTid));
-                                        if (fwdCol == MetatileCollision.COL_FLOOR_CEIL || fwdCol == MetatileCollision.COL_NO_SIDE)
+                                        if (fwdCol == MetatileCollision.COL_FLOOR_CEIL || fwdCol == MetatileCollision.COL_NO_SIDE ||
+                                            SharedPhysics.IsSlopeTile(fwdCol))
                                             middlePixelBlocked = false;
                                     }
                                 }
@@ -11507,6 +11591,52 @@ namespace FamidashEditor
                             }
                         }
                         // === END FORWARD COLLISION CHECK ===
+                        
+                        // NES bg_side_coll_common slope Y nudge: when forward probe hits a
+                        // slope (and not already on slope), adjust Y by ±2 pixels.
+                        // Wave/snake handle slopes separately (as death), so skip them.
+                        if (!deathTriggered && !ShouldSkipSideCollisionForSlope() &&
+                            currentGameMode != 6 && currentGameMode != 10)
+                        {
+                            int playerX_px_nudge = preAdvancePlayerX_fixed >> 8;
+                            int playerY_px_nudge = playerY_fixed >> 8;
+                            int hbW_nudge = (currplayer_mini != 0) ? 8 : 15;
+                            int hbH_nudge = (currplayer_mini != 0) ? 7 : 15;
+                            int centerY_nudge;
+                            if (currplayer_mini != 0)
+                            {
+                                int miniOff = (0x10 - hbH_nudge) >> 1;
+                                centerY_nudge = playerY_px_nudge + miniOff + (hbH_nudge >> 1);
+                                if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8)
+                                    centerY_nudge += (currplayer_gravity != 0) ? 3 : -2;
+                            }
+                            else
+                            {
+                                centerY_nudge = playerY_px_nudge + (hbH_nudge >> 1);
+                            }
+                            int rightEdge_nudge = playerX_px_nudge + hbW_nudge;
+                            int nTX = rightEdge_nudge / TILE;
+                            int nTY = centerY_nudge / TILE;
+                            int groundRowsToReserve_n = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int nTIY = nTY + groundRowsToReserve_n;
+                            if (nTX >= 0 && nTX < mapWidth && nTIY >= 0 && nTIY < mapHeight)
+                            {
+                                int nTid = tiles[nTIY * mapWidth + nTX];
+                                var nCol = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(nTid));
+                                if (SharedPhysics.IsSlopeTile(nCol))
+                                {
+                                    // NES: upside-down slopes (RU/LU) nudge +2, floor slopes (RD/LD) nudge -2
+                                    bool isUpsideDown = (nCol == MetatileCollision.COL_SLOPE_RU45 ||
+                                                        nCol == MetatileCollision.COL_SLOPE_LU45) ||
+                                                       (nCol >= MetatileCollision.COL_SLOPE_RU22_RIGHT &&
+                                                        nCol <= MetatileCollision.COL_SLOPE_LU22_LEFT) ||
+                                                       (nCol >= MetatileCollision.COL_SLOPE_RU66_TOP &&
+                                                        nCol <= MetatileCollision.COL_SLOPE_LU66_TOP);
+                                    int fwdNudge = isUpsideDown ? 2 : -2;
+                                    playerY_fixed += fwdNudge << 8;
+                                }
+                            }
+                        }
                         
                         // --- Wave-specific slope death checks (NES bg_coll_death + bg_coll_R) ---
                         // NES bg_coll_death calls bg_coll_slope at the center point.
@@ -11948,6 +12078,176 @@ namespace FamidashEditor
                             player_x_fixed[1] = player_x_fixed[0];
                             AppendSimDebug($"[PLAYER2_X_SYNC] Synced X to player 1: {playerX_fixed>>8}");
                             
+                            // === P2 DEATH CHECKS (NES: x_movement_coll + bg_coll_death run for P2) ===
+                            // NES processes x_movement_coll (floor spikes + forward collision) and
+                            // bg_coll_death for P2 at P1's X, P2's post-physics Y.
+                            // P2's X doesn't advance independently (synced to P1), so no preAdvance distinction.
+                            if (!MainWindow.Option_NoDeath && !deathTriggered)
+                            {
+                                int p2X_px = playerX_fixed >> 8;
+                                int p2Y_px = playerY_fixed >> 8;
+                                int groundRowsToReserve_p2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                                
+                                // 1) Floor spike check (NES bg_coll_floor_spikes)
+                                if (CheckFloorSpikes(p2X_px, p2Y_px, out int p2FsDeathX, out int p2FsDeathY))
+                                {
+                                    AppendSimDebug($"[P2_DEATH] Floor spike at ({p2FsDeathX},{p2FsDeathY})");
+                                    deathTriggered = true;
+                                    deathTileX = p2FsDeathX;
+                                    deathTileY = p2FsDeathY;
+                                    paused = true;
+                                    _ = StopMusicAsync();
+                                    try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } try { mw.AddDeathMarker(p2FsDeathX, p2FsDeathY); } catch { } } })); } catch { }
+                                }
+                                
+                                // 2) Forward collision check (NES bg_coll_R → bg_side_coll_common)
+                                if (!deathTriggered && !ShouldSkipSideCollisionForSlope())
+                                {
+                                    int hitboxW_p2 = (currentGameMode == 6) ? 8 : ((currplayer_mini != 0) ? 8 : 15);
+                                    int hitboxH_p2 = (currentGameMode == 6) ? 8 : ((currplayer_mini != 0) ? 7 : 15);
+                                    int rightEdge_p2 = p2X_px + hitboxW_p2;
+                                    int centerY_p2;
+                                    if (currentGameMode == 6)
+                                    {
+                                        centerY_p2 = p2Y_px + (hitboxH_p2 >> 1);
+                                    }
+                                    else if (currplayer_mini != 0)
+                                    {
+                                        int miniTopOff_p2 = (0x10 - hitboxH_p2) >> 1;
+                                        centerY_p2 = p2Y_px + miniTopOff_p2 + (hitboxH_p2 >> 1);
+                                        if (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8)
+                                            centerY_p2 += (currplayer_gravity != 0) ? 3 : -2;
+                                    }
+                                    else
+                                    {
+                                        centerY_p2 = p2Y_px + (hitboxH_p2 >> 1);
+                                    }
+                                    
+                                    bool p2MiddleBlocked = CheckPixelCollision(rightEdge_p2, centerY_p2, groundRowsToReserve_p2);
+                                    if (p2MiddleBlocked)
+                                    {
+                                        int fwdTX_p2 = rightEdge_p2 / TILE;
+                                        int fwdTY_p2 = centerY_p2 / TILE;
+                                        int fwdTIY_p2 = fwdTY_p2 + groundRowsToReserve_p2;
+                                        if (fwdTX_p2 >= 0 && fwdTX_p2 < mapWidth && fwdTIY_p2 >= 0 && fwdTIY_p2 < mapHeight)
+                                        {
+                                            int fwdTid_p2 = tiles[fwdTIY_p2 * mapWidth + fwdTX_p2];
+                                            var fwdCol_p2 = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(fwdTid_p2));
+                                            if (fwdCol_p2 == MetatileCollision.COL_FLOOR_CEIL || fwdCol_p2 == MetatileCollision.COL_NO_SIDE ||
+                                                SharedPhysics.IsSlopeTile(fwdCol_p2))
+                                                p2MiddleBlocked = false;
+                                        }
+                                    }
+                                    bool p2MiddleDeath = PointHitsSpikeFloor(rightEdge_p2, centerY_p2, groundRowsToReserve_p2);
+                                    
+                                    if (p2MiddleBlocked || p2MiddleDeath)
+                                    {
+                                        string reason_p2 = p2MiddleBlocked ? "Forward collision" : "Forward spike death";
+                                        AppendSimDebug($"[P2_DEATH] {reason_p2} at ({rightEdge_p2},{centerY_p2})");
+                                        deathTriggered = true;
+                                        deathTileX = rightEdge_p2;
+                                        deathTileY = centerY_p2;
+                                        paused = true;
+                                        _ = StopMusicAsync();
+                                        try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } try { mw.AddDeathMarker(rightEdge_p2, centerY_p2); } catch { } } })); } catch { }
+                                    }
+                                    
+                                    // Slope Y nudge for P2 (non-wave/snake)
+                                    if (!deathTriggered && currentGameMode != 6 && currentGameMode != 10)
+                                    {
+                                        int nTX_p2 = rightEdge_p2 / TILE;
+                                        int nTY_p2 = centerY_p2 / TILE;
+                                        int nTIY_p2 = nTY_p2 + groundRowsToReserve_p2;
+                                        if (nTX_p2 >= 0 && nTX_p2 < mapWidth && nTIY_p2 >= 0 && nTIY_p2 < mapHeight)
+                                        {
+                                            int nTid_p2 = tiles[nTIY_p2 * mapWidth + nTX_p2];
+                                            var nCol_p2 = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(nTid_p2));
+                                            if (SharedPhysics.IsSlopeTile(nCol_p2))
+                                            {
+                                                bool isUp_p2 = (nCol_p2 == MetatileCollision.COL_SLOPE_RU45 ||
+                                                                nCol_p2 == MetatileCollision.COL_SLOPE_LU45) ||
+                                                               (nCol_p2 >= MetatileCollision.COL_SLOPE_RU22_RIGHT &&
+                                                                nCol_p2 <= MetatileCollision.COL_SLOPE_LU22_LEFT) ||
+                                                               (nCol_p2 >= MetatileCollision.COL_SLOPE_RU66_TOP &&
+                                                                nCol_p2 <= MetatileCollision.COL_SLOPE_LU66_TOP);
+                                                playerY_fixed += (isUp_p2 ? 2 : -2) << 8;
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // 3) Wave/snake slope death checks
+                                if (!deathTriggered && (currentGameMode == 6 || currentGameMode == 10))
+                                {
+                                    int wW_p2 = 8, wH_p2 = 8;
+                                    bool isMiniWave_p2 = (currplayer_mini != 0);
+                                    // Center-point slope
+                                    int cX_p2 = p2X_px + (wW_p2 >> 1) - 1;
+                                    int cY_p2 = p2Y_px + (wH_p2 >> 1);
+                                    int cTX_p2 = cX_p2 / TILE, cTY_p2 = cY_p2 / TILE;
+                                    int cTIY_p2 = cTY_p2 + groundRowsToReserve_p2;
+                                    if (cTX_p2 >= 0 && cTX_p2 < mapWidth && cTIY_p2 >= 0 && cTIY_p2 < mapHeight)
+                                    {
+                                        byte cTVal_p2 = (byte)tiles[cTIY_p2 * mapWidth + cTX_p2];
+                                        var cCol_p2 = MetatileCollisionTable.GetCollision(cTVal_p2);
+                                        if (cCol_p2 >= MetatileCollision.COL_SLOPE_RD45 && cCol_p2 <= MetatileCollision.COL_SLOPE_LU66_TOP)
+                                        {
+                                            bool skipS_p2 = (!isMiniWave_p2 && cCol_p2 == MetatileCollision.COL_SLOPE_LU45) ||
+                                                            (isMiniWave_p2 && (cCol_p2 == MetatileCollision.COL_SLOPE_LU66_TOP || cCol_p2 == MetatileCollision.COL_SLOPE_LU66_BOT));
+                                            if (!skipS_p2 && bg_coll_slope(cX_p2, cY_p2, cCol_p2))
+                                            {
+                                                AppendSimDebug($"[P2_DEATH] Wave center slope at ({cTX_p2},{cTY_p2})");
+                                                deathTriggered = true;
+                                                paused = true;
+                                                _ = StopMusicAsync();
+                                                try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } } })); } catch { }
+                                            }
+                                        }
+                                    }
+                                    // Right-edge slope
+                                    if (!deathTriggered && !ShouldSkipSideCollisionForSlope())
+                                    {
+                                        int rX_p2 = p2X_px + wW_p2;
+                                        int rY_p2 = p2Y_px + (wH_p2 >> 1);
+                                        int rTX_p2 = rX_p2 / TILE, rTY_p2 = rY_p2 / TILE;
+                                        int rTIY_p2 = rTY_p2 + groundRowsToReserve_p2;
+                                        if (rTX_p2 >= 0 && rTX_p2 < mapWidth && rTIY_p2 >= 0 && rTIY_p2 < mapHeight)
+                                        {
+                                            byte rTVal_p2 = (byte)tiles[rTIY_p2 * mapWidth + rTX_p2];
+                                            var rCol_p2 = MetatileCollisionTable.GetCollision(rTVal_p2);
+                                            if (rCol_p2 >= MetatileCollision.COL_SLOPE_RD45 && rCol_p2 <= MetatileCollision.COL_SLOPE_LU66_TOP)
+                                            {
+                                                bool skipS2_p2 = (!isMiniWave_p2 && rCol_p2 == MetatileCollision.COL_SLOPE_LU45) ||
+                                                                  (isMiniWave_p2 && (rCol_p2 == MetatileCollision.COL_SLOPE_LU66_TOP || rCol_p2 == MetatileCollision.COL_SLOPE_LU66_BOT));
+                                                if (!skipS2_p2 && bg_coll_slope(rX_p2, rY_p2, rCol_p2))
+                                                {
+                                                    AppendSimDebug($"[P2_DEATH] Wave R-edge slope at ({rTX_p2},{rTY_p2})");
+                                                    deathTriggered = true;
+                                                    paused = true;
+                                                    _ = StopMusicAsync();
+                                                    try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } } })); } catch { }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // 4) Center-point death tile check (NES bg_coll_death)
+                                if (!deathTriggered)
+                                {
+                                    if (CheckDeathCollision(out int p2DeathX, out int p2DeathY))
+                                    {
+                                        AppendSimDebug($"[P2_DEATH] Death tile at ({p2DeathX},{p2DeathY})");
+                                        deathTriggered = true;
+                                        deathTileX = p2DeathX;
+                                        deathTileY = p2DeathY;
+                                        paused = true;
+                                        _ = StopMusicAsync();
+                                        try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } try { mw.AddDeathMarker(p2DeathX, p2DeathY); } catch { } } })); } catch { }
+                                    }
+                                }
+                            }
+                            
                             // Save player 2 state back to arrays
                             player_x_fixed[1] = playerX_fixed;
                             player_y_fixed[1] = playerY_fixed;
@@ -12078,20 +12378,39 @@ namespace FamidashEditor
                                                 {
                                                     if (!p2_mini)
                                                     {
-                                                        int p2Frame = (cubeRotate_fixed >> 8) & 0xFF;
-                                                        p2Frame = p2Frame % 7;
+                                                        int p2SpriteEntry = GetCubeSpriteFrame();
+                                                        int p2TileIdx = p2SpriteEntry & 0x07;
+                                                        bool p2HFlip = (p2SpriteEntry & 0x40) != 0;
+                                                        bool p2VFlip = (p2SpriteEntry & 0x80) != 0;
                                                         string[] p2FrameNames = (p2_gameMode == 8) ? s_ninjaFrameNames : s_cubeFrameNames;
-                                                        string p2ChosenFrame = p2FrameNames[p2Frame];
+                                                        if (p2TileIdx >= p2FrameNames.Length) p2TileIdx = 0;
+                                                        string p2ChosenFrame = p2FrameNames[p2TileIdx];
                                                         var p2RotImg = LoadCachedResourceImage(p2ChosenFrame);
                                                         if (p2RotImg != null && playerImage != null)
                                                         {
                                                             playerImage.Source = App.EnsureUnfrozenForRender(p2RotImg) ?? p2RotImg;
                                                             playerImage.Tag = p2ChosenFrame;
+                                                            // Apply cube rotation flip
+                                                            if (p2HFlip || p2VFlip)
+                                                            {
+                                                                playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                                                                playerImage.RenderTransform = new ScaleTransform(p2HFlip ? -1 : 1, p2VFlip ? -1 : 1);
+                                                            }
+                                                            else
+                                                            {
+                                                                playerImage.RenderTransform = Transform.Identity;
+                                                            }
                                                         }
                                                     }
                                                     else
                                                     {
                                                         int p2MiniFrame = GetCubeSpriteMiniFrame();
+                                                        // Get flip flags for mini P2
+                                                        int p2MiniRawFrame = (cubeRotateMini_fixed >> 8) & 0xFF;
+                                                        if (p2MiniRawFrame < 0 || p2MiniRawFrame >= 24) p2MiniRawFrame = 0;
+                                                        int p2MiniEntry = drawcube_sprite_table[p2MiniRawFrame];
+                                                        bool p2MiniHFlip = (p2MiniEntry & 0x40) != 0;
+                                                        bool p2MiniVFlip = (p2MiniEntry & 0x80) != 0;
                                                         string[] p2MiniFrameNames = (p2_gameMode == 8) ? new string[]
                                                         {
                                                             "ninja_mini_00_frame_0.png", "ninja_mini_01_frame_1.png",
@@ -12109,6 +12428,16 @@ namespace FamidashEditor
                                                         {
                                                             playerImage.Source = App.EnsureUnfrozenForRender(p2MiniImg) ?? p2MiniImg;
                                                             playerImage.Tag = p2ChosenMini;
+                                                            // Apply cube rotation flip for mini P2
+                                                            if (p2MiniHFlip || p2MiniVFlip)
+                                                            {
+                                                                playerImage.RenderTransformOrigin = new Point(0.5, 0.5);
+                                                                playerImage.RenderTransform = new ScaleTransform(p2MiniHFlip ? -1 : 1, p2MiniVFlip ? -1 : 1);
+                                                            }
+                                                            else
+                                                            {
+                                                                playerImage.RenderTransform = Transform.Identity;
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -12557,7 +12886,7 @@ namespace FamidashEditor
                                 else if (IsGroundTrigger(sid)) { if (anchorX_center_fixed < bestGround_fixed) { bestGround_fixed = anchorX_center_fixed; groundIdxLocal = idx; groundSidLocal = sid; } }
                             }
                         }
-                        else { if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx); if (processedGravityPortals.Contains(idx)) processedGravityPortals.Remove(idx); if (processedGravityModPortals.Contains(idx)) processedGravityModPortals.Remove(idx); if (processedOrbs.Contains(idx)) processedOrbs.Remove(idx); if (processedTeleportPortals.Contains(idx)) processedTeleportPortals.Remove(idx); }
+                        else { if (processedColorTriggers.Contains(idx)) processedColorTriggers.Remove(idx); if (processedGravityPortals.Contains(idx)) processedGravityPortals.Remove(idx); if (processedGravityModPortals.Contains(idx)) processedGravityModPortals.Remove(idx); if (processedGameModePortals.Contains(idx)) processedGameModePortals.Remove(idx); if (processedOrbs.Contains(idx)) processedOrbs.Remove(idx); if (processedTeleportPortals.Contains(idx)) processedTeleportPortals.Remove(idx); }
                     }
                 }
 

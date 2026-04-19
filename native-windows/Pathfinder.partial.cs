@@ -130,6 +130,7 @@ namespace FamidashEditor
                 bool isWave = (currentGameMode == 6);
                 bool isSwing = (currentGameMode == 7);
                 bool isNinja = (currentGameMode == 8);
+                bool isPogo = (currentGameMode == 9);
                 if (isBall)
                 {
                     // Ball mode: do NOT extend holds.  The ballFlipBuffer countdown
@@ -139,7 +140,7 @@ namespace FamidashEditor
                     // critical input=true at the exact landing frame.
                     pfHoldCounter = 0;
                 }
-                else if (!isContinuousThrust && !isCube && !isRobot && !isSpider && !isWave && !isSwing && !isNinja)
+                else if (!isContinuousThrust && !isCube && !isRobot && !isSpider && !isWave && !isSwing && !isNinja && !isPogo)
                 {
                     pfHoldCounter = 1; // Hold for 1 extra frame after this one
                 }
