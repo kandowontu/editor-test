@@ -93,17 +93,32 @@ namespace FamidashEditor
         }
 
         private void PathfinderCompareButton_Click(object sender, RoutedEventArgs e)
+            => RunTraceCompare(silent: false);
+
+        private void RefreshReplayButtonVisibility()
         {
             try
             {
-                if (!File.Exists(MainWindow.ReplayTempFile))
+                PathfinderReplayButton.Visibility =
+                    System.IO.File.Exists(this.ReplayTempFile)
+                        ? System.Windows.Visibility.Visible
+                        : System.Windows.Visibility.Collapsed;
+            }
+            catch { }
+        }
+
+        private void RunTraceCompare(bool silent = false)
+        {
+            try
+            {
+                if (!File.Exists(this.ReplayTempFile))
                 {
-                    StatusText.Text = "Compare: no sim replay CSV on disk.";
+                    if (!silent) StatusText.Text = "Compare: no sim replay CSV on disk.";
                     return;
                 }
-                if (!File.Exists(MainWindow.MesenTraceFile))
+                if (!File.Exists(this.MesenTraceFile))
                 {
-                    StatusText.Text = "Compare: no Mesen trace on disk. Run \"Replay in Mesen\" first.";
+                    if (!silent) StatusText.Text = "Compare: no Mesen trace on disk. Run \"Replay in Mesen\" first.";
                     return;
                 }
 
@@ -113,16 +128,16 @@ namespace FamidashEditor
                 try
                 {
                     string ts = System.DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-                    string dir = System.IO.Path.GetDirectoryName(MainWindow.MesenTraceFile) ?? System.IO.Path.GetTempPath();
+                    string dir = System.IO.Path.GetDirectoryName(this.MesenTraceFile) ?? System.IO.Path.GetTempPath();
                     string mtSnap = System.IO.Path.Combine(dir, $"famidash_mesen_trace_{ts}.csv");
                     string rpSnap = System.IO.Path.Combine(dir, $"famidash_replay_{ts}.csv");
-                    File.Copy(MainWindow.MesenTraceFile, mtSnap, overwrite: true);
-                    File.Copy(MainWindow.ReplayTempFile, rpSnap, overwrite: true);
+                    File.Copy(this.MesenTraceFile, mtSnap, overwrite: true);
+                    File.Copy(this.ReplayTempFile, rpSnap, overwrite: true);
                 }
                 catch { /* best-effort archival */ }
 
-                var sim = LoadSimRows(MainWindow.ReplayTempFile, out int yOffset);
-                var romAll = LoadRomRows(MainWindow.MesenTraceFile);
+                var sim = LoadSimRows(this.ReplayTempFile, out int yOffset);
+                var romAll = LoadRomRows(this.MesenTraceFile);
 
                 if (sim.Count == 0 || romAll.Count == 0)
                 {
@@ -402,24 +417,25 @@ namespace FamidashEditor
                 fullReport.AppendLine("Full per-frame comparison (rom_f,sim_f,rom_xy,sim_xy,dx,dy,a_next,sim_a):");
                 fullReport.Append(fullRows);
 
-                // Write the full report to temp and working directory for inspection.
-                string reportPath = Path.Combine(Path.GetTempPath(), "famidash_trace_compare.txt");
-                string cwdReportPath = Path.Combine(Environment.CurrentDirectory, "famidash_trace_compare.txt");
+                // Write the full report to the level's replay directory.
+                string reportPath = Path.Combine(this.CurrentReplayDir, "famidash_trace_compare.txt");
                 try { File.WriteAllText(reportPath, fullReport.ToString()); } catch { }
-                try { File.WriteAllText(cwdReportPath, fullReport.ToString()); } catch { }
 
                 string statusLine;
                 if (firstDivergeRom < 0)
-                    statusLine = $"Compare: no divergence ({compared} frames). Reports -> {reportPath} | {cwdReportPath}";
+                    statusLine = $"Compare: no divergence ({compared} frames). Report -> {reportPath}";
                 else
-                    statusLine = $"Compare: DIVERGE at rom_frame {firstDivergeRom} (sim {firstDivergeSim}) dx={dxAtDiverge} dy={dyAtDiverge}. Reports -> {reportPath} | {cwdReportPath}";
+                    statusLine = $"Compare: DIVERGE at rom_frame {firstDivergeRom} (sim {firstDivergeSim}) dx={dxAtDiverge} dy={dyAtDiverge}. Report -> {reportPath}";
                 StatusText.Text = statusLine;
 
-                // Show a summary dialog so the user sees the breakdown immediately.
-                MessageBox.Show(summary.ToString(),
-                    "Trace comparison",
-                    MessageBoxButton.OK,
-                    firstDivergeRom < 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                if (!silent)
+                {
+                    // Show a summary dialog so the user sees the breakdown immediately.
+                    MessageBox.Show(summary.ToString(),
+                        "Trace comparison",
+                        MessageBoxButton.OK,
+                        firstDivergeRom < 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                }
             }
             catch (Exception ex)
             {

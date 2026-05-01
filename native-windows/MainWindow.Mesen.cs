@@ -105,7 +105,7 @@ namespace FamidashEditor
                     throw new InvalidOperationException("Famidash ROM is not configured. Use Tools → Mesen (NES) → Configure Famidash ROM.");
 
                 string workDir = Path.GetDirectoryName(exePath)!;
-                string luaPath = Path.Combine(Path.GetTempPath(), "famidash_overlay.lua");
+                string luaPath = OverlayLuaPath;
                 try { File.WriteAllText(luaPath, BuildOverlayLuaScript()); } catch { luaPath = ""; }
 
                 string args = $"\"{famidashRomPath}\"";

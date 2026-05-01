@@ -40,8 +40,10 @@ namespace FamidashEditor
                 // Apply mini mode offset matching PF's GetHitboxOffsetY
                 playerY_px += GetMiniSpriteOffsetY();
 
-                // PF uses padLeft = currentX_px + 0 (no +1 for blue pads)
-                int padLeft = playerX_px;
+                // NES sprite_collide() sets Generic.x = high_byte(currplayer_x) + 1
+                // ONCE for the whole pass -- applies to blue pads too. (Legacy SIM
+                // had a separate path with no +1; that was wrong vs NES.)
+                int padLeft = playerX_px + 1;
                 int padRight = padLeft + hitboxW;        // exclusive (matches PF)
                 int playerTop = playerY_px;
                 int playerBottom = playerTop + hitboxH;  // exclusive (matches PF)
@@ -64,6 +66,14 @@ namespace FamidashEditor
                     // Gravity gate: bottom pads need normal grav, top pads need inverted grav
                     if (isBottomPad && gravityInverted) continue;
                     if (isTopPad && !gravityInverted) continue;
+
+                    // NES spcl_gvdn_pd / spcl_gvup_pd unconditionally do
+                    // idx8_inc(activesprites_activated, index), and the sprite
+                    // dispatch gate skips already-activated sprites unless
+                    // dual / platformer is active. So in non-dual mode each blue
+                    // pad fires at most once per life.
+                    if (!dual && orbActivated.TryGetValue(idx, out var alreadyActivated) && alreadyActivated)
+                        continue;
 
                     // Inline AABB matching PF's ProcessSprites:
                     // Use anchor-overridden id_for_geom for hitbox lookup (same as PF)
@@ -130,6 +140,8 @@ namespace FamidashEditor
 
                         playerVelY_fixed = newVel;
                         orbhitonthisframe[currplayer] = true;
+                        if (!dual)
+                            orbActivated[idx] = true;
                     }
                 }
             }

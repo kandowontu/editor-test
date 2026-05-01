@@ -10152,7 +10152,8 @@ namespace FamidashEditor
                 s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed,
                 s.GravFlipped, s.Mini, s.GameMode, input,
                 s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType,
-                s.SlopeJumpHigher, s.LastSlopeType);
+                s.SlopeJumpHigher, s.LastSlopeType,
+                s.CameraY_fixed);
             s.Y_fixed = r.NewY_fixed;
             s.VelY_fixed = r.NewVelY_fixed;
             s.OnGround = r.OnGround;
@@ -12747,8 +12748,12 @@ namespace FamidashEditor
                 if (sid >= 0x70 && sid <= 0x74) continue;
 
                 // Pad detection (requires hitbox overlap)
-                // Pads fire EVERY overlapping frame (famidash has activation tracking commented out).
-                // Do NOT add to ProcessedSprites � must match sim behavior.
+                // Yellow/pink/red/green pads use pad_stuff() which does NOT call
+                // idx8_inc(activesprites_activated) -- they fire every overlapping frame.
+                // Blue pads (spcl_gvdn_pd / spcl_gvup_pd) DO unconditionally call
+                // idx8_inc(activesprites_activated, index), so they fire at most once
+                // per life in non-dual / non-platformer mode (the dispatch gate at
+                // sprite_collide_lookup L723 skips active sprites unless dual/platformer).
                 if (IsYellowPad(sid) || IsPinkPad(sid) || IsRedPad(sid) || IsBluePad(sid) || IsGreenPad(sid))
                 {
                     // Blue pads have a gravity gate: bottom pads only when gravity
@@ -12760,11 +12765,11 @@ namespace FamidashEditor
                         if (!isBottomBluePad && !s.GravFlipped) continue; // top pad needs inverted grav
                     }
 
-                    // Sim's CheckPadCollision uses (playerX_fixed >> 8) + 1 for yellow/pink/red/green pads,
-                    // matching NES sprite_collide() where Generic.x = high_byte(currplayer_x) + 1.
-                    // Blue pads are in a separate CheckBluePadCollision that uses plain (>> 8).
-                    int padXOffset = IsBluePad(sid) ? 0 : 1;
-                    int padLeft = currentX_px + padXOffset;
+                    // NES sprite_collide() sets Generic.x = high_byte(currplayer_x) + 1
+                    // ONCE for the entire pass -- applies to ALL sprite types including
+                    // blue pads. Always +1 here (legacy SIM had a separate blue-pad path
+                    // with no offset; that was wrong).
+                    int padLeft = currentX_px + 1;
                     int padRight = padLeft + hbW;  // exclusive right
                     bool xOverlap = !((padRight) < sp.HitLeft || sp.HitRight < padLeft);
                     bool yOverlap = !((playerBottom) < sp.HitTop || sp.HitBottom < playerTop);
@@ -12778,6 +12783,10 @@ namespace FamidashEditor
                     {
                         ApplyPadSprite(ref s, sid);
                         orbHitThisFrame = true;
+                        // Blue pads: NES sets activesprites_activated, gating future
+                        // collisions in non-dual mode. Mirror that with ProcessedSprites.
+                        if (IsBluePad(sid) && !s.DualActive)
+                            s.ProcessedSprites.Add(sp.Index);
                     }
                     continue;
                 }
@@ -12971,9 +12980,10 @@ namespace FamidashEditor
                                     bool isBottomBluePad = (rsid == 0x0D || rsid == 0xFD);
                                     if (isBottomBluePad && s.GravFlipped) continue;
                                     if (!isBottomBluePad && !s.GravFlipped) continue;
+                                    // Honor blue-pad one-shot activation gate from prior pass
+                                    if (s.ProcessedSprites.Contains(rsp.Index)) continue;
                                 }
-                                int padXOffset = IsBluePad(rsid) ? 0 : 1;
-                                int rPadLeft = currentX_px + padXOffset;
+                                int rPadLeft = currentX_px + 1;
                                 int rPadRight = rPadLeft + hbW;
                                 bool rxOverlap = !((rPadRight) < rsp.HitLeft || rsp.HitRight < rPadLeft);
                                 bool ryOverlap = !((playerBottom) < rsp.HitTop || rsp.HitBottom < playerTop);
@@ -12984,6 +12994,8 @@ namespace FamidashEditor
 #endif
                                     ApplyPadSprite(ref s, rsid);
                                     orbHitThisFrame = true;
+                                    if (IsBluePad(rsid) && !s.DualActive)
+                                        s.ProcessedSprites.Add(rsp.Index);
                                 }
                                 continue;
                             }

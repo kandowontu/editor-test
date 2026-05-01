@@ -51,6 +51,18 @@ namespace FamidashEditor
         // ════════════════════════════════════════════════════════════════════
         internal static int BallGravity(bool mini) => mini ? 0x57 : 0x47;
         internal static int BallSwitchVel(bool mini) => mini ? 0x120 : 0x200;
+        // NES BALL_MAX_FALLSPEED table (physics_table_defines.cmp.h):
+        //   idx 4 (NTSC normal normal-grav)  = 0x0600
+        //   idx 5 (NTSC normal inverted-grav)= 0xFA00 (-1536, magnitude 0x600)
+        //   idx 6 (NTSC mini   normal-grav)  = 0x0600
+        //   idx 7 (NTSC mini   inverted-grav)= 0xFB00 (-1280, magnitude 0x500)
+        // PF currently treats fallspeed magnitude as direction-symmetric and
+        // negates for gravFlipped at the call site.  The asymmetry at idx 7
+        // (mini inverted = magnitude 0x500) is not yet modelled — it would
+        // require either a four-way table or threading gravFlipped through
+        // here.  Keep magnitude 0x600 until a real mini-inverted divergence
+        // is observed.  (A previous patch returned 0x500 for mini which broke
+        // mini-normal; reverted.)
         internal static int BallMaxFallSpeed(bool mini) => 0x600;
 
         // ════════════════════════════════════════════════════════════════════
@@ -2298,7 +2310,8 @@ namespace FamidashEditor
             int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed,
             bool gravFlipped, bool mini, int gameMode, bool inputHeld,
             int slopeWasOnCounter, int slopeFrames, int slopeType,
-            bool slopeJumpHigher, int lastSlopeType)
+            bool slopeJumpHigher, int lastSlopeType,
+            int camY_fixed = 0)
         {
             var r = new EjectResult {
                 NewY_fixed = playerY_fixed, NewVelY_fixed = velY_fixed,
@@ -2309,25 +2322,75 @@ namespace FamidashEditor
 
             int playerX_px = playerX_fixed >> 8;
             int playerY_px = playerY_fixed >> 8;
+            // NES `bg_coll_U / bg_coll_D` decisions are made in SCREEN-relative
+            // coordinates: `Generic.y = high_byte(currplayer_y)` where
+            // `currplayer_y` is integrated purely from velocity (no scroll
+            // adjustment).  When the player's SCREEN sub-pixel underflows
+            // during gravity, screen_high decrements and the ceiling probe
+            // catches the ceiling tile that frame.  PF's Y_fixed is in WORLD
+            // coords; if scroll_y has a non-zero sub-pixel component, the
+            // WORLD low does NOT underflow at the same moment SCREEN low does
+            // and PF detects the ceiling one frame late.  Replicate the NES
+            // SCREEN-high computation:  
+            //   screen_y = player_y_world - cam_y_world (with proper byte borrow)
+            //   probe_world_y = screen_high + cam_high (= NES Generic.y + scroll_y)
+            // (xstep ball A-press divergence rom_f=4045 / sim_f=4033.)
+            int playerY_px_nes = ((playerY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8);
             int hbW = GetCubeHitboxW(mini);
             int hbH = GetCubeHitboxH(mini);
             int miniOffset = GetMiniCenterOffsetY(mini);
             int ballYOffset = gravFlipped ? -1 : 1;
-            int collisionY = playerY_px + miniOffset + ballYOffset;
+            int collisionY = playerY_px_nes + miniOffset + ballYOffset;
 
             UpdateSlopeCounters(ref r.SlopeWasOnCounter, ref r.SlopeType,
                                 ref r.NewVelY_fixed, gameMode, gravFlipped, mini, ref r.LastSlopeType);
 
+            // ────────────────────────────────────────────────────────────────
+            // NOTE on NES ball_eject() structure (gamemode_ball.h L88-130):
+            //   The NES source runs BOTH bg_coll_U() AND bg_coll_D() every
+            //   frame regardless of gravity, with vel-sign gates inside each.
+            //   Each hit also clears orbactive and most cube_data flags as a
+            //   side effect.
+            //   PF does NOT model those side effects, and a previous attempt
+            //   to run both probes unconditionally produced a major regression
+            //   (rom_f=3559) — likely because the missing side effects let
+            //   stale orb state cascade.  Until those side-effects are wired
+            //   up, keep the gravFlipped gate so only the surface the player
+            //   is actually moving toward is probed (matches behaviour PF
+            //   relied on for parity through f=4044).
+            // ────────────────────────────────────────────────────────────────
+
+            // NES `currplayer_y` is SCREEN-relative; ball_eject modifies its
+            // HIGH byte only.  PF stores Y_fixed in WORLD coords, and the
+            // displayed/probe SCREEN-Y has a sub-byte borrow whenever
+            // `Y_fixed.low < camY_fixed.low`.  To match NES we must:
+            //   1. Preserve the SCREEN low byte (matches NES "low_byte
+            //      (currplayer_y) untouched").
+            //   2. Set the SCREEN high byte directly (matches NES eject
+            //      adjusting currplayer_y_high).
+            // Writing world_high while preserving world_low corrupts SCREEN
+            // high by ±1 every time the borrow flips, which surfaced as a
+            // chronic 1-px Y offset in inverted-grav rest at xstep
+            // (rom_f=3560+) and ultimately a missed spike at rom_f=4089.
+            int camHigh = camY_fixed >> 8;
+            int screenLow_old = (r.NewY_fixed - camY_fixed) & 0xFF;
+
             if (gravFlipped)
             {
-                if (r.NewVelY_fixed <= 0)
+                // NES bg_coll_U tile gate: `if (high_byte(vel_y) & 0x80)` —
+                // sign bit set, i.e. STRICTLY < 0.  Using <= 0 wiped the
+                // low-byte sub-pixel state at rest, putting PF's eject
+                // alternation one frame out of phase with NES (xstep ball
+                // A-press divergence f=4045).
+                if (r.NewVelY_fixed < 0)
                 {
                     var (hit, ceilBotY, _) = CheckCeiling(in map, playerX_px, collisionY, hbW, hbH);
                     if (hit)
                     {
-                        // NES ball_eject only modifies high_byte(currplayer_y);
-                        // low_byte (player_y_low) is preserved → PF Y_fixed.low unchanged.
-                        r.NewY_fixed = ((ceilBotY - miniOffset) << 8) | (r.NewY_fixed & 0xFF);
+                        // Set SCREEN high = ceilBotY - miniOffset - camHigh,
+                        // preserve SCREEN low byte.
+                        int screenHigh_new = ceilBotY - miniOffset - camHigh;
+                        r.NewY_fixed = camY_fixed + (screenHigh_new << 8) + screenLow_old;
                         r.NewVelY_fixed = 0; r.OnGround = true;
                     }
                 }
@@ -2345,8 +2408,14 @@ namespace FamidashEditor
                 if (slopeHit)
                 {
                     if (slopeEject > 0)
-                        // NES ball_eject preserves low_byte(currplayer_y).
-                        r.NewY_fixed = (((r.NewY_fixed >> 8) - slopeEject) << 8) | (r.NewY_fixed & 0xFF);
+                    {
+                        // Slope eject is a relative SCREEN-high adjustment.
+                        // Preserve SCREEN low byte by routing through screen
+                        // coords (same world/screen-borrow risk as ceiling).
+                        int curScreenHigh = camHigh + ((r.NewY_fixed - camY_fixed) >> 8);
+                        int screenHigh_new = curScreenHigh - slopeEject - camHigh;
+                        r.NewY_fixed = camY_fixed + (screenHigh_new << 8) + screenLow_old;
+                    }
                     r.NewVelY_fixed = 0;
                     r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
                     r.SlopeType = newSlopeType; r.OnGround = true;
@@ -2357,8 +2426,10 @@ namespace FamidashEditor
                     if (spike) { r.Died = true; return r; }
                     if (hit)
                     {
-                        // NES ball_eject preserves low_byte(currplayer_y).
-                        r.NewY_fixed = ((surfY - hbH - miniOffset - ballYOffset) << 8) | (r.NewY_fixed & 0xFF);
+                        // Set SCREEN high = surfY - hbH - miniOffset - ballYOffset - camHigh,
+                        // preserve SCREEN low byte.
+                        int screenHigh_new = surfY - hbH - miniOffset - ballYOffset - camHigh;
+                        r.NewY_fixed = camY_fixed + (screenHigh_new << 8) + screenLow_old;
                         r.NewVelY_fixed = 0; r.OnGround = true;
                     }
                 }

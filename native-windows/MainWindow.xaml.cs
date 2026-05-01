@@ -8811,6 +8811,7 @@ namespace FamidashEditor
                 mapHeight = tabData.MapHeight;
                 hasUnsavedChanges = tabData.HasUnsavedChanges;
                 currentFilePath = tabData.FilePath;
+                RefreshReplayButtonVisibility();
                 
                 if (WidthBox != null) WidthBox.Text = mapWidth.ToString();
                 if (HeightBox != null) HeightBox.Text = mapHeight.ToString();
@@ -21711,7 +21712,7 @@ namespace FamidashEditor
                                 {
                                     precomputedPathfinderInputs = engine.Inputs;
                                     precomputedCollectedCoins = engine.FinalCollectedCoinIndices;
-                                    // Persist replay CSV for the "Replay in Mesen" button.
+                                    // Persist replay CSV + Lua for the "Replay in Mesen" button.
                                     try { TryWritePathfinderReplayCsv(engine); } catch { }
                                     if (drawPathLine)
                                     {
@@ -21726,11 +21727,10 @@ namespace FamidashEditor
                                 }
                                 else
                                 {
-                                    // Still use partial inputs so the simulator can replay
-                                    // as far as the pathfinder got (user can enable pathfinder
-                                    // checkbox even for incomplete paths)
+                                    // Partial path — still write replay so it can be used in Mesen.
                                     precomputedPathfinderInputs = engine.Inputs;
                                     precomputedCollectedCoins = engine.FinalCollectedCoinIndices;
+                                    try { TryWritePathfinderReplayCsv(engine); } catch { }
                                     if (drawPathLine)
                                     {
                                         pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
@@ -21765,23 +21765,16 @@ namespace FamidashEditor
                                 StopPathfinderButton.IsEnabled = true;
                                 PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed;
                                 PathfinderJumpToButton.Visibility = System.Windows.Visibility.Collapsed;
-                                // Show "Replay in Mesen" only if a replay CSV is now on disk.
+                                RefreshReplayButtonVisibility();
+                                // Auto-compare when debug logging is enabled and a Mesen trace exists.
+#if !DISABLE_DEBUG_LOGGING
                                 try
                                 {
-                                    PathfinderReplayButton.Visibility =
-                                        System.IO.File.Exists(MainWindow.ReplayTempFile)
-                                            ? System.Windows.Visibility.Visible
-                                            : System.Windows.Visibility.Collapsed;
-                                    // Show "Compare Traces" only when both a replay CSV and a
-                                    // Mesen-side trace are present (i.e. user has at least one
-                                    // recorded run to compare against).
-                                    PathfinderCompareButton.Visibility =
-                                        (System.IO.File.Exists(MainWindow.ReplayTempFile)
-                                         && System.IO.File.Exists(MainWindow.MesenTraceFile))
-                                            ? System.Windows.Visibility.Visible
-                                            : System.Windows.Visibility.Collapsed;
+                                    if (System.IO.File.Exists(this.MesenTraceFile))
+                                        RunTraceCompare(silent: true);
                                 }
                                 catch { }
+#endif
                                 _activePathfinderEngine = null;
                                 StopPathfinderFollow();
                                 // Clean up all speculative path polylines
@@ -21902,7 +21895,11 @@ namespace FamidashEditor
         {
             string csv = engine.ExportReplayCsv();
             if (string.IsNullOrEmpty(csv)) return;
-            try { System.IO.File.WriteAllText(MainWindow.ReplayTempFile, csv); }
+            try { System.IO.File.WriteAllText(this.ReplayTempFile, csv); }
+            catch { }
+            // Also (re)write the Lua script so it embeds the current level's
+            // paths — ready for manual load in Mesen or the Replay button.
+            try { System.IO.File.WriteAllText(this.OverlayLuaPath, BuildOverlayLuaScript(includeReplay: true)); }
             catch { }
         }
 
@@ -21910,7 +21907,7 @@ namespace FamidashEditor
         {
             try
             {
-                if (!System.IO.File.Exists(MainWindow.ReplayTempFile))
+                if (!System.IO.File.Exists(this.ReplayTempFile))
                 {
                     StatusText.Text = "Replay: no pathfinder solution available. Calculate a path first.";
                     return;

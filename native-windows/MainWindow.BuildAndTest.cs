@@ -454,8 +454,8 @@ namespace FamidashEditor
 
             string workDir = Path.GetDirectoryName(exePath)!;
 
-            // Write the overlay Lua script to a temp file so Mesen loads it on startup.
-            string luaPath = Path.Combine(Path.GetTempPath(), "famidash_overlay.lua");
+            // Write the overlay Lua script to the per-level Documents folder.
+            string luaPath = OverlayLuaPath;
             try { File.WriteAllText(luaPath, BuildOverlayLuaScript(useReplay)); } catch { luaPath = ""; }
 
             // Build argument list: <rom> [lua-script]

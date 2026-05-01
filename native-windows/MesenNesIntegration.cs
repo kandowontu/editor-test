@@ -53,7 +53,11 @@ namespace FamidashEditor
 
             Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath) ?? Environment.CurrentDirectory);
 
-            string scriptPath = Path.Combine(Path.GetTempPath(), "famidash-mesen-ramcap.lua");
+            string scriptDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                "Famidash Editor", "Replays");
+            Directory.CreateDirectory(scriptDir);
+            string scriptPath = Path.Combine(scriptDir, "famidash-mesen-ramcap.lua");
             File.WriteAllText(scriptPath, BuildLuaScript(options), Encoding.UTF8);
 
             string args = string.Join(" ", new[]

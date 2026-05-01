@@ -45,19 +45,52 @@ namespace FamidashEditor
         private int             _smoothScrollShiftXPx = int.MinValue;
         private TranslateTransform? _smoothScrollTransform;
         private bool            _overlayRenderHooked = false;
-        // Temp file path written by the Lua script each frame
-        private static readonly string ScrollTempFile =
-            Path.Combine(Path.GetTempPath(), "famidash_overlay_scroll.txt");
+        // ── Per-level replay/trace paths ────────────────────────────────────
+        // All Mesen-related files live in My Documents under a per-level folder.
+        //   <Documents>/Famidash Editor/Replays/<level>/famidash_overlay.lua
+        //   <Documents>/Famidash Editor/Replays/<level>/famidash_overlay_scroll.txt
+        //   <Documents>/Famidash Editor/Replays/<level>/famidash_replay.csv
+        //   <Documents>/Famidash Editor/Replays/<level>/famidash_mesen_trace.csv
+        // Snapshots from "Compare Traces" land in the same per-level folder.
+        internal static string ReplayRootDir =>
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                "Famidash Editor", "Replays");
 
-        // Temp file read by the Lua script for replay input injection
-        internal static readonly string ReplayTempFile =
-            Path.Combine(Path.GetTempPath(), "famidash_replay.csv");
+        private static string SanitizeLevelName(string? raw)
+        {
+            string name;
+            if (string.IsNullOrWhiteSpace(raw))
+                name = "untitled";
+            else
+                name = Path.GetFileNameWithoutExtension(raw);
+            if (string.IsNullOrWhiteSpace(name)) name = "untitled";
+            foreach (char ch in Path.GetInvalidFileNameChars())
+                name = name.Replace(ch, '_');
+            return name;
+        }
 
-        // Temp file written by the Lua script every frame while the replay is
-        // armed — one row per emulator frame containing observed PF coords.
-        // Layout: frame,px,py,a,raw_x,raw_y,scrollx,scrolly
-        internal static readonly string MesenTraceFile =
-            Path.Combine(Path.GetTempPath(), "famidash_mesen_trace.csv");
+        internal static string GetLevelReplayDir(string? levelFilePath)
+        {
+            string dir = Path.Combine(ReplayRootDir, SanitizeLevelName(levelFilePath));
+            try { Directory.CreateDirectory(dir); } catch { }
+            return dir;
+        }
+
+        internal string CurrentReplayDir =>
+            GetLevelReplayDir(currentFilePath);
+
+        private string ScrollTempFile =>
+            Path.Combine(CurrentReplayDir, "famidash_overlay_scroll.txt");
+
+        internal string OverlayLuaPath =>
+            Path.Combine(CurrentReplayDir, "famidash_overlay.lua");
+
+        internal string ReplayTempFile =>
+            Path.Combine(CurrentReplayDir, "famidash_replay.csv");
+
+        internal string MesenTraceFile =>
+            Path.Combine(CurrentReplayDir, "famidash_mesen_trace.csv");
 
         // -----------------------------------------------------------------------
         // P/Invoke
@@ -113,6 +146,7 @@ namespace FamidashEditor
 
         internal void StopMesenOverlay()
         {
+            string scrollFile = ScrollTempFile; // capture before state is torn down
             try { _overlayReadCts?.Cancel(); } catch { }
             _overlayReadCts      = null;
             _overlayReadTask     = null;
@@ -147,7 +181,7 @@ namespace FamidashEditor
                 }
             }
             catch { }
-            try { if (File.Exists(ScrollTempFile)) File.Delete(ScrollTempFile); } catch { }
+            try { if (File.Exists(scrollFile)) File.Delete(scrollFile); } catch { }
         }
 
         protected override void OnClosing(CancelEventArgs e)
@@ -418,12 +452,12 @@ namespace FamidashEditor
         //   _scroll_x = $04A6 (uint32 world pixel camera X)
         //   _scroll_y = $04AA (uint16 encoded camera Y)
         // -----------------------------------------------------------------------
-        internal static string BuildOverlayLuaScript()
+        internal string BuildOverlayLuaScript()
         {
             return BuildOverlayLuaScript(includeReplay: false);
         }
 
-        internal static string BuildOverlayLuaScript(bool includeReplay)
+        internal string BuildOverlayLuaScript(bool includeReplay)
         {
             string escaped = ScrollTempFile.Replace("\\", "\\\\");
             string replayEscaped = ReplayTempFile.Replace("\\", "\\\\");
@@ -431,7 +465,7 @@ namespace FamidashEditor
 
             string scrollPart =
 $@"-- FamidashEditor overlay script (auto-generated, do not edit)
-local scrollFile = ""{escaped}""
+local scrollFile = ""famidash_overlay_scroll.txt""
 
 emu.addEventCallback(function()
     local scrollX = emu.read32(0x04A6, emu.memType.nesMemory) or 0
