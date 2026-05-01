@@ -1,0 +1,9 @@
+﻿using System;
+class P {
+  static void Main() {
+    var t = new MetatileCollisionTable();
+    Console.WriteLine($"123 -> {(int)MetatileCollisionTable.GetCollision(123)}");
+    Console.WriteLine($"124 -> {(int)MetatileCollisionTable.GetCollision(124)}");
+    Console.WriteLine($"122 -> {(int)MetatileCollisionTable.GetCollision(122)}");
+  }
+}

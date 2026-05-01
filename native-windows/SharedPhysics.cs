@@ -59,10 +59,12 @@ namespace FamidashEditor
         internal static int ShipGravityBase(bool mini) => mini ? 0x31 : 0x2A;
         internal static int ShipGravityAfterHold(bool mini) => mini ? 0x3B : 0x32;
         internal static int ShipGravityHoldFall(bool mini) => mini ? 0x3E : 0x34;
-        // SIM's SHIP_GRAVITY(baseTableIdx) uses (table_idx & 3) which strips the
-        // mini bit, so mini and non-mini both map to values[4] = 0x22.
-        // Match the SIM's actual behavior (not the NES table values[6] = 0x27).
-        internal static int ShipGravity(bool mini) => 0x22;
+        // NES SHIP_GRAVITY table indexed by currplayer_table_idx (no mini-bit
+        // masking).  values[] = {0x30,0xD0,0x39,0xC7,0x22,0xDE,0x27,0xD9}.
+        // NTSC normal grav: idx=4 → 0x22.  NTSC mini normal grav: idx=6 → 0x27.
+        // Older comment claimed SIM masks bit 2 — that masking is itself a SIM
+        // bug; NES famidash does NOT mask, and we MUST match famidash 1:1.
+        internal static int ShipGravity(bool mini) => mini ? 0x27 : 0x22;
         // SIM's SHIP_MAX_FALLSPEED / _HOLD use the same (table_idx & 3) masking,
         // so mini and non-mini both map to values[4].
         internal static int ShipMaxFallSpeed(bool mini) => 0x02D7;
@@ -714,6 +716,9 @@ namespace FamidashEditor
 
         internal static int MapTileForCollision(int tid)
         {
+            // Empty/sentinel: tile arrays use -1 (and the editor uses several
+            // visual-only IDs) for "no collision". Normalize all to 0x00.
+            if (tid < 0) return 0x00;
             switch (tid)
             {
                 case 0xDF: case 0xE3: case 0xFE: case 0xFF: return 0x00;
@@ -772,6 +777,8 @@ namespace FamidashEditor
             int playerCenter_px = playerX_px + (TILE / 2);
             int playerLeft_px = playerCenter_px - (hbW / 2);
             int playerRight_px = playerLeft_px + (hbW - 1);
+            int probeCenter_px = playerLeft_px + (hbW / 2);
+            int[] probeXs = new int[] { playerLeft_px, probeCenter_px, playerRight_px };
 
             if (!gravFlipped)
             {
@@ -785,8 +792,10 @@ namespace FamidashEditor
 
                 if (tileArrayY < 0) return false;
 
-                for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
+                int localY = ((footY_px % TILE) + TILE) % TILE;
+                foreach (int px in probeXs)
                 {
+                    int tx = px / TILE;
                     if (tx < 0 || tx >= map.MapWidth) continue;
                     int idx = tileArrayY * map.MapWidth + tx;
                     if (idx < 0 || idx >= map.Tiles.Length) continue;
@@ -795,8 +804,13 @@ namespace FamidashEditor
                     if (col == MetatileCollision.COL_NONE) continue;
 
                     int tileStartX = tx * TILE;
-                    int localX = Math.Max(0, Math.Min(TILE - 1, playerCenter_px - tileStartX));
-                    if (ProvidesFloorAtColumn(col, localX))
+                    int localX = Math.Max(0, Math.Min(TILE - 1, px - tileStartX));
+                    // Require the foot probe pixel to actually lie inside the tile's
+                    // solid region. Without TileOccupiesPixel, half-slabs (COL_TOP)
+                    // would falsely report support when the player's feet are below
+                    // the solid 8-pixel cap.
+                    if (ProvidesFloorAtColumn(col, localX) &&
+                        TileOccupiesPixel(col, localX, localY))
                         return true;
                 }
                 return false;
@@ -810,8 +824,10 @@ namespace FamidashEditor
                 int tileArrayY = tileAboveY + map.GroundRowsToReserve;
                 if (tileArrayY < 0 || tileArrayY >= map.MapHeight) return false;
 
-                for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
+                int localY = ((valGS % TILE) + TILE) % TILE;
+                foreach (int px in probeXs)
                 {
+                    int tx = px / TILE;
                     if (tx < 0 || tx >= map.MapWidth) continue;
                     int idx = tileArrayY * map.MapWidth + tx;
                     if (idx < 0 || idx >= map.Tiles.Length) continue;
@@ -820,18 +836,15 @@ namespace FamidashEditor
                     if (col == MetatileCollision.COL_NONE) continue;
 
                     int tileStartX = tx * TILE;
-                    int localX = Math.Max(0, Math.Min(TILE - 1, playerCenter_px - tileStartX));
-                    if (ProvidesFloorAtColumn(col, localX))
+                    int localX = Math.Max(0, Math.Min(TILE - 1, px - tileStartX));
+                    if (ProvidesFloorAtColumn(col, localX) &&
+                        TileOccupiesPixel(col, localX, localY))
                         return true;
                 }
                 return false;
             }
         }
 
-        /// <summary>
-        /// Ball grounded-probe spike death: probes 3 X-points at the ball's
-        /// grounded-probe position for spike death (matching NES bg_coll_U_D_checks).
-        /// </summary>
         internal static bool BallGroundedProbeSpikeDeath(
             in CollisionMap map, int playerX_px, int playerY_px,
             int hbW, int hbH, int hbOffY, bool gravFlipped)
@@ -864,7 +877,8 @@ namespace FamidashEditor
                 if (tileIdx < 0 || tileIdx >= map.Tiles.Length) continue;
 
                 int tileId = map.Tiles[tileIdx];
-                var collision = MetatileCollisionTable.GetCollision((byte)tileId);
+                int mappedTileId = MapTileForCollision(tileId);
+                var collision = MetatileCollisionTable.GetCollision((byte)mappedTileId);
 
                 int localX = px % TILE;
                 int localY = checkY % TILE;
@@ -895,7 +909,14 @@ namespace FamidashEditor
             int idx = tileArrayY * map.MapWidth + tileX;
             if (idx < 0 || idx >= map.Tiles.Length) return MetatileCollision.COL_NONE;
             int tid = map.Tiles[idx];
-            return MetatileCollisionTable.GetCollision((byte)tid);
+            int mappedTid = MapTileForCollision(tid);
+            var col = MetatileCollisionTable.GetCollision((byte)mappedTid);
+            // NES bg_coll_U_D_checks: COL_ALL returns 0 when high_byte(currplayer_x) < 0x10.
+            // In the PF/SIM coordinate system, tileX == 0 corresponds to the first column
+            // where the player starts. The NES player starts at screen X=17 (past column 0),
+            // so solid blocks in column 0 never cause floor/ceiling collision.
+            if (tileX == 0 && col == MetatileCollision.COL_ALL) return MetatileCollision.COL_NONE;
+            return col;
         }
 
         /// <summary>
@@ -1044,13 +1065,40 @@ namespace FamidashEditor
         /// Check floor collision (downward).
         /// This IS the CheckCollisionDown algorithm — SIM and PF both call this.
         /// Returns (hit, surfaceY, spikeDeath).
+        /// 
+        /// NES bg_coll_D (collision.h ~line 950) gates the rectangular floor probes
+        /// behind `!(high_byte(currplayer_vel_y) & 0x80)` — i.e., the probes only
+        /// run when the player is NOT ascending. When velY_fixed &lt; 0 the player
+        /// is moving upward and bg_coll_D returns 0 (no floor), allowing
+        /// bg_coll_R/bg_coll_L (called by x_movement_coll) to fire on tiles like
+        /// COL_TOP whose top edge the cube's body is overlapping. Without this
+        /// guard, an ascending cube whose body intersects the side of a COL_TOP
+        /// slab gets snapped up onto the slab top instead of dying — a
+        /// SIM/PF-only divergence from Famidash.
+        /// 
+        /// `velY_fixed` is the player's signed 8.8 fixed-point Y velocity
+        /// (negative = upward in normal gravity). The default 0 preserves the
+        /// pre-fix behavior for callers that don't track velocity (e.g. wave/snake
+        /// scans).
         /// </summary>
         internal static (bool hit, int surfaceY, bool spikeDeath) CheckFloor(
-            in CollisionMap map, int collX, int collY, int collW, int collH)
+            in CollisionMap map, int collX, int collY, int collW, int collH,
+            int velY_fixed = 0)
         {
+            // NES bg_coll_D guard: skip the rectangular floor probes entirely
+            // while ascending. Slopes are handled by a separate code path in
+            // both SIM and PF, so the slope-detection portion of bg_coll_D has
+            // no analog here to preserve.
+            if (velY_fixed < 0)
+                return (false, 0, false);
+
             int playerBottom_px = collY + collH;
             int tileBelowY = playerBottom_px / TILE;
             int playerLeft_px = collX;
+            // NES bg_coll_D uses Generic.width = CUBE_WIDTH[mini] = {0x0F, 0x08}
+            // (collision.h x_movement.h, physics_table_defines.cmp.h).  Right probe
+            // = X + Generic.width = X+15 for non-mini, X+8 for mini.  Center probe
+            // = X + (Generic.width >> 1) = X+7 for non-mini, X+4 for mini.
             int playerRight_px = collX + collW;
 
             int tileArrayYFloor = tileBelowY + map.GroundRowsToReserve;
@@ -1071,8 +1119,10 @@ namespace FamidashEditor
 
             for (int probeIdx = 0; probeIdx < 3; probeIdx++)
             {
+                // NES probes: left = X+0, center = X + (Generic.width >> 1) = X+7,
+                // right = X + Generic.width = X+15 (non-mini).
                 int px = probeIdx == 0 ? playerLeft_px
-                       : probeIdx == 1 ? playerLeft_px + collW / 2
+                       : probeIdx == 1 ? playerLeft_px + (collW >> 1)
                        : playerRight_px;
                 int tileX = px / TILE;
 
@@ -1082,7 +1132,8 @@ namespace FamidashEditor
                 if (tileIdx < 0 || tileIdx >= map.Tiles.Length) continue;
 
                 int tileId = map.Tiles[tileIdx];
-                var collision = MetatileCollisionTable.GetCollision((byte)tileId);
+                int mappedTileId = MapTileForCollision(tileId);
+                var collision = MetatileCollisionTable.GetCollision((byte)mappedTileId);
                 if (collision == MetatileCollision.COL_NONE) continue;
 
                 int localX = px % TILE;
@@ -1121,7 +1172,15 @@ namespace FamidashEditor
                 {
                     int tileWorldY = tileBelowY * TILE;
                     int surfaceY = tileWorldY + topOffsetPx;
-                    if (playerBottom_px >= surfaceY)
+                    // NES bg_coll_D semantics: a floor is only registered when the
+                    // probe pixel actually lies inside the tile's solid region.
+                    // For half-slabs like COL_TOP (occupies localY 0..7) this prevents
+                    // snapping the player up onto the surface when their feet have
+                    // already fallen through the slab (localY > 7). Without this
+                    // upper bound, the player can teleport ~8-15px back upward and
+                    // survive a gap that Famidash treats as fatal.
+                    if (playerBottom_px >= surfaceY &&
+                        TileOccupiesPixel(collision, localX, localY))
                     {
                         return (true, surfaceY, false);
                     }
@@ -1160,33 +1219,53 @@ namespace FamidashEditor
         /// Check ceiling collision (upward).
         /// This IS the CheckCollisionUp algorithm — SIM and PF both call this.
         /// Returns (hit, ceilingBottomY, spikeDeath).
+        /// 
+        /// NES bg_coll_U (collision.h ~line 894) gates the rectangular ceiling
+        /// probes behind `(high_byte(currplayer_vel_y) & 0x80)` — i.e., the probes
+        /// only run when the player is moving upward (velY &lt; 0). When velY is
+        /// non-negative the probes are skipped, allowing bg_coll_R/bg_coll_L to
+        /// fire on the side of overhanging COL_BOTTOM-style slabs the player's
+        /// body is intersecting from below. See CheckFloor for the symmetric
+        /// COL_TOP case. `velY_fixed` is the player's signed 8.8 fixed-point Y
+        /// velocity. Default 0 preserves pre-fix behavior for callers that don't
+        /// track velocity (wave/snake scans).
         /// </summary>
         internal static (bool hit, int ceilingBottomY, bool spikeDeath) CheckCeiling(
-            in CollisionMap map, int collX, int collY, int collW, int collH)
+            in CollisionMap map, int collX, int collY, int collW, int collH,
+            int velY_fixed = -1)
         {
+            // NES bg_coll_U guard: skip the rectangular ceiling probes entirely
+            // when not ascending. Slope handling lives elsewhere in our codebase
+            // so the slope portion of bg_coll_U has no analog here.
+            if (velY_fixed >= 0)
+                return (false, 0, false);
+
             int playerTop_px = collY;
             int playerLeft_px = collX;
+            // NES bg_coll_U uses Generic.width = CUBE_WIDTH[mini] = {0x0F, 0x08}
+            // (collision.h, physics_table_defines.cmp.h).  Right probe = X+15 (non-mini).
             int playerRight_px = collX + collW;
 
-            // NES bg_coll_U probes at Generic_y - 1 (one pixel above hitbox top).
-            // Use probeY for overlap checks so an exact-touch case (playerTop == tileBottom) is detected.
-            int probeY = playerTop_px - 1;
+            // NES bg_coll_U probe Y (collision.h:893):
+            //   temp_y = Generic.y + (mini ? (0x10-h)>>1 : 0) + 1
+            // For non-mini: temp_y = top + 1.  For mini: temp_y = top + 4 + 1 = top + 5
+            // (the caller passes collY = playerY + hbOffY so for both cases the probe
+            // is at collY + 1 — i.e. ONE pixel BELOW the player's hitbox top, which
+            // means INSIDE the player's body.)  Both the spike and solid-tile probes
+            // share this Y exactly; using top - 1 (1px above) detects the wrong row.
+            int probeY = playerTop_px + 1;
 
-            // --- Spike death pre-check: 3 X-points at Y = top + 1 ---
-            // NES bg_coll_U checks left, left+width/2, left+width.
-            // Important: do NOT return early here — the solid ceiling detection
-            // must still run so callers can snap the player position.  On the NES,
-            // bg_coll_U finds the solid surface first, then bg_coll_floor_spikes
-            // checks for spikes at the post-snap position.  Returning early would
-            // prevent the snap and leave the player at a pre-snap Y where floor-
-            // spike probes hit the same death tile, causing an incorrect death.
+            // --- Spike death pre-check: 3 X-points at probeY (= top + 1) ---
+            // NES bg_coll_U checks left, left+width/2, left+width — same Y as the
+            // solid-tile probe below.
             bool spikeFound = false;
             {
-                int checkY = playerTop_px + 1;
+                int checkY = probeY;
                 for (int cpIdx = 0; cpIdx < 3; cpIdx++)
                 {
+                    // NES probes: left=X+0, center=X+(Generic.width>>1)=X+7, right=X+Generic.width=X+15
                     int px = cpIdx == 0 ? playerLeft_px
-                           : cpIdx == 1 ? playerLeft_px + collW / 2
+                           : cpIdx == 1 ? playerLeft_px + (collW >> 1)
                            : playerRight_px;
                     int tileX = px / TILE;
                     int tileY = checkY / TILE;
@@ -1200,7 +1279,8 @@ namespace FamidashEditor
                     if (checkTileIdx < 0 || checkTileIdx >= map.Tiles.Length) continue;
 
                     int checkTileId = map.Tiles[checkTileIdx];
-                    var checkCollision = MetatileCollisionTable.GetCollision((byte)checkTileId);
+                    int mappedCheckTileId = MapTileForCollision(checkTileId);
+                    var checkCollision = MetatileCollisionTable.GetCollision((byte)mappedCheckTileId);
 
                     int localX = px % TILE;
                     int localY = checkY % TILE;
@@ -1215,9 +1295,9 @@ namespace FamidashEditor
                 }
             }
 
-            int tileAboveY = (playerTop_px - 1) >= 0
-                ? (playerTop_px - 1) / TILE
-                : ((playerTop_px - 1) - TILE + 1) / TILE;
+            int tileAboveY = probeY >= 0
+                ? probeY / TILE
+                : (probeY - TILE + 1) / TILE;
 
             // Validate using array Y (world Y + groundRowsToReserve), not raw world Y,
             // because negative world tile rows are valid when groundRowsToReserve > 0.
@@ -1235,7 +1315,8 @@ namespace FamidashEditor
                 if (tileIdx < 0 || tileIdx >= map.Tiles.Length) continue;
 
                 int tileId = map.Tiles[tileIdx];
-                var collision = MetatileCollisionTable.GetCollision((byte)tileId);
+                int mappedTileId = MapTileForCollision(tileId);
+                var collision = MetatileCollisionTable.GetCollision((byte)mappedTileId);
 
                 if (collision == MetatileCollision.COL_NONE) continue;
 
@@ -1307,6 +1388,12 @@ namespace FamidashEditor
         /// <summary>
         /// CheckCenterPointDeath — single center pixel death check.
         /// Center point: (x + (w>>1) - 1, y + (h>>1) + hitboxOffsetY)
+        ///
+        /// NES bg_coll_death calls
+        ///   bg_coll_U_D_checks() || bg_coll_mini_blocks() || bg_coll_spikes() || bg_coll_slope()
+        /// at the center point.  bg_coll_mini_blocks kills when the center pixel is in
+        /// the SOLID half of COL_TOP / COL_BOTTOM / COL_DOWN_LEFT etc. — without this,
+        /// horizontally walking into the side of a half-slab is survived.
         /// </summary>
         internal static bool CheckCenterPointDeath(
             in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY)
@@ -1334,7 +1421,44 @@ namespace FamidashEditor
             int localX = Math.Max(0, Math.Min(TILE - 1, centerX_px - tileStartX));
             int localY = Math.Max(0, Math.Min(TILE - 1, centerY_px - tileStartY));
 
-            return MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY);
+            // bg_coll_spikes — pure spike/death tiles
+            if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
+                return true;
+
+            // bg_coll_mini_blocks + bg_coll_U_D_checks — partial-collision and
+            // full-block tiles.  Center inside the SOLID region = death.
+            // Now includes COL_ALL / COL_FLOOR_CEIL / COL_NO_SIDE: NES
+            // bg_coll_U_D_checks returns 1 for these full-block cases, so
+            // center-inside-block kills on NES.  Now that bg_coll_D probes
+            // match NES (collW, not collW+1), eject snap distance also matches
+            // and the previously-feared false positives no longer occur.
+            switch (collision)
+            {
+                case MetatileCollision.COL_ALL:
+                case MetatileCollision.COL_FLOOR_CEIL:
+                case MetatileCollision.COL_NO_SIDE:
+                case MetatileCollision.COL_BOTTOM:
+                case MetatileCollision.COL_TOP:
+                case MetatileCollision.COL_LEFT:
+                case MetatileCollision.COL_RIGHT:
+                case MetatileCollision.COL_UP_LEFT:
+                case MetatileCollision.COL_UP_RIGHT:
+                case MetatileCollision.COL_DOWN_LEFT:
+                case MetatileCollision.COL_DOWN_RIGHT:
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                    if (TileOccupiesPixel(collision, localX, localY))
+                        return true;
+                    break;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -1367,7 +1491,42 @@ namespace FamidashEditor
             int localX = Math.Max(0, Math.Min(TILE - 1, centerX - tileStartX));
             int localY = Math.Max(0, Math.Min(TILE - 1, centerY - tileStartY));
 
-            return MetatileCollisionTable.TileKillsAtPixel(col, localX, localY);
+            if (MetatileCollisionTable.TileKillsAtPixel(col, localX, localY))
+                return true;
+
+            // NES bg_coll_death also calls bg_coll_mini_blocks() and
+            // bg_coll_U_D_checks() at the center point.  bg_coll_U_D_checks
+            // returns 1 for the full-block cases COL_ALL / COL_FLOOR_CEIL /
+            // COL_NO_SIDE — center-inside-block kills on NES.  Now that
+            // bg_coll_D probes match NES (collW, not collW+1), eject snap
+            // distance matches and previous false positives no longer occur.
+            switch (col)
+            {
+                case MetatileCollision.COL_ALL:
+                case MetatileCollision.COL_FLOOR_CEIL:
+                case MetatileCollision.COL_NO_SIDE:
+                case MetatileCollision.COL_BOTTOM:
+                case MetatileCollision.COL_TOP:
+                case MetatileCollision.COL_LEFT:
+                case MetatileCollision.COL_RIGHT:
+                case MetatileCollision.COL_UP_LEFT:
+                case MetatileCollision.COL_UP_RIGHT:
+                case MetatileCollision.COL_DOWN_LEFT:
+                case MetatileCollision.COL_DOWN_RIGHT:
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                    if (TileOccupiesPixel(col, localX, localY))
+                        return true;
+                    break;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -1443,18 +1602,13 @@ namespace FamidashEditor
                 return false;
 
             int rightEdge_px = playerX_px + hbW;
-            int centerY_px;
-            if (mini)
-            {
-                int miniTopOffset = (0x10 - hbH) >> 1;
-                centerY_px = playerY_px + miniTopOffset + (hbH >> 1);
-                if (gameMode == 0 || gameMode == 4 || gameMode == 8)
-                    centerY_px += gravFlipped ? 3 : -2;
-            }
-            else
-            {
-                centerY_px = playerY_px + (hbH >> 1);
-            }
+            // NES bg_side_coll_common: tmp1 = Y + (mini ? (0x10-h)/2 : 0) + h/2
+            // Generic.height = CUBE_HEIGHT[mini] (15 / 7) or WAVE_HEIGHT (8) — *hitbox* height.
+            // For non-mini cube: h=15 -> Y + 7 (NOT Y + 8 — that's sprite center, wrong).
+            // For mini cube: (16-7)/2 + 7/2 = 4 + 3 = Y + 7, then ± grav adj for cube/robot/ninja.
+            int centerY_px = playerY_px + (mini ? (((0x10 - hbH) >> 1) + (hbH >> 1)) : (hbH >> 1));
+            if (mini && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+                centerY_px += gravFlipped ? 3 : -2;
 
             int tileX = rightEdge_px / TILE;
             int tileY = centerY_px / TILE;
@@ -1509,18 +1663,10 @@ namespace FamidashEditor
             int hbW, int hbH, int hbOffY, int gameMode, bool mini, bool gravFlipped)
         {
             int rightEdge_px = playerX_px + hbW;
-            int centerY_px;
-            if (mini)
-            {
-                int miniTopOffset = (0x10 - hbH) >> 1;
-                centerY_px = playerY_px + miniTopOffset + (hbH >> 1);
-                if (gameMode == 0 || gameMode == 4 || gameMode == 8)
-                    centerY_px += gravFlipped ? 3 : -2;
-            }
-            else
-            {
-                centerY_px = playerY_px + (hbH >> 1);
-            }
+            // Match NES bg_side_coll_common: probe Y uses *hitbox* height, not sprite height.
+            int centerY_px = playerY_px + (mini ? (((0x10 - hbH) >> 1) + (hbH >> 1)) : (hbH >> 1));
+            if (mini && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+                centerY_px += gravFlipped ? 3 : -2;
 
             int tileX = rightEdge_px / TILE;
             int tileY = centerY_px / TILE;
@@ -2007,6 +2153,12 @@ namespace FamidashEditor
             public bool OnGround;
             public bool Died;
             public bool WasZeroed;
+            public bool DebugCeilSlopeHit;
+            public bool DebugCeilTileHit;
+            public bool DebugCeilSpike;
+            public bool DebugFloorSlopeHit;
+            public bool DebugFloorTileHit;
+            public bool DebugFloorSpike;
             public int SlopeType;
             public int SlopeFrames;
             public int SlopeWasOnCounter;
@@ -2024,7 +2176,8 @@ namespace FamidashEditor
             int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed,
             bool gravFlipped, bool mini, int gameMode, bool inputHeld,
             int slopeWasOnCounter, int slopeFrames, int slopeType,
-            bool slopeJumpHigher, int lastSlopeType)
+            bool slopeJumpHigher, int lastSlopeType,
+            int camY_fixed = 0)
         {
             var r = new EjectResult {
                 NewY_fixed = playerY_fixed, NewVelY_fixed = velY_fixed,
@@ -2035,6 +2188,14 @@ namespace FamidashEditor
 
             int playerX_px = playerX_fixed >> 8;
             int playerY_px = playerY_fixed >> 8;
+            // NES bg_coll_D probes at `Generic.y + Generic.height` where
+            // Generic.y = high_byte(currplayer_y) and currplayer_y is
+            // SCREEN-relative (verified by spider gamemode bounds checks at
+            // 0x07 / 0xF8 and x_movement.h Y wrap to 0xF900 / 0x0600).
+            // Tile world Y = screen_Y + scroll_y_high.  When Y.low < camY.low
+            // the NES byte-subtraction produces a borrow, making the probe row
+            // one less than plain (Y_world >> 8).  Replicate exactly:
+            int playerY_px_nes = ((playerY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8);
             int hbW = GetCubeHitboxW(mini);
             int hbH = GetCubeHitboxH(mini);
             int hbOffY = GetHitboxOffsetY(gameMode, mini, gravFlipped);
@@ -2055,9 +2216,14 @@ namespace FamidashEditor
                 if (slopeHit)
                 {
                     if (slopeEject > 0)
-                        r.NewY_fixed = ((r.NewY_fixed >> 8) - slopeEject) << 8;
+                        // NES `low_byte(currplayer_y) = 0` zeroes the SCREEN-relative
+                        // player sub-pixel, leaving world subpx = scroll_y_subpx.
+                        // In PF coords that means Y_fixed.low must equal Cam_fixed.low
+                        // so (Y-Cam).low = 0 mirrors NES player_y_low = 0.
+                        r.NewY_fixed = (((r.NewY_fixed >> 8) - slopeEject) << 8) | (camY_fixed & 0xFF);
                     r.NewVelY_fixed = 0; r.WasZeroed = true;
                     r.SlopeType = newSlopeType; r.OnGround = true;
+                    r.DebugFloorSlopeHit = true;
                     if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
                         r.SlopeJumpHigher = true;
                     else { r.SlopeFrames = 1; r.SlopeWasOnCounter = 3; }
@@ -2065,18 +2231,30 @@ namespace FamidashEditor
                 else if (r.NewVelY_fixed >= 0)
                 {
                     var (floorHit, floorTopY, spike) = CheckFloor(
-                        in map, playerX_px, playerY_px + hbOffY, hbW, hbH);
-                    if (spike) { r.Died = true; return r; }
+                        in map, playerX_px, playerY_px_nes + hbOffY, hbW, hbH);
+                    if (spike) { r.Died = true; r.DebugFloorSpike = true; return r; }
                     if (floorHit)
                     {
-                        r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
+                        // NES cube_eject (gamemode_cube.h ~L210):
+                        //   high_byte(currplayer_y) -= eject_D;
+                        //   low_byte(currplayer_y) = 0;       ← SCREEN-rel subpx
+                        //   currplayer_vel_y = 0;
+                        // In PF representation Y_fixed = Cam_fixed + player_y_full,
+                        // so zeroing player_y_low means Y_fixed.low = Cam_fixed.low.
+                        r.NewY_fixed = ((floorTopY - hbH - hbOffY) << 8) | (camY_fixed & 0xFF);
                         r.NewVelY_fixed = 0; r.WasZeroed = true; r.OnGround = true;
+                        r.DebugFloorTileHit = true;
                     }
                 }
             }
             else
             {
-                int slopeHbOffY = mini ? ((0x10 - hbH) >> 1) : 0;
+                // NES bg_coll_U slope probe: `Generic.y + (byte(0x10-Generic.height)>>1) + ...`
+                // The vertical-center offset term is UNCONDITIONAL in bg_coll_U
+                // (unlike bg_coll_D where it is gated on currplayer_mini).  For
+                // non-mini ship/wave/snake (height=7) this adds +4px to the probe Y;
+                // for non-mini cube (height=15) it is 0, matching prior behavior.
+                int slopeHbOffY = (0x10 - hbH) >> 1;
                 int slopeCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
 
                 var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
@@ -2086,7 +2264,8 @@ namespace FamidashEditor
 
                 if (ceilSlopeHit)
                 {
-                    r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
+                    // NES `low_byte(currplayer_y) = 0` → PF Y_fixed.low = Cam_fixed.low.
+                    r.NewY_fixed = (((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8) | (camY_fixed & 0xFF);
                     r.NewVelY_fixed = 0; r.WasZeroed = true;
                     r.OnGround = true; r.SlopeType = ceilSlopeType;
                     if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
@@ -2096,10 +2275,12 @@ namespace FamidashEditor
                 else if (r.NewVelY_fixed <= 0)
                 {
                     var (ceilHit, ceilBotY, _) = CheckCeiling(
-                        in map, playerX_px, playerY_px + hbOffY, hbW, hbH);
+                        in map, playerX_px, playerY_px_nes + hbOffY, hbW, hbH);
                     if (ceilHit)
                     {
-                        r.NewY_fixed = (ceilBotY - hbOffY - 1) << 8;
+                        // NES cube_eject ceiling branch: low_byte(currplayer_y) = 0
+                        // → PF Y_fixed.low = Cam_fixed.low (preserve scroll_subpx as world subpx).
+                        r.NewY_fixed = ((ceilBotY - hbOffY - 1) << 8) | (camY_fixed & 0xFF);
                         r.NewVelY_fixed = 0; r.WasZeroed = true; r.OnGround = true;
                     }
                 }
@@ -2144,7 +2325,9 @@ namespace FamidashEditor
                     var (hit, ceilBotY, _) = CheckCeiling(in map, playerX_px, collisionY, hbW, hbH);
                     if (hit)
                     {
-                        r.NewY_fixed = (ceilBotY - miniOffset) << 8;
+                        // NES ball_eject only modifies high_byte(currplayer_y);
+                        // low_byte (player_y_low) is preserved → PF Y_fixed.low unchanged.
+                        r.NewY_fixed = ((ceilBotY - miniOffset) << 8) | (r.NewY_fixed & 0xFF);
                         r.NewVelY_fixed = 0; r.OnGround = true;
                     }
                 }
@@ -2162,7 +2345,8 @@ namespace FamidashEditor
                 if (slopeHit)
                 {
                     if (slopeEject > 0)
-                        r.NewY_fixed = ((r.NewY_fixed >> 8) - slopeEject) << 8;
+                        // NES ball_eject preserves low_byte(currplayer_y).
+                        r.NewY_fixed = (((r.NewY_fixed >> 8) - slopeEject) << 8) | (r.NewY_fixed & 0xFF);
                     r.NewVelY_fixed = 0;
                     r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
                     r.SlopeType = newSlopeType; r.OnGround = true;
@@ -2173,7 +2357,8 @@ namespace FamidashEditor
                     if (spike) { r.Died = true; return r; }
                     if (hit)
                     {
-                        r.NewY_fixed = (surfY - hbH - miniOffset - ballYOffset) << 8;
+                        // NES ball_eject preserves low_byte(currplayer_y).
+                        r.NewY_fixed = ((surfY - hbH - miniOffset - ballYOffset) << 8) | (r.NewY_fixed & 0xFF);
                         r.NewVelY_fixed = 0; r.OnGround = true;
                     }
                 }
@@ -2193,7 +2378,8 @@ namespace FamidashEditor
             int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed,
             bool gravFlipped, bool mini, int gameMode, bool inputHeld,
             int slopeWasOnCounter, int slopeFrames, int slopeType,
-            bool slopeJumpHigher, int lastSlopeType)
+            bool slopeJumpHigher, int lastSlopeType,
+            int camY_fixed = 0)
         {
             var r = new EjectResult {
                 NewY_fixed = playerY_fixed, NewVelY_fixed = velY_fixed,
@@ -2204,16 +2390,26 @@ namespace FamidashEditor
 
             int playerX_px = playerX_fixed >> 8;
             int playerY_px = playerY_fixed >> 8;
+            // NES bg_coll_U/D probe at `Generic.y + ...` where Generic.y is
+            // SCREEN-relative high byte.  Replicate NES sub-pixel-borrow.
+            int playerY_px_nes = ((playerY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8);
             int hbW = GetCubeHitboxW(mini);
             int hbH = GetCubeHitboxH(mini);
             int hbOffY = GetHitboxOffsetY(gameMode, mini, gravFlipped);
             int collX = playerX_px;
-            int collY = playerY_px + hbOffY;
+            int collY = playerY_px_nes + hbOffY;
 
             UpdateSlopeCounters(ref r.SlopeWasOnCounter, ref r.SlopeType,
                                 ref r.NewVelY_fixed, gameMode, gravFlipped, mini, ref r.LastSlopeType);
 
-            int slopeHbOffY = mini ? ((0x10 - hbH) >> 1) : 0;
+            // NES bg_coll_D slope probe: `Generic.y + Generic.height - 2 + (currplayer_mini ? (0x10-h)>>1 : 0)`
+            //   → the center-offset term IS gated on currplayer_mini.
+            // NES bg_coll_U slope probe: `Generic.y + (byte(0x10-Generic.height)>>1) + ...`
+            //   → the center-offset term is UNCONDITIONAL.
+            // Use separate variables: floor-slope honors mini gate; ceil-slope does not.
+            // Critical for non-mini ship/wave/snake where height=7 → +4 ceiling probe Y.
+            int floorSlopeHbOffY = mini ? ((0x10 - hbH) >> 1) : 0;
+            int ceilSlopeHbOffY  = (0x10 - hbH) >> 1;
 
             // NES velocity gates: inside bg_coll_U / bg_coll_D the SLOPE phase
             // always runs regardless of velocity, but the TILE collision phase
@@ -2225,22 +2421,32 @@ namespace FamidashEditor
             // velocity (>= 0) and runs its tile phase.  Must re-derive the
             // gate booleans after each phase so the second check uses live
             // velocity, exactly as the NES does.
-            bool velMovingUp   = velY_fixed < 0;
-            bool velMovingDown = velY_fixed >= 0;
+            bool velMovingUp   = r.NewVelY_fixed < 0;
+            bool velMovingDown = r.NewVelY_fixed >= 0;
 
             if (!gravFlipped)
             {
                 // Normal gravity: ceiling first (secondary), floor last (primary landing surface).
 
                 // Ceiling slopes (always run, no velocity gate — matches NES)
-                int ceilCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
+                int ceilCheckY = playerY_px_nes + ceilSlopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
                 var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
                     in map, playerX_px, playerX_px, ceilCheckY, hbW,
                     inputHeld, gameMode, gravFlipped, velX_fixed,
                     ref r.LastSlopeType, ref r.SlopeJumpHigher);
                 if (ceilSlopeHit)
                 {
-                    r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
+                    r.DebugCeilSlopeHit = true;
+                    // NES preserves low-byte (sub-pixel) of currplayer_y; only the
+                    // high byte is modified by the eject.  Compose Y_fixed so that
+                    // the NES sprite-Y formula `(Cam>>8)+((Y-Cam)>>8)` yields newPxY
+                    // exactly: Y_fixed = Cam + ((newPxY - Cam.high) << 8) + RAWL.
+                    // Just `(newPxY<<8) | RAWL` would borrow whenever RAWL<Cam.low,
+                    // making display = newPxY-1 (off-by-one ceiling/floor eject).
+                    int currNesTop = ((r.NewY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8);
+                    int newPxY = currNesTop + ceilSlopeEject - 1;
+                    int newSub = (r.NewY_fixed - camY_fixed) & 0xFF;
+                    r.NewY_fixed = camY_fixed + ((newPxY - (camY_fixed >> 8)) << 8) + newSub;
                     r.NewVelY_fixed = 0;
                     r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
                     r.SlopeType = ceilSlopeType;
@@ -2248,10 +2454,21 @@ namespace FamidashEditor
                 else if (velMovingUp)
                 {
                     // Ceiling tile collision — only when moving up
-                    var (ceilHit, ceilBotY, _) = CheckCeiling(in map, collX, collY, hbW, hbH);
+                    var (ceilHit, ceilBotY, ceilSpike) = CheckCeiling(in map, collX, collY, hbW, hbH);
+                    if (ceilSpike) { r.DebugCeilSpike = true; r.Died = true; return r; }
                     if (ceilHit)
                     {
-                        r.NewY_fixed = (ceilBotY - hbOffY) << 8;
+                        r.DebugCeilTileHit = true;
+                        // NES gamemode_ship.h:60: `Y_high = Y_high - eject_U - 1`.
+                        // With eject_U = (0xF0 | tmp8) and probe at top+1 in tile row
+                        // N, NES uint8 arithmetic gives Y_new_top = N*16 + (15 − 5·mini)
+                        // − 1 = ceilBotY − hbOffY − 2 (for both mini and non-mini ship).
+                        // Cube uses `Y -= eject_U` and lands at ceilBotY - hbOffY - 1.
+                        // Ship's extra `-1` => `-2` here.  Compose Y_fixed via cam so
+                        // display formula yields newPxY exactly (see ceilSlope above).
+                        int newPxY = ceilBotY - hbOffY - 2;
+                        int newSub = (r.NewY_fixed - camY_fixed) & 0xFF;
+                        r.NewY_fixed = camY_fixed + ((newPxY - (camY_fixed >> 8)) << 8) + newSub;
                         r.NewVelY_fixed = 0;
                     }
                 }
@@ -2262,15 +2479,21 @@ namespace FamidashEditor
                 velMovingDown = r.NewVelY_fixed >= 0;
 
                 // Floor slopes (always run, no velocity gate — matches NES)
-                int floorCheckY = playerY_px + slopeHbOffY + hbH - 2;
+                int floorCheckY = playerY_px_nes + floorSlopeHbOffY + hbH - 2;
                 var (floorSlopeHit, floorSlopeEject, floorSlopeType) = CheckSlopesDown(
                     in map, playerX_px, playerX_px, floorCheckY, hbW,
                     inputHeld, gameMode, gravFlipped, velX_fixed,
                     ref r.LastSlopeType, ref r.SlopeJumpHigher);
                 if (floorSlopeHit)
                 {
+                    r.DebugFloorSlopeHit = true;
                     if (floorSlopeEject > 0)
-                        r.NewY_fixed = ((r.NewY_fixed >> 8) - floorSlopeEject) << 8;
+                    {
+                        int currNesTop = ((r.NewY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8);
+                        int newPxY = currNesTop - floorSlopeEject;
+                        int newSub = (r.NewY_fixed - camY_fixed) & 0xFF;
+                        r.NewY_fixed = camY_fixed + ((newPxY - (camY_fixed >> 8)) << 8) + newSub;
+                    }
                     r.NewVelY_fixed = 0;
                     r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
                     r.SlopeType = floorSlopeType;
@@ -2278,12 +2501,16 @@ namespace FamidashEditor
                 else if (velMovingDown)
                 {
                     // Floor tile collision — only when moving down
-                    int updatedCollY = (r.NewY_fixed >> 8) + hbOffY;
+                    int updatedCollY = ((r.NewY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8) + hbOffY;
                     var (floorHit, floorTopY, spike) = CheckFloor(in map, collX, updatedCollY, hbW, hbH);
-                    if (spike) { r.Died = true; return r; }
+                    if (spike) { r.DebugFloorSpike = true; r.Died = true; return r; }
                     if (floorHit)
                     {
-                        r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
+                        r.DebugFloorTileHit = true;
+                        // Compose Y_fixed via cam so display formula yields newPxY.
+                        int newPxY = floorTopY - hbH - hbOffY;
+                        int newSub = (r.NewY_fixed - camY_fixed) & 0xFF;
+                        r.NewY_fixed = camY_fixed + ((newPxY - (camY_fixed >> 8)) << 8) + newSub;
                         r.NewVelY_fixed = 0;
                     }
                 }
@@ -2293,15 +2520,21 @@ namespace FamidashEditor
                 // Flipped gravity: floor first (secondary), ceiling last (primary landing surface).
 
                 // Floor slopes (always run, no velocity gate — matches NES)
-                int floorCheckY = playerY_px + slopeHbOffY + hbH - 2;
+                int floorCheckY = playerY_px_nes + floorSlopeHbOffY + hbH - 2;
                 var (floorSlopeHit, floorSlopeEject, floorSlopeType) = CheckSlopesDown(
                     in map, playerX_px, playerX_px, floorCheckY, hbW,
                     inputHeld, gameMode, gravFlipped, velX_fixed,
                     ref r.LastSlopeType, ref r.SlopeJumpHigher);
                 if (floorSlopeHit)
                 {
+                    r.DebugFloorSlopeHit = true;
                     if (floorSlopeEject > 0)
-                        r.NewY_fixed = ((r.NewY_fixed >> 8) - floorSlopeEject) << 8;
+                    {
+                        int currNesTop = ((r.NewY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8);
+                        int newPxY = currNesTop - floorSlopeEject;
+                        int newSub = (r.NewY_fixed - camY_fixed) & 0xFF;
+                        r.NewY_fixed = camY_fixed + ((newPxY - (camY_fixed >> 8)) << 8) + newSub;
+                    }
                     r.NewVelY_fixed = 0;
                     r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
                     r.SlopeType = floorSlopeType;
@@ -2310,10 +2543,14 @@ namespace FamidashEditor
                 {
                     // Floor tile collision — only when moving down (secondary for flipped)
                     var (floorHit, floorTopY, spike) = CheckFloor(in map, collX, collY, hbW, hbH);
-                    if (spike) { r.Died = true; return r; }
+                    if (spike) { r.DebugFloorSpike = true; r.Died = true; return r; }
                     if (floorHit)
                     {
-                        r.NewY_fixed = (floorTopY - hbH - hbOffY) << 8;
+                        r.DebugFloorTileHit = true;
+                        // Compose via cam so display formula yields newPxY.
+                        int newPxY = floorTopY - hbH - hbOffY;
+                        int newSub = (r.NewY_fixed - camY_fixed) & 0xFF;
+                        r.NewY_fixed = camY_fixed + ((newPxY - (camY_fixed >> 8)) << 8) + newSub;
                         r.NewVelY_fixed = 0;
                     }
                 }
@@ -2323,14 +2560,18 @@ namespace FamidashEditor
                 velMovingDown = r.NewVelY_fixed >= 0;
 
                 // Ceiling slopes (always run, no velocity gate — matches NES)
-                int ceilCheckY = playerY_px + slopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
+                int ceilCheckY = playerY_px_nes + ceilSlopeHbOffY + (mini ? 1 : 2) + (gameMode == 1 ? 1 : 0);
                 var (ceilSlopeHit, ceilSlopeEject, ceilSlopeType) = CheckSlopesUp(
                     in map, playerX_px, playerX_px, ceilCheckY, hbW,
                     inputHeld, gameMode, gravFlipped, velX_fixed,
                     ref r.LastSlopeType, ref r.SlopeJumpHigher);
                 if (ceilSlopeHit)
                 {
-                    r.NewY_fixed = ((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8;
+                    r.DebugCeilSlopeHit = true;
+                    int currNesTop = ((r.NewY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8);
+                    int newPxY = currNesTop + ceilSlopeEject - 1;
+                    int newSub = (r.NewY_fixed - camY_fixed) & 0xFF;
+                    r.NewY_fixed = camY_fixed + ((newPxY - (camY_fixed >> 8)) << 8) + newSub;
                     r.NewVelY_fixed = 0;
                     r.SlopeFrames = 1; r.SlopeWasOnCounter = 3;
                     r.SlopeType = ceilSlopeType;
@@ -2338,11 +2579,17 @@ namespace FamidashEditor
                 else if (velMovingUp)
                 {
                     // Ceiling tile collision — only when moving up (primary for flipped)
-                    int updatedCollY = (r.NewY_fixed >> 8) + hbOffY;
-                    var (ceilHit, ceilBotY, _) = CheckCeiling(in map, collX, updatedCollY, hbW, hbH);
+                    int updatedCollY = ((r.NewY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8) + hbOffY;
+                    var (ceilHit, ceilBotY, ceilSpike) = CheckCeiling(in map, collX, updatedCollY, hbW, hbH);
+                    if (ceilSpike) { r.DebugCeilSpike = true; r.Died = true; return r; }
                     if (ceilHit)
                     {
-                        r.NewY_fixed = (ceilBotY - hbOffY) << 8;
+                        r.DebugCeilTileHit = true;
+                        // NES ship: Y -= eject_U + 1 lands at ceilBotY - hbOffY - 2.
+                        // Compose via cam so display formula yields newPxY.
+                        int newPxY = ceilBotY - hbOffY - 2;
+                        int newSub = (r.NewY_fixed - camY_fixed) & 0xFF;
+                        r.NewY_fixed = camY_fixed + ((newPxY - (camY_fixed >> 8)) << 8) + newSub;
                         r.NewVelY_fixed = 0;
                     }
                 }

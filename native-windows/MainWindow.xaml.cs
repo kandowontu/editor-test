@@ -3545,6 +3545,20 @@ namespace FamidashEditor
             if (MenuFileSave != null) MenuFileSave.Click += SaveButton_Click;
             if (MenuFileSaveAs != null) MenuFileSaveAs.Click += MenuFileSaveAs_Click;
             if (MenuOpenSimulator != null) MenuOpenSimulator.Click += MenuOpenSimulator_Click;
+            if (MenuConfigureFamidashRom != null) MenuConfigureFamidashRom.Click += MenuConfigureFamidashRom_Click;
+            if (MenuRunFamidashMesen != null) MenuRunFamidashMesen.Click += MenuRunFamidashMesen_Click;
+            if (MenuCaptureRamMesen != null) MenuCaptureRamMesen.Click += MenuCaptureRamMesen_Click;
+            if (MenuBuildAndTest != null) MenuBuildAndTest.Click += MenuBuildAndTest_Click;
+                if (MenuOverlayAndFollow != null)
+                {
+                    MenuOverlayAndFollow.IsChecked = _overlayAndFollow;
+                    MenuOverlayAndFollow.Click += (s, e) => { _overlayAndFollow = MenuOverlayAndFollow.IsChecked; try { SaveEditorSettings(); } catch { } };
+                }
+                if (MenuCamFollow != null)
+                {
+                    MenuCamFollow.IsChecked = _camFollow;
+                    MenuCamFollow.Click += (s, e) => { _camFollow = MenuCamFollow.IsChecked; try { SaveEditorSettings(); } catch { } };
+                }
             if (MenuFileLoad != null) MenuFileLoad.Click += LoadButton_Click;
             if (MenuFileClose != null) MenuFileClose.Click += MenuFileClose_Click;
             if (MenuFileExit != null) MenuFileExit.Click += (s, e) => { this.Close(); };
@@ -7410,6 +7424,36 @@ namespace FamidashEditor
                             catch { }
                         }
                     }
+
+                    // optional mesen integration settings (NES only)
+                    if (doc.RootElement.TryGetProperty("mesenPath", out var mp))
+                    {
+                        try { mesenPath = mp.GetString(); } catch { mesenPath = null; }
+                    }
+                    if (doc.RootElement.TryGetProperty("famidashRomPath", out var mr))
+                    {
+                        try { famidashRomPath = mr.GetString(); } catch { famidashRomPath = null; }
+                    }
+                    if (doc.RootElement.TryGetProperty("mesenRamAddresses", out var mra))
+                    {
+                        try { mesenRamAddresses = mra.GetString() ?? mesenRamAddresses; } catch { }
+                    }
+                    if (doc.RootElement.TryGetProperty("mesenCaptureFrames", out var mcf))
+                    {
+                        try { mesenCaptureFrames = Math.Max(1, mcf.GetInt32()); } catch { }
+                    }
+                    if (doc.RootElement.TryGetProperty("mesenCaptureEveryNFrames", out var mce))
+                    {
+                        try { mesenCaptureEveryNFrames = Math.Max(1, mce.GetInt32()); } catch { }
+                    }
+                    if (doc.RootElement.TryGetProperty("mesenCaptureTimeoutSeconds", out var mct))
+                    {
+                        try { mesenCaptureTimeoutSeconds = Math.Max(10, mct.GetInt32()); } catch { }
+                        if (doc.RootElement.TryGetProperty("overlayAndFollow", out var oaf))
+                            try { _overlayAndFollow = oaf.GetBoolean(); } catch { }
+                        if (doc.RootElement.TryGetProperty("camFollow", out var cf2))
+                            try { _camFollow = cf2.GetBoolean(); } catch { }
+                    }
                 }
             }
             catch { }
@@ -7449,12 +7493,20 @@ namespace FamidashEditor
                     playerColorEnabled = playerTintEnabled,
                     gridDarkness = gridDarkness,
                     famistudioPath = string.IsNullOrEmpty(famiStudioPath) ? null : famiStudioPath,
+                    mesenPath = string.IsNullOrEmpty(mesenPath) ? null : mesenPath,
+                    famidashRomPath = string.IsNullOrEmpty(famidashRomPath) ? null : famidashRomPath,
+                    mesenRamAddresses = mesenRamAddresses,
+                    mesenCaptureFrames = mesenCaptureFrames,
+                    mesenCaptureEveryNFrames = mesenCaptureEveryNFrames,
+                    mesenCaptureTimeoutSeconds = mesenCaptureTimeoutSeconds,
                     tileboardPosition = tileboardPosition
                     ,
                     noDeath = Option_NoDeath,
                     showTileHitboxes = Option_ShowTileHitboxes,
                     camMode = Option_CamMode,
-                    openSimulatorPaused = loadedOpenSimulatorPaused
+                    openSimulatorPaused = loadedOpenSimulatorPaused,
+                    overlayAndFollow = _overlayAndFollow,
+                    camFollow = _camFollow
                 };
                 var txt = System.Text.Json.JsonSerializer.Serialize(obj);
                 var dir = AppContext.BaseDirectory;
@@ -21659,6 +21711,8 @@ namespace FamidashEditor
                                 {
                                     precomputedPathfinderInputs = engine.Inputs;
                                     precomputedCollectedCoins = engine.FinalCollectedCoinIndices;
+                                    // Persist replay CSV for the "Replay in Mesen" button.
+                                    try { TryWritePathfinderReplayCsv(engine); } catch { }
                                     if (drawPathLine)
                                     {
                                         pathfinderPaths.Add((new System.Collections.Generic.List<(int, int)>(engine.PathPoints), GetPathfinderBiasColor(jumpTimingBias)));
@@ -21711,6 +21765,23 @@ namespace FamidashEditor
                                 StopPathfinderButton.IsEnabled = true;
                                 PathfinderProgressBar.Visibility = System.Windows.Visibility.Collapsed;
                                 PathfinderJumpToButton.Visibility = System.Windows.Visibility.Collapsed;
+                                // Show "Replay in Mesen" only if a replay CSV is now on disk.
+                                try
+                                {
+                                    PathfinderReplayButton.Visibility =
+                                        System.IO.File.Exists(MainWindow.ReplayTempFile)
+                                            ? System.Windows.Visibility.Visible
+                                            : System.Windows.Visibility.Collapsed;
+                                    // Show "Compare Traces" only when both a replay CSV and a
+                                    // Mesen-side trace are present (i.e. user has at least one
+                                    // recorded run to compare against).
+                                    PathfinderCompareButton.Visibility =
+                                        (System.IO.File.Exists(MainWindow.ReplayTempFile)
+                                         && System.IO.File.Exists(MainWindow.MesenTraceFile))
+                                            ? System.Windows.Visibility.Visible
+                                            : System.Windows.Visibility.Collapsed;
+                                }
+                                catch { }
                                 _activePathfinderEngine = null;
                                 StopPathfinderFollow();
                                 // Clean up all speculative path polylines
@@ -21822,6 +21893,40 @@ namespace FamidashEditor
                 PathfinderJumpToButton.ClearValue(Button.ForegroundProperty);
             }
             catch { }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        //  Pathfinder Replay in Mesen
+        // ─────────────────────────────────────────────────────────────────────
+        private void TryWritePathfinderReplayCsv(PathfinderEngine engine)
+        {
+            string csv = engine.ExportReplayCsv();
+            if (string.IsNullOrEmpty(csv)) return;
+            try { System.IO.File.WriteAllText(MainWindow.ReplayTempFile, csv); }
+            catch { }
+        }
+
+        private void PathfinderReplayButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!System.IO.File.Exists(MainWindow.ReplayTempFile))
+                {
+                    StatusText.Text = "Replay: no pathfinder solution available. Calculate a path first.";
+                    return;
+                }
+
+                StatusText.Text = "Replay: building ROM, then launching Mesen...";
+                // Always (re)build the ROM from the current level state so the
+                // injected inputs play against the same geometry the pathfinder
+                // solved for. BuildAndTestForReplayAsync skips the confirm and
+                // launches Mesen with the replay-injection Lua overlay.
+                _ = BuildAndTestForReplayAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Replay error: {ex.Message}";
+            }
         }
 
         private async void SetOptionsButton_Click(object? sender, RoutedEventArgs e)

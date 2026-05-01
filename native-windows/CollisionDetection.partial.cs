@@ -53,7 +53,11 @@ namespace FamidashEditor
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
 
-            var (hit, surfaceY, spikeDeath) = SharedPhysics.CheckFloor(in map, playerX_px, playerY_px, width, height);
+            // NES bg_coll_D guard: floor probes are skipped while ascending
+            // (vel_y high-byte sign bit set). Pass current playerVelY_fixed so
+            // ascending cubes don't snap up onto COL_TOP slabs they're hitting
+            // from the side.
+            var (hit, surfaceY, spikeDeath) = SharedPhysics.CheckFloor(in map, playerX_px, playerY_px, width, height, playerVelY_fixed);
 
             if (spikeDeath && !MainWindow.Option_NoDeath)
             {
@@ -103,7 +107,10 @@ namespace FamidashEditor
             int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
             var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
 
-            var (hit, ceilingBottomY, _) = SharedPhysics.CheckCeiling(in map, playerX_px, playerY_px, width, height);
+            // NES bg_coll_U guard: ceiling probes only run while moving upward
+            // (vel_y < 0). Pass current playerVelY_fixed so descending cubes
+            // don't snap onto COL_BOTTOM slabs they're hitting from the side.
+            var (hit, ceilingBottomY, _) = SharedPhysics.CheckCeiling(in map, playerX_px, playerY_px, width, height, playerVelY_fixed);
 
             return (hit, ceilingBottomY);
         }
@@ -138,7 +145,7 @@ namespace FamidashEditor
                 if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
                 
                 int tileId = tiles[tileIdx];
-                var collision = MetatileCollisionTable.GetCollision((byte)tileId);
+                var collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
                 
                 if (collision == MetatileCollision.COL_NONE) continue;
                 
@@ -236,7 +243,7 @@ namespace FamidashEditor
                 if (tileIdx < 0 || tileIdx >= tiles.Length) continue;
                 
                 int tileId = tiles[tileIdx];
-                var collision = MetatileCollisionTable.GetCollision((byte)tileId);
+                var collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
                 
                 if (collision == MetatileCollision.COL_NONE) continue;
                 

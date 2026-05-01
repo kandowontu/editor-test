@@ -149,12 +149,11 @@ if (currplayer_mini != 0)
                 int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
                 int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
                 
-                // Move path down 8 pixels when mini and gravity is normal
+                // Apply mini mode offset for trail to match visual position
                 bool isMini = (miniMode);
-                bool gravityInverted = gravityFlipped;
-                if (isMini && !gravityInverted)
+                if (isMini)
                 {
-                    playerWorldCenterY_px += 8;
+                    playerWorldCenterY_px += 4;
                 }
                 
                 // Only record when X moves significantly (4+ pixels) to avoid capturing Y jags

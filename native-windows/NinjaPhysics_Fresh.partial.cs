@@ -133,7 +133,7 @@ if (currplayer_mini != 0)
                 bool isMini_trail = (currplayer_mini != 0);
                 if (isMini_trail)
                 {
-                    playerY_px_trail += 8;
+                    playerY_px_trail += 4;
                 }
                 int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
                 // Record to appropriate path list based on which player is active

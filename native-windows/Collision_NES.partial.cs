@@ -155,7 +155,7 @@ namespace FamidashEditor
             }
             
             int tileId = tiles[tileIdx];
-            collision = (byte)MetatileCollisionTable.GetCollision((byte)tileId);
+            collision = (byte)MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
         }
         
         /// <summary>

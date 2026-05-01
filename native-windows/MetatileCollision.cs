@@ -95,60 +95,60 @@ namespace FamidashEditor
                     return InRange(localY, 0x04, 0x0b) && InRange(localX, 0x04, 0x08);
 
                 case MetatileCollision.COL_DEATH_TOP:
-                    // Top portion: NES checks localY < 6, localX in [5,7]
-                    return (localY < 0x06) && InRange(localX, 0x05, 0x07);
+                    // NES col_death_top_routine: y < 6, x in [3,9]
+                    return (localY < 0x06) && InRange(localX, 0x03, 0x09);
 
                 case MetatileCollision.COL_DEATH_BOTTOM:
-                    // Bottom portion: NES checks localY > 10, localX in [5,7]
-                    return (localY > 0x0a) && InRange(localX, 0x05, 0x07);
+                    // NES col_death_bottom_routine: y > 10, x in [3,9]
+                    return (localY > 0x0a) && InRange(localX, 0x03, 0x09);
 
                 case MetatileCollision.COL_DEATH_LEFT:
-                    // Left portion: NES checks localX < 6, localY in [6,8]
-                    return (localX < 0x06) && InRange(localY, 0x06, 0x08);
+                    // NES col_death_left_routine: x < 6, y in [3,9]
+                    return (localX < 0x06) && InRange(localY, 0x03, 0x09);
 
                 case MetatileCollision.COL_DEATH_RIGHT:
-                    // Right portion: NES checks localX >= 10, localY in [6,8]
-                    return (localX >= 0x0a) && InRange(localY, 0x06, 0x08);
+                    // NES col_death_right_routine: x >= 10, y in [3,9]
+                    return (localX >= 0x0a) && InRange(localY, 0x03, 0x09);
 
                 // Diagonal death tiles
                 case MetatileCollision.COL_DEATH_BOTTOM_LEFT:
                     // NES: col_death_left_routine() | col_death_bottom_routine()
-                    return ((localX < 0x06) && InRange(localY, 0x06, 0x08)) ||
-                           ((localY > 0x0a) && InRange(localX, 0x05, 0x07));
+                    return ((localX < 0x06) && InRange(localY, 0x03, 0x09)) ||
+                           ((localY > 0x0a) && InRange(localX, 0x03, 0x09));
 
                 case MetatileCollision.COL_DEATH_BOTTOM_RIGHT:
                     // NES: col_death_right_routine() | col_death_bottom_routine()
-                    return ((localX >= 0x0a) && InRange(localY, 0x06, 0x08)) ||
-                           ((localY > 0x0a) && InRange(localX, 0x05, 0x07));
+                    return ((localX >= 0x0a) && InRange(localY, 0x03, 0x09)) ||
+                           ((localY > 0x0a) && InRange(localX, 0x03, 0x09));
 
                 case MetatileCollision.COL_DEATH_TOP_LEFT:
                     // NES: col_death_left_routine() | col_death_top_routine()
-                    return ((localX < 0x06) && InRange(localY, 0x06, 0x08)) ||
-                           ((localY < 0x06) && InRange(localX, 0x05, 0x07));
+                    return ((localX < 0x06) && InRange(localY, 0x03, 0x09)) ||
+                           ((localY < 0x06) && InRange(localX, 0x03, 0x09));
 
                 case MetatileCollision.COL_DEATH_TOP_RIGHT:
                     // NES: col_death_right_routine() | col_death_top_routine()
-                    return ((localX >= 0x0a) && InRange(localY, 0x06, 0x08)) ||
-                           ((localY < 0x06) && InRange(localX, 0x05, 0x07));
+                    return ((localX >= 0x0a) && InRange(localY, 0x03, 0x09)) ||
+                           ((localY < 0x06) && InRange(localX, 0x03, 0x09));
 
                 // Combo death tiles (no NES tiles currently mapped, included for completeness)
                 case MetatileCollision.COL_DEATH_TOP_RIGHT_LEFT:
-                    return ((localY < 0x06) && InRange(localX, 0x05, 0x07)) ||
-                           ((localX >= 0x0a) && InRange(localY, 0x06, 0x08)) ||
-                           ((localX < 0x06) && InRange(localY, 0x06, 0x08));
+                    return ((localY < 0x06) && InRange(localX, 0x03, 0x09)) ||
+                           ((localX >= 0x0a) && InRange(localY, 0x03, 0x09)) ||
+                           ((localX < 0x06) && InRange(localY, 0x03, 0x09));
 
                 case MetatileCollision.COL_DEATH_TOP_BOTTOM:
-                    return ((localY < 0x06) && InRange(localX, 0x05, 0x07)) ||
-                           ((localY > 0x0a) && InRange(localX, 0x05, 0x07));
+                    return ((localY < 0x06) && InRange(localX, 0x03, 0x09)) ||
+                           ((localY > 0x0a) && InRange(localX, 0x03, 0x09));
 
                 case MetatileCollision.COL_DEATH_LEFT_RIGHT:
-                    return ((localX < 0x06) && InRange(localY, 0x06, 0x08)) ||
-                           ((localX >= 0x0a) && InRange(localY, 0x06, 0x08));
+                    return ((localX < 0x06) && InRange(localY, 0x03, 0x09)) ||
+                           ((localX >= 0x0a) && InRange(localY, 0x03, 0x09));
 
                 case MetatileCollision.COL_DEATH_TOP_LEFT_BOTTOM:
-                    return ((localY < 0x06) && InRange(localX, 0x05, 0x07)) ||
-                           ((localX < 0x06) && InRange(localY, 0x06, 0x08)) ||
-                           ((localY > 0x0a) && InRange(localX, 0x05, 0x07));
+                    return ((localY < 0x06) && InRange(localX, 0x03, 0x09)) ||
+                           ((localX < 0x06) && InRange(localY, 0x03, 0x09)) ||
+                           ((localY > 0x0a) && InRange(localX, 0x03, 0x09));
 
                 // Pure death spike tiles (no solid collision)
                 // UP spikes = spikes pointing up from bottom, death in TOP half
@@ -179,8 +179,8 @@ namespace FamidashEditor
 
                 // Mixed solid/death tiles (solid collision on one side, death on the other)
                 case MetatileCollision.COL_TOP_CENTER_SPIKE:
-                    // Top half has solid collision, bottom center has death spike (col_death_bottom_routine): X [5,7]
-                    return (localY > 0x0a) && InRange(localX, 0x05, 0x07);
+                    // NES: bg_coll_spikes uses col_death_bottom_routine: y > 10, x in [3,9]
+                    return (localY > 0x0a) && InRange(localX, 0x03, 0x09);
 
                 case MetatileCollision.COL_BOTTOM_CENTER_SPIKE:
                     // Bottom half has solid collision, top center has death spike
@@ -205,6 +205,76 @@ namespace FamidashEditor
                 case MetatileCollision.COL_BOTTOM_SPIKES:
                     // Bottom half solid collision, top has repeating death spikes
                     return (localY < 0x08) && InRange(localX & 0x07, 0x02, 0x05);
+
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Side-probe death check — mirrors NES bg_coll_spikes() called from
+        /// bg_side_coll_common BEFORE bg_coll_sides. This is what kills the
+        /// player when their forward (right/left) edge probe enters a tile.
+        ///
+        /// Critically, COL_TOP/COL_BOTTOM are SAFE for top/bottom landing
+        /// (handled via bg_coll_D/bg_coll_U) but DEADLY when hit from the side
+        /// in their solid half. TileKillsAtPixel returns false for these
+        /// because it's also used for floor-corner spike checks where they
+        /// must remain safe — so this method exists to model the side path.
+        /// </summary>
+        public static bool TileKillsAtSideProbe(MetatileCollision col, int localX, int localY)
+        {
+            // First: anything TileKillsAtPixel kills, the side probe also kills.
+            if (TileKillsAtPixel(col, localX, localY)) return true;
+
+            // NES bg_coll_spikes additional cases (collision.h ~line 280-320)
+            int ly = localY & 0x0f;
+            int ly_low3 = ly & 0x07;
+            int lx = localX & 0x0f;
+
+            switch (col)
+            {
+                // case COL_BOTTOM_*: kills when ly >= 8 (i.e. bits 4..7 nonzero in ly)
+                case MetatileCollision.COL_BOTTOM:
+                case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
+                case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
+                case MetatileCollision.COL_BOTTOM_CENTER_SPIKE:
+                case MetatileCollision.COL_BOTTOM_SPIKES:
+                    return ly_low3 != ly;  // == ly >= 8
+
+                // case COL_TOP_*: kills when ly < 8
+                case MetatileCollision.COL_TOP:
+                case MetatileCollision.COL_TOP_CENTER_SPIKE:
+                    return ly_low3 == ly;  // == ly < 8
+
+                // COL_DOWN_LEFT / COL_LEFT_SPIKE_BLOCK: ly>=8 && lx<8
+                case MetatileCollision.COL_DOWN_LEFT:
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                    return (ly >= 8) && (lx < 8);
+
+                // COL_DOWN_RIGHT / COL_RIGHT_SPIKE_BLOCK: ly>=8 && lx>=8
+                case MetatileCollision.COL_DOWN_RIGHT:
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                    return (ly >= 8) && (lx >= 8);
+
+                case MetatileCollision.COL_LEFT:
+                    return lx < 8;
+                case MetatileCollision.COL_RIGHT:
+                    return lx >= 8;
+
+                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                    return (lx < 8) ? (ly < 8) : (ly >= 8);
+                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                    return (lx < 8) ? (ly >= 8) : (ly < 8);
+
+                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                    return !(ly >= 8 && lx < 8);
+                case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                    return !(ly >= 8 && lx >= 8);
+                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                    return !(ly < 8 && lx < 8);
+                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                    return !(ly < 8 && lx >= 8);
 
                 default:
                     return false;

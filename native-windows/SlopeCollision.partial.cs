@@ -825,7 +825,7 @@ namespace FamidashEditor
                     int tileIdx = tileArrayY * mapWidth + tileX;
                     if (tileIdx >= 0 && tileIdx < tiles.Length)
                     {
-                        byte tileValue = (byte)tiles[tileIdx];
+                        byte tileValue = (byte)SharedPhysics.MapTileForCollision(tiles[tileIdx]);
                         MetatileCollision collision = MetatileCollisionTable.GetCollision(tileValue);
                         
                         AppendSimDebug($"[SLOPE] Check: tmp2={tmp2}, tempX={temp_x}, tempY={temp_y}, tile=[{tileX},{tileY}], arrayY={tileArrayY}, idx={tileIdx}, tileVal=0x{tileValue:X2}, collision={collision}");
@@ -979,7 +979,7 @@ namespace FamidashEditor
                     int tileIdx = tileArrayY * mapWidth + tileX;
                     if (tileIdx >= 0 && tileIdx < tiles.Length)
                     {
-                        byte tileValue = (byte)tiles[tileIdx];
+                        byte tileValue = (byte)SharedPhysics.MapTileForCollision(tiles[tileIdx]);
                         MetatileCollision coll = MetatileCollisionTable.GetCollision(tileValue);
                         
                         AppendSimDebug($"[SLOPE_U] Check: tmp2={tmp2_dir}, tempX={temp_x_val}, tempY={temp_y_val}, tile=[{tileX},{tileY}], tileVal=0x{tileValue:X2}, collision={coll}");

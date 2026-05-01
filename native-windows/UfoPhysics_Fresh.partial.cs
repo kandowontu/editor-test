@@ -57,24 +57,9 @@ if (currplayer_mini != 0)
             AppendSimDebug($"[UFO] table_idx={currplayer_table_idx}, gravity={tmpgravity}, fallspeed={tmpfallspeed}");
             CommonGravityRoutine_Fresh();
             
-            // Prevent velocity from pulling player into ceiling (needed for both gravity states)
-            {
-                bool isMini = (miniMode);
-                int hitboxW = isMini ? 8 : 15;
-                int hitboxH = isMini ? 7 : 15;
-                int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-                int collisionX = (playerX_fixed >> 8);
-                int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
-                var (collided, collisionBottomY_prox) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
-                
-                if (collided && playerVelY_fixed < 0) {
-                    // Snap Y to ceiling surface (same formula as UfoShipEject_Fresh)
-                    int newY_prox = collisionBottomY_prox - hitboxOffsetY;
-                    playerY_fixed = newY_prox << 8;
-                    playerVelY_fixed = 0;
-                    AppendSimDebug($"[UFO] Ceiling grounded - snapped Y to {newY_prox}");
-                }
-            }
+            // Ceiling proximity check REMOVED — NES ufo_movement has none.
+            // It caused PF/SIM to stall one frame earlier than NES near ceilings.
+            // UfoShipEject_Fresh handles ceiling collisions correctly.
             
             // No collision offset - use exact position
             UfoShipEject_Fresh();

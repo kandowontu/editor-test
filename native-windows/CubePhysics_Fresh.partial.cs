@@ -344,14 +344,17 @@ namespace FamidashEditor
                             }
                             else if (tileIndexY >= 0)
                             {
+                                int footLocalY = ((footWorldY_px % TILE) + TILE) % TILE;
                                 for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
                                 {
                                     if (tx < 0 || tx >= mapWidth) continue;
                                     int tid = tiles[tileIndexY * mapWidth + tx];
-                                    var col = MetatileCollisionTable.GetCollision((byte)tid);
+                                    var col = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tid));
                                     int tileStartX = tx * TILE;
                                     int localX = Math.Max(0, Math.Min(TILE - 1, playerCenter_px - tileStartX));
-                                    if (ProvidesFloorAtColumnStatic(col, localX, out int _)) { stillSupported = true; break; }
+                                    if (ProvidesFloorAtColumnStatic(col, localX, out int _) &&
+                                        SharedPhysics.TileOccupiesPixel(col, localX, footLocalY))
+                                    { stillSupported = true; break; }
                                 }
                             }
                         }
@@ -423,7 +426,8 @@ namespace FamidashEditor
                 gravFlipped, mini, currentGameMode, inputHeld,
                 currplayer_was_on_slope_counter, currplayer_slope_frames,
                 currplayer_slope_type, make_cube_jump_higher,
-                currplayer_last_slope_type);
+                currplayer_last_slope_type,
+                cameraY_fixed);
 
             playerY_fixed = r.NewY_fixed;
             playerVelY_fixed = r.NewVelY_fixed;
@@ -567,14 +571,47 @@ namespace FamidashEditor
             if (tileIdx < 0 || tileIdx >= tiles.Length) return;
             
             int tileId = tiles[tileIdx];
-            var collision = MetatileCollisionTable.GetCollision((byte)tileId);
+            var collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
             
             int localX = centerX_px % TILE;
             int localY = centerY_px % TILE;
             
-            if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
+            // NES bg_coll_death: bg_coll_spikes() || bg_coll_mini_blocks() ||
+            // bg_coll_U_D_checks() at center.  Now includes COL_ALL /
+            // COL_FLOOR_CEIL / COL_NO_SIDE (NES bg_coll_U_D_checks returns 1).
+            // The bg_coll_D probe fix (collW vs collW+1) closed the eject gap
+            // that previously caused false positives.
+            bool dies = MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY);
+            if (!dies)
             {
-                AppendSimDebug($"[DEATH] Center point spike at ({centerX_px},{centerY_px}) tile={tileId:X2}");
+                switch (collision)
+                {
+                    case MetatileCollision.COL_ALL:
+                    case MetatileCollision.COL_FLOOR_CEIL:
+                    case MetatileCollision.COL_NO_SIDE:
+                    case MetatileCollision.COL_BOTTOM:
+                    case MetatileCollision.COL_TOP:
+                    case MetatileCollision.COL_LEFT:
+                    case MetatileCollision.COL_RIGHT:
+                    case MetatileCollision.COL_UP_LEFT:
+                    case MetatileCollision.COL_UP_RIGHT:
+                    case MetatileCollision.COL_DOWN_LEFT:
+                    case MetatileCollision.COL_DOWN_RIGHT:
+                    case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                    case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                    case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                    case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                    case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                    case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                    case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                    case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                        dies = SharedPhysics.TileOccupiesPixel(collision, localX, localY);
+                        break;
+                }
+            }
+            if (dies)
+            {
+                AppendSimDebug($"[DEATH] Center point spike at ({centerX_px},{centerY_px}) tile={tileId:X2} col={collision}");
                 deathTriggered = true;
                 deathTileX = centerX_px;
                 deathTileY = centerY_px;

@@ -1113,33 +1113,9 @@ namespace FamidashEditor
                 int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw);   // exclusive bound (NES: x + width)
                 int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh);   // exclusive bound (NES: y + height)
 
-                // If the hitbox table entry is the default TILE size but a larger sprite image
-                // is available (either in preview map or spriteImages), prefer the image size
-                // for collision so portals rendered from larger bitmaps get correct functional area.
-                try
-                {
-                    if (hw == TILE && hh == TILE)
-                    {
-                        BitmapSource? bs = null;
-                        // Prefer preview image for the resolved geometry id; if unavailable,
-                        // fall back to the instance sprite id so collision matches the renderer's
-                        // final sprite selection (which sometimes uses the instance id).
-                        int keyGeom = id_for_geom & 0xFF;
-                        int keyInst = sid & 0xFF;
-                        if (previewSpriteMap != null && previewSpriteMap.TryGetValue(keyGeom, out var pimgG) && pimgG is BitmapSource pbsG) bs = pbsG;
-                        else if (previewSpriteMap != null && previewSpriteMap.TryGetValue(keyInst, out var pimgI) && pimgI is BitmapSource pbsI) bs = pbsI;
-                        else if (spriteImages != null && keyGeom >= 0 && keyGeom < spriteImages.Length && spriteImages[keyGeom] is BitmapSource sbsG) bs = sbsG;
-                        else if (spriteImages != null && keyInst >= 0 && keyInst < spriteImages.Length && spriteImages[keyInst] is BitmapSource sbsI) bs = sbsI;
-                        if (bs != null)
-                        {
-                            hw = Math.Max(1, bs.PixelWidth);
-                            hh = Math.Max(1, bs.PixelHeight);
-                            spriteRight_world_px = spriteLeft_world_px + hw;   // exclusive (NES-style)
-                            spriteBottom_world_px = spriteTop_world_px + hh;   // exclusive (NES-style)
-                        }
-                    }
-                }
-                catch { }
+                // Keep gameplay collision on NES geometry tables only. Expanding to bitmap
+                // dimensions (for example 24x48 portal art) makes SIM portal collisions fire
+                // earlier/later than PF and Famidash's table-driven check_collision logic.
 
                 // CRITICAL: Hitbox cache disabled for determinism (rendering is async and non-deterministic)
                 // The cache causes collision detection to vary between runs based on render timing
@@ -1971,11 +1947,47 @@ namespace FamidashEditor
                 return true;
             }
 
-            // Fix 35b: Removed solid-block penetration death check (bg_coll_U_D_checks).
-            // The PF's SharedPhysics.CheckDeathCollision had the same check removed
-            // in Fix 35 because the SIM's eject logic has minor gaps vs NES that
-            // cause the player center to briefly penetrate solid tiles without the
-            // NES actually killing.  The SIM's copy must match.
+            // NES bg_coll_death also calls bg_coll_mini_blocks() at the center point.
+            // mini_blocks kills (in bg_coll_death context) when the center pixel is in
+            // the SOLID half of a partial-collision tile: COL_TOP/BOTTOM half-slabs,
+            // COL_DOWN_*/UP_* quadrants, COL_LEFT/RIGHT half-walls, diagonals, stairs,
+            // and SPIKE_BLOCK partials. Without this, walking horizontally into the
+            // side of a half-slab is incorrectly survived.
+            //
+            // Includes full-block COL_ALL / COL_FLOOR_CEIL / COL_NO_SIDE: NES
+            // bg_coll_U_D_checks returns 1 for these, so the center-in-solid-block
+            // case kills on NES.  Now that bg_coll_D probe positions match NES
+            // (collW instead of collW+1), eject snap distance also matches —
+            // the previously-feared false positives no longer occur.
+            switch (collision)
+            {
+                case MetatileCollision.COL_ALL:
+                case MetatileCollision.COL_FLOOR_CEIL:
+                case MetatileCollision.COL_NO_SIDE:
+                case MetatileCollision.COL_BOTTOM:
+                case MetatileCollision.COL_TOP:
+                case MetatileCollision.COL_LEFT:
+                case MetatileCollision.COL_RIGHT:
+                case MetatileCollision.COL_UP_LEFT:
+                case MetatileCollision.COL_UP_RIGHT:
+                case MetatileCollision.COL_DOWN_LEFT:
+                case MetatileCollision.COL_DOWN_RIGHT:
+                case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                    if (SharedPhysics.TileOccupiesPixel(collision, localX, localY))
+                    {
+                        deathX_px = centerX;
+                        deathY_px = centerY;
+                        return true;
+                    }
+                    break;
+            }
 
             return false;
         }
@@ -2078,7 +2090,9 @@ namespace FamidashEditor
                             try { Dispatcher?.BeginInvoke(new Action(() => { UpdatePlayerIconFlip(); InvertedCheckBox.IsChecked = gravityReversed; })); } catch { }
                             
                             // Halve Y velocity
-                            playerVelY_fixed /= 2;
+                            // cc65 optimizes int /= 2 → asr (arithmetic shift floors negatives).
+                            // C# /= 2 truncates toward zero — use >>= 1 to match NES exactly.
+                            playerVelY_fixed >>= 1;
                             
                             AppendSimDebug($"[GRAV_PORTAL] POST-ACTIVATION: currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed}");
                             
@@ -2176,7 +2190,29 @@ namespace FamidashEditor
                             // Clearing it here destroyed legitimate cross-mode input.
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
-                            try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                            // NES portal velY rules (sprite_loading.h ~764):
+                            //   ship(1)/ball(2)/UFO(3): halve velY
+                            //   robot(4): halve only if prev was WAVE(6)/SNAKE(7)
+                            //   cube(0)/spider(5)/pogo(9)/swing(10)/ninja(8): zero only if prev WAVE/SNAKE
+                            //   wave(6)/snake(7)/football(11): no change
+                            try
+                            {
+                                bool prevWaveSnake = (oldMode == 6 || oldMode == 7);
+                                switch (newMode)
+                                {
+                                    case 1: case 2: case 3:
+                                        // cc65 asr semantics; see grav-portal note above
+                                        playerVelY_fixed >>= 1;
+                                        break;
+                                    case 4:
+                                        if (prevWaveSnake) playerVelY_fixed >>= 1;
+                                        break;
+                                    case 0: case 5: case 8: case 9: case 10:
+                                        if (prevWaveSnake) playerVelY_fixed = 0;
+                                        break;
+                                }
+                            }
+                            catch { }
                         }
 
                         // Set target_scroll_y for modes that use smooth camera scroll
@@ -2226,7 +2262,24 @@ namespace FamidashEditor
                             // NOTE: Do NOT clear keyXPressedCount — see main portal block.
                             try { UpdateGameModeDisplay(); } catch { }
                             try { UpdateEffectiveGravity(); } catch { }
-                            try { playerVelY_fixed = playerVelY_fixed / 2; } catch { }
+                            // NES portal velY rules — see main portal block above.
+                            try
+                            {
+                                bool prevWaveSnake = (oldMode == 6 || oldMode == 7);
+                                switch (newMode)
+                                {
+                                    case 1: case 2: case 3:
+                                        playerVelY_fixed >>= 1;  // cc65 asr; see notes
+                                        break;
+                                    case 4:
+                                        if (prevWaveSnake) playerVelY_fixed >>= 1;
+                                        break;
+                                    case 0: case 5: case 8: case 9: case 10:
+                                        if (prevWaveSnake) playerVelY_fixed = 0;
+                                        break;
+                                }
+                            }
+                            catch { }
                         }
 
                         try { Dispatcher?.BeginInvoke(new Action(() => { try { UpdatePlayerImageForMode(); } catch { } })); } catch { }
@@ -3715,7 +3768,10 @@ namespace FamidashEditor
         // Matches Famidash target_scroll_y: camera scrolls smoothly toward this value
         private int targetCameraY_fixed = 0;
         private const int PORTAL_TO_TOP_DIFF_PX = 0x3A; // 58px offset from portal Y to screen top
-        private const int SHIP_SCROLL_SPEED_FIXED = 0x0266; // 8.8 fixed-point ~2.4 px/frame
+        // NES NTSC ship-scroll speeds. See PathfinderEngine.cs for the cc65
+        // do_if_carry asymmetry that makes these unequal (down=3, up=2 px/frame).
+        private const int SHIP_SCROLL_SPEED_DOWN_FIXED = 0x0300; // 3 px/frame (NES down branch, NTSC)
+        private const int SHIP_SCROLL_SPEED_UP_FIXED   = 0x0200; // 2 px/frame (NES up branch,   NTSC)
         private int _sim_nesCoordOffset; // PF→NES linear-Y offset for nametable distortion
 
         private int NesNtCameraTarget_fixed(int portalWorldY_px)
@@ -3840,6 +3896,7 @@ namespace FamidashEditor
         private bool jblocked = false; // J block - requires press instead of hold for next jump
         private bool dblocked = false; // D block - allows wave to walk on surfaces instead of going through/colliding/dying
         private bool fblocked = false; // F block - forces press-to-jump in cube mode and flips gravity on ceiling/floor hit
+        private int invincibleCounter = 0; // NES invincible_counter: 8 frames of spawn protection
         private int[] ninjajumps = new int[2] { 3, 3 };
         private int[] robotJumpTime = new int[2];
 #pragma warning disable CS0414
@@ -4679,7 +4736,10 @@ namespace FamidashEditor
                 try
                 {
                     // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9)/football(11), or when nocamlockforced
-                    bool camFollowsY = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || currentGameMode == 11 || nocamlockforced);
+                    // NES scroll.h cube branch: GAMEMODE_CUBE(0), GAMEMODE_ROBOT(4),
+                    // GAMEMODE_NINJA(8), GAMEMODE_POGO(9), or nocamlock/nocamlockforced.
+                    // FOOTBALL (11) is NOT in this list — it uses ship-style smooth scroll.
+                    bool camFollowsY = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
                     if (physicsEnabled && jumpedOnce && !paused)
                     {
                         if ((!dual || twoplayer) && camFollowsY)
@@ -4690,12 +4750,18 @@ namespace FamidashEditor
                             int screenY_fixed_post = playerY_fixed - cameraY_fixed;
                             if (screenY_fixed_post < 0x4000)
                             {
+                                // NES gate: only run when camera can actually move up.
                                 int need_fixed = 0x4000 - screenY_fixed_post;
                                 cameraY_fixed -= need_fixed;
                                 if (cameraY_fixed < minCamY_reserved) cameraY_fixed = minCamY_reserved;
+                                // World-Y of player is conserved by NES process_y_scroll;
+                                // PF cameraY_fixed has 8 fractional bits so the move
+                                // above tracks scroll precision natively. Do NOT touch
+                                // playerY_fixed.
                             }
                             else if ((screenY_fixed_post >> 8) >= 0xA0)
                             {
+                                // NES gate: scroll_y < 0x2EF (cam not at bottom limit).
                                 int need_fixed = screenY_fixed_post - 0xA000;
                                 int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
                                 cameraY_fixed += need_fixed;
@@ -4704,16 +4770,23 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            // Ship-style smooth scroll: move camera toward targetCameraY_fixed at fixed speed
-                            if (targetCameraY_fixed > cameraY_fixed)
+                            // Ship-style smooth scroll toward target.
+                            // NES net deltas (see PathfinderEngine for derivation):
+                            //   target > cam (cam moves down): scroll +2, screen −2, world Δ = 0
+                            //   target < cam (cam moves up):   scroll −3, screen +2, world Δ = −1
+                            // Comparison is INTEGER-PIXEL: NES `scroll_y` is byte-only
+                            // (subpx lives separately and isn't compared). PF cam may carry
+                            // a sub-pixel residue from cube-mode tracking — ignore it here.
+                            int _camPx = cameraY_fixed >> 8;
+                            int _tgtPx = targetCameraY_fixed >> 8;
+                            if (_tgtPx > _camPx)
                             {
-                                cameraY_fixed += SHIP_SCROLL_SPEED_FIXED;
-                                if (cameraY_fixed > targetCameraY_fixed) cameraY_fixed = targetCameraY_fixed;
+                                cameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
                             }
-                            else if (targetCameraY_fixed < cameraY_fixed)
+                            else if (_tgtPx < _camPx)
                             {
-                                cameraY_fixed -= SHIP_SCROLL_SPEED_FIXED;
-                                if (cameraY_fixed < targetCameraY_fixed) cameraY_fixed = targetCameraY_fixed;
+                                cameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
+                                playerY_fixed -= 0x0100;
                             }
                             // Clamp to valid range
                             int maxCamY = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
@@ -5389,6 +5462,7 @@ namespace FamidashEditor
                 // Place the player so it starts on the leftmost visible tile (x=0)
                 playerX_fixed = 0;
                 interactionScreenOffset_px = -1;
+                invincibleCounter = 8; // NES: invincible_counter = 8 in reset_level
                 
                 // Initialize Y position on ground (unless START POS overrides this later)
                 // Use physics resting position: groundSurface - hitboxH.
@@ -5618,6 +5692,11 @@ namespace FamidashEditor
         // Mirrors MainWindow.GetAnimatedTileIndex for saw tiles so simulator can animate tile-based saws
         private int MapAnimatedTileIndex(int originalIndex)
         {
+            // Empty/sentinel: tile arrays use -1 (and a few visual-only IDs) for
+            // "no collision".  Without this, (byte)(-1) becomes 0xFF and resolves
+            // to phantom COL_DOWN_LEFT, breaking forward/floor/death checks.
+            if (originalIndex < 0) return 0x00;
+
             // Simulator forces preview-like behavior when requested
             int mapped = originalIndex;
 
@@ -6949,6 +7028,8 @@ namespace FamidashEditor
                         int playerCenter_px = (playerX_fixed >> 8) + (TILE / 2);
                         int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
                         int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
+                        int probeCenter_px = playerLeft_px + (HITBOX_W_LOCAL / 2);
+                        int[] probeXs = new int[] { playerLeft_px, probeCenter_px, playerRight_px };
                         // Foot = bottom of actual hitbox (hitboxOffset + hitboxH)
                         int hitboxH_gs = miniMode ? 7 : 15;
                         int hitboxOffY_gs = 0;
@@ -6965,8 +7046,10 @@ namespace FamidashEditor
                         }
                         else if (tileIndexY >= 0)
                         {
-                            for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
+                            int localY = ((footWorldY_px % TILE) + TILE) % TILE;
+                            foreach (int px in probeXs)
                             {
+                                int tx = px / TILE;
                                 if (tx < 0 || tx >= mapWidth) continue;
                                 int tid = tiles[tileIndexY * mapWidth + tx];
                                 int useTidForAnim = MapAnimatedTileIndex(tid);
@@ -6987,8 +7070,14 @@ namespace FamidashEditor
                                 }
                                 var col = MetatileCollisionTable.GetCollision((byte)collisionTid);
                                 int tileStartX = tx * TILE;
-                                int localX = Math.Max(0, Math.Min(TILE - 1, playerCenter_px - tileStartX));
-                                if (ProvidesFloorAtColumnStatic(col, localX, out int _)) { stillSupported = true; break; }
+                                int localX = Math.Max(0, Math.Min(TILE - 1, px - tileStartX));
+                                // Require the foot probe pixel to actually lie inside
+                                // the tile's solid region. Half-slabs (COL_TOP) only
+                                // occupy localY 0..7; without this check the player
+                                // would falsely retain support after falling through.
+                                if (ProvidesFloorAtColumnStatic(col, localX, out int _) &&
+                                    SharedPhysics.TileOccupiesPixel(col, localX, localY))
+                                { stillSupported = true; break; }
                             }
                         }
                     }
@@ -7204,7 +7293,8 @@ namespace FamidashEditor
                 // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9)/football(11), or when nocamlockforced
                 try
                 {
-                    bool camFollowsY_2 = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || currentGameMode == 11 || nocamlockforced);
+                    // NES scroll.h cube branch (see camFollowsY above).
+                    bool camFollowsY_2 = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
                     if (physicsEnabled && jumpedOnce && !paused)
                     {
                         if ((!dual || twoplayer) && camFollowsY_2)
@@ -7215,12 +7305,15 @@ namespace FamidashEditor
                             int screenY_fixed_2 = playerY_fixed - cameraY_fixed;
                             if (screenY_fixed_2 < 0x4000)
                             {
+                                // NES gate: only when camera actually moves up.
                                 int need_fixed = 0x4000 - screenY_fixed_2;
                                 cameraY_fixed -= need_fixed;
                                 if (cameraY_fixed < minCamY_reserved2) cameraY_fixed = minCamY_reserved2;
+                                // (See primary site — world-Y conserved; do NOT touch playerY_fixed.)
                             }
                             else if ((screenY_fixed_2 >> 8) >= 0xA0)
                             {
+                                // NES gate: scroll_y < 0x2EF.
                                 int need_fixed = screenY_fixed_2 - 0xA000;
                                 int maxCameraY_fixed_local = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
                                 cameraY_fixed += need_fixed;
@@ -7229,16 +7322,18 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            // Ship-style smooth scroll toward target
-                            if (targetCameraY_fixed > cameraY_fixed)
+                            // Ship-style smooth scroll: see other site for derivation.
+                            // INTEGER-PIXEL comparison (NES `scroll_y` byte-only).
+                            int _camPx2 = cameraY_fixed >> 8;
+                            int _tgtPx2 = targetCameraY_fixed >> 8;
+                            if (_tgtPx2 > _camPx2)
                             {
-                                cameraY_fixed += SHIP_SCROLL_SPEED_FIXED;
-                                if (cameraY_fixed > targetCameraY_fixed) cameraY_fixed = targetCameraY_fixed;
+                                cameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
                             }
-                            else if (targetCameraY_fixed < cameraY_fixed)
+                            else if (_tgtPx2 < _camPx2)
                             {
-                                cameraY_fixed -= SHIP_SCROLL_SPEED_FIXED;
-                                if (cameraY_fixed < targetCameraY_fixed) cameraY_fixed = targetCameraY_fixed;
+                                cameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
+                                playerY_fixed -= 0x0100;
                             }
                             int maxCamY_2 = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
                             int minCamY_2 = -(((hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0) * TILE) << 8;
@@ -7544,6 +7639,18 @@ namespace FamidashEditor
                                         // Prefer detecting a local floor first (so bottom-half slabs are honored).
                                         if (ProvidesFloorAtColumn(col, lx, out int off))
                                         {
+                                            // FIX: gate by foot pixel actually being inside the slab.
+                                            // Without this, a COL_TOP slab in the row above the foot
+                                            // is treated as a valid landing surface, teleporting the
+                                            // cube up onto it (Famidash kills, sim survived).
+                                            // The gate matches SharedPhysics.CheckFloor's NES-correct
+                                            // semantics: only register a floor when the probe pixel
+                                            // lies inside the tile's solid region.
+                                            int tileWorldYTop = (ty - groundRowsToReserve_calc) * TILE;
+                                            int footLocalY = footWorldY_px - tileWorldYTop;
+                                            if (footLocalY < 0 || footLocalY > 15) continue;
+                                            if (!TileOccupiesPixel(col, lx, footLocalY)) continue;
+
                                             any = true;
                                             if (off < bestTopOffset) bestTopOffset = off;
                                             continue;
@@ -11102,6 +11209,85 @@ namespace FamidashEditor
                 // finding no floor.  The old check ran at NEW X before physics reverted
                 // to OLD X, which could prematurely clear onGround/wasZeroed and cause
                 // 1-frame divergences at ledge edges.
+                if (onGround)
+                {
+                    try
+                    {
+                        bool stillSupported = false;
+                        if (gravityReversed)
+                        {
+                            stillSupported = IsTouchingCeiling();
+                        }
+                        else
+                        {
+                            const int HITBOX_W_LOCAL = 15;
+                            int playerCenter_px = (playerX_fixed >> 8) + (TILE / 2);
+                            int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
+                            int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
+                            int probeCenter_px = playerLeft_px + (HITBOX_W_LOCAL / 2);
+                            int[] probeXs = new int[] { playerLeft_px, probeCenter_px, playerRight_px };
+                            int hitboxH_gs = miniMode ? 7 : 15;
+                            int hitboxOffY_gs = 0;
+                            if (miniMode)
+                                hitboxOffY_gs = (currentGameMode == 2) ? 4 : 9;
+                            int footWorldY_px = (playerY_fixed >> 8) + hitboxOffY_gs + hitboxH_gs;
+                            int tileBelowY_world = footWorldY_px / TILE;
+                            int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
+
+                            if (tileIndexY >= mapHeight)
+                            {
+                                stillSupported = true;
+                            }
+                            else if (tileIndexY >= 0)
+                            {
+                                int localY = ((footWorldY_px % TILE) + TILE) % TILE;
+                                foreach (int px in probeXs)
+                                {
+                                    int tx = px / TILE;
+                                    if (tx < 0 || tx >= mapWidth) continue;
+                                    int tid = tiles[tileIndexY * mapWidth + tx];
+                                    int useTidForAnim = MapAnimatedTileIndex(tid);
+                                    int collisionTid = useTidForAnim;
+                                    if (useTidForAnim >= 1000)
+                                    {
+                                        if (useTidForAnim >= 1000 && useTidForAnim <= 1007)
+                                            collisionTid = 0x08 + ((useTidForAnim - 1000) % 4);
+                                        else if (useTidForAnim >= 1010 && useTidForAnim <= 1015)
+                                        {
+                                            int group = (useTidForAnim - 1010) % 3;
+                                            collisionTid = (group == 0) ? 0x04 : (group == 1) ? 0x7D : 0x7F;
+                                        }
+                                        else if (useTidForAnim >= 1020 && useTidForAnim <= 1037)
+                                            collisionTid = 0x74 + ((useTidForAnim - 1020) % 9);
+                                        else
+                                            collisionTid = tid;
+                                    }
+                                    var col = MetatileCollisionTable.GetCollision((byte)collisionTid);
+                                    int tileStartX = tx * TILE;
+                                    int localX = Math.Max(0, Math.Min(TILE - 1, px - tileStartX));
+                                    // Half-slabs (COL_TOP) only occupy localY 0..7 — without
+                                    // TileOccupiesPixel the player would falsely retain support
+                                    // after walking past their solid region.
+                                    if (ProvidesFloorAtColumnStatic(col, localX, out int _) &&
+                                        SharedPhysics.TileOccupiesPixel(col, localX, localY))
+                                    { stillSupported = true; break; }
+                                }
+                            }
+                        }
+
+                        if (!stillSupported)
+                        {
+                            onGround = false;
+                            wasZeroedByCollisionLastFrame = false;
+                        }
+                    }
+                    catch
+                    {
+                        onGround = false;
+                        wasZeroedByCollisionLastFrame = false;
+                    }
+                }
                 
                 // === COLLISION/GROUNDING DISABLED ===
                 /*
@@ -11421,7 +11607,8 @@ namespace FamidashEditor
                         // === 4-CORNER FLOOR SPIKE CHECK (NES bg_coll_floor_spikes) ===
                         // NES x_movement_coll runs bg_coll_floor_spikes() BEFORE bg_coll_R().
                         // Uses OLD X (pre-advance) and post-eject Y. Not gated by slope skip.
-                        if (!MainWindow.Option_NoDeath && !deathTriggered)
+                        // NES: x_movement_coll is gated by invincible_counter
+                        if (!MainWindow.Option_NoDeath && !deathTriggered && invincibleCounter == 0)
                         {
                             int floorSpikeX = preAdvancePlayerX_fixed >> 8;
                             int floorSpikeY = playerY_fixed >> 8;
@@ -11462,7 +11649,8 @@ namespace FamidashEditor
                         // currplayer_was_on_slope_counter or currplayer_slope_frames is non-zero
                         // (collision.h line 405-407). This prevents false wall-deaths when
                         // the player recently left a slope.
-                        if (!MainWindow.Option_NoDeath && !deathTriggered && !ShouldSkipSideCollisionForSlope())
+                        // NES: x_movement_coll is gated by invincible_counter
+                        if (!MainWindow.Option_NoDeath && !deathTriggered && !ShouldSkipSideCollisionForSlope() && invincibleCounter == 0)
                         {
                             bool needsForwardCheck = currentGameMode == 0 || // Cube
                                                     currentGameMode == 1 || // Ship
@@ -11659,7 +11847,7 @@ namespace FamidashEditor
                             int cTileArrayY = cTileY + groundRowsToReserve_ws;
                             if (cTileX >= 0 && cTileX < mapWidth && cTileArrayY >= 0 && cTileArrayY < mapHeight)
                             {
-                                byte cTileVal = (byte)tiles[cTileArrayY * mapWidth + cTileX];
+                                byte cTileVal = (byte)SharedPhysics.MapTileForCollision(tiles[cTileArrayY * mapWidth + cTileX]);
                                 var cCol = MetatileCollisionTable.GetCollision(cTileVal);
                                 if (cCol >= MetatileCollision.COL_SLOPE_RD45 && cCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
                                 {
@@ -11685,7 +11873,7 @@ namespace FamidashEditor
                                 int rTileArrayY = rTileY + groundRowsToReserve_ws;
                                 if (rTileX >= 0 && rTileX < mapWidth && rTileArrayY >= 0 && rTileArrayY < mapHeight)
                                 {
-                                    byte rTileVal = (byte)tiles[rTileArrayY * mapWidth + rTileX];
+                                    byte rTileVal = (byte)SharedPhysics.MapTileForCollision(tiles[rTileArrayY * mapWidth + rTileX]);
                                     var rCol = MetatileCollisionTable.GetCollision(rTileVal);
                                     if (rCol >= MetatileCollision.COL_SLOPE_RD45 && rCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
                                     {
@@ -11704,14 +11892,22 @@ namespace FamidashEditor
                             }
                         }
                         
-                        // Restore NEW X after physics+forward collision ran at OLD X
-                        playerX_fixed = attemptedPlayerX_fixed;
-                        
-                        // Check for death collision at NEW X (matches NES: bg_coll_death
-                        // runs INSIDE x_movement AFTER advancing currplayer_x)
+                        // NES order-of-operations note (collision.h + x_movement.h + state_game.h):
+                        //   1) cube_movement → cube_eject (post-eject Y written to currplayer_y)
+                        //   2) runthecolls → x_movement_coll: bg_coll_floor_spikes + bg_coll_R at OLD X
+                        //   3) runthecolls → x_movement:
+                        //        Generic.x = high_byte(currplayer_x)   ← OLD X
+                        //        Generic.y = high_byte(currplayer_y)   ← post-eject Y
+                        //        currplayer_x += currplayer_vel_x      ← advances X, but Generic.x is NEVER reloaded
+                        //   4) runthecolls → bg_coll_death: uses Generic.x (still OLD X) for center pixel
+                        //
+                        // So bg_coll_death runs at OLD X (NOT NEW X). We previously advanced X
+                        // first and used NEW X — that lets the player's center pixel sweep past
+                        // a half-slab side that NES kills on (a 1–3 px discrepancy depending on
+                        // current speed). Run the death check FIRST, then advance.
                         if (!deathTriggered && !camModeActive && CheckDeathCollision(out int deathX_px, out int deathY_px))
                         {
-                            AppendSimDebug($"[DEATH] Death tile collision at ({deathX_px},{deathY_px})");
+                            AppendSimDebug($"[DEATH] Death tile collision at ({deathX_px},{deathY_px}) (OLD X)");
                             deathTriggered = true;
                             deathTileX = deathX_px;
                             deathTileY = deathY_px;
@@ -11732,6 +11928,12 @@ namespace FamidashEditor
                             }
                             catch { }
                         }
+                        
+                        // Now that bg_coll_death has run at OLD X, advance X to NEW X for
+                        // the next frame's physics. NES x_movement already advanced
+                        // currplayer_x before bg_coll_death ran; the SIM mirrors that final
+                        // state by assigning here, after the death check.
+                        playerX_fixed = attemptedPlayerX_fixed;
                         
                         // Reset gravity flip flag now that physics has processed it
                         gravityFlippedThisFrame = false;
@@ -12188,7 +12390,7 @@ namespace FamidashEditor
                                     int cTIY_p2 = cTY_p2 + groundRowsToReserve_p2;
                                     if (cTX_p2 >= 0 && cTX_p2 < mapWidth && cTIY_p2 >= 0 && cTIY_p2 < mapHeight)
                                     {
-                                        byte cTVal_p2 = (byte)tiles[cTIY_p2 * mapWidth + cTX_p2];
+                                        byte cTVal_p2 = (byte)SharedPhysics.MapTileForCollision(tiles[cTIY_p2 * mapWidth + cTX_p2]);
                                         var cCol_p2 = MetatileCollisionTable.GetCollision(cTVal_p2);
                                         if (cCol_p2 >= MetatileCollision.COL_SLOPE_RD45 && cCol_p2 <= MetatileCollision.COL_SLOPE_LU66_TOP)
                                         {
@@ -12213,7 +12415,7 @@ namespace FamidashEditor
                                         int rTIY_p2 = rTY_p2 + groundRowsToReserve_p2;
                                         if (rTX_p2 >= 0 && rTX_p2 < mapWidth && rTIY_p2 >= 0 && rTIY_p2 < mapHeight)
                                         {
-                                            byte rTVal_p2 = (byte)tiles[rTIY_p2 * mapWidth + rTX_p2];
+                                            byte rTVal_p2 = (byte)SharedPhysics.MapTileForCollision(tiles[rTIY_p2 * mapWidth + rTX_p2]);
                                             var rCol_p2 = MetatileCollisionTable.GetCollision(rTVal_p2);
                                             if (rCol_p2 >= MetatileCollision.COL_SLOPE_RD45 && rCol_p2 <= MetatileCollision.COL_SLOPE_LU66_TOP)
                                             {

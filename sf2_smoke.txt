@@ -1,0 +1,2 @@
+script started
+frame 60 reached

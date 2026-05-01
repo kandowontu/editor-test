@@ -29,7 +29,16 @@ namespace FamidashEditor
         private const int TILE = 16;
         private const int NES_H = 15;                      // NES screen height in tiles
         private const int SCREEN_H_PX = NES_H * TILE;     // NES screen height in pixels (240)
-        private const int SHIP_SCROLL_SPEED_FIXED = 0x0266; // smooth-scroll speed (~2.4 px/frame, 8.8 fixed)
+        // NES NTSC ship-scroll speeds.  Per famidash physics_table_defines.cmp.h:
+        //   SHIP_SCROLL_SPEED_lo[NTSC=1] = 0x00, SHIP_SCROLL_SPEED_hi = 0x02.
+        // The scroll.h "down" branch (target < scroll_y, camera moves up in world)
+        // uses an `eor #$FF; sec; adc subpx` sequence that, with lo=0x00, sets
+        // carry every frame, so `do_if_carry({++hi})` always fires and the high
+        // byte becomes 3 -> scroll_y -= 3 each frame.  The "up" branch uses
+        // `clc; adc subpx` with lo=0x00 which never carries, so hi stays at 2
+        // -> scroll_y += 2 each frame.  Hence the asymmetric pair below.
+        private const int SHIP_SCROLL_SPEED_DOWN_FIXED = 0x0300; // 3 px/frame (NES down branch, NTSC)
+        private const int SHIP_SCROLL_SPEED_UP_FIXED   = 0x0200; // 2 px/frame (NES up branch,   NTSC)
         private const int PORTAL_TO_TOP_DIFF_PX = 0x3A;     // 58px offset from portal Y to screen top
         private const int LOOKAHEAD_HORIZON = 90;
         private const int MAX_SPECULATIVE_DEPTH = 3; // max recursion depth for chained jump evaluation
@@ -447,28 +456,63 @@ namespace FamidashEditor
         }
 
         /// <summary>
+        /// NES bottom scroll cap in PF camera-Y pixels.  NES `cap_scroll_y_at_bottom`
+        /// hard-caps `scroll_y` at raw 0x02EF (= linear 719 = high*240+low with
+        /// hi=2, lo=0xEF).  In PF coords that's `719 - nesYOffset`.  This is one
+        /// pixel TIGHTER than the geometric maximum (mapHeight*TILE - 240) for
+        /// levels where the playfield extends to NES row 60.  Without this
+        /// adjustment, PF cam settles 1 px lower than NES, accumulating world-Y
+        /// drift and eventually missing ceiling collisions in the ship section.
+        /// </summary>
+        private int NesMaxCamY_px()
+        {
+            int geom = (mapHeight - NES_H) * TILE;
+            int nesCap = 719 - _nesCoordOffset;
+            return Math.Max(0, Math.Min(geom, nesCap));
+        }
+
+        /// <summary>
         /// Compute the NES-effective camera target in 8.8 fixed PF coordinates.
-        /// NES scroll_y uses nametable encoding (low byte wraps at 0xEF, blocks
-        /// of 240px) but target_scroll_y is set from linear sprite Y coordinates.
-        /// The comparison target==scroll_y matches raw 16-bit values, so the camera
-        /// settles at physical position hi*240+lo instead of hi*256+lo — a
-        /// discrepancy of hi*16 pixels.
+        ///
+        /// NES `target_scroll_y = activesprites_y - PORTAL_TO_TOP_DIFF`, where
+        /// activesprites_y is stored in NORMAL 16-bit linear pixels (export_levels.py:
+        /// y = row * 16). The NES camera converges when scroll_y_raw == target_raw
+        /// as a 16-bit byte comparison. But scroll_y is stored in SKIP-F0 form
+        /// (high byte counts 240-pixel blocks, low byte 0x00..0xEF), while target
+        /// is in NORMAL form (high * 256 + low). So convergence happens at the
+        /// PHYSICAL position = high(target_raw)*240 + low(target_raw), NOT at
+        /// (target_raw) linearly.
+        ///
+        /// Per-frame NES does `if (low_byte(target) >= 0xF0) target += 0x10` to
+        /// keep target in skip-F0 form. After this correction:
+        ///   physical_convergence = high*240 + low (skip-F0 interpretation).
+        ///
+        /// This produces a 16-px-per-high-byte LOSS in PF coords vs the naive
+        /// linear interpretation. For example: portalWorldY=192 → NES_norm=720,
+        /// target=662=0x0296. Convergence physical = 2*240+0x96 = 630 NES linear
+        /// = 102 PF px (NOT 134 PF px).
+        ///
+        /// If physical_convergence exceeds the bottom cap (linear 719), camera
+        /// stays at the cap and PF target is clamped to NesMaxCamY_px().
         /// </summary>
         private int NesNtCameraTarget_fixed(int portalWorldY_px)
         {
-            int rawTarget = portalWorldY_px - PORTAL_TO_TOP_DIFF_PX;
-            int nesLinear = rawTarget + _nesCoordOffset;
-            if (nesLinear < 0x100) // high byte = 0 → no distortion
-                return Math.Max(0, rawTarget << 8);
-            // NES process_y_scroll: if (low_byte(target) >= 0xF0) target += 0x10
-            if ((nesLinear & 0xFF) >= 0xF0) nesLinear += 0x10;
-            // Nametable linearization: physical = hi*240 + lo
-            int hi = nesLinear >> 8;
-            int lo = nesLinear & 0xFF;
+            int nesNormalRaw = portalWorldY_px + _nesCoordOffset - PORTAL_TO_TOP_DIFF_PX;
+            if (nesNormalRaw < 0) return 0;
+            // NES per-frame correction: if low byte of target_scroll_y >= 0xF0,
+            // shift it into skip-F0 form.
+            if ((nesNormalRaw & 0xFF) >= 0xF0) nesNormalRaw += 0x10;
+            int hi = (nesNormalRaw >> 8) & 0xFF;
+            int lo = nesNormalRaw & 0xFF;
+            // Camera physical position when scroll_y_raw == target_raw, with
+            // scroll_y interpreted in skip-F0 form.
             int physicalNES = hi * 240 + lo;
-            int effectivePF = physicalNES - _nesCoordOffset;
-            return Math.Max(0, effectivePF << 8);
+            int targetPF = physicalNES - _nesCoordOffset;
+            int maxPF = NesMaxCamY_px();
+            if (targetPF > maxPF) targetPF = maxPF;
+            return Math.Max(0, targetPF) << 8;
         }
+
 
         // -- Frame trace for diagnostics ---------------------------------
         // Writes a CSV to %TEMP%\famidash_pf_trace.csv on every frame of the
@@ -483,7 +527,7 @@ namespace FamidashEditor
             try
             {
                 _traceWriter = new System.IO.StreamWriter(_frameTracePath, false);
-                _traceWriter.WriteLine("frame,X_fixed,Y_fixed,VelY_fixed,input,alive,X_px,Y_px,onGround");
+                _traceWriter.WriteLine("frame,X_fixed,Y_fixed,VelY_fixed,input,alive,X_px,Y_px,onGround,CamY_px,TgtCamY_px,mode,gravFlipped,shipCeilSlopeHit,shipCeilTileHit,shipCeilSpike,shipFloorSlopeHit,shipFloorTileHit,shipFloorSpike,CamY_fixed,Y_lowB,CamY_lowB");
             }
             catch { _traceWriter = null; }
         }
@@ -493,7 +537,22 @@ namespace FamidashEditor
             if (_traceWriter == null || _speculativeDepth > 0) return;
             try
             {
-                _traceWriter.WriteLine($"{frame},0x{s.X_fixed:X},0x{s.Y_fixed:X},0x{s.VelY_fixed:X},{(input ? 1 : 0)},{(alive ? 1 : 0)},{s.X_fixed >> 8},{s.Y_fixed >> 8},{(s.OnGround ? 1 : 0)}");
+                // X_px / Y_px output as hitbox-CENTER (top + 8) to match the
+                // Mesen overlay's `py = scrollY + (rawY>>8) + 8 - nesYOffset`
+                // convention.  Without the +8, comparisons show a phantom
+                // 8-pixel gap that has nothing to do with physics.
+                //
+                // Y_px must mirror NES sprite display: scroll_y + rawY_high.
+                // Equivalent in PF coords:
+                //   (CameraY_fixed >> 8) + ((Y_fixed - CameraY_fixed) >> 8)
+                // Plain `Y_fixed >> 8` includes a sub-pixel carry from
+                // (sy_subpx + rawY_low >= 256), which NES does NOT propagate
+                // into the rendered Y (sub-bytes are pure fractions).  After a
+                // long camera-snap sequence sy_subpx can be ~0x97, causing
+                // `Y_fixed >> 8` to read +1 vs NES on every frame where
+                // rawY_low pushes the fractional sum past 256.
+                int yDisplayPx = (s.CameraY_fixed >> 8) + ((s.Y_fixed - s.CameraY_fixed) >> 8);
+                _traceWriter.WriteLine($"{frame},0x{s.X_fixed:X},0x{s.Y_fixed:X},0x{s.VelY_fixed:X},{(input ? 1 : 0)},{(alive ? 1 : 0)},{(s.X_fixed >> 8) + 8},{yDisplayPx + 8},{(s.OnGround ? 1 : 0)},{s.CameraY_fixed >> 8},{s.TargetCameraY_fixed >> 8},{s.GameMode},{(s.GravFlipped ? 1 : 0)},{(s.ShipDbgCeilSlopeHit ? 1 : 0)},{(s.ShipDbgCeilTileHit ? 1 : 0)},{(s.ShipDbgCeilSpike ? 1 : 0)},{(s.ShipDbgFloorSlopeHit ? 1 : 0)},{(s.ShipDbgFloorTileHit ? 1 : 0)},{(s.ShipDbgFloorSpike ? 1 : 0)},0x{s.CameraY_fixed:X},0x{s.Y_fixed & 0xFF:X2},0x{s.CameraY_fixed & 0xFF:X2}");
             }
             catch { }
         }
@@ -644,6 +703,12 @@ namespace FamidashEditor
             public int GameMode;
             public bool GravFlipped;
             public bool Mini;
+            public bool ShipDbgCeilSlopeHit;
+            public bool ShipDbgCeilTileHit;
+            public bool ShipDbgCeilSpike;
+            public bool ShipDbgFloorSlopeHit;
+            public bool ShipDbgFloorTileHit;
+            public bool ShipDbgFloorSpike;
             public int GravMul;                 // +1 or -1
             public double GravityMod;           // gravity multiplier from portals/triggers (default 1.0)
             public bool WasZeroedByCollision;   // set by eject when landing
@@ -854,6 +919,44 @@ namespace FamidashEditor
         public string ResultMessage { get; private set; } = "";
 
         /// <summary>
+        /// Linear-Y offset between NES world coordinates and pathfinder world
+        /// coordinates: <c>NES_y = PF_y + NesYOffset</c>. Equal to
+        /// <c>(57 - mapHeight + groundRowsToReserve) * 16</c>. Set by the
+        /// constructor; used by replay export so emulator-side scripts can
+        /// translate live <c>_player_y</c> readings back into PF coords.
+        /// </summary>
+        public int NesYOffset => _nesCoordOffset;
+
+        /// <summary>
+        /// Export the per-frame replay as CSV. Layout:
+        ///   <c>nes_y_offset,N</c>           -- first line, metadata
+        ///   <c>frame,x,y,a</c>              -- header
+        ///   <c>0,X0,Y0,A0</c> ...           -- one row per frame
+        /// x/y are pathfinder pixel coordinates (hitbox-center). The Lua
+        /// overlay reads NES <c>_player_y</c> and subtracts the offset to get
+        /// matching PF coords. a is 1 when A is held that frame, else 0.
+        /// Returns empty string when no successful path is available.
+        /// </summary>
+        public string ExportReplayCsv()
+        {
+            if (PathPoints == null || Inputs == null) return string.Empty;
+            int n = Math.Min(PathPoints.Count, Inputs.Count);
+            if (n == 0) return string.Empty;
+            var sb = new System.Text.StringBuilder(n * 16);
+            sb.Append("nes_y_offset,").Append(_nesCoordOffset).Append('\n');
+            sb.Append("frame,x,y,a\n");
+            for (int i = 0; i < n; i++)
+            {
+                var p = PathPoints[i];
+                sb.Append(i).Append(',')
+                  .Append(p.x).Append(',')
+                  .Append(p.y).Append(',')
+                  .Append(Inputs[i] ? 1 : 0).Append('\n');
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
         /// All paths attempted during backtracking (failed attempts).
         /// Each entry is a snapshot of the path segment that was explored
         /// before the backtracker rewound to try a different decision.
@@ -949,8 +1052,13 @@ namespace FamidashEditor
                 {
                     Index = idx,
                     SpriteId = sid,
-                    AnchorX_px = anchorTileXForSort * TILE + TILE / 2,
-                    AnchorY_px = (storageTileY - groundRowsToReserve) * TILE + TILE / 2,
+                    AnchorX_px = anchorTileXForSort * TILE + TILE / 2 + pxOff,
+                    // AnchorY must include the per-position pyOff so the NES-side
+                    // activesprites_y (which is stored as (rowOffset+j)*16+offsetY)
+                    // matches.  Without this, ship-portal target_scroll_y is
+                    // computed at the wrong world Y, missing the upscroll
+                    // compensation NES applies in process_y_scroll.
+                    AnchorY_px = (storageTileY - groundRowsToReserve) * TILE + TILE / 2 + pyOff,
                     HitLeft = hitLeft,
                     HitTop = hitTop,
                     HitRight = hitRight,
@@ -1532,8 +1640,11 @@ namespace FamidashEditor
             for (int f = 0; f < inputs.Count; f++)
             {
                 bool alive = StepFrame(ref state, inputs[f], out bool endLevel);
-                int pathMiniOffY = (state.Mini && !state.GravFlipped) ? 4 : 0;
-                pathPoints.Add(((state.X_fixed >> 8) + 8, (state.Y_fixed >> 8) + pathMiniOffY + 8));
+                // NES Lua side reads `(raw_y_high) + 8` with no mini offset, so
+                // the replay export must also not add miniOffY — mini hitbox top
+                // == NES currplayer_y, identical to non-mini.
+                int worldY_px = (state.CameraY_fixed >> 8) + ((state.Y_fixed - state.CameraY_fixed) >> 8);
+                pathPoints.Add(((state.X_fixed >> 8) + 8, worldY_px + 8));
                 if (!alive) return false;
                 if (endLevel) return true;
             }
@@ -2028,17 +2139,18 @@ namespace FamidashEditor
                 //   X: (playerX_fixed >> 8) + playerVisualWidth / 2  (= X + 8)
                 //   Y: (playerY_fixed >> 8) + [4 if mini && !inverted] + playerVisualHeight / 2
                 {
-                    int pathMiniOffY = state.Mini ? 4 : 0;
+                    // NES Lua reads `raw_y_high + 8` with no mini offset.
+                    int worldY_px = (state.CameraY_fixed >> 8) + ((state.Y_fixed - state.CameraY_fixed) >> 8);
                     PathPoints.Add(((state.X_fixed >> 8) + 8,
-                                    (state.Y_fixed >> 8) + pathMiniOffY + 8));
+                                    worldY_px + 8));
                     if (state.DualActive)
                     {
                         // Insert segment break when dual mode just activated (gap from previous section)
                         if (!_prevDualActiveForPath && Path2Points.Count > 0)
                             Path2Points.Add((-1, -1)); // sentinel: start new segment
-                        int p2MiniOffY = state.P2_Mini ? 4 : 0;
+                        int p2WorldY_px = (state.CameraY_fixed >> 8) + ((state.P2_Y_fixed - state.CameraY_fixed) >> 8);
                         Path2Points.Add(((state.X_fixed >> 8) + 8,
-                                         (state.P2_Y_fixed >> 8) + p2MiniOffY + 8));
+                                         p2WorldY_px + 8));
                     }
                     _prevDualActiveForPath = state.DualActive;
                 }
@@ -2806,6 +2918,47 @@ namespace FamidashEditor
                     if (step8bDeathCount > 0)
                         Console.Error.WriteLine($"[S8B] f={frame} step8b={step8bDeathCount} total={deathCount} front={frontier.Count} cand={candState.Count} mode={frontier[0].GameMode}");
 
+                    // Dual section Y-distribution diagnostic: track P1 and P2 Y ranges
+                    // approaching the obstacle at col 220-222 (worldX=3520-3554)
+                    if (candState.Count > 0 && candState[0].DualActive)
+                    {
+                        int candX = candState[0].X_fixed >> 8;
+                        bool inCritZone = candX >= 3500 && candX <= 3560;
+                        bool every10 = (candX >= 3100 && candX < 3500 && frame % 10 == 0);
+                        if (inCritZone || every10)
+                        {
+                            int p1MinY=9999,p1MaxY=-1,p2MinY=9999,p2MaxY=-1;
+                            int p1Safe=0,p2Safe=0,bothSafe=0;
+                            int p1On401=0,p2On401=0,bothOn401=0;
+                            foreach (var cs in candState)
+                            {
+                                int p1y = cs.Y_fixed>>8, p2y = cs.P2_Y_fixed>>8;
+                                if (p1y<p1MinY) p1MinY=p1y; if (p1y>p1MaxY) p1MaxY=p1y;
+                                if (p2y<p2MinY) p2MinY=p2y; if (p2y>p2MaxY) p2MaxY=p2y;
+                                bool p1s = p1y>=441 && p1y<=470, p2s = p2y>=357;
+                                if (p1s) p1Safe++;
+                                if (p2s) p2Safe++;
+                                if (p1s && p2s) bothSafe++;
+                                bool p1l = p1y == 401, p2l = p2y == 401;
+                                if (p1l) p1On401++;
+                                if (p2l) p2On401++;
+                                if (p1l && p2l) bothOn401++;
+                            }
+                            Console.Error.WriteLine($"[DUAL_Y] f={frame} X={candX} cands={candState.Count} P1:[{p1MinY},{p1MaxY}] p1s={p1Safe} on401={p1On401} P2:[{p2MinY},{p2MaxY}] p2s={p2Safe} on401={p2On401} both={bothSafe} both401={bothOn401}");
+                            // Print individual state details for states with P1 near the obstacle floor [395,415]
+                            if (inCritZone)
+                            {
+                                foreach (var cs in candState)
+                                {
+                                    int p1y = cs.Y_fixed>>8, p2y = cs.P2_Y_fixed>>8;
+                                    int p1v = cs.VelY_fixed, p2v = cs.P2_VelY_fixed;
+                                    if ((p1y >= 355 && p1y <= 420) || (p2y >= 355 && p2y <= 420))
+                                        Console.Error.WriteLine($"  [ST] X={candX} P1Y={p1y} P1V={p1v} P2Y={p2y} P2V={p2v}");
+                                }
+                            }
+                        }
+                    }
+
                     // Ship ceiling-stuck diagnostic: dump candidate details when frontier is tiny
                     if (Verbose && frontier.Count <= 10 && frontier.Count > 0 && frontier[0].GameMode == 1 && candState.Count > 0)
                     {
@@ -3564,8 +3717,11 @@ namespace FamidashEditor
                 Inputs.Add(inp);
 
 #if !DISABLE_DEBUG_LOGGING
-                // Per-frame state dump for SIM comparison — log Y_fixed, VelY_fixed, mode, and input
-                PfLog($"[REPLAY f={f}] X=0x{state.X_fixed:X} ({state.X_fixed >> 8}px) Y=0x{state.Y_fixed:X} ({state.Y_fixed >> 8}px) velY=0x{state.VelY_fixed:X} mode={state.GameMode} grav={(state.GravFlipped ? "FF" : "00")} mini={(state.Mini ? 1 : 0)} inp={(inp ? 1 : 0)}");
+                // Per-frame state dump for SIM comparison — log Y_fixed, VelY_fixed, mode, and input.
+                // Display Y mirrors NES sprite Y (scroll_y + rawY_high) — see
+                // the trace-CSV note above for why `Y_fixed >> 8` would over-count.
+                int yDisplayPx = (state.CameraY_fixed >> 8) + ((state.Y_fixed - state.CameraY_fixed) >> 8);
+                PfLog($"[REPLAY f={f}] X=0x{state.X_fixed:X} ({state.X_fixed >> 8}px) Y=0x{state.Y_fixed:X} ({yDisplayPx}px) velY=0x{state.VelY_fixed:X} mode={state.GameMode} grav={(state.GravFlipped ? "FF" : "00")} mini={(state.Mini ? 1 : 0)} inp={(inp ? 1 : 0)}");
 #endif
 
                 int preStepGameMode = state.GameMode;
@@ -3589,15 +3745,19 @@ namespace FamidashEditor
                 TraceFrame(f, ref state, Inputs[f], alive);
 
                 int pathMiniOffY = state.Mini ? 4 : 0;
+                // NES-equivalent world-Y pixel: scroll_y_pixel + screen_y_high
+                // (no sub-pixel carry between camera.low and screen.low).
+                int worldY_px = (state.CameraY_fixed >> 8) + ((state.Y_fixed - state.CameraY_fixed) >> 8);
                 PathPoints.Add(((state.X_fixed >> 8) + 8,
-                                (state.Y_fixed >> 8) + pathMiniOffY + 8));
+                                worldY_px + 8));
                 if (state.DualActive)
                 {
                     if (!_prevDualActiveForPath && Path2Points.Count > 0)
                         Path2Points.Add((-1, -1)); // sentinel: start new segment
                     int p2MiniOffY = state.P2_Mini ? 4 : 0;
+                    int p2WorldY_px = (state.CameraY_fixed >> 8) + ((state.P2_Y_fixed - state.CameraY_fixed) >> 8);
                     Path2Points.Add(((state.X_fixed >> 8) + 8,
-                                     (state.P2_Y_fixed >> 8) + p2MiniOffY + 8));
+                                     p2WorldY_px + 8));
                 }
                 _prevDualActiveForPath = state.DualActive;
 
@@ -8204,6 +8364,12 @@ namespace FamidashEditor
             //    flag persists across mode changes like UFO, causing sprHash coarsening
             //    during the entire non-cube section) --
             s.Step2Ejected = false;
+            s.ShipDbgCeilSlopeHit = false;
+            s.ShipDbgCeilTileHit = false;
+            s.ShipDbgCeilSpike = false;
+            s.ShipDbgFloorSlopeHit = false;
+            s.ShipDbgFloorTileHit = false;
+            s.ShipDbgFloorSpike = false;
 
             // -- Clear pending orb from previous frame --
             ClearPendingOrbs(ref s);
@@ -8344,30 +8510,14 @@ namespace FamidashEditor
             {
                 CubeGravity(ref s);
 
-                // Ceiling proximity check:
-                // After gravity, if gravity is flipped and player is moving toward ceiling,
-                // check collision at Y-1 to detect boundary hits that CubeEject would miss.
-                // NES cube_movement has NO ceiling spike check � spikes handled by
-                // bg_coll_floor_spikes (4-corner) which runs for all modes.
-                if (s.GravFlipped)
-                {
-                    int hbW_chk = GetHitboxW(s.Mini);
-                    int hbH_chk = GetHitboxH(s.Mini);
-                    int hbOffY_chk = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
-                    int collX_chk = s.X_fixed >> 8;
-                    int testY_chk = (s.Y_fixed >> 8) + hbOffY_chk - 1;
-                    var (ceilHit, ceilBotY_prox, _) = CheckCeiling(collX_chk, testY_chk, hbW_chk, hbH_chk);
-                    if (ceilHit && s.VelY_fixed < 0)
-                    {
-                        // Snap Y to ceiling surface (same formula as CubeEject)
-                        // to prevent sub-pixel drift each frame.
-                        int newY_prox = ceilBotY_prox - hbOffY_chk - 1;
-                        s.Y_fixed = newY_prox << 8;
-                        s.VelY_fixed = 0;
-                        s.OnGround = true;
-                        s.WasZeroedByCollision = true;
-                    }
-                }
+                // (Removed: ceiling proximity check that ran BEFORE CubeEject in
+                // gravFlipped mode probing at Y_top - 1.  It used the wrong probe
+                // row vs NES bg_coll_U (which probes Y_top + 1, matching CubeEject's
+                // internal CheckCeiling probe), causing PF to zero velY one frame
+                // ahead of NES on cube/grav-flipped ceiling contact.  CubeEject's
+                // ceiling branch already handles this case correctly using the
+                // NES-equivalent probe.  See repo/famidash-cube-floor-eject-divergence.md
+                // (dryout grav-flipped case).
 
                 // Eject first (matching NES: cube_eject runs inside cube_movement,
                 // bg_coll_death runs later in runthecolls using post-eject Generic.y)
@@ -8455,149 +8605,63 @@ namespace FamidashEditor
             }
             else if (s.GameMode == 2) // Ball mode
             {
-                // -- Matching SIM BallPhysics_Fresh() order --
-                // NES/SIM order: grounded spike check ? flip ? clear_switched ? gravity
-                //                ? [2-frame cooldown skip] ? velocity zeroing ? eject
+                // -- NES ball_movement (gamemode_ball.h) order, 1:1 --
+                //   1. common_gravity_routine        (apply gravity, Y += vy)
+                //   2. ball_eject                    (bg_coll_U + bg_coll_D, vy=0 on hit)
+                //   3. flip check                    (hold && !ball_switched && vy==0)
+                //   4. clear ball_switched if !hold
+                // Earlier "before-gravity" flip + buffering + 2-frame cooldown
+                // were SIM-era hacks — they made PF flip one frame too early
+                // and apply gravity AFTER the flip, drifting Y on every flip.
 
-                // 0. Grounded spike death check � SIM runs CheckCollisionDown
-                //    for the grounded probe EVERY frame (before flip/gravity).
-                //    CheckCollisionDown has floor-spike death side-effect.
-                //    Normal gravity only (SIM's CheckCollisionUp discards spikeDeath).
-                if (!s.GravFlipped)
+                // 1. Gravity (common_gravity_routine)
+                BallGravityStep(ref s);
+
+                // 2. Ball eject — bg_coll_U then bg_coll_D, both can fire same frame.
+                //    Sets vy=0 on hit; updates OnGround / SlopeWasOnCounter.
                 {
-                    int hbW_g = GetHitboxW(s.Mini);
-                    int hbH_g = GetHitboxH(s.Mini);
-                    int hbOffY_g = GetHitboxOffsetY(2, s.Mini, s.GravFlipped);
-                    int playerBottom_g = (s.Y_fixed >> 8) + hbOffY_g + hbH_g;
-                    var (_, _, groundedSpike) = CheckFloor(s.X_fixed >> 8, playerBottom_g, hbW_g, 2);
-                    if (groundedSpike)
+                    bool died = false;
+                    BallEject(ref s, input, out died);
+                    if (died)
                     {
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[BALL_GROUNDED_SPIKE_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                        _lastDeathReason = "BALL_GROUNDED_SPIKE_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
+                        PfLog($"[BALL_EJECT_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                        _lastDeathReason = "BALL_EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
 #endif
                         s.DeathType = s.DeathType >= 11 ? s.DeathType : (byte)6;
                         return false;
                     }
                 }
 
-                // 1. Flip check with input buffering (BEFORE gravity � matches SIM/NES).
-                //    SIM's ball physics buffers the press (orbBufferActive) and flips
-                //    on landing while hold persists.  The SIM playback holds for
-                //    PF_BALL_HOLD_FRAMES (8) after each PF true.  Mirror this:
-                //    - input=1 & grounded ? flip immediately
-                //    - input=1 & !grounded ? buffer for up to 8 frames
-                //    - buffer>0 & grounded & !switched ? flip (buffered landing)
-
-                // Refresh OnGround at current position — prevents stale grounding
-                // when X has advanced past a platform edge since the last eject.
-                // SIM re-evaluates grounding fresh each frame via BallIsGrounded;
-                // PF must do the same to match. Keep OnGround true on slopes
-                // (SlopeWasOnCounter > 0) since BallIsGrounded can't detect them.
-                if (s.OnGround && !BallIsGrounded(ref s) && s.SlopeWasOnCounter == 0)
-                    s.OnGround = false;
-
+                // 3. Flip check — NES requires (hold && !ball_switched && vy==0).
+                //    BallFlipCooldown stores the NES `ball_switched` flag.
+                //    orbHitThisFrame guard preserves NES press-consumed-by-orb semantics.
+                if (input && !orbHitThisFrame
+                    && s.BallFlipCooldown == 0
+                    && s.VelY_fixed == 0)
                 {
-                    bool shouldFlip = false;
-                    if (input && !orbHitThisFrame && s.BallFlipCooldown == 0)
-                    {
-                        // BallIsGrounded uses CheckFloor which doesn't detect slopes.
-                        // NES ball_eject sets OnGround when on a slope, so use that
-                        // as a fallback — matches the NES persistent-flag behavior.
-                        if (BallIsGrounded(ref s) || s.OnGround)
-                        {
-                            shouldFlip = true;
-                        }
-                        else
-                        {
-                            s.BallInputBuffer = 8; // PF_BALL_HOLD_FRAMES
-                        }
-                    }
-                    else if (s.BallInputBuffer > 0 && !orbHitThisFrame && s.BallFlipCooldown == 0 && (BallIsGrounded(ref s) || s.OnGround))
-                    {
-                        shouldFlip = true;
-                    }
-
-                    if (shouldFlip)
-                    {
-                        s.GravFlipped = !s.GravFlipped;
-                        s.GravMul = s.GravFlipped ? -1 : 1;
-                        s.VelY_fixed = BallSwitchVel(s.Mini) * s.GravMul;
-                        s.OnGround = false;
-                        // NOTE: Do NOT clear WasZeroedByCollision here — SIM's
-                        // BallPhysics_Fresh / InvertGravity_Fresh does not touch it.
-                        // The flag is properly cleared in ApplyPortalSprite when
-                        // the gamemode changes (matching SIM's CheckGameModePortals).
-                        s.BallFlipCooldown = 1;  // ball_switched = true
-                        s.BallInputBuffer = 0;
-                        s.BallCooldownFrames = 2; // SIM skips vel zeroing + eject for 2 frames after flip
+                    s.GravFlipped = !s.GravFlipped;
+                    s.GravMul = s.GravFlipped ? -1 : 1;
+                    s.VelY_fixed = BallSwitchVel(s.Mini) * s.GravMul;
+                    s.OnGround = false;
+                    s.BallFlipCooldown = 1;  // ball_switched = 1
+                    s.BallInputBuffer = 0;
+                    s.BallCooldownFrames = 0;
 #if !DISABLE_DEBUG_LOGGING
-                        PfLog($"[BALL_FLIP] gravFlipped={s.GravFlipped} gravMul={s.GravMul} VelY=0x{s.VelY_fixed:X4} mini={s.Mini}");
+                    PfLog($"[BALL_FLIP] gravFlipped={s.GravFlipped} gravMul={s.GravMul} VelY=0x{s.VelY_fixed:X4} mini={s.Mini}");
 #endif
-                    }
-                    else if (s.BallInputBuffer > 0)
-                    {
-                        s.BallInputBuffer--;
-                    }
+                    // NES bg_coll_floor_spikes() runs after the velocity assignment.
+                    // (PF's existing post-physics death check covers floor spikes.)
                 }
 
-                // 2. Clear ball_switched when button released.
-                //    SIM clears when !holdJump.  In PF, "hold" = input || buffer>0.
-                if (s.BallFlipCooldown != 0 && !input && s.BallInputBuffer == 0)
+                // 4. Clear ball_switched when button released.
+                if (s.BallFlipCooldown != 0 && !input)
                 {
                     s.BallFlipCooldown = 0;
                 }
 
-                // 3. Gravity (common_gravity_routine) � runs AFTER flip so it uses
-                //    the post-flip VelY (matching SIM/NES ordering).
-                BallGravityStep(ref s);
-
-                // 4. 2-frame cooldown after flip: skip velocity zeroing and eject.
-                //    SIM's BallPhysics_Fresh returns early during cooldown, preventing
-                //    the eject from snapping the ball back to the surface it just
-                //    flipped away from.
-                if (s.BallCooldownFrames > 0)
-                {
-                    s.BallCooldownFrames--;
-                }
-                else
-                {
-                    // 5. Velocity zeroing: prevents velocity accumulation when grounded.
-                    //    Normal gravity + VelY<0 ? ceiling check ? zero VelY + snap Y
-                    //    Flipped gravity + VelY>0 ? floor check ? zero VelY
-                    {
-                        bool velZeroDied = false;
-                        BallVelocityZeroing(ref s, out velZeroDied);
-                        if (velZeroDied)
-                        {
-#if !DISABLE_DEBUG_LOGGING
-                            PfLog($"[BALL_VELZERO_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                            _lastDeathReason = "BALL_VELZERO_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
-#endif
-                            s.DeathType = s.DeathType >= 11 ? s.DeathType : (byte)6;
-                            return false;
-                        }
-                    }
-
-                    // 6. Ball eject � NES-accurate tile probe and eject math
-                    //    Matches original ball_eject() which calls bg_coll_U then bg_coll_D
-                    //    with velocity gating inside each function.
-                    {
-                        bool died = false;
-                        BallEject(ref s, input, out died);
-                        if (died)
-                        {
-#if !DISABLE_DEBUG_LOGGING
-                            PfLog($"[BALL_EJECT_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
-                            _lastDeathReason = "BALL_EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8;
-#endif
-                            s.DeathType = s.DeathType >= 11 ? s.DeathType : (byte)6;
-                            return false;
-                        }
-                    }
-                    // Step 5: UpdateSlopeCounters_Fresh — decrement counters, fire apply_slope_vel
-                    PfUpdateSlopeCounters_Fresh(ref s);
-                }
+                // Step 5: UpdateSlopeCounters_Fresh — decrement counters, fire apply_slope_vel
+                PfUpdateSlopeCounters_Fresh(ref s);
 
                 // NO center death check here — NES ball_movement does NOT run
                 // bg_coll_death inside the mode handler.  Step 7c handles it.
@@ -8609,26 +8673,13 @@ namespace FamidashEditor
                 // UFO uses tap-to-jump (not hold-to-fly like ship).
                 UfoGravityStep(ref s);
 
-                // -- CEILING PROXIMITY CHECK (non-flipped gravity only) --
-                // NES ufo_movement does NOT have a ceiling spike check here.
-                // Spikes are handled by bg_coll_floor_spikes (4-corner) for all modes.
-                // This check zeros upward velocity AND snaps Y to the ceiling surface,
-                // matching SIM UfoPhysics_Fresh which snaps playerY_fixed to clear
-                // sub-pixel drift (prevents trajectory divergence over many frames).
-                // Runs unconditionally — needed for both normal and flipped gravity.
-                {
-                    int hbW_chk = GetHitboxW(s.Mini);
-                    int hbH_chk = GetHitboxH(s.Mini);
-                    int hbOffY_chk = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
-                    int collX_chk = s.X_fixed >> 8;
-                    int testY_chk = (s.Y_fixed >> 8) + hbOffY_chk - 1;
-                    var (ceilHit, ceilBotY_chk, _) = CheckCeiling(collX_chk, testY_chk, hbW_chk, hbH_chk);
-                    if (ceilHit && s.VelY_fixed < 0)
-                    {
-                        s.Y_fixed = (ceilBotY_chk - hbOffY_chk) << 8;
-                        s.VelY_fixed = 0;
-                    }
-                }
+                // -- CEILING PROXIMITY CHECK REMOVED --
+                // NES ufo_movement (gamemode_ufo.h) has NO ceiling proximity check;
+                // it only runs common_gravity_routine -> ufo_ship_eject -> jump.
+                // The previous check zeroed upward velocity and snapped Y on
+                // ceiling proximity, which caused PF to stall a frame earlier
+                // than NES near ceilings (cumulative trajectory drift).
+                // ShipEject handles ceiling collisions correctly via its own probes.
 
                 // -- UFO EJECT (shared with Ship: ceiling + floor, no velocity guard) --
                 ShipEject(ref s, input, out bool ufoDied);
@@ -9157,6 +9208,72 @@ namespace FamidashEditor
             if (_dualP2Guard)
                 s.X_fixed = newX_fixed;
 
+#if !DISABLE_DEBUG_LOGGING
+            // -- DEATH-WINDOW DIAGNOSTIC DUMP --
+            // Unconditional probe dump for frames in the known-divergence window
+            // around sim_cursor=2702 (NES dies, PF survives).  Captures every
+            // corner/center/forward tile id PF examines so we can compare with
+            // the NES kill source.  Gated tightly to avoid log spam.
+            if (_speculativeDepth == 0 && !_dualP2Guard)
+            {
+                int _f = PathPoints.Count;
+                if ((_f >= 2697 && _f <= 2705) || (_f >= 3360 && _f <= 3380))
+                {
+                    int _px = s.X_fixed >> 8;
+                    int _py = s.Y_fixed >> 8;
+                    int _hbW = GetHitboxW(s.Mini);
+                    int _hbH = GetHitboxH(s.Mini);
+                    int _hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
+                    int _miniOffY = s.Mini ? ((0x10 - _hbH) >> 1) : 0;
+                    int _rowBottomY = _py + _miniOffY + _hbH - 2;
+                    int _rowTopY = _py + (s.Mini ? _miniOffY : 2);
+                    int _leftX = _px + 3;
+                    int _rightX = _px + _hbW - 3;
+                    PfLog($"[DEATH_DIAG f={_f}] X={_px} Y={_py} vY={s.VelY_fixed} gm={s.GameMode} mini={s.Mini} grav={s.GravFlipped} hb=({_hbW}x{_hbH}+{_hbOffY})");
+                    void _probe(string name, int x, int y)
+                    {
+                        int tileX = x / TILE;
+                        int tileY = y / TILE;
+                        int tileArrayY = tileY + _collisionMap.GroundRowsToReserve;
+                        int tid = -1;
+                        if (tileX >= 0 && tileX < _collisionMap.MapWidth &&
+                            tileArrayY >= 0 && tileArrayY < _collisionMap.MapHeight)
+                        {
+                            int idx = tileArrayY * _collisionMap.MapWidth + tileX;
+                            if (idx >= 0 && idx < _collisionMap.Tiles.Length)
+                                tid = _collisionMap.Tiles[idx];
+                        }
+                        int mapped = tid >= 0 ? MapTileForCollision(tid) : -1;
+                        var col = mapped >= 0 ? MetatileCollisionTable.GetCollision((byte)mapped) : 0;
+                        int lx = ((x % TILE) + TILE) % TILE;
+                        int ly = ((y % TILE) + TILE) % TILE;
+                        bool kills = mapped >= 0 && MetatileCollisionTable.TileKillsAtPixel(col, lx, ly);
+                        PfLog($"  [{name}] world=({x},{y}) tile=({tileX},{tileArrayY}) tid=0x{tid:X2} mapped=0x{mapped:X2} col={col} local=({lx},{ly}) kills={kills}");
+                    }
+                    _probe("BL", _leftX,  _rowBottomY);
+                    _probe("BR", _rightX, _rowBottomY);
+                    _probe("TL", _leftX,  _rowTopY);
+                    _probe("TR", _rightX, _rowTopY);
+                    int _cx = _px + (_hbW >> 1) - 1;
+                    int _cy = _py + (_hbH / 2) + _hbOffY;
+                    _probe("CENTER", _cx, _cy);
+                    int _fwdX = _px + _hbW;
+                    int _fwdY = _py + (s.Mini ? (((0x10 - _hbH) >> 1) + (_hbH >> 1)) : (_hbH >> 1));
+                    _probe("FWD", _fwdX, _fwdY);
+                    // Ship ceiling probes (bg_coll_U): X, X+W/2, X+W at Y+1.
+                    if (s.GameMode == 1)
+                    {
+                        _probe("U_L",  _px,             _py + 1);
+                        _probe("U_M",  _px + (_hbW>>1), _py + 1);
+                        _probe("U_R",  _px + _hbW,     _py + 1);
+                        _probe("D_L",  _px,             _py + _hbH - 1);
+                        _probe("D_M",  _px + (_hbW>>1), _py + _hbH - 1);
+                        _probe("D_R",  _px + _hbW,     _py + _hbH - 1);
+                    }
+                }
+            }
+#endif
+
             // -- STEP 7a: 4-CORNER SPIKE CHECK (bg_coll_floor_spikes) at OLD X --
             if (CheckFloorSpikes(ref s))
             {
@@ -9209,8 +9326,11 @@ namespace FamidashEditor
                 // NES process_y_scroll: when dual && !twoplayer, camera ALWAYS uses
                 // ship-style smooth scroll toward target_scroll_y (set by the dual
                 // portal).  It never tracks the player's Y directly.
+                // NES scroll.h cube branch: GAMEMODE_CUBE(0), GAMEMODE_ROBOT(4),
+                // GAMEMODE_NINJA(8), GAMEMODE_POGO(9), or nocamlock/nocamlockforced.
+                // SPIDER (5) is NOT in this list — it uses ship-style smooth scroll.
                 bool camFollowsY = (!s.DualActive) &&
-                    (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 8 || s.GameMode == 9 || s.NoCamLockForced);
+                    (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9 || s.NoCamLockForced);
                 if (camFollowsY)
                 {
                     // Match NES process_y_scroll: top threshold 0x4000 (64px), bottom 0xA0 (160px)
@@ -9218,38 +9338,67 @@ namespace FamidashEditor
                     int screenY_fixed = s.Y_fixed - s.CameraY_fixed;
                     if (screenY_fixed < 0x4000)
                     {
+                        // NES gate: scroll_y >= min_scroll_y && (scroll_y_subpx || scroll_y != min_scroll_y).
+                        // We don't track scroll_y_subpx, so only run when camera can actually move up.
                         int need_fixed = 0x4000 - screenY_fixed;
                         s.CameraY_fixed -= need_fixed;
                         if (s.CameraY_fixed < minCamY_reserved) s.CameraY_fixed = minCamY_reserved;
+                        // World-Y of player is conserved by NES process_y_scroll:
+                        // the sub-pixel shuffles between player_y_screen.low and
+                        // scroll_y_subpx, but their 24-bit sum (player world Y)
+                        // is unchanged. PF cameraY_fixed already has 8 fractional
+                        // bits, so the camera move above tracks NES scroll with
+                        // equal-or-better precision. Do NOT touch Y_fixed.
                     }
                     else if ((screenY_fixed >> 8) >= 0xA0)
                     {
+                        // NES gate: scroll_y < 0x2EF (camera not at bottom limit).
                         int need_fixed = screenY_fixed - 0xA000;
-                        int maxCamY = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                        int maxCamY = NesMaxCamY_px() << 8;
                         s.CameraY_fixed += need_fixed;
                         if (s.CameraY_fixed > maxCamY) s.CameraY_fixed = maxCamY;
+                        // (See note above — world-Y conserved; do NOT touch Y_fixed.)
                     }
                 }
                 else
                 {
                     // Ship-style smooth scroll toward target.
-                    // NES process_y_scroll does NOT update target_scroll_y per-frame;
-                    // target is set only by portal hits.  The camera scrolls toward
-                    // the portal-set target at a fixed speed, enforcing OOB death
-                    // when the player flies too far from the locked camera.
-
-                    // Ship-style smooth scroll toward target
-                    if (s.TargetCameraY_fixed > s.CameraY_fixed)
+                    // NES process_y_scroll ship branch (NTSC, SHIP_SCROLL_SPEED=0x0200):
+                    //   target > scroll (cam moves DOWN in world, "up branch"):
+                    //     player0_y  -= 0x0200          -> currplayer_y −= 2 px
+                    //     scroll_subpx += LSB           -> += 0 (LSB=0), no carry generated
+                    //     do_if_carry NOT fired         -> MSB stays 2
+                    //     scroll_y = add(MSB, scroll_y) -> scroll_y += 2 px
+                    //     Net world Δ = scroll Δ + screen Δ = +2 + (−2) = 0
+                    //   target < scroll (cam moves UP in world, "down branch"):
+                    //     player0_y  += 0x0200          -> currplayer_y += 2 px
+                    //     scroll_subpx -= LSB           -> -= 0, SBC of 0 sets carry (no borrow)
+                    //     do_if_carry FIRED             -> MSB becomes 3
+                    //     scroll_y = sub(MSB, scroll_y) -> scroll_y -= 3 px
+                    //     Net world Δ = scroll Δ + screen Δ = −3 + 2 = −1
+                    // PF Y_fixed is world coords, so we apply the net −1 px during upscroll only.
+                    // Comparison is INTEGER-PIXEL only — NES `scroll_y` is byte-integer
+                    // (the fractional lives in a separate `scroll_y_subpx` byte and does
+                    // not participate in `target_scroll_y > scroll_y` test). PF
+                    // CameraY_fixed may carry a sub-pixel residue from cube-mode tracking;
+                    // we must ignore it here or the cam oscillates forever around target.
+                    int _camPx = s.CameraY_fixed >> 8;
+                    int _tgtPx = s.TargetCameraY_fixed >> 8;
+                    if (_tgtPx > _camPx)
                     {
-                        s.CameraY_fixed += SHIP_SCROLL_SPEED_FIXED;
-                        if (s.CameraY_fixed > s.TargetCameraY_fixed) s.CameraY_fixed = s.TargetCameraY_fixed;
+                        // Cam moves down (scroll +=2, screen −2). World Δ = 0.
+                        // NES does NOT clamp to target — it overshoots and the
+                        // opposite branch fires next frame to bounce back.
+                        s.CameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
                     }
-                    else if (s.TargetCameraY_fixed < s.CameraY_fixed)
+                    else if (_tgtPx < _camPx)
                     {
-                        s.CameraY_fixed -= SHIP_SCROLL_SPEED_FIXED;
-                        if (s.CameraY_fixed < s.TargetCameraY_fixed) s.CameraY_fixed = s.TargetCameraY_fixed;
+                        // Cam moves up (scroll −3, screen +2). World Δ = −1.
+                        // NES does NOT clamp to target — overshoot is intentional.
+                        s.CameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
+                        s.Y_fixed -= 0x0100;
                     }
-                    int maxCamY2 = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                    int maxCamY2 = NesMaxCamY_px() << 8;
                     int minCamY2 = -(groundRowsToReserve * TILE) << 8;
                     if (s.CameraY_fixed < minCamY2) s.CameraY_fixed = minCamY2;
                     if (s.CameraY_fixed > maxCamY2) s.CameraY_fixed = maxCamY2;
@@ -9308,30 +9457,56 @@ namespace FamidashEditor
             if (!_dualP2Guard)
                 CheckGravityModTriggersAtNewX(ref s);
 
-            // -- STEP 8: RESTORE NEW X --
-            s.X_fixed = newX_fixed;
-
-            // -- STEP 8b: DEATH CHECK at NEW X (matching NES bg_coll_death) --
-            // NES bg_coll_death runs INSIDE x_movement AFTER advancing currplayer_x.
+            // -- STEP 7c: DEATH CHECK at OLD X (matching NES bg_coll_death) --
+            // NES x_movement loads Generic.x = high_byte(currplayer_x) at function
+            // entry (OLD X), then advances currplayer_x — but Generic.x is NEVER
+            // reloaded. bg_coll_death runs immediately after and uses Generic.x for
+            // the center-pixel probe, so it operates at OLD X (post-eject Y).
+            // This was the long-standing source of "PF says survive, ROM kills":
+            // a 1–3px sweep past a half-slab side that's deadly at OLD X but clear
+            // at NEW X. We MUST run these checks before assigning newX_fixed.
             if (CheckDeathCollision(ref s))
             {
 #if !DISABLE_DEBUG_LOGGING
-                PfLog($"[DEATH_COLL] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                PfLog($"[DEATH_COLL] X(old)={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                 if (_speculativeDepth == 0) { _lastDeathReason = "DEATH_COLL"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                 s.DeathType = 9;
                 return false;
             }
 
-            // -- STEP 8b2: SLOPE PENETRATION DEATH at NEW X --
+            // -- STEP 7d: SLOPE PENETRATION DEATH at OLD X --
+            // Same reasoning as STEP 7c: bg_coll_slope is called from bg_coll_death
+            // at the same Generic.x (OLD X) center pixel.
             if (CheckSlopePenetrationDeath(ref s))
             {
 #if !DISABLE_DEBUG_LOGGING
-                PfLog($"[SLOPE_PENETRATION_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                PfLog($"[SLOPE_PENETRATION_DEATH] X(old)={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
 #endif
                 if (_speculativeDepth == 0) { _lastDeathReason = "SLOPE_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                 s.DeathType = 9;
                 return false;
+            }
+
+            // -- STEP 8: ADVANCE X TO NEW X --
+            // bg_coll_death has run at OLD X above; now finalise the X advance for
+            // the next frame's physics (NES x_movement advanced currplayer_x before
+            // bg_coll_death ran, but Generic.x kept the OLD value).
+            s.X_fixed = newX_fixed;
+
+            // -- STEP 8a: VERIFY GROUND SUPPORT at NEW X --
+            // Without this check, grounded states can persist across small gaps/
+            // edge clips for an extra frame, allowing false survivals over
+            // COL_TOP-adjacent geometry that Famidash drops/kills on.
+            if (s.OnGround && s.VelY_fixed == 0)
+            {
+                bool shouldVerify = s.GameMode != 1 && s.GameMode != 3 && s.GameMode != 5 &&
+                                    s.GameMode != 6 && s.GameMode != 7 && s.GameMode != 10;
+                if (shouldVerify && !VerifyGroundSupport(ref s))
+                {
+                    s.OnGround = false;
+                    s.WasZeroedByCollision = false;
+                }
             }
 
             // -- STEP 8c: SPEED PORTAL CHECK --
@@ -9470,7 +9645,10 @@ namespace FamidashEditor
                 {
                     p1_GravFlipped = !p1_GravFlipped;
                     p1_GravMul = p1_GravFlipped ? -1 : 1;
-                    p1_VelY /= 2;
+                    // cc65 optimizes int /= 2 → asr (arithmetic shift, floors negatives).
+                    // C# /= 2 truncates toward zero → off-by-one for negative values.
+                    // Use >>= 1 to match NES exactly.
+                    p1_VelY >>= 1;
                     _p2OrbFlippedOtherGrav = false;
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[DUAL_CAP_CHECK] P2 orb flipped P1 grav→{p1_GravFlipped} velY→0x{p1_VelY:X4}");
@@ -9702,7 +9880,8 @@ namespace FamidashEditor
                 s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed,
                 s.GravFlipped, s.Mini, s.GameMode, input,
                 s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType,
-                s.SlopeJumpHigher, s.LastSlopeType);
+                s.SlopeJumpHigher, s.LastSlopeType,
+                s.CameraY_fixed);
             s.Y_fixed = r.NewY_fixed;
             s.VelY_fixed = r.NewVelY_fixed;
             s.OnGround = r.OnGround;
@@ -9713,6 +9892,39 @@ namespace FamidashEditor
             s.SlopeJumpHigher = r.SlopeJumpHigher;
             s.LastSlopeType = r.LastSlopeType;
             if (r.Died) { died = true; s.DeathType = 6; }
+#if !DISABLE_DEBUG_LOGGING
+            // TEMP eject diagnostic: log on the frame eject snapped Y so we can
+            // see WHY PF ejects but NES bg_coll_D returns 0 in some edge cases.
+            if (r.WasZeroed)
+            {
+                int yPxIn  = s.Y_fixed >> 8;
+                int xPx    = s.X_fixed >> 8;
+                string branch = r.DebugFloorSlopeHit ? "SLOPE"
+                              : r.DebugFloorTileHit  ? "FLOOR"
+                              : "OTHER";
+                int botPx  = yPxIn + SharedPhysics.GetCubeHitboxH(s.Mini);
+                int tileY  = botPx / 16;
+                int tileX0 = xPx / 16;
+                int tileX1 = (xPx + (SharedPhysics.GetCubeHitboxW(s.Mini) >> 1)) / 16;
+                int tileX2 = (xPx + SharedPhysics.GetCubeHitboxW(s.Mini)) / 16;
+                int tileArrY = tileY + _collisionMap.GroundRowsToReserve;
+                string tileDump = "";
+                int[] tileXs = { tileX0, tileX1, tileX2 };
+                foreach (var tx in tileXs)
+                {
+                    if (tx >= 0 && tx < _collisionMap.MapWidth && tileArrY >= 0 && tileArrY < _collisionMap.MapHeight)
+                    {
+                        int idx = tileArrY * _collisionMap.MapWidth + tx;
+                        int tid = _collisionMap.Tiles[idx];
+                        int mapped = SharedPhysics.MapTileForCollision(tid);
+                        var col = MetatileCollisionTable.GetCollision((byte)mapped);
+                        tileDump += $" [{tx}]tid=0x{tid:X2} mapped=0x{mapped:X2} col={col}";
+                    }
+                    else tileDump += $" [{tx}]OOB";
+                }
+                PfLog($"[EJECT-DIAG] branch={branch} X={xPx} Y={yPxIn} botPx={botPx} tileY={tileY} (arrY={tileArrY}) localY={botPx & 0xF} probes:{tileDump}");
+            }
+#endif
 
             // NES cube_eject() hblocked/fblocked handling (gamemode_cube.h lines 201-237).
             // SharedPhysics.CubeEject already handled the normal direction.
@@ -11848,7 +12060,7 @@ namespace FamidashEditor
                 int idx = tileArrayY * _collisionMap.MapWidth + tx;
                 if (idx < 0 || idx >= _collisionMap.Tiles.Length) continue;
 
-                var col = MetatileCollisionTable.GetCollision((byte)_collisionMap.Tiles[idx]);
+                var col = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(_collisionMap.Tiles[idx]));
                 if (IsSolidForSpider(col))
                 {
                     var (_, colTop, _, _) = SharedPhysics.GetCollisionBounds(col);
@@ -11896,7 +12108,7 @@ namespace FamidashEditor
                 int idx = tileArrayY * _collisionMap.MapWidth + tx;
                 if (idx < 0 || idx >= _collisionMap.Tiles.Length) continue;
 
-                var col = MetatileCollisionTable.GetCollision((byte)_collisionMap.Tiles[idx]);
+                var col = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(_collisionMap.Tiles[idx]));
                 if (IsSolidForSpider(col))
                 {
                     var (_, _, _, colBottom) = SharedPhysics.GetCollisionBounds(col);
@@ -11975,6 +12187,9 @@ namespace FamidashEditor
             int gravMul = s.GravMul;
             bool falling = gravMul > 0 ? (s.VelY_fixed > 0) : (s.VelY_fixed < 0);
 
+            // NES tables are looked up by `currplayer_table_idx` whose bit 0
+            // (TBLIDX_GRAV) selects the pre-negated entry when gravity is
+            // flipped.  PF mirrors this with `* gravMul`.
             int gravity;
             if (holding && falling)
                 gravity = ShipGravityHoldFall(s.Mini) * gravMul;
@@ -11985,13 +12200,18 @@ namespace FamidashEditor
             else
                 gravity = ShipGravity(s.Mini) * gravMul;
 
-            // Negate when holding (thrust opposite to gravity)
-            if (holding)
+            // NES: `if ((currplayer_gravity ? 1 : 0) ^ tmp2) tmpgravity = -tmpgravity;`
+            // i.e. negate when (gravFlipped XOR holding) is true.  Old PF only
+            // negated on `holding` which broke flipped+no-input (omitted negate).
+            if (s.GravFlipped ^ holding)
                 gravity = -gravity;
 
-            // Ship uses SHIP_MAX_FALLSPEED_HOLD as tmpfallspeed in CommonGravityRoutine_Fresh.
-            // Delegate to SharedPhysics for the accel/decel/integrate.
-            int shipMaxFS = ShipMaxFallSpeedHold(s.Mini) * gravMul;
+            // NES gamemode_ship.h:38 — `tmpfallspeed = 0x4443` ALWAYS positive.
+            // common_gravity_routine compares (vel_y < tmpfallspeed) when gravity
+            // is flipped; with +0x4443 the predicate is essentially always true
+            // so tmpaccel gets re-flipped to point in the right direction.
+            // Passing −0x4443 here breaks inverted-gravity ship physics.
+            int shipMaxFS = 0x4443;
 
             int clampMaxY = Math.Max(0, (mapHeight * TILE - TILE)) << 8;
 
@@ -11999,47 +12219,33 @@ namespace FamidashEditor
                 ref s.VelY_fixed,
                 ref s.Y_fixed,
                 gravity,       // tmpgravity (already direction-adjusted and negated for hold)
-                shipMaxFS,     // tmpfallspeed (direction-adjusted)
+                shipMaxFS,     // tmpfallspeed (always +0x4443 per NES)
                 s.GravFlipped ? 0xFF : 0,
                 s.Dashing, s.GravityMod, 1.0, true, s.VelX_fixed,
                 clampMaxY);
 
-            // -- Ship inverted-gravity ceiling grounding --
-            // Match ShipPhysics_Fresh: after gravity+Y update, if inverted gravity
-            // and there's a ceiling 1px above, zero upward velocity AND snap Y to
-            // the ceiling surface to prevent sub-pixel drift (matching SIM).
-            // NOTE: SIM probes at testY = playerY + hitboxOffsetY - 1 (1px above),
-            // so we pass cgY - 1 to CheckCeiling which uses topY for its boundary
-            // check (topY < colBottom_px). Without the -1, the check fails at
-            // the exact ceiling boundary (e.g. 304 < 304 = false).
-            // NES ship_movement has NO ceiling spike check � spikes handled
-            // by bg_coll_floor_spikes (4-corner) which runs for all modes.
-            if (s.GravFlipped)
+            // NES ship velocity clamp \u2014 hardcoded in gamemode_ship.h:
+            //   if currplayer_gravity:  vel \u2208 [-0x0369, +0x0443]
+            //   else:                   vel \u2208 [-0x0443, +0x0369]
+            // NES ship velocity clamp — gamemode_ship.h:42-46
+            //   if currplayer_gravity:  vel ∈ [-0x0369, +0x0443]
+            //   else (normal grav):     vel ∈ [-0x0443, +0x0369]
+            // Magnitude cap is LARGER in the gravity direction (e.g. normal grav
+            // up cap 0x0443 > down cap 0x0369).  Original SIM/PF had these
+            // swapped, slowing ascent and accelerating descent.
+            const int SHIP_VEL_DOWN_CAP = 0x0369;
+            const int SHIP_VEL_UP_CAP   = 0x0443;
+            if (!s.GravFlipped)
             {
-                int cgX = s.X_fixed >> 8;
-                int hbOffY_cg = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
-                int cgY = (s.Y_fixed >> 8) + hbOffY_cg - 1;
-                var (ceilGrounded, ceilBotY_cg, _) = CheckCeiling(cgX, cgY, GetHitboxW(s.Mini), GetHitboxH(s.Mini));
-                if (ceilGrounded && s.VelY_fixed < 0)
-                {
-                    s.Y_fixed = (ceilBotY_cg - hbOffY_cg) << 8;
-                    s.VelY_fixed = 0;
-                }
-            }
-
-            // Clamp velocity to ship max speeds
-            int maxDown = ShipMaxFallSpeed(s.Mini) * gravMul;
-            int maxUp = -ShipMaxFallSpeedHold(s.Mini) * gravMul;
-
-            if (gravMul > 0)
-            {
-                if (s.VelY_fixed < maxUp) s.VelY_fixed = maxUp;
-                if (s.VelY_fixed > maxDown) s.VelY_fixed = maxDown;
+                // normal grav: up = negative Y, down = positive Y
+                if (s.VelY_fixed < -SHIP_VEL_UP_CAP)   s.VelY_fixed = -SHIP_VEL_UP_CAP;
+                if (s.VelY_fixed >  SHIP_VEL_DOWN_CAP) s.VelY_fixed =  SHIP_VEL_DOWN_CAP;
             }
             else
             {
-                if (s.VelY_fixed > maxUp) s.VelY_fixed = maxUp;
-                if (s.VelY_fixed < maxDown) s.VelY_fixed = maxDown;
+                // inverted grav: up = positive Y, down = negative Y
+                if (s.VelY_fixed < -SHIP_VEL_DOWN_CAP) s.VelY_fixed = -SHIP_VEL_DOWN_CAP;
+                if (s.VelY_fixed >  SHIP_VEL_UP_CAP)   s.VelY_fixed =  SHIP_VEL_UP_CAP;
             }
         }
 
@@ -12053,7 +12259,8 @@ namespace FamidashEditor
                 s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed,
                 s.GravFlipped, s.Mini, s.GameMode, input,
                 s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType,
-                s.SlopeJumpHigher, s.LastSlopeType);
+                s.SlopeJumpHigher, s.LastSlopeType,
+                s.CameraY_fixed);
             s.Y_fixed = r.NewY_fixed;
             s.VelY_fixed = r.NewVelY_fixed;
             s.SlopeType = r.SlopeType;
@@ -12061,6 +12268,12 @@ namespace FamidashEditor
             s.SlopeWasOnCounter = r.SlopeWasOnCounter;
             s.SlopeJumpHigher = r.SlopeJumpHigher;
             s.LastSlopeType = r.LastSlopeType;
+            s.ShipDbgCeilSlopeHit = r.DebugCeilSlopeHit;
+            s.ShipDbgCeilTileHit = r.DebugCeilTileHit;
+            s.ShipDbgCeilSpike = r.DebugCeilSpike;
+            s.ShipDbgFloorSlopeHit = r.DebugFloorSlopeHit;
+            s.ShipDbgFloorTileHit = r.DebugFloorTileHit;
+            s.ShipDbgFloorSpike = r.DebugFloorSpike;
             if (r.Died) { died = true; }
         }
 
@@ -12254,7 +12467,16 @@ namespace FamidashEditor
         private bool ProcessSprites(ref SimState s, int currentX_px, out bool orbHitThisFrame)
         {
             orbHitThisFrame = false;
-            int playerY_px = s.Y_fixed >> 8;
+            // Sprite collision must mirror NES `sprite_collide()`:
+            //   Generic.y = high_byte(currplayer_y) + ((0x10 - h) >> 1)
+            // `high_byte(currplayer_y)` is screen-rel rawY top byte and does NOT
+            // include any sub-pixel carry from (sy_subpx + rawY_low >= 256). The
+            // PF world-Y equivalent is scroll_y + rawY_high, i.e.
+            //   (CameraY_fixed >> 8) + ((Y_fixed - CameraY_fixed) >> 8)
+            // Plain `Y_fixed >> 8` would over-count by 1px for ~37% of frames
+            // after a long camera-snap sequence (sy_subpx ~0x97), causing
+            // orb/pad/portal activations one frame earlier than NES.
+            int playerY_px = (s.CameraY_fixed >> 8) + ((s.Y_fixed - s.CameraY_fixed) >> 8);
             int hbW = GetHitboxW(s.Mini);
             int hbH = GetHitboxH(s.Mini);
             int hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
@@ -12287,8 +12509,9 @@ namespace FamidashEditor
                     if (dsid == 0x22 && !s.DualActive)
                     {
                         s.DualActive = true;
-                        // NES sets target_scroll_y from the dual portal's Y (spcl_dual_pt)
-                        s.TargetCameraY_fixed = NesNtCameraTarget_fixed(sp.AnchorY_px);
+                        // NES sets target_scroll_y from the dual portal's Y (spcl_dual_pt).
+                        // Use tile-top to match SIM and other PF portal call sites.
+                        s.TargetCameraY_fixed = NesNtCameraTarget_fixed(sp.AnchorY_px - TILE / 2);
                         s.P2_Y_fixed = s.Y_fixed;
                         s.P2_VelY_fixed = -s.VelY_fixed;
                         s.P2_GravFlipped = !s.GravFlipped;
@@ -12325,8 +12548,9 @@ namespace FamidashEditor
                     else if (dsid == 0x23 && s.DualActive)
                     {
                         s.DualActive = false;
-                        // Set target_scroll_y from the portal's Y position (matching dual portal behavior)
-                        s.TargetCameraY_fixed = NesNtCameraTarget_fixed(sp.AnchorY_px);
+                        // Set target_scroll_y from the portal's Y position (matching dual portal behavior).
+                        // Use tile-top to match SIM and other PF portal call sites.
+                        s.TargetCameraY_fixed = NesNtCameraTarget_fixed(sp.AnchorY_px - TILE / 2);
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[SINGLE_ACTIVATE] idx={sp.Index} targetCamY={s.TargetCameraY_fixed >> 8}");
 #endif
@@ -12459,6 +12683,10 @@ namespace FamidashEditor
                     {
                         PfLog($"[SPRITE_CHECK] sid=0x{sid:X2} idx={sp.Index} playerBox=({nesX},{playerTop})-({playerRight},{playerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom}) xOvlp={xOverlap} yOvlp={yOverlap} hit={hit}");
                     }
+                    else if (IsGameModePortal(sid))
+                    {
+                        PfLog($"[GMPORTAL_CHECK] sid=0x{sid:X2} idx={sp.Index} anchorY={sp.AnchorY_px} playerBox=({nesX},{playerTop})-({playerRight},{playerBottom}) spriteBox=({sp.HitLeft},{sp.HitTop})-({sp.HitRight},{sp.HitBottom}) xOvlp={xOverlap} yOvlp={yOverlap} hit={hit} processed={s.ProcessedSprites.Contains(sp.Index)}");
+                    }
 #endif
 
                     if (hit)
@@ -12480,6 +12708,9 @@ namespace FamidashEditor
                             {
                                 int portalWorldY_px = sp.AnchorY_px - TILE / 2;
                                 s.TargetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
+#if !DISABLE_DEBUG_LOGGING
+                                PfLog($"[MODE_PORTAL_TARGET_OLDX] sid=0x{sid:X2} idx={sp.Index} AnchorY_px={sp.AnchorY_px} portalWorldY_px={portalWorldY_px} resultPF_px={s.TargetCameraY_fixed >> 8} mode={s.GameMode}");
+#endif
                             }
                         }
                         if (IsEndLevel(sid)) return true;
@@ -12717,7 +12948,8 @@ namespace FamidashEditor
                         // subsequent pad/orb checks must use the new position (matches
                         // SIM where CheckPadCollision runs after CheckTeleportPortals
                         // and recomputes bounds from the updated Y).
-                        playerY_px = s.Y_fixed >> 8;
+                        // Use NES sprite-Y formula (see top of ProcessSprites).
+                        playerY_px = (s.CameraY_fixed >> 8) + ((s.Y_fixed - s.CameraY_fixed) >> 8);
                         playerTop = playerY_px + hbOffY;
                         playerBottom = playerTop + hbH;
                         // SIM checks pads/orbs AFTER teleport portals in separate
@@ -12913,6 +13145,9 @@ namespace FamidashEditor
                         {
                             int portalWorldY_px = sp.AnchorY_px - TILE / 2;
                             s.TargetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
+#if !DISABLE_DEBUG_LOGGING
+                            PfLog($"[MODE_PORTAL_TARGET] sid=0x{sid:X2} idx={sp.Index} AnchorY_px={sp.AnchorY_px} portalWorldY_px={portalWorldY_px} resultPF_px={s.TargetCameraY_fixed >> 8} mode={s.GameMode}");
+#endif
                         }
                     }
                     break; // only one portal per frame (matching sim's break)
@@ -13081,14 +13316,40 @@ namespace FamidashEditor
                     // Shadow cleanup is handled by the BFS expansion loop after
                     // StepFrame returns (it detects RainbowMaxMode==0 with non-null
                     // RainbowShadows and returns their resources there).
-                    // NES: unconditionally halve velocity on mode change
-                    // (sprite_loading.h line 764: currplayer_vel_y /= 2)
-                    s.VelY_fixed /= 2;
+                    // NES portal velY rules (sprite_loading.h ~764):
+                    //   ship(1)/ball(2)/UFO(3): halve velY (spcl_ball: gamemode != collided guarded by outer mode!=prev)
+                    //   robot(4):                halve velY only if prev was WAVE(6) or SNAKE(7)
+                    //   cube(0)/spider(5)/pogo(9)/swing(10)/ninja(8): zero velY only if prev was WAVE/SNAKE
+                    //   wave(6)/snake(7)/football(11): no change
+                    {
+                        bool prevWaveSnake = (prevMode == 6 || prevMode == 7);
+                        switch (mode)
+                        {
+                            case 1: case 2: case 3:
+                                // cc65 optimizes int /= 2 → asr; C# /= 2 truncates toward zero. Use >>= 1.
+                                s.VelY_fixed >>= 1;
+                                break;
+                            case 4:
+                                if (prevWaveSnake) s.VelY_fixed >>= 1;
+                                break;
+                            case 0: case 5: case 8: case 9: case 10:
+                                if (prevWaveSnake) s.VelY_fixed = 0;
+                                break;
+                            // case 6, 7, 11: no change
+                        }
+                    }
                     // Clear stale collision-zeroing flag so it doesn't leak
                     // across game modes.  E.g. ball eject sets the flag; wave
                     // then wrongly skips velY recalculation.  Matches SIM's
                     // CheckGameModePortals which clears wasZeroedByCollisionLastFrame.
                     s.WasZeroedByCollision = false;
+                    // NES sprite_gamemode_main calls clear_slope_stuff() on mode
+                    // changes. Clear per-player slope carryover so exit-slope
+                    // velocity does not leak into the new mode (e.g. ship).
+                    s.SlopeWasOnCounter = 0;
+                    s.SlopeFrames = 0;
+                    s.SlopeType = 0;
+                    s.LastSlopeType = 0;
                     // Clear ball input buffer — a buffered flip from a previous
                     // ball segment shouldn't leak through other modes.
                     s.BallInputBuffer = 0;
@@ -13165,9 +13426,10 @@ namespace FamidashEditor
                     s.GravFlipped = true;
                     s.GravMul = -1;
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[PORTAL_GRAV_FLIP] REVERSED! VelY halved: 0x{s.VelY_fixed:X4} -> 0x{s.VelY_fixed / 2:X4}");
+                    PfLog($"[PORTAL_GRAV_FLIP] REVERSED! VelY halved: 0x{s.VelY_fixed:X4} -> 0x{s.VelY_fixed >> 1:X4}");
 #endif
-                    s.VelY_fixed /= 2;
+                    // cc65 optimizes int /= 2 → asr; use >>= 1 to match NES (floors negatives).
+                    s.VelY_fixed >>= 1;
                     s.WasZeroedByCollision = false;
                     return true;
                 }
@@ -13176,9 +13438,9 @@ namespace FamidashEditor
                     s.GravFlipped = false;
                     s.GravMul = 1;
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[PORTAL_GRAV_FLIP] NORMAL! VelY halved: 0x{s.VelY_fixed:X4} -> 0x{s.VelY_fixed / 2:X4}");
+                    PfLog($"[PORTAL_GRAV_FLIP] NORMAL! VelY halved: 0x{s.VelY_fixed:X4} -> 0x{s.VelY_fixed >> 1:X4}");
 #endif
-                    s.VelY_fixed /= 2;
+                    s.VelY_fixed >>= 1;
                     s.WasZeroedByCollision = false;
                     return true;
                 }
@@ -13310,7 +13572,7 @@ namespace FamidashEditor
                         // P1 is running — directly flip P2's stored gravity and halve velocity
                         s.P2_GravFlipped = !s.P2_GravFlipped;
                         s.P2_GravMul = s.P2_GravFlipped ? -1 : 1;
-                        s.P2_VelY_fixed /= 2;
+                        s.P2_VelY_fixed >>= 1;  // cc65 asr (floors negatives); see notes above
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[DUAL_CAP_CHECK] P1 blue orb flipped P2 grav→{s.P2_GravFlipped} velY→0x{s.P2_VelY_fixed:X4}");
 #endif
@@ -13344,7 +13606,7 @@ namespace FamidashEditor
                     {
                         s.P2_GravFlipped = !s.P2_GravFlipped;
                         s.P2_GravMul = s.P2_GravFlipped ? -1 : 1;
-                        s.P2_VelY_fixed /= 2;
+                        s.P2_VelY_fixed >>= 1;  // cc65 asr (floors negatives); see notes above
 #if !DISABLE_DEBUG_LOGGING
                         PfLog($"[DUAL_CAP_CHECK] P1 green orb flipped P2 grav→{s.P2_GravFlipped} velY→0x{s.P2_VelY_fixed:X4}");
 #endif
@@ -13474,7 +13736,7 @@ namespace FamidashEditor
         private void SnapCameraToPlayerY(ref SimState s)
         {
             int minCamY = -(groundRowsToReserve * TILE) << 8;
-            int maxCamY = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+            int maxCamY = NesMaxCamY_px() << 8;
             int screenY = s.Y_fixed - s.CameraY_fixed;
             if (screenY < 0x4000)
             {
@@ -13642,12 +13904,17 @@ namespace FamidashEditor
                 PfLog($"[FLOOR_SPIKE_DEATH] corner {cornerName} ({deathX},{deathY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} localXY=({_lx},{_ly})");
                 _lastDeathReason = $"FLOOR_SPIKE:{cornerName}({deathX},{deathY})";
                 _lastDeathX = playerX; _lastDeathY = playerY;
-                // System.Console.WriteLine($"[DBG_SPIKE_DETAIL] pX={playerX} pY={playerY} corner={cornerName} deathPt=({deathX},{deathY}) tid=0x{_tid:X2} mapped=0x{_mtid:X2} col={_col} local=({_lx},{_ly})");
+                System.Console.Error.WriteLine($"[DBG_SPIKE] pX={playerX} pY={playerY} grav={s.GravFlipped} corner={cornerName} pt=({deathX},{deathY}) tid=0x{_tid:X2} col={_col} local=({_lx},{_ly})");
             }
             return killed;
 #else
-            return SharedPhysics.CheckFloorSpikes(in _collisionMap, playerX, playerY, hbW, hbH, s.Mini,
-                out _, out _);
+            bool killed = SharedPhysics.CheckFloorSpikes(in _collisionMap, playerX, playerY, hbW, hbH, s.Mini,
+                out int deathX, out int deathY,
+                out string cornerName, out int _tid, out int _mtid,
+                out MetatileCollision _col, out int _lx, out int _ly);
+            if (killed)
+                System.Console.Error.WriteLine($"[DBG_SPIKE] pX={playerX} pY={playerY} grav={s.GravFlipped} dualP2={_dualP2Guard} corner={cornerName} pt=({deathX},{deathY}) tid=0x{_tid:X2} col={_col} local=({_lx},{_ly})");
+            return killed;
 #endif
         }
 

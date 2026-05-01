@@ -398,7 +398,7 @@ if (currplayer_mini != 0)
                     if (tileIdx >= 0 && tileIdx < tiles.Length)
                     {
                         int tileId = tiles[tileIdx];
-                        var collision = MetatileCollisionTable.GetCollision((byte)tileId);
+                        var collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
                         
                         if (IsSolidCollisionForSpider(collision))
                         {
@@ -463,7 +463,7 @@ if (currplayer_mini != 0)
                     if (tileIdx >= 0 && tileIdx < tiles.Length)
                     {
                         int tileId = tiles[tileIdx];
-                        var collision = MetatileCollisionTable.GetCollision((byte)tileId);
+                        var collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
                         
                         if (IsSolidCollisionForSpider(collision))
                         {

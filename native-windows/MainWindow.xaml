@@ -156,6 +156,18 @@
                     <MenuItem x:Name="MenuToolStartPos" Header="START _POS Marker" IsCheckable="True" InputGestureText="P" />
                     <Separator />
                     <MenuItem x:Name="MenuOpenSimulator" Header="Open _Simulator" InputGestureText="F5" />
+                    <Separator />
+                    <MenuItem Header="Mesen (NES)">
+                            <MenuItem x:Name="MenuConfigureFamidashRom" Header="Configure Famidash ROM..." />
+                            <Separator />
+                            <MenuItem x:Name="MenuRunFamidashMesen" Header="Run Famidash In Mesen" />
+                            <MenuItem x:Name="MenuCaptureRamMesen" Header="Capture NES RAM (Headless)" />
+                            <Separator />
+                            <MenuItem x:Name="MenuBuildAndTest" Header="Build and Test" />
+                            <Separator />
+                            <MenuItem x:Name="MenuOverlayAndFollow" Header="Overlay and Follow" IsCheckable="True" IsChecked="True" />
+                            <MenuItem x:Name="MenuCamFollow" Header="Cam Follow" IsCheckable="True" IsChecked="True" />
+                    </MenuItem>
                 </MenuItem>
                 <MenuItem Header="_Options">
                     <MenuItem Header="Editor Options">
@@ -368,6 +380,8 @@
             <Button x:Name="StopPathfinderButton" Content="Stop" Margin="2" Visibility="Collapsed" Click="StopPathfinderButton_Click" ToolTip="Cancel current pathfinder calculation" Background="#AA3333" Foreground="White" FontWeight="Bold" />
             <ProgressBar x:Name="PathfinderProgressBar" Width="120" Height="16" Margin="4,2" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed" />
             <Button x:Name="PathfinderJumpToButton" Content="Follow" Margin="2" Visibility="Collapsed" Click="PathfinderJumpToButton_Click" ToolTip="Toggle auto-follow to track pathfinder progress" />
+            <Button x:Name="PathfinderReplayButton" Content="Replay in Mesen" Margin="2" Visibility="Collapsed" Click="PathfinderReplayButton_Click" ToolTip="Run the calculated pathfinder solution in Mesen by injecting controller inputs based on player X/Y" />
+            <Button x:Name="PathfinderCompareButton" Content="Compare Traces" Margin="2" Visibility="Collapsed" Click="PathfinderCompareButton_Click" ToolTip="Compare the most recent Mesen trace against the pathfinder sim trace and report the first divergence" />
             <TextBlock Text="Width (X):" VerticalAlignment="Center" Margin="6,0,2,0" />
             <TextBox x:Name="WidthBox" Width="60" Margin="2" />
             <TextBlock Text="Height (Y):" VerticalAlignment="Center" Margin="8,0,2,0" />
@@ -393,7 +407,7 @@
 
         <ScrollViewer x:Name="MapScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" 
                       IsManipulationEnabled="True">
-            <Grid>
+            <Grid x:Name="MapContentRoot">
                 <!-- Background base, Parallax, Ground, Tiles layer, Sprites layer, Grid overlay -->
                 <Image x:Name="BackgroundImage" Panel.ZIndex="0" />
                 <Image x:Name="ParallaxImage" Panel.ZIndex="1" />

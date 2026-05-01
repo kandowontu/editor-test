@@ -70,48 +70,38 @@ if (currplayer_mini != 0)
                 tmpgravity = (currplayer_mini != 0 ? GameModePhysics.MINI_SHIP_GRAVITY_HOLD_FALL : GameModePhysics.SHIP_GRAVITY_HOLD_FALL) * gravityMultiplier;
             }
             
-            // Negate gravity when holding input (thrust in opposite direction)
-            // Don't check currplayer_gravity here since we already applied gravityMultiplier
-            if (tmp2) {
+            // NES: `if ((currplayer_gravity ? 1 : 0) ^ tmp2) tmpgravity = -tmpgravity;`
+            if (gravityInverted ^ tmp2) {
                 tmpgravity = -tmpgravity;
             }
             
-            tmpfallspeed = GameModePhysics.SHIP_MAX_FALLSPEED_HOLD(baseTableIdx) * gravityMultiplier;
-            
+            // NES gamemode_ship.h:38 \u2014 hardcoded `tmpfallspeed = 0x4443`,
+            // ALWAYS positive regardless of gravity direction.  This matters because
+            // common_gravity_routine compares (vel_y < tmpfallspeed) when gravity is
+            // flipped \u2014 with +0x4443 the predicate is essentially always true so
+            // tmpaccel gets re-flipped to point the right way.
+            tmpfallspeed = 0x4443;
+
             CommonGravityRoutine_Fresh();
-            
-            // If grounded with inverted gravity, prevent velocity from pulling into ceiling
-            if (currplayer_gravity != 0) {
-                bool isMini = (currplayer_mini != 0);
-                int hitboxW = isMini ? 8 : 15;
-                int hitboxH = isMini ? 7 : 15;
-                int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
-                int collisionX = (playerX_fixed >> 8);
-                int testY = (playerY_fixed >> 8) + hitboxOffsetY - 1;
-                var (collided, collisionBottomY_prox) = CheckCollisionUp(collisionX, testY, hitboxW, hitboxH);
-                
-                if (collided && playerVelY_fixed < 0) {
-                    // Snap Y to ceiling surface (same formula as UfoShipEject_Fresh)
-                    // Prevents sub-pixel drift at exact boundary conditions.
-                    int newY_prox = collisionBottomY_prox - hitboxOffsetY;
-                    playerY_fixed = newY_prox << 8;
-                    playerVelY_fixed = 0;
-                    AppendSimDebug($"[SHIP] Ceiling grounded - snapped Y to {newY_prox}");
-                }
-            }
-            
-            // Max speed clamping (apply gravity multiplier to the limits)
-            int maxUpSpeed = -GameModePhysics.SHIP_MAX_FALLSPEED_HOLD(baseTableIdx) * gravityMultiplier;   // Going up (against gravity) - hold speed
-            int maxDownSpeed = GameModePhysics.SHIP_MAX_FALLSPEED(baseTableIdx) * gravityMultiplier;  // Going down (with gravity) - normal speed
-            
-            if (gravityMultiplier > 0) {
-                // Normal gravity: up is negative, down is positive
-                if (playerVelY_fixed < maxUpSpeed) playerVelY_fixed = maxUpSpeed;
-                if (playerVelY_fixed > maxDownSpeed) playerVelY_fixed = maxDownSpeed;
+
+            // NES ship velocity clamp — hardcoded in gamemode_ship.h:42-46:
+            //   if currplayer_gravity:  vel ∈ [-0x0369, +0x0443]
+            //   else (normal grav):     vel ∈ [-0x0443, +0x0369]
+            // i.e. magnitude cap is 0x0443 in the GRAVITY direction (ship coasts
+            // farther when thrust opposes gravity — confusingly the "with-thrust"
+            // case has the LARGER cap because the thrust opposes the fall).
+            // Original SIM had these swapped, making the ship rise too slowly and
+            // fall too fast — matching the trace divergence pattern.
+            const int SHIP_VEL_DOWN_CAP = 0x0369;  // smaller magnitude (positive Y)
+            const int SHIP_VEL_UP_CAP   = 0x0443;  // larger magnitude (negative Y)
+            if (currplayer_gravity == 0) {
+                // normal grav: up = negative Y, down = positive Y
+                if (playerVelY_fixed < -SHIP_VEL_UP_CAP)  playerVelY_fixed = -SHIP_VEL_UP_CAP;
+                if (playerVelY_fixed >  SHIP_VEL_DOWN_CAP) playerVelY_fixed =  SHIP_VEL_DOWN_CAP;
             } else {
-                // Inverted gravity: up is positive, down is negative
-                if (playerVelY_fixed > maxUpSpeed) playerVelY_fixed = maxUpSpeed;
-                if (playerVelY_fixed < maxDownSpeed) playerVelY_fixed = maxDownSpeed;
+                // inverted grav: up = positive Y, down = negative Y
+                if (playerVelY_fixed < -SHIP_VEL_DOWN_CAP) playerVelY_fixed = -SHIP_VEL_DOWN_CAP;
+                if (playerVelY_fixed >  SHIP_VEL_UP_CAP)   playerVelY_fixed =  SHIP_VEL_UP_CAP;
             }
             
             UfoShipEject_Fresh();
@@ -138,7 +128,8 @@ if (currplayer_mini != 0)
                 gravFlipped, mini, currentGameMode, inputHeld,
                 currplayer_was_on_slope_counter, currplayer_slope_frames,
                 currplayer_slope_type, make_cube_jump_higher,
-                currplayer_last_slope_type);
+                currplayer_last_slope_type,
+                cameraY_fixed);
 
             playerY_fixed = r.NewY_fixed;
             playerVelY_fixed = r.NewVelY_fixed;

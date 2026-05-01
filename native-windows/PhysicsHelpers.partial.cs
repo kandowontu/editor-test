@@ -52,7 +52,7 @@ namespace FamidashEditor
                 
                 if (tileIdx >= 0 && tileIdx < tiles.Length)
                 {
-                    return (byte)tiles[tileIdx];
+                    return (byte)SharedPhysics.MapTileForCollision(tiles[tileIdx]);
                 }
                 
                 return 0;
