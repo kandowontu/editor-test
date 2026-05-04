@@ -134,6 +134,35 @@ namespace FamidashEditor
         private static int GetHitboxOffsetY(int gameMode, bool mini, bool gravFlipped)
             => SharedPhysics.GetHitboxOffsetY(gameMode, mini, gravFlipped);
 
+        /// <summary>
+        /// World-Y in pixels for collision probes. Returns Y_fixed >> 8 directly.
+        ///
+        /// NES `temp_y` for collision probes is `add_scroll_y(Generic.y + ..., scroll_y)`,
+        /// where `Generic.y = high_byte(currplayer_y)` and `scroll_y = high_byte(scroll_y_full)`.
+        /// In NES terms, `currplayer_y` is the player's screen-relative position (16.8 fixed)
+        /// and `scroll_y_full` is the camera (16.8 fixed).  The world Y the collision probe
+        /// uses is the integer sum: `(currplayer_y >> 8) + (scroll_y_full >> 8)`.
+        /// In PF, Y_fixed and CameraY_fixed are both world-space 16.8 fixed point.
+        /// At PROBE TIME (post-gravity, pre-camera-follow), NES's `Generic.y` is
+        /// `high_byte(currplayer_y_post_y_movement)` and NES's collision uses
+        /// `temp_y = Generic.y + mid_offset + scroll_y_high` where `scroll_y_high`
+        /// is still last frame's value (process_y_scroll runs AFTER collisions).
+        ///
+        /// The equivalent in PF world-space is simply `Y_fixed >> 8` — the integer
+        /// world-Y of the player after gravity has updated Y_fixed.  Using a borrow
+        /// form `(Cam>>8) + ((Y-Cam)>>8)` is INCORRECT here because Cam may already
+        /// reflect end-of-prev-frame state with a different subpixel than Y, and the
+        /// borrow drops 1 pixel when `Y.sub &lt; Cam.sub`, shifting the probe row.
+        ///
+        /// Verified at sim 10788 of everyend: ROM and PF replay positions match
+        /// exactly (29843, 527).  NES `temp_y mod 16 = 4` triggers BR COL_DEATH;
+        /// non-borrow `Y_fixed>>8 = 519` gives `(519+13) mod 16 = 4` ✓.
+        /// Borrow gave 518 → `mod 16 = 3` ✗ (off by 1, missed kill).
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private static int NesPlayerY_px(int yFixed, int camYFixed)
+            => (camYFixed >> 8) + ((yFixed - camYFixed) >> 8);
+
         // Ball physics constants (delegate to SharedPhysics)
         private static int BallGravity(bool mini) => SharedPhysics.BallGravity(mini);
         private static int BallSwitchVel(bool mini) => SharedPhysics.BallSwitchVel(mini);
@@ -1126,6 +1155,93 @@ namespace FamidashEditor
         //  PUBLIC API
         // -------------------------------------------------------------------
 
+        /// <summary>
+        /// Replay a fixed input sequence through the physics engine, one frame at a time.
+        /// Writes a trajectory CSV to <paramref name="output"/>:
+        ///   frame,gameFrame,x,y,velY,jump,onGround,event
+        /// Pre-rolls <paramref name="preRollFrames"/> frames with no input before the sequence.
+        /// </summary>
+        public void ReplayInputSequence(
+            int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode,
+            bool startGravFlipped, bool startMini,
+            IList<bool> inputs, int preRollFrames,
+            System.IO.TextWriter output)
+        {
+            _log = System.IO.TextWriter.Null;
+            _frameCounter = 0;
+            _speculativeDepth = 0;
+            _dualP2Guard = false;
+            _btSkipAllOrbs = false;
+            _btSkipSpecificOrbs.Clear();
+            _btSkipSpecificPads.Clear();
+            _hitOrbHistory.Clear();
+            _autoForgivenCoins.Clear();
+            _cubeJumpedThisStep = false;
+            _step1FireCount = 0;
+            _step2FireCount = 0;
+            _gravFDeathCounts = null;
+            _gravFDeathFrame = 0;
+            _lastDeathReason = "";
+            _lastDeathX = 0;
+            _lastDeathY = 0;
+            TraceFrameOpen();
+
+            int initCamY = ComputeInitCameraY(startY_px);
+            var state = new SimState
+            {
+                X_fixed = startX_px << 8,
+                Y_fixed = startY_px << 8,
+                VelX_fixed = SpeedUiIndexToFixed(startSpeedUiIndex),
+                VelY_fixed = 0,
+                GameMode = startGameMode,
+                GravFlipped = startGravFlipped,
+                Mini = startMini,
+                GravMul = startGravFlipped ? -1 : 1,
+                GravityMod = 1.0,
+                WasZeroedByCollision = true,
+                OnGround = true,
+                ProcessedSprites = NewSpriteSet(),
+                PendingOrbIndex = -1,
+                PendingOrbSpriteId = -1,
+                PendingOrbExtra1Index = -1,
+                PendingOrbExtra1SpriteId = -1,
+                PendingOrbExtra2Index = -1,
+                PendingOrbExtra2SpriteId = -1,
+                NinjaJumps = (startGameMode == 8) ? NINJA_MAX_JUMPS : 0,
+                CameraY_fixed = initCamY,
+                TargetCameraY_fixed = initCamY
+            };
+            ApplyPortalsUpTo(ref state, startX_px);
+
+            output.WriteLine("tasFrame,gameFrame,x,y,velY,jump,onGround,event");
+
+            int totalFrames = preRollFrames + inputs.Count;
+            for (int f = 0; f < totalFrames; f++)
+            {
+                bool inp = (f >= preRollFrames) ? inputs[f - preRollFrames] : false;
+                int gameFrame = f;
+
+                bool alive = StepFrame(ref state, inp, out bool endLevel);
+
+                int xPx = state.X_fixed >> 8;
+                int yPx = state.Y_fixed >> 8;
+                int velY = state.VelY_fixed;
+                bool onGnd = state.OnGround;
+
+                string evt = "";
+                if (!alive) evt = $"DEAD:dt{state.DeathType}";
+                else if (endLevel) evt = "END";
+
+                bool report = !alive || endLevel || (xPx >= 12200 && xPx <= 12900);
+                if (report)
+                    output.WriteLine($"{f - preRollFrames},{gameFrame},{xPx},{yPx},0x{(velY & 0xFFFF):X4},{(inp ? 1 : 0)},{(onGnd ? 1 : 0)},{evt}");
+
+                _frameCounter++;
+                if (!alive || endLevel) break;
+            }
+            output.Flush();
+        }
+
         public void Run(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode,
                         bool startGravFlipped, bool startMini)
         {
@@ -1201,6 +1317,16 @@ namespace FamidashEditor
             if (Success || UseBFS)
             {
                 // BFS completed the level, or explicit BFS-only mode — done
+                sw.Stop();
+                if (!string.IsNullOrEmpty(ResultMessage))
+                    ResultMessage += $" [{sw.Elapsed.TotalSeconds:F1}s]";
+                return;
+            }
+
+            // Non-coin runs are BFS-only. The heuristic fallback is expensive and
+            // has not provided useful improvements for this mode.
+            if (!PreferCoins)
+            {
                 sw.Stop();
                 if (!string.IsNullOrEmpty(ResultMessage))
                     ResultMessage += $" [{sw.Elapsed.TotalSeconds:F1}s]";
@@ -2540,14 +2666,18 @@ namespace FamidashEditor
             // Discrete modes (cube/ball/robot/spider) use 1/4-pixel Y quantization;
             // finer than that (e.g. 1/64 pixel) creates a combinatorial explosion
             // in sections with many jump timings (gravity flips, staircase sections).
+            // EXCEPTION: Non-coin modes use NO quantization to preserve all distinct states
+            // needed to find any solution path (not optimizing for coins).
             bool continuous = (s.GameMode == 1 || s.GameMode == 3 || s.GameMode == 6 || s.GameMode == 7 || s.GameMode == 10); // ship, UFO, wave, swing, snake
             
-            // Quantize Y: continuous at 2px, discrete at 1/4px.
-            int yq = continuous ? ((s.Y_fixed >> 9) & 0xFFF) 
-                                : ((s.Y_fixed >> 6) & 0xFFFF);
-            // Quantize VelY: continuous 32-unit, discrete 64-unit
-            int vq = continuous ? (((s.VelY_fixed + 0x8000) >> 5) & 0xFFF)
-                                : (((s.VelY_fixed + 0x8000) >> 6) & 0x7FF);
+            // Quantize Y: for non-coin, use FULL precision; for coin, use coarser quantization
+            int yq = !PreferCoins ? (s.Y_fixed & 0xFFFF)  // full 16-bit Y for non-coin
+                                : continuous ? ((s.Y_fixed >> 9) & 0xFFF)  // 2px for continuous coin mode
+                                            : ((s.Y_fixed >> 6) & 0xFFFF); // 1/4px for discrete coin mode
+            // Quantize VelY: for non-coin, use FULL precision; for coin, use coarser quantization
+            int vq = !PreferCoins ? (s.VelY_fixed & 0xFFFF)  // full 16-bit VelY for non-coin
+                                : continuous ? (((s.VelY_fixed + 0x8000) >> 5) & 0xFFF)  // 32-unit for continuous
+                                            : (((s.VelY_fixed + 0x8000) >> 6) & 0x7FF); // 64-unit for discrete
             // Pack game mode, gravity, mini, onGround, orbed.
             // Orbed is critical for swing: it determines whether a gravity
             // flip can happen this frame. Without it, flip-ready and
@@ -2845,6 +2975,7 @@ namespace FamidashEditor
                     int gravFDeathCount = 0;
                     var gravFDeathTypes = new int[13];
                     bool trackDeathTypes = (frame >= 2000 && frame <= 2070) || (frame >= 3550 && frame <= 3850);
+                    bool trackAscending = (frame >= 4467 && frame <= 4470);
                     int[]? frameDtCounts = trackDeathTypes ? new int[13] : null;
                     int coinRangeDeaths = 0; // deaths where parent Y <= 167 (coin range)
 
@@ -2872,6 +3003,19 @@ namespace FamidashEditor
                         if (!rAlive[k])
                         {
                             if (rState[k].DeathType == 9) step8bDeathCount++;
+                            // Track ascending state deaths
+                            if (trackAscending)
+                            {
+                                int pi_a = k >> 1;
+                                var ps_a = frontier[pi_a];
+                                int parentVelY = ps_a.VelY_fixed;
+                                int parentY = ps_a.Y_fixed >> 8;
+                                if (parentVelY < 0 && parentY < 720)
+                                {
+                                    var ds_a = rState[k];
+                                    Console.Error.WriteLine($"[ASC_DEATH] f={frame} inp={(k&1)==1} pX={ps_a.X_fixed>>8} pY={parentY} pVelY=0x{parentVelY:X} dt={ds_a.DeathType} cX={ds_a.X_fixed>>8} cY={ds_a.Y_fixed>>8}");
+                                }
+                            }
                             // Track death types per frame for detailed logging
                             if (frameDtCounts != null) frameDtCounts[rState[k].DeathType]++;
                             // Track low-Y deaths near coin 2
@@ -3023,7 +3167,18 @@ namespace FamidashEditor
                         _log.WriteLine($"[BFS] ALL DEAD at frame {frame} (X~{highWaterX}px pct={pct}% expanded={frontier.Count * 2} deaths={deathCount})");
 #if !DISABLE_DEBUG_LOGGING
                         BfsLog($"ALL DEAD at frame {frame} (X~{highWaterX}px pct={pct}% expanded={frontier.Count * 2} deaths={deathCount})");
-#endif                        // Death type distribution
+#endif
+                        // Log frontier states before expansion
+                        System.Console.Error.WriteLine($"[BFS] Frontier before expansion: {frontier.Count} states");
+                        _log.WriteLine($"[BFS] Frontier before expansion: {frontier.Count} states");
+                        for (int fi = 0; fi < frontier.Count; fi++)
+                        {
+                            var f = frontier[fi];
+                            System.Console.Error.WriteLine($"  [{fi}] X={f.X_fixed >> 8} Y={f.Y_fixed >> 8} VelY=0x{f.VelY_fixed:X} grav={f.GravFlipped} mini={f.Mini}");
+                            _log.WriteLine($"  [{fi}] X={f.X_fixed >> 8} Y={f.Y_fixed >> 8} VelY=0x{f.VelY_fixed:X} grav={f.GravFlipped} mini={f.Mini}");
+                        }
+                        
+                        // Death type distribution
                         var dtCounts = new int[13];
                         for (int k = 0; k < expandCount; k++)
                             if (!rAlive[k] && !rEnd[k]) dtCounts[rState[k].DeathType]++;
@@ -3133,6 +3288,33 @@ namespace FamidashEditor
                         if (!deduped.TryGetValue(key, out int ex) || candScore[i] < candScore[ex])
                             deduped[key] = i;
                     }
+                    // Track dedup collisions
+                    if (candState.Count > 0 && candState.Count != deduped.Count)
+                        System.Console.Error.WriteLine($"[DEDUP] f={frame} cand={candState.Count} deduped={deduped.Count} (lost {candState.Count - deduped.Count})");
+                    if (frame >= 4400 && frame <= 4600 && deduped.Count > 0)
+                    {
+                        // Track all states and deaths near the problem area
+                        {
+                            foreach (var cand in candState) {
+                                int cx = cand.X_fixed >> 8;
+                                int cy = cand.Y_fixed >> 8;
+                                if (cx >= 12300 && cx <= 12700)
+                                    Console.Error.WriteLine($"[TRACE] f={frame} X={cx} Y={cy} VelY=0x{cand.VelY_fixed:X}");
+                            }
+                            // Deaths of states in problem area
+                            for (int k2 = 0; k2 < expandCount; k2++) {
+                                if (!rAlive[k2] && !rEnd[k2]) {
+                                    int pj = k2 >> 1;
+                                    var ps2 = frontier[pj];
+                                    int pcx = ps2.X_fixed >> 8;
+                                    if (pcx >= 12300 && pcx <= 12700) {
+                                        var ds2 = rState[k2];
+                                        Console.Error.WriteLine($"[TDEAD] f={frame} pX={pcx} pY={ps2.Y_fixed>>8} pVelY=0x{ps2.VelY_fixed:X} dt={ds2.DeathType} inp={(k2&1)==1}");
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // -- GRAVF pipeline diagnostic --
                     {
@@ -3162,13 +3344,14 @@ namespace FamidashEditor
                     var frameP = new List<int>();
                     var frameI = new List<bool>();
 
-                    // Frontier cap: fixed at BFS_MAX_FRONTIER.  Adaptive doubling
-                    // near coins was removed because it destabilized pruning balance,
-                    // causing regressions in hexagonforce et al.
-                    int effectiveCap = BFS_MAX_FRONTIER;
+                    // Frontier cap: expand dramatically for non-coin mode to preserve all viable paths
+                    // without ANY pruning. Coin-collecting paths are more constrained and benefit
+                    // from pruning; non-coin runs need maximum exploration to find ANY solution.
+                    int effectiveCap = PreferCoins ? BFS_MAX_FRONTIER : int.MaxValue / 2;
 
-                    // Main slots: 75% by score
-                    int mainSlots = effectiveCap * 3 / 4;
+                    // Main slots: For non-coin mode, keep ALL deduplicated states.
+                    // For coin mode, keep top 75% by score.
+                    int mainSlots = PreferCoins ? (effectiveCap * 3 / 4) : sortedIdx.Count;
 
                     int mainKeep = Math.Min(mainSlots, sortedIdx.Count);
                     for (int i = 0; i < mainKeep && nextFrontier.Count < effectiveCap; i++)
@@ -3180,7 +3363,19 @@ namespace FamidashEditor
                     }
 
                     // Diversity slots: remaining capacity from underrepresented Y bins + gravity diversity + mode diversity
-                    if (sortedIdx.Count > mainKeep)
+                    // For non-coin mode, skip diversity checks and keep all remaining states
+                    if (!PreferCoins && sortedIdx.Count > mainKeep)
+                    {
+                        // Non-coin mode: admit ALL remaining deduplicated states
+                        for (int i = mainKeep; i < sortedIdx.Count && nextFrontier.Count < effectiveCap; i++)
+                        {
+                            int ci = sortedIdx[i];
+                            nextFrontier.Add(candState[ci]);
+                            frameP.Add(candParent[ci]);
+                            frameI.Add(candInput[ci]);
+                        }
+                    }
+                    else if (sortedIdx.Count > mainKeep)
                     {
                         int Y_BIN_SIZE = 16;
                         var yBinCounts = new Dictionary<int, int>();
@@ -8521,13 +8716,16 @@ namespace FamidashEditor
 
                 // Eject first (matching NES: cube_eject runs inside cube_movement,
                 // bg_coll_death runs later in runthecolls using post-eject Generic.y)
+                int yBeforeEject = s.Y_fixed >> 8;
+                int velYBeforeEject = s.VelY_fixed;
                 bool ejectDied = false;
                 CubeEject(ref s, input, out ejectDied);
                 if (ejectDied)
                 {
 #if !DISABLE_DEBUG_LOGGING
-                    PfLog($"[EJECT_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+                    PfLog($"[EJECT_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px (before: {yBeforeEject}, velY: before=0x{velYBeforeEject:X} after=0x{s.VelY_fixed:X})");
 #endif
+                    System.Console.Error.WriteLine($"[EJECT_DEATH_DBG] frame={_frameCounter} X={s.X_fixed >> 8} Y_before={yBeforeEject} Y_after={s.Y_fixed >> 8} VelY_before=0x{velYBeforeEject:X} VelY_after=0x{s.VelY_fixed:X}");
                     if (_speculativeDepth == 0) { _lastDeathReason = "EJECT_DEATH"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
                     s.DeathType = 2;
                     return false;
@@ -9217,10 +9415,10 @@ namespace FamidashEditor
             if (_speculativeDepth == 0 && !_dualP2Guard)
             {
                 int _f = PathPoints.Count;
-                if ((_f >= 2697 && _f <= 2705) || (_f >= 3360 && _f <= 3380))
+                if ((_f >= 924 && _f <= 932) || (_f >= 2697 && _f <= 2705) || (_f >= 3360 && _f <= 3380) || (_f >= 4539 && _f <= 4542) || (_f >= 10783 && _f <= 10792))
                 {
                     int _px = s.X_fixed >> 8;
-                    int _py = s.Y_fixed >> 8;
+                    int _py = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed); // NES-accurate borrow-aware Y
                     int _hbW = GetHitboxW(s.Mini);
                     int _hbH = GetHitboxH(s.Mini);
                     int _hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
@@ -9229,7 +9427,7 @@ namespace FamidashEditor
                     int _rowTopY = _py + (s.Mini ? _miniOffY : 2);
                     int _leftX = _px + 3;
                     int _rightX = _px + _hbW - 3;
-                    PfLog($"[DEATH_DIAG f={_f}] X={_px} Y={_py} vY={s.VelY_fixed} gm={s.GameMode} mini={s.Mini} grav={s.GravFlipped} hb=({_hbW}x{_hbH}+{_hbOffY})");
+                    PfLog($"[DEATH_DIAG f={_f}] X={_px} Y={_py} (rawY={(s.Y_fixed>>8)}) vY={s.VelY_fixed} gm={s.GameMode} mini={s.Mini} grav={s.GravFlipped} hb=({_hbW}x{_hbH}+{_hbOffY})");
                     void _probe(string name, int x, int y)
                     {
                         int tileX = x / TILE;
@@ -9290,7 +9488,15 @@ namespace FamidashEditor
             // H_BLOCK does NOT skip forward collision; it only enables ceiling eject.
             if (s.GameMode == 0 || s.GameMode == 1 || s.GameMode == 2 || s.GameMode == 3 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 6 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode == 10)
             {
-                if (CheckForwardCollision(ref s))
+                // Ascending state diagnostic
+                bool _isAscDbg = (_frameCounter >= 4467 && _frameCounter <= 4470 && s.VelY_fixed < 0 && (s.Y_fixed >> 8) < 720);
+                bool _fwdResult = CheckForwardCollision(ref s);
+                if (_isAscDbg)
+                {
+                    int _nesY = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
+                    Console.Error.WriteLine($"[FWD_DBG] f={_frameCounter} X={s.X_fixed>>8} Y={s.Y_fixed>>8} nesY={_nesY} VelY=0x{s.VelY_fixed:X} fwd={_fwdResult}");
+                }
+                if (_fwdResult)
                 {
 #if !DISABLE_DEBUG_LOGGING
                     PfLog($"[FWD_DEATH] X={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
@@ -9353,10 +9559,28 @@ namespace FamidashEditor
                     else if ((screenY_fixed >> 8) >= 0xA0)
                     {
                         // NES gate: scroll_y < 0x2EF (camera not at bottom limit).
-                        int need_fixed = screenY_fixed - 0xA000;
+                        // Once integer scroll_y reaches the 0x2EF cap, NES skips
+                        // the downscroll branch entirely AND the cap routine is a
+                        // no-op (24-bit compare against 0x02F000 fails).  PF must
+                        // mirror that gate, otherwise the clamp below would chop
+                        // any subpixel residue we gained during the last legal
+                        // scroll, drifting world-Y by up to 0xFF/256 px below NES.
                         int maxCamY = NesMaxCamY_px() << 8;
-                        s.CameraY_fixed += need_fixed;
-                        if (s.CameraY_fixed > maxCamY) s.CameraY_fixed = maxCamY;
+                        if ((s.CameraY_fixed >> 8) < (maxCamY >> 8))
+                        {
+                            int need_fixed = screenY_fixed - 0xA000;
+                            s.CameraY_fixed += need_fixed;
+                            // NES cap_scroll_y_at_bottom does a 24-bit compare:
+                            // cap fires only when (sy_sub, sy_lo, sy_hi) >= 0x02F000.
+                            // Below that threshold scroll_y_subpx may freely range
+                            // up to 0xFF while scroll_y is still at the integer cap
+                            // (0x02EF).  Allow the subpixel to evolve up to
+                            // maxCamY|0xFF and only snap to maxCamY (sub=0) when
+                            // that boundary is exceeded — exactly what NES
+                            // `cap_scroll_y_at_bottom` does.
+                            int maxCamFixedWithSub = maxCamY | 0xFF;
+                            if (s.CameraY_fixed > maxCamFixedWithSub) s.CameraY_fixed = maxCamY;
+                        }
                         // (See note above — world-Y conserved; do NOT touch Y_fixed.)
                     }
                 }
@@ -9492,7 +9716,35 @@ namespace FamidashEditor
             // bg_coll_death has run at OLD X above; now finalise the X advance for
             // the next frame's physics (NES x_movement advanced currplayer_x before
             // bg_coll_death ran, but Generic.x kept the OLD value).
+            int oldXForDeath_fixed = s.X_fixed;
             s.X_fixed = newX_fixed;
+
+            // Empirical ROM traces show deaths that occur exactly when entering
+            // a death pixel on the post-advance X, while the old-X probe is clear.
+            // Keep OLD-X as the primary check (matches source intent), then run a
+            // NEW-X fallback probe to match observed hardware behavior.
+            if (s.X_fixed != oldXForDeath_fixed)
+            {
+                if (CheckDeathCollision(ref s))
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[DEATH_COLL] X(new)={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "DEATH_COLL_NEWX"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 9;
+                    return false;
+                }
+
+                if (CheckSlopePenetrationDeath(ref s))
+                {
+#if !DISABLE_DEBUG_LOGGING
+                    PfLog($"[SLOPE_PENETRATION_DEATH] X(new)={s.X_fixed >> 8}px Y={s.Y_fixed >> 8}px");
+#endif
+                    if (_speculativeDepth == 0) { _lastDeathReason = "SLOPE_DEATH_NEWX"; _lastDeathX = s.X_fixed >> 8; _lastDeathY = s.Y_fixed >> 8; }
+                    s.DeathType = 9;
+                    return false;
+                }
+            }
 
             // -- STEP 8a: VERIFY GROUND SUPPORT at NEW X --
             // Without this check, grounded states can persist across small gaps/
@@ -13901,7 +14153,7 @@ namespace FamidashEditor
         private bool CheckFloorSpikes(ref SimState s)
         {
             int playerX = s.X_fixed >> 8;
-            int playerY = s.Y_fixed >> 8;
+            int playerY = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
             int hbW = GetHitboxW(s.Mini);
             int hbH = GetHitboxH(s.Mini);
 
@@ -13936,7 +14188,7 @@ namespace FamidashEditor
         private bool CheckDeathCollision(ref SimState s)
         {
             int playerX_px = s.X_fixed >> 8;
-            int playerY_px = s.Y_fixed >> 8;
+            int playerY_px = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
             int hbW = GetHitboxW(s.Mini);
             int hbH = GetHitboxH(s.Mini);
             int hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
@@ -13986,7 +14238,7 @@ namespace FamidashEditor
 
             // NES bg_coll_death center pixel: Generic.x + (width>>1)-1, Generic.y + (height>>1) + miniOffset
             int centerX = (s.X_fixed >> 8) + (hbW >> 1) - 1;
-            int centerY = (s.Y_fixed >> 8) + (hbH / 2) + hbOffY;
+            int centerY = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed) + (hbH / 2) + hbOffY;
 
             int tileX = centerX / TILE;
             int tileY = centerY / TILE;
@@ -14018,7 +14270,7 @@ namespace FamidashEditor
                 return false;
 
             int playerX_px = s.X_fixed >> 8;
-            int playerY_px = s.Y_fixed >> 8;
+            int playerY_px = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
 
             // NES sprite_collide sets Generic.width/height BEFORE movement and
             // x_movement_coll.  For wave/snake: WAVE_WIDTH=8, WAVE_HEIGHT=8.

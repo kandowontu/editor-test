@@ -593,9 +593,13 @@ emu.addEventCallback(function()
     end
 
     if armed then
-        -- Advance the cursor while the next entry's X has been reached.
-        while cursor < #replay and replay[cursor + 1].x <= px do
-            cursor = cursor + 1
+        -- Guard: at game-start scrollX is garbage (~0xFFFFFF82), making px ~4
+        -- billion and blowing the cursor to #replay in one step.  Only advance
+        -- when px is in a plausible in-level range (NES level width << 500000px).
+        if px >= 0 and px < 524288 then
+            while cursor < #replay and replay[cursor + 1].x <= px do
+                cursor = cursor + 1
+            end
         end
         -- Frame alignment: PathPoints[cursor] is the post-physics position for
         -- sim frame `cursor`, produced by Inputs[cursor]. We've just observed
@@ -611,10 +615,6 @@ emu.addEventCallback(function()
         if traceFp then
             -- Per-frame dump of NES physics state for divergence analysis.
             -- Symbol locations from BUILD/main/famidash.dbg:
-            --   _currplayer_vel_y     zp $6E (16-bit signed)
-            --   _currplayer_table_idx zp $79 (8-bit)
-            --   _gravity_mod          abs $5C2 (8-bit)
-            --   _dashing              abs $4D4 (8-bit, [currplayer])
             --   _gamemode             abs (varies; read via debugger pref)
             --   _scroll_y_subpx       abs (8-bit)
             local vel_y_raw = emu.read16(0x006E, emu.memType.nesMemory) or 0

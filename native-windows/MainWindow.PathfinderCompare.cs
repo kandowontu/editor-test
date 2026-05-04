@@ -114,10 +114,10 @@ namespace FamidashEditor
                 if (!File.Exists(this.ReplayTempFile))
                 {
                     if (!silent) StatusText.Text = "Compare: no sim replay CSV on disk.";
-                    return;
-                }
-                if (!File.Exists(this.MesenTraceFile))
-                {
+                    string snapTs = System.DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+                    string dir = System.IO.Path.GetDirectoryName(this.MesenTraceFile) ?? System.IO.Path.GetTempPath();
+                    string mtSnap = System.IO.Path.Combine(dir, $"famidash_mesen_trace_{snapTs}.csv");
+                    string rpSnap = System.IO.Path.Combine(dir, $"famidash_replay_{snapTs}.csv");
                     if (!silent) StatusText.Text = "Compare: no Mesen trace on disk. Run \"Replay in Mesen\" first.";
                     return;
                 }
@@ -127,10 +127,10 @@ namespace FamidashEditor
                 // the format used by famidash_pf_debug_*.txt for easy pairing.
                 try
                 {
-                    string ts = System.DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+                    string snapTs = System.DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
                     string dir = System.IO.Path.GetDirectoryName(this.MesenTraceFile) ?? System.IO.Path.GetTempPath();
-                    string mtSnap = System.IO.Path.Combine(dir, $"famidash_mesen_trace_{ts}.csv");
-                    string rpSnap = System.IO.Path.Combine(dir, $"famidash_replay_{ts}.csv");
+                    string mtSnap = System.IO.Path.Combine(dir, $"famidash_mesen_trace_{snapTs}.csv");
+                    string rpSnap = System.IO.Path.Combine(dir, $"famidash_replay_{snapTs}.csv");
                     File.Copy(this.MesenTraceFile, mtSnap, overwrite: true);
                     File.Copy(this.ReplayTempFile, rpSnap, overwrite: true);
                 }
@@ -417,8 +417,9 @@ namespace FamidashEditor
                 fullReport.AppendLine("Full per-frame comparison (rom_f,sim_f,rom_xy,sim_xy,dx,dy,a_next,sim_a):");
                 fullReport.Append(fullRows);
 
-                // Write the full report to the level's replay directory.
-                string reportPath = Path.Combine(this.CurrentReplayDir, "famidash_trace_compare.txt");
+                // Write the full report to %TEMP% with a timestamp so each run is preserved.
+                string ts = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string reportPath = Path.Combine(Path.GetTempPath(), $"famidash_trace_compare_{ts}.txt");
                 try { File.WriteAllText(reportPath, fullReport.ToString()); } catch { }
 
                 string statusLine;

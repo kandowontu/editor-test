@@ -728,15 +728,9 @@ namespace FamidashEditor
 
         internal static int MapTileForCollision(int tid)
         {
-            // Empty/sentinel: tile arrays use -1 (and the editor uses several
-            // visual-only IDs) for "no collision". Normalize all to 0x00.
+            // Empty/sentinel: tile arrays use -1 for "no collision". Normalize to 0x00.
             if (tid < 0) return 0x00;
-            switch (tid)
-            {
-                case 0xDF: case 0xE3: case 0xFE: case 0xFF: return 0x00;
-                case 0xFD: return 0x26;
-                default: return tid;
-            }
+            return tid;
         }
 
         /// <summary>
@@ -1156,6 +1150,11 @@ namespace FamidashEditor
                 // COL_DEATH_LEFT, COL_DEATH_RIGHT, etc.) are NOT checked in the
                 // floor collision path — they provide no floor and no spike death.
                 // Death tiles always skip the floor check (unconditional continue).
+                // NOTE: Spike detection sets deathPending but does NOT prevent
+                // continued searching — only if ALL probes fail to find a floor
+                // AND a spike was detected do we return spike death. If a floor
+                // is found, the spike is overridden (COLL_CHECK_BOTTOM line 840:
+                // cube_data &= 0b1111110 clears the death bit).
                 if (collision == MetatileCollision.COL_DEATH_TOP || collision == MetatileCollision.COL_DEATH_BOTTOM)
                 {
                     if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
@@ -2202,11 +2201,11 @@ namespace FamidashEditor
             int playerY_px = playerY_fixed >> 8;
             // NES bg_coll_D probes at `Generic.y + Generic.height` where
             // Generic.y = high_byte(currplayer_y) and currplayer_y is
-            // SCREEN-relative (verified by spider gamemode bounds checks at
-            // 0x07 / 0xF8 and x_movement.h Y wrap to 0xF900 / 0x0600).
-            // Tile world Y = screen_Y + scroll_y_high.  When Y.low < camY.low
-            // the NES byte-subtraction produces a borrow, making the probe row
-            // one less than plain (Y_world >> 8).  Replicate exactly:
+            // SCREEN-relative.  PF Y_fixed is in WORLD coords, so derive the
+            // NES probe world tile row as scroll_int + screen_int — which is
+            // `((Y - cam) >> 8) + (cam >> 8)`.  This naturally subtracts the
+            // sub-pixel borrow that NES does NOT see (NES tracks screen_y as a
+            // separate uint16 whose .high is unaffected by scroll_y subpx).
             int playerY_px_nes = ((playerY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8);
             int hbW = GetCubeHitboxW(mini);
             int hbH = GetCubeHitboxH(mini);
@@ -2229,9 +2228,8 @@ namespace FamidashEditor
                 {
                     if (slopeEject > 0)
                         // NES `low_byte(currplayer_y) = 0` zeroes the SCREEN-relative
-                        // player sub-pixel, leaving world subpx = scroll_y_subpx.
-                        // In PF coords that means Y_fixed.low must equal Cam_fixed.low
-                        // so (Y-Cam).low = 0 mirrors NES player_y_low = 0.
+                        // sub-pixel.  In PF (world coords) world_subpx = scroll_subpx +
+                        // screen_subpx, so post-eject world_subpx = camY_fixed.low.
                         r.NewY_fixed = (((r.NewY_fixed >> 8) - slopeEject) << 8) | (camY_fixed & 0xFF);
                     r.NewVelY_fixed = 0; r.WasZeroed = true;
                     r.SlopeType = newSlopeType; r.OnGround = true;
@@ -2251,8 +2249,8 @@ namespace FamidashEditor
                         //   high_byte(currplayer_y) -= eject_D;
                         //   low_byte(currplayer_y) = 0;       ← SCREEN-rel subpx
                         //   currplayer_vel_y = 0;
-                        // In PF representation Y_fixed = Cam_fixed + player_y_full,
-                        // so zeroing player_y_low means Y_fixed.low = Cam_fixed.low.
+                        // World subpx = scroll_subpx + screen_subpx, so set
+                        // Y_fixed.low = camY_fixed.low after eject.
                         r.NewY_fixed = ((floorTopY - hbH - hbOffY) << 8) | (camY_fixed & 0xFF);
                         r.NewVelY_fixed = 0; r.WasZeroed = true; r.OnGround = true;
                         r.DebugFloorTileHit = true;
@@ -2276,7 +2274,7 @@ namespace FamidashEditor
 
                 if (ceilSlopeHit)
                 {
-                    // NES `low_byte(currplayer_y) = 0` → PF Y_fixed.low = Cam_fixed.low.
+                    // NES `low_byte(currplayer_y) = 0` → world subpx = camY_fixed.low.
                     r.NewY_fixed = (((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8) | (camY_fixed & 0xFF);
                     r.NewVelY_fixed = 0; r.WasZeroed = true;
                     r.OnGround = true; r.SlopeType = ceilSlopeType;
@@ -2291,7 +2289,7 @@ namespace FamidashEditor
                     if (ceilHit)
                     {
                         // NES cube_eject ceiling branch: low_byte(currplayer_y) = 0
-                        // → PF Y_fixed.low = Cam_fixed.low (preserve scroll_subpx as world subpx).
+                        // → world subpx = camY_fixed.low.
                         r.NewY_fixed = ((ceilBotY - hbOffY - 1) << 8) | (camY_fixed & 0xFF);
                         r.NewVelY_fixed = 0; r.WasZeroed = true; r.OnGround = true;
                     }

@@ -18,6 +18,16 @@ using FamidashEditor;
 // Parse --coins flag (can appear anywhere in args)
 bool preferCoins = args.Any(a => a.Equals("--coins", StringComparison.OrdinalIgnoreCase));
 bool useBfs = args.Any(a => a.Equals("--bfs", StringComparison.OrdinalIgnoreCase));
+bool useProbe = args.Any(a => a.Equals("--probe", StringComparison.OrdinalIgnoreCase));
+string? tasInputFile = null;
+int tasPreRollFrames = 60; // default: TAS starts at 1 second (60 frames) into gameplay
+foreach (var a in args)
+{
+    if (a.StartsWith("--tas=", StringComparison.OrdinalIgnoreCase))
+        tasInputFile = a.Substring(6);
+    else if (a.StartsWith("--tas-preroll=", StringComparison.OrdinalIgnoreCase))
+        tasPreRollFrames = int.Parse(a.Substring(14));
+}
 bool verbose = args.Any(a => a.Equals("--verbose", StringComparison.OrdinalIgnoreCase) || a.Equals("-v", StringComparison.OrdinalIgnoreCase));
 // Filter out named flags before positional parsing
 var positionalArgs = args.Where(a => !a.StartsWith("--") && !a.Equals("-v", StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -94,6 +104,44 @@ Console.WriteLine($"Map: {level.Width}x{level.Height}  tiles={level.Tiles?.Lengt
 int[] tiles = level.Tiles ?? Array.Empty<int>();
 int[] sprites = level.Sprites ?? Array.Empty<int>();
 int mapWidth = level.Width;
+
+if (useProbe)
+{
+    int mapH = level.Height;
+    int groundRows = level.HasGroundLayer ? 3 : 0;
+    Console.WriteLine($"groundRows={groundRows} hasGround={level.HasGroundLayer}");
+    var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapH, groundRows);
+    int playerX = 29832, playerY = 519;
+    int rowBottomY = playerY + 15 - 2;
+    int rowTopY = playerY + 2;
+    int leftX = playerX + 3;
+    int rightX = playerX + 15 - 3;
+    void Probe(string name, int x, int y)
+    {
+        int tileX = x / 16;
+        int tileY = y / 16;
+        int arrY = tileY + groundRows;
+        int idx = arrY * mapWidth + tileX;
+        int tid = (idx >= 0 && idx < tiles.Length) ? tiles[idx] : -999;
+        int mapped = SharedPhysics.MapTileForCollision(tid);
+        var col = MetatileCollisionTable.GetCollision((byte)mapped);
+        int lx = ((x % 16) + 16) % 16;
+        int ly = ((y % 16) + 16) % 16;
+        bool kills = MetatileCollisionTable.TileKillsAtPixel(col, lx, ly);
+        bool fullKill = SharedPhysics.PointKillsPlayer(map, x, y);
+        Console.WriteLine($"  [{name}] world=({x},{y}) tile=({tileX},{arrY}) tid={tid} mapped={mapped} col={col} local=({lx},{ly}) KILLS={kills} fullKill={fullKill}");
+    }
+    Probe("BL", leftX, rowBottomY);
+    Probe("BR", rightX, rowBottomY);
+    Probe("TL", leftX, rowTopY);
+    Probe("TR", rightX, rowTopY);
+    bool fs = SharedPhysics.CheckFloorSpikes(map, playerX, playerY, 15, 15, false, out int dx, out int dy);
+    Console.WriteLine($"CheckFloorSpikes: {fs} at ({dx},{dy})");
+    Console.WriteLine("\nDirect tiles[r*W+col] for rows 32-38:");
+    for (int r = 32; r <= 38; r++)
+        Console.WriteLine($"  r={r}: 1864={tiles[r*mapWidth+1864]}, 1865={tiles[r*mapWidth+1865]}, 1866={tiles[r*mapWidth+1866]}");
+    return 0;
+}
 var spriteAnchors = new Dictionary<int, (int, int)>();
 var spritePixelOffsets = new Dictionary<int, (int, int)>();
 bool gotOffsetsFromConfig = false;
@@ -244,6 +292,25 @@ engine.Progress = new Progress<int>(pct =>
 });
 
 var sw = System.Diagnostics.Stopwatch.StartNew();
+
+// TAS replay mode
+if (tasInputFile != null)
+{
+    var tasLines = File.ReadAllLines(tasInputFile);
+    const string IDLE = "|..|........|........";
+    var tasInputs = new List<bool>(tasLines.Length);
+    foreach (var line in tasLines)
+        tasInputs.Add(line != IDLE);
+
+    Console.WriteLine($"TAS replay: {tasInputs.Count} frames, preroll={tasPreRollFrames}");
+    Console.WriteLine($"Jump frames: {tasInputs.Count(b => b)}");
+    engine.ReplayInputSequence(startX_px, startY_px, startSpeedUiIndex, startGameMode, false, false,
+        tasInputs, tasPreRollFrames, Console.Out);
+    sw.Stop();
+    Console.Error.WriteLine($"TAS replay done in {sw.Elapsed.TotalSeconds:F1}s");
+    return 0;
+}
+
 engine.Run(startX_px, startY_px, startSpeedUiIndex, startGameMode, false, false);
 sw.Stop();
 
