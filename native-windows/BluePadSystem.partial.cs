@@ -63,15 +63,18 @@ namespace FamidashEditor
                     if (!isBottomPad && !isTopPad)
                         continue;
 
-                    // Gravity gate: bottom pads need normal grav, top pads need inverted grav
-                    if (isBottomPad && gravityInverted) continue;
-                    if (isTopPad && !gravityInverted) continue;
+                    // Gravity gate is checked AFTER overlap so we still mark
+                    // gate-mismatched but overlapping pads as activated --
+                    // NES `spcl_gvdn_pd` / `spcl_gvup_pd` (sprite_loading.h)
+                    // unconditionally `idx8_inc(activesprites_activated, index)`
+                    // on collision, even when the gate skips the flip.
+                    // Without this, two stacked blue pads (e.g. dreamer.tmx
+                    // idx 23976 0xFD + 23977 0xFE) both overlap the player
+                    // on the same frame: the first pad flips gravity, then
+                    // on the next frame the second pad's gate now matches
+                    // and it fires a spurious second flip.
 
-                    // NES spcl_gvdn_pd / spcl_gvup_pd unconditionally do
-                    // idx8_inc(activesprites_activated, index), and the sprite
-                    // dispatch gate skips already-activated sprites unless
-                    // dual / platformer is active. So in non-dual mode each blue
-                    // pad fires at most once per life.
+                    // Already activated check (non-dual mode only)
                     if (!dual && orbActivated.TryGetValue(idx, out var alreadyActivated) && alreadyActivated)
                         continue;
 
@@ -127,19 +130,26 @@ namespace FamidashEditor
 
                     if (xOverlap && yOverlap)
                     {
-                        ClearSlopeStuff();
+                        // NES marks pad activated on any collision, even
+                        // when gate mismatch skips the flip.
+                        bool gateOk = !((isBottomPad && gravityInverted) || (isTopPad && !gravityInverted));
 
-                        gravityInverted = !gravityInverted;
-                        gravityFlipped = gravityInverted;
-                        gravityReversed = gravityInverted;
+                        if (gateOk)
+                        {
+                            ClearSlopeStuff();
 
-                        try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
+                            gravityInverted = !gravityInverted;
+                            gravityFlipped = gravityInverted;
+                            gravityReversed = gravityInverted;
 
-                        int baseVel = isMini ? PAD_HEIGHT_BLUE_mini : PAD_HEIGHT_BLUE_normal;
-                        int newVel = gravityInverted ? baseVel : -baseVel;
+                            try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
 
-                        playerVelY_fixed = newVel;
-                        orbhitonthisframe[currplayer] = true;
+                            int baseVel = isMini ? PAD_HEIGHT_BLUE_mini : PAD_HEIGHT_BLUE_normal;
+                            int newVel = gravityInverted ? baseVel : -baseVel;
+
+                            playerVelY_fixed = newVel;
+                            orbhitonthisframe[currplayer] = true;
+                        }
                         if (!dual)
                             orbActivated[idx] = true;
                     }

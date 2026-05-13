@@ -276,7 +276,8 @@ if (currplayer_mini != 0)
 
             // Set up Generic struct for collision detection
             // NES: Generic.x = high_byte(currplayer_x) + 4 (always +4)
-            // NES: Generic.y = high_byte(currplayer_y) + ((vel < 0) ? 2 : -2)
+            // NES (gamemode_wave.h L41):
+            //   Generic.y = high_byte(currplayer_y) + ((vel < 0) ? 2 : -2)
             // NES: WAVE_WIDTH = 0x08, WAVE_HEIGHT = 0x08 (always 8×8)
             Generic_x = (playerX_fixed >> 8) + 4;
             int yAdj = (playerVelY_fixed < 0) ? 2 : -2;

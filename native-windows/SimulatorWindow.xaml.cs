@@ -1348,8 +1348,15 @@ namespace FamidashEditor
             int hi = configSpawnYHi.Value & 0xFF;
             int lo = (configSpawnYLo.HasValue ? configSpawnYLo.Value : 0) & 0xFF;
             int nesSpawnY = (hi << 8) | lo; // NES 16-bit fixed-point (8 frac bits)
-            int worldOffset = (mapHeight - NES_H) * TILE; // TMX offset for NES world origin
-            return nesSpawnY + (worldOffset << 8);
+            // Match NES exactly: PF_top_px = nesSpawnHi + nesScrollLinear - nesYOffset.
+            // Use NES default scroll (0x02EF -> linear 719) when not provided, matching
+            // export_levels.py defaults.
+            int nesScrollHi = (configScrollYHi ?? 0x02) & 0xFF;
+            int nesScrollLo = (configScrollYLo ?? 0xEF) & 0xFF;
+            int nesScrollLinear = nesScrollHi * 240 + nesScrollLo;
+            int gRTR = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            int nesYOffset = (57 - mapHeight + gRTR) * 16;
+            return nesSpawnY + ((nesScrollLinear - nesYOffset) << 8);
         }
 
         /// <summary>
@@ -1876,15 +1883,27 @@ namespace FamidashEditor
             
             // Use player hitbox dimensions
             bool isMini = (currplayer_mini != 0);
-            int width = isMini ? 8 : 15;
-            int height = isMini ? 7 : 15;
+            int width, height;
+            // NES x_movement sets Generic.width/height = WAVE_WIDTH/WAVE_HEIGHT (8x8)
+            // for wave/snake before bg_coll_death runs.  Mini wave still uses 8x8 there
+            // (bg_coll_death uses Generic.width/height that x_movement just set).
+            if (currentGameMode == 6 || currentGameMode == 7)  // wave or snake
+            {
+                width = 8;
+                height = 8;
+            }
+            else
+            {
+                width = isMini ? 8 : 15;
+                height = isMini ? 7 : 15;
+            }
             
             // Apply mini mode centering offset to match NES bg_coll_death:
             // NES computes center as Y + (height>>1) + (mini ? (0x10-height)>>1 : 0)
             // The centering offset (0x10-7)>>1 = 4 is applied unconditionally
             // (not gravity-dependent) because Generic.y already reflects the
-            // ejected position.
-            if (miniMode)
+            // ejected position.  Wave/snake skip this since their Generic.height = 8.
+            if (miniMode && currentGameMode != 6 && currentGameMode != 7)
             {
                 playerY_px += (0x10 - height) >> 1;  // +4 for mini (height=7)
             }
@@ -2117,10 +2136,16 @@ namespace FamidashEditor
             {
                 int playerX_px = (playerX_fixed >> 8) + 1;
                 int playerY_px = playerY_fixed >> 8;
-                int hitboxW = miniMode ? 8 : 15;
-                int hitboxH = miniMode ? 7 : 15;
+                // NES sprite_collide (sprite_loading.h L1149-1156): wave/snake uses
+                // Generic = WAVE_WIDTH(8) x WAVE_HEIGHT(8); other modes use CUBE dims.
+                bool isWaveGmp = (currentGameMode == 6 || currentGameMode == 10);
+                int hitboxW = isWaveGmp ? 8 : (miniMode ? 8 : 15);
+                int hitboxH = isWaveGmp ? 8 : (miniMode ? 7 : 15);
 
-                playerY_px += GetMiniSpriteOffsetY();
+                if (isWaveGmp)
+                    playerY_px += 4;  // (0x10 - 8) >> 1
+                else
+                    playerY_px += GetMiniSpriteOffsetY();
 
                 int playerLeft_px = playerX_px;
                 int playerRight_px = playerX_px + hitboxW - 1;
@@ -11813,15 +11838,23 @@ namespace FamidashEditor
                                 var nCol = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(nTid));
                                 if (SharedPhysics.IsSlopeTile(nCol))
                                 {
-                                    // NES: upside-down slopes (RU/LU) nudge +2, floor slopes (RD/LD) nudge -2
-                                    bool isUpsideDown = (nCol == MetatileCollision.COL_SLOPE_RU45 ||
-                                                        nCol == MetatileCollision.COL_SLOPE_LU45) ||
-                                                       (nCol >= MetatileCollision.COL_SLOPE_RU22_RIGHT &&
-                                                        nCol <= MetatileCollision.COL_SLOPE_LU22_LEFT) ||
-                                                       (nCol >= MetatileCollision.COL_SLOPE_RU66_TOP &&
-                                                        nCol <= MetatileCollision.COL_SLOPE_LU66_TOP);
-                                    int fwdNudge = isUpsideDown ? 2 : -2;
-                                    playerY_fixed += fwdNudge << 8;
+                                    // NES bg_side_coll_common dispatches to bg_coll_slope() —
+                                    // wedge test (tmp4 >= tmp7).  Without this gate the nudge
+                                    // false-fires whenever the probe lands in the empty half
+                                    // of a ceiling slope tile (dreamer wave-portal entry).
+                                    var (wedgeHit_n, _, _) = SharedPhysics.SlopeCalc(rightEdge_nudge, centerY_nudge, nCol);
+                                    if (wedgeHit_n)
+                                    {
+                                        // NES: upside-down slopes (RU/LU) nudge +2, floor slopes (RD/LD) nudge -2
+                                        bool isUpsideDown = (nCol == MetatileCollision.COL_SLOPE_RU45 ||
+                                                            nCol == MetatileCollision.COL_SLOPE_LU45) ||
+                                                           (nCol >= MetatileCollision.COL_SLOPE_RU22_RIGHT &&
+                                                            nCol <= MetatileCollision.COL_SLOPE_LU22_LEFT) ||
+                                                           (nCol >= MetatileCollision.COL_SLOPE_RU66_TOP &&
+                                                            nCol <= MetatileCollision.COL_SLOPE_LU66_TOP);
+                                        int fwdNudge = isUpsideDown ? 2 : -2;
+                                        playerY_fixed += fwdNudge << 8;
+                                    }
                                 }
                             }
                         }
@@ -11839,10 +11872,13 @@ namespace FamidashEditor
                             const int WAVE_W = 8, WAVE_H = 8;
                             int groundRowsToReserve_ws = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             bool isMiniWave = (currplayer_mini != 0);
+                            // NES bg_coll_death/bg_side_coll_common probe Y uses Generic.y + miniCenterAdj + height/2.
+                            // Wave hitbox is 8x8 (Generic.height = 8); miniCenterAdj = (16-8)>>1 = 4 when mini.
+                            int miniCenter = isMiniWave ? 4 : 0;
                             
                             // 1) Center-point slope (bg_coll_death → bg_coll_slope)
                             int cX = wPx + (WAVE_W >> 1) - 1;
-                            int cY = wPy + (WAVE_H >> 1);
+                            int cY = wPy + miniCenter + (WAVE_H >> 1);
                             int cTileX = cX / TILE, cTileY = cY / TILE;
                             int cTileArrayY = cTileY + groundRowsToReserve_ws;
                             if (cTileX >= 0 && cTileX < mapWidth && cTileArrayY >= 0 && cTileArrayY < mapHeight)
@@ -11865,10 +11901,15 @@ namespace FamidashEditor
                             }
                             
                             // 2) Right-edge slope (bg_coll_R → bg_side_coll_common → bg_coll_slope)
+                            //    NES bg_coll_slope() side effect on hit (regardless of gamemode/dblocked):
+                            //      currplayer_slope_frames = 1; currplayer_was_on_slope_counter = 3;
+                            //    Then wave/snake branch: if (!dblocked) cube_data |= 1 (death).
+                            //    With dblocked, the slope counters still get set → next frame's
+                            //    wave_movement zeros vY → wave gets stuck → bg_coll_death kills.
                             if (!deathTriggered && !ShouldSkipSideCollisionForSlope())
                             {
                                 int rX = wPx + WAVE_W;
-                                int rY = wPy + (WAVE_H >> 1);
+                                int rY = wPy + miniCenter + (WAVE_H >> 1);
                                 int rTileX = rX / TILE, rTileY = rY / TILE;
                                 int rTileArrayY = rTileY + groundRowsToReserve_ws;
                                 if (rTileX >= 0 && rTileX < mapWidth && rTileArrayY >= 0 && rTileArrayY < mapHeight)
@@ -11881,11 +11922,21 @@ namespace FamidashEditor
                                                          (isMiniWave && (rCol == MetatileCollision.COL_SLOPE_LU66_TOP || rCol == MetatileCollision.COL_SLOPE_LU66_BOT));
                                         if (!skipSlope && bg_coll_slope(rX, rY, rCol))
                                         {
-                                            AppendSimDebug($"[WAVE_DEATH] R-edge slope X={wPx} Y={wPy} tile=({rTileX},{rTileY}) col={rCol}");
-                                            deathTriggered = true;
-                                            paused = true;
-                                            _ = StopMusicAsync();
-                                            try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } } })); } catch { }
+                                            // bg_coll_slope() side effects (always on hit):
+                                            currplayer_slope_frames = 1;
+                                            currplayer_was_on_slope_counter = 3;
+                                            if (!dblocked)
+                                            {
+                                                AppendSimDebug($"[WAVE_DEATH] R-edge slope X={wPx} Y={wPy} tile=({rTileX},{rTileY}) col={rCol}");
+                                                deathTriggered = true;
+                                                paused = true;
+                                                _ = StopMusicAsync();
+                                                try { Dispatcher.BeginInvoke(new Action(() => { try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { } if (this.Owner is MainWindow mw) { try { mw.PauseSimulatorPlayback(); } catch { } } })); } catch { }
+                                            }
+                                            else
+                                            {
+                                                AppendSimDebug($"[WAVE_REDGE_SLOPE_DBLOCKED] X={wPx} Y={wPy} tile=({rTileX},{rTileY}) col={rCol} sf=1 swoc=3");
+                                            }
                                         }
                                     }
                                 }
@@ -12366,13 +12417,18 @@ namespace FamidashEditor
                                             var nCol_p2 = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(nTid_p2));
                                             if (SharedPhysics.IsSlopeTile(nCol_p2))
                                             {
-                                                bool isUp_p2 = (nCol_p2 == MetatileCollision.COL_SLOPE_RU45 ||
-                                                                nCol_p2 == MetatileCollision.COL_SLOPE_LU45) ||
-                                                               (nCol_p2 >= MetatileCollision.COL_SLOPE_RU22_RIGHT &&
-                                                                nCol_p2 <= MetatileCollision.COL_SLOPE_LU22_LEFT) ||
-                                                               (nCol_p2 >= MetatileCollision.COL_SLOPE_RU66_TOP &&
-                                                                nCol_p2 <= MetatileCollision.COL_SLOPE_LU66_TOP);
-                                                playerY_fixed += (isUp_p2 ? 2 : -2) << 8;
+                                                // Wedge gate (NES bg_coll_slope) — see P1 fix above.
+                                                var (wedgeHit_p2, _, _) = SharedPhysics.SlopeCalc(rightEdge_p2, centerY_p2, nCol_p2);
+                                                if (wedgeHit_p2)
+                                                {
+                                                    bool isUp_p2 = (nCol_p2 == MetatileCollision.COL_SLOPE_RU45 ||
+                                                                    nCol_p2 == MetatileCollision.COL_SLOPE_LU45) ||
+                                                                   (nCol_p2 >= MetatileCollision.COL_SLOPE_RU22_RIGHT &&
+                                                                    nCol_p2 <= MetatileCollision.COL_SLOPE_LU22_LEFT) ||
+                                                                   (nCol_p2 >= MetatileCollision.COL_SLOPE_RU66_TOP &&
+                                                                    nCol_p2 <= MetatileCollision.COL_SLOPE_LU66_TOP);
+                                                    playerY_fixed += (isUp_p2 ? 2 : -2) << 8;
+                                                }
                                             }
                                         }
                                     }

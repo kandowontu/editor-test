@@ -21498,25 +21498,20 @@ namespace FamidashEditor
                     startX_px = startPosMarkerX.Value;
                     startY_px = startPosMarkerY.Value;
                 }
-                else if (loadedSpawnYPositionHi.HasValue)
-                {
-                    // Use NES spawn Y config: convert hi/lo bytes to TMX pixel Y
-                    int hi = loadedSpawnYPositionHi.Value & 0xFF;
-                    int lo = (loadedSpawnYPositionLow.HasValue ? loadedSpawnYPositionLow.Value : 0) & 0xFF;
-                    int nesSpawnY = (hi << 8) | lo; // NES 16-bit fixed-point (8 frac bits)
-                    int worldOffset = (mapHeight - 15) * 16; // NES_H=15, TILE=16
-                    startY_px = (nesSpawnY >> 8) + worldOffset;
-                    int maxY = Math.Max(0, (mapHeight * 16 - 16));
-                    if (startY_px > maxY) startY_px = maxY;
-                    if (startY_px < 0) startY_px = 0;
-                }
                 else
                 {
-                    // Default: start on the ground at X=0
-                    // Use physics resting position: groundSurface - hitboxH (15 for normal cube)
-                    int groundSurface_px = (mapHeight - groundRowsToReserve) * 16;
-                    startY_px = Math.Max(0, groundSurface_px - 15);
+                    // Match NES exactly. NES initializes currplayer_y = spawn_y_pos (screen-relative
+                    // 8.8 fixed) and scroll_y from spawn_scroll_y_pos. In PF coords:
+                    //   PF_startY_top = NES_screen_Y_top + NES_scroll_y_linear - nesYOffset
+                    // Defaults match LEVELS/export_levels.py: spawnHi=0xB0 scrollHi=0x02 scrollLo=0xEF.
+                    int nesYOffset = (57 - mapHeight + groundRowsToReserve) * 16;
+                    int nesSpawnHi = (loadedSpawnYPositionHi ?? 0xB0) & 0xFF;
+                    int nesScrollHi = (loadedScrollYPositionHi ?? 0x02) & 0xFF;
+                    int nesScrollLo = (loadedScrollYPositionLow ?? 0xEF) & 0xFF;
+                    int nesScrollLinear = nesScrollHi * 240 + nesScrollLo;
+                    startY_px = nesSpawnHi + nesScrollLinear - nesYOffset;
                     int maxY = Math.Max(0, (mapHeight * 16 - 16));
+                    if (startY_px < 0) startY_px = 0;
                     if (startY_px > maxY) startY_px = maxY;
                 }
 

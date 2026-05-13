@@ -180,8 +180,14 @@ namespace FamidashEditor
 
                 // Mixed solid/death tiles (solid collision on one side, death on the other)
                 case MetatileCollision.COL_TOP_CENTER_SPIKE:
-                    // NES: bg_coll_spikes uses col_death_bottom_routine: y > 10, x in [5,8]
-                    return (localY > 0x0a) && InRange(localX, 0x05, 0x08);
+                    // NES bg_coll_spikes(COL_TOP_CENTER_SPIKE/COL_TOP_SPIKES) dispatches
+                    // to col_death_bottom_routine which kills when:
+                    //   (temp_y & 0x0f) > 0x0a   AND   in_range(temp_x & 0x0f, 0x03, 0x09)
+                    // Verified against sim-famidash/BUILD/main/famidash.lst at $A48E
+                    // (sbc #$03 / sbc #$09-$03+1 → bcs skip).  The previous PF range
+                    // [5,8] was too narrow and let a real spike kill (tx=$F3 →
+                    // localX=3) survive at shardscapes sc=1943.
+                    return (localY > 0x0a) && InRange(localX, 0x03, 0x09);
 
                 case MetatileCollision.COL_BOTTOM_CENTER_SPIKE:
                     // Bottom half has solid collision, top center has death spike

@@ -46,6 +46,7 @@ int maxFallSpeed = 0x06; // default
 int startSpeedUiIndex = 1;  // default: 1 = 1x speed (index 0 = 0.5x)
 int startGameMode = 0; // default: cube mode
 int? metaSpawnYHi = null, metaSpawnYLo = null;
+int? metaScrollYHi = null, metaScrollYLo = null;
 {
     string lvlName = Path.GetFileNameWithoutExtension(tmxPath).ToLowerInvariant();
     string? metaFile = FindMetadataFile(tmxPath);
@@ -54,7 +55,7 @@ int? metaSpawnYHi = null, metaSpawnYLo = null;
     {
         try
         {
-        var (metaSpeed, metaMaxFall, metaGameMode, mSpawnHi, mSpawnLo) = ParseMetadataLevelProperties(metaFile, lvlName);
+        var (metaSpeed, metaMaxFall, metaGameMode, mSpawnHi, mSpawnLo, mScrollHi, mScrollLo) = ParseMetadataLevelProperties(metaFile, lvlName);
         if (metaSpeed.HasValue)
         {
             // NES/metadata convention: 0=1x, 1=0.5x, 2+=same
@@ -75,6 +76,8 @@ int? metaSpawnYHi = null, metaSpawnYLo = null;
         }
         metaSpawnYHi = mSpawnHi;
         metaSpawnYLo = mSpawnLo;
+        metaScrollYHi = mScrollHi;
+        metaScrollYLo = mScrollLo;
         if (mSpawnHi.HasValue)
             Console.WriteLine($"Metadata: spawnY=0x{mSpawnHi.Value:X2}{(mSpawnLo ?? 0):X2} for '{lvlName}'");
         }
@@ -246,27 +249,27 @@ if (!gotOffsetsFromConfig)
 bool hasGround = true;
 int groundTileRows = 3;
 
-// Default start position: on the ground at X=0
+// Default start position: match NES exactly.
+// NES initializes currplayer_y = spawn_y_pos (screen-relative 8.8 fixed) and
+// scroll_y from spawn_scroll_y_pos.  In PF coords:
+//   PF_startY_top = NES_screen_Y_top + NES_scroll_y_linear - nesYOffset
+// where:
+//   NES_screen_Y_top = spawnYPositionHi (defaults to 0xB0 in export_levels.py)
+//   NES_scroll_y_linear = scrollYPositionHi*240 + scrollYPositionLow
+//                          (defaults 0x02/0xEF -> 719 in export_levels.py)
+//   nesYOffset = (57 - mapHeight + groundRowsToReserve) * 16  (PathfinderEngine convention)
 int groundRowsToReserve = (hasGround && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-int groundSurface_px = (level.Height - groundRowsToReserve) * 16;
+int nesYOffset = (57 - level.Height + groundRowsToReserve) * 16;
+int nesSpawnHi = (metaSpawnYHi ?? 0xB0) & 0xFF;
+int nesScrollHi = (metaScrollYHi ?? 0x02) & 0xFF;
+int nesScrollLo = (metaScrollYLo ?? 0xEF) & 0xFF;
+int nesScrollLinear = nesScrollHi * 240 + nesScrollLo;
 int startX_px = 0;
-int startY_px = Math.Max(0, groundSurface_px - 15); // 15 = cube hitbox height
+int startY_px = nesSpawnHi + nesScrollLinear - nesYOffset;
 int maxY = Math.Max(0, level.Height * 16 - 16);
+if (startY_px < 0) startY_px = 0;
 if (startY_px > maxY) startY_px = maxY;
-
-// Override start Y from metadata spawnYPositionHi/Low if present
-// Conversion matches SimulatorWindow.ComputeSpawnYFixed():
-//   nesSpawnY = (hi << 8) | lo       (8.8 fixed point)
-//   worldOffset = (mapHeight - NES_H) * TILE   (NES_H = 15)
-//   spawnY_px = (nesSpawnY >> 8) + worldOffset
-if (metaSpawnYHi.HasValue)
-{
-    const int NES_H = 15;
-    int hi = metaSpawnYHi.Value & 0xFF;
-    int worldOffset = (level.Height - NES_H) * 16;
-    startY_px = hi + worldOffset;
-    Console.WriteLine($"Spawn Y override: hi=0x{hi:X2} worldOffset={worldOffset} → startY_px={startY_px}");
-}
+Console.WriteLine($"Spawn: spawnHi=0x{nesSpawnHi:X2} scrollHi=0x{nesScrollHi:X2} scrollLo=0x{nesScrollLo:X2} scrollLin={nesScrollLinear} nesYOffset={nesYOffset} -> startY_px={startY_px}");
 
 Console.WriteLine($"Start: ({startX_px}, {startY_px})  speed={startSpeedUiIndex}  maxFall=0x{maxFallSpeed:X}  bias={jumpTimingBias:F2}  mode={startGameMode}");
 
@@ -419,7 +422,7 @@ static string Json5ToJson(string json5)
 // ══════════════════════════════════════════════════════════════
 // Helper: read startingSpeed and maxFallSpeed for a level from metadata
 // ══════════════════════════════════════════════════════════════
-static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawnYHi, int? spawnYLo) ParseMetadataLevelProperties(string metaPath, string levelName)
+static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawnYHi, int? spawnYLo, int? scrollYHi, int? scrollYLo) ParseMetadataLevelProperties(string metaPath, string levelName)
 {
     string raw = File.ReadAllText(metaPath);
     string json = Json5ToJson(raw);
@@ -441,7 +444,7 @@ static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawn
                     string? lvl = lvlProp.GetString();
                     if (lvl?.Equals(levelName, StringComparison.OrdinalIgnoreCase) == true)
                     {
-                        int? speed = null, maxFall = null, gameMode = null, spawnHi = null, spawnLo = null;
+                        int? speed = null, maxFall = null, gameMode = null, spawnHi = null, spawnLo = null, scrollHi = null, scrollLo = null;
                         if (entry.TryGetProperty("startingSpeed", out var sp) && sp.ValueKind == JsonValueKind.Number)
                             speed = sp.GetInt32();
                         if (entry.TryGetProperty("maxFallSpeed", out var mf) && mf.ValueKind == JsonValueKind.Number)
@@ -452,15 +455,19 @@ static (int? startingSpeed, int? maxFallSpeed, int? startingGameMode, int? spawn
                             spawnHi = syh.GetInt32();
                         if (entry.TryGetProperty("spawnYPositionLow", out var syl) && syl.ValueKind == JsonValueKind.Number)
                             spawnLo = syl.GetInt32();
-                        Console.WriteLine($"  Found level '{lvl}' in {arrayName} at index {count}: speed={speed} maxFall={maxFall} gameMode={gameMode} spawnYHi={spawnHi} spawnYLo={spawnLo}");
-                        return (speed, maxFall, gameMode, spawnHi, spawnLo);
+                        if (entry.TryGetProperty("scrollYPositionHi", out var schi) && schi.ValueKind == JsonValueKind.Number)
+                            scrollHi = schi.GetInt32();
+                        if (entry.TryGetProperty("scrollYPositionLow", out var sclo) && sclo.ValueKind == JsonValueKind.Number)
+                            scrollLo = sclo.GetInt32();
+                        Console.WriteLine($"  Found level '{lvl}' in {arrayName} at index {count}: speed={speed} maxFall={maxFall} gameMode={gameMode} spawnYHi={spawnHi} spawnYLo={spawnLo} scrollYHi={scrollHi} scrollYLo={scrollLo}");
+                        return (speed, maxFall, gameMode, spawnHi, spawnLo, scrollHi, scrollLo);
                     }
                 }
             }
             Console.WriteLine($"  Searched {count} levels in {arrayName}, '{levelName}' not found");
         }
     }
-    return (null, null, null, null, null);
+    return (null, null, null, null, null, null, null);
 }
 
 // ══════════════════════════════════════════════════════════════

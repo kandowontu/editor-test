@@ -110,7 +110,7 @@ namespace FamidashEditor
             // NES bg_coll_U guard: ceiling probes only run while moving upward
             // (vel_y < 0). Pass current playerVelY_fixed so descending cubes
             // don't snap onto COL_BOTTOM slabs they're hitting from the side.
-            var (hit, ceilingBottomY, _) = SharedPhysics.CheckCeiling(in map, playerX_px, playerY_px, width, height, playerVelY_fixed);
+            var (hit, ceilingBottomY, _, _) = SharedPhysics.CheckCeiling(in map, playerX_px, playerY_px, width, height, playerVelY_fixed);
 
             return (hit, ceilingBottomY);
         }

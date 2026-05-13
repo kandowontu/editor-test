@@ -1,6 +1,6 @@
 import csv
 
-mp = r'C:\Users\kando\Documents\Famidash Editor\Replays\everyend\famidash_mesen_trace.csv'
+mp = r'C:\Users\kando\Documents\Famidash Editor\Replays\shardscapes\famidash_mesen_trace.csv'
 rows = list(csv.reader(open(mp)))
 hdr = rows[1]
 sci  = hdr.index('sim_cursor')
@@ -36,6 +36,8 @@ vyfi = pfhdr.index('VelY_fixed')
 pf = {}
 for ln in lines[1:]:
     p = ln.split(',')
+    if len(p) < len(pfhdr):
+        continue
     if not p[fi].isdigit():
         continue
     f = int(p[fi])
