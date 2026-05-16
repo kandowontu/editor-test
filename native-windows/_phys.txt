@@ -1,0 +1,200 @@
+﻿F=3183 sim=3170 events=9
+  ufo_movement.in pc=B25F A=03 X=03 Y=06 cpx=50E1 cpy=4417 cpvy=-620 G=(51,48,8x7) ej_U=F9 ej_D=0F col=00 probe=(83,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EDD sy=02E6
+  ufo_ship_eject.out pc=B0F9 A=00 X=00 Y=06 cpx=50E1 cpy=4417 cpvy=-620 G=(51,48,8x7) ej_U=F9 ej_D=0F col=00 probe=(83,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EDD sy=02E6
+  bg_coll_U.in pc=A183 A=41 X=00 Y=01 cpx=50E1 cpy=41DD cpvy=-570 G=(50,41,8x7) ej_U=F9 ej_D=0F col=00 probe=(83,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EDD sy=02E6
+  bg_coll_U.out pc=A2BB A=00 X=00 Y=33 cpx=50E1 cpy=41DD cpvy=-570 G=(50,41,8x7) ej_U=F9 ej_D=0F col=00 probe=(35,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EDD sy=02E6
+  bg_coll_death.out pc=B0CF A=00 X=00 Y=33 cpx=50E1 cpy=41DD cpvy=-570 G=(50,41,8x7) ej_U=F9 ej_D=0F col=00 probe=(35,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EDD sy=02E6
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=33 cpx=50E1 cpy=41DD cpvy=-570 G=(50,41,8x7) ej_U=F9 ej_D=0F col=00 probe=(35,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EDD sy=02E6
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=43 cpx=50E1 cpy=41DD cpvy=-570 G=(50,41,8x7) ej_U=F9 ej_D=0F col=00 probe=(3D,40,03) mini=1 grav=00 tidx=06 cd=00 sx=01EDD sy=02E6
+  bg_coll_D.out pc=A3ED A=A2 X=00 Y=04 cpx=5052 cpy=41DD cpvy=-570 G=(50,41,8x7) ej_U=F9 ej_D=0F col=00 probe=(30,3E,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE1 sy=02E6
+  cube_eject.in pc=B542 A=03 X=00 Y=01 cpx=5052 cpy=41DD cpvy=-570 G=(50,41,8x7) ej_U=F9 ej_D=0F col=00 probe=(0F,09,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE1 sy=02E6
+F=3184 sim=3171 events=15
+  ufo_movement.in pc=B25F A=03 X=03 Y=06 cpx=5052 cpy=41DD cpvy=-570 G=(51,45,8x7) ej_U=F9 ej_D=0F col=00 probe=(0F,09,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE1 sy=02E6
+  ufo_ship_eject.out pc=B0F9 A=00 X=00 Y=06 cpx=5052 cpy=41DD cpvy=-570 G=(51,45,8x7) ej_U=F9 ej_D=0F col=00 probe=(0F,09,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE1 sy=02E6
+  bg_coll_U.in pc=A183 A=3F X=00 Y=01 cpx=5052 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(0F,09,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE1 sy=02E6
+  bg_coll_U.out pc=A2BB A=00 X=00 Y=33 cpx=5052 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(39,3A,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE1 sy=02E6
+  bg_coll_death.out pc=B0CF A=00 X=00 Y=33 cpx=5052 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(39,3A,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE1 sy=02E6
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=33 cpx=5052 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(39,3A,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE1 sy=02E6
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=33 cpx=5052 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(41,3E,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE1 sy=02E6
+  bg_coll_D.out pc=A3ED A=A2 X=00 Y=04 cpx=50C3 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(34,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  cube_eject.out pc=B5E5 A=27 X=F9 Y=B0 cpx=50C3 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(CC,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  cube_eject.out pc=B5E5 A=2E X=F9 Y=B4 cpx=50C3 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(CC,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  cube_eject.out pc=B5E5 A=35 X=F9 Y=B8 cpx=50C3 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(CC,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  cube_eject.out pc=B5E5 A=3C X=F9 Y=BC cpx=50C3 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(CC,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  cube_eject.out pc=B5E5 A=42 X=F9 Y=C0 cpx=50C3 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(CC,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  cube_eject.out pc=B5E5 A=49 X=F9 Y=C4 cpx=50C3 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(CC,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  cube_eject.out pc=B5E5 A=50 X=F9 Y=C8 cpx=50C3 cpy=3FD5 cpvy=-520 G=(50,3F,8x7) ej_U=F9 ej_D=0F col=00 probe=(CC,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+F=3185 sim=3172 events=9
+  ufo_movement.in pc=B25F A=03 X=03 Y=06 cpx=50C3 cpy=3FD5 cpvy=-520 G=(51,43,8x7) ej_U=F9 ej_D=0F col=00 probe=(CC,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  ufo_ship_eject.out pc=B0F9 A=00 X=00 Y=06 cpx=50C3 cpy=3FD5 cpvy=-520 G=(51,43,8x7) ej_U=F9 ej_D=0F col=00 probe=(CC,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  bg_coll_U.in pc=A183 A=3D X=00 Y=01 cpx=50C3 cpy=3DFF cpvy=-470 G=(50,3D,8x7) ej_U=F9 ej_D=0F col=00 probe=(CC,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  bg_coll_U.out pc=A2BB A=00 X=00 Y=33 cpx=50C3 cpy=3DFF cpvy=-470 G=(50,3D,8x7) ej_U=F9 ej_D=0F col=00 probe=(3C,38,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  bg_coll_death.out pc=B0CF A=00 X=00 Y=33 cpx=50C3 cpy=3DFF cpvy=-470 G=(50,3D,8x7) ej_U=F9 ej_D=0F col=00 probe=(3C,38,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=33 cpx=50C3 cpy=3DFF cpvy=-470 G=(50,3D,8x7) ej_U=F9 ej_D=0F col=00 probe=(3C,38,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=33 cpx=50C3 cpy=3DFF cpvy=-470 G=(50,3D,8x7) ej_U=F9 ej_D=0F col=00 probe=(44,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE4 sy=02E6
+  bg_coll_D.out pc=A3ED A=A2 X=00 Y=04 cpx=5034 cpy=3DFF cpvy=-470 G=(50,3D,8x7) ej_U=F9 ej_D=0F col=00 probe=(37,3A,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE8 sy=02E6
+  cube_eject.in pc=B542 A=03 X=00 Y=01 cpx=5034 cpy=3DFF cpvy=-470 G=(50,3D,8x7) ej_U=F9 ej_D=0F col=00 probe=(18,29,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE8 sy=02E6
+F=3186 sim=3173 events=11
+  spider_movement.out pc=BD06 A=80 X=00 Y=00 cpx=5034 cpy=371D cpvy=-1762 G=(54,39,8x8) ej_U=F9 ej_D=0F col=00 probe=(18,29,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE8 sy=02E6
+  bg_coll_U.in pc=A183 A=80 X=00 Y=00 cpx=5034 cpy=371D cpvy=-1762 G=(54,39,8x8) ej_U=F9 ej_D=0F col=00 probe=(18,29,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE8 sy=02E6
+  bg_coll_U.out pc=A2BB A=00 X=00 Y=34 cpx=5034 cpy=371D cpvy=-1762 G=(54,39,8x8) ej_U=F9 ej_D=0F col=00 probe=(44,34,03) mini=1 grav=00 tidx=06 cd=00 sx=01EE8 sy=02E6
+  bg_coll_D.out pc=A3ED A=A5 X=00 Y=00 cpx=506F cpy=391D cpvy=-1762 G=(50,37,8x8) ej_U=F9 ej_D=0F col=00 probe=(3B,35,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+  cube_eject.out pc=B5E5 A=38 X=F9 Y=B0 cpx=506F cpy=391D cpvy=-1762 G=(50,37,8x8) ej_U=F9 ej_D=0F col=00 probe=(36,0C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+  cube_eject.out pc=B5E5 A=3E X=F9 Y=B4 cpx=506F cpy=391D cpvy=-1762 G=(50,37,8x8) ej_U=F9 ej_D=0F col=00 probe=(36,0C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+  cube_eject.out pc=B5E5 A=45 X=F9 Y=B8 cpx=506F cpy=391D cpvy=-1762 G=(50,37,8x8) ej_U=F9 ej_D=0F col=00 probe=(36,0C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+  cube_eject.out pc=B5E5 A=4C X=F9 Y=BC cpx=506F cpy=391D cpvy=-1762 G=(50,37,8x8) ej_U=F9 ej_D=0F col=00 probe=(36,0C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+  cube_eject.out pc=B5E5 A=53 X=F9 Y=C0 cpx=506F cpy=391D cpvy=-1762 G=(50,37,8x8) ej_U=F9 ej_D=0F col=00 probe=(36,0C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+  cube_eject.out pc=B5E5 A=5A X=F9 Y=C4 cpx=506F cpy=391D cpvy=-1762 G=(50,37,8x8) ej_U=F9 ej_D=0F col=00 probe=(36,0C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+  cube_eject.out pc=B5E5 A=61 X=F9 Y=C8 cpx=506F cpy=391D cpvy=-1762 G=(50,37,8x8) ej_U=F9 ej_D=0F col=00 probe=(36,0C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+F=3187 sim=3174 events=5
+  spider_movement.out pc=BD06 A=80 X=00 Y=00 cpx=506F cpy=34A7 cpvy=-1142 G=(54,36,8x8) ej_U=F9 ej_D=0F col=00 probe=(36,0C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+  bg_coll_U.in pc=A183 A=80 X=00 Y=00 cpx=506F cpy=34A7 cpvy=-1142 G=(54,36,8x8) ej_U=F9 ej_D=0F col=00 probe=(36,0C,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+  bg_coll_U.out pc=A2BB A=00 X=00 Y=24 cpx=506F cpy=34A7 cpvy=-1142 G=(54,36,8x8) ej_U=F9 ej_D=0F col=00 probe=(46,2E,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEA sy=02E3
+  bg_coll_D.out pc=A3ED A=A5 X=00 Y=00 cpx=5098 cpy=36A7 cpvy=-1142 G=(50,34,8x8) ej_U=F9 ej_D=0F col=00 probe=(3D,2F,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEE sy=02E0
+  cube_eject.in pc=B542 A=04 X=00 Y=01 cpx=5098 cpy=36A7 cpvy=-1142 G=(50,34,8x8) ej_U=F9 ej_D=0F col=00 probe=(32,6F,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEE sy=02E0
+F=3188 sim=3175 events=11
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=5098 cpy=3EF9 cpvy=2130 G=(54,3C,8x8) ej_U=F9 ej_D=0F col=00 probe=(32,6F,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEE sy=02E0
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=5098 cpy=3EF9 cpvy=2130 G=(54,3C,8x8) ej_U=F9 ej_D=0F col=00 probe=(32,6F,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEE sy=02E0
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=34 cpx=5098 cpy=3EF9 cpvy=2130 G=(54,3C,8x8) ej_U=F9 ej_D=0F col=00 probe=(4A,38,03) mini=1 grav=00 tidx=06 cd=00 sx=01EEE sy=02E0
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=50C1 cpy=40F9 cpvy=2130 G=(50,3E,8x8) ej_U=F9 ej_D=0F col=00 probe=(41,36,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+  cube_eject.out pc=B5E5 A=1E X=F9 Y=A8 cpx=50C1 cpy=40F9 cpvy=2130 G=(50,3E,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,22,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+  cube_eject.out pc=B5E5 A=27 X=F9 Y=AC cpx=50C1 cpy=40F9 cpvy=2130 G=(50,3E,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,22,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+  cube_eject.out pc=B5E5 A=2F X=F9 Y=B0 cpx=50C1 cpy=40F9 cpvy=2130 G=(50,3E,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,22,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+  cube_eject.out pc=B5E5 A=37 X=F9 Y=B4 cpx=50C1 cpy=40F9 cpvy=2130 G=(50,3E,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,22,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+  cube_eject.out pc=B5E5 A=40 X=F9 Y=B8 cpx=50C1 cpy=40F9 cpvy=2130 G=(50,3E,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,22,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+  cube_eject.out pc=B5E5 A=48 X=F9 Y=BC cpx=50C1 cpy=40F9 cpvy=2130 G=(50,3E,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,22,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+  cube_eject.out pc=B5E5 A=50 X=F9 Y=C0 cpx=50C1 cpy=40F9 cpvy=2130 G=(50,3E,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,22,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+F=3189 sim=3176 events=5
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=50C1 cpy=494B cpvy=2130 G=(54,47,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,22,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=50C1 cpy=494B cpvy=2130 G=(54,47,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,22,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=44 cpx=50C1 cpy=494B cpvy=2130 G=(54,47,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,40,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF2 sy=02DD
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=50FC cpy=4B4B cpvy=2130 G=(50,49,8x8) ej_U=F9 ej_D=0F col=00 probe=(45,3E,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF4 sy=02DA
+  cube_eject.in pc=B542 A=02 X=00 Y=01 cpx=50FC cpy=4B4B cpvy=2130 G=(50,49,8x8) ej_U=F9 ej_D=0F col=00 probe=(8C,65,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF4 sy=02DA
+F=3190 sim=3176 events=11
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=50FC cpy=4FC1 cpvy=1142 G=(54,4D,8x8) ej_U=F9 ej_D=0F col=00 probe=(8C,65,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF4 sy=02DA
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=50FC cpy=4FC1 cpvy=1142 G=(54,4D,8x8) ej_U=F9 ej_D=0F col=00 probe=(8C,65,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF4 sy=02DA
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=45 cpx=50FC cpy=4FC1 cpvy=1142 G=(54,4D,8x8) ej_U=F9 ej_D=0F col=00 probe=(50,43,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF4 sy=02DA
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=5037 cpy=51C1 cpvy=1142 G=(50,4F,8x8) ej_U=F9 ej_D=0F col=00 probe=(47,41,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+  cube_eject.out pc=B5E5 A=35 X=F9 Y=A8 cpx=5037 cpy=51C1 cpvy=1142 G=(50,4F,8x8) ej_U=F9 ej_D=0F col=00 probe=(F9,48,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+  cube_eject.out pc=B5E5 A=39 X=F9 Y=AC cpx=5037 cpy=51C1 cpvy=1142 G=(50,4F,8x8) ej_U=F9 ej_D=0F col=00 probe=(F9,48,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+  cube_eject.out pc=B5E5 A=3E X=F9 Y=B0 cpx=5037 cpy=51C1 cpvy=1142 G=(50,4F,8x8) ej_U=F9 ej_D=0F col=00 probe=(F9,48,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+  cube_eject.out pc=B5E5 A=42 X=F9 Y=B4 cpx=5037 cpy=51C1 cpvy=1142 G=(50,4F,8x8) ej_U=F9 ej_D=0F col=00 probe=(F9,48,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+  cube_eject.out pc=B5E5 A=47 X=F9 Y=B8 cpx=5037 cpy=51C1 cpvy=1142 G=(50,4F,8x8) ej_U=F9 ej_D=0F col=00 probe=(F9,48,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+  cube_eject.out pc=B5E5 A=4B X=F9 Y=BC cpx=5037 cpy=51C1 cpvy=1142 G=(50,4F,8x8) ej_U=F9 ej_D=0F col=00 probe=(F9,48,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+  cube_eject.out pc=B5E5 A=50 X=F9 Y=C0 cpx=5037 cpy=51C1 cpvy=1142 G=(50,4F,8x8) ej_U=F9 ej_D=0F col=00 probe=(F9,48,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+F=3191 sim=3177 events=5
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=5037 cpy=5637 cpvy=1142 G=(54,54,8x8) ej_U=F9 ej_D=0F col=00 probe=(F9,48,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=5037 cpy=5637 cpvy=1142 G=(54,54,8x8) ej_U=F9 ej_D=0F col=00 probe=(F9,48,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=45 cpx=5037 cpy=5637 cpvy=1142 G=(54,54,8x8) ej_U=F9 ej_D=0F col=00 probe=(53,47,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF7 sy=02D7
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=5072 cpy=5837 cpvy=1142 G=(50,56,8x8) ej_U=F9 ej_D=0F col=00 probe=(4A,45,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF9 sy=02D4
+  cube_eject.in pc=B542 A=02 X=00 Y=01 cpx=5072 cpy=5837 cpvy=1142 G=(50,56,8x8) ej_U=F9 ej_D=0F col=00 probe=(47,3B,03) mini=1 grav=00 tidx=06 cd=00 sx=01EF9 sy=02D4
+F=3192 sim=3177 events=11
+  spider_movement.out pc=BD06 A=80 X=00 Y=00 cpx=5072 cpy=53C1 cpvy=-1142 G=(54,55,8x8) ej_U=F9 ej_D=0F col=00 probe=(47,3B,03) mini=1 grav=00 tidx=06 cd=02 sx=01EF9 sy=02D4
+  bg_coll_U.in pc=A183 A=80 X=00 Y=00 cpx=5072 cpy=53C1 cpvy=-1142 G=(54,55,8x8) ej_U=F9 ej_D=0F col=00 probe=(47,3B,03) mini=1 grav=00 tidx=06 cd=02 sx=01EF9 sy=02D4
+  bg_coll_U.out pc=A2BB A=00 X=00 Y=35 cpx=5072 cpy=53C1 cpvy=-1142 G=(54,55,8x8) ej_U=F9 ej_D=0F col=00 probe=(55,3E,03) mini=1 grav=00 tidx=06 cd=02 sx=01EF9 sy=02D4
+  bg_coll_D.out pc=A3ED A=A5 X=00 Y=00 cpx=50AD cpy=55C1 cpvy=-1142 G=(50,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(4C,3F,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+  cube_eject.out pc=B5E5 A=35 X=F9 Y=A8 cpx=50AD cpy=55C1 cpvy=-1142 G=(50,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(25,7E,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+  cube_eject.out pc=B5E5 A=3A X=F9 Y=AC cpx=50AD cpy=55C1 cpvy=-1142 G=(50,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(25,7E,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+  cube_eject.out pc=B5E5 A=3E X=F9 Y=B0 cpx=50AD cpy=55C1 cpvy=-1142 G=(50,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(25,7E,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+  cube_eject.out pc=B5E5 A=43 X=F9 Y=B4 cpx=50AD cpy=55C1 cpvy=-1142 G=(50,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(25,7E,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+  cube_eject.out pc=B5E5 A=47 X=F9 Y=B8 cpx=50AD cpy=55C1 cpvy=-1142 G=(50,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(25,7E,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+  cube_eject.out pc=B5E5 A=4C X=F9 Y=BC cpx=50AD cpy=55C1 cpvy=-1142 G=(50,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(25,7E,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+  cube_eject.out pc=B5E5 A=50 X=F9 Y=C0 cpx=50AD cpy=55C1 cpvy=-1142 G=(50,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(25,7E,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+F=3193 sim=3178 events=5
+  spider_movement.out pc=BD06 A=80 X=00 Y=00 cpx=50AD cpy=514B cpvy=-1142 G=(54,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(25,7E,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+  bg_coll_U.in pc=A183 A=80 X=00 Y=00 cpx=50AD cpy=514B cpvy=-1142 G=(54,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(25,7E,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+  bg_coll_U.out pc=A2BB A=00 X=00 Y=35 cpx=50AD cpy=514B cpvy=-1142 G=(54,53,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,39,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFB sy=02D1
+  bg_coll_D.out pc=A3ED A=A5 X=00 Y=00 cpx=50E8 cpy=534B cpvy=-1142 G=(50,51,8x8) ej_U=F9 ej_D=0F col=00 probe=(4E,3A,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFD sy=02CE
+  cube_eject.in pc=B542 A=02 X=00 Y=01 cpx=50E8 cpy=534B cpvy=-1142 G=(50,51,8x8) ej_U=F9 ej_D=0F col=00 probe=(33,31,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFD sy=02CE
+F=3194 sim=3178 events=11
+  spider_movement.out pc=BD06 A=80 X=00 Y=00 cpx=50E8 cpy=4ED5 cpvy=-1142 G=(54,50,8x8) ej_U=F9 ej_D=0F col=00 probe=(33,31,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFD sy=02CE
+  bg_coll_U.in pc=A183 A=80 X=00 Y=00 cpx=50E8 cpy=4ED5 cpvy=-1142 G=(54,50,8x8) ej_U=F9 ej_D=0F col=00 probe=(33,31,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFD sy=02CE
+  bg_coll_U.out pc=A2BB A=00 X=00 Y=35 cpx=50E8 cpy=4ED5 cpvy=-1142 G=(54,50,8x8) ej_U=F9 ej_D=0F col=00 probe=(59,33,03) mini=1 grav=00 tidx=06 cd=02 sx=01EFD sy=02CE
+  bg_coll_D.out pc=A3ED A=A5 X=00 Y=00 cpx=5023 cpy=50D5 cpvy=-1142 G=(50,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(50,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+  cube_eject.out pc=B5E5 A=35 X=F9 Y=B0 cpx=5023 cpy=50D5 cpvy=-1142 G=(50,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(40,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+  cube_eject.out pc=B5E5 A=39 X=F9 Y=B4 cpx=5023 cpy=50D5 cpvy=-1142 G=(50,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(40,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+  cube_eject.out pc=B5E5 A=3E X=F9 Y=B8 cpx=5023 cpy=50D5 cpvy=-1142 G=(50,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(40,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+  cube_eject.out pc=B5E5 A=42 X=F9 Y=BC cpx=5023 cpy=50D5 cpvy=-1142 G=(50,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(40,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+  cube_eject.out pc=B5E5 A=47 X=F9 Y=C0 cpx=5023 cpy=50D5 cpvy=-1142 G=(50,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(40,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+  cube_eject.out pc=B5E5 A=4B X=F9 Y=C4 cpx=5023 cpy=50D5 cpvy=-1142 G=(50,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(40,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+  cube_eject.out pc=B5E5 A=50 X=F9 Y=C8 cpx=5023 cpy=50D5 cpvy=-1142 G=(50,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(40,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+F=3195 sim=3179 events=5
+  spider_movement.out pc=BD06 A=80 X=00 Y=00 cpx=5023 cpy=4C5F cpvy=-1142 G=(54,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(40,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+  bg_coll_U.in pc=A183 A=80 X=00 Y=00 cpx=5023 cpy=4C5F cpvy=-1142 G=(54,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(40,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+  bg_coll_U.out pc=A2BB A=00 X=00 Y=25 cpx=5023 cpy=4C5F cpvy=-1142 G=(54,4E,8x8) ej_U=F9 ej_D=0F col=00 probe=(5C,2E,03) mini=1 grav=00 tidx=06 cd=02 sx=01F00 sy=02CB
+  bg_coll_D.out pc=A3ED A=A5 X=00 Y=00 cpx=505E cpy=4E5F cpvy=-1142 G=(50,4C,8x8) ej_U=F9 ej_D=0F col=00 probe=(53,2F,03) mini=1 grav=00 tidx=06 cd=02 sx=01F02 sy=02C8
+  cube_eject.in pc=B542 A=02 X=00 Y=01 cpx=505E cpy=4E5F cpvy=-1142 G=(50,4C,8x8) ej_U=F9 ej_D=0F col=00 probe=(AE,57,03) mini=1 grav=00 tidx=06 cd=02 sx=01F02 sy=02C8
+F=3196 sim=3179 events=11
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=505E cpy=52D5 cpvy=1142 G=(54,50,8x8) ej_U=F9 ej_D=0F col=00 probe=(AE,57,03) mini=1 grav=00 tidx=06 cd=02 sx=01F02 sy=02C8
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=505E cpy=52D5 cpvy=1142 G=(54,50,8x8) ej_U=F9 ej_D=0F col=00 probe=(AE,57,03) mini=1 grav=00 tidx=06 cd=02 sx=01F02 sy=02C8
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=35 cpx=505E cpy=52D5 cpvy=1142 G=(54,50,8x8) ej_U=F9 ej_D=0F col=00 probe=(5E,34,03) mini=1 grav=00 tidx=06 cd=02 sx=01F02 sy=02C8
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=5099 cpy=54D5 cpvy=1142 G=(50,52,8x8) ej_U=F9 ej_D=0F col=00 probe=(55,32,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+  cube_eject.out pc=B5E5 A=35 X=F9 Y=98 cpx=5099 cpy=54D5 cpvy=1142 G=(50,52,8x8) ej_U=F9 ej_D=0F col=00 probe=(EC,6A,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+  cube_eject.out pc=B5E5 A=3A X=F9 Y=9C cpx=5099 cpy=54D5 cpvy=1142 G=(50,52,8x8) ej_U=F9 ej_D=0F col=00 probe=(EC,6A,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+  cube_eject.out pc=B5E5 A=3E X=F9 Y=A0 cpx=5099 cpy=54D5 cpvy=1142 G=(50,52,8x8) ej_U=F9 ej_D=0F col=00 probe=(EC,6A,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+  cube_eject.out pc=B5E5 A=43 X=F9 Y=A4 cpx=5099 cpy=54D5 cpvy=1142 G=(50,52,8x8) ej_U=F9 ej_D=0F col=00 probe=(EC,6A,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+  cube_eject.out pc=B5E5 A=47 X=F9 Y=A8 cpx=5099 cpy=54D5 cpvy=1142 G=(50,52,8x8) ej_U=F9 ej_D=0F col=00 probe=(EC,6A,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+  cube_eject.out pc=B5E5 A=4C X=F9 Y=AC cpx=5099 cpy=54D5 cpvy=1142 G=(50,52,8x8) ej_U=F9 ej_D=0F col=00 probe=(EC,6A,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+  cube_eject.out pc=B5E5 A=50 X=F9 Y=B0 cpx=5099 cpy=54D5 cpvy=1142 G=(50,52,8x8) ej_U=F9 ej_D=0F col=00 probe=(EC,6A,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+F=3197 sim=3180 events=5
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=5099 cpy=594B cpvy=1142 G=(54,57,8x8) ej_U=F9 ej_D=0F col=00 probe=(EC,6A,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=5099 cpy=594B cpvy=1142 G=(54,57,8x8) ej_U=F9 ej_D=0F col=00 probe=(EC,6A,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=36 cpx=5099 cpy=594B cpvy=1142 G=(54,57,8x8) ej_U=F9 ej_D=0F col=00 probe=(60,38,03) mini=1 grav=00 tidx=06 cd=00 sx=01F04 sy=02C5
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=50D4 cpy=5B4B cpvy=1142 G=(50,59,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,36,03) mini=1 grav=00 tidx=06 cd=00 sx=01F06 sy=02C2
+  cube_eject.in pc=B542 A=02 X=00 Y=01 cpx=50D4 cpy=5B4B cpvy=1142 G=(50,59,8x8) ej_U=F9 ej_D=0F col=00 probe=(1A,8D,03) mini=1 grav=00 tidx=06 cd=00 sx=01F06 sy=02C2
+F=3198 sim=3181 events=11
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=50D4 cpy=5FC1 cpvy=1142 G=(54,5D,8x8) ej_U=F9 ej_D=0F col=00 probe=(1A,8D,03) mini=1 grav=00 tidx=06 cd=00 sx=01F06 sy=02C2
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=50D4 cpy=5FC1 cpvy=1142 G=(54,5D,8x8) ej_U=F9 ej_D=0F col=00 probe=(1A,8D,03) mini=1 grav=00 tidx=06 cd=00 sx=01F06 sy=02C2
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=36 cpx=50D4 cpy=5FC1 cpvy=1142 G=(54,5D,8x8) ej_U=F9 ej_D=0F col=00 probe=(62,3B,03) mini=1 grav=00 tidx=06 cd=00 sx=01F06 sy=02C2
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=500F cpy=61C1 cpvy=1142 G=(50,5F,8x8) ej_U=F9 ej_D=0F col=00 probe=(59,39,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+  cube_eject.out pc=B5E5 A=35 X=F9 Y=98 cpx=500F cpy=61C1 cpvy=1142 G=(50,5F,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,60,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+  cube_eject.out pc=B5E5 A=39 X=F9 Y=9C cpx=500F cpy=61C1 cpvy=1142 G=(50,5F,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,60,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+  cube_eject.out pc=B5E5 A=3E X=F9 Y=A0 cpx=500F cpy=61C1 cpvy=1142 G=(50,5F,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,60,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+  cube_eject.out pc=B5E5 A=42 X=F9 Y=A4 cpx=500F cpy=61C1 cpvy=1142 G=(50,5F,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,60,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+  cube_eject.out pc=B5E5 A=47 X=F9 Y=A8 cpx=500F cpy=61C1 cpvy=1142 G=(50,5F,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,60,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+  cube_eject.out pc=B5E5 A=4B X=F9 Y=AC cpx=500F cpy=61C1 cpvy=1142 G=(50,5F,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,60,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+  cube_eject.out pc=B5E5 A=50 X=F9 Y=B0 cpx=500F cpy=61C1 cpvy=1142 G=(50,5F,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,60,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+F=3199 sim=3181 events=5
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=500F cpy=6637 cpvy=1142 G=(54,64,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,60,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=500F cpy=6637 cpvy=1142 G=(54,64,8x8) ej_U=F9 ej_D=0F col=00 probe=(57,60,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=36 cpx=500F cpy=6637 cpvy=1142 G=(54,64,8x8) ej_U=F9 ej_D=0F col=00 probe=(65,3F,03) mini=1 grav=00 tidx=06 cd=00 sx=01F09 sy=02BF
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=504A cpy=6837 cpvy=1142 G=(50,66,8x8) ej_U=F9 ej_D=0F col=00 probe=(5C,3D,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0B sy=02BC
+  cube_eject.in pc=B542 A=02 X=00 Y=01 cpx=504A cpy=6837 cpvy=1142 G=(50,66,8x8) ej_U=F9 ej_D=0F col=00 probe=(35,43,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0B sy=02BC
+F=3200 sim=3182 events=11
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=504A cpy=6CAD cpvy=1142 G=(54,6A,8x8) ej_U=F9 ej_D=0F col=00 probe=(35,43,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0B sy=02BC
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=504A cpy=6CAD cpvy=1142 G=(54,6A,8x8) ej_U=F9 ej_D=0F col=00 probe=(35,43,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0B sy=02BC
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=46 cpx=504A cpy=6CAD cpvy=1142 G=(54,6A,8x8) ej_U=F9 ej_D=0F col=00 probe=(67,42,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0B sy=02BC
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=5085 cpy=6EAD cpvy=1142 G=(50,6C,8x8) ej_U=F9 ej_D=0F col=00 probe=(5E,40,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+  cube_eject.out pc=B5E5 A=35 X=F9 Y=98 cpx=5085 cpy=6EAD cpvy=1142 G=(50,6C,8x8) ej_U=F9 ej_D=0F col=00 probe=(A3,66,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+  cube_eject.out pc=B5E5 A=3A X=F9 Y=9C cpx=5085 cpy=6EAD cpvy=1142 G=(50,6C,8x8) ej_U=F9 ej_D=0F col=00 probe=(A3,66,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+  cube_eject.out pc=B5E5 A=3E X=F9 Y=A0 cpx=5085 cpy=6EAD cpvy=1142 G=(50,6C,8x8) ej_U=F9 ej_D=0F col=00 probe=(A3,66,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+  cube_eject.out pc=B5E5 A=43 X=F9 Y=A4 cpx=5085 cpy=6EAD cpvy=1142 G=(50,6C,8x8) ej_U=F9 ej_D=0F col=00 probe=(A3,66,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+  cube_eject.out pc=B5E5 A=47 X=F9 Y=A8 cpx=5085 cpy=6EAD cpvy=1142 G=(50,6C,8x8) ej_U=F9 ej_D=0F col=00 probe=(A3,66,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+  cube_eject.out pc=B5E5 A=4C X=F9 Y=AC cpx=5085 cpy=6EAD cpvy=1142 G=(50,6C,8x8) ej_U=F9 ej_D=0F col=00 probe=(A3,66,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+  cube_eject.out pc=B5E5 A=50 X=F9 Y=B0 cpx=5085 cpy=6EAD cpvy=1142 G=(50,6C,8x8) ej_U=F9 ej_D=0F col=00 probe=(A3,66,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+F=3201 sim=3182 events=5
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=5085 cpy=7323 cpvy=1142 G=(54,71,8x8) ej_U=F9 ej_D=0F col=00 probe=(A3,66,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=5085 cpy=7323 cpvy=1142 G=(54,71,8x8) ej_U=F9 ej_D=0F col=00 probe=(A3,66,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=46 cpx=5085 cpy=7323 cpvy=1142 G=(54,71,8x8) ej_U=F9 ej_D=0F col=00 probe=(69,46,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0D sy=02B9
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=50C0 cpy=7523 cpvy=1142 G=(50,73,8x8) ej_U=F9 ej_D=0F col=00 probe=(60,44,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0F sy=02B6
+  cube_eject.in pc=B542 A=02 X=00 Y=01 cpx=50C0 cpy=7523 cpvy=1142 G=(50,73,8x8) ej_U=F9 ej_D=0F col=00 probe=(E1,79,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0F sy=02B6
+F=3202 sim=3182 events=11
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=50C0 cpy=7999 cpvy=1142 G=(54,77,8x8) ej_U=F9 ej_D=0F col=00 probe=(E1,79,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0F sy=02B6
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=50C0 cpy=7999 cpvy=1142 G=(54,77,8x8) ej_U=F9 ej_D=0F col=00 probe=(E1,79,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0F sy=02B6
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=46 cpx=50C0 cpy=7999 cpvy=1142 G=(54,77,8x8) ej_U=F9 ej_D=0F col=00 probe=(6B,49,03) mini=1 grav=00 tidx=06 cd=00 sx=01F0F sy=02B6
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=50FB cpy=7B99 cpvy=1142 G=(50,79,8x8) ej_U=F9 ej_D=0F col=00 probe=(62,47,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+  cube_eject.out pc=B5E5 A=36 X=F9 Y=98 cpx=50FB cpy=7B99 cpvy=1142 G=(50,79,8x8) ej_U=F9 ej_D=0F col=00 probe=(0F,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+  cube_eject.out pc=B5E5 A=3A X=F9 Y=9C cpx=50FB cpy=7B99 cpvy=1142 G=(50,79,8x8) ej_U=F9 ej_D=0F col=00 probe=(0F,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+  cube_eject.out pc=B5E5 A=3F X=F9 Y=A0 cpx=50FB cpy=7B99 cpvy=1142 G=(50,79,8x8) ej_U=F9 ej_D=0F col=00 probe=(0F,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+  cube_eject.out pc=B5E5 A=43 X=F9 Y=A4 cpx=50FB cpy=7B99 cpvy=1142 G=(50,79,8x8) ej_U=F9 ej_D=0F col=00 probe=(0F,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+  cube_eject.out pc=B5E5 A=48 X=F9 Y=A8 cpx=50FB cpy=7B99 cpvy=1142 G=(50,79,8x8) ej_U=F9 ej_D=0F col=00 probe=(0F,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+  cube_eject.out pc=B5E5 A=4C X=F9 Y=AC cpx=50FB cpy=7B99 cpvy=1142 G=(50,79,8x8) ej_U=F9 ej_D=0F col=00 probe=(0F,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+  cube_eject.out pc=B5E5 A=50 X=F9 Y=B0 cpx=50FB cpy=7B99 cpvy=1142 G=(50,79,8x8) ej_U=F9 ej_D=0F col=00 probe=(0F,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+F=3203 sim=3183 events=5
+  spider_movement.out pc=BD06 A=00 X=00 Y=00 cpx=50FB cpy=800F cpvy=1142 G=(54,7E,8x8) ej_U=F9 ej_D=0F col=00 probe=(0F,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+  bg_coll_D.in pc=A2BC A=00 X=00 Y=00 cpx=50FB cpy=800F cpvy=1142 G=(54,7E,8x8) ej_U=F9 ej_D=0F col=00 probe=(0F,3C,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+  bg_coll_D.out pc=A3ED A=00 X=00 Y=46 cpx=50FB cpy=800F cpvy=1142 G=(54,7E,8x8) ej_U=F9 ej_D=0F col=00 probe=(6D,4D,03) mini=1 grav=00 tidx=06 cd=00 sx=01F11 sy=02B3
+  bg_coll_D.out pc=A3ED A=AF X=00 Y=0E cpx=5036 cpy=820F cpvy=1142 G=(50,80,8x8) ej_U=F9 ej_D=0F col=00 probe=(64,4B,03) mini=1 grav=00 tidx=06 cd=00 sx=01F14 sy=02B0
+  cube_eject.in pc=B542 A=02 X=00 Y=01 cpx=5036 cpy=820F cpvy=1142 G=(50,80,8x8) ej_U=F9 ej_D=0F col=00 probe=(0C,9F,03) mini=1 grav=00 tidx=06 cd=00 sx=01F14 sy=02B0
+F=3204 sim=3184 events=11
+  spider_movement.out pc=BD06 A=80 X=00 Y=00 cpx=5036 cpy=7D99 cpvy=-1142 G=(54,7F,8x8) ej_U=F9 ej_D=0F col=00 probe=(0C,9F,03) mini=1 grav=00 tidx=06 cd=02 sx=01F14 sy=02B0

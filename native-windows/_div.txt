@@ -1,0 +1,45 @@
+﻿total compared rows: 3408
+
+-- RUN sim_f=0..0 (len=12)
+   rom_f=   0 sim_f=   0 rom=(    8, 375) sim=(   12, 368) dx= -4 dy=   7
+   rom_f=   1 sim_f=   0 rom=(    8, 375) sim=(   12, 368) dx= -4 dy=   7
+   rom_f=   2 sim_f=   0 rom=(    8, 375) sim=(   12, 368) dx= -4 dy=   7
+   rom_f=   3 sim_f=   0 rom=(    8, 375) sim=(   12, 368) dx= -4 dy=   7
+   ...
+   rom_f=   8 sim_f=   0 rom=(    8, 375) sim=(   12, 368) dx= -4 dy=   7
+   rom_f=   9 sim_f=   0 rom=(    8, 375) sim=(   12, 368) dx= -4 dy=   7
+   rom_f=  10 sim_f=   0 rom=(    8, 375) sim=(   12, 368) dx= -4 dy=   7
+   rom_f=  11 sim_f=   0 rom=(   10, 375) sim=(   12, 368) dx= -2 dy=   7
+
+-- RUN sim_f=418..431 (len=14)
+   rom_f= 430 sim_f= 418 rom=(  944, 255) sim=(  944, 252) dx=  0 dy=   3
+   rom_f= 431 sim_f= 419 rom=(  947, 254) sim=(  947, 250) dx=  0 dy=   4
+   rom_f= 432 sim_f= 420 rom=(  949, 253) sim=(  949, 249) dx=  0 dy=   4
+   rom_f= 433 sim_f= 421 rom=(  951, 253) sim=(  951, 248) dx=  0 dy=   5
+   ...
+   rom_f= 440 sim_f= 428 rom=(  967, 262) sim=(  967, 254) dx=  0 dy=   8
+   rom_f= 441 sim_f= 429 rom=(  969, 265) sim=(  969, 256) dx=  0 dy=   9
+   rom_f= 442 sim_f= 430 rom=(  971, 265) sim=(  971, 259) dx=  0 dy=   6
+   rom_f= 443 sim_f= 431 rom=(  973, 265) sim=(  973, 262) dx=  0 dy=   3
+
+-- RUN sim_f=2560..2750 (len=191)
+   rom_f=2572 sim_f=2560 rom=( 6284, 318) sim=( 6284, 324) dx=  0 dy=  -6
+   rom_f=2573 sim_f=2561 rom=( 6287, 316) sim=( 6287, 321) dx=  0 dy=  -5
+   rom_f=2574 sim_f=2562 rom=( 6290, 313) sim=( 6290, 318) dx=  0 dy=  -5
+   rom_f=2575 sim_f=2563 rom=( 6293, 311) sim=( 6293, 316) dx=  0 dy=  -5
+   ...
+   rom_f=2759 sim_f=2747 rom=( 6801, 336) sim=( 6801, 341) dx=  0 dy=  -5
+   rom_f=2760 sim_f=2748 rom=( 6804, 339) sim=( 6804, 344) dx=  0 dy=  -5
+   rom_f=2761 sim_f=2749 rom=( 6807, 341) sim=( 6807, 346) dx=  0 dy=  -5
+   rom_f=2762 sim_f=2750 rom=( 6810, 344) sim=( 6810, 349) dx=  0 dy=  -5
+
+-- RUN sim_f=3172..3188 (len=222)
+   rom_f=3186 sim_f=3172 rom=( 8002, 242) sim=( 8002, 246) dx=  0 dy=  -4
+   rom_f=3187 sim_f=3173 rom=( 8006, 237) sim=( 8004, 240) dx=  2 dy=  -3
+   rom_f=3188 sim_f=3174 rom=( 8010, 228) sim=( 8008, 248) dx=  2 dy= -20
+   rom_f=3189 sim_f=3174 rom=( 8012, 218) sim=( 8008, 248) dx=  4 dy= -30
+   ...
+   rom_f=3404 sim_f=3188 rom=( 8068, 223) sim=( 8067, 250) dx=  1 dy= -27
+   rom_f=3405 sim_f=3188 rom=( 8068, 223) sim=( 8067, 250) dx=  1 dy= -27
+   rom_f=3406 sim_f=3188 rom=( 8068, 223) sim=( 8067, 250) dx=  1 dy= -27
+   rom_f=3407 sim_f=3188 rom=( 8068, 223) sim=( 8067, 250) dx=  1 dy= -27

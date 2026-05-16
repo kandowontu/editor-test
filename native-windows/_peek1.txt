@@ -1,0 +1,50 @@
+﻿=== PF trace f=415..436 ===
+frame X Y VY onG mode grv mini input
+415 938 263 0xFFFFF9A0 0 0 1 0 0
+416 940 257 0xFFFFFA0B 0 0 1 0 0
+417 942 254 0xFFFFFD70 0 0 0 0 0
+418 944 252 0xFFFFFDDB 0 0 0 0 0
+419 947 250 0xFFFFFE46 0 0 0 0 0
+420 949 249 0xFFFFFEB1 0 0 0 0 0
+421 951 248 0xFFFFFF1C 0 0 0 0 0
+422 953 248 0xFFFFFF87 0 0 0 0 0
+423 955 248 0xFFFFFFF2 0 0 0 0 0
+424 958 248 0x5D 0 0 0 0 0
+425 960 249 0xC8 0 0 0 0 0
+426 962 250 0x133 0 0 0 0 0
+427 964 252 0x19E 0 0 0 0 0
+428 967 254 0x209 0 0 0 0 0
+429 969 256 0x274 0 0 0 0 0
+430 971 259 0x2DF 0 0 0 0 0
+431 973 262 0x34A 0 0 0 0 0
+432 976 265 0x0 1 0 0 0 0
+433 978 265 0x0 1 0 0 0 0
+434 980 265 0x0 1 0 0 0 0
+435 982 265 0x0 1 0 0 0 0
+436 984 265 0x0 1 0 0 0 0
+
+=== Mesen header ===
+nes_y_offset,528
+
+=== Mesen rom_f 425..445 ===
+rom=425 sim=414 px=933 py=273 a_next=0 vy=-1444 grav=0 gm=0
+rom=426 sim=415 px=935 py=267 a_next=0 vy=-1551 grav=0 gm=0
+rom=427 sim=416 px=938 py=261 a_next=0 vy=-1444 grav=0 gm=0
+rom=428 sim=417 px=940 py=258 a_next=0 vy=-615 grav=0 gm=0
+rom=429 sim=418 px=942 py=256 a_next=0 vy=-508 grav=0 gm=0
+rom=430 sim=419 px=944 py=255 a_next=0 vy=-401 grav=0 gm=0
+rom=431 sim=420 px=947 py=254 a_next=0 vy=-294 grav=0 gm=0
+rom=432 sim=421 px=949 py=253 a_next=0 vy=-187 grav=0 gm=0
+rom=433 sim=422 px=951 py=253 a_next=0 vy=-80 grav=0 gm=0
+rom=434 sim=423 px=953 py=253 a_next=0 vy=27 grav=0 gm=0
+rom=435 sim=424 px=955 py=253 a_next=0 vy=134 grav=0 gm=0
+rom=436 sim=425 px=958 py=254 a_next=0 vy=241 grav=0 gm=0
+rom=437 sim=426 px=960 py=256 a_next=0 vy=348 grav=0 gm=0
+rom=438 sim=427 px=962 py=257 a_next=0 vy=455 grav=0 gm=0
+rom=439 sim=428 px=964 py=260 a_next=0 vy=562 grav=0 gm=0
+rom=440 sim=429 px=967 py=262 a_next=0 vy=669 grav=0 gm=0
+rom=441 sim=430 px=969 py=265 a_next=0 vy=0 grav=0 gm=0
+rom=442 sim=431 px=971 py=265 a_next=0 vy=0 grav=0 gm=0
+rom=443 sim=432 px=973 py=265 a_next=0 vy=0 grav=0 gm=0
+rom=444 sim=433 px=976 py=265 a_next=0 vy=0 grav=0 gm=0
+rom=445 sim=434 px=978 py=265 a_next=0 vy=0 grav=0 gm=0

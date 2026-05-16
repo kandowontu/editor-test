@@ -5,7 +5,22 @@
 			fmsSongName: "emehT uneM",
 			lowerText: "EMEHT UNEM",
 			originalArtistText: "ROBTOP",
-			
+		},
+		{
+			fmsSongName: "Stereo Madness",
+			upperText: "STEREO ",
+			lowerText: "MADNESS",
+			originalArtistText: "FOREVERBOUND",
+			vsSystemEnabled: true,
+			nsfData: {
+				trackLabel: "Stereo Madness",
+				trackAuthor: {
+					original: "ForeverBound",
+					cover: "Zenith302, UserSniper"
+				},
+				durationNTSC: 85550,
+				durationPAL: 102840
+			}
 		},
 		{
 			fmsSongName: "Cycles",
@@ -22,104 +37,56 @@
 			}
 		},
 		{
-			fmsSongName: "Clubstep",
-			lowerText: "CLUBSTEP",
-			originalArtistText: "DJ NATE",
-		},
-		{
 			fmsSongName: "Practice",
 			lowerText: "PRACTICE",
 			originalArtistText: "OCULARNEBULA",
-			nsfData: {
-				trackLabel: "Practice ~ Stay Inside Me",
-				trackAuthor: {
-					original: "OcularNebula",
-					cover: "UserSniper"
-				},
-				durationNTSC: 239817,
-				durationPAL: 288380,
-				looped: true
-			}
-		},		
+			vsSystemEnabled: false,
+		},
 		{
 			fmsSongName: "Scheming Weasel",
 			upperText: "SCHEMING",
 			lowerText: "WEASEL",
-			originalArtistText: "KEVIN MACLEOD",	
+			originalArtistText: "KEVIN MACLEOD",
+			vsSystemEnabled: false
 		},
 		{
-			fmsSongName: "Hell",
-			lowerText: "ACCELERATE",
-			originalArtistText: "ACID NOTATION",
+			fmsSongName: "Astronomical Expedition",
+			upperText: "ASTRONOMICAL",
+			lowerText: "EXPEDITION",
+			originalArtistText: "SEAGLOWINGPRO",
 		},
 		{
-			fmsSongName: "atthespeedoflight",
-			upperText: "AT THE SPEED",
-			lowerText: "OF LIGHT PT 1",
-			originalArtistText: "DIMRAIN47",
+			fmsSongName: "C Madness",
+			lowerText: "C MADNESS",
+			originalArtistText: "FOREVERBOUND",
 		},
 		{
-			fmsSongName: "atthespeedoflight2",
-			upperText: "AT THE SPEED",
-			lowerText: "OF LIGHT PT 2",
-			originalArtistText: "DIMRAIN47",
+			fmsSongName: "Deep Swim",
+			lowerText: "DEEP SWIM",
+			originalArtistText: "WINDOWS96",
 		},
 		{
-			fmsSongName: "atthespeedoflight3",
-			upperText: "AT THE SPEED",
-			lowerText: "OF LIGHT PT 3",
-			originalArtistText: "DIMRAIN47",
+			fmsSongName: "Dastardly",
+			upperText: "DICK DASTARDLY",
+			lowerText: "RICHARDSON",
+			originalArtistText: "LCHAVASSE",
 		},
 		{
-			fmsSongName: "Blacklight",
-			lowerText: "BLACKLIGHT",
-			originalArtistText: "RUKKUS",
+			fmsSongName: "Hungryman Adventures",
+			upperText: "ELECTROMAN",
+			lowerText: "MY VERSION",
+			originalArtistText: "WATERFLAME",
 		},
 		{
-			fmsSongName: "Death Moon",
-			lowerText: "DEATH MOON",
-			originalArtistText: "SOUNDHOLICK",
+			fmsSongName: "Ground to ReTraY",
+			upperText: "GROUND TO",
+			lowerText: "RETRAY",
+			originalArtistText: "DETIOUS   SGP",
 		},
 		{
-			fmsSongName: "eighto",
-			lowerText: "EIGHTO",
-			originalArtistText: "JOMEKKA",
-		},
-		{
-			fmsSongName: "endorphins",
-			lowerText: "ENDORPHINS",
-			originalArtistText: "DUOCORE",
-		},
-		{
-			fmsSongName: "Every End PT1",
-			lowerText: "EVERY END PT1",
-			originalArtistText: "DIMRAIN47",
-		},
-		{
-			fmsSongName: "Every End PT2",
-			lowerText: "EVERY END PT2",
-			originalArtistText: "DIMRAIN47",
-		},
-		{
-			fmsSongName: "Every Madness",
-			lowerText: "EVERY MADNESS",
-			originalArtistText: "CLOUD54",
-		},
-		{
-			fmsSongName: "Fairydust",
-			lowerText: "FAIRYDUST",
-			originalArtistText: "RUKKUS",
-		},
-		{
-			fmsSongName: "holography",
-			lowerText: "HOLOGRAPHY",
-			originalArtistText: "GARLAGAN",
-		},
-		{
-			fmsSongName: "Miami Hotline Vol. 3",
-			upperText: "MIAMI HOTLINE",
-			lowerText: "VOL 3",
-			originalArtistText: "DEMONICITY",
+			fmsSongName: "Load",
+			lowerText: "LOAD",
+			originalArtistText: "KIYNARIA"
 		},
 		{
 			fmsSongName: "Nine Circles",
@@ -127,46 +94,32 @@
 			originalArtistText: "RUKKUS",
 		},
 		{
-			fmsSongName: "crackdown",
-			upperText: "OKIBA",
-			lowerText: "CRACKDOWN",
-			originalArtistText: "BOSSFIGHT",
+			fmsSongName: "Sunslammer",
+			lowerText: "SUNSLAMMER",
+			originalArtistText: "SETH PEELLE"
 		},
 		{
-			fmsSongName: "Problematic",
-			lowerText: "PROBLEMATIC",
-			originalArtistText: "RUKKUS",
+			fmsSongName: "Unity",
+			lowerText: "UNITY",
+			originalArtistText: "THEFATRAT"
 		},
 		{
-			fmsSongName: "Pursuit",
-			lowerText: "PURSUIT",
-			originalArtistText: "BOOM KITTY",		
+			fmsSongName: "Future Funk PT1",
+			upperText: "WHATS A",
+			lowerText: "FUTUREFUNKPT1",
+			originalArtistText: "LEMKUUJA",
 		},
 		{
-			fmsSongName: "Sonic blaster",
-			upperText: "SONIC",
-			lowerText: "BLASTER",
-			originalArtistText: "F777",
+			fmsSongName: "Future Funk PT2",
+			upperText: "WHATS A",
+			lowerText: "FUTUREFUNKPT2",
+			originalArtistText: "LEMKUUJA",
 		},
 		{
-			fmsSongName: "stalemate",
-			lowerText: "STALEMATE",
-			originalArtistText: "KAYOSZX",
-		},
-		{
-			fmsSongName: "EON",
-			lowerText: "THE ANGEL",
-			originalArtistText: "CACOLA",
-		},
-		{
-			fmsSongName: "Thermodynamix",
-			lowerText: "THERMODYNAMIX",
-			originalArtistText: "DJ NATE",
-		},	
-		{
-			fmsSongName: "Try This",
-			lowerText: "TRY THIS",
-			originalArtistText: "PEGBOARD NERDS",
+			fmsSongName: "Youve been Trolled",
+			upperText: "YOUVE BEEN",
+			lowerText: "TROLLED",
+			originalArtistText: "THECLYDECASH",
 		},
 	],
 	SFX: [

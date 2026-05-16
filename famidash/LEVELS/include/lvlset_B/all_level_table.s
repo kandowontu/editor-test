@@ -35,6 +35,7 @@ _level_list_lo:
 	.byte .lobyte(level_data_subtleoddities)
 	.byte .lobyte(level_data_powertrip)
 	.byte .lobyte(level_data_danceofviolins)
+	.byte .lobyte(level_data_newdashcity)
 	.byte .lobyte(level_data_birdbrain)
 	.byte .lobyte(level_data_aprettyeasylevel)
 	.byte .lobyte(level_data_tetrix)
@@ -71,6 +72,7 @@ _level_list_hi:
 	.byte .hibyte(level_data_subtleoddities)
 	.byte .hibyte(level_data_powertrip)
 	.byte .hibyte(level_data_danceofviolins)
+	.byte .hibyte(level_data_newdashcity)
 	.byte .hibyte(level_data_birdbrain)
 	.byte .hibyte(level_data_aprettyeasylevel)
 	.byte .hibyte(level_data_tetrix)
@@ -107,6 +109,7 @@ _level_list_bank:
 	.byte .lobyte(.bank(level_data_subtleoddities))
 	.byte .lobyte(.bank(level_data_powertrip))
 	.byte .lobyte(.bank(level_data_danceofviolins))
+	.byte .lobyte(.bank(level_data_newdashcity))
 	.byte .lobyte(.bank(level_data_birdbrain))
 	.byte .lobyte(.bank(level_data_aprettyeasylevel))
 	.byte .lobyte(.bank(level_data_tetrix))
@@ -118,9 +121,10 @@ _level_chunk_list_lo:
 	.byte .lobyte(level_data_cryogenic_2)
 	.byte .lobyte(level_data_thesteamworks_3)
 	.byte .lobyte(level_data_subtleoddities_4)
-	.byte .lobyte(level_data_birdbrain_5)
-	.byte .lobyte(level_data_tetrix_6)
-	.byte .lobyte(level_data_highlife_7)
+	.byte .lobyte(level_data_newdashcity_5)
+	.byte .lobyte(level_data_birdbrain_6)
+	.byte .lobyte(level_data_tetrix_7)
+	.byte .lobyte(level_data_highlife_8)
 
 _level_chunk_list_hi:
 	.byte .hibyte(level_data_somewhereinaforest_0)
@@ -128,9 +132,10 @@ _level_chunk_list_hi:
 	.byte .hibyte(level_data_cryogenic_2)
 	.byte .hibyte(level_data_thesteamworks_3)
 	.byte .hibyte(level_data_subtleoddities_4)
-	.byte .hibyte(level_data_birdbrain_5)
-	.byte .hibyte(level_data_tetrix_6)
-	.byte .hibyte(level_data_highlife_7)
+	.byte .hibyte(level_data_newdashcity_5)
+	.byte .hibyte(level_data_birdbrain_6)
+	.byte .hibyte(level_data_tetrix_7)
+	.byte .hibyte(level_data_highlife_8)
 
 _level_chunk_list_bank:
 	.byte .lobyte(.bank(level_data_somewhereinaforest_0))
@@ -138,36 +143,37 @@ _level_chunk_list_bank:
 	.byte .lobyte(.bank(level_data_cryogenic_2))
 	.byte .lobyte(.bank(level_data_thesteamworks_3))
 	.byte .lobyte(.bank(level_data_subtleoddities_4))
-	.byte .lobyte(.bank(level_data_birdbrain_5))
-	.byte .lobyte(.bank(level_data_tetrix_6))
-	.byte .lobyte(.bank(level_data_highlife_7))
+	.byte .lobyte(.bank(level_data_newdashcity_5))
+	.byte .lobyte(.bank(level_data_birdbrain_6))
+	.byte .lobyte(.bank(level_data_tetrix_7))
+	.byte .lobyte(.bank(level_data_highlife_8))
 
 .define MID_LEVEL_LENGTHS_ENABLED 1
 .define HIGH_LEVEL_LENGTHS_ENABLED 0
 
 _level_lengths_lo:
 	.byte .lobyte($00006F)		; bestautomaticlvl
-	.byte .lobyte($00008D)		; sonar
+	.byte .lobyte($00008B)		; sonar
 	.byte .lobyte($000064)		; darkparadise
 	.byte .lobyte($000018)		; xmaschallenge
-	.byte .lobyte($00007B)		; ninox
+	.byte .lobyte($00007A)		; ninox
 	.byte .lobyte($00009D)		; somewhereinaforest
 	.byte .lobyte($00005C)		; lookatthislevel
 	.byte .lobyte($0000F3)		; ajollyretrochristmas
-	.byte .lobyte($00006C)		; ultiatedestruction
+	.byte .lobyte($00006D)		; ultiatedestruction
 	.byte .lobyte($000079)		; moonlight
 	.byte .lobyte($00006F)		; fofii_fofii_fofii
 	.byte .lobyte($0000BC)		; selectpaymenttype
 	.byte .lobyte($00004D)		; pyrophoric
 	.byte .lobyte($000099)		; cryogenic
-	.byte .lobyte($00005D)		; oceane
+	.byte .lobyte($00005B)		; oceane
 	.byte .lobyte($0000B2)		; generationretro
 	.byte .lobyte($0000E1)		; scarletsurge
 	.byte .lobyte($000082)		; tinytunes
 	.byte .lobyte($0000BF)		; fireaura
-	.byte .lobyte($0000AB)		; rainbowdust
+	.byte .lobyte($0000A6)		; rainbowdust
 	.byte .lobyte($00008F)		; wintherace
-	.byte .lobyte($000090)		; factorytime
+	.byte .lobyte($00008F)		; factorytime
 	.byte .lobyte($0000CC)		; thesteamworks
 	.byte .lobyte($0000BB)		; rainingtacos
 	.byte .lobyte($000097)		; dorabaebasic10
@@ -176,36 +182,37 @@ _level_lengths_lo:
 	.byte .lobyte($0000C0)		; subtleoddities
 	.byte .lobyte($0000C0)		; powertrip
 	.byte .lobyte($000096)		; danceofviolins
+	.byte .lobyte($000108)		; newdashcity
 	.byte .lobyte($00009D)		; birdbrain
-	.byte .lobyte($000070)		; aprettyeasylevel
-	.byte .lobyte($000138)		; tetrix
+	.byte .lobyte($00006F)		; aprettyeasylevel
+	.byte .lobyte($000137)		; tetrix
 	.byte .lobyte($000154)		; highlife
 
 .if MID_LEVEL_LENGTHS_ENABLED
 
 _level_lengths_md:
 	.byte .hibyte($00006F)		; bestautomaticlvl
-	.byte .hibyte($00008D)		; sonar
+	.byte .hibyte($00008B)		; sonar
 	.byte .hibyte($000064)		; darkparadise
 	.byte .hibyte($000018)		; xmaschallenge
-	.byte .hibyte($00007B)		; ninox
+	.byte .hibyte($00007A)		; ninox
 	.byte .hibyte($00009D)		; somewhereinaforest
 	.byte .hibyte($00005C)		; lookatthislevel
 	.byte .hibyte($0000F3)		; ajollyretrochristmas
-	.byte .hibyte($00006C)		; ultiatedestruction
+	.byte .hibyte($00006D)		; ultiatedestruction
 	.byte .hibyte($000079)		; moonlight
 	.byte .hibyte($00006F)		; fofii_fofii_fofii
 	.byte .hibyte($0000BC)		; selectpaymenttype
 	.byte .hibyte($00004D)		; pyrophoric
 	.byte .hibyte($000099)		; cryogenic
-	.byte .hibyte($00005D)		; oceane
+	.byte .hibyte($00005B)		; oceane
 	.byte .hibyte($0000B2)		; generationretro
 	.byte .hibyte($0000E1)		; scarletsurge
 	.byte .hibyte($000082)		; tinytunes
 	.byte .hibyte($0000BF)		; fireaura
-	.byte .hibyte($0000AB)		; rainbowdust
+	.byte .hibyte($0000A6)		; rainbowdust
 	.byte .hibyte($00008F)		; wintherace
-	.byte .hibyte($000090)		; factorytime
+	.byte .hibyte($00008F)		; factorytime
 	.byte .hibyte($0000CC)		; thesteamworks
 	.byte .hibyte($0000BB)		; rainingtacos
 	.byte .hibyte($000097)		; dorabaebasic10
@@ -214,36 +221,37 @@ _level_lengths_md:
 	.byte .hibyte($0000C0)		; subtleoddities
 	.byte .hibyte($0000C0)		; powertrip
 	.byte .hibyte($000096)		; danceofviolins
+	.byte .hibyte($000108)		; newdashcity
 	.byte .hibyte($00009D)		; birdbrain
-	.byte .hibyte($000070)		; aprettyeasylevel
-	.byte .hibyte($000138)		; tetrix
+	.byte .hibyte($00006F)		; aprettyeasylevel
+	.byte .hibyte($000137)		; tetrix
 	.byte .hibyte($000154)		; highlife
 
 .if HIGH_LEVEL_LENGTHS_ENABLED
 
 _level_lengths_hi:
 	.byte .bankbyte($00006F)		; bestautomaticlvl
-	.byte .bankbyte($00008D)		; sonar
+	.byte .bankbyte($00008B)		; sonar
 	.byte .bankbyte($000064)		; darkparadise
 	.byte .bankbyte($000018)		; xmaschallenge
-	.byte .bankbyte($00007B)		; ninox
+	.byte .bankbyte($00007A)		; ninox
 	.byte .bankbyte($00009D)		; somewhereinaforest
 	.byte .bankbyte($00005C)		; lookatthislevel
 	.byte .bankbyte($0000F3)		; ajollyretrochristmas
-	.byte .bankbyte($00006C)		; ultiatedestruction
+	.byte .bankbyte($00006D)		; ultiatedestruction
 	.byte .bankbyte($000079)		; moonlight
 	.byte .bankbyte($00006F)		; fofii_fofii_fofii
 	.byte .bankbyte($0000BC)		; selectpaymenttype
 	.byte .bankbyte($00004D)		; pyrophoric
 	.byte .bankbyte($000099)		; cryogenic
-	.byte .bankbyte($00005D)		; oceane
+	.byte .bankbyte($00005B)		; oceane
 	.byte .bankbyte($0000B2)		; generationretro
 	.byte .bankbyte($0000E1)		; scarletsurge
 	.byte .bankbyte($000082)		; tinytunes
 	.byte .bankbyte($0000BF)		; fireaura
-	.byte .bankbyte($0000AB)		; rainbowdust
+	.byte .bankbyte($0000A6)		; rainbowdust
 	.byte .bankbyte($00008F)		; wintherace
-	.byte .bankbyte($000090)		; factorytime
+	.byte .bankbyte($00008F)		; factorytime
 	.byte .bankbyte($0000CC)		; thesteamworks
 	.byte .bankbyte($0000BB)		; rainingtacos
 	.byte .bankbyte($000097)		; dorabaebasic10
@@ -252,9 +260,10 @@ _level_lengths_hi:
 	.byte .bankbyte($0000C0)		; subtleoddities
 	.byte .bankbyte($0000C0)		; powertrip
 	.byte .bankbyte($000096)		; danceofviolins
+	.byte .bankbyte($000108)		; newdashcity
 	.byte .bankbyte($00009D)		; birdbrain
-	.byte .bankbyte($000070)		; aprettyeasylevel
-	.byte .bankbyte($000138)		; tetrix
+	.byte .bankbyte($00006F)		; aprettyeasylevel
+	.byte .bankbyte($000137)		; tetrix
 	.byte .bankbyte($000154)		; highlife
 
 .endif

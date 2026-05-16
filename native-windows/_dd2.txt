@@ -1,0 +1,223 @@
+﻿=== |dy|>=4 events (with surrounding context) ===
+-- around sim_f=0
+  rom_f=  13 sim_f=   0 rom=(   14, 361) sim=(   12, 368) dx=  2 dy=  -7
+  rom_f=  14 sim_f=   1 rom=(   16, 354) sim=(   14, 361) dx=  2 dy=  -7
+  rom_f=  15 sim_f=   2 rom=(   19, 348) sim=(   16, 354) dx=  3 dy=  -6
+  rom_f=  16 sim_f=   3 rom=(   21, 342) sim=(   19, 348) dx=  2 dy=  -6
+-- around sim_f=63
+  rom_f=  74 sim_f=  61 rom=(  150, 377) sim=(  148, 377) dx=  2 dy=   0
+  rom_f=  75 sim_f=  62 rom=(  152, 377) sim=(  150, 377) dx=  2 dy=   0
+  rom_f=  76 sim_f=  63 rom=(  155, 369) sim=(  152, 377) dx=  3 dy=  -8
+  rom_f=  77 sim_f=  64 rom=(  157, 362) sim=(  155, 369) dx=  2 dy=  -7
+  rom_f=  78 sim_f=  65 rom=(  159, 356) sim=(  157, 362) dx=  2 dy=  -6
+  rom_f=  79 sim_f=  66 rom=(  161, 350) sim=(  159, 356) dx=  2 dy=  -6
+-- around sim_f=120
+  rom_f= 131 sim_f= 118 rom=(  277, 313) sim=(  275, 313) dx=  2 dy=   0
+  rom_f= 132 sim_f= 119 rom=(  280, 313) sim=(  277, 313) dx=  3 dy=   0
+  rom_f= 133 sim_f= 120 rom=(  282, 307) sim=(  280, 313) dx=  2 dy=  -6
+  rom_f= 134 sim_f= 121 rom=(  284, 303) sim=(  282, 307) dx=  2 dy=  -4
+  rom_f= 135 sim_f= 122 rom=(  286, 298) sim=(  284, 303) dx=  2 dy=  -5
+  rom_f= 136 sim_f= 123 rom=(  289, 294) sim=(  286, 298) dx=  3 dy=  -4
+-- around sim_f=215
+  rom_f= 226 sim_f= 213 rom=(  489, 377) sim=(  487, 377) dx=  2 dy=   0
+  rom_f= 227 sim_f= 214 rom=(  492, 377) sim=(  489, 377) dx=  3 dy=   0
+  rom_f= 228 sim_f= 215 rom=(  494, 371) sim=(  492, 377) dx=  2 dy=  -6
+  rom_f= 229 sim_f= 216 rom=(  496, 367) sim=(  494, 371) dx=  2 dy=  -4
+  rom_f= 230 sim_f= 217 rom=(  498, 362) sim=(  496, 367) dx=  2 dy=  -5
+  rom_f= 231 sim_f= 218 rom=(  500, 358) sim=(  498, 362) dx=  2 dy=  -4
+-- around sim_f=282
+  rom_f= 293 sim_f= 280 rom=(  639, 361) sim=(  636, 361) dx=  3 dy=   0
+  rom_f= 294 sim_f= 281 rom=(  641, 361) sim=(  639, 361) dx=  2 dy=   0
+  rom_f= 295 sim_f= 282 rom=(  643, 355) sim=(  641, 361) dx=  2 dy=  -6
+  rom_f= 296 sim_f= 283 rom=(  645, 351) sim=(  643, 355) dx=  2 dy=  -4
+  rom_f= 297 sim_f= 284 rom=(  648, 346) sim=(  645, 351) dx=  3 dy=  -5
+  rom_f= 298 sim_f= 285 rom=(  650, 342) sim=(  648, 346) dx=  2 dy=  -4
+-- around sim_f=309
+  rom_f= 320 sim_f= 307 rom=(  699, 363) sim=(  697, 357) dx=  2 dy=   6
+  rom_f= 321 sim_f= 308 rom=(  701, 368) sim=(  699, 363) dx=  2 dy=   5
+  rom_f= 322 sim_f= 309 rom=(  703, 363) sim=(  701, 368) dx=  2 dy=  -5
+  rom_f= 323 sim_f= 310 rom=(  706, 358) sim=(  703, 363) dx=  3 dy=  -5
+  rom_f= 324 sim_f= 311 rom=(  708, 354) sim=(  706, 358) dx=  2 dy=  -4
+  rom_f= 325 sim_f= 312 rom=(  710, 350) sim=(  708, 354) dx=  2 dy=  -4
+-- around sim_f=351
+  rom_f= 362 sim_f= 349 rom=(  793, 203) sim=(  790, 209) dx=  3 dy=  -6
+  rom_f= 363 sim_f= 350 rom=(  795, 199) sim=(  793, 203) dx=  2 dy=  -4
+  rom_f= 364 sim_f= 351 rom=(  797, 206) sim=(  795, 199) dx=  2 dy=   7
+  rom_f= 365 sim_f= 352 rom=(  799, 213) sim=(  797, 206) dx=  2 dy=   7
+  rom_f= 366 sim_f= 353 rom=(  802, 219) sim=(  799, 213) dx=  3 dy=   6
+  rom_f= 367 sim_f= 354 rom=(  804, 225) sim=(  802, 219) dx=  2 dy=   6
+-- around sim_f=380
+  rom_f= 391 sim_f= 378 rom=(  857, 260) sim=(  855, 257) dx=  2 dy=   3
+  rom_f= 392 sim_f= 379 rom=(  860, 261) sim=(  857, 259) dx=  3 dy=   2
+  rom_f= 393 sim_f= 380 rom=(  862, 265) sim=(  860, 260) dx=  2 dy=   5
+  rom_f= 394 sim_f= 381 rom=(  864, 267) sim=(  862, 264) dx=  2 dy=   3
+  rom_f= 395 sim_f= 382 rom=(  866, 269) sim=(  864, 266) dx=  2 dy=   3
+  rom_f= 396 sim_f= 383 rom=(  868, 271) sim=(  866, 268) dx=  2 dy=   3
+-- around sim_f=385
+  rom_f= 396 sim_f= 383 rom=(  868, 271) sim=(  866, 268) dx=  2 dy=   3
+  rom_f= 397 sim_f= 384 rom=(  871, 273) sim=(  868, 270) dx=  3 dy=   3
+  rom_f= 398 sim_f= 385 rom=(  873, 278) sim=(  871, 272) dx=  2 dy=   6
+  rom_f= 399 sim_f= 386 rom=(  875, 283) sim=(  873, 277) dx=  2 dy=   6
+  rom_f= 400 sim_f= 387 rom=(  877, 288) sim=(  875, 283) dx=  2 dy=   5
+  rom_f= 401 sim_f= 388 rom=(  880, 293) sim=(  877, 287) dx=  3 dy=   6
+-- around sim_f=415
+  rom_f= 426 sim_f= 413 rom=(  935, 267) sim=(  933, 275) dx=  2 dy=  -8
+  rom_f= 427 sim_f= 414 rom=(  938, 261) sim=(  935, 269) dx=  3 dy=  -8
+  rom_f= 428 sim_f= 415 rom=(  940, 258) sim=(  938, 263) dx=  2 dy=  -5
+  rom_f= 429 sim_f= 416 rom=(  942, 256) sim=(  940, 257) dx=  2 dy=  -1
+  rom_f= 430 sim_f= 417 rom=(  944, 255) sim=(  942, 254) dx=  2 dy=   1
+  rom_f= 431 sim_f= 418 rom=(  947, 254) sim=(  944, 252) dx=  3 dy=   2
+-- around sim_f=430
+  rom_f= 441 sim_f= 428 rom=(  969, 265) sim=(  967, 254) dx=  2 dy=  11
+  rom_f= 442 sim_f= 429 rom=(  971, 265) sim=(  969, 256) dx=  2 dy=   9
+  rom_f= 443 sim_f= 430 rom=(  973, 265) sim=(  971, 259) dx=  2 dy=   6
+  rom_f= 444 sim_f= 431 rom=(  976, 265) sim=(  973, 262) dx=  3 dy=   3
+  rom_f= 445 sim_f= 432 rom=(  978, 265) sim=(  976, 265) dx=  2 dy=   0
+  rom_f= 446 sim_f= 433 rom=(  980, 265) sim=(  978, 265) dx=  2 dy=   0
+-- around sim_f=505
+  rom_f= 516 sim_f= 503 rom=( 1136, 313) sim=( 1134, 313) dx=  2 dy=   0
+  rom_f= 517 sim_f= 504 rom=( 1138, 313) sim=( 1136, 313) dx=  2 dy=   0
+  rom_f= 518 sim_f= 505 rom=( 1141, 307) sim=( 1138, 313) dx=  3 dy=  -6
+  rom_f= 519 sim_f= 506 rom=( 1143, 303) sim=( 1141, 307) dx=  2 dy=  -4
+  rom_f= 520 sim_f= 507 rom=( 1145, 298) sim=( 1143, 303) dx=  2 dy=  -5
+  rom_f= 521 sim_f= 508 rom=( 1147, 294) sim=( 1145, 298) dx=  2 dy=  -4
+-- around sim_f=601
+  rom_f= 612 sim_f= 599 rom=( 1350, 329) sim=( 1348, 329) dx=  2 dy=   0
+  rom_f= 613 sim_f= 600 rom=( 1352, 329) sim=( 1350, 329) dx=  2 dy=   0
+  rom_f= 614 sim_f= 601 rom=( 1355, 323) sim=( 1352, 329) dx=  3 dy=  -6
+  rom_f= 615 sim_f= 602 rom=( 1357, 319) sim=( 1355, 323) dx=  2 dy=  -4
+  rom_f= 616 sim_f= 603 rom=( 1359, 314) sim=( 1357, 319) dx=  2 dy=  -5
+  rom_f= 617 sim_f= 604 rom=( 1361, 310) sim=( 1359, 314) dx=  2 dy=  -4
+-- around sim_f=708
+  rom_f= 719 sim_f= 706 rom=( 1589, 377) sim=( 1587, 377) dx=  2 dy=   0
+  rom_f= 720 sim_f= 707 rom=( 1591, 377) sim=( 1589, 377) dx=  2 dy=   0
+  rom_f= 721 sim_f= 708 rom=( 1593, 371) sim=( 1591, 377) dx=  2 dy=  -6
+  rom_f= 722 sim_f= 709 rom=( 1596, 367) sim=( 1593, 371) dx=  3 dy=  -4
+  rom_f= 723 sim_f= 710 rom=( 1598, 362) sim=( 1596, 367) dx=  2 dy=  -5
+  rom_f= 724 sim_f= 711 rom=( 1600, 358) sim=( 1598, 362) dx=  2 dy=  -4
+-- around sim_f=758
+  rom_f= 769 sim_f= 756 rom=( 1700, 377) sim=( 1698, 377) dx=  2 dy=   0
+  rom_f= 770 sim_f= 757 rom=( 1703, 377) sim=( 1700, 377) dx=  3 dy=   0
+  rom_f= 771 sim_f= 758 rom=( 1705, 371) sim=( 1703, 377) dx=  2 dy=  -6
+  rom_f= 772 sim_f= 759 rom=( 1707, 367) sim=( 1705, 371) dx=  2 dy=  -4
+  rom_f= 773 sim_f= 760 rom=( 1709, 362) sim=( 1707, 367) dx=  2 dy=  -5
+  rom_f= 774 sim_f= 761 rom=( 1712, 358) sim=( 1709, 362) dx=  3 dy=  -4
+-- around sim_f=795
+  rom_f= 806 sim_f= 793 rom=( 1783, 377) sim=( 1781, 377) dx=  2 dy=   0
+  rom_f= 807 sim_f= 794 rom=( 1785, 377) sim=( 1783, 377) dx=  2 dy=   0
+  rom_f= 808 sim_f= 795 rom=( 1788, 369) sim=( 1785, 377) dx=  3 dy=  -8
+  rom_f= 809 sim_f= 796 rom=( 1791, 362) sim=( 1788, 369) dx=  3 dy=  -7
+  rom_f= 810 sim_f= 797 rom=( 1793, 356) sim=( 1791, 362) dx=  2 dy=  -6
+  rom_f= 811 sim_f= 798 rom=( 1796, 350) sim=( 1793, 356) dx=  3 dy=  -6
+-- around sim_f=864
+  rom_f= 875 sim_f= 862 rom=( 1973, 328) sim=( 1970, 328) dx=  3 dy=   0
+  rom_f= 876 sim_f= 863 rom=( 1976, 328) sim=( 1973, 328) dx=  3 dy=   0
+  rom_f= 877 sim_f= 864 rom=( 1979, 324) sim=( 1976, 328) dx=  3 dy=  -4
+  rom_f= 878 sim_f= 865 rom=( 1982, 320) sim=( 1979, 324) dx=  3 dy=  -4
+  rom_f= 879 sim_f= 866 rom=( 1984, 315) sim=( 1982, 320) dx=  2 dy=  -5
+  rom_f= 880 sim_f= 867 rom=( 1987, 312) sim=( 1984, 315) dx=  3 dy=  -3
+-- around sim_f=945
+  rom_f= 956 sim_f= 943 rom=( 2197, 344) sim=( 2194, 344) dx=  3 dy=   0
+  rom_f= 957 sim_f= 944 rom=( 2200, 344) sim=( 2197, 344) dx=  3 dy=   0
+  rom_f= 958 sim_f= 945 rom=( 2203, 339) sim=( 2200, 344) dx=  3 dy=  -5
+  rom_f= 959 sim_f= 946 rom=( 2206, 335) sim=( 2203, 339) dx=  3 dy=  -4
+  rom_f= 960 sim_f= 947 rom=( 2208, 331) sim=( 2206, 335) dx=  2 dy=  -4
+  rom_f= 961 sim_f= 948 rom=( 2211, 327) sim=( 2208, 331) dx=  3 dy=  -4
+-- around sim_f=1418
+  rom_f=1429 sim_f=1416 rom=( 3528, 346) sim=( 3525, 343) dx=  3 dy=   3
+  rom_f=1430 sim_f=1417 rom=( 3530, 350) sim=( 3528, 346) dx=  2 dy=   4
+  rom_f=1431 sim_f=1418 rom=( 3533, 344) sim=( 3530, 350) dx=  3 dy=  -6
+  rom_f=1432 sim_f=1419 rom=( 3536, 342) sim=( 3533, 344) dx=  3 dy=  -2
+  rom_f=1433 sim_f=1420 rom=( 3539, 340) sim=( 3536, 342) dx=  3 dy=  -2
+  rom_f=1434 sim_f=1421 rom=( 3542, 337) sim=( 3539, 340) dx=  3 dy=  -3
+-- around sim_f=1502
+  rom_f=1513 sim_f=1500 rom=( 3762, 289) sim=( 3759, 295) dx=  3 dy=  -6
+  rom_f=1514 sim_f=1501 rom=( 3765, 283) sim=( 3762, 289) dx=  3 dy=  -6
+  rom_f=1515 sim_f=1502 rom=( 3769, 287) sim=( 3765, 283) dx=  4 dy=   4
+  rom_f=1516 sim_f=1503 rom=( 3772, 291) sim=( 3769, 287) dx=  3 dy=   4
+  rom_f=1517 sim_f=1504 rom=( 3776, 294) sim=( 3772, 291) dx=  4 dy=   3
+  rom_f=1518 sim_f=1505 rom=( 3779, 297) sim=( 3776, 294) dx=  3 dy=   3
+-- around sim_f=1531
+  rom_f=1542 sim_f=1529 rom=( 3862, 285) sim=( 3858, 288) dx=  4 dy=  -3
+  rom_f=1543 sim_f=1530 rom=( 3865, 281) sim=( 3862, 285) dx=  3 dy=  -4
+  rom_f=1544 sim_f=1531 rom=( 3869, 285) sim=( 3865, 281) dx=  4 dy=   4
+  rom_f=1545 sim_f=1532 rom=( 3872, 290) sim=( 3869, 285) dx=  3 dy=   5
+  rom_f=1546 sim_f=1533 rom=( 3876, 294) sim=( 3872, 290) dx=  4 dy=   4
+  rom_f=1547 sim_f=1534 rom=( 3879, 298) sim=( 3876, 294) dx=  3 dy=   4
+-- around sim_f=1576
+  rom_f=1587 sim_f=1574 rom=( 3990, 296) sim=( 3988, 296) dx=  2 dy=   0
+  rom_f=1588 sim_f=1575 rom=( 3993, 296) sim=( 3990, 296) dx=  3 dy=   0
+  rom_f=1589 sim_f=1576 rom=( 3996, 300) sim=( 3993, 296) dx=  3 dy=   4
+  rom_f=1590 sim_f=1577 rom=( 3999, 305) sim=( 3996, 300) dx=  3 dy=   5
+  rom_f=1591 sim_f=1578 rom=( 4001, 309) sim=( 3999, 305) dx=  2 dy=   4
+  rom_f=1592 sim_f=1579 rom=( 4004, 313) sim=( 4001, 309) dx=  3 dy=   4
+-- around sim_f=2560
+  rom_f=2571 sim_f=2558 rom=( 6281, 321) sim=( 6279, 319) dx=  2 dy=   2
+  rom_f=2572 sim_f=2559 rom=( 6284, 318) sim=( 6281, 321) dx=  3 dy=  -3
+  rom_f=2573 sim_f=2560 rom=( 6287, 316) sim=( 6284, 324) dx=  3 dy=  -8
+  rom_f=2574 sim_f=2561 rom=( 6290, 313) sim=( 6287, 321) dx=  3 dy=  -8
+  rom_f=2575 sim_f=2562 rom=( 6293, 311) sim=( 6290, 318) dx=  3 dy=  -7
+  rom_f=2576 sim_f=2563 rom=( 6295, 309) sim=( 6293, 316) dx=  2 dy=  -7
+-- around sim_f=2585
+  rom_f=2596 sim_f=2583 rom=( 6351, 310) sim=( 6348, 313) dx=  3 dy=  -3
+  rom_f=2597 sim_f=2584 rom=( 6353, 312) sim=( 6351, 315) dx=  2 dy=  -3
+  rom_f=2598 sim_f=2585 rom=( 6356, 309) sim=( 6353, 317) dx=  3 dy=  -8
+  rom_f=2599 sim_f=2586 rom=( 6359, 307) sim=( 6356, 314) dx=  3 dy=  -7
+  rom_f=2600 sim_f=2587 rom=( 6362, 304) sim=( 6359, 312) dx=  3 dy=  -8
+  rom_f=2601 sim_f=2588 rom=( 6364, 302) sim=( 6362, 309) dx=  2 dy=  -7
+-- around sim_f=2626
+  rom_f=2637 sim_f=2624 rom=( 6464, 329) sim=( 6461, 330) dx=  3 dy=  -1
+  rom_f=2638 sim_f=2625 rom=( 6467, 332) sim=( 6464, 334) dx=  3 dy=  -2
+  rom_f=2639 sim_f=2626 rom=( 6470, 329) sim=( 6467, 337) dx=  3 dy=  -8
+  rom_f=2640 sim_f=2627 rom=( 6472, 327) sim=( 6470, 334) dx=  2 dy=  -7
+  rom_f=2641 sim_f=2628 rom=( 6475, 325) sim=( 6472, 332) dx=  3 dy=  -7
+  rom_f=2642 sim_f=2629 rom=( 6478, 323) sim=( 6475, 330) dx=  3 dy=  -7
+-- around sim_f=2666
+  rom_f=2677 sim_f=2664 rom=( 6575, 346) sim=( 6572, 348) dx=  3 dy=  -2
+  rom_f=2678 sim_f=2665 rom=( 6577, 349) sim=( 6575, 351) dx=  2 dy=  -2
+  rom_f=2679 sim_f=2666 rom=( 6580, 347) sim=( 6577, 354) dx=  3 dy=  -7
+  rom_f=2680 sim_f=2667 rom=( 6583, 344) sim=( 6580, 352) dx=  3 dy=  -8
+  rom_f=2681 sim_f=2668 rom=( 6586, 342) sim=( 6583, 349) dx=  3 dy=  -7
+  rom_f=2682 sim_f=2669 rom=( 6588, 340) sim=( 6586, 347) dx=  2 dy=  -7
+-- around sim_f=2689
+  rom_f=2700 sim_f=2687 rom=( 6638, 337) sim=( 6635, 340) dx=  3 dy=  -3
+  rom_f=2701 sim_f=2688 rom=( 6641, 338) sim=( 6638, 342) dx=  3 dy=  -4
+  rom_f=2702 sim_f=2689 rom=( 6644, 336) sim=( 6641, 344) dx=  3 dy=  -8
+  rom_f=2703 sim_f=2690 rom=( 6647, 333) sim=( 6644, 341) dx=  3 dy=  -8
+  rom_f=2704 sim_f=2691 rom=( 6649, 331) sim=( 6647, 338) dx=  2 dy=  -7
+  rom_f=2705 sim_f=2692 rom=( 6652, 329) sim=( 6649, 336) dx=  3 dy=  -7
+-- around sim_f=2720
+  rom_f=2731 sim_f=2718 rom=( 6724, 345) sim=( 6721, 347) dx=  3 dy=  -2
+  rom_f=2732 sim_f=2719 rom=( 6727, 348) sim=( 6724, 350) dx=  3 dy=  -2
+  rom_f=2733 sim_f=2720 rom=( 6729, 346) sim=( 6727, 353) dx=  2 dy=  -7
+  rom_f=2734 sim_f=2721 rom=( 6732, 343) sim=( 6729, 351) dx=  3 dy=  -8
+  rom_f=2735 sim_f=2722 rom=( 6735, 341) sim=( 6732, 348) dx=  3 dy=  -7
+  rom_f=2736 sim_f=2723 rom=( 6738, 338) sim=( 6735, 346) dx=  3 dy=  -8
+-- around sim_f=2752
+  rom_f=2763 sim_f=2750 rom=( 6812, 347) sim=( 6810, 349) dx=  2 dy=  -2
+  rom_f=2764 sim_f=2751 rom=( 6815, 350) sim=( 6812, 349) dx=  3 dy=   1
+  rom_f=2765 sim_f=2752 rom=( 6818, 353) sim=( 6815, 349) dx=  3 dy=   4
+  rom_f=2766 sim_f=2753 rom=( 6821, 349) sim=( 6818, 350) dx=  3 dy=  -1
+  rom_f=2767 sim_f=2754 rom=( 6824, 344) sim=( 6821, 349) dx=  3 dy=  -5
+  rom_f=2768 sim_f=2755 rom=( 6826, 342) sim=( 6824, 344) dx=  2 dy=  -2
+-- around sim_f=2754
+  rom_f=2765 sim_f=2752 rom=( 6818, 353) sim=( 6815, 349) dx=  3 dy=   4
+  rom_f=2766 sim_f=2753 rom=( 6821, 349) sim=( 6818, 350) dx=  3 dy=  -1
+  rom_f=2767 sim_f=2754 rom=( 6824, 344) sim=( 6821, 349) dx=  3 dy=  -5
+  rom_f=2768 sim_f=2755 rom=( 6826, 342) sim=( 6824, 344) dx=  2 dy=  -2
+  rom_f=2769 sim_f=2756 rom=( 6829, 339) sim=( 6826, 341) dx=  3 dy=  -2
+  rom_f=2770 sim_f=2757 rom=( 6832, 337) sim=( 6829, 339) dx=  3 dy=  -2
+-- around sim_f=2803
+  rom_f=2814 sim_f=2801 rom=( 6954, 278) sim=( 6951, 279) dx=  3 dy=  -1
+  rom_f=2815 sim_f=2802 rom=( 6956, 278) sim=( 6954, 279) dx=  2 dy=  -1
+  rom_f=2816 sim_f=2803 rom=( 6959, 275) sim=( 6956, 279) dx=  3 dy=  -4
+  rom_f=2817 sim_f=2804 rom=( 6962, 273) sim=( 6959, 276) dx=  3 dy=  -3
+  rom_f=2818 sim_f=2805 rom=( 6965, 271) sim=( 6962, 274) dx=  3 dy=  -3
+  rom_f=2819 sim_f=2806 rom=( 6967, 268) sim=( 6965, 271) dx=  2 dy=  -3
+-- around sim_f=2856
+  rom_f=2867 sim_f=2854 rom=( 7100, 269) sim=( 7097, 268) dx=  3 dy=   1
+  rom_f=2868 sim_f=2855 rom=( 7103, 271) sim=( 7100, 270) dx=  3 dy=   1
+  rom_f=2869 sim_f=2856 rom=( 7106, 268) sim=( 7103, 272) dx=  3 dy=  -4
+  rom_f=2870 sim_f=2857 rom=( 7108, 266) sim=( 7106, 269) dx=  2 dy=  -3
+  rom_f=2871 sim_f=2858 rom=( 7111, 264) sim=( 7108, 267) dx=  3 dy=  -3
+  rom_f=2872 sim_f=2859 rom=( 7114, 262) sim=( 7111, 265) dx=  3 dy=  -3

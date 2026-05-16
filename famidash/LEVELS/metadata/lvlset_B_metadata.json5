@@ -103,7 +103,7 @@
 			stars: 2,
 			songID: "song_xenogenesis",
 			startingGameMode: 0,
-			startingSpeed: 0,
+			startingSpeed: 1,
 			startingBackgroundColor: 0x01,
 			startingGroundColor: 0x01,
 			parallaxDisable: true
@@ -236,7 +236,7 @@
 			stars: 4,			
 			songID: "song_driving_by_night",
 			startingGameMode: 0,
-			startingSpeed: 0,
+			startingSpeed: 1,
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true,
@@ -347,9 +347,21 @@
 			objectOffsets: [
 				{
 					coordinates: [
-						[185, 33]
+						[185, 20], [233, 23], [239, 25], [298, 24], [305, 24], [311, 23], [314, 24], [495, 20], [500, 20], [505, 20],
 					],
 					offsetY: +8
+				},
+				{
+					coordinates: [
+						[236, 25], [242, 26], [249, 26],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[151, 24], [155, 24], [156, 25], [160, 25], [162, 24], [166, 24], [168, 23], [172, 23], [173, 24], [177, 24], [178, 22], [182, 22], [183, 23], [187, 23], [188, 22], [192, 22], [193, 24], [197, 24],
+					],
+					offsetY: -4
 				},
 			]
 		},
@@ -665,7 +677,7 @@
 			stars: 6,
 			songID: "song_kesobomb",
 			startingGameMode: 0,
-			startingSpeed: 0,
+			startingSpeed: 2,
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true
@@ -1266,6 +1278,57 @@
 			startingBackgroundColor: 0x0F,
 			startingGroundColor: 0x0F,
 			parallaxDisable: true
+		},
+		{
+			level: "newdashcity",
+			lowerText: "NEW DASH CITY",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "B",
+			sawSet: "A",
+			difficulty: "INSANE",
+			stars: 8,
+			songID: "song_new_dash_city",
+			startingGameMode: 0,
+			startingSpeed: 0,
+			startingBackgroundColor: 0x0F,
+			startingGroundColor: 0x0F,
+			parallaxDisable: true,
+			maxFallSpeed: 0x07,
+			hasSuperheroes: false,
+			objectOffsets: [
+				{
+					coordinates: [
+						[169, 20], [881, 11], [1056, 21], [1059, 23], [1075, 22], [1077, 18], [1099, 17], [1157, 19], [1309, 23], [1369, 24], [1385, 24], [1441, 24],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[187, 17], [190, 17], [232, 18], [233, 18], [550, 22], [768, 18], [769, 18], [777, 16], [778, 16], [893, 13], [1145, 21], [1190, 21], [1238, 21],
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [
+						[157, 23], [364, 23], [366, 23], [534, 23], [722, 23], [906, 11], [1001, 14], [1006, 14], [1033, 15], [1057, 22], [1104, 20], [1273, 22], [1328, 21], [1384, 22],
+					],
+					offsetY: -8
+				},
+				{
+					coordinates: [
+						[859, 8], [1127, 18],
+					],
+					offsetX: +16
+				},
+				{
+					coordinates: [
+						[536, 16], [566, 16], [1225, 21],
+					],
+					offsetY: +8,
+					offsetX: +8,
+				},
+			]
 		},
 		{
 			level: "birdbrain",

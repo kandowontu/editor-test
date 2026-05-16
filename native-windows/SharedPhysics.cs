@@ -204,6 +204,11 @@ namespace FamidashEditor
             };
         }
 
+        // All gamemode portals should share one collision geometry profile.
+        // Use the canonical cube-portal table entry so mode-specific portal art
+        // IDs do not drift in trigger timing.
+        internal const int GAMEMODE_PORTAL_GEOM_SID = 0x00;
+
         // ════════════════════════════════════════════════════════════════════
         //  SPRITE CLASSIFIERS
         // ════════════════════════════════════════════════════════════════════
@@ -240,6 +245,13 @@ namespace FamidashEditor
             IsVelocityOrb(sid) || IsGravityOrb(sid) || IsWhiteOrb(sid);
         internal static bool IsCoinSprite(int sid) => sid == 0x07 || sid == 0x1A || sid == 0x1B;
         internal static bool IsMiniCoinSprite(int sid) => sid == 0x6E;
+
+        internal static int NormalizePortalGeometrySid(int sid)
+        {
+            int sid8 = sid & 0xFF;
+            if (IsGameModePortal(sid8)) return GAMEMODE_PORTAL_GEOM_SID;
+            return sid8;
+        }
 
         // Dash orb sprite IDs (all 10 variants)
         internal static bool IsDashOrb(int sid) =>
@@ -2254,13 +2266,15 @@ namespace FamidashEditor
 
                 if (probe == 0 && (slopeType & SLOPE_RISING) != 0)
                 {
-                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                    // NES bg_coll_slope col_end: GAMEMODE_CUBE/ROBOT/NINJA (0/4/8) only.
+                    // Football (11) is NOT in the NES branch — do not include.
+                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
                         slopeJumpHigher = true;
                     continue;
                 }
                 if (probe == 1 && (slopeType & SLOPE_RISING) == 0)
                 {
-                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
                         slopeJumpHigher = true;
                     continue;
                 }
@@ -2274,7 +2288,10 @@ namespace FamidashEditor
                     //      OVERRIDE tmp8 with high_byte(vel_x).
                     // Apply in the same order — ship/UFO override FIRST, swap LAST — so the
                     // swap wins when both conditions fire (matches NES exactly).
-                    if (gameMode == 1 || gameMode == 3)
+                    // NES col_end's "else" branch fires for ALL non-cube/robot/ninja modes
+                    // (ship/ball/UFO/spider/wave/swing/pogo/snake/football).  Anything not
+                    // in {0,4,8} gets the unstick conditional.
+                    if (gameMode != 0 && gameMode != 4 && gameMode != 8)
                     {
                         int aIdx = ((slopeType & SLOPE_RISING) != 0 ? 4 : 0)
                                  | ((slopeType & SLOPE_UD) != 0 ? 2 : 0)
@@ -2329,13 +2346,14 @@ namespace FamidashEditor
 
                 if (probe == 0 && (slopeType & SLOPE_RISING) != 0)
                 {
-                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                    // NES bg_coll_slope col_end: GAMEMODE_CUBE/ROBOT/NINJA (0/4/8) only.
+                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
                         slopeJumpHigher = true;
                     continue;
                 }
                 if (probe == 1 && (slopeType & SLOPE_RISING) == 0)
                 {
-                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                    if (hit && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
                         slopeJumpHigher = true;
                     continue;
                 }
@@ -2349,7 +2367,8 @@ namespace FamidashEditor
                     //      OVERRIDE tmp8 with high_byte(vel_x).
                     // Apply in the same order — ship/UFO override FIRST, swap LAST — so the
                     // swap wins when both conditions fire (matches NES exactly).
-                    if (gameMode == 1 || gameMode == 3)
+                    // NES col_end's "else" branch fires for ALL non-cube/robot/ninja modes.
+                    if (gameMode != 0 && gameMode != 4 && gameMode != 8)
                     {
                         int aIdx = ((slopeType & SLOPE_RISING) != 0 ? 4 : 0)
                                  | ((slopeType & SLOPE_UD) != 0 ? 2 : 0)
@@ -2388,8 +2407,20 @@ namespace FamidashEditor
                 slopeWasOnCounter--;
                 if (slopeWasOnCounter == 0)
                 {
-                    int tableIdx = (gravFlipped ? 1 : 0) | (mini ? 4 : 0);
-                    if (gameMode == 2 || gameMode == 9)
+                    // NES decrement_was_on_slope (bgmtest_huge.c L446-486) only
+                    // applies EXIT_SLOPE_* for GAMEMODE_BALL (2) and GAMEMODE_CUBE (0).
+                    // Pogo (9) and football (11) are NOT in the NES switch — do not include.
+                    //
+                    // NES asm trick replaces the gravity bit of table_idx with the
+                    // slope's UPSIDEDOWN bit:
+                    //   tableIdx = (table_idx & ~TBLIDX_GRAV) | (slope_type & SLOPE_UPSIDEDOWN ? 1 : 0)
+                    // PF previously used gravFlipped here, which produces the wrong sign of
+                    // EXIT_SLOPE_CUBE_22 when slope_UD differs from gravFlipped (e.g.
+                    // gravity-flipped player on a non-UD slope or vice versa).
+                    const int SLOPE_UPSIDEDOWN = 0b1000;
+                    bool slopeUd = (slopeType & SLOPE_UPSIDEDOWN) != 0;
+                    int tableIdx = (slopeUd ? 1 : 0) | (mini ? 4 : 0);
+                    if (gameMode == 2)
                     {
                         int st = slopeType & 0b1111;
                         if (st == 0b0110 || st == 0b1110)
@@ -2397,7 +2428,7 @@ namespace FamidashEditor
                         else if (st == 0b0111 || st == 0b1111)
                             velY_fixed += EXIT_SLOPE_BALL_66[tableIdx];
                     }
-                    else if (gameMode == 0 || gameMode == 11)
+                    else if (gameMode == 0)
                     {
                         int st = slopeType & 0b1111;
                         if (st == 0b0110 || st == 0b1110)
@@ -2446,13 +2477,18 @@ namespace FamidashEditor
         }
 
         /// <summary>slope_jump_check — bonus velocity when jumping off slopes.
-        /// NES MAKE_CUBE_JUMP_HIGHER table: normal=-0x9A/+0x9A, mini=-0x80/+0x80 (sign flips with gravity).</summary>
+        /// NES MAKE_CUBE_JUMP_HIGHER table is indexed by currplayer_table_idx, whose
+        /// bit 2 (TBLIDX_NTSC) selects the framerate slot:
+        ///   table_idx 0..3 (PAL/50fps): ±0x9A for both normal and mini
+        ///   table_idx 4..7 (NTSC/60fps): ±0x80 for both normal and mini
+        /// The editor exports/runs NTSC ROMs exclusively, so always use 0x80.
+        /// Sign flips with gravity (matches table layout: hi byte alternates 0xFF/0x00).</summary>
         internal static void SlopeJumpCheck(ref int velY_fixed, ref bool slopeJumpHigher, int slopeType, bool mini, bool gravFlipped)
         {
             if (!slopeJumpHigher) return;
             if ((slopeType & SLOPE_DEGREES_MASK) != SLOPE_22DEG)
             {
-                int boost = mini ? 0x80 : 0x9A;
+                const int boost = 0x80; // NTSC value (table_idx 4..7); editor is always NTSC
                 velY_fixed += gravFlipped ? boost : -boost;
             }
             slopeJumpHigher = false;
@@ -2539,7 +2575,8 @@ namespace FamidashEditor
                     r.NewVelY_fixed = 0; r.WasZeroed = true;
                     r.SlopeType = newSlopeType; r.OnGround = true;
                     r.DebugFloorSlopeHit = true;
-                    if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                    // NES bg_coll_slope col_end CUBE/ROBOT/NINJA branch (0/4/8 only).
+                    if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
                         r.SlopeJumpHigher = true;
                     else { r.SlopeFrames = 1; r.SlopeWasOnCounter = 3; }
                 }
@@ -2583,7 +2620,8 @@ namespace FamidashEditor
                     r.NewY_fixed = (((r.NewY_fixed >> 8) + ceilSlopeEject - 1) << 8) | (camY_fixed & 0xFF);
                     r.NewVelY_fixed = 0; r.WasZeroed = true;
                     r.OnGround = true; r.SlopeType = ceilSlopeType;
-                    if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8 || gameMode == 11))
+                    // NES bg_coll_slope col_end CUBE/ROBOT/NINJA branch (0/4/8 only).
+                    if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
                         r.SlopeJumpHigher = true;
                     else { r.SlopeFrames = 1; r.SlopeWasOnCounter = 3; }
                 }
@@ -2919,20 +2957,37 @@ namespace FamidashEditor
                 else if (velMovingUp)
                 {
                     // Ceiling tile collision — only when moving up
-                    var (ceilHit, ceilBotY, ceilSpike, _) = CheckCeiling(in map, collX, collY, hbW, hbH);
+                    var (ceilHit, ceilBotY, ceilSpike, ceilCollision) = CheckCeiling(in map, collX, collY, hbW, hbH);
                     if (ceilSpike) { r.DebugCeilSpike = true; r.Died = true; return r; }
                     if (ceilHit)
                     {
                         r.DebugCeilTileHit = true;
                         hadCeilTileHit = true;
-                        // NES gamemode_ship.h:60: `Y_high = Y_high - eject_U - 1`.
-                        // With eject_U = (0xF0 | tmp8) and probe at top+1 in tile row
-                        // N, NES uint8 arithmetic gives Y_new_top = N*16 + (15 − 5·mini)
-                        // − 1 = ceilBotY − hbOffY − 2 (for both mini and non-mini ship).
-                        // Cube uses `Y -= eject_U` and lands at ceilBotY - hbOffY - 1.
-                        // Ship's extra `-1` => `-2` here.  Compose Y_fixed via cam so
-                        // display formula yields newPxY exactly (see ceilSlope above).
-                        int newPxY = ceilBotY - hbOffY - 2;
+                        int currNesTop = ((r.NewY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8);
+                        int newPxY;
+
+                        // NES ship/UFO path uses `Y_high = Y_high - eject_U - 1`
+                        // where eject_U comes from bg_coll_return_U() and depends on
+                        // probeY low nibble (`tmp8 = temp_y & 0x0F`).  Using this
+                        // directly avoids the mini-UFO snap/death mismatch at tight
+                        // overhangs where pure ceilBot geometry lands 1-2px off.
+                        if (gameMode == 1 || gameMode == 3)
+                        {
+                            int probeY = currNesTop + hbOffY + 1;
+                            int tmp8 = ((probeY % TILE) + TILE) % TILE;
+                            bool udChecksPath = ceilCollision == MetatileCollision.COL_NO_SIDE ||
+                                                ceilCollision == MetatileCollision.COL_ALL ||
+                                                ceilCollision == MetatileCollision.COL_FLOOR_CEIL;
+                            int ejectU = (udChecksPath ? 0xF0 : 0xF8) | tmp8;
+                            int signedEjectU = unchecked((sbyte)(byte)ejectU);
+                            newPxY = currNesTop - signedEjectU - 1;
+                        }
+                        else
+                        {
+                            // Compose Y_fixed via cam so display formula yields newPxY.
+                            newPxY = ceilBotY - hbOffY - 2;
+                        }
+
                         int newSub = (r.NewY_fixed - camY_fixed) & 0xFF;
                         r.NewY_fixed = camY_fixed + ((newPxY - (camY_fixed >> 8)) << 8) + newSub;
                         r.NewVelY_fixed = 0;
@@ -2967,15 +3022,24 @@ namespace FamidashEditor
                 else if (velMovingDown)
                 {
                     // Floor tile collision — only when moving down
-                    int updatedCollY = ((r.NewY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8) + hbOffY;
-                    var (floorHit, floorTopY, spike, ejectD, floorCollision) = CheckFloorDetailed(in map, collX, updatedCollY, hbW, hbH);
+                    // NES ufo_ship_eject calls bg_coll_U then bg_coll_D without
+                    // reloading Generic.y. The second probe still uses the
+                    // original Generic.y from function entry, not the post-U
+                    // snapped Y. Keep collY fixed to that pre-eject value.
+                    var (floorHit, floorTopY, spike, ejectD, floorCollision) = CheckFloorDetailed(in map, collX, collY, hbW, hbH);
                     if (spike) { r.DebugFloorSpike = true; r.Died = true; return r; }
                     if (floorHit)
                     {
                         r.DebugFloorTileHit = true;
                         int newPxY;
-                        if (hadCeilTileHit && IsMiniBlockType(floorCollision))
+                        if (hadCeilTileHit)
                         {
+                            // NES ufo_ship_eject always runs bg_coll_D after bg_coll_U.
+                            // When the U pass zeroes velY, D still evaluates and applies
+                            // high_byte(currplayer_y) -= eject_D on any D collision type
+                            // returned by bg_coll_return_D (including COL_ALL), not just
+                            // mini-block geometries. Using geometric floorTop snap here can
+                            // miss the exact NES post-U+D Y and drift side-collision death.
                             int currNesTop = ((r.NewY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8);
                             newPxY = currNesTop - ejectD;
                         }
@@ -3054,8 +3118,9 @@ namespace FamidashEditor
                 else if (velMovingUp)
                 {
                     // Ceiling tile collision — only when moving up (primary for flipped)
-                    int updatedCollY = ((r.NewY_fixed - camY_fixed) >> 8) + (camY_fixed >> 8) + hbOffY;
-                    var (ceilHit, ceilBotY, ceilSpike, _) = CheckCeiling(in map, collX, updatedCollY, hbW, hbH);
+                    // Match NES Generic.y behavior (see normal-gravity branch):
+                    // second probe in ufo_ship_eject uses pre-eject Generic.y.
+                    var (ceilHit, ceilBotY, ceilSpike, _) = CheckCeiling(in map, collX, collY, hbW, hbH);
                     if (ceilSpike) { r.DebugCeilSpike = true; r.Died = true; return r; }
                     if (ceilHit)
                     {

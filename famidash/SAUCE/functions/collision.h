@@ -50,10 +50,10 @@ char bg_coll_sides() {
 		case COL_ALL: 
 			return 1;	
 		case COL_BOTTOM: 
-			if ((uint8_t)(temp_y & 0x08)) return 1;		// If Y pos inside block ≥ 8px
+			if ((uint8_t)(temp_y & 0x08) && !force_platformer) return 1;		// If Y pos inside block ≥ 8px
 			break;
 		case COL_TOP: 
-			if (!(uint8_t)(temp_y & 0x08)) return 1;		// If Y pos inside block < 8px
+			if (!(uint8_t)(temp_y & 0x08) && !force_platformer) return 1;		// If Y pos inside block < 8px
 			break;
 		case COL_FLOOR_CEIL:
 			if (gamemode == gamemode == GAMEMODE_WAVE || gamemode == GAMEMODE_SNAKE) return 0;
@@ -66,7 +66,7 @@ char bg_coll_sides() {
 char col_death_bottom_routine() {
 	if ((uint8_t)(temp_y & 0x0f) > 0x0a) {							// If Y pos inside block ≥ 8px, die
 		// If Y pos inside block < 8px, die
-		do_if_in_range((uint8_t)(temp_x & 0x0f), 0x03, 0x0A-1, {		// If X pos even insider, die even more
+		do_if_in_range((uint8_t)(temp_x & 0x0f), 0x05, 0x08-1, {		// If X pos even insider, die even more
 			cube_data[currplayer] = 1;
 			return 1;
 		});
@@ -77,7 +77,7 @@ char col_death_bottom_routine() {
 char col_death_top_routine() {
 	if ((uint8_t)(temp_y & 0x0f) < 0x06) {			
 		// If Y pos inside block < 8px, die
-		do_if_in_range((uint8_t)(temp_x & 0x0f), 0x03, 0x0A-1, {		// If X pos even insider, die even more
+		do_if_in_range((uint8_t)(temp_x & 0x0f), 0x05, 0x08-1, {		// If X pos even insider, die even more
 			cube_data[currplayer] = 1;
 			return 1;
 		});
@@ -87,7 +87,7 @@ char col_death_top_routine() {
 
 char col_death_right_routine() {
 	if ((uint8_t)(temp_x & 0x0f) >= 0x0a) {
-		do_if_in_range((uint8_t)(temp_y & 0x0f), 0x03, 0x0A-1, {
+		do_if_in_range((uint8_t)(temp_y & 0x0f), 0x06, 0x09-1, {
 			cube_data[currplayer] = 1;
 			return 1;
 		});
@@ -97,7 +97,7 @@ char col_death_right_routine() {
 
 char col_death_left_routine() {
 	if ((uint8_t)(temp_x & 0x0f) < 0x06) {
-		do_if_in_range((uint8_t)(temp_y & 0x0f), 0x03, 0x0A-1, {
+		do_if_in_range((uint8_t)(temp_y & 0x0f), 0x06, 0x09-1, {
 			cube_data[currplayer] = 1;
 			return 1;
 		});
@@ -262,6 +262,30 @@ void bg_coll_floor_spikes() { // used for spike collision
 	Clobbers:
 	tmp2, tmp8
 */
+
+char bg_coll_top_bottom_slabs() {
+	switch (collision) {
+		case COL_BOTTOM:
+			tmp2 = (uint8_t)(temp_y & 0x0f);
+			tmp8 = tmp2 & 0x07;	 
+			// if (tmp2 >= 0x08) {
+			if (tmp8 != tmp2) {
+				return 1;
+			}
+			break;
+		case COL_TOP:
+			tmp2 = (uint8_t)(temp_y & 0x0f);
+			tmp8 = tmp2 & 0x07;	 
+			// if (tmp2 >= 0x08) {
+			if (tmp8 == tmp2) {
+				return 1;
+			}
+			break;
+		};
+	return 0;
+}
+			
+
 char bg_coll_mini_blocks() {
 	if (collision != COL_FLOOR_CEIL && high_byte(currplayer_x) < 0x10) return 0;
 	switch (collision) {
@@ -299,7 +323,6 @@ char bg_coll_mini_blocks() {
 		case COL_BOTTOM_RIGHT_SPIKE:
 		case COL_BOTTOM_CENTER_SPIKE:
 		case COL_BOTTOM_SPIKES:
-		case COL_BOTTOM:
 			tmp2 = (uint8_t)(temp_y & 0x0f);
 			tmp8 = tmp2 & 0x07;	 
 			// if (tmp2 >= 0x08) {
@@ -310,7 +333,6 @@ char bg_coll_mini_blocks() {
 
 		case COL_TOP_CENTER_SPIKE:
 		case COL_TOP_SPIKES:
-		case COL_TOP:
 			tmp2 = (uint8_t)(temp_y & 0x0f);
 			tmp8 = tmp2 & 0x07;	 
 			// if (tmp2 >= 0x08) {
@@ -428,7 +450,7 @@ char bg_side_coll_common() {
 
 		if (bg_coll_spikes()) return 0;
 
-		return bg_coll_sides() || bg_coll_mini_blocks();
+		return bg_coll_sides() || bg_coll_mini_blocks() || bg_coll_top_bottom_slabs();
 	} 
 	
 	return 0;
@@ -746,7 +768,7 @@ char bg_coll_slope() {
 	tmp2, tmp8
 */
 char bg_coll_return_D () {
-	tmp1 = bg_coll_U_D_checks() || bg_coll_mini_blocks();
+	tmp1 = bg_coll_U_D_checks() || bg_coll_mini_blocks() || bg_coll_top_bottom_slabs();
 	eject_D = tmp8;
 	return tmp1;
 }
@@ -759,7 +781,7 @@ char bg_coll_return_D () {
 */
 char bg_coll_return_U () {
 	tmp3 = bg_coll_U_D_checks();
-	tmp1 = bg_coll_mini_blocks();
+	tmp1 = bg_coll_mini_blocks() || bg_coll_top_bottom_slabs();
 	eject_U = (tmp3 ? 0xf0 : 0xf8) | tmp8;
 	return tmp1 | tmp3;
 }
@@ -892,7 +914,7 @@ char bg_coll_U() {
 	}
 
 	if (high_byte(currplayer_vel_y) & 0x80) {
-		temp_x = Generic.x + low_word(scroll_x) + (gamemode == GAMEMODE_WAVE || gamemode == GAMEMODE_SNAKE ? 10 : 0); // automatically only the low byte
+		temp_x = Generic.x + low_word(scroll_x) + (gamemode == GAMEMODE_WAVE || gamemode == GAMEMODE_SNAKE ? 4 : 0); // automatically only the low byte
 		
 		storeWordSeparately(
 			add_scroll_y(
@@ -1037,12 +1059,19 @@ void bg_coll_death() {
 	
 	if (collision) {
 		if (!dblocked[currplayer] || gamemode != GAMEMODE_WAVE) {
-			if (bg_coll_U_D_checks() || bg_coll_mini_blocks() || bg_coll_spikes() || bg_coll_slope()) {
-				idx8_store(cube_data, currplayer, cube_data[currplayer] | 1);
+			if (!force_platformer) {
+				if (bg_coll_U_D_checks() || bg_coll_mini_blocks() || bg_coll_top_bottom_slabs() || bg_coll_spikes() || bg_coll_slope()) {
+					idx8_store(cube_data, currplayer, cube_data[currplayer] | 1);
+				}
 			}
+			else {
+				if (bg_coll_U_D_checks() || bg_coll_mini_blocks() || bg_coll_spikes() || bg_coll_slope()) {
+					idx8_store(cube_data, currplayer, cube_data[currplayer] | 1);
+				}
+			}				
 		}
 		else {
-			if (bg_coll_mini_blocks() || bg_coll_spikes() || bg_coll_slope()) {
+			if (bg_coll_mini_blocks() || bg_coll_top_bottom_slabs() || bg_coll_spikes() || bg_coll_slope()) {
 				idx8_store(cube_data, currplayer, cube_data[currplayer] | 1);
 			}
 		}

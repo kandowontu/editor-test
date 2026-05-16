@@ -1856,6 +1856,95 @@
 				},
 			]
 		},
+		{ 
+			level: "short_kings",
+			lowerText: "SHORT KINGS",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "B",
+			sawSet: "A",
+			difficulty: "NORMAL",
+			stars: 3,
+			songID: "song_load",
+			startingGameMode: 0,
+			startingSpeed: 3,
+			maxFallSpeed: 0x07,
+			startingBackgroundColor: 0x01,
+			startingGroundColor: 0x15,
+			spawnYPositionHi: 0x00,
+			objectOffsets: [
+				{
+					coordinates: [
+						[9, 13],
+						[77, 15],
+						[84, 15],
+						[158, 17],
+						[172, 14],
+						[255, 14],
+						[267, 15],
+						[268, 15],
+						[269, 15],
+						[341, 15]
+					],
+					offsetY: -8 
+				},
+				{
+					coordinates: [112, 15],
+					offsetY: +8 
+				},
+				{
+					coordinates: [
+						[173, 14],
+						[256, 14]
+					],
+					offsetY: -8, 
+					offsetX: -8
+				},
+				{
+					coordinates: [
+						[172, 15],
+						[255, 15],
+						[267, 16],
+						[341, 16]
+					],
+					offsetY: -16 
+				}
+			]
+		},
+		{
+			level: "nicktoons",
+			lowerText: "NICKTOONS",
+			decoType: "DECO1",
+			spikeSet: "A",
+			blockSet: "B",
+			sawSet: "A",
+			difficulty: "NORMAL",
+			stars: 3,
+			songID: "song_unity",
+			startingGameMode: 0,
+			startingSpeed: 1,
+			startingBackgroundColor: 0x28,
+			startingGroundColor: 0x27,
+			parallaxDisable: true,
+			maxFallSpeed: 0x07,
+			spawnYPositionHi: 0x00,
+			objectOffsets: [
+				{
+					coordinates: [
+						[154, 15], [231, 15], [307, 15], [384, 15],
+						[87, 16], [128, 16], [162, 16], [200, 16], [226, 16],
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [
+						[226, 16],
+					],
+					offsetX: +8
+				},
+			]
+		},
+		
 		{
 			level: "leveleasy",
 			lowerText: "LEVEL EASY",
@@ -2400,9 +2489,21 @@
 			objectOffsets: [
 				{
 					coordinates: [
-						[185, 33]
+						[185, 20], [233, 23], [239, 25], [298, 24], [305, 24], [311, 23], [314, 24], [495, 20], [500, 20], [505, 20],
 					],
 					offsetY: +8
+				},
+				{
+					coordinates: [
+						[236, 25], [242, 26], [249, 26],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[151, 24], [155, 24], [156, 25], [160, 25], [162, 24], [166, 24], [168, 23], [172, 23], [173, 24], [177, 24], [178, 22], [182, 22], [183, 23], [187, 23], [188, 22], [192, 22], [193, 24], [197, 24],
+					],
+					offsetY: -4
 				},
 			]
 		},
@@ -2784,7 +2885,8 @@
 		},		
 		{
 			level: "tinytunes",
-			lowerText: "TINY TUNES",
+			upperText: "TINY",
+			lowerText: "TUNES",
 			decoType: "DECO1",
 			spikeSet: "A",
 			blockSet: "B",
@@ -3247,6 +3349,56 @@
 			],
 		},
 		{
+			level: "ninecircleseasy",
+			upperText: "NINE CIRCLES",
+			lowerText: "EASY",
+			decoType: "DECO1",
+			spikeSet: "C",
+			blockSet: "B",
+			sawSet: "A",
+			difficulty: "HARDER",
+			stars: 7,
+			songID: "song_nine_circles",
+			startingGameMode: 0,
+			startingSpeed: 1,
+			startingBackgroundColor: 0x06,
+			startingGroundColor: 0x16,
+			parallaxDisable: true,
+			maxFallSpeed: 0x07,
+			objectOffsets: [
+				{
+					coordinates: [
+						[99, 18], [239, 16], [382, 16], [695, 21], [696, 21], [885, 21], [946, 21], [1057, 25], [647, 19],
+					],
+					offsetY: -8
+				},
+				{
+					coordinates: [
+						[695, 21], [944, 20],
+					],
+					offsetX: +16
+				},
+				{
+					coordinates: [
+						[294, 19], [482, 22], [510, 21], [594, 24], [606, 17], [651, 22], [808, 21], [815, 25], [828, 25], [845, 25], [890, 21], [898, 21], [907, 21], [945, 21], [945, 20], [647, 19],
+					],
+					offsetX: +8
+				},
+				{
+					coordinates: [
+						[438, 19], [455, 21], [510, 21], [555, 22], [558, 24], [696, 20], [885, 20], [890, 21], [898, 21], [907, 21], [945, 20], [944, 20], [946, 20],
+					],
+					offsetY: +8
+				},
+				{
+					coordinates: [
+						[946, 20], [946, 21],
+					],
+					offsetX: -8
+				},
+			]
+		},
+		{
 			level: "lostinthewoods",
 			upperText: "LOST IN",
 			lowerText: "THE WOODS",
@@ -3684,7 +3836,7 @@
 			sawSet: "A",
 			difficulty: "INSANE",
 			stars: 8,
-			songID: "song_stereo_madness_2",
+			songID: "song_unity",
 			startingGameMode: 0,
 			startingSpeed: 1,
 			startingBackgroundColor: 0x0F,

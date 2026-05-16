@@ -755,9 +755,9 @@ namespace FamidashEditor
             int screenX = playerX_px - cameraX_px;
             
             // Wave/Snake use different Generic values than cube/ship/etc
-            // NES: wave_movement sets Generic.x = playerX + 4, Generic.y = playerY + (vel<0?2:-2)
-            //       Generic.width = 8, Generic.height = 16
-            // NES: bg_coll_D slope section uses Generic.x, Generic.y + Generic.height - 2
+            // NES: wave_movement sets Generic.x = playerX + 4, Generic.y = playerY + (mini?0:4)
+            //       Generic.width = 8, Generic.height = 8
+            // NES: bg_coll_D slope section uses temp_x based on Generic.x directly.
             bool isWaveMode = (currentGameMode == 6 || currentGameMode == 10);
             
             int checkBaseX, checkWidth, checkBaseY, hitboxH;
@@ -766,12 +766,12 @@ namespace FamidashEditor
             {
                 // Match NES wave Generic setup
                 // NES: WAVE_HEIGHT = 0x08 for all wave modes (mini and non-mini)
-                int waveYOffset = (playerVelY_fixed < 0) ? 2 : -2;
-                int genericY = playerY_px + waveYOffset;
+                int waveMiniBaseAdj = (currplayer_mini != 0) ? 0 : 4;
+                int genericY = playerY_px + waveMiniBaseAdj;
                 const int genericHeight = 8; // NES WAVE_HEIGHT = 0x08
                 int miniYAdj = (currplayer_mini != 0) ? ((0x10 - genericHeight) >> 1) : 0;
                 
-                checkBaseX = playerX_px + 4;  // NES: Generic.x = playerX + 4
+                checkBaseX = playerX_px + 4;  // NES: Generic.x = playerX + 4 for wave/snake
                 checkWidth = 8;               // NES: Generic.width = 8 for wave
                 checkBaseY = genericY + genericHeight - 2 + miniYAdj;
                 hitboxH = genericHeight;
@@ -930,8 +930,8 @@ namespace FamidashEditor
             {
                 // NES: WAVE_HEIGHT = 0x08 for all wave modes (mini and non-mini)
                 // NES bg_coll_U: centering ((0x10-height)>>1) is applied UNCONDITIONALLY
-                int waveYOffset = (playerVelY_fixed < 0) ? 2 : -2;
-                int genericY = playerY_px + waveYOffset;
+                int waveMiniBaseAdj = (currplayer_mini != 0) ? 0 : 4;
+                int genericY = playerY_px + waveMiniBaseAdj;
                 const int genericHeight = 8; // NES WAVE_HEIGHT = 0x08
                 int centerAdj = (0x10 - genericHeight) >> 1; // Always applied for bg_coll_U
                 

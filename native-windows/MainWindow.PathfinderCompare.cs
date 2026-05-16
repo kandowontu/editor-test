@@ -116,8 +116,9 @@ namespace FamidashEditor
                     if (!silent) StatusText.Text = "Compare: no sim replay CSV on disk.";
                     string snapTs = System.DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
                     string dir = System.IO.Path.GetTempPath();
-                    string mtSnap = System.IO.Path.Combine(dir, $"famidash_mesen_trace_{snapTs}.csv");
-                    string rpSnap = System.IO.Path.Combine(dir, $"famidash_replay_{snapTs}.csv");
+                    string levelTag = this.CurrentLevelTag;
+                    string mtSnap = System.IO.Path.Combine(dir, $"famidash_mesen_trace_{levelTag}_{snapTs}.csv");
+                    string rpSnap = System.IO.Path.Combine(dir, $"famidash_replay_{levelTag}_{snapTs}.csv");
                     if (!silent) StatusText.Text = "Compare: no Mesen trace on disk. Run \"Replay in Mesen\" first.";
                     return;
                 }
@@ -129,8 +130,9 @@ namespace FamidashEditor
                 {
                     string snapTs = System.DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
                     string dir = System.IO.Path.GetTempPath();
-                    string mtSnap = System.IO.Path.Combine(dir, $"famidash_mesen_trace_{snapTs}.csv");
-                    string rpSnap = System.IO.Path.Combine(dir, $"famidash_replay_{snapTs}.csv");
+                    string levelTag = this.CurrentLevelTag;
+                    string mtSnap = System.IO.Path.Combine(dir, $"famidash_mesen_trace_{levelTag}_{snapTs}.csv");
+                    string rpSnap = System.IO.Path.Combine(dir, $"famidash_replay_{levelTag}_{snapTs}.csv");
                     File.Copy(this.MesenTraceFile, mtSnap, overwrite: true);
                     File.Copy(this.ReplayTempFile, rpSnap, overwrite: true);
                 }
@@ -220,15 +222,22 @@ namespace FamidashEditor
                 var fullRows = new StringBuilder();
                 fullRows.AppendLine("rom_f, sim_f, rom_xy, sim_xy, dx, dy, a_next, sim_a");
 
-                // Frame alignment: NES cursor=1 represents the pre-physics rest
-                // frame (vy=0, py at spawn). PF f=0 is the FIRST physics step
-                // (post-jump-fired, vy=-0x40F). Therefore NES cursor=N matches
-                // PF sim[N-2], not sim[N-1]. Skip cursor<2 rows entirely so we
-                // don't compare pre-physics rest against post-physics state.
+                // Frame alignment: Lua's `cursor` is 1-based and replay[1] =
+                // PathPoints[0] (spawn, pre-physics on both sides). The Lua
+                // advance loop `while replay[cursor+1].x <= px` lands on the
+                // largest cursor whose replay[cursor].x equals NES.px AFTER
+                // the current frame's physics. So NES cursor=N matches
+                // PF.PathPoints[N-1] (single Lua-base offset, NO extra
+                // skip-pre-physics step). Empirically verified: at NES px=152,
+                // Lua reports cursor=64 because replay[64].x=PF.PathPoints[63].x
+                // =152, and PF.PathPoints[63]=(152,377) exactly equals NES.
+                // The previous `cursor-2` mapping put the entire compare one
+                // PF frame behind, manifesting as ~7px dy spikes at every
+                // jump/portal/slope event (1 frame of jump-velocity).
                 foreach (var r in rom)
                 {
-                    if (r.SimCursor < 2) continue; // pre-physics latency frames
-                    int simIdx = r.SimCursor - 2; // Lua 1-based + skip pre-physics row
+                    if (r.SimCursor < 1) continue; // skip pre-spawn rows
+                    int simIdx = r.SimCursor - 1; // Lua 1-based -> C# 0-based
                     if (simIdx < 0 || simIdx >= sim.Count) continue;
                     var s = sim[simIdx];
                     int dx = r.Px - s.X;

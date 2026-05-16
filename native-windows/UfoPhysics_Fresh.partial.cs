@@ -64,9 +64,6 @@ if (currplayer_mini != 0)
             // No collision offset - use exact position
             UfoShipEject_Fresh();
             
-            // Update slope exit velocity counters (NES: called after eject in process_cube)
-            UpdateSlopeCounters_Fresh();
-            
             // Check for jump input (press, not hold) - read without consuming first
             int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
             bool pressedJump = pressCount > 0;
@@ -84,6 +81,12 @@ if (currplayer_mini != 0)
                 AppendSimDebug($"[UFO] JUMP! table_idx={currplayer_table_idx}, jumpVel={jumpVel}, velY={playerVelY_fixed}");
             }
             ufoOrbed = false;
+            
+            // Update slope exit velocity counters AFTER jump (NES: x_movement_coll
+            // runs apply_slope_vel after ufo_movement, so it overwrites the jump
+            // velocity when leaving a slope).  Putting this before the jump caused
+            // mini-UFO Y divergences vs NES of +3..+6 px on every jump-off-slope frame.
+            UpdateSlopeCounters_Fresh();
             
             // Record position for trail (skip during pathfinder speculative simulation)
             if (!pfSimulating)

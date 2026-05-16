@@ -2418,11 +2418,17 @@ namespace FamidashEditor
     // Attempted (failed backtrack) paths from pathfinder — shown in a different color
     private System.Collections.Generic.List<System.Collections.Generic.List<(int x, int y)>> attemptedPaths = new();
     private System.Collections.Generic.List<System.Windows.UIElement> attemptedPathPolylines = new();
+    // Mesen-traced (actual NES) paths — populated when Mesen window closes by
+    // parsing famidash_mesen_trace.csv.  One sub-list per attempt (separated by
+    // "# --- respawn ---" lines in the CSV).  Rendered as bright magenta so it
+    // stands out against the pathfinder bias-colored paths.
+    private System.Collections.Generic.List<System.Collections.Generic.List<(int x, int y)>> mesenPaths = new();
+    private System.Collections.Generic.List<System.Windows.UIElement> mesenPathPolylines = new();
     // Two-stage F12 clear: first press clears attempted paths, second press clears final path
     private bool _attemptedPathsCleared = false;
     // Speculative path visualization (updated in real-time during pathfinder computation)
     // Speculative path polylines with timed removal (each stays 1 second)
-    private List<Shapes.Polyline> _speculativePolylines = new();
+    private List<System.Windows.UIElement> _speculativePolylines = new();
     // Speculative path data saved during calculation for persistent display after completion
     private List<List<(int x, int y)>> _speculativePathData = new();
     // Active pathfinder engine reference (for Jump To button and cancellation)
@@ -4731,9 +4737,6 @@ namespace FamidashEditor
             // Only increment animation frame when we actually render
             animationFrame++;
 
-            // Visible debug: update window title so user can see animation frame advancing
-            try { this.Title = $"Famidash Editor (Preview anim {animationFrame})"; } catch { }
-            
             // Debug: Log frame switching every 60 frames (once per second)
             if (animationFrame % 60 == 0)
             {
@@ -12613,6 +12616,10 @@ namespace FamidashEditor
                 foreach (var aPoly in attemptedPathPolylines)
                     try { CanvasHost.Children.Remove(aPoly); } catch { }
                 attemptedPathPolylines.Clear();
+                // Remove previous Mesen path polylines
+                foreach (var mPoly in mesenPathPolylines)
+                    try { CanvasHost.Children.Remove(mPoly); } catch { }
+                mesenPathPolylines.Clear();
 
                 double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
                 double pad = mapViewportPadding;
@@ -12654,6 +12661,54 @@ namespace FamidashEditor
                     Canvas.SetZIndex(aPathElement, 2050);
                     CanvasHost.Children.Add(aPathElement);
                     attemptedPathPolylines.Add(aPathElement);
+                }
+
+                // Draw Mesen-traced (actual NES) paths — bright magenta, on top
+                // of pathfinder paths so divergences are visible by eye.
+                if (mesenPaths.Count > 0)
+                {
+                    var mGeo = new System.Windows.Media.StreamGeometry();
+                    using (var mCtx = mGeo.Open())
+                    {
+                        double minDist2 = scale * scale; // 1 screen-px decimation
+                        foreach (var mPath in mesenPaths)
+                        {
+                            if (mPath == null || mPath.Count < 2) continue;
+                            var first = mPath[0];
+                            double lastDx = pad + first.x * scale;
+                            double lastDy = pad + (first.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                            mCtx.BeginFigure(new System.Windows.Point(lastDx, lastDy), false, false);
+                            for (int pi = 1; pi < mPath.Count; pi++)
+                            {
+                                var p = mPath[pi];
+                                double dx = pad + p.x * scale;
+                                double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                                double ddx = dx - lastDx, ddy = dy - lastDy;
+                                if (ddx * ddx + ddy * ddy >= minDist2)
+                                {
+                                    mCtx.LineTo(new System.Windows.Point(dx, dy), true, false);
+                                    lastDx = dx; lastDy = dy;
+                                }
+                            }
+                            // Always include the final point so the path's endpoint is exact.
+                            var last = mPath[mPath.Count - 1];
+                            double fdx = pad + last.x * scale;
+                            double fdy = pad + (last.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                            mCtx.LineTo(new System.Windows.Point(fdx, fdy), true, false);
+                        }
+                    }
+                    mGeo.Freeze();
+                    var mPathElement = new Shapes.Path()
+                    {
+                        Data = mGeo,
+                        Stroke = new SolidColorBrush(Color.FromArgb(0xE0, 0x00, 0xFF, 0x66)),
+                        StrokeThickness = Math.Max(1.0, 2.0 * scale),
+                        IsHitTestVisible = false
+                    };
+                    // Z above pathfinder paths (2000) and attempted (2050).
+                    Canvas.SetZIndex(mPathElement, 2100);
+                    CanvasHost.Children.Add(mPathElement);
+                    mesenPathPolylines.Add(mPathElement);
                 }
 
                 // Draw pathfinder paths (colored by bias, persist until F12)
@@ -12896,6 +12951,55 @@ namespace FamidashEditor
             catch { }
         }
 
+        /// <summary>
+        /// Load the per-frame Mesen trace CSV (px/py columns) and render each
+        /// attempt as a separate polyline overlay.  Called when Mesen closes so
+        /// the user can visually compare PF (bias-colored) vs NES (magenta).
+        /// </summary>
+        public void LoadAndShowMesenTracePath(string traceCsvPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(traceCsvPath) || !System.IO.File.Exists(traceCsvPath))
+                    return;
+                var attempts = new System.Collections.Generic.List<System.Collections.Generic.List<(int x, int y)>>();
+                var current = new System.Collections.Generic.List<(int x, int y)>();
+                foreach (var raw in System.IO.File.ReadAllLines(traceCsvPath))
+                {
+                    if (string.IsNullOrWhiteSpace(raw)) continue;
+                    if (raw.StartsWith("#", System.StringComparison.Ordinal))
+                    {
+                        // "# --- respawn ---" — start a new attempt.
+                        if (current.Count > 0) { attempts.Add(current); current = new System.Collections.Generic.List<(int x, int y)>(); }
+                        continue;
+                    }
+                    if (raw.StartsWith("nes_y_offset", System.StringComparison.Ordinal)) continue;
+                    if (raw.StartsWith("rom_frame", System.StringComparison.Ordinal)) continue;
+                    var parts = raw.Split(',');
+                    if (parts.Length < 4) continue;
+                    if (!long.TryParse(parts[2], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long pxRaw)) continue;
+                    int px = unchecked((int)(uint)pxRaw);
+                    if (!int.TryParse(parts[3], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int py)) continue;
+                    // Filter pre-level garbage (very large negative-as-uint or > level width).
+                    if (px < 0 || px > 524288) continue;
+                    current.Add((px, py));
+                }
+                if (current.Count > 0) attempts.Add(current);
+
+                Dispatcher?.BeginInvoke(new System.Action(() =>
+                {
+                    try
+                    {
+                        // Replace any existing Mesen paths with the freshly-parsed set.
+                        mesenPaths = attempts;
+                        UpdatePlayerPathOverlay();
+                    }
+                    catch { }
+                }));
+            }
+            catch { }
+        }
+
         /// <summary>Clear all path overlays: pathfinder paths, attempted paths, simulator paths, and death markers.</summary>
         public void ClearPlayerPathOverlay()
         {
@@ -12910,6 +13014,11 @@ namespace FamidashEditor
                 foreach (var pfPoly in pathfinderPathPolylines)
                     try { if (CanvasHost != null) CanvasHost.Children.Remove(pfPoly); } catch { }
                 pathfinderPathPolylines.Clear();
+                // Also clear Mesen-traced paths.
+                mesenPaths.Clear();
+                foreach (var mPoly in mesenPathPolylines)
+                    try { if (CanvasHost != null) CanvasHost.Children.Remove(mPoly); } catch { }
+                mesenPathPolylines.Clear();
             }
             catch { }
         }
@@ -21556,8 +21665,8 @@ namespace FamidashEditor
                         // Real-time speculative path visualization callback.
                         // Called from the background thread for each delay being tested.
                         // Uses async BeginInvoke so the pathfinder thread isn't blocked.
-                        // Throttle: allow max 8 paths per 16ms window so UI isn't flooded
-                        // but cube/ball decisions still show multiple paths per evaluation.
+                        // Throttle: allow denser ship/wave rendering while keeping other
+                        // modes conservative to avoid UI flooding.
                         var _lastSpecUpdate = System.Diagnostics.Stopwatch.StartNew();
                         int _specPathsInWindow = 0;
                         int _specDataCount = 0;
@@ -21585,18 +21694,23 @@ namespace FamidashEditor
                             // Live rendering (only if toggle is on)
                             if (showPathfinderLive)
                             {
+                                int modeCopy = engine.CurrentSpeculativeVizMode;
+                                bool shipOrWave = (modeCopy == 1 || modeCopy == 6);
+
                                 // Reset counter every 16ms window
                                 if (_lastSpecUpdate.ElapsedMilliseconds >= 16)
                                 {
                                     _lastSpecUpdate.Restart();
                                     _specPathsInWindow = 0;
                                 }
-                                if (path != null && _specPathsInWindow >= 3)
+                                int maxPerWindow = shipOrWave ? 10 : 3;
+                                if (path != null && _specPathsInWindow >= maxPerWindow)
                                     return;
                                 _specPathsInWindow++;
 
                                 int survCopy = survival;
                                 bool isHoldCopy = isHold;
+                                int modeForUi = modeCopy;
 
                                 Dispatcher.BeginInvoke(new Action(() =>
                                 {
@@ -21612,42 +21726,109 @@ namespace FamidashEditor
                                         double scale = (ZoomSlider != null) ? ZoomSlider.Value : 1.0;
                                         double pad = mapViewportPadding;
 
-                                        // Color: green if survived full horizon, red/orange otherwise
+                                        // Mode-aware styling for denser decision showcase.
+                                        // Ship/Wave use distinct hold/release palettes so
+                                        // decision-making is visible at a glance.
                                         Color c;
-                                        if (survCopy >= 90)
-                                            c = Color.FromArgb(0xC0, 0x00, 0xFF, 0x00); // green = survived
-                                        else if (isHoldCopy)
-                                            c = Color.FromArgb(0xC0, 0xFF, 0x88, 0x00); // orange = hold-jump dying
+                                        if (modeForUi == 1) // ship
+                                        {
+                                            c = isHoldCopy
+                                                ? Color.FromArgb(0xD0, 0x00, 0xD7, 0xC8)
+                                                : Color.FromArgb(0xD0, 0xFF, 0xB0, 0x3A);
+                                        }
+                                        else if (modeForUi == 6) // wave
+                                        {
+                                            c = isHoldCopy
+                                                ? Color.FromArgb(0xD0, 0x5A, 0x9D, 0xFF)
+                                                : Color.FromArgb(0xD0, 0xA8, 0xE6, 0x3C);
+                                        }
                                         else
-                                            c = Color.FromArgb(0xC0, 0xFF, 0x40, 0x40); // red = dying
+                                        {
+                                            if (survCopy >= 90)
+                                                c = Color.FromArgb(0xC0, 0x00, 0xFF, 0x00);
+                                            else if (isHoldCopy)
+                                                c = Color.FromArgb(0xC0, 0xFF, 0x88, 0x00);
+                                            else
+                                                c = Color.FromArgb(0xC0, 0xFF, 0x40, 0x40);
+                                        }
+
+                                        double lifeMs = (modeForUi == 1 || modeForUi == 6) ? 1200.0 : 350.0;
+                                        double lineScale = (modeForUi == 1 || modeForUi == 6) ? 1.0 : 0.8;
+                                        double baseThickness = Math.Max(1.0, (1.2 + Math.Min(2.0, survCopy / 60.0)) * scale * lineScale);
+
+                                        // Keep the number of live speculative elements bounded.
+                                        const int MAX_LIVE_SPEC_ELEMENTS = 240;
+                                        while (_speculativePolylines.Count > MAX_LIVE_SPEC_ELEMENTS)
+                                        {
+                                            var old = _speculativePolylines[0];
+                                            _speculativePolylines.RemoveAt(0);
+                                            try { CanvasHost.Children.Remove(old); } catch { }
+                                        }
+
+                                        var glow = new Shapes.Polyline()
+                                        {
+                                            Stroke = new SolidColorBrush(Color.FromArgb((byte)Math.Max(0x30, c.A / 2), c.R, c.G, c.B)),
+                                            StrokeThickness = baseThickness * 1.9,
+                                            IsHitTestVisible = false
+                                        };
 
                                         var poly = new Shapes.Polyline()
                                         {
                                             Stroke = new SolidColorBrush(c),
-                                            StrokeThickness = Math.Max(1.0, 1.5 * scale),
+                                            StrokeThickness = baseThickness,
                                             IsHitTestVisible = false
                                         };
+                                        if (modeForUi == 1 || modeForUi == 6)
+                                            poly.StrokeDashArray = isHoldCopy ? new DoubleCollection(new[] { 3.0, 2.0 }) : new DoubleCollection(new[] { 1.0, 2.0 });
+
+                                        double lastDx = 0, lastDy = 0;
                                         foreach (var p in pathSnapshot)
                                         {
                                             double dx = pad + p.x * scale;
                                             double dy = pad + (p.y + (3 * TileSize)) * scale + gridRenderShiftY;
+                                            lastDx = dx; lastDy = dy;
+                                            glow.Points.Add(new System.Windows.Point(dx, dy));
                                             poly.Points.Add(new System.Windows.Point(dx, dy));
                                         }
-                                        Canvas.SetZIndex(poly, 2100); // above committed paths
-                                        CanvasHost.Children.Add(poly);
-                                        _speculativePolylines.Add(poly);
+                                        var endMarker = new Shapes.Ellipse()
+                                        {
+                                            Width = Math.Max(2.0, 3.0 * scale),
+                                            Height = Math.Max(2.0, 3.0 * scale),
+                                            Fill = new SolidColorBrush(c),
+                                            Stroke = new SolidColorBrush(Color.FromArgb(0xD0, 0xFF, 0xFF, 0xFF)),
+                                            StrokeThickness = Math.Max(0.5, 0.8 * scale),
+                                            IsHitTestVisible = false
+                                        };
+                                        Canvas.SetLeft(endMarker, lastDx - endMarker.Width / 2.0);
+                                        Canvas.SetTop(endMarker, lastDy - endMarker.Height / 2.0);
 
-                                        // Remove this polyline after 250ms
+                                        Canvas.SetZIndex(glow, 2098);
+                                        Canvas.SetZIndex(poly, 2100); // above committed paths
+                                        Canvas.SetZIndex(endMarker, 2101);
+                                        CanvasHost.Children.Add(glow);
+                                        CanvasHost.Children.Add(poly);
+                                        CanvasHost.Children.Add(endMarker);
+                                        _speculativePolylines.Add(glow);
+                                        _speculativePolylines.Add(poly);
+                                        _speculativePolylines.Add(endMarker);
+
+                                        // Remove temporary speculative visuals after a short lifetime.
                                         var removeTimer = new System.Windows.Threading.DispatcherTimer();
-                                        removeTimer.Interval = TimeSpan.FromMilliseconds(250);
+                                        removeTimer.Interval = TimeSpan.FromMilliseconds(lifeMs);
+                                        var glowRef = glow;
                                         var polyRef = poly;
+                                        var markerRef = endMarker;
                                         removeTimer.Tick += (s, ev) =>
                                         {
                                             removeTimer.Stop();
                                             try
                                             {
+                                                CanvasHost?.Children.Remove(glowRef);
                                                 CanvasHost?.Children.Remove(polyRef);
+                                                CanvasHost?.Children.Remove(markerRef);
+                                                _speculativePolylines.Remove(glowRef);
                                                 _speculativePolylines.Remove(polyRef);
+                                                _speculativePolylines.Remove(markerRef);
                                             }
                                             catch { }
                                         };

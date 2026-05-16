@@ -63,18 +63,16 @@ if (currplayer_mini != 0)
             
             switch (tmp1) {
                 case 0:
-                    // Calculate vel_y based on vel_x UNLESS we just landed
-                    // NES: check the flag BEFORE clearing it so the wave stays at velY=0
-                    // for one frame after eject (allows surface-sliding)
-                    if (!wasZeroedByCollisionLastFrame)
-                    {
-                        if (!miniMode) {
-                            playerVelY_fixed = gravityFlipped ? -playerVelX_fixed : playerVelX_fixed;
-                        } else {
-                            playerVelY_fixed = gravityFlipped ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
-                        }
+                    // NES gamemode_wave.h case 0 recalculates currplayer_vel_y = ±vel_x
+                    // UNCONDITIONALLY every frame.  No "was zeroed" gate.  PF removed the
+                    // wasZeroedByCollisionLastFrame gate to match NES — SIM must do the same
+                    // or wave Y movement lags by one frame after every bg_coll_U/D eject.
+                    if (!miniMode) {
+                        playerVelY_fixed = gravityFlipped ? -playerVelX_fixed : playerVelX_fixed;
+                    } else {
+                        playerVelY_fixed = gravityFlipped ? -(playerVelX_fixed << 1) : (playerVelX_fixed << 1);
                     }
-                    wasZeroedByCollisionLastFrame = false; // Clear AFTER checking — matches NES/PF
+                    wasZeroedByCollisionLastFrame = false;
                     
                     // Input handling - use same system as cube
                     bool holding = IsXDownAsync() || keyXHeld;
@@ -277,15 +275,15 @@ if (currplayer_mini != 0)
             // Set up Generic struct for collision detection
             // NES: Generic.x = high_byte(currplayer_x) + 4 (always +4)
             // NES (gamemode_wave.h L41):
-            //   Generic.y = high_byte(currplayer_y) + ((vel < 0) ? 2 : -2)
+            //   Generic.y = high_byte(currplayer_y) + (currplayer_mini ? 0 : 4)
             // NES: WAVE_WIDTH = 0x08, WAVE_HEIGHT = 0x08 (always 8×8)
             Generic_x = (playerX_fixed >> 8) + 4;
-            int yAdj = (playerVelY_fixed < 0) ? 2 : -2;
-            Generic_y = (playerY_fixed >> 8) + yAdj;
+            int miniBaseAdj = (currplayer_mini != 0) ? 0 : 4;
+            Generic_y = (playerY_fixed >> 8) + miniBaseAdj;
             Generic_width = 8;
             Generic_height = 8;
             
-            AppendSimDebug($"[WAVE_EJECT] Generic=({Generic_x},{Generic_y}) {Generic_width}x{Generic_height} velY=0x{playerVelY_fixed:X} yAdj={yAdj}");
+            AppendSimDebug($"[WAVE_EJECT] Generic=({Generic_x},{Generic_y}) {Generic_width}x{Generic_height} velY=0x{playerVelY_fixed:X} miniBaseAdj={miniBaseAdj}");
             
             // Check collision based on VELOCITY direction
             // When velY == 0 (wasZeroed frame), skip collision — wave is resting on surface
@@ -334,7 +332,7 @@ if (currplayer_mini != 0)
                     return;
                 }
             }
-            else if (playerVelY_fixed > 0)  // Velocity is positive (moving DOWN)
+            else if (playerVelY_fixed >= 0)  // Velocity is non-negative (moving DOWN)
             {
                 if (wave_coll_D())
                 {

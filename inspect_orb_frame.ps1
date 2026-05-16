@@ -1,0 +1,3 @@
+$mt = Import-Csv "$env:TEMP\famidash_mesen_trace.csv" -Header 'rom_frame','sim_cursor','px','py','a_next','a_cur','raw_x','raw_y','scrollx','scrolly','vel_y','table_idx','gravity_mod','dashing','gamemode','scroll_y_subpx','framerate','tgt_scroll_y','cp_y','scroll_y_raw','cube_data','death_pc','death_ctx','collmap_r8','mini','cp_gravity','nocamlock','nocamlockforced','min_scroll_y','dual' | Select-Object -Skip 2
+# Show ALL rows for sc=2105-2115 (including duplicates)
+$mt | ?{ [int]$_.sim_cursor -ge 2105 -and [int]$_.sim_cursor -le 2120 } | Select-Object rom_frame, sim_cursor, px, raw_x, scrollx, @{N='vy';E={[int]$_.vel_y}}, a_cur | ft -AutoSize

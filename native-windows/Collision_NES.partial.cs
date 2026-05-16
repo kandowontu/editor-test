@@ -532,7 +532,7 @@ namespace FamidashEditor
         private bool wave_coll_D()
         {
             // Regular collision check
-            temp_x = Generic_x;
+            temp_x = Generic_x + 4;
             temp_y = Generic_y + Generic_height;
             
             tmp8 = temp_y & 0x0f;
@@ -565,7 +565,7 @@ namespace FamidashEditor
             }
             
             // Point 3: right
-            temp_x = Generic_x + Generic_width;
+            temp_x = Generic_x + 4 + Generic_width;
             bg_collision_sub();
             if (CheckCollisionAtPoint(temp_x, temp_y, (MetatileCollision)collision))
             {
@@ -586,7 +586,7 @@ namespace FamidashEditor
         private bool wave_coll_U()
         {
             // Check top edge
-            temp_x = Generic_x;
+            temp_x = Generic_x + 4;
             temp_y = Generic_y - 1;
             
             tmp8 = 16 - (temp_y & 0x0f);

@@ -966,19 +966,29 @@ namespace FamidashEditor
                 int storageTileX = idx % mapWidth;
                 int storageTileY = idx / mapWidth;
 
-                // If anchored, prefer the anchored sprite id for geometry lookup so preview matches editor
-                int id_for_geom = sid & 0xFF;
+                // Geometry defaults to the instance SID. Portal classes must use
+                // their own SID geometry (NES sprite_collide indexes tables by
+                // activesprites_type[index], not an anchor owner's type).
+                int sid8 = sid & 0xFF;
+                int id_for_geom = sid8;
                 int anchorKey = -1;
+                bool allowAnchorGeom = !(SharedPhysics.IsSpeedPortal(sid8)
+                                         || SharedPhysics.IsGameModePortal(sid8)
+                                         || SharedPhysics.IsGravityPortal(sid8)
+                                         || SharedPhysics.IsMiniGrowthPortal(sid8));
                 if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
                 {
                     anchorKey = anchor.anchorTileY * mapWidth + anchor.anchorTileX;
                     // Prefer the anchor's sprite id for geometry lookup when anchored
-                    if (anchorKey >= 0 && anchorKey < sprites.Length)
+                    if (allowAnchorGeom && anchorKey >= 0 && anchorKey < sprites.Length)
                     {
                         int anchoredId = sprites[anchorKey];
                         if (anchoredId >= 0 && anchoredId < 256) id_for_geom = anchoredId & 0xFF;
                     }
                 }
+
+                // Keep all gamemode portals on one canonical hitbox profile.
+                id_for_geom = SharedPhysics.NormalizePortalGeometrySid(id_for_geom);
 
                 int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
                 int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
@@ -1053,14 +1063,21 @@ namespace FamidashEditor
                 int storageTileX = idx % mapWidth;
                 int storageTileY = idx / mapWidth;
 
-                // If anchored, prefer the anchored sprite id for geometry lookup so preview matches editor
-                int id_for_geom = sid & 0xFF;
+                // Geometry defaults to the instance SID. Portal classes must use
+                // their own SID geometry (NES sprite_collide indexes tables by
+                // activesprites_type[index], not an anchor owner's type).
+                int sid8 = sid & 0xFF;
+                int id_for_geom = sid8;
                 int anchorKey = -1;
+                bool allowAnchorGeom = !(SharedPhysics.IsSpeedPortal(sid8)
+                                         || SharedPhysics.IsGameModePortal(sid8)
+                                         || SharedPhysics.IsGravityPortal(sid8)
+                                         || SharedPhysics.IsMiniGrowthPortal(sid8));
                 if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
                 {
                     anchorKey = anchor.anchorTileY * mapWidth + anchor.anchorTileX;
                     // Prefer the anchor's sprite id for geometry lookup when anchored
-                    if (anchorKey >= 0 && anchorKey < sprites.Length)
+                    if (allowAnchorGeom && anchorKey >= 0 && anchorKey < sprites.Length)
                     {
                         int anchoredId = sprites[anchorKey];
                         if (anchoredId >= 0 && anchoredId < 256) id_for_geom = anchoredId & 0xFF;
@@ -1072,6 +1089,9 @@ namespace FamidashEditor
                     // displayed origin (so using the instance tile + anchor pixel offsets yields
                     // the correct world rect).
                 }
+
+                // Keep all gamemode portals on one canonical hitbox profile.
+                id_for_geom = SharedPhysics.NormalizePortalGeometrySid(id_for_geom);
 
                 int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
                 int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
@@ -11167,12 +11187,17 @@ namespace FamidashEditor
                                 // (matching PF's SpriteEntry pre-computation, no image expansion)
                                 int storageTileX_sp1 = idx % mapWidth;
                                 int storageTileY_sp1 = idx / mapWidth;
-                                int id_for_geom_sp1 = sid & 0xFF;
+                                int sid8_sp1 = sid & 0xFF;
+                                int id_for_geom_sp1 = sid8_sp1;
                                 int anchorKey_sp1 = -1;
+                                bool allowAnchorGeom_sp1 = !(SharedPhysics.IsSpeedPortal(sid8_sp1)
+                                                             || SharedPhysics.IsGameModePortal(sid8_sp1)
+                                                             || SharedPhysics.IsGravityPortal(sid8_sp1)
+                                                             || SharedPhysics.IsMiniGrowthPortal(sid8_sp1));
                                 if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor_sp1))
                                 {
                                     anchorKey_sp1 = anchor_sp1.anchorTileY * mapWidth + anchor_sp1.anchorTileX;
-                                    if (anchorKey_sp1 >= 0 && anchorKey_sp1 < sprites.Length)
+                                    if (allowAnchorGeom_sp1 && anchorKey_sp1 >= 0 && anchorKey_sp1 < sprites.Length)
                                     {
                                         int anchoredId_sp1 = sprites[anchorKey_sp1];
                                         if (anchoredId_sp1 >= 0 && anchoredId_sp1 < 256) id_for_geom_sp1 = anchoredId_sp1 & 0xFF;
@@ -11190,7 +11215,9 @@ namespace FamidashEditor
                                 { pxOff_sp1 = offs_sp1.offsetX; pyOff_sp1 = offs_sp1.offsetY; }
 
                                 int sLeft_sp1 = storageTileX_sp1 * TILE + hxoff_sp1 + pxOff_sp1;
-                                int sTop_sp1 = (storageTileY_sp1 - groundRowsToReserve_sp1) * TILE + hyoff_sp1 + pyOff_sp1 - 1;
+                                // Speed portals in NES sprite_collide do not use the
+                                // extra -1 Y bias from check_spr_objects-style paths.
+                                int sTop_sp1 = (storageTileY_sp1 - groundRowsToReserve_sp1) * TILE + hyoff_sp1 + pyOff_sp1;
                                 int sRight_sp1 = sLeft_sp1 + Math.Max(1, hw_sp1);   // exclusive (NES-style)
                                 int sBottom_sp1 = sTop_sp1 + Math.Max(1, hh_sp1);   // exclusive (NES-style)
 
@@ -11208,7 +11235,11 @@ namespace FamidashEditor
                                     else if (spd == CUBE_SPEED_X2) speed = 2;
                                     else if (spd == CUBE_SPEED_X3) speed = 3;
                                     else if (spd == CUBE_SPEED_X4) speed = 4;
-                                    processedSpeedPortals.Add(idx);
+                                    // NES `spcl_spd_*` does NOT call
+                                    // `idx8_inc(activesprites_activated, index)`,
+                                    // so the speed portal re-fires every frame
+                                    // the player overlaps it. Wave physics fix
+                                    // depends on this re-fire.
                                     AppendSimDebug($"[SPEED_P1] sid=0x{sid:X2} VelX -> 0x{spd:X4}");
                                     // Recompute X advance with new speed so this frame uses it (matching PF)
                                     if (isFullSpeed)
@@ -11216,7 +11247,6 @@ namespace FamidashEditor
                                     else
                                         attemptedPlayerX_fixed = playerX_fixed + (int)Math.Round((currentSpeed_fixed * speedMultiplierLocal) * simTimeScale);
                                     attemptedPlayerCenter_fixed = attemptedPlayerX_fixed + centerOffset_fixed;
-                                    break; // one per frame, matching PF
                                 }
                             }
                         }
@@ -12191,12 +12221,17 @@ namespace FamidashEditor
 
                                         int storageTileX_sp2 = idx % mapWidth;
                                         int storageTileY_sp2 = idx / mapWidth;
-                                        int id_for_geom_sp2 = sid & 0xFF;
+                                        int sid8_sp2 = sid & 0xFF;
+                                        int id_for_geom_sp2 = sid8_sp2;
                                         int anchorKey_sp2 = -1;
+                                        bool allowAnchorGeom_sp2 = !(SharedPhysics.IsSpeedPortal(sid8_sp2)
+                                                                     || SharedPhysics.IsGameModePortal(sid8_sp2)
+                                                                     || SharedPhysics.IsGravityPortal(sid8_sp2)
+                                                                     || SharedPhysics.IsMiniGrowthPortal(sid8_sp2));
                                         if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor_sp2))
                                         {
                                             anchorKey_sp2 = anchor_sp2.anchorTileY * mapWidth + anchor_sp2.anchorTileX;
-                                            if (anchorKey_sp2 >= 0 && anchorKey_sp2 < sprites.Length)
+                                            if (allowAnchorGeom_sp2 && anchorKey_sp2 >= 0 && anchorKey_sp2 < sprites.Length)
                                             {
                                                 int anchoredId_sp2 = sprites[anchorKey_sp2];
                                                 if (anchoredId_sp2 >= 0 && anchoredId_sp2 < 256) id_for_geom_sp2 = anchoredId_sp2 & 0xFF;
@@ -12214,7 +12249,9 @@ namespace FamidashEditor
                                         { pxOff_sp2 = offs_sp2.offsetX; pyOff_sp2 = offs_sp2.offsetY; }
 
                                         int sLeft_sp2 = storageTileX_sp2 * TILE + hxoff_sp2 + pxOff_sp2;
-                                        int sTop_sp2 = (storageTileY_sp2 - groundRowsToReserve_sp2) * TILE + hyoff_sp2 + pyOff_sp2 - 1;
+                                        // Keep P2 speed checks in lockstep with P1/PF:
+                                        // no extra -1 Y bias for speed portal overlaps.
+                                        int sTop_sp2 = (storageTileY_sp2 - groundRowsToReserve_sp2) * TILE + hyoff_sp2 + pyOff_sp2;
                                         int sRight_sp2 = sLeft_sp2 + Math.Max(1, hw_sp2);
                                         int sBottom_sp2 = sTop_sp2 + Math.Max(1, hh_sp2);
 
@@ -12230,9 +12267,10 @@ namespace FamidashEditor
                                             else if (spd == CUBE_SPEED_X2) speed = 2;
                                             else if (spd == CUBE_SPEED_X3) speed = 3;
                                             else if (spd == CUBE_SPEED_X4) speed = 4;
-                                            processedSpeedPortals.Add(idx);
+                                            // NES `spcl_spd_*` does NOT one-shot via
+                                            // idx8_inc; speed portals re-fire every
+                                            // frame the player overlaps them.
                                             AppendSimDebug($"[SPEED_P2] sid=0x{sid:X2} VelX -> 0x{spd:X4}");
-                                            break;
                                         }
                                     }
                                 }
