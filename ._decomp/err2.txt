@@ -1,0 +1,3 @@
+Tool 'ilspycmd' failed to update due to the following:
+The settings file in the tool's NuGet package is invalid: Settings file 'DotnetToolSettings.xml' was not found in the package.
+Tool 'ilspycmd' failed to install. Contact the tool author for assistance.

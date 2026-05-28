@@ -1,0 +1,552 @@
+using System;
+using System.Threading;
+
+namespace FamidashEditor
+{
+    public partial class SimulatorWindow
+    {
+        /// <summary>
+        /// spider_movement() from gamemode_spider.h - Complete refactor
+        /// Spider teleports to ceiling/floor when X is pressed
+        /// </summary>
+        private void SpiderPhysics_Fresh()
+        {
+            // Orb activation check first
+            {
+                bool holdJump_orb = IsXDownAsync() || keyXHeld;
+                int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
+                bool pressJump_orb = pressCount_orb > 0;
+                bool gravityInverted_orb = (currplayer_gravity != 0);
+                int playerX_px_orb = (playerX_fixed >> 8) + 1;
+                int playerY_px_orb = playerY_fixed >> 8;
+                int hitboxW_orb = (currplayer_mini != 0) ? 8 : 15;
+                int hitboxH_orb = (currplayer_mini != 0) ? 7 : 15;
+                
+                // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
+if (currplayer_mini != 0)
+                {
+                    playerY_px_orb += 4;
+                }
+                
+                int scrollX_px_orb = 0;
+                
+                int tempVelY = playerVelY_fixed;
+                var (orbActivated, orbType) = UpdateOrbSystem(5, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
+                                                   scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
+                                                   (currplayer_mini != 0), ref tempVelY);
+                if (orbActivated)
+                {
+                    playerVelY_fixed = tempVelY;
+                    AppendSimDebug($"[SPIDER] Orb activated! Type=0x{orbType:X2}, New velY={playerVelY_fixed}");
+                    
+                    // Set blackOrbed flag if this was a black orb (0x44)
+                    if (orbType == 0x44)
+                    {
+                        blackOrbed = true;
+                        AppendSimDebug($"[SPIDER] BLACK ORB activated - blackOrbed set to true");
+                    }
+                    
+                    if (pressJump_orb)
+                        Interlocked.Exchange(ref keyXPressedCount, 0);
+                }
+                
+                if (!holdJump_orb)
+                    ClearOrbBuffer();
+            }
+            
+            // Get base physics values
+            int baseTableIdx = (miniMode ? 4 : 0);
+            bool gravityInverted = gravityFlipped;
+            int gravityMultiplier = gravityInverted ? -1 : 1;
+            
+            tmpfallspeed = GameModePhysics.SPIDER_MAX_FALLSPEED(baseTableIdx) * gravityMultiplier;
+            tmpgravity = GameModePhysics.SPIDER_GRAVITY(baseTableIdx) * gravityMultiplier;
+            
+            // Apply gravity and integrate position
+            CommonGravityRoutine_Fresh();
+            
+            // Spider eject - check collision and zero velocity if grounded
+            // Offset collision check down 1 pixel (normal) or up 2 pixels (inverted)
+            int offsetY = (playerY_fixed >> 8) + (gravityInverted ? -2 : 1);
+            SpiderEject_Fresh(offsetY);
+
+            // Update slope exit velocity counters
+            UpdateSlopeCounters_Fresh();
+
+            // Update the global onGround flag based on whether we're grounded
+            // If velocity is 0 after eject, we hit something and are grounded
+            onGround = (playerVelY_fixed == 0);
+            AppendSimDebug($"[SPIDER] After eject: onGround={onGround}, velY={playerVelY_fixed}");
+            
+            // Input handling
+            bool holdingJump = IsXDownAsync() || keyXHeld;
+            int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
+            bool pressedJump = pressCount > 0;
+            
+            // Spider can only teleport when velocity is 0 (grounded) and not orbed
+            bool canTeleport = (playerVelY_fixed == 0) && !orbed[currplayer];
+            
+            if (!gravityFlipped)
+            {
+                // Normal gravity - on floor, can teleport to ceiling
+                if ((pressedJump || (holdingJump && blackOrbed)) && canTeleport)
+                {
+                    AppendSimDebug($"[SPIDER] TELEPORTING TO CEILING! Start Y={playerY_fixed >> 8}");
+                    
+                    // Flip gravity and table index
+                    currplayer_gravity = 0xFF; // GRAVITY_UP
+                    gravityFlipped = true;
+                    gravityReversed = true;
+                    UpdateCurrplayerTableIdx_Fresh();
+                    
+                    // Scan upward for ceiling (positions player at ceiling surface)
+                    SpiderUpWait_Fresh();
+                    
+                    playerVelY_fixed = 0;
+                    try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
+                    
+                    AppendSimDebug($"[SPIDER] Teleported to ceiling Y={playerY_fixed >> 8}");
+                    blackOrbed = false;
+                }
+                else if (!holdingJump) 
+                {
+                    blackOrbed = false;
+                    orbed[currplayer] = false;
+                }
+            }
+            else
+            {
+                // Inverted gravity - on ceiling, can teleport to floor
+                if ((pressedJump || (holdingJump && blackOrbed)) && canTeleport)
+                {
+                    AppendSimDebug($"[SPIDER] TELEPORTING TO FLOOR! Start Y={playerY_fixed >> 8}");
+                    
+                    // Flip gravity and table index
+                    currplayer_gravity = 0x00; // GRAVITY_DOWN
+                    gravityFlipped = false;
+                    gravityReversed = false;
+                    UpdateCurrplayerTableIdx_Fresh();
+                    
+                    // Scan downward for floor (positions player at floor surface)
+                    SpiderDownWait_Fresh();
+                    
+                    playerVelY_fixed = 0;
+                    try { Dispatcher?.BeginInvoke(new Action(() => UpdatePlayerIconFlip())); } catch { }
+                    
+                    AppendSimDebug($"[SPIDER] Teleported to floor Y={playerY_fixed >> 8}");
+                    blackOrbed = false;
+                }
+                else if (!holdingJump)
+                {
+                    blackOrbed = false;
+                    orbed[currplayer] = false;
+                }
+            }
+            
+            // Record position for trail (skip during pathfinder speculative simulation)
+            if (!pfSimulating)
+            try
+            {
+                int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                int playerY_px_trail = playerY_fixed >> 8;
+                // Apply mini mode offset for trail to match visual position
+                bool isMini_trail = (currplayer_mini != 0);
+                if (isMini_trail)
+                {
+                    playerY_px_trail += 4;
+                }
+                int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
+                
+                // Record to appropriate path list based on which player is active
+                if (currplayer == 0)
+                    recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                else if (dual)
+                    RecordP2PathPoint(playerWorldCenterX_px, playerWorldCenterY_px);
+            }
+            catch { }
+        }
+        
+        /// <summary>
+        /// spider_eject() from gamemode_spider.h
+        /// Checks collision and zeros velocity if grounded
+        /// offsetY is the Y position to check (already offset by +1 or -2)
+        /// </summary>
+        private void SpiderEject_Fresh(int offsetY)
+        {
+            bool isMini = (miniMode);
+            int hitboxW = isMini ? 8 : 15;
+            int hitboxH = isMini ? 7 : 15;
+            int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
+            int collisionX = (playerX_fixed >> 8);
+            int collisionY = offsetY + hitboxOffsetY;
+            
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+
+            // Update slope counters each frame
+            UpdateSlopeCounters();
+            
+            if (!gravityFlipped)
+            {
+                // Normal gravity - check slopes first, then floor collision
+                bool slopeHit = bg_coll_D_slopes();
+                if (slopeHit)
+                {
+                    if (eject_D > 0)
+                    {
+                        int currentY_px = playerY_fixed >> 8;
+                        int newY_px = currentY_px - eject_D;
+                        playerY_fixed = newY_px << 8;
+                    }
+                    playerVelY_fixed = 0;
+                    wasZeroedByCollisionLastFrame = true;
+                }
+                else
+                {
+                    // spider_eject calls bg_coll_D (3 probes, no inset), not bg_coll_D_spider.
+                    var (collided, ejectAmount) = BgCollD_Spider(collisionX, collisionY, hitboxW, hitboxH, groundRowsToReserve, useEjectProbes: true);
+                    if (collided)
+                    {
+                        int currentY_px = playerY_fixed >> 8;
+                        int newY_px = currentY_px - ejectAmount;
+                        playerY_fixed = newY_px << 8;
+                        playerVelY_fixed = 0;
+                        wasZeroedByCollisionLastFrame = true;
+                        AppendSimDebug($"[SPIDER_EJECT] Floor collision: eject={ejectAmount}, Y {currentY_px} -> {newY_px}");
+                    }
+                    else
+                    {
+                        // No collision - allow gravity to apply
+                        wasZeroedByCollisionLastFrame = false;
+                    }
+                }
+            }
+            else
+            {
+                // Inverted gravity - check ceiling collision
+                // spider_eject calls bg_coll_U (3 probes, no inset), not bg_coll_U_spider.
+                var (collided, ejectAmount) = BgCollU_Spider(collisionX, collisionY, hitboxW, hitboxH, groundRowsToReserve, useEjectProbes: true);
+                if (collided)
+                {
+                    // NES eject lands at exactly surfaceBottom via byte-wrap math.
+                    // collisionY + ejectAmount == surfaceBottom (the offset cancels out).
+                    int newY_px = collisionY + ejectAmount;
+                    playerY_fixed = newY_px << 8;
+                    playerVelY_fixed = 0;
+                    wasZeroedByCollisionLastFrame = true;  // Signal gravity not to re-apply next frame
+                    AppendSimDebug($"[SPIDER_EJECT] Ceiling collision: eject={ejectAmount}, Y -> {newY_px}");
+                }
+                else
+                {
+                    // No collision - allow gravity to apply
+                    wasZeroedByCollisionLastFrame = false;
+                }
+            }
+        }
+        
+        /// <summary>
+        /// spider_up_wait() from gamemode_spider.h
+        /// Scans upward in 8-pixel steps until ceiling is found
+        /// </summary>
+        private void SpiderUpWait_Fresh()
+        {
+            int hitboxW = (miniMode) ? 8 : 15;
+            int hitboxH = (miniMode) ? 8 : 15;
+            int hitboxOffsetY = (miniMode) ? 0 : 0; // Spider doesn't use mini offset during scan
+            int playerX_px = playerX_fixed >> 8;
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            
+            int scanY_px = playerY_fixed >> 8;
+            int maxIterations = 200; // Safety limit
+            int iteration = 0;
+            
+            while (iteration < maxIterations)
+            {
+                // Move up 8 pixels
+                scanY_px -= 8;
+                playerY_fixed = scanY_px << 8;
+                
+                // Process camera scroll (matching famidash's process_y_scroll)
+                ProcessCameraScrollDuringSpiderScan();
+                
+                // Check if too high (world Y < 0 accounting for ground offset)
+                if (scanY_px <= -(groundRowsToReserve * TILE))
+                {
+                    AppendSimDebug($"[SPIDER_UP] Hit top boundary at Y={scanY_px}");
+                    playerY_fixed = 0;
+                    break;
+                }
+                
+                // Check for ceiling collision
+                var (collided, eject) = BgCollU_Spider(playerX_px, scanY_px + hitboxOffsetY, hitboxW, hitboxH, groundRowsToReserve);
+                if (collided)
+                {
+                    // Use eject amount to position precisely at collision surface
+                    scanY_px += eject;
+                    AppendSimDebug($"[SPIDER_UP] Found ceiling, eject={eject}, final scanY={scanY_px}");
+                    playerY_fixed = scanY_px << 8;
+                    break;
+                }
+                
+                iteration++;
+            }
+            
+            if (iteration >= maxIterations)
+            {
+                AppendSimDebug($"[SPIDER_UP] Max iterations reached, stopping at Y={scanY_px}");
+                playerY_fixed = scanY_px << 8;
+            }
+        }
+        
+        /// <summary>
+        /// spider_down_wait() from gamemode_spider.h
+        /// Scans downward in 8-pixel steps until floor is found
+        /// </summary>
+        private void SpiderDownWait_Fresh()
+        {
+            bool isMini = (miniMode);
+            int hitboxW = isMini ? 8 : 15;
+            int hitboxH = isMini ? 7 : 15;
+            int hitboxOffsetY = isMini ? ((0x10 - hitboxH) >> 1) : 0;
+            int playerX_px = playerX_fixed >> 8;
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            
+            int scanY_px = playerY_fixed >> 8;
+            int maxY_px = (mapHeight - groundRowsToReserve) * TILE - hitboxH;
+            int maxIterations = 200; // Safety limit
+            int iteration = 0;
+            
+            while (iteration < maxIterations)
+            {
+                // Move down 8 pixels
+                scanY_px += 8;
+                playerY_fixed = scanY_px << 8;
+                
+                // Process camera scroll (matching famidash's process_y_scroll)
+                ProcessCameraScrollDuringSpiderScan();
+                
+                // Check if too low
+                if (scanY_px >= maxY_px)
+                {
+                    AppendSimDebug($"[SPIDER_DOWN] Hit bottom boundary at Y={scanY_px}");
+                    playerY_fixed = maxY_px << 8;
+                    break;
+                }
+                
+                // Check for floor collision
+                var (collided, eject) = BgCollD_Spider(playerX_px, scanY_px + hitboxOffsetY, hitboxW, hitboxH, groundRowsToReserve);
+                if (collided)
+                {
+                    // Use eject amount to position precisely at collision surface
+                    scanY_px -= eject;
+                    AppendSimDebug($"[SPIDER_DOWN] Found floor, eject={eject}, final scanY={scanY_px}");
+                    playerY_fixed = scanY_px << 8;
+                    break;
+                }
+                
+                iteration++;
+            }
+            
+            if (iteration >= maxIterations)
+            {
+                AppendSimDebug($"[SPIDER_DOWN] Max iterations reached, stopping at Y={scanY_px}");
+                playerY_fixed = scanY_px << 8;
+            }
+        }
+        
+        /// <summary>
+        /// Spider floor collision check.
+        /// useEjectProbes=false: bg_coll_D_spider style (2 probes, 3px inset) — for scan.
+        /// useEjectProbes=true:  bg_coll_D style (3 probes, no inset) — for spider_eject.
+        /// Returns (collided, ejectAmount) where ejectAmount is pixels to move up
+        /// </summary>
+        private (bool collided, int ejectAmount) BgCollD_Spider(int playerX_px, int playerY_px, int width, int height, int groundRowsToReserve, bool useEjectProbes = false)
+        {
+            // Check bottom of hitbox
+            int checkY_px = playerY_px + height;
+            
+            // Convert world Y to tile Y (accounting for ground offset)
+            int tileY = (checkY_px / TILE) + groundRowsToReserve;
+            
+            // Check if beyond map bottom (ground layer = solid)
+            if (tileY >= mapHeight)
+            {
+                int groundTop_world = (mapHeight - groundRowsToReserve) * TILE;
+                int eject = checkY_px - groundTop_world;
+                return (true, eject);
+            }
+            
+            if (tileY < 0) return (false, 0);
+
+            int[] probes;
+            if (useEjectProbes)
+            {
+                // NES bg_coll_D: 3 probes at X, X+width/2, X+width (no inset)
+                probes = new[] { playerX_px, playerX_px + (width >> 1), playerX_px + width };
+            }
+            else
+            {
+                // NES bg_coll_D_spider: 2 probes with 3px inset
+                probes = new[] { playerX_px + 3, playerX_px + width - 3 };
+            }
+            
+            foreach (int probeX in probes)
+            {
+                int probeTileX = probeX / TILE;
+                if (probeTileX >= 0 && probeTileX < mapWidth)
+                {
+                    int tileIdx = tileY * mapWidth + probeTileX;
+                    if (tileIdx >= 0 && tileIdx < tiles.Length)
+                    {
+                        int tileId = tiles[tileIdx];
+                        var collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
+                        
+                        if (IsSolidCollisionForSpider(collision))
+                        {
+                            var (colLeft, colTop, colRight, colBottom) = SharedPhysics.GetCollisionBounds(collision);
+                            int tileTopLeft_world = (tileY - groundRowsToReserve) * TILE;
+                            int collisionTop_world = tileTopLeft_world + colTop;
+                            
+                            if (checkY_px >= collisionTop_world)
+                            {
+                                int eject = checkY_px - collisionTop_world;
+                                return (true, eject);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return (false, 0);
+        }
+        
+        /// <summary>
+        /// Spider ceiling collision check.
+        /// useEjectProbes=false: bg_coll_U_spider style (2 probes, 3px inset) — for scan.
+        /// useEjectProbes=true:  bg_coll_U style (3 probes, no inset) — for spider_eject.
+        /// Returns (collided, ejectAmount) where ejectAmount is pixels to move down
+        /// </summary>
+        private (bool collided, int ejectAmount) BgCollU_Spider(int playerX_px, int playerY_px, int width, int height, int groundRowsToReserve, bool useEjectProbes = false)
+        {
+            // Check top of hitbox
+            int checkY_px = playerY_px;
+            
+            // Convert world Y to tile Y (accounting for ground offset)
+            int tileY = (checkY_px / TILE) + groundRowsToReserve;
+            
+            // Check if above map top (solid ceiling)
+            if (tileY < 0)
+            {
+                int eject = 0 - checkY_px;
+                return (true, eject);
+            }
+            
+            if (tileY >= mapHeight) return (false, 0);
+
+            int[] probes;
+            if (useEjectProbes)
+            {
+                // NES bg_coll_U: 3 probes at X, X+width/2, X+width (no inset)
+                probes = new[] { playerX_px, playerX_px + (width >> 1), playerX_px + width };
+            }
+            else
+            {
+                // NES bg_coll_U_spider: 2 probes with 3px inset
+                probes = new[] { playerX_px + 3, playerX_px + width - 3 };
+            }
+            
+            foreach (int probeX in probes)
+            {
+                int probeTileX = probeX / TILE;
+                if (probeTileX >= 0 && probeTileX < mapWidth)
+                {
+                    int tileIdx = tileY * mapWidth + probeTileX;
+                    if (tileIdx >= 0 && tileIdx < tiles.Length)
+                    {
+                        int tileId = tiles[tileIdx];
+                        var collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
+                        
+                        if (IsSolidCollisionForSpider(collision))
+                        {
+                            var (colLeft, colTop, colRight, colBottom) = SharedPhysics.GetCollisionBounds(collision);
+                            int tileTopLeft_world = (tileY - groundRowsToReserve) * TILE;
+                            int collisionBottom_world = tileTopLeft_world + colBottom;
+                            
+                            int eject = collisionBottom_world - checkY_px;
+                            return (true, eject);
+                        }
+                    }
+                }
+            }
+            
+            return (false, 0);
+        }
+        
+        /// <summary>
+        /// Checks if a collision type is solid for spider (excludes death tiles)
+        /// </summary>
+        private bool IsSolidCollisionForSpider(MetatileCollision collision)
+        {
+             return collision != MetatileCollision.COL_NONE &&
+                 !SharedPhysics.IsDeathCollision(collision);
+        }
+        
+        /// <summary>
+        /// Process camera scroll during spider scan (matching famidash's process_y_scroll)
+        /// </summary>
+        private void ProcessCameraScrollDuringSpiderScan()
+        {
+            try
+            {
+                if (physicsEnabled && jumpedOnce)
+                {
+                    int playerCenterScreenY = (playerY_fixed >> 8) + (playerVisualHeight / 2) - (cameraY_fixed >> 8);
+                    int topThreshold = 5 * TILE;
+                    int bottomThreshold = NES_H * TILE - 5 * TILE;
+
+                    if (playerCenterScreenY <= topThreshold)
+                    {
+                        int need = topThreshold - playerCenterScreenY;
+                        int camMove = Math.Min(need, (cameraY_fixed >> 8));
+                        cameraY_fixed -= (camMove << 8);
+                        if (cameraY_fixed < 0) cameraY_fixed = 0;
+                    }
+                    else if (playerCenterScreenY >= bottomThreshold)
+                    {
+                        int need = playerCenterScreenY - bottomThreshold;
+                        int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                        int camAvail = (maxCameraY_fixed - cameraY_fixed) >> 8;
+                        int camMove = Math.Min(need, camAvail);
+                        cameraY_fixed += (camMove << 8);
+                        if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
+                    }
+                }
+            }
+            catch { }
+            
+            // Record position for trail (skip during pathfinder speculative simulation)
+            if (!pfSimulating)
+            try
+            {
+                int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                int playerY_px_trail = playerY_fixed >> 8;
+                // Apply mini mode offset for trail to match visual position
+                bool isMini_trail = (currplayer_mini != 0);
+                if (isMini_trail)
+                {
+                    playerY_px_trail += 4;
+                }
+                int playerWorldCenterY_px = playerY_px_trail + (playerVisualHeight / 2);
+                
+                // Record to appropriate path list based on which player is active
+                if (currplayer == 0)
+                    recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                else if (dual)
+                    RecordP2PathPoint(playerWorldCenterX_px, playerWorldCenterY_px);
+            }
+            catch { }
+        }
+    }
+}
+
+
+

@@ -22,5 +22,6 @@
     <Compile Include="..\native-windows\SharedPhysics.cs" Link="SharedPhysics.cs" />
     <Compile Include="..\native-windows\TmxHandler.cs" Link="TmxHandler.cs" />
     <Compile Include="..\native-windows\MetatileCollision.cs" Link="MetatileCollision.cs" />
+    <Compile Include="..\native-windows\PfTrace.cs" Link="PfTrace.cs" />
   </ItemGroup>
 </Project>

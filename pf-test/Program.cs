@@ -29,6 +29,9 @@ foreach (var a in args)
         tasPreRollFrames = int.Parse(a.Substring(14));
 }
 bool verbose = args.Any(a => a.Equals("--verbose", StringComparison.OrdinalIgnoreCase) || a.Equals("-v", StringComparison.OrdinalIgnoreCase));
+TextWriter originalOut = Console.Out;
+if (!verbose)
+    Console.SetOut(TextWriter.Null);
 // Filter out named flags before positional parsing
 var positionalArgs = args.Where(a => !a.StartsWith("--") && !a.Equals("-v", StringComparison.OrdinalIgnoreCase)).ToArray();
 int? cliStartMode = null;
@@ -96,6 +99,8 @@ if (cliStartMode.HasValue)
 
 if (!File.Exists(tmxPath))
 {
+    if (!verbose)
+        Console.SetOut(originalOut);
     Console.Error.WriteLine($"TMX not found: {tmxPath}");
     return 1;
 }
@@ -279,6 +284,7 @@ var engine = new PathfinderEngine(
     hasGround, groundTileRows,
     maxFallSpeed,
     spritePixelOffsets);
+engine.LevelName = tmxPath;
 engine.JumpTimingBias = jumpTimingBias;
 engine.PreferCoins = preferCoins;
 engine.UseBFS = useBfs || preferCoins; // Editor: UseBFS = preferCoins (BFS collects all coins in a single pass)
@@ -291,7 +297,7 @@ if (useBfs)
 
 engine.Progress = new Progress<int>(pct =>
 {
-    Console.Write($"\r  Progress: {pct}%   ");
+    originalOut.Write($"\r  Progress: {pct}%   ");
 });
 
 var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -310,12 +316,27 @@ if (tasInputFile != null)
     engine.ReplayInputSequence(startX_px, startY_px, startSpeedUiIndex, startGameMode, false, false,
         tasInputs, tasPreRollFrames, Console.Out);
     sw.Stop();
+    if (!verbose)
+        Console.SetOut(originalOut);
     Console.Error.WriteLine($"TAS replay done in {sw.Elapsed.TotalSeconds:F1}s");
     return 0;
 }
 
+TextWriter? originalErr = null;
+if (!verbose)
+{
+    originalErr = Console.Error;
+    Console.SetError(TextWriter.Null);
+}
+
 engine.Run(startX_px, startY_px, startSpeedUiIndex, startGameMode, false, false);
+
+if (originalErr != null)
+    Console.SetError(originalErr);
 sw.Stop();
+
+if (!verbose)
+    Console.SetOut(originalOut);
 
 Console.WriteLine();
 Console.WriteLine($"Result: {(engine.Success ? "SUCCESS" : "FAILED")}");
@@ -544,70 +565,3 @@ static Dictionary<int, (int, int)> ParseMetadataOffsets(string metaPath, string 
     return offsets;
 }
 
-// ══════════════════════════════════════════════════════════════
-// Helper: apply globalObjectOffsets from metadata root
-// These are sprite-ID-based offsets that apply to ALL instances
-// of matching sprite types across all levels (e.g. +8Y for bottom pads).
-// Only applies to positions that don't already have a per-level offset.
-// ══════════════════════════════════════════════════════════════
-static int ApplyGlobalObjectOffsets(string metaPath, int[] sprites, int mapWidth,
-    Dictionary<int, (int, int)> offsets)
-{
-    string raw = File.ReadAllText(metaPath);
-    string json = Json5ToJson(raw);
-
-    using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = true });
-    var root = doc.RootElement;
-
-    if (!root.TryGetProperty("globalObjectOffsets", out var gooArray)
-        || gooArray.ValueKind != JsonValueKind.Array)
-        return 0;
-
-    int applied = 0;
-    foreach (var entry in gooArray.EnumerateArray())
-    {
-        int ox = 0, oy = 0;
-        if (entry.TryGetProperty("offsetX", out var oxProp)) ox = oxProp.GetInt32();
-        if (entry.TryGetProperty("offsetY", out var oyProp)) oy = oyProp.GetInt32();
-        if (entry.TryGetProperty("offset", out var offProp) && offProp.ValueKind == JsonValueKind.Array && offProp.GetArrayLength() >= 2)
-        {
-            ox = offProp[0].GetInt32();
-            oy = offProp[1].GetInt32();
-        }
-        if (ox == 0 && oy == 0) continue;
-
-        // Collect matching object IDs
-        var matchIds = new HashSet<int>();
-        if (entry.TryGetProperty("objectID", out var oidProp))
-        {
-            if (oidProp.ValueKind == JsonValueKind.Number)
-                matchIds.Add(oidProp.GetInt32());
-            else if (oidProp.ValueKind == JsonValueKind.Array)
-                foreach (var id in oidProp.EnumerateArray())
-                    if (id.ValueKind == JsonValueKind.Number)
-                        matchIds.Add(id.GetInt32());
-        }
-        if (matchIds.Count == 0) continue;
-
-        bool isOverride = false;
-        if (entry.TryGetProperty("override", out var ovProp) && ovProp.ValueKind == JsonValueKind.True)
-            isOverride = true;
-
-        // Apply to every sprite instance that matches
-        for (int idx = 0; idx < sprites.Length; idx++)
-        {
-            int sid = sprites[idx] & 0xFF;
-            if (sid == 0 || !matchIds.Contains(sid)) continue;
-
-            if (!isOverride && offsets.ContainsKey(idx)) continue; // per-level offset takes priority
-
-            // Merge with existing offset if override
-            if (offsets.TryGetValue(idx, out var existing))
-                offsets[idx] = (existing.Item1 + ox, existing.Item2 + oy);
-            else
-                offsets[idx] = (ox, oy);
-            applied++;
-        }
-    }
-    return applied;
-}

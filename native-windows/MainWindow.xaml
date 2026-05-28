@@ -16,6 +16,8 @@
             <ColumnDefinition Width="260" />
             <ColumnDefinition Width="5" />
             <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="MesenSplitterCol" Width="0" />
+            <ColumnDefinition x:Name="MesenPanelCol"    Width="0" />
         </Grid.ColumnDefinitions>
 
         <!-- Left palettes -->
@@ -380,7 +382,7 @@
             <Button x:Name="StopPathfinderButton" Content="Stop" Margin="2" Visibility="Collapsed" Click="StopPathfinderButton_Click" ToolTip="Cancel current pathfinder calculation" Background="#AA3333" Foreground="White" FontWeight="Bold" />
             <ProgressBar x:Name="PathfinderProgressBar" Width="120" Height="16" Margin="4,2" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed" />
             <Button x:Name="PathfinderJumpToButton" Content="Follow" Margin="2" Visibility="Collapsed" Click="PathfinderJumpToButton_Click" ToolTip="Toggle auto-follow to track pathfinder progress" />
-            <Button x:Name="PathfinderReplayButton" Content="Replay in Mesen" Margin="2" Visibility="Collapsed" Click="PathfinderReplayButton_Click" ToolTip="Run the calculated pathfinder solution in Mesen by injecting controller inputs based on player X/Y" />
+            <Button x:Name="PathfinderReplayButton" Content="Replay in Mesen" Margin="2" Visibility="Collapsed" Click="PathfinderReplayButton_Click" ToolTip="Run the calculated pathfinder solution in Mesen by injecting controller inputs based on player X/Y (F9)" />
             <TextBlock Text="Width (X):" VerticalAlignment="Center" Margin="6,0,2,0" />
             <TextBox x:Name="WidthBox" Width="60" Margin="2" />
             <TextBlock Text="Height (Y):" VerticalAlignment="Center" Margin="8,0,2,0" />
@@ -438,5 +440,11 @@
             </Grid>
         </ScrollViewer>
         </DockPanel>
+
+        <!-- Embedded Mesen panel (collapsed by default; expanded when F9 / "Replay in Mesen" runs in embedded mode) -->
+        <GridSplitter x:Name="MesenSplitter" Grid.Column="3" Width="5" HorizontalAlignment="Stretch"
+                      Background="#33000000" ShowsPreview="False" Visibility="Collapsed"/>
+        <Border x:Name="MesenEmbeddedHost" Grid.Column="4" Background="Black" Visibility="Collapsed"
+                MinWidth="256" MinHeight="240" />
     </Grid>
 </Window>

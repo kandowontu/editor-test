@@ -1,0 +1,660 @@
+using System;
+using System.Threading;
+
+namespace FamidashEditor
+{
+    public partial class SimulatorWindow
+    {
+        // ========================================================================
+        // CUBE PHYSICS - Fresh 1:1 Port from cleaned gamemode_cube.h
+        // ========================================================================
+
+        // Physics constants — delegate to SharedPhysics to prevent drift
+        private const int CUBE_GRAVITY_NORMAL = SharedPhysics.CUBE_GRAVITY_NORMAL;
+        private const int CUBE_GRAVITY_MINI = SharedPhysics.CUBE_GRAVITY_MINI;
+        private const int CUBE_MAX_FALLSPEED_NORMAL = SharedPhysics.CUBE_MAX_FALLSPEED;
+        private const int CUBE_MAX_FALLSPEED_MINI = SharedPhysics.CUBE_MAX_FALLSPEED;
+        private const int JUMP_VEL_NORMAL = SharedPhysics.JUMP_VEL_NORMAL;
+        private const int JUMP_VEL_MINI = SharedPhysics.JUMP_VEL_MINI;
+        
+        // Cube hitbox dimensions — delegate to SharedPhysics
+        private const int CUBE_HITBOX_W = SharedPhysics.CUBE_HITBOX_W;
+        private const int CUBE_HITBOX_H = SharedPhysics.CUBE_HITBOX_H;
+        private const int MINI_CUBE_HITBOX_W = SharedPhysics.MINI_CUBE_HITBOX_W;
+        private const int MINI_CUBE_HITBOX_H = SharedPhysics.MINI_CUBE_HITBOX_H;
+        
+        // State variables from famidash.h
+        private byte currplayer_mini = 0;      // 0 = normal, 1 = mini
+        private byte currplayer_gravity = 0;   // 0 = down, 0xFF = up
+        
+        // Track if we zeroed velocity due to ground collision (for preventing gravity oscillation)
+        // Initialized to true because the player starts grounded on the floor.
+        private bool wasZeroedByCollisionLastFrame = true;
+        
+        // Temporary variables used in cube_movement()
+        private int tmpgravity = 0;
+        private int tmpfallspeed = 0;
+        
+        /// <summary>
+        /// Main cube physics routine - matches cube_movement() from gamemode_cube.h
+        /// </summary>
+        private void ProcessCubePhysics_Fresh()
+        {
+            try
+            {
+                int groundRowsCalc = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                AppendSimDebug($"[CUBE_START] posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), velY=0x{playerVelY_fixed:X4}, gravity=0x{currplayer_gravity:X2}, mini={currplayer_mini}");
+                
+                // STEP 0: Check for orb activation FIRST (before any input consumption)
+                {
+                    bool holdJump_orb = IsXDownAsync() || keyXHeld;
+                    int pressCount_orb = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
+                    bool pressJump_orb = pressCount_orb > 0;
+                    bool gravityInverted_orb = (currplayer_gravity != 0);
+                    int playerX_px_orb = (playerX_fixed >> 8) + 1;
+                    int playerY_px_orb = playerY_fixed >> 8;
+                    int hitboxW_orb = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
+                    int hitboxH_orb = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
+                    
+                    // NES: Generic.y += ((0x10 - height) >> 1); Normal: +0, Mini: +4
+                    if (currplayer_mini != 0)
+                    {
+                        playerY_px_orb += 4;
+                    }
+                    
+                    int scrollX_px_orb = 0;
+                    
+                    int tempVelY = playerVelY_fixed;
+                    var (orbActivated, _) = UpdateOrbSystem(0, playerX_px_orb, playerY_px_orb, hitboxW_orb, hitboxH_orb, 
+                                                       scrollX_px_orb, pressJump_orb, holdJump_orb, gravityInverted_orb, 
+                                                       (currplayer_mini != 0), ref tempVelY);
+                    if (orbActivated)
+                    {
+                        playerVelY_fixed = tempVelY;
+                        
+                        // NES does NOT consume the press/hold flags after orb activation.
+                        // Both sprite_gamemode_main (orb) and cube_movement (jump) share
+                        // the same input for the entire frame.  If the orb bounces the
+                        // player into a surface and CubeEject zeros velocity, the jump
+                        // check must still see the press so it can fire (matching PF
+                        // which uses a single 'input' boolean for both).
+                        // orbHoldConsumedKeyStillDown already prevents orb re-activation.
+                    }
+                    
+                    // Clear orb buffer when X is released
+                    if (!holdJump_orb)
+                        ClearOrbBuffer();
+                }
+                
+                // Save grounded state BEFORE gravity is applied (for Football release)
+                bool wasGroundedAtFrameStart = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
+                
+                // Set physics constants using table index
+                // From gamemode_cube.h lines 16-22
+                tmpfallspeed = GameModePhysics.CUBE_MAX_FALLSPEED(currplayer_table_idx, CUBE_MAX_FALLSPEED);
+                tmpgravity = GameModePhysics.CUBE_GRAVITY(currplayer_table_idx);
+                
+                // AppendSimDebug($"[CUBE] Constants: table_idx={currplayer_table_idx}, gravity_const={tmpgravity:X}, fallspeed={tmpfallspeed:X}, grav_byte={currplayer_gravity:X2}");
+                
+                // STEP 1: Set physics values and apply gravity/collision (happens BEFORE jump check)
+                // Set physics values for CommonGravityRoutine
+                int baseTableIdx2 = (currplayer_mini != 0 ? 4 : 0);
+                bool gravityInverted2 = (currplayer_gravity != 0);
+                int gravityMultiplier2 = gravityInverted2 ? -1 : 1;
+                tmpgravity = GameModePhysics.CUBE_GRAVITY(baseTableIdx2) * gravityMultiplier2;
+                tmpfallspeed = GameModePhysics.CUBE_MAX_FALLSPEED(baseTableIdx2, CUBE_MAX_FALLSPEED) * gravityMultiplier2;
+                
+                AppendSimDebug($"[CUBE_PRE_GRAV] tmpgravity=0x{tmpgravity:X}, tmpfallspeed=0x{tmpfallspeed:X}");
+                
+                // STEP 2: common_gravity_routine() - applies gravity and integrates velocity
+                CommonGravityRoutine_Fresh();
+                
+                // If grounded with inverted gravity, prevent velocity from pulling into ceiling
+                if (currplayer_gravity != 0) {
+                    bool isMini_check = (currplayer_mini != 0);
+                    int hitboxW_check = isMini_check ? 8 : 15;
+                    int hitboxH_check = isMini_check ? 7 : 15;
+                    int hitboxOffsetY_check = SharedPhysics.GetMiniCenterOffsetY(isMini_check);
+                    int collisionX_check = (playerX_fixed >> 8);
+                    int testY_check = (playerY_fixed >> 8) + hitboxOffsetY_check - 1;
+                    var (collided_check, collisionBottomY_check) = CheckCollisionUp(collisionX_check, testY_check, hitboxW_check, hitboxH_check);
+                    
+                    if (collided_check && playerVelY_fixed < 0) {
+                        // Snap Y to ceiling surface (same formula as CubeEject reversed gravity)
+                        // This prevents sub-pixel drift when playerTop == ceilBottom,
+                        // where CheckCollisionUp's strict < comparison would miss the eject.
+                        int newY_prox = collisionBottomY_check - hitboxOffsetY_check - 1;
+                        playerY_fixed = newY_prox << 8;
+                        playerVelY_fixed = 0;
+                        // AppendSimDebug($"[CUBE] Ceiling grounded - snapped Y to {newY_prox}");
+                    }
+                }
+                
+                // AppendSimDebug($"[CUBE] After gravity: velY={playerVelY_fixed}, posY={playerY_fixed >> 8}");
+                
+                // STEP 3: cube_eject() - collision detection and ejection
+                // NES order: cube_movement → common_gravity_routine → cube_eject → (return)
+                // then runthecolls → bg_coll_death (uses post-eject Generic.y)
+                CubeEject_Fresh();
+                
+                // Check center-point death AFTER eject (matches NES bg_coll_death() in
+                // runthecolls which reads post-eject currplayer_y via Generic.y)
+                CheckCenterPointDeath_Fresh();
+                
+                // AppendSimDebug($"[CUBE] After collision: velY={playerVelY_fixed}, posY={playerY_fixed >> 8}");
+                
+                // STEP 4: Jump input check (AFTER gravity and collision, matching famidash order)
+                // This happens after position update, so on jump frame:
+                // - Frame 1: gravity applied (0), position updated (0), then jump sets velocity
+                // - Frame 2+: gravity applied to jump velocity, position moves
+                if (playerVelY_fixed == 0)
+                {
+                    // NORMAL CUBE JUMP (if NOT Football mode)
+                    if (currentGameMode != 11) // NOT GAMEMODE_FOOTBALL
+                    {
+                        // Read input - PEEK first, don't consume yet
+                        bool holdJump = IsXDownAsync() || keyXHeld;
+                        int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
+                        bool pressJump = pressCount > 0;
+                        
+                        // Log pathfinder jump check data when pathfinder is active and input is present
+                        if (pathfinderEnabled && (holdJump || pressJump))
+                            AppendSimDebug($"[PF-JUMP] hold={holdJump}, press={pressJump}, velY=0x{playerVelY_fixed:X4}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}, wasZeroed={wasZeroedByCollisionLastFrame}, pfIdx={pfFrameIndex}");                        
+                        // Two jump paths from gamemode_cube.h lines 50-65:
+                        // Path 1: Hold A && !jblocked && !fblocked → if (!orbed) jump
+                        // Path 2: Press A && (jblocked || fblocked) → jump (no orbed check!)
+                        
+                        // Use tolerance for grounded check (check if at rest)
+                        bool isGrounded = (playerVelY_fixed >= -16 && playerVelY_fixed <= 16);
+                        
+                        bool doJump = false;
+                        // Path 1: hold-to-jump (no jblocked/fblocked, checks orbed)
+                        // During pathfinder replay, use pressJump instead of holdJump.
+                        // The PF's input may have consecutive trues from landing
+                        // predictions; pressJump is consumed once per true→grounded
+                        // transition, preventing stale holds from mis-firing jumps.
+                        bool cubeJumpInput = pathfinderEnabled ? pressJump : holdJump;
+                        if (cubeJumpInput && !jblocked && !fblocked && isGrounded && !orbed[currplayer] && dashing[currplayer] == 0)
+                            doJump = true;
+                        // Path 2: press-to-jump (jblocked/fblocked, no orbed check)
+                        else if (pressJump && (jblocked || fblocked) && isGrounded && dashing[currplayer] == 0)
+                            doJump = true;
+
+                        if (doJump)
+                        {
+                            if (pathfinderEnabled) AppendSimDebug($"[PF-JUMP] JUMP TRIGGERED! velY → 0x{(GameModePhysics.JUMP_VEL(currplayer_mini != 0 ? 4 : 0) * (currplayer_gravity != 0 ? -1 : 1)):X4}");
+                            
+                            // Consume the press now that we're using it for jump
+                            Interlocked.Exchange(ref keyXPressedCount, 0);
+                            
+                            // Get base physics value (always from down-gravity index)
+                            int baseTableIdx = (currplayer_mini != 0 ? 4 : 0);
+                            bool gravityInverted = (currplayer_gravity != 0);
+                            int gravityMultiplier = gravityInverted ? -1 : 1;
+                            
+                            // From gamemode_cube.h: currplayer_vel_y = JUMP_VEL(currplayer_table_idx);
+                            int jumpVel = GameModePhysics.JUMP_VEL(baseTableIdx) * gravityMultiplier;
+                            playerVelY_fixed = jumpVel;
+                            
+                            // NES slope_jump_check: add extra velocity when jumping off a slope
+                            SlopeJumpCheck_Fresh();
+                            
+                            // AppendSimDebug($"[CUBE] Jump applied: table_idx={currplayer_table_idx}, jumpVel={jumpVel}, velY now = {playerVelY_fixed}");
+                        }
+                        
+                        // Update orb hold suppression (X hold from ground jump shouldn't activate orbs)
+                        UpdateOrbHoldSuppression(holdJump, isGrounded);
+                    }
+                }
+                else
+                {
+                    // AppendSimDebug($"[CUBE] Cannot jump: velY={playerVelY_fixed} (must be 0)");
+                }
+                
+                // STEP 4A: Football mode charging (gamemode_cube.h lines 140-143)
+                // Charging happens every frame while holding X, even in mid-air for buffering
+                if (currentGameMode == 11) // GAMEMODE_FOOTBALL
+                {
+                    bool holdX = IsXDownAsync() || keyXHeld;
+                    
+                    // Charging phase: increment chargepower while holding X
+                    if (holdX && !orbed[currplayer])
+                    {
+                        chargepower[0]++;
+                        
+                        // Handle overcharge: if chargepower >= 45, reset and set orbed flag
+                        if (chargepower[0] >= 45)
+                        {
+                            chargepower[0] = 0;
+                            orbed[currplayer] = true;
+                        }
+                        
+                        AppendSimDebug($"[FOOTBALL] Charging: chargepower={chargepower[0]}, orbed={orbed[currplayer]}");
+                    }
+                }
+                
+                // STEP 4B: Football release (gamemode_cube.h lines 145-155)
+                // This is a SEPARATE conditional that runs regardless (not nested in velY==0)
+                if (currentGameMode == 11) // GAMEMODE_FOOTBALL
+                {
+                    bool holdX = IsXDownAsync() || keyXHeld;
+                    
+                    // Release phase: happens when NOT holding X AND grounded
+                    if (!holdX)
+                    {
+                        // From gamemode_cube.h: Save chargepower before clearing it
+                        int tmp3 = chargepower[0];
+                        AppendSimDebug($"[FOOTBALL] Release triggered: tmp3={tmp3}, holdX={holdX}");
+                        
+                        // Clear orbed flag on release
+                        orbed[currplayer] = false;
+                        
+                        // Calculate jump velocity using chargepower (from gamemode_cube.h line 154)
+                        // tmpA = chargepower * (currplayer_gravity ? 0x004C : -0x004C)
+                        int baseTableIdx_fb = (currplayer_mini != 0 ? 4 : 0);
+                        bool gravityInverted_fb = (currplayer_gravity != 0);
+                        int gravityMultiplier_fb = gravityInverted_fb ? 1 : -1;
+                        
+                        int tmpA = tmp3 * (0x004C * gravityMultiplier_fb);
+                        
+                        // Apply velocity if chargepower > 0 and player velocity is zero or small (grounded state)
+                        // From gamemode_cube.h: if (chargepower && currplayer_vel_y == 0)
+                        // But we also allow release when velocity is small (just started falling) to handle walk-off-edge case
+                        bool isGroundedOrNearGround = (playerVelY_fixed == 0) || 
+                                                      (!gravityInverted_fb && playerVelY_fixed > 0 && playerVelY_fixed < 0x100) ||
+                                                      (gravityInverted_fb && playerVelY_fixed < 0 && playerVelY_fixed > -0x100);
+                        
+                        if (tmp3 > 0 && isGroundedOrNearGround)
+                        {
+                            playerVelY_fixed = tmpA;
+                            // NES slope_jump_check: add extra velocity when jumping off a slope
+                            SlopeJumpCheck_Fresh();
+                            AppendSimDebug($"[FOOTBALL] Released! chargepower={tmp3}, tmpA=0x{tmpA:X4}, velY now = {playerVelY_fixed}");
+                        }
+                        
+                        // Reset chargepower on release (gamemode_cube.h line 154)
+                        chargepower[0] = 0;
+                    }
+                }
+                
+                // Clear alphabet block flags AFTER jump check (matches PF/NES order:
+                // ProcessSprites sets jblocked → gravity → eject → jump check reads jblocked → clear)
+                // Previously these were cleared inside CubeEject_Fresh, BEFORE the jump check,
+                // which caused Path 2 (pressJump && jblocked) to never fire.
+                // hblocked is also cleared here — it was consumed during CubeEject_Fresh
+                // for the ceiling eject.  Forward collision does NOT check hblocked.
+                jblocked = false;
+                fblocked = false;
+                hblocked = false;
+
+                // STEP 5: Update slope counters (decrement each frame)
+                UpdateSlopeCounters_Fresh();
+                
+                // Record position for trail AFTER physics completes (for smooth visualization)
+                // Skip during pathfinder speculative simulation to avoid polluting trail
+                if (!pfSimulating)
+                try
+                {
+                    int playerWorldCenterX_px = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+                    int playerWorldCenterY_px = (playerY_fixed >> 8) + (playerVisualHeight / 2);
+                    
+                    // Apply mini mode offset for visual position consistency
+                    // Mini mode: 8x7 hitbox at Y+9 (normal gravity) or Y+0 (inverted)
+                    // So visual position is 8 pixels down from physics position in normal gravity
+                    bool isMini = (currplayer_mini != 0);
+                    if (isMini)
+                    {
+                        playerWorldCenterY_px += 4; // gravity-independent centering offset
+                    }
+                    
+                    // Record to appropriate path list based on which player is active
+                    if (currplayer == 0)
+                        recordedPlayerPath.Add((playerWorldCenterX_px, playerWorldCenterY_px));
+                    else if (dual)
+                        RecordP2PathPoint(playerWorldCenterX_px, playerWorldCenterY_px);
+                }
+                catch { }
+                
+                // CRITICAL: After all physics updates, verify that cube still has ground support
+                // This ensures that walking off a platform immediately triggers falling
+                // rather than waiting for the next frame's main loop check
+                if (onGround && playerVelY_fixed == 0)
+                {
+                    try
+                    {
+                        bool stillSupported = false;
+                        if (currplayer_gravity == 0)  // Normal gravity
+                        {
+                            const int HITBOX_W_LOCAL = 15;
+                            // Always center on TILE/2 (player pos = 16x16 tile space)
+                            int playerCenter_px = (playerX_fixed >> 8) + (TILE / 2);
+                            int playerLeft_px = playerCenter_px - (HITBOX_W_LOCAL / 2);
+                            int playerRight_px = playerLeft_px + (HITBOX_W_LOCAL - 1);
+                            // Foot = bottom of actual hitbox (hitboxOffset + hitboxH)
+                            int hitboxH_gs = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
+                            int hitboxOffY_gs = (currplayer_mini != 0) ? 9 : 0; // cube mode, normal gravity
+                            int footWorldY_px = (playerY_fixed >> 8) + hitboxOffY_gs + hitboxH_gs;
+                            int tileBelowY_world = footWorldY_px / TILE;
+                            int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                            int tileIndexY = tileBelowY_world + groundRowsToReserve_local;
+                            if (tileIndexY >= mapHeight)
+                            {
+                                // Player is over the implicit ground layer — always supported
+                                stillSupported = true;
+                            }
+                            else if (tileIndexY >= 0)
+                            {
+                                int footLocalY = ((footWorldY_px % TILE) + TILE) % TILE;
+                                for (int tx = playerLeft_px / TILE; tx <= playerRight_px / TILE; tx++)
+                                {
+                                    if (tx < 0 || tx >= mapWidth) continue;
+                                    int tid = tiles[tileIndexY * mapWidth + tx];
+                                    var col = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tid));
+                                    int tileStartX = tx * TILE;
+                                    int localX = Math.Max(0, Math.Min(TILE - 1, playerCenter_px - tileStartX));
+                                    if (ProvidesFloorAtColumnStatic(col, localX, out int _) &&
+                                        SharedPhysics.TileOccupiesPixel(col, localX, footLocalY))
+                                    { stillSupported = true; break; }
+                                }
+                            }
+                        }
+                        else  // Inverted gravity
+                        {
+                            stillSupported = IsTouchingCeiling();
+                        }
+
+                        if (!stillSupported)
+                        {
+                            onGround = false;
+                            wasZeroedByCollisionLastFrame = false;  // Allow gravity to apply next frame
+                            AppendSimDebug($"[CUBE] Ground support lost - clearing onGround flag and collision flag");
+                        }
+                    }
+                    catch { onGround = false; }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { AppendSimDebug($"ProcessCubePhysics_Fresh error: {ex.Message}"); } catch { }
+            }
+        }
+        
+        /// <summary>
+        /// common_gravity_routine() from gamemode_cube.h lines 177-206
+        /// Delegates to SharedPhysics.CommonGravityRoutine so PF and SIM use identical logic.
+        /// </summary>
+        private void CommonGravityRoutine_Fresh()
+        {
+            AppendSimDebug($"[GRAV_START] velY=0x{playerVelY_fixed:X4}, posY=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), dashing={dashing[currplayer]}, wasZeroedByCollision={wasZeroedByCollisionLastFrame}, mode={currentGameMode}");
+
+            int velBefore = playerVelY_fixed;
+            int posBefore = playerY_fixed;
+
+            int clampMaxY = Math.Max(0, (mapHeight * TILE - playerVisualHeight)) << 8;
+
+            SharedPhysics.CommonGravityRoutine(
+                ref playerVelY_fixed,
+                ref playerY_fixed,
+                tmpgravity,
+                tmpfallspeed,
+                currplayer_gravity,
+                dashing[currplayer],
+                gravityMultiplier,
+                simTimeScale,
+                isFullSpeed,
+                playerVelX_fixed,
+                clampMaxY);
+
+            AppendSimDebug($"[GRAV_POS] posY: 0x{posBefore:X4} ({posBefore >> 8}px) -> 0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), velY: 0x{velBefore:X4} -> 0x{playerVelY_fixed:X4}");
+        }
+        
+        /// <summary>
+        /// cube_eject() — thin wrapper over SharedPhysics.CubeEject.
+        /// Handles SIM-specific hblocked/fblocked head-bonk AFTER shared ejection.
+        /// </summary>
+        private void CubeEject_Fresh()
+        {
+            bool mini = currplayer_mini != 0;
+            bool gravFlipped = currplayer_gravity != 0;
+            bool inputHeld = IsXDownAsync() || keyXHeld || upHeld;
+
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            var map = new SharedPhysics.CollisionMap(tiles, mapWidth, mapHeight, groundRowsToReserve);
+
+            var r = SharedPhysics.CubeEject(in map,
+                playerX_fixed, playerY_fixed, playerVelY_fixed, playerVelX_fixed,
+                gravFlipped, mini, currentGameMode, inputHeld,
+                currplayer_was_on_slope_counter, currplayer_slope_frames,
+                currplayer_slope_type, make_cube_jump_higher,
+                currplayer_last_slope_type,
+                cameraY_fixed);
+
+            playerY_fixed = r.NewY_fixed;
+            playerVelY_fixed = r.NewVelY_fixed;
+            onGround = r.OnGround;
+            wasZeroedByCollisionLastFrame = r.WasZeroed;
+            currplayer_slope_type = r.SlopeType;
+            currplayer_slope_frames = r.SlopeFrames;
+            currplayer_was_on_slope_counter = r.SlopeWasOnCounter;
+            make_cube_jump_higher = r.SlopeJumpHigher;
+            currplayer_last_slope_type = r.LastSlopeType;
+
+            if (r.Died && !MainWindow.Option_NoDeath)
+            {
+                AppendSimDebug($"[DEATH] Floor spike detected (SharedPhysics.CubeEject)");
+                deathTriggered = true;
+                deathTileX = playerX_fixed >> 8;
+                deathTileY = (playerY_fixed >> 8) + SharedPhysics.GetCubeHitboxH(mini);
+                paused = true;
+                _ = StopMusicAsync();
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                        if (this.Owner is MainWindow mw)
+                        {
+                            try { mw.PauseSimulatorPlayback(); } catch { }
+                            try { mw.AddDeathMarker(deathTileX, deathTileY); } catch { }
+                        }
+                    }));
+                }
+                catch { }
+                return;
+            }
+
+            // NES cube_eject() hblocked/fblocked handling (gamemode_cube.h lines 201-237).
+            // SharedPhysics.CubeEject already handled the primary direction (floor for
+            // normal grav, ceiling for reversed grav) and sets vel=0, WasZeroed=true.
+            // With the hblocked fix, primary-direction hblocked also produces vel=0
+            // (gravity ? 0xFFFF : 0 for floor, !gravity ? 1 : 0 for ceiling), so
+            // SharedPhysics.CubeEject's vel=0 is already correct — no override needed.
+            //
+            // When hblocked||fblocked, the NES code ALSO checks the opposite direction.
+            // Opposite-direction eject:
+            //   bg_coll_U guard: vel < 0  |  bg_coll_D guard: vel >= 0
+            //   hblocked → velocity = 1 (ceiling) or 0xFFFF (floor) instead of 0
+            //   fblocked → flip gravity
+            if ((currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 11) && (hblocked || fblocked))
+            {
+                int hitboxW = SharedPhysics.GetCubeHitboxW(mini);
+                int hitboxH = SharedPhysics.GetCubeHitboxH(mini);
+                int hitboxOffsetY = SharedPhysics.GetHitboxOffsetY(currentGameMode, mini, gravFlipped);
+
+                // Opposite-direction eject (NES secondary bg_coll_U / bg_coll_D).
+                int collisionX = playerX_fixed >> 8;
+                if (!gravFlipped)
+                {
+                    // Normal grav → opposite = ceiling (bg_coll_U).  Guard: vel < 0.
+                    if ((short)(playerVelY_fixed & 0xFFFF) < 0)
+                    {
+                        int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
+                        var (topCollided, collisionBottomY) = CheckCollisionUp(collisionX, collisionY, hitboxW, hitboxH);
+                        if (topCollided)
+                        {
+                            int newY = collisionBottomY - hitboxOffsetY;
+                            AppendSimDebug($"[CUBE]     H/F_BLOCK ceiling eject: Y {playerY_fixed >> 8} -> {newY}, velY -> {(hblocked ? "1" : "0")}");
+                            playerY_fixed = newY << 8;
+                            playerVelY_fixed = hblocked ? 1 : 0;
+                            if (!hblocked) onGround = true;
+                            orbed[currplayer] = false; // NES: orbactive = 0
+                            if (fblocked)
+                            {
+                                currplayer_gravity = 0xFF;
+                                gravityFlipped = true;
+                                gravityReversed = true;
+                                currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // Reversed grav → opposite = floor (bg_coll_D).  Guard: vel >= 0.
+                    if ((short)(playerVelY_fixed & 0xFFFF) >= 0)
+                    {
+                        int collisionY = (playerY_fixed >> 8) + hitboxOffsetY;
+                        var (bottomCollided, collisionTopY) = CheckCollisionDown(collisionX, collisionY, hitboxW, hitboxH);
+                        if (bottomCollided)
+                        {
+                            int newY = collisionTopY - hitboxH - hitboxOffsetY;
+                            AppendSimDebug($"[CUBE]     H/F_BLOCK floor eject: Y {playerY_fixed >> 8} -> {newY}, velY -> {(hblocked ? "-1" : "0")}");
+                            playerY_fixed = newY << 8;
+                            playerVelY_fixed = hblocked ? -1 : 0;  // NES 0xFFFF = -1 signed 16-bit
+                            if (!hblocked) onGround = true;
+                            orbed[currplayer] = false; // NES: orbactive = 0
+                            if (fblocked)
+                            {
+                                currplayer_gravity = 0;
+                                gravityFlipped = false;
+                                gravityReversed = false;
+                                currplayer_table_idx = (currplayer_gravity != 0 ? 1 : 0) | (currplayer_mini != 0 ? 4 : 0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Check center point for death (matches bg_coll_death() from collision.h line 1019)
+        /// This checks a single center point of the player hitbox for spike/death collision
+        /// </summary>
+        private void CheckCenterPointDeath_Fresh()
+        {
+            if (MainWindow.Option_NoDeath || deathTriggered) return;
+            
+            int playerX_px = playerX_fixed >> 8;
+            int playerY_px = playerY_fixed >> 8;
+            
+            // Calculate hitbox dimensions
+            int hitboxW = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;
+            int hitboxH = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_H : CUBE_HITBOX_H;
+            
+            int hitboxOffsetY = SharedPhysics.GetCubeHitboxOffsetY(currplayer_mini != 0, currplayer_gravity != 0);
+            
+            // From collision.h: center X = Generic.x + (Generic.width >> 1) - 1
+            // From collision.h: center Y = Generic.y + (Generic.height >> 1) + mini_offset
+            int centerX_px = playerX_px + (hitboxW >> 1) - 1;
+            int centerY_px = playerY_px + (hitboxH >> 1) + hitboxOffsetY;
+            
+            int tileX = centerX_px / TILE;
+            int tileY = centerY_px / TILE;
+            
+            if (tileX < 0 || tileX >= mapWidth || tileY < 0 || tileY >= mapHeight) return;
+            
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+            int tileArrayY = tileY + groundRowsToReserve;
+            if (tileArrayY >= mapHeight) return;
+            
+            int tileIdx = tileArrayY * mapWidth + tileX;
+            if (tileIdx < 0 || tileIdx >= tiles.Length) return;
+            
+            int tileId = tiles[tileIdx];
+            var collision = MetatileCollisionTable.GetCollision((byte)SharedPhysics.MapTileForCollision(tileId));
+            
+            int localX = centerX_px % TILE;
+            int localY = centerY_px % TILE;
+            
+            // NES bg_coll_death: bg_coll_spikes() || bg_coll_mini_blocks() ||
+            // bg_coll_U_D_checks() at center.  Now includes COL_ALL /
+            // COL_FLOOR_CEIL / COL_NO_SIDE (NES bg_coll_U_D_checks returns 1).
+            // The bg_coll_D probe fix (collW vs collW+1) closed the eject gap
+            // that previously caused false positives.
+            bool dies = MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY);
+            if (!dies)
+            {
+                switch (collision)
+                {
+                    case MetatileCollision.COL_ALL:
+                    case MetatileCollision.COL_FLOOR_CEIL:
+                    case MetatileCollision.COL_NO_SIDE:
+                    case MetatileCollision.COL_BOTTOM:
+                    case MetatileCollision.COL_TOP:
+                    case MetatileCollision.COL_LEFT:
+                    case MetatileCollision.COL_RIGHT:
+                    case MetatileCollision.COL_UP_LEFT:
+                    case MetatileCollision.COL_UP_RIGHT:
+                    case MetatileCollision.COL_DOWN_LEFT:
+                    case MetatileCollision.COL_DOWN_RIGHT:
+                    case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+                    case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+                    case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+                    case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+                    case MetatileCollision.COL_TOP_LEFT_STAIRS:
+                    case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+                    case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+                    case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+                        dies = SharedPhysics.TileOccupiesPixel(collision, localX, localY);
+                        break;
+                }
+            }
+            if (dies)
+            {
+                AppendSimDebug($"[DEATH] Center point spike at ({centerX_px},{centerY_px}) tile={tileId:X2} col={collision}");
+                deathTriggered = true;
+                deathTileX = centerX_px;
+                deathTileY = centerY_px;
+                
+                // Skip UI side effects during pathfinder speculative simulation
+                if (pfSimulating) return;
+                
+                paused = true;
+                _ = StopMusicAsync();
+                
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                        if (this.Owner is MainWindow mw)
+                        {
+                            try { mw.PauseSimulatorPlayback(); } catch { }
+                            try { mw.AddDeathMarker(centerX_px, centerY_px); } catch { }
+                        }
+                    }));
+                }
+                catch { }
+            }
+        }
+        
+        /// <summary>
+        /// Initialize cube physics state
+        /// </summary>
+        private void EnableCubePhysics_Fresh()
+        {
+            try
+            {
+                currplayer_mini = 0;      // Normal size
+                currplayer_gravity = 0;   // Normal gravity (down)
+            }
+            catch (Exception ex)
+            {
+                try { AppendSimDebug($"EnableCubePhysics_Fresh error: {ex.Message}"); } catch { }
+            }
+        }
+    }
+}
+
+
+

@@ -1,0 +1,43 @@
+SLOPE FULL DUMP - db6
+off_y=0
+PF slope tags total=402, REPLAY frames=6, BFS ignored=396
+NES slope frames=0
+Union slope frames=4
+PF REPLAY sessions=4, NES sessions=0
+State mismatches=4, pos mismatches=0, vel mismatches=0
+
+=== SECTION A: PF REPLAY slope sessions ===
+  f=439..439 n=1 peak|dY|=0 peak|dVY|=1311 sT=['2']
+  f=874..874 n=1 peak|dY|=0 peak|dVY|=1311 sT=['6']
+  f=3122..3122 n=1 peak|dY|=17 peak|dVY|=1032 sT=['6']
+  f=3152..3152 n=1 peak|dY|=14 peak|dVY|=669 sT=['6']
+
+=== SECTION B: NES slope sessions ===
+
+=== SECTION C: SYMMETRIC DIFFERENCES (state mismatch) ===
+  f=439 PF-only dY=0 dVY=-1311
+      PF: [cube/pre-grav] velY=-1424 velX=571 sT=2 sF=0 swOn=2 jH=False lst=0 Y=0x00014400 (324px) gravF=False mini=False onG=False
+  f=874 PF-only dY=0 dVY=-1311
+      PF: [cube/pre-grav] velY=-1424 velX=571 sT=6 sF=0 swOn=0 jH=False lst=0 Y=0x00014C00 (332px) gravF=False mini=False onG=False
+  f=3122 PF-only dY=-17 dVY=-1032
+      PF: [cube/pre-grav] velY=-1424 velX=708 sT=6 sF=0 swOn=2 jH=False lst=0 Y=0x00013900 (313px) gravF=False mini=False onG=False
+  f=3152 PF-only dY=-14 dVY=-669
+      PF: [cube/pre-grav] velY=-1424 velX=708 sT=6 sF=0 swOn=2 jH=False lst=0 Y=0x00013000 (304px) gravF=False mini=False onG=False
+
+=== SECTION D: Frame-by-frame dump per union session ===
+
+-- session f=439..439 (1 frames) --
+  f=439 PFy=326 MTy=326 dY=0 | PFvy=-6 MTvy=-1317 dVY=-1311 | PF=Y NES=N
+      PF[cube/pre-grav] velY=-1424 velX=571 sT=2 sF=0 swOn=2 jH=False lst=0 Y=0x00014400 (324px) gravF=False mini=False onG=False
+
+-- session f=874..874 (1 frames) --
+  f=874 PFy=334 MTy=334 dY=0 | PFvy=-6 MTvy=-1317 dVY=-1311 | PF=Y NES=N
+      PF[cube/pre-grav] velY=-1424 velX=571 sT=6 sF=0 swOn=0 jH=False lst=0 Y=0x00014C00 (332px) gravF=False mini=False onG=False
+
+-- session f=3122..3122 (1 frames) --
+  f=3122 PFy=315 MTy=298 dY=-17 | PFvy=-6 MTvy=-1038 dVY=-1032 | PF=Y NES=N
+      PF[cube/pre-grav] velY=-1424 velX=708 sT=6 sF=0 swOn=2 jH=False lst=0 Y=0x00013900 (313px) gravF=False mini=False onG=False
+
+-- session f=3152..3152 (1 frames) --
+  f=3152 PFy=306 MTy=292 dY=-14 | PFvy=-6 MTvy=-675 dVY=-669 | PF=Y NES=N
+      PF[cube/pre-grav] velY=-1424 velX=708 sT=6 sF=0 swOn=2 jH=False lst=0 Y=0x00013000 (304px) gravF=False mini=False onG=False

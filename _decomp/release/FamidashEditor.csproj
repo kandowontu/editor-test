@@ -1,0 +1,705 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <AssemblyName>FamidashEditor</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>True</UseWPF>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>12.0</LangVersion>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RootNamespace />
+  </PropertyGroup>
+  <ItemGroup>
+    <None Remove="fmsplayerwindow.baml" />
+    <None Remove="colorwheelpickerwindow.baml" />
+    <None Remove="simulatorwindow.baml" />
+    <None Remove="splashscreen.baml" />
+    <None Remove="loadingwindow.baml" />
+    <None Remove="pathfindersettingswindow.baml" />
+    <None Remove="setoptionswindow.baml" />
+    <None Remove="colorpickerwindow.baml" />
+    <None Remove="mainwindow.baml" />
+    <None Remove="offsetmapwindow.baml" />
+    <None Remove="app.baml" />
+    <None Remove="debuginfowindow.baml" />
+    <None Remove="FamidashEditor.fire.wav" />
+    <None Remove="FamidashEditor.saw-frame1.png" />
+    <None Remove="FamidashEditor.saw-frame2.png" />
+    <None Remove="FamidashEditor.small-saw-frame1.png" />
+    <None Remove="FamidashEditor.small-saw-frame2.png" />
+    <None Remove="FamidashEditor.large-saw-frame1.png" />
+    <None Remove="FamidashEditor.large-saw-frame2.png" />
+    <None Remove="FamidashEditor.cube-mini.png" />
+    <None Remove="FamidashEditor.cube_00_frame_0_upright.png" />
+    <None Remove="FamidashEditor.cube_01_frame_1_45cw.png" />
+    <None Remove="FamidashEditor.cube_02_frame_2_90cw_side.png" />
+    <None Remove="FamidashEditor.cube_03_frame_3_135cw.png" />
+    <None Remove="FamidashEditor.cube_04_frame_4_180_upside.png" />
+    <None Remove="FamidashEditor.cube_05_frame_5_225cw.png" />
+    <None Remove="FamidashEditor.cube_06_frame_6_270cw_opposite.png" />
+    <None Remove="FamidashEditor.cube_mini_00_frame_0.png" />
+    <None Remove="FamidashEditor.cube_mini_01_frame_1.png" />
+    <None Remove="FamidashEditor.cube_mini_02_frame_2.png" />
+    <None Remove="FamidashEditor.cube_mini_03_frame_3.png" />
+    <None Remove="FamidashEditor.cube_mini_04_frame_4.png" />
+    <None Remove="FamidashEditor.ninja_00_frame_0.png" />
+    <None Remove="FamidashEditor.ninja_01_frame_1.png" />
+    <None Remove="FamidashEditor.ninja_02_frame_2.png" />
+    <None Remove="FamidashEditor.ninja_03_frame_3.png" />
+    <None Remove="FamidashEditor.ninja_04_frame_4.png" />
+    <None Remove="FamidashEditor.ninja_05_frame_5.png" />
+    <None Remove="FamidashEditor.ninja_06_frame_6.png" />
+    <None Remove="FamidashEditor.ninja_mini_00_frame_0.png" />
+    <None Remove="FamidashEditor.ninja_mini_01_frame_1.png" />
+    <None Remove="FamidashEditor.ninja_mini_02_frame_2.png" />
+    <None Remove="FamidashEditor.ninja_mini_03_frame_3.png" />
+    <None Remove="FamidashEditor.ninja_mini_04_frame_4.png" />
+    <None Remove="FamidashEditor.spider.png" />
+    <None Remove="FamidashEditor.spider2.png" />
+    <None Remove="FamidashEditor.spider3.png" />
+    <None Remove="FamidashEditor.spider4.png" />
+    <None Remove="FamidashEditor.spiderjump.png" />
+    <None Remove="FamidashEditor.spider-mini.png" />
+    <None Remove="FamidashEditor.spider-mini2.png" />
+    <None Remove="FamidashEditor.spider-mini3.png" />
+    <None Remove="FamidashEditor.spider-mini4.png" />
+    <None Remove="FamidashEditor.spider-mini-jump.png" />
+    <None Remove="FamidashEditor.robot.png" />
+    <None Remove="FamidashEditor.robot2.png" />
+    <None Remove="FamidashEditor.robot3.png" />
+    <None Remove="FamidashEditor.robot4.png" />
+    <None Remove="FamidashEditor.robotjump.png" />
+    <None Remove="FamidashEditor.robot-mini.png" />
+    <None Remove="FamidashEditor.robot-mini2.png" />
+    <None Remove="FamidashEditor.robot-mini3.png" />
+    <None Remove="FamidashEditor.robot-mini4.png" />
+    <None Remove="FamidashEditor.robot-mini-jump.png" />
+    <None Remove="FamidashEditor.wave.png" />
+    <None Remove="FamidashEditor.wave-mini2.png" />
+    <None Remove="FamidashEditor.wave2.png" />
+    <None Remove="FamidashEditor.wave-mini.png" />
+    <None Remove="FamidashEditor.ninja.png" />
+    <None Remove="FamidashEditor.ninja-mini.png" />
+    <None Remove="FamidashEditor.swingcopter.png" />
+    <None Remove="FamidashEditor.swingcopter-mini.png" />
+    <None Remove="FamidashEditor.pogo.png" />
+    <None Remove="FamidashEditor.pogo2.png" />
+    <None Remove="FamidashEditor.pogo-mini.png" />
+    <None Remove="FamidashEditor.pogo-mini2.png" />
+    <None Remove="FamidashEditor.snake.png" />
+    <None Remove="FamidashEditor.snake-mini.png" />
+    <None Remove="FamidashEditor.football.png" />
+    <None Remove="FamidashEditor.football-mini.png" />
+    <None Remove="FamidashEditor.football-mini1.png" />
+    <None Remove="FamidashEditor.football-mini2.png" />
+    <None Remove="FamidashEditor.football-mini3.png" />
+    <None Remove="FamidashEditor.football-mini4.png" />
+    <None Remove="FamidashEditor.football-mini5.png" />
+    <None Remove="FamidashEditor.football-mini6.png" />
+    <None Remove="FamidashEditor.ball-mini.png" />
+    <None Remove="FamidashEditor.ufo-mini.png" />
+    <None Remove="FamidashEditor.cube-portal.png" />
+    <None Remove="FamidashEditor.ship-portal.png" />
+    <None Remove="FamidashEditor.ball-portal.png" />
+    <None Remove="FamidashEditor.ufo-portal.png" />
+    <None Remove="FamidashEditor.robot-portal.png" />
+    <None Remove="FamidashEditor.wave-portal.png" />
+    <None Remove="FamidashEditor.spider-portal.png" />
+    <None Remove="FamidashEditor.mini-portal.png" />
+    <None Remove="FamidashEditor.growth-portal.png" />
+    <None Remove="FamidashEditor.swingcopter-portal.png" />
+    <None Remove="FamidashEditor.ninja-portal.png" />
+    <None Remove="FamidashEditor.pogo-portal.png" />
+    <None Remove="FamidashEditor.snake-portal.png" />
+    <None Remove="FamidashEditor.football-portal.png" />
+    <None Remove="FamidashEditor.gravity-down-portal.png" />
+    <None Remove="FamidashEditor.gravity-up-portal.png" />
+    <None Remove="FamidashEditor.yellow-orb-frame1.png" />
+    <None Remove="FamidashEditor.yellow-orb-frame2.png" />
+    <None Remove="FamidashEditor.yellow-orb-frame3.png" />
+    <None Remove="FamidashEditor.yellow-orb-frame4.png" />
+    <None Remove="FamidashEditor.blue-orb-frame1.png" />
+    <None Remove="FamidashEditor.blue-orb-frame2.png" />
+    <None Remove="FamidashEditor.blue-orb-frame3.png" />
+    <None Remove="FamidashEditor.blue-orb-frame4.png" />
+    <None Remove="FamidashEditor.pink-orb-frame1.png" />
+    <None Remove="FamidashEditor.pink-orb-frame2.png" />
+    <None Remove="FamidashEditor.pink-orb-frame3.png" />
+    <None Remove="FamidashEditor.pink-orb-frame4.png" />
+    <None Remove="FamidashEditor.green-orb-frame1.png" />
+    <None Remove="FamidashEditor.green-orb-frame2.png" />
+    <None Remove="FamidashEditor.green-orb-frame3.png" />
+    <None Remove="FamidashEditor.green-orb-frame4.png" />
+    <None Remove="FamidashEditor.red-orb-frame1.png" />
+    <None Remove="FamidashEditor.red-orb-frame2.png" />
+    <None Remove="FamidashEditor.red-orb-frame3.png" />
+    <None Remove="FamidashEditor.red-orb-frame4.png" />
+    <None Remove="FamidashEditor.black-orb-frame1.png" />
+    <None Remove="FamidashEditor.black-orb-frame2.png" />
+    <None Remove="FamidashEditor.black-orb-frame3.png" />
+    <None Remove="FamidashEditor.black-orb-frame4.png" />
+    <None Remove="FamidashEditor.white-orb-frame1.png" />
+    <None Remove="FamidashEditor.white-orb-frame2.png" />
+    <None Remove="FamidashEditor.white-orb-frame3.png" />
+    <None Remove="FamidashEditor.white-orb-frame4.png" />
+    <None Remove="FamidashEditor.coin-frame1.png" />
+    <None Remove="FamidashEditor.coin-frame2.png" />
+    <None Remove="FamidashEditor.coin-frame3.png" />
+    <None Remove="FamidashEditor.coin-frame4.png" />
+    <None Remove="FamidashEditor.mini-coin-frame1.png" />
+    <None Remove="FamidashEditor.mini-coin-frame2.png" />
+    <None Remove="FamidashEditor.mini-coin-frame3.png" />
+    <None Remove="FamidashEditor.mini-coin-frame4.png" />
+    <None Remove="FamidashEditor.red-pad-up-frame1.png" />
+    <None Remove="FamidashEditor.red-pad-up-frame2.png" />
+    <None Remove="FamidashEditor.red-pad-up-frame3.png" />
+    <None Remove="FamidashEditor.red-pad-up-frame4.png" />
+    <None Remove="FamidashEditor.yellow-pad-down-frame1.png" />
+    <None Remove="FamidashEditor.yellow-pad-down-frame2.png" />
+    <None Remove="FamidashEditor.yellow-pad-down-frame3.png" />
+    <None Remove="FamidashEditor.yellow-pad-down-frame4.png" />
+    <None Remove="FamidashEditor.yellow-pad-up-frame1.png" />
+    <None Remove="FamidashEditor.yellow-pad-up-frame2.png" />
+    <None Remove="FamidashEditor.yellow-pad-up-frame3.png" />
+    <None Remove="FamidashEditor.yellow-pad-up-frame4.png" />
+    <None Remove="FamidashEditor.blue-pad-down-frame1.png" />
+    <None Remove="FamidashEditor.blue-pad-down-frame2.png" />
+    <None Remove="FamidashEditor.blue-pad-down-frame3.png" />
+    <None Remove="FamidashEditor.blue-pad-down-frame4.png" />
+    <None Remove="FamidashEditor.blue-pad-up-frame1.png" />
+    <None Remove="FamidashEditor.blue-pad-up-frame2.png" />
+    <None Remove="FamidashEditor.blue-pad-up-frame3.png" />
+    <None Remove="FamidashEditor.blue-pad-up-frame4.png" />
+    <None Remove="FamidashEditor.pink-pad-down-frame1.png" />
+    <None Remove="FamidashEditor.pink-pad-down-frame2.png" />
+    <None Remove="FamidashEditor.pink-pad-down-frame3.png" />
+    <None Remove="FamidashEditor.pink-pad-down-frame4.png" />
+    <None Remove="FamidashEditor.pink-pad-up-frame1.png" />
+    <None Remove="FamidashEditor.pink-pad-up-frame2.png" />
+    <None Remove="FamidashEditor.pink-pad-up-frame3.png" />
+    <None Remove="FamidashEditor.pink-pad-up-frame4.png" />
+    <None Remove="FamidashEditor.green-pad-expanded-frame1.png" />
+    <None Remove="FamidashEditor.green-pad-expanded-frame2.png" />
+    <None Remove="FamidashEditor.green-pad-expanded-frame3.png" />
+    <None Remove="FamidashEditor.green-pad-expanded-frame4.png" />
+    <None Remove="FamidashEditor.red-pad-down-frame1.png" />
+    <None Remove="FamidashEditor.red-pad-down-frame2.png" />
+    <None Remove="FamidashEditor.red-pad-down-frame3.png" />
+    <None Remove="FamidashEditor.red-pad-down-frame4.png" />
+    <None Remove="FamidashEditor.sprites.png" />
+    <None Remove="FamidashEditor.gravity-down-downwards-portal.png" />
+    <None Remove="FamidashEditor.gravity-down-upwards-portal.png" />
+    <None Remove="FamidashEditor.gravity-up-downwards-portal.png" />
+    <None Remove="FamidashEditor.gravity-up-upwards-portal.png" />
+    <None Remove="FamidashEditor.gravity-1-3rd-x-portal.png" />
+    <None Remove="FamidashEditor.gravity-1-half-x-portal.png" />
+    <None Remove="FamidashEditor.gravity-2-3rd-x-portal.png" />
+    <None Remove="FamidashEditor.gravity-2x-portal.png" />
+    <None Remove="FamidashEditor.gravity-1x-portal.png" />
+    <None Remove="FamidashEditor.dual-portal.png" />
+    <None Remove="FamidashEditor.single-portal.png" />
+    <None Remove="FamidashEditor.dash-orb-right-frame1.png" />
+    <None Remove="FamidashEditor.dash-orb-right-frame2.png" />
+    <None Remove="FamidashEditor.dash-gravity-orb-right-frame1.png" />
+    <None Remove="FamidashEditor.dash-gravity-orb-right-frame2.png" />
+    <None Remove="FamidashEditor.dash-orb-45deg-upwards-frame1.png" />
+    <None Remove="FamidashEditor.dash-orb-45deg-upwards-frame2.png" />
+    <None Remove="FamidashEditor.dash-gravity-orb-45deg-upwards-frame1.png" />
+    <None Remove="FamidashEditor.dash-gravity-orb-45deg-upwards-frame2.png" />
+    <None Remove="FamidashEditor.dash-orb-45deg-downwards-frame1.png" />
+    <None Remove="FamidashEditor.dash-orb-45deg-downwards-frame2.png" />
+    <None Remove="FamidashEditor.dash-gravity-orb-45deg-downwards-frame1.png" />
+    <None Remove="FamidashEditor.dash-gravity-orb-45deg-downwards-frame2.png" />
+    <None Remove="FamidashEditor.dash-orb-up-frame1.png" />
+    <None Remove="FamidashEditor.dash-orb-up-frame2.png" />
+    <None Remove="FamidashEditor.dash-gravity-orb-up-frame1.png" />
+    <None Remove="FamidashEditor.dash-gravity-orb-up-frame2.png" />
+    <None Remove="FamidashEditor.dash-orb-down-frame1.png" />
+    <None Remove="FamidashEditor.dash-orb-down-frame2.png" />
+    <None Remove="FamidashEditor.dash-gravity-orb-down-frame1.png" />
+    <None Remove="FamidashEditor.dash-gravity-orb-down-frame2.png" />
+    <None Remove="FamidashEditor.teleport-orb-enter-frame1.png" />
+    <None Remove="FamidashEditor.teleport-orb-enter-frame2.png" />
+    <None Remove="FamidashEditor.teleport-orb-exit-frame1.png" />
+    <None Remove="FamidashEditor.teleport-orb-exit-frame2.png" />
+    <None Remove="FamidashEditor.spider-orb-downwards-frame1.png" />
+    <None Remove="FamidashEditor.spider-orb-downwards-frame2.png" />
+    <None Remove="FamidashEditor.spider-orb-upwards-frame1.png" />
+    <None Remove="FamidashEditor.spider-orb-upwards-frame2.png" />
+    <None Remove="FamidashEditor.star-frame1.png" />
+    <None Remove="FamidashEditor.star-frame2.png" />
+    <None Remove="FamidashEditor.diamond-frame1.png" />
+    <None Remove="FamidashEditor.diamond-frame2.png" />
+    <None Remove="FamidashEditor.diamond-half-frame1.png" />
+    <None Remove="FamidashEditor.diamond-half-frame2.png" />
+    <None Remove="FamidashEditor.question-mark-frame1.png" />
+    <None Remove="FamidashEditor.question-mark-frame2.png" />
+    <None Remove="FamidashEditor.exclamation-mark-frame1.png" />
+    <None Remove="FamidashEditor.exclamation-mark-frame2.png" />
+    <None Remove="FamidashEditor.x-frame1.png" />
+    <None Remove="FamidashEditor.x-frame2.png" />
+    <None Remove="FamidashEditor.pole-short-frame1.png" />
+    <None Remove="FamidashEditor.pole-short-frame2.png" />
+    <None Remove="FamidashEditor.pole-short-upsidedown-frame1.png" />
+    <None Remove="FamidashEditor.pole-short-upsidedown-frame2.png" />
+    <None Remove="FamidashEditor.pole-left-short-frame1.png" />
+    <None Remove="FamidashEditor.pole-left-short-frame2.png" />
+    <None Remove="FamidashEditor.pole-right-short-frame1.png" />
+    <None Remove="FamidashEditor.pole-right-short-frame2.png" />
+    <None Remove="FamidashEditor.pole-left-medium-frame1.png" />
+    <None Remove="FamidashEditor.pole-left-medium-frame2.png" />
+    <None Remove="FamidashEditor.pole-right-medium-frame1.png" />
+    <None Remove="FamidashEditor.pole-right-medium-frame2.png" />
+    <None Remove="FamidashEditor.pole-medium-frame1.png" />
+    <None Remove="FamidashEditor.pole-medium-frame2.png" />
+    <None Remove="FamidashEditor.pole-medium-upsidedown-frame1.png" />
+    <None Remove="FamidashEditor.pole-medium-upsidedown-frame2.png" />
+    <None Remove="FamidashEditor.pole-long-frame1.png" />
+    <None Remove="FamidashEditor.pole-long-frame2.png" />
+    <None Remove="FamidashEditor.pole-long-upsidedown-frame1.png" />
+    <None Remove="FamidashEditor.pole-long-upsidedown-frame2.png" />
+    <None Remove="FamidashEditor.chain.png" />
+    <None Remove="FamidashEditor.deco-spikes.png" />
+    <None Remove="FamidashEditor.deco-spikes-upsidedown.png" />
+    <None Remove="FamidashEditor.deco-spikes-small.png" />
+    <None Remove="FamidashEditor.deco-spikes-small-upsidedown.png" />
+    <None Remove="FamidashEditor.pulsing-ball-frame1.png" />
+    <None Remove="FamidashEditor.pulsing-ball-frame2.png" />
+    <None Remove="FamidashEditor.music-note-frame1.png" />
+    <None Remove="FamidashEditor.music-note-frame2.png" />
+    <None Remove="FamidashEditor.chain-upsidedown.png" />
+    <None Remove="FamidashEditor.speed-05x.png" />
+    <None Remove="FamidashEditor.speed-1x.png" />
+    <None Remove="FamidashEditor.speed-2x.png" />
+    <None Remove="FamidashEditor.speed-3x.png" />
+    <None Remove="FamidashEditor.speed-4x.png" />
+    <None Remove="FamidashEditor.speed-special.png" />
+    <None Remove="FamidashEditor.spider-pad.png" />
+    <None Remove="FamidashEditor.spider-pad-upsidedown.png" />
+    <None Remove="FamidashEditor.teleport-portal-horizontal-enter-downwards.png" />
+    <None Remove="FamidashEditor.teleport-portal-horizontal-exit-upwards.png" />
+    <None Remove="FamidashEditor.teleport-portal-horizontal-enter-upwards.png" />
+    <None Remove="FamidashEditor.teleport-portal-horizontal-exit-downwards.png" />
+    <None Remove="FamidashEditor.teleport-portal-enter.png" />
+    <None Remove="FamidashEditor.teleport-portal-exit.png" />
+    <None Remove="FamidashEditor.that_one_render_1.png" />
+    <None Remove="FamidashEditor.cube.png" />
+    <None Remove="FamidashEditor.ship.png" />
+    <None Remove="FamidashEditor.ship2.png" />
+    <None Remove="FamidashEditor.ship3.png" />
+    <None Remove="FamidashEditor.ship4.png" />
+    <None Remove="FamidashEditor.ship5.png" />
+    <None Remove="FamidashEditor.ship6.png" />
+    <None Remove="FamidashEditor.ship7.png" />
+    <None Remove="FamidashEditor.ship-mini.png" />
+    <None Remove="FamidashEditor.ship-mini1.png" />
+    <None Remove="FamidashEditor.ship-mini2.png" />
+    <None Remove="FamidashEditor.ship-mini3.png" />
+    <None Remove="FamidashEditor.ship-mini4.png" />
+    <None Remove="FamidashEditor.ship-mini5.png" />
+    <None Remove="FamidashEditor.ship-mini6.png" />
+    <None Remove="FamidashEditor.swingcopter1.png" />
+    <None Remove="FamidashEditor.swingcopter2.png" />
+    <None Remove="FamidashEditor.swingcopter3.png" />
+    <None Remove="FamidashEditor.swingcopter4.png" />
+    <None Remove="FamidashEditor.swingcopter-mini1.png" />
+    <None Remove="FamidashEditor.swingcopter-mini2.png" />
+    <None Remove="FamidashEditor.swingcopter-mini3.png" />
+    <None Remove="FamidashEditor.swingcopter-mini4.png" />
+    <None Remove="FamidashEditor.football1.png" />
+    <None Remove="FamidashEditor.football2.png" />
+    <None Remove="FamidashEditor.football3.png" />
+    <None Remove="FamidashEditor.football4.png" />
+    <None Remove="FamidashEditor.football5.png" />
+    <None Remove="FamidashEditor.football6.png" />
+    <None Remove="FamidashEditor.ball.png" />
+    <None Remove="FamidashEditor.ball2.png" />
+    <None Remove="FamidashEditor.ufo.png" />
+    <None Remove="FamidashEditor.BlocksaSpikesaSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlocksaSpikesaSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlocksaSpikesbSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlocksaSpikesbSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlocksaSpikescSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlocksaSpikescSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlocksbSpikesaSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlocksbSpikesaSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlocksbSpikesbSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlocksbSpikesbSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlocksbSpikescSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlocksbSpikescSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlockscSpikesaSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlockscSpikesaSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlockscSpikesbSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlockscSpikesbSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlockscSpikescSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlockscSpikescSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlocksdSpikesaSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlocksdSpikesaSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlocksdSpikesbSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlocksdSpikesbSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.BlocksdSpikescSawsaSlopesa.png" />
+    <None Remove="FamidashEditor.BlocksdSpikescSawsaSlopesnone.png" />
+    <None Remove="FamidashEditor.famidash.bmp" />
+    <None Remove="parallax.bmp" />
+    <None Remove="ground.bmp" />
+    <None Remove="noparallax.bmp" />
+    <None Remove="Assets.parallax.bmp" />
+    <None Remove="Assets.ground.bmp" />
+    <EmbeddedResource Include="fmsplayerwindow.baml" LogicalName="fmsplayerwindow.baml" />
+    <EmbeddedResource Include="colorwheelpickerwindow.baml" LogicalName="colorwheelpickerwindow.baml" />
+    <EmbeddedResource Include="simulatorwindow.baml" LogicalName="simulatorwindow.baml" />
+    <EmbeddedResource Include="splashscreen.baml" LogicalName="splashscreen.baml" />
+    <EmbeddedResource Include="loadingwindow.baml" LogicalName="loadingwindow.baml" />
+    <EmbeddedResource Include="pathfindersettingswindow.baml" LogicalName="pathfindersettingswindow.baml" />
+    <EmbeddedResource Include="setoptionswindow.baml" LogicalName="setoptionswindow.baml" />
+    <EmbeddedResource Include="colorpickerwindow.baml" LogicalName="colorpickerwindow.baml" />
+    <EmbeddedResource Include="mainwindow.baml" LogicalName="mainwindow.baml" />
+    <EmbeddedResource Include="offsetmapwindow.baml" LogicalName="offsetmapwindow.baml" />
+    <EmbeddedResource Include="app.baml" LogicalName="app.baml" />
+    <EmbeddedResource Include="debuginfowindow.baml" LogicalName="debuginfowindow.baml" />
+    <EmbeddedResource Include="FamidashEditor.fire.wav" LogicalName="FamidashEditor.fire.wav" />
+    <EmbeddedResource Include="FamidashEditor.saw-frame1.png" LogicalName="FamidashEditor.saw-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.saw-frame2.png" LogicalName="FamidashEditor.saw-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.small-saw-frame1.png" LogicalName="FamidashEditor.small-saw-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.small-saw-frame2.png" LogicalName="FamidashEditor.small-saw-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.large-saw-frame1.png" LogicalName="FamidashEditor.large-saw-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.large-saw-frame2.png" LogicalName="FamidashEditor.large-saw-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.cube-mini.png" LogicalName="FamidashEditor.cube-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_00_frame_0_upright.png" LogicalName="FamidashEditor.cube_00_frame_0_upright.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_01_frame_1_45cw.png" LogicalName="FamidashEditor.cube_01_frame_1_45cw.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_02_frame_2_90cw_side.png" LogicalName="FamidashEditor.cube_02_frame_2_90cw_side.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_03_frame_3_135cw.png" LogicalName="FamidashEditor.cube_03_frame_3_135cw.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_04_frame_4_180_upside.png" LogicalName="FamidashEditor.cube_04_frame_4_180_upside.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_05_frame_5_225cw.png" LogicalName="FamidashEditor.cube_05_frame_5_225cw.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_06_frame_6_270cw_opposite.png" LogicalName="FamidashEditor.cube_06_frame_6_270cw_opposite.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_mini_00_frame_0.png" LogicalName="FamidashEditor.cube_mini_00_frame_0.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_mini_01_frame_1.png" LogicalName="FamidashEditor.cube_mini_01_frame_1.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_mini_02_frame_2.png" LogicalName="FamidashEditor.cube_mini_02_frame_2.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_mini_03_frame_3.png" LogicalName="FamidashEditor.cube_mini_03_frame_3.png" />
+    <EmbeddedResource Include="FamidashEditor.cube_mini_04_frame_4.png" LogicalName="FamidashEditor.cube_mini_04_frame_4.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_00_frame_0.png" LogicalName="FamidashEditor.ninja_00_frame_0.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_01_frame_1.png" LogicalName="FamidashEditor.ninja_01_frame_1.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_02_frame_2.png" LogicalName="FamidashEditor.ninja_02_frame_2.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_03_frame_3.png" LogicalName="FamidashEditor.ninja_03_frame_3.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_04_frame_4.png" LogicalName="FamidashEditor.ninja_04_frame_4.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_05_frame_5.png" LogicalName="FamidashEditor.ninja_05_frame_5.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_06_frame_6.png" LogicalName="FamidashEditor.ninja_06_frame_6.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_mini_00_frame_0.png" LogicalName="FamidashEditor.ninja_mini_00_frame_0.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_mini_01_frame_1.png" LogicalName="FamidashEditor.ninja_mini_01_frame_1.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_mini_02_frame_2.png" LogicalName="FamidashEditor.ninja_mini_02_frame_2.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_mini_03_frame_3.png" LogicalName="FamidashEditor.ninja_mini_03_frame_3.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja_mini_04_frame_4.png" LogicalName="FamidashEditor.ninja_mini_04_frame_4.png" />
+    <EmbeddedResource Include="FamidashEditor.spider.png" LogicalName="FamidashEditor.spider.png" />
+    <EmbeddedResource Include="FamidashEditor.spider2.png" LogicalName="FamidashEditor.spider2.png" />
+    <EmbeddedResource Include="FamidashEditor.spider3.png" LogicalName="FamidashEditor.spider3.png" />
+    <EmbeddedResource Include="FamidashEditor.spider4.png" LogicalName="FamidashEditor.spider4.png" />
+    <EmbeddedResource Include="FamidashEditor.spiderjump.png" LogicalName="FamidashEditor.spiderjump.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-mini.png" LogicalName="FamidashEditor.spider-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-mini2.png" LogicalName="FamidashEditor.spider-mini2.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-mini3.png" LogicalName="FamidashEditor.spider-mini3.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-mini4.png" LogicalName="FamidashEditor.spider-mini4.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-mini-jump.png" LogicalName="FamidashEditor.spider-mini-jump.png" />
+    <EmbeddedResource Include="FamidashEditor.robot.png" LogicalName="FamidashEditor.robot.png" />
+    <EmbeddedResource Include="FamidashEditor.robot2.png" LogicalName="FamidashEditor.robot2.png" />
+    <EmbeddedResource Include="FamidashEditor.robot3.png" LogicalName="FamidashEditor.robot3.png" />
+    <EmbeddedResource Include="FamidashEditor.robot4.png" LogicalName="FamidashEditor.robot4.png" />
+    <EmbeddedResource Include="FamidashEditor.robotjump.png" LogicalName="FamidashEditor.robotjump.png" />
+    <EmbeddedResource Include="FamidashEditor.robot-mini.png" LogicalName="FamidashEditor.robot-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.robot-mini2.png" LogicalName="FamidashEditor.robot-mini2.png" />
+    <EmbeddedResource Include="FamidashEditor.robot-mini3.png" LogicalName="FamidashEditor.robot-mini3.png" />
+    <EmbeddedResource Include="FamidashEditor.robot-mini4.png" LogicalName="FamidashEditor.robot-mini4.png" />
+    <EmbeddedResource Include="FamidashEditor.robot-mini-jump.png" LogicalName="FamidashEditor.robot-mini-jump.png" />
+    <EmbeddedResource Include="FamidashEditor.wave.png" LogicalName="FamidashEditor.wave.png" />
+    <EmbeddedResource Include="FamidashEditor.wave-mini2.png" LogicalName="FamidashEditor.wave-mini2.png" />
+    <EmbeddedResource Include="FamidashEditor.wave2.png" LogicalName="FamidashEditor.wave2.png" />
+    <EmbeddedResource Include="FamidashEditor.wave-mini.png" LogicalName="FamidashEditor.wave-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja.png" LogicalName="FamidashEditor.ninja.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja-mini.png" LogicalName="FamidashEditor.ninja-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter.png" LogicalName="FamidashEditor.swingcopter.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter-mini.png" LogicalName="FamidashEditor.swingcopter-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.pogo.png" LogicalName="FamidashEditor.pogo.png" />
+    <EmbeddedResource Include="FamidashEditor.pogo2.png" LogicalName="FamidashEditor.pogo2.png" />
+    <EmbeddedResource Include="FamidashEditor.pogo-mini.png" LogicalName="FamidashEditor.pogo-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.pogo-mini2.png" LogicalName="FamidashEditor.pogo-mini2.png" />
+    <EmbeddedResource Include="FamidashEditor.snake.png" LogicalName="FamidashEditor.snake.png" />
+    <EmbeddedResource Include="FamidashEditor.snake-mini.png" LogicalName="FamidashEditor.snake-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.football.png" LogicalName="FamidashEditor.football.png" />
+    <EmbeddedResource Include="FamidashEditor.football-mini.png" LogicalName="FamidashEditor.football-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.football-mini1.png" LogicalName="FamidashEditor.football-mini1.png" />
+    <EmbeddedResource Include="FamidashEditor.football-mini2.png" LogicalName="FamidashEditor.football-mini2.png" />
+    <EmbeddedResource Include="FamidashEditor.football-mini3.png" LogicalName="FamidashEditor.football-mini3.png" />
+    <EmbeddedResource Include="FamidashEditor.football-mini4.png" LogicalName="FamidashEditor.football-mini4.png" />
+    <EmbeddedResource Include="FamidashEditor.football-mini5.png" LogicalName="FamidashEditor.football-mini5.png" />
+    <EmbeddedResource Include="FamidashEditor.football-mini6.png" LogicalName="FamidashEditor.football-mini6.png" />
+    <EmbeddedResource Include="FamidashEditor.ball-mini.png" LogicalName="FamidashEditor.ball-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.ufo-mini.png" LogicalName="FamidashEditor.ufo-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.cube-portal.png" LogicalName="FamidashEditor.cube-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.ship-portal.png" LogicalName="FamidashEditor.ship-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.ball-portal.png" LogicalName="FamidashEditor.ball-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.ufo-portal.png" LogicalName="FamidashEditor.ufo-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.robot-portal.png" LogicalName="FamidashEditor.robot-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.wave-portal.png" LogicalName="FamidashEditor.wave-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-portal.png" LogicalName="FamidashEditor.spider-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.mini-portal.png" LogicalName="FamidashEditor.mini-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.growth-portal.png" LogicalName="FamidashEditor.growth-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter-portal.png" LogicalName="FamidashEditor.swingcopter-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.ninja-portal.png" LogicalName="FamidashEditor.ninja-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.pogo-portal.png" LogicalName="FamidashEditor.pogo-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.snake-portal.png" LogicalName="FamidashEditor.snake-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.football-portal.png" LogicalName="FamidashEditor.football-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-down-portal.png" LogicalName="FamidashEditor.gravity-down-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-up-portal.png" LogicalName="FamidashEditor.gravity-up-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-orb-frame1.png" LogicalName="FamidashEditor.yellow-orb-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-orb-frame2.png" LogicalName="FamidashEditor.yellow-orb-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-orb-frame3.png" LogicalName="FamidashEditor.yellow-orb-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-orb-frame4.png" LogicalName="FamidashEditor.yellow-orb-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-orb-frame1.png" LogicalName="FamidashEditor.blue-orb-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-orb-frame2.png" LogicalName="FamidashEditor.blue-orb-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-orb-frame3.png" LogicalName="FamidashEditor.blue-orb-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-orb-frame4.png" LogicalName="FamidashEditor.blue-orb-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-orb-frame1.png" LogicalName="FamidashEditor.pink-orb-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-orb-frame2.png" LogicalName="FamidashEditor.pink-orb-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-orb-frame3.png" LogicalName="FamidashEditor.pink-orb-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-orb-frame4.png" LogicalName="FamidashEditor.pink-orb-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.green-orb-frame1.png" LogicalName="FamidashEditor.green-orb-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.green-orb-frame2.png" LogicalName="FamidashEditor.green-orb-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.green-orb-frame3.png" LogicalName="FamidashEditor.green-orb-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.green-orb-frame4.png" LogicalName="FamidashEditor.green-orb-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.red-orb-frame1.png" LogicalName="FamidashEditor.red-orb-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.red-orb-frame2.png" LogicalName="FamidashEditor.red-orb-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.red-orb-frame3.png" LogicalName="FamidashEditor.red-orb-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.red-orb-frame4.png" LogicalName="FamidashEditor.red-orb-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.black-orb-frame1.png" LogicalName="FamidashEditor.black-orb-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.black-orb-frame2.png" LogicalName="FamidashEditor.black-orb-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.black-orb-frame3.png" LogicalName="FamidashEditor.black-orb-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.black-orb-frame4.png" LogicalName="FamidashEditor.black-orb-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.white-orb-frame1.png" LogicalName="FamidashEditor.white-orb-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.white-orb-frame2.png" LogicalName="FamidashEditor.white-orb-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.white-orb-frame3.png" LogicalName="FamidashEditor.white-orb-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.white-orb-frame4.png" LogicalName="FamidashEditor.white-orb-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.coin-frame1.png" LogicalName="FamidashEditor.coin-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.coin-frame2.png" LogicalName="FamidashEditor.coin-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.coin-frame3.png" LogicalName="FamidashEditor.coin-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.coin-frame4.png" LogicalName="FamidashEditor.coin-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.mini-coin-frame1.png" LogicalName="FamidashEditor.mini-coin-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.mini-coin-frame2.png" LogicalName="FamidashEditor.mini-coin-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.mini-coin-frame3.png" LogicalName="FamidashEditor.mini-coin-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.mini-coin-frame4.png" LogicalName="FamidashEditor.mini-coin-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.red-pad-up-frame1.png" LogicalName="FamidashEditor.red-pad-up-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.red-pad-up-frame2.png" LogicalName="FamidashEditor.red-pad-up-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.red-pad-up-frame3.png" LogicalName="FamidashEditor.red-pad-up-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.red-pad-up-frame4.png" LogicalName="FamidashEditor.red-pad-up-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-pad-down-frame1.png" LogicalName="FamidashEditor.yellow-pad-down-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-pad-down-frame2.png" LogicalName="FamidashEditor.yellow-pad-down-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-pad-down-frame3.png" LogicalName="FamidashEditor.yellow-pad-down-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-pad-down-frame4.png" LogicalName="FamidashEditor.yellow-pad-down-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-pad-up-frame1.png" LogicalName="FamidashEditor.yellow-pad-up-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-pad-up-frame2.png" LogicalName="FamidashEditor.yellow-pad-up-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-pad-up-frame3.png" LogicalName="FamidashEditor.yellow-pad-up-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.yellow-pad-up-frame4.png" LogicalName="FamidashEditor.yellow-pad-up-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-pad-down-frame1.png" LogicalName="FamidashEditor.blue-pad-down-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-pad-down-frame2.png" LogicalName="FamidashEditor.blue-pad-down-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-pad-down-frame3.png" LogicalName="FamidashEditor.blue-pad-down-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-pad-down-frame4.png" LogicalName="FamidashEditor.blue-pad-down-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-pad-up-frame1.png" LogicalName="FamidashEditor.blue-pad-up-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-pad-up-frame2.png" LogicalName="FamidashEditor.blue-pad-up-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-pad-up-frame3.png" LogicalName="FamidashEditor.blue-pad-up-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.blue-pad-up-frame4.png" LogicalName="FamidashEditor.blue-pad-up-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-pad-down-frame1.png" LogicalName="FamidashEditor.pink-pad-down-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-pad-down-frame2.png" LogicalName="FamidashEditor.pink-pad-down-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-pad-down-frame3.png" LogicalName="FamidashEditor.pink-pad-down-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-pad-down-frame4.png" LogicalName="FamidashEditor.pink-pad-down-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-pad-up-frame1.png" LogicalName="FamidashEditor.pink-pad-up-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-pad-up-frame2.png" LogicalName="FamidashEditor.pink-pad-up-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-pad-up-frame3.png" LogicalName="FamidashEditor.pink-pad-up-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.pink-pad-up-frame4.png" LogicalName="FamidashEditor.pink-pad-up-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.green-pad-expanded-frame1.png" LogicalName="FamidashEditor.green-pad-expanded-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.green-pad-expanded-frame2.png" LogicalName="FamidashEditor.green-pad-expanded-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.green-pad-expanded-frame3.png" LogicalName="FamidashEditor.green-pad-expanded-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.green-pad-expanded-frame4.png" LogicalName="FamidashEditor.green-pad-expanded-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.red-pad-down-frame1.png" LogicalName="FamidashEditor.red-pad-down-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.red-pad-down-frame2.png" LogicalName="FamidashEditor.red-pad-down-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.red-pad-down-frame3.png" LogicalName="FamidashEditor.red-pad-down-frame3.png" />
+    <EmbeddedResource Include="FamidashEditor.red-pad-down-frame4.png" LogicalName="FamidashEditor.red-pad-down-frame4.png" />
+    <EmbeddedResource Include="FamidashEditor.sprites.png" LogicalName="FamidashEditor.sprites.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-down-downwards-portal.png" LogicalName="FamidashEditor.gravity-down-downwards-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-down-upwards-portal.png" LogicalName="FamidashEditor.gravity-down-upwards-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-up-downwards-portal.png" LogicalName="FamidashEditor.gravity-up-downwards-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-up-upwards-portal.png" LogicalName="FamidashEditor.gravity-up-upwards-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-1-3rd-x-portal.png" LogicalName="FamidashEditor.gravity-1-3rd-x-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-1-half-x-portal.png" LogicalName="FamidashEditor.gravity-1-half-x-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-2-3rd-x-portal.png" LogicalName="FamidashEditor.gravity-2-3rd-x-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-2x-portal.png" LogicalName="FamidashEditor.gravity-2x-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.gravity-1x-portal.png" LogicalName="FamidashEditor.gravity-1x-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.dual-portal.png" LogicalName="FamidashEditor.dual-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.single-portal.png" LogicalName="FamidashEditor.single-portal.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-orb-right-frame1.png" LogicalName="FamidashEditor.dash-orb-right-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-orb-right-frame2.png" LogicalName="FamidashEditor.dash-orb-right-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-gravity-orb-right-frame1.png" LogicalName="FamidashEditor.dash-gravity-orb-right-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-gravity-orb-right-frame2.png" LogicalName="FamidashEditor.dash-gravity-orb-right-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-orb-45deg-upwards-frame1.png" LogicalName="FamidashEditor.dash-orb-45deg-upwards-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-orb-45deg-upwards-frame2.png" LogicalName="FamidashEditor.dash-orb-45deg-upwards-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-gravity-orb-45deg-upwards-frame1.png" LogicalName="FamidashEditor.dash-gravity-orb-45deg-upwards-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-gravity-orb-45deg-upwards-frame2.png" LogicalName="FamidashEditor.dash-gravity-orb-45deg-upwards-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-orb-45deg-downwards-frame1.png" LogicalName="FamidashEditor.dash-orb-45deg-downwards-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-orb-45deg-downwards-frame2.png" LogicalName="FamidashEditor.dash-orb-45deg-downwards-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-gravity-orb-45deg-downwards-frame1.png" LogicalName="FamidashEditor.dash-gravity-orb-45deg-downwards-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-gravity-orb-45deg-downwards-frame2.png" LogicalName="FamidashEditor.dash-gravity-orb-45deg-downwards-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-orb-up-frame1.png" LogicalName="FamidashEditor.dash-orb-up-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-orb-up-frame2.png" LogicalName="FamidashEditor.dash-orb-up-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-gravity-orb-up-frame1.png" LogicalName="FamidashEditor.dash-gravity-orb-up-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-gravity-orb-up-frame2.png" LogicalName="FamidashEditor.dash-gravity-orb-up-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-orb-down-frame1.png" LogicalName="FamidashEditor.dash-orb-down-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-orb-down-frame2.png" LogicalName="FamidashEditor.dash-orb-down-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-gravity-orb-down-frame1.png" LogicalName="FamidashEditor.dash-gravity-orb-down-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.dash-gravity-orb-down-frame2.png" LogicalName="FamidashEditor.dash-gravity-orb-down-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.teleport-orb-enter-frame1.png" LogicalName="FamidashEditor.teleport-orb-enter-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.teleport-orb-enter-frame2.png" LogicalName="FamidashEditor.teleport-orb-enter-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.teleport-orb-exit-frame1.png" LogicalName="FamidashEditor.teleport-orb-exit-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.teleport-orb-exit-frame2.png" LogicalName="FamidashEditor.teleport-orb-exit-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-orb-downwards-frame1.png" LogicalName="FamidashEditor.spider-orb-downwards-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-orb-downwards-frame2.png" LogicalName="FamidashEditor.spider-orb-downwards-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-orb-upwards-frame1.png" LogicalName="FamidashEditor.spider-orb-upwards-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-orb-upwards-frame2.png" LogicalName="FamidashEditor.spider-orb-upwards-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.star-frame1.png" LogicalName="FamidashEditor.star-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.star-frame2.png" LogicalName="FamidashEditor.star-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.diamond-frame1.png" LogicalName="FamidashEditor.diamond-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.diamond-frame2.png" LogicalName="FamidashEditor.diamond-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.diamond-half-frame1.png" LogicalName="FamidashEditor.diamond-half-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.diamond-half-frame2.png" LogicalName="FamidashEditor.diamond-half-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.question-mark-frame1.png" LogicalName="FamidashEditor.question-mark-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.question-mark-frame2.png" LogicalName="FamidashEditor.question-mark-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.exclamation-mark-frame1.png" LogicalName="FamidashEditor.exclamation-mark-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.exclamation-mark-frame2.png" LogicalName="FamidashEditor.exclamation-mark-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.x-frame1.png" LogicalName="FamidashEditor.x-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.x-frame2.png" LogicalName="FamidashEditor.x-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-short-frame1.png" LogicalName="FamidashEditor.pole-short-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-short-frame2.png" LogicalName="FamidashEditor.pole-short-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-short-upsidedown-frame1.png" LogicalName="FamidashEditor.pole-short-upsidedown-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-short-upsidedown-frame2.png" LogicalName="FamidashEditor.pole-short-upsidedown-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-left-short-frame1.png" LogicalName="FamidashEditor.pole-left-short-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-left-short-frame2.png" LogicalName="FamidashEditor.pole-left-short-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-right-short-frame1.png" LogicalName="FamidashEditor.pole-right-short-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-right-short-frame2.png" LogicalName="FamidashEditor.pole-right-short-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-left-medium-frame1.png" LogicalName="FamidashEditor.pole-left-medium-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-left-medium-frame2.png" LogicalName="FamidashEditor.pole-left-medium-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-right-medium-frame1.png" LogicalName="FamidashEditor.pole-right-medium-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-right-medium-frame2.png" LogicalName="FamidashEditor.pole-right-medium-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-medium-frame1.png" LogicalName="FamidashEditor.pole-medium-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-medium-frame2.png" LogicalName="FamidashEditor.pole-medium-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-medium-upsidedown-frame1.png" LogicalName="FamidashEditor.pole-medium-upsidedown-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-medium-upsidedown-frame2.png" LogicalName="FamidashEditor.pole-medium-upsidedown-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-long-frame1.png" LogicalName="FamidashEditor.pole-long-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-long-frame2.png" LogicalName="FamidashEditor.pole-long-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-long-upsidedown-frame1.png" LogicalName="FamidashEditor.pole-long-upsidedown-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pole-long-upsidedown-frame2.png" LogicalName="FamidashEditor.pole-long-upsidedown-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.chain.png" LogicalName="FamidashEditor.chain.png" />
+    <EmbeddedResource Include="FamidashEditor.deco-spikes.png" LogicalName="FamidashEditor.deco-spikes.png" />
+    <EmbeddedResource Include="FamidashEditor.deco-spikes-upsidedown.png" LogicalName="FamidashEditor.deco-spikes-upsidedown.png" />
+    <EmbeddedResource Include="FamidashEditor.deco-spikes-small.png" LogicalName="FamidashEditor.deco-spikes-small.png" />
+    <EmbeddedResource Include="FamidashEditor.deco-spikes-small-upsidedown.png" LogicalName="FamidashEditor.deco-spikes-small-upsidedown.png" />
+    <EmbeddedResource Include="FamidashEditor.pulsing-ball-frame1.png" LogicalName="FamidashEditor.pulsing-ball-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.pulsing-ball-frame2.png" LogicalName="FamidashEditor.pulsing-ball-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.music-note-frame1.png" LogicalName="FamidashEditor.music-note-frame1.png" />
+    <EmbeddedResource Include="FamidashEditor.music-note-frame2.png" LogicalName="FamidashEditor.music-note-frame2.png" />
+    <EmbeddedResource Include="FamidashEditor.chain-upsidedown.png" LogicalName="FamidashEditor.chain-upsidedown.png" />
+    <EmbeddedResource Include="FamidashEditor.speed-05x.png" LogicalName="FamidashEditor.speed-05x.png" />
+    <EmbeddedResource Include="FamidashEditor.speed-1x.png" LogicalName="FamidashEditor.speed-1x.png" />
+    <EmbeddedResource Include="FamidashEditor.speed-2x.png" LogicalName="FamidashEditor.speed-2x.png" />
+    <EmbeddedResource Include="FamidashEditor.speed-3x.png" LogicalName="FamidashEditor.speed-3x.png" />
+    <EmbeddedResource Include="FamidashEditor.speed-4x.png" LogicalName="FamidashEditor.speed-4x.png" />
+    <EmbeddedResource Include="FamidashEditor.speed-special.png" LogicalName="FamidashEditor.speed-special.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-pad.png" LogicalName="FamidashEditor.spider-pad.png" />
+    <EmbeddedResource Include="FamidashEditor.spider-pad-upsidedown.png" LogicalName="FamidashEditor.spider-pad-upsidedown.png" />
+    <EmbeddedResource Include="FamidashEditor.teleport-portal-horizontal-enter-downwards.png" LogicalName="FamidashEditor.teleport-portal-horizontal-enter-downwards.png" />
+    <EmbeddedResource Include="FamidashEditor.teleport-portal-horizontal-exit-upwards.png" LogicalName="FamidashEditor.teleport-portal-horizontal-exit-upwards.png" />
+    <EmbeddedResource Include="FamidashEditor.teleport-portal-horizontal-enter-upwards.png" LogicalName="FamidashEditor.teleport-portal-horizontal-enter-upwards.png" />
+    <EmbeddedResource Include="FamidashEditor.teleport-portal-horizontal-exit-downwards.png" LogicalName="FamidashEditor.teleport-portal-horizontal-exit-downwards.png" />
+    <EmbeddedResource Include="FamidashEditor.teleport-portal-enter.png" LogicalName="FamidashEditor.teleport-portal-enter.png" />
+    <EmbeddedResource Include="FamidashEditor.teleport-portal-exit.png" LogicalName="FamidashEditor.teleport-portal-exit.png" />
+    <EmbeddedResource Include="FamidashEditor.that_one_render_1.png" LogicalName="FamidashEditor.that_one_render_1.png" />
+    <EmbeddedResource Include="FamidashEditor.cube.png" LogicalName="FamidashEditor.cube.png" />
+    <EmbeddedResource Include="FamidashEditor.ship.png" LogicalName="FamidashEditor.ship.png" />
+    <EmbeddedResource Include="FamidashEditor.ship2.png" LogicalName="FamidashEditor.ship2.png" />
+    <EmbeddedResource Include="FamidashEditor.ship3.png" LogicalName="FamidashEditor.ship3.png" />
+    <EmbeddedResource Include="FamidashEditor.ship4.png" LogicalName="FamidashEditor.ship4.png" />
+    <EmbeddedResource Include="FamidashEditor.ship5.png" LogicalName="FamidashEditor.ship5.png" />
+    <EmbeddedResource Include="FamidashEditor.ship6.png" LogicalName="FamidashEditor.ship6.png" />
+    <EmbeddedResource Include="FamidashEditor.ship7.png" LogicalName="FamidashEditor.ship7.png" />
+    <EmbeddedResource Include="FamidashEditor.ship-mini.png" LogicalName="FamidashEditor.ship-mini.png" />
+    <EmbeddedResource Include="FamidashEditor.ship-mini1.png" LogicalName="FamidashEditor.ship-mini1.png" />
+    <EmbeddedResource Include="FamidashEditor.ship-mini2.png" LogicalName="FamidashEditor.ship-mini2.png" />
+    <EmbeddedResource Include="FamidashEditor.ship-mini3.png" LogicalName="FamidashEditor.ship-mini3.png" />
+    <EmbeddedResource Include="FamidashEditor.ship-mini4.png" LogicalName="FamidashEditor.ship-mini4.png" />
+    <EmbeddedResource Include="FamidashEditor.ship-mini5.png" LogicalName="FamidashEditor.ship-mini5.png" />
+    <EmbeddedResource Include="FamidashEditor.ship-mini6.png" LogicalName="FamidashEditor.ship-mini6.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter1.png" LogicalName="FamidashEditor.swingcopter1.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter2.png" LogicalName="FamidashEditor.swingcopter2.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter3.png" LogicalName="FamidashEditor.swingcopter3.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter4.png" LogicalName="FamidashEditor.swingcopter4.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter-mini1.png" LogicalName="FamidashEditor.swingcopter-mini1.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter-mini2.png" LogicalName="FamidashEditor.swingcopter-mini2.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter-mini3.png" LogicalName="FamidashEditor.swingcopter-mini3.png" />
+    <EmbeddedResource Include="FamidashEditor.swingcopter-mini4.png" LogicalName="FamidashEditor.swingcopter-mini4.png" />
+    <EmbeddedResource Include="FamidashEditor.football1.png" LogicalName="FamidashEditor.football1.png" />
+    <EmbeddedResource Include="FamidashEditor.football2.png" LogicalName="FamidashEditor.football2.png" />
+    <EmbeddedResource Include="FamidashEditor.football3.png" LogicalName="FamidashEditor.football3.png" />
+    <EmbeddedResource Include="FamidashEditor.football4.png" LogicalName="FamidashEditor.football4.png" />
+    <EmbeddedResource Include="FamidashEditor.football5.png" LogicalName="FamidashEditor.football5.png" />
+    <EmbeddedResource Include="FamidashEditor.football6.png" LogicalName="FamidashEditor.football6.png" />
+    <EmbeddedResource Include="FamidashEditor.ball.png" LogicalName="FamidashEditor.ball.png" />
+    <EmbeddedResource Include="FamidashEditor.ball2.png" LogicalName="FamidashEditor.ball2.png" />
+    <EmbeddedResource Include="FamidashEditor.ufo.png" LogicalName="FamidashEditor.ufo.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksaSpikesaSawsaSlopesa.png" LogicalName="FamidashEditor.BlocksaSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksaSpikesaSawsaSlopesnone.png" LogicalName="FamidashEditor.BlocksaSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksaSpikesbSawsaSlopesa.png" LogicalName="FamidashEditor.BlocksaSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksaSpikesbSawsaSlopesnone.png" LogicalName="FamidashEditor.BlocksaSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksaSpikescSawsaSlopesa.png" LogicalName="FamidashEditor.BlocksaSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksaSpikescSawsaSlopesnone.png" LogicalName="FamidashEditor.BlocksaSpikescSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksbSpikesaSawsaSlopesa.png" LogicalName="FamidashEditor.BlocksbSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksbSpikesaSawsaSlopesnone.png" LogicalName="FamidashEditor.BlocksbSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksbSpikesbSawsaSlopesa.png" LogicalName="FamidashEditor.BlocksbSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksbSpikesbSawsaSlopesnone.png" LogicalName="FamidashEditor.BlocksbSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksbSpikescSawsaSlopesa.png" LogicalName="FamidashEditor.BlocksbSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksbSpikescSawsaSlopesnone.png" LogicalName="FamidashEditor.BlocksbSpikescSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlockscSpikesaSawsaSlopesa.png" LogicalName="FamidashEditor.BlockscSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlockscSpikesaSawsaSlopesnone.png" LogicalName="FamidashEditor.BlockscSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlockscSpikesbSawsaSlopesa.png" LogicalName="FamidashEditor.BlockscSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlockscSpikesbSawsaSlopesnone.png" LogicalName="FamidashEditor.BlockscSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlockscSpikescSawsaSlopesa.png" LogicalName="FamidashEditor.BlockscSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlockscSpikescSawsaSlopesnone.png" LogicalName="FamidashEditor.BlockscSpikescSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksdSpikesaSawsaSlopesa.png" LogicalName="FamidashEditor.BlocksdSpikesaSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksdSpikesaSawsaSlopesnone.png" LogicalName="FamidashEditor.BlocksdSpikesaSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksdSpikesbSawsaSlopesa.png" LogicalName="FamidashEditor.BlocksdSpikesbSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksdSpikesbSawsaSlopesnone.png" LogicalName="FamidashEditor.BlocksdSpikesbSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksdSpikescSawsaSlopesa.png" LogicalName="FamidashEditor.BlocksdSpikescSawsaSlopesa.png" />
+    <EmbeddedResource Include="FamidashEditor.BlocksdSpikescSawsaSlopesnone.png" LogicalName="FamidashEditor.BlocksdSpikescSawsaSlopesnone.png" />
+    <EmbeddedResource Include="FamidashEditor.famidash.bmp" LogicalName="FamidashEditor.famidash.bmp" />
+    <EmbeddedResource Include="parallax.bmp" LogicalName="parallax.bmp" />
+    <EmbeddedResource Include="ground.bmp" LogicalName="ground.bmp" />
+    <EmbeddedResource Include="noparallax.bmp" LogicalName="noparallax.bmp" />
+    <EmbeddedResource Include="Assets.parallax.bmp" LogicalName="Assets.parallax.bmp" />
+    <EmbeddedResource Include="Assets.ground.bmp" LogicalName="Assets.ground.bmp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="NAudio.WinMM">
+      <HintPath>native-windows/bin/Release/net8.0-windows/win-x64/NAudio.WinMM.dll</HintPath>
+    </Reference>
+    <Reference Include="NAudio.Core">
+      <HintPath>native-windows/bin/Release/net8.0-windows/win-x64/NAudio.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="NAudio">
+      <HintPath>native-windows/bin/Release/net8.0-windows/win-x64/NAudio.dll</HintPath>
+    </Reference>
+    <Reference Include="NAudio.Wasapi">
+      <HintPath>native-windows/bin/Release/net8.0-windows/win-x64/NAudio.Wasapi.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
