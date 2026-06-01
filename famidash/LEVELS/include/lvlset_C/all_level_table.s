@@ -11,13 +11,17 @@ _level_list_lo:
 	.byte .lobyte(level_data_short_kings)
 	.byte .lobyte(level_data_nicktoons)
 	.byte .lobyte(level_data_hungrymanadventures)
+	.byte .lobyte(level_data_dorabaebasic7)
+	.byte .lobyte(level_data_endgame)
 	.byte .lobyte(level_data_astronomicalexpedition)
 	.byte .lobyte(level_data_ninecircleseasy)
 	.byte .lobyte(level_data_overawed)
 	.byte .lobyte(level_data_unity)
 	.byte .lobyte(level_data_dastardly)
+	.byte .lobyte(level_data_thetripletrial)
 	.byte .lobyte(level_data_trolledfix)
 	.byte .lobyte(level_data_supercycles)
+	.byte .lobyte(level_data_chaozimpact)
 	.byte .lobyte(level_data_futurefunkfix)
 
 _level_list_hi:
@@ -27,13 +31,17 @@ _level_list_hi:
 	.byte .hibyte(level_data_short_kings)
 	.byte .hibyte(level_data_nicktoons)
 	.byte .hibyte(level_data_hungrymanadventures)
+	.byte .hibyte(level_data_dorabaebasic7)
+	.byte .hibyte(level_data_endgame)
 	.byte .hibyte(level_data_astronomicalexpedition)
 	.byte .hibyte(level_data_ninecircleseasy)
 	.byte .hibyte(level_data_overawed)
 	.byte .hibyte(level_data_unity)
 	.byte .hibyte(level_data_dastardly)
+	.byte .hibyte(level_data_thetripletrial)
 	.byte .hibyte(level_data_trolledfix)
 	.byte .hibyte(level_data_supercycles)
+	.byte .hibyte(level_data_chaozimpact)
 	.byte .hibyte(level_data_futurefunkfix)
 
 _level_list_bank:
@@ -43,13 +51,17 @@ _level_list_bank:
 	.byte .lobyte(.bank(level_data_short_kings))
 	.byte .lobyte(.bank(level_data_nicktoons))
 	.byte .lobyte(.bank(level_data_hungrymanadventures))
+	.byte .lobyte(.bank(level_data_dorabaebasic7))
+	.byte .lobyte(.bank(level_data_endgame))
 	.byte .lobyte(.bank(level_data_astronomicalexpedition))
 	.byte .lobyte(.bank(level_data_ninecircleseasy))
 	.byte .lobyte(.bank(level_data_overawed))
 	.byte .lobyte(.bank(level_data_unity))
 	.byte .lobyte(.bank(level_data_dastardly))
+	.byte .lobyte(.bank(level_data_thetripletrial))
 	.byte .lobyte(.bank(level_data_trolledfix))
 	.byte .lobyte(.bank(level_data_supercycles))
+	.byte .lobyte(.bank(level_data_chaozimpact))
 	.byte .lobyte(.bank(level_data_futurefunkfix))
 
 _level_chunk_list_lo:
@@ -83,13 +95,17 @@ _level_lengths_lo:
 	.byte .lobyte($000039)		; short_kings
 	.byte .lobyte($000059)		; nicktoons
 	.byte .lobyte($00006A)		; hungrymanadventures
+	.byte .lobyte($0000F7)		; dorabaebasic7
+	.byte .lobyte($00009F)		; endgame
 	.byte .lobyte($000102)		; astronomicalexpedition
 	.byte .lobyte($0000B9)		; ninecircleseasy
 	.byte .lobyte($0000A7)		; overawed
 	.byte .lobyte($00006B)		; unity
 	.byte .lobyte($0000B2)		; dastardly
+	.byte .lobyte($00003E)		; thetripletrial
 	.byte .lobyte($00003D)		; trolledfix
 	.byte .lobyte($000088)		; supercycles
+	.byte .lobyte($000080)		; chaozimpact
 	.byte .lobyte($0001DD)		; futurefunkfix
 
 .if MID_LEVEL_LENGTHS_ENABLED
@@ -101,13 +117,17 @@ _level_lengths_md:
 	.byte .hibyte($000039)		; short_kings
 	.byte .hibyte($000059)		; nicktoons
 	.byte .hibyte($00006A)		; hungrymanadventures
+	.byte .hibyte($0000F7)		; dorabaebasic7
+	.byte .hibyte($00009F)		; endgame
 	.byte .hibyte($000102)		; astronomicalexpedition
 	.byte .hibyte($0000B9)		; ninecircleseasy
 	.byte .hibyte($0000A7)		; overawed
 	.byte .hibyte($00006B)		; unity
 	.byte .hibyte($0000B2)		; dastardly
+	.byte .hibyte($00003E)		; thetripletrial
 	.byte .hibyte($00003D)		; trolledfix
 	.byte .hibyte($000088)		; supercycles
+	.byte .hibyte($000080)		; chaozimpact
 	.byte .hibyte($0001DD)		; futurefunkfix
 
 .if HIGH_LEVEL_LENGTHS_ENABLED
@@ -119,13 +139,17 @@ _level_lengths_hi:
 	.byte .bankbyte($000039)		; short_kings
 	.byte .bankbyte($000059)		; nicktoons
 	.byte .bankbyte($00006A)		; hungrymanadventures
+	.byte .bankbyte($0000F7)		; dorabaebasic7
+	.byte .bankbyte($00009F)		; endgame
 	.byte .bankbyte($000102)		; astronomicalexpedition
 	.byte .bankbyte($0000B9)		; ninecircleseasy
 	.byte .bankbyte($0000A7)		; overawed
 	.byte .bankbyte($00006B)		; unity
 	.byte .bankbyte($0000B2)		; dastardly
+	.byte .bankbyte($00003E)		; thetripletrial
 	.byte .bankbyte($00003D)		; trolledfix
 	.byte .bankbyte($000088)		; supercycles
+	.byte .bankbyte($000080)		; chaozimpact
 	.byte .bankbyte($0001DD)		; futurefunkfix
 
 .endif

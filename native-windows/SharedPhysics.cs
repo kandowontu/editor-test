@@ -60,6 +60,8 @@ internal static class SharedPhysics
 
 	internal static Action<string>? BallEjectDiagLog;
 
+	internal static Action<string>? FullTraceLog;
+
 	internal static Action<string>? SlopeDiagLog;
 
 	internal const int TILE = 16;
@@ -1672,6 +1674,7 @@ internal static class SharedPhysics
 
 	internal static (bool hit, int surfaceY, bool spikeDeath) CheckFloor(in CollisionMap map, int collX, int collY, int collW, int collH, int velY_fixed = 0)
 	{
+		FullTraceLog?.Invoke($"cur=0 gm=-1 tag=CheckFloor.in cx={collX} cy={collY} w={collW} h={collH} vyf={velY_fixed}");
 		if (velY_fixed < 0)
 		{
 			return (hit: false, surfaceY: 0, spikeDeath: false);
@@ -1778,6 +1781,7 @@ internal static class SharedPhysics
 
 	internal static (bool hit, int surfaceY, bool spikeDeath, int ejectD, MetatileCollision collisionType) CheckFloorDetailed(in CollisionMap map, int collX, int collY, int collW, int collH, int velY_fixed = 0)
 	{
+		FullTraceLog?.Invoke($"cur=0 gm=-1 tag=CheckFloorDetailed.in cx={collX} cy={collY} w={collW} h={collH} vyf={velY_fixed}");
 		if (velY_fixed < 0)
 		{
 			return (hit: false, surfaceY: 0, spikeDeath: false, ejectD: 0, collisionType: MetatileCollision.COL_NONE);
@@ -1910,6 +1914,7 @@ internal static class SharedPhysics
 
 	internal static (bool hit, int ceilingBottomY, bool spikeDeath, MetatileCollision hitCollision) CheckCeiling(in CollisionMap map, int collX, int collY, int collW, int collH, int velY_fixed = -1)
 	{
+		FullTraceLog?.Invoke($"cur=0 gm=-1 tag=CheckCeiling.in cx={collX} cy={collY} w={collW} h={collH} vyf={velY_fixed}");
 		if (velY_fixed >= 0)
 		{
 			return (hit: false, ceilingBottomY: 0, spikeDeath: false, hitCollision: MetatileCollision.COL_NONE);
@@ -2038,6 +2043,7 @@ internal static class SharedPhysics
 
 	internal static bool CheckCenterPointDeath(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY)
 	{
+		FullTraceLog?.Invoke($"cur=0 gm=-1 tag=CheckCenterPointDeath.in X={playerX_px} Y={playerY_px} hbW={hbW} hbH={hbH} hbOffY={hbOffY}");
 		int num = playerX_px + (hbW >> 1) - 1;
 		int num2 = playerY_px + (hbH >> 1) + hbOffY;
 		int num3 = num / 16;
@@ -2074,6 +2080,7 @@ internal static class SharedPhysics
 
 	internal static bool CheckDeathCollision(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY, int gameMode = -1, bool dblocked = false)
 	{
+		FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=CheckDeathCollision.in X={playerX_px} Y={playerY_px} hbW={hbW} hbH={hbH} mode={gameMode} dblk={(dblocked ? 1 : 0)}");
 		int num = playerX_px + (hbW >> 1) - 1;
 		int num2 = playerY_px + hbH / 2 + hbOffY;
 		int num3 = num / 16;
@@ -2138,6 +2145,7 @@ internal static class SharedPhysics
 
 	internal static bool CheckFloorSpikes(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, bool mini, out int deathX, out int deathY)
 	{
+		FullTraceLog?.Invoke($"cur=0 gm=-1 tag=CheckFloorSpikes.in X={playerX_px} Y={playerY_px} hbW={hbW} hbH={hbH} mini={(mini ? 1 : 0)}");
 		deathX = 0;
 		deathY = 0;
 		int num = (mini ? (16 - hbH >> 1) : 0);
@@ -2174,6 +2182,7 @@ internal static class SharedPhysics
 
 	internal static bool CheckFloorSpikes(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, bool mini, out int deathX, out int deathY, out string cornerName, out int dbg_tid, out int dbg_mappedTid, out MetatileCollision dbg_col, out int dbg_localX, out int dbg_localY)
 	{
+		FullTraceLog?.Invoke($"cur=0 gm=-1 tag=CheckFloorSpikes2.in X={playerX_px} Y={playerY_px} hbW={hbW} hbH={hbH} mini={(mini ? 1 : 0)}");
 		deathX = 0;
 		deathY = 0;
 		cornerName = "";
@@ -2240,6 +2249,7 @@ internal static class SharedPhysics
 
 	internal static bool CheckForwardCollision(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY, int gameMode, bool mini, bool gravFlipped, bool skipSlopeCheck = false)
 	{
+		FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=CheckForwardCollision.in X={playerX_px} Y={playerY_px} hbW={hbW} hbH={hbH} hbOffY={hbOffY} mode={gameMode} mini={(mini ? 1 : 0)} gF={(gravFlipped ? 1 : 0)} skipSlope={(skipSlopeCheck ? 1 : 0)}");
 		if (!skipSlopeCheck && HasSlopeNearFeet(in map, playerX_px, playerY_px, hbW, hbH, hbOffY))
 		{
 			return false;
@@ -2288,6 +2298,7 @@ internal static class SharedPhysics
 
 	internal static (int nudge, int slopeType) GetForwardSlopeNudge(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY, int gameMode, bool mini, bool gravFlipped)
 	{
+		FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=GetForwardSlopeNudge.in X={playerX_px} Y={playerY_px} hbW={hbW} hbH={hbH} hbOffY={hbOffY} mode={gameMode} mini={(mini ? 1 : 0)} gF={(gravFlipped ? 1 : 0)}");
 		int num = playerX_px + hbW;
 		int num2 = playerY_px + (mini ? ((16 - hbH >> 1) + (hbH >> 1)) : (hbH >> 1));
 		if (mini && (gameMode == 0 || gameMode == 4 || gameMode == 8))
@@ -3278,6 +3289,44 @@ internal static class SharedPhysics
 		int hitboxOffsetY = GetHitboxOffsetY(gameMode, mini, gravFlipped);
 		int collX = num;
 		int collY = num2 + hitboxOffsetY;
+		if (gameMode == 1 || gameMode == 3)
+		{
+			var (hit2, _, spike2, hitCollision2) = CheckCeiling(in map, collX, collY, cubeHitboxW, cubeHitboxH);
+			if (spike2)
+			{
+				result.DebugCeilSpike = true;
+				result.Died = true;
+				return result;
+			}
+			if (hit2)
+			{
+				result.DebugCeilTileHit = true;
+				int yPx2 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
+				int adjust2 = ((yPx2 + hitboxOffsetY + 1) % 16 + 16) % 16;
+				int ejectU2 = (sbyte)(byte)(((hitCollision2 == MetatileCollision.COL_NO_SIDE || hitCollision2 == MetatileCollision.COL_ALL || hitCollision2 == MetatileCollision.COL_FLOOR_CEIL) ? 240 : 248) | adjust2);
+				int newYPx2 = yPx2 - ejectU2 - 1;
+				int yLow2 = (result.NewY_fixed - camY_fixed) & 0xFF;
+				result.NewY_fixed = camY_fixed + (newYPx2 - (camY_fixed >> 8) << 8) + yLow2;
+				result.NewVelY_fixed = 0;
+			}
+			var (hit3, _, spike3, ejectD3, _) = CheckFloorDetailed(in map, collX, collY, cubeHitboxW, cubeHitboxH);
+			if (spike3)
+			{
+				result.DebugFloorSpike = true;
+				result.Died = true;
+				return result;
+			}
+			if (hit3)
+			{
+				result.DebugFloorTileHit = true;
+				int yPx3 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
+				int newYPx3 = yPx3 - ejectD3;
+				int yLow3 = (result.NewY_fixed - camY_fixed) & 0xFF;
+				result.NewY_fixed = camY_fixed + (newYPx3 - (camY_fixed >> 8) << 8) + yLow3;
+				result.NewVelY_fixed = 0;
+			}
+			return result;
+		}
 		UpdateSlopeCounters(ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.NewVelY_fixed, ref result.NewY_fixed, gameMode, gravFlipped, mini, ref result.LastSlopeType);
 		int num3 = (mini ? (16 - cubeHitboxH >> 1) : 0);
 		int num4 = 16 - cubeHitboxH >> 1;

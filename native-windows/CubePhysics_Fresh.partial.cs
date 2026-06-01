@@ -159,7 +159,7 @@ namespace FamidashEditor
                         
                         // Log pathfinder jump check data when pathfinder is active and input is present
                         if (pathfinderEnabled && (holdJump || pressJump))
-                            AppendSimDebug($"[PF-JUMP] hold={holdJump}, press={pressJump}, velY=0x{playerVelY_fixed:X4}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}, wasZeroed={wasZeroedByCollisionLastFrame}, pfIdx={pfFrameIndex}");                        
+                            AppendSimDebug($"[PF-JUMP] hold={holdJump}, press={pressJump}, velY=0x{playerVelY_fixed:X4}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}, wasZeroed={wasZeroedByCollisionLastFrame}, pfFrame={Math.Max(0, pfFrameIndex - 1)}");                        
                         // Two jump paths from gamemode_cube.h lines 50-65:
                         // Path 1: Hold A && !jblocked && !fblocked → if (!orbed) jump
                         // Path 2: Press A && (jblocked || fblocked) → jump (no orbed check!)
@@ -545,7 +545,7 @@ namespace FamidashEditor
             if (MainWindow.Option_NoDeath || deathTriggered) return;
             
             int playerX_px = playerX_fixed >> 8;
-            int playerY_px = playerY_fixed >> 8;
+            int playerY_px = NesPlayerY_px(playerY_fixed);
             
             // Calculate hitbox dimensions
             int hitboxW = (currplayer_mini != 0) ? MINI_CUBE_HITBOX_W : CUBE_HITBOX_W;

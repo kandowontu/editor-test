@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -421,7 +422,72 @@ public class PathfinderEngine
 
 	public volatile bool CancelRequested;
 
+	private sealed class TeeTextWriter : TextWriter
+	{
+		private readonly TextWriter[] _writers;
+
+		public override Encoding Encoding => Encoding.UTF8;
+
+		public TeeTextWriter(params TextWriter[] writers)
+		{
+			_writers = writers.Where(static w => w != null).ToArray();
+		}
+
+		public override void WriteLine(string? value)
+		{
+			for (int i = 0; i < _writers.Length; i++)
+			{
+				_writers[i].WriteLine(value);
+			}
+		}
+
+		public override void Flush()
+		{
+			for (int i = 0; i < _writers.Length; i++)
+			{
+				_writers[i].Flush();
+			}
+		}
+	}
+
+	private sealed class PrefixTextWriter : TextWriter
+	{
+		private readonly TextWriter _inner;
+		private readonly Func<string> _prefixFactory;
+
+		public override Encoding Encoding => _inner.Encoding;
+
+		public PrefixTextWriter(TextWriter inner, Func<string> prefixFactory)
+		{
+			_inner = inner;
+			_prefixFactory = prefixFactory;
+		}
+
+		public override void WriteLine(string? value)
+		{
+			_inner.WriteLine(_prefixFactory() + (value ?? string.Empty));
+		}
+
+		public override void Flush()
+		{
+			_inner.Flush();
+		}
+	}
+
+	private TextWriter _baseLog = TextWriter.Null;
 	private TextWriter _log = TextWriter.Null;
+
+#if !DISABLE_DEBUG_LOGGING
+	private string _pfDebugLogPath = string.Empty;
+	private string _frameTracePath = string.Empty;
+	private string _orbDebugLogPath = string.Empty;
+	private string _fullTracePath = string.Empty;
+	private StreamWriter? _traceWriter;
+	private StreamWriter? _pfDebugWriter;
+	private StreamWriter? _orbDebugWriter;
+	private StreamWriter? _fullTraceWriter;
+	private bool _artifactWritersOpen;
+#endif
 
 	private volatile int _currentX_px;
 
@@ -684,7 +750,17 @@ public class PathfinderEngine
 
 	public int CurrentX_px => _currentX_px;
 
-	public string DebugLogPath => string.Empty;
+	public string DebugLogPath
+	{
+		get
+		{
+#if !DISABLE_DEBUG_LOGGING
+			return _pfDebugLogPath;
+#else
+			return string.Empty;
+#endif
+		}
+	}
 
 	public string LevelName { get; set; } = "";
 
@@ -697,9 +773,29 @@ public class PathfinderEngine
 
 	private int SpawnYSubpx => ConfigSpawnYLo.GetValueOrDefault() & 0xFF;
 
-	public string FrameTracePath => string.Empty;
+	public string FrameTracePath
+	{
+		get
+		{
+#if !DISABLE_DEBUG_LOGGING
+			return _frameTracePath;
+#else
+			return string.Empty;
+#endif
+		}
+	}
 
-	public string OrbDebugLogPath => string.Empty;
+	public string OrbDebugLogPath
+	{
+		get
+		{
+#if !DISABLE_DEBUG_LOGGING
+			return _orbDebugLogPath;
+#else
+			return string.Empty;
+#endif
+		}
+	}
 
 	public List<(int x, int y)> PathPoints { get; private set; }
 
@@ -1107,20 +1203,224 @@ public class PathfinderEngine
 		return Math.Max(0, num4) << 8;
 	}
 
+#if !DISABLE_DEBUG_LOGGING
+	private static string SanitizeTraceTag(string? value)
+	{
+		if (string.IsNullOrWhiteSpace(value))
+		{
+			return "unknown";
+		}
+		StringBuilder stringBuilder = new StringBuilder(value.Length);
+		foreach (char c in value)
+		{
+			if (char.IsLetterOrDigit(c))
+			{
+				stringBuilder.Append(c);
+			}
+			else
+			{
+				stringBuilder.Append('_');
+			}
+		}
+		string text = stringBuilder.ToString().Trim('_');
+		return (text.Length != 0) ? text : "unknown";
+	}
+
+	private void EnsureArtifactWritersOpen()
+	{
+		if (_artifactWritersOpen)
+		{
+			return;
+		}
+		string tempPath = Path.GetTempPath();
+		string text = SanitizeTraceTag(LevelName);
+		string text2 = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss_fff");
+		string text3 = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+		_pfDebugLogPath = Path.Combine(tempPath, $"famidash_pf_debug_{text}_{text2}.txt");
+		_frameTracePath = Path.Combine(tempPath, $"famidash_pf_trace_{text}_{text2}.csv");
+		_orbDebugLogPath = Path.Combine(tempPath, $"famidash_pf_orb_debug_{text}_{text2}.log");
+		_fullTracePath = Path.Combine(tempPath, $"famidash_pf_trace_FULL_{text}_{text3}.log");
+		UTF8Encoding uTF8Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+		try
+		{
+			_pfDebugWriter = new StreamWriter(_pfDebugLogPath, append: false, uTF8Encoding)
+			{
+				AutoFlush = true
+			};
+		}
+		catch
+		{
+			_pfDebugWriter = null;
+		}
+		try
+		{
+			_orbDebugWriter = new StreamWriter(_orbDebugLogPath, append: false, uTF8Encoding)
+			{
+				AutoFlush = true
+			};
+			_orbDebugWriter.WriteLine($"# pf orb debug {DateTime.UtcNow:o} level={LevelName}");
+		}
+		catch
+		{
+			_orbDebugWriter = null;
+		}
+		try
+		{
+			_fullTraceWriter = new StreamWriter(_fullTracePath, append: false, uTF8Encoding)
+			{
+				AutoFlush = true
+			};
+			_fullTraceWriter.WriteLine($"# PfTrace opened {DateTime.UtcNow:o} level={LevelName}");
+			_fullTraceWriter.WriteLine("# FrameLo=0 FrameHi=2147483647");
+			_fullTraceWriter.WriteLine("# format: f=N cur=C gm=G tag=NAME k=v k=v ...");
+		}
+		catch
+		{
+			_fullTraceWriter = null;
+		}
+		List<TextWriter> list = new List<TextWriter>();
+		if (!ReferenceEquals(_baseLog, TextWriter.Null))
+		{
+			list.Add(_baseLog);
+		}
+		if (_pfDebugWriter != null)
+		{
+			list.Add(new PrefixTextWriter(_pfDebugWriter, () => $"[PF f={_frameCounter}] "));
+		}
+		_log = (list.Count switch
+		{
+			0 => TextWriter.Null,
+			1 => list[0],
+			_ => new TeeTextWriter(list.ToArray())
+		});
+		SharedPhysics.FullTraceLog = delegate(string msg)
+		{
+			if (_fullTraceWriter == null || _speculativeDepth > 0)
+			{
+				return;
+			}
+			try
+			{
+				_fullTraceWriter.WriteLine($"f={_frameCounter} {msg}");
+			}
+			catch
+			{
+			}
+		};
+		_artifactWritersOpen = true;
+	}
+
+	private void CloseArtifactWriters()
+	{
+		try
+		{
+			_log.Flush();
+		}
+		catch
+		{
+		}
+		_log = _baseLog;
+		SharedPhysics.FullTraceLog = null;
+		try
+		{
+			_pfDebugWriter?.Flush();
+			_pfDebugWriter?.Dispose();
+		}
+		catch
+		{
+		}
+		try
+		{
+			_orbDebugWriter?.Flush();
+			_orbDebugWriter?.Dispose();
+		}
+		catch
+		{
+		}
+		try
+		{
+			_fullTraceWriter?.Flush();
+			_fullTraceWriter?.Dispose();
+		}
+		catch
+		{
+		}
+		_pfDebugWriter = null;
+		_orbDebugWriter = null;
+		_fullTraceWriter = null;
+		_artifactWritersOpen = false;
+	}
+#endif
+
 	private void TraceFrameOpen()
 	{
+		#if !DISABLE_DEBUG_LOGGING
+		EnsureArtifactWritersOpen();
+		try
+		{
+			_traceWriter = new StreamWriter(_frameTracePath, append: false, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
+			{
+				AutoFlush = true
+			};
+			_traceWriter.WriteLine("frame,X_fixed,Y_fixed,VelY_fixed,input,alive,X_px,Y_px,onGround,CamY_px,TgtCamY_px,mode,gravFlipped,shipCeilSlopeHit,shipCeilTileHit,shipCeilSpike,shipFloorSlopeHit,shipFloorTileHit,shipFloorSpike,CamY_fixed,Y_lowB,CamY_lowB,ScrollYSubpx,mini,VelX_fixed,SlopeType,LastSlopeType,SlopeFrames,SlopeWasOn");
+		}
+		catch
+		{
+			_traceWriter = null;
+		}
+		#endif
 	}
 
 	private void TraceFrame(int frame, ref SimState s, bool input, bool alive)
 	{
+		#if !DISABLE_DEBUG_LOGGING
+		if (_traceWriter == null || _speculativeDepth > 0)
+		{
+			return;
+		}
+		try
+		{
+			int num = (s.X_fixed >> 8) + 8;
+			int num2 = (s.CameraY_fixed >> 8) + ((s.Y_fixed - s.CameraY_fixed) >> 8) + 8;
+			_traceWriter.WriteLine($"{frame},0x{s.X_fixed:X},0x{s.Y_fixed:X},0x{s.VelY_fixed:X},{(input ? 1 : 0)},{(alive ? 1 : 0)},{num},{num2},{(s.OnGround ? 1 : 0)},{s.CameraY_fixed >> 8},{s.TargetCameraY_fixed >> 8},{s.GameMode},{(s.GravFlipped ? 1 : 0)},{(s.ShipDbgCeilSlopeHit ? 1 : 0)},{(s.ShipDbgCeilTileHit ? 1 : 0)},{(s.ShipDbgCeilSpike ? 1 : 0)},{(s.ShipDbgFloorSlopeHit ? 1 : 0)},{(s.ShipDbgFloorTileHit ? 1 : 0)},{(s.ShipDbgFloorSpike ? 1 : 0)},0x{s.CameraY_fixed:X},{s.Y_fixed & 0xFF},{s.CameraY_fixed & 0xFF},{s.ScrollYSubpx},{(s.Mini ? 1 : 0)},0x{s.VelX_fixed:X},{s.SlopeType},{s.LastSlopeType},{s.SlopeFrames},{s.SlopeWasOnCounter}");
+		}
+		catch
+		{
+		}
+		#endif
 	}
 
 	private void TraceFrameClose()
 	{
+		#if !DISABLE_DEBUG_LOGGING
+		try
+		{
+			_traceWriter?.Flush();
+			_traceWriter?.Dispose();
+		}
+		catch
+		{
+		}
+		_traceWriter = null;
+		CloseArtifactWriters();
+		#endif
 	}
 
 	internal void OrbDbg(string msg)
 	{
+		#if !DISABLE_DEBUG_LOGGING
+		if (_orbDebugWriter == null || _speculativeDepth > 0)
+		{
+			return;
+		}
+		try
+		{
+			_orbDebugWriter.WriteLine($"[PF f={_frameCounter}] {msg}");
+		}
+		catch
+		{
+		}
+		#endif
 	}
 
 	private static bool IsCoinSprite(int sid)
@@ -1448,7 +1748,8 @@ public class PathfinderEngine
 
 	public void ReplayInputSequence(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini, IList<bool> inputs, int preRollFrames, TextWriter output)
 	{
-		_log = TextWriter.Null;
+		_baseLog = TextWriter.Null;
+		_log = _baseLog;
 		_frameCounter = 0;
 		_speculativeDepth = 0;
 		_dualP2Guard = false;
@@ -1530,7 +1831,8 @@ public class PathfinderEngine
 
 	public void Run(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini)
 	{
-		_log = (Verbose ? Console.Error : TextWriter.Null);
+		_baseLog = (Verbose ? Console.Error : TextWriter.Null);
+		_log = _baseLog;
 		for (int i = 0; i < allCoins.Count; i++)
 		{
 			_log.WriteLine($"[COIN_INFO] coin#{i} idx={allCoins[i].Index} sid=0x{allCoins[i].SpriteId:X2} pos=({allCoins[i].AnchorX_px},{allCoins[i].AnchorY_px}) hit=({allCoins[i].HitLeft},{allCoins[i].HitTop})-({allCoins[i].HitRight},{allCoins[i].HitBottom})");
@@ -1565,8 +1867,8 @@ public class PathfinderEngine
 			}
 			return;
 		}
-		List<bool> inputs = ((Inputs != null) ? new List<bool>(Inputs) : null);
-		List<(int, int)> pathPoints = ((PathPoints != null) ? new List<(int, int)>(PathPoints) : null);
+		List<bool>? inputs = ((Inputs != null) ? new List<bool>(Inputs) : null);
+		List<(int, int)>? pathPoints = ((PathPoints != null) ? new List<(int, int)>(PathPoints) : null);
 		string resultMessage = ResultMessage;
 		int num = ((PathPoints != null && PathPoints.Count > 0) ? PathPoints[PathPoints.Count - 1].x : 0);
 		int num2 = mapWidth * 16;
@@ -1578,8 +1880,8 @@ public class PathfinderEngine
 			int num3 = ((PathPoints != null && PathPoints.Count > 0) ? PathPoints[PathPoints.Count - 1].x : 0);
 			if (num > num3)
 			{
-				Inputs = inputs;
-				PathPoints = pathPoints;
+				if (inputs != null) Inputs = inputs;
+				if (pathPoints != null) PathPoints = pathPoints;
 				ResultMessage = resultMessage;
 				_log.WriteLine($"[BFS?HEURISTIC] Heuristic worse ({num3}px vs BFS {num}px), keeping BFS result");
 			}
@@ -1589,11 +1891,11 @@ public class PathfinderEngine
 		if (Success && PreferCoins && _forgivenCoins.Count > 0 && allCoins.Count > 0)
 		{
 			int num4 = (mapHeight - groundRowsToReserve) * 16 - 15;
-			List<bool> inputs2 = new List<bool>(Inputs);
-			List<(int, int)> pathPoints2 = new List<(int, int)>(PathPoints);
+			List<bool> inputs2 = new List<bool>(Inputs ?? new List<bool>());
+			List<(int, int)> pathPoints2 = new List<(int, int)>(PathPoints ?? new List<(int, int)>());
 			string resultMessage2 = ResultMessage;
 			int num5 = ((FinalCollectedCoinIndices != null) ? FinalCollectedCoinIndices.Count : 0);
-			HashSet<int> hashSet = ((FinalCollectedCoinIndices != null) ? new HashSet<int>(FinalCollectedCoinIndices) : null);
+			HashSet<int>? hashSet = ((FinalCollectedCoinIndices != null) ? new HashSet<int>(FinalCollectedCoinIndices) : null);
 			List<SpriteEntry> list = allCoins.Where((SpriteEntry c) => _forgivenCoins.Contains(c.Index)).ToList();
 			int value8;
 			List<SpriteEntry> list2 = list.Where((SpriteEntry c) => _forgivenCoinGameModes.TryGetValue(c.Index, out value8) && value8 == 0).ToList();
@@ -1648,8 +1950,8 @@ public class PathfinderEngine
 						if (num10 > num5)
 						{
 							_log.WriteLine($"[COIN_RETRY_COMBINED] Improved: {num10} vs {num5}");
-							inputs2 = new List<bool>(Inputs);
-							pathPoints2 = new List<(int, int)>(PathPoints);
+							inputs2 = new List<bool>(Inputs ?? new List<bool>());
+							pathPoints2 = new List<(int, int)>(PathPoints ?? new List<(int, int)>());
 							resultMessage2 = ResultMessage;
 							num5 = num10;
 							hashSet = ((FinalCollectedCoinIndices != null) ? new HashSet<int>(FinalCollectedCoinIndices) : null);
@@ -1731,8 +2033,8 @@ public class PathfinderEngine
 						if (num16 > num5)
 						{
 							_log.WriteLine($"[COIN_RETRY] Improved: {num16} vs {num5}");
-							inputs2 = new List<bool>(Inputs);
-							pathPoints2 = new List<(int, int)>(PathPoints);
+							inputs2 = new List<bool>(Inputs ?? new List<bool>());
+							pathPoints2 = new List<(int, int)>(PathPoints ?? new List<(int, int)>());
 							resultMessage2 = ResultMessage;
 							num5 = num16;
 							hashSet = ((FinalCollectedCoinIndices != null) ? new HashSet<int>(FinalCollectedCoinIndices) : null);
@@ -1794,8 +2096,8 @@ public class PathfinderEngine
 						if (num18 > num5)
 						{
 							_log.WriteLine($"[COIN_RETRY_SHIP] Improved: {num18} vs {num5}");
-							inputs2 = new List<bool>(Inputs);
-							pathPoints2 = new List<(int, int)>(PathPoints);
+							inputs2 = new List<bool>(Inputs ?? new List<bool>());
+							pathPoints2 = new List<(int, int)>(PathPoints ?? new List<(int, int)>());
 							resultMessage2 = ResultMessage;
 							num5 = num18;
 							hashSet = ((FinalCollectedCoinIndices != null) ? new HashSet<int>(FinalCollectedCoinIndices) : null);
@@ -1839,8 +2141,8 @@ public class PathfinderEngine
 						if (num20 > num5)
 						{
 							_log.WriteLine($"[COIN_RETRY_BALL] Improved: {num20} vs {num5}");
-							inputs2 = new List<bool>(Inputs);
-							pathPoints2 = new List<(int, int)>(PathPoints);
+							inputs2 = new List<bool>(Inputs ?? new List<bool>());
+							pathPoints2 = new List<(int, int)>(PathPoints ?? new List<(int, int)>());
 							resultMessage2 = ResultMessage;
 							num5 = num20;
 							hashSet = ((FinalCollectedCoinIndices != null) ? new HashSet<int>(FinalCollectedCoinIndices) : null);
@@ -2178,7 +2480,7 @@ public class PathfinderEngine
 		int num7 = 0;
 		int num8 = 0;
 		int nextCoinCheckIdx = 0;
-		List<BacktrackCheckpoint> list = null;
+		List<BacktrackCheckpoint>? list = null;
 		for (int i = 0; i < 28800; i++)
 		{
 			num5++;
@@ -2279,7 +2581,7 @@ public class PathfinderEngine
 			{
 				flag7 = true;
 			}
-			if (flag7 && _backtrackCheckpoints.Count > 0)
+			if (flag7 && _backtrackCheckpoints != null && _backtrackCheckpoints.Count > 0)
 			{
 				int frame = _backtrackCheckpoints[_backtrackCheckpoints.Count - 1].Frame;
 				if (i - frame < 4)
@@ -2289,9 +2591,13 @@ public class PathfinderEngine
 			}
 			if (flag7 && !flag5 && !_backtrackActive)
 			{
-				if (_backtrackCheckpoints.Count >= 200)
+				if (_backtrackCheckpoints != null && _backtrackCheckpoints.Count >= 200)
 				{
 					_backtrackCheckpoints.RemoveAt(0);
+				}
+				if (_backtrackCheckpoints == null)
+				{
+					_backtrackCheckpoints = new List<BacktrackCheckpoint>();
 				}
 				SimState state = (flag4 ? simState3 : s.Clone());
 				_backtrackCheckpoints.Add(new BacktrackCheckpoint
@@ -2449,7 +2755,7 @@ public class PathfinderEngine
 					num7 = Inputs.Count;
 					num8 = PathPoints.Count;
 					nextCoinCheckIdx = _nextCoinCheckIdx;
-					list = _backtrackCheckpoints.Select((BacktrackCheckpoint cp) => new BacktrackCheckpoint
+					list = (_backtrackCheckpoints ?? new List<BacktrackCheckpoint>()).Select((BacktrackCheckpoint cp) => new BacktrackCheckpoint
 					{
 						Frame = cp.Frame,
 						State = cp.State.Clone(),
@@ -2507,7 +2813,7 @@ public class PathfinderEngine
 					{
 						PathPoints.RemoveRange(num8, PathPoints.Count - num8);
 					}
-					_backtrackCheckpoints = list;
+					_backtrackCheckpoints = list ?? new List<BacktrackCheckpoint>();
 					_backtrackActive = false;
 					_backtrackAttempts = 0;
 					_btOverrideFrame = -1;
@@ -2525,7 +2831,7 @@ public class PathfinderEngine
 					_missedCoinIdx = -1;
 					foreach (SpriteEntry allCoin in allCoins)
 					{
-						SpriteSet processedSprites = s.ProcessedSprites;
+						SpriteSet? processedSprites = s.ProcessedSprites;
 						if (processedSprites != null && processedSprites.Contains(allCoin.Index) && !_permanentlyCollectedCoins.ContainsKey(allCoin.Index))
 						{
 							_permanentlyCollectedCoins[allCoin.Index] = num6;
@@ -2576,7 +2882,7 @@ public class PathfinderEngine
 				{
 					PathPoints.RemoveRange(num8, PathPoints.Count - num8);
 				}
-				_backtrackCheckpoints = list;
+				_backtrackCheckpoints = list ?? new List<BacktrackCheckpoint>();
 				_backtrackActive = false;
 				_backtrackAttempts = 0;
 				_btOverrideFrame = -1;
@@ -2594,7 +2900,7 @@ public class PathfinderEngine
 				_missedCoinIdx = -1;
 				foreach (SpriteEntry allCoin3 in allCoins)
 				{
-					SpriteSet processedSprites2 = s.ProcessedSprites;
+					SpriteSet? processedSprites2 = s.ProcessedSprites;
 					if (processedSprites2 != null && processedSprites2.Contains(allCoin3.Index) && !_permanentlyCollectedCoins.ContainsKey(allCoin3.Index))
 					{
 						_permanentlyCollectedCoins[allCoin3.Index] = num6;
@@ -2870,8 +3176,8 @@ public class PathfinderEngine
 						}
 						else if (flag15)
 						{
-							SimState[] rainbowShadows = s8.RainbowShadows;
-							for (int num169 = 0; num169 < rainbowShadows.Length && flag14; num169++)
+								SimState[]? rainbowShadows = s8.RainbowShadows;
+								for (int num169 = 0; rainbowShadows != null && num169 < rainbowShadows.Length && flag14; num169++)
 							{
 								if (!StepFrame(ref rainbowShadows[num169], input2, out endLevel4))
 								{
@@ -2909,7 +3215,7 @@ public class PathfinderEngine
 				int[] array = new int[13];
 				bool trackDeathTypes = (frame >= 2000 && frame <= 2070) || (frame >= 3550 && frame <= 3850);
 				bool trackAscending = frame >= 4467 && frame <= 4470;
-				int[] frameDtCounts = (trackDeathTypes ? new int[13] : null);
+				int[]? frameDtCounts = (trackDeathTypes ? new int[13] : null);
 				int num18 = 0;
 				int workerCount = Math.Min(Environment.ProcessorCount, Math.Max(1, expandCount / 256));
 				if (workerCount > expandCount)
@@ -2929,10 +3235,10 @@ public class PathfinderEngine
 				int[] partStep8bDeathCount = new int[workerCount];
 				int[] partGravFDeathCount = new int[workerCount];
 				int[][] partGravFDeathTypes = new int[workerCount][];
-				int[][] partFrameDtCounts = ((frameDtCounts != null) ? new int[workerCount][] : null);
+				int[][]? partFrameDtCounts = ((frameDtCounts != null) ? new int[workerCount][] : null);
 				int[] partCoinRangeDeaths = new int[workerCount];
-				List<string>[] partAscDeathLogs = (trackAscending ? new List<string>[workerCount] : null);
-				List<string>[] partGravDeathLogs = ((frame >= 1890) ? new List<string>[workerCount] : null);
+				List<string>[]? partAscDeathLogs = (trackAscending ? new List<string>[workerCount] : null);
+				List<string>[]? partGravDeathLogs = ((frame >= 1890) ? new List<string>[workerCount] : null);
 				bool[] partHasWin = new bool[workerCount];
 				int[] partWinCoins = new int[workerCount];
 				int[] partWinParent = new int[workerCount];
@@ -2952,10 +3258,10 @@ public class PathfinderEngine
 					int num155 = 0;
 					int num156 = 0;
 					int[] array10 = new int[13];
-					int[] array11 = ((frameDtCounts != null) ? new int[13] : null);
+					int[]? array11 = ((frameDtCounts != null) ? new int[13] : null);
 					int num157 = 0;
-					List<string> list31 = (trackAscending ? new List<string>() : null);
-					List<string> list32 = ((frame >= 1890) ? new List<string>(3) : null);
+					List<string>? list31 = (trackAscending ? new List<string>() : null);
+					List<string>? list32 = ((frame >= 1890) ? new List<string>(3) : null);
 					bool flag11 = false;
 					int num158 = 0;
 					int num159 = -1;
@@ -2993,7 +3299,7 @@ public class PathfinderEngine
 								if (velY_fixed2 < 0 && num163 < 720)
 								{
 									SimState simState14 = rState[num160];
-									list31.Add($"[ASC_DEATH] f={frame} inp={flag13} pX={simState13.X_fixed >> 8} pY={num163} pVelY=0x{velY_fixed2:X} dt={simState14.DeathType} cX={simState14.X_fixed >> 8} cY={simState14.Y_fixed >> 8}");
+									list31?.Add($"[ASC_DEATH] f={frame} inp={flag13} pX={simState13.X_fixed >> 8} pY={num163} pVelY=0x{velY_fixed2:X} dt={simState14.DeathType} cX={simState14.X_fixed >> 8} cY={simState14.Y_fixed >> 8}");
 								}
 							}
 							if (array11 != null && deathType >= 0 && deathType < array11.Length)
@@ -3044,16 +3350,16 @@ public class PathfinderEngine
 					partGravFDeathTypes[wi] = array10;
 					if (partFrameDtCounts != null)
 					{
-						partFrameDtCounts[wi] = array11;
+						partFrameDtCounts[wi] = array11 ?? new int[13];
 					}
 					partCoinRangeDeaths[wi] = num157;
 					if (partAscDeathLogs != null)
 					{
-						partAscDeathLogs[wi] = list31;
+						partAscDeathLogs[wi] = list31 ?? new List<string>();
 					}
 					if (partGravDeathLogs != null)
 					{
-						partGravDeathLogs[wi] = list32;
+						partGravDeathLogs[wi] = list32 ?? new List<string>();
 					}
 					partHasWin[wi] = flag11;
 					partWinCoins[wi] = num158;
@@ -3377,7 +3683,7 @@ public class PathfinderEngine
 						}
 						foreach (SpriteEntry allCoin in allCoins)
 						{
-							if (allCoin.HitRight > num59 && !simState2.ProcessedSprites.Contains(allCoin.Index))
+							if (allCoin.HitRight > num59 && simState2.ProcessedSprites != null && !simState2.ProcessedSprites.Contains(allCoin.Index))
 							{
 								flag5 = true;
 								break;
@@ -4006,7 +4312,7 @@ public class PathfinderEngine
 				int count2 = allCoins.Count;
 				if (PreferCoins && count2 > 0 && FinalCollectedCoinIndices != null && FinalCollectedCoinIndices.Count < count2)
 				{
-					List<bool> list24 = TryCoinBeamSplice(list23, startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
+					List<bool>? list24 = TryCoinBeamSplice(list23, startX_px, startY_px, startSpeedUiIndex, startGameMode, startGravFlipped, startMini);
 					if (list24 != null)
 					{
 						list23 = list24;
@@ -4435,7 +4741,7 @@ public class PathfinderEngine
 			if (!flag)
 			{
 				_log.WriteLine($"[COIN_SPLICE] Trying survival beam from f={num22}...");
-				List<bool> list10 = RunSurvivalBeam(startState, num22, originalInputs.Count + 3000);
+				List<bool>? list10 = RunSurvivalBeam(startState, num22, originalInputs.Count + 3000);
 				if (list10 != null)
 				{
 					_log.WriteLine($"[COIN_SPLICE] Survival beam succeeded! len={list10.Count}");
@@ -5704,7 +6010,7 @@ public class PathfinderEngine
 					}
 					return result;
 				}
-				List<bool> list6 = null;
+				List<bool>? list6 = null;
 				bool flag13 = false;
 				List<bool> list7 = new List<bool>();
 				bool flag14 = false;
@@ -7890,6 +8196,8 @@ public class PathfinderEngine
 	private bool StepFrame(ref SimState s, bool input, out bool endLevel)
 	{
 		endLevel = false;
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=frame.in X={s.X_fixed >> 8}.{(s.X_fixed & 0xFF):X2} Y={s.Y_fixed >> 8}.{(s.Y_fixed & 0xFF):X2} Ypx={((s.Y_fixed - s.CameraY_fixed) >> 8) + (s.CameraY_fixed >> 8)} Vx={s.VelX_fixed} Vy={s.VelY_fixed} sFr={s.SlopeFrames} swOn={s.SlopeWasOnCounter} sT={s.SlopeType} lst={s.LastSlopeType} inp={(input ? 1 : 0)} grav={(s.GravFlipped ? 1 : 0)} mini={(s.Mini ? 1 : 0)} gm={s.GameMode} onG={(s.OnGround ? 1 : 0)} dash={s.Dashing} camY={s.CameraY_fixed >> 8}.{(s.CameraY_fixed & 0xFF):X2}");
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=StepFrame.in input={(input ? 1 : 0)} prevHeld={(s.PrevInputHeld ? 1 : 0)} dash={s.Dashing} orbed={(s.Orbed ? 1 : 0)} dual={(s.DualActive ? 1 : 0)}");
 		s.Step2Ejected = false;
 		s.ShipDbgCeilSlopeHit = false;
 		s.ShipDbgCeilTileHit = false;
@@ -7915,6 +8223,7 @@ public class PathfinderEngine
 			s.Orbed = false;
 		}
 		bool orbHitThisFrame = false;
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.in X={num} Y={(s.Y_fixed >> 8)} mode={s.GameMode} pendOrb={s.PendingOrbIndex}");
 		endLevel = ProcessSprites(ref s, num, out orbHitThisFrame);
 		if (endLevel)
 		{
@@ -7984,7 +8293,7 @@ public class PathfinderEngine
 					s.ProcessedSprites.Add(num6);
 					if (!_dualP2Guard)
 					{
-						_p1OrbIndicesThisFrame.Add(num6);
+						if (_p1OrbIndicesThisFrame != null) _p1OrbIndicesThisFrame.Add(num6);
 					}
 				}
 				else if (IsSpiderOrb(num7))
@@ -7995,7 +8304,7 @@ public class PathfinderEngine
 					s.ProcessedSprites.Add(num6);
 					if (!_dualP2Guard)
 					{
-						_p1OrbIndicesThisFrame.Add(num6);
+						if (_p1OrbIndicesThisFrame != null) _p1OrbIndicesThisFrame.Add(num6);
 					}
 				}
 				else
@@ -8010,7 +8319,7 @@ public class PathfinderEngine
 						s.ProcessedSprites.Add(num6);
 						if (!_dualP2Guard)
 						{
-							_p1OrbIndicesThisFrame.Add(num6);
+							if (_p1OrbIndicesThisFrame != null) _p1OrbIndicesThisFrame.Add(num6);
 						}
 					}
 				}
@@ -8038,7 +8347,7 @@ public class PathfinderEngine
 						s.ProcessedSprites.Add(reference.Index);
 						if (!_dualP2Guard)
 						{
-							_p1OrbIndicesThisFrame.Add(reference.Index);
+							if (_p1OrbIndicesThisFrame != null) _p1OrbIndicesThisFrame.Add(reference.Index);
 						}
 						OrbDbg($"SWEEP slot={i} sid=0x{num7:X2} swept_idx={reference.Index} sprBox=({reference.HitLeft},{reference.HitTop})-({reference.HitRight},{reference.HitBottom}) plBox=({num2},{num3})-({num5},{num4})");
 					}
@@ -8054,6 +8363,7 @@ public class PathfinderEngine
 		int x_fixed2 = s.X_fixed + s.VelX_fixed;
 		if (!_dualP2Guard)
 		{
+			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=CheckGravityModTriggersAtNewX.in gMod={s.GravityMod}");
 			CheckGravityModTriggersAtNewX(ref s);
 		}
 		if (s.GameMode == 0)
@@ -8839,7 +9149,7 @@ public class PathfinderEngine
 			int y_fixed2 = s.Y_fixed;
 			int velY_fixed5 = s.VelY_fixed;
 			bool gravFlipped2 = s.GravFlipped;
-			foreach (int item in _p1OrbIndicesThisFrame)
+			foreach (int item in _p1OrbIndicesThisFrame ?? Enumerable.Empty<int>())
 			{
 				s.ProcessedSprites.Remove(item);
 			}
@@ -8848,7 +9158,7 @@ public class PathfinderEngine
 			bool endLevel2;
 			bool flag12 = StepFrame(ref s, input2, out endLevel2);
 			_dualP2Guard = false;
-			foreach (int item2 in _p1OrbIndicesThisFrame)
+			foreach (int item2 in _p1OrbIndicesThisFrame ?? Enumerable.Empty<int>())
 			{
 				s.ProcessedSprites.Add(item2);
 			}
@@ -9332,13 +9642,13 @@ public class PathfinderEngine
 			return false;
 		}
 		_speculativeDepth++;
-		List<(int, int)> list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+		List<(int, int)>? list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 		int num5 = SimulateForwardWithJumpAt(state, -1, holdAfterLanding: false, list);
 		OnSpeculativePath?.Invoke(list, -1, num5, arg4: false);
 		int num6 = 0;
 		for (int j = 0; j < 20; j++)
 		{
-			List<(int, int)> list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+			List<(int, int)>? list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 			int num7 = SimulateForwardWithJumpAt(state, j, holdAfterLanding: false, list2);
 			OnSpeculativePath?.Invoke(list2, j, num7, arg4: false);
 			if (num7 > num6)
@@ -9408,13 +9718,13 @@ public class PathfinderEngine
 			return false;
 		}
 		_speculativeDepth++;
-		List<(int, int)> list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+		List<(int, int)>? list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 		int num5 = SimulateForwardWithJumpAt(state, -1, holdAfterLanding: false, list);
 		OnSpeculativePath?.Invoke(list, -1, num5, arg4: false);
 		int num6 = 0;
 		for (int j = 0; j < 25; j++)
 		{
-			List<(int, int)> list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+			List<(int, int)>? list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 			int num7 = SimulateForwardWithJumpAt(state, j, holdAfterLanding: false, list2);
 			OnSpeculativePath?.Invoke(list2, j, num7, arg4: false);
 			if (num7 > num6)
@@ -9479,14 +9789,14 @@ public class PathfinderEngine
 			return false;
 		}
 		_speculativeDepth++;
-		List<(int, int)> list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+		List<(int, int)>? list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 		int num5 = SimulateForwardWithJumpAt(state, -1, holdAfterLanding: false, list);
 		OnSpeculativePath?.Invoke(list, -1, num5, arg4: false);
 		int num6 = 0;
 		int num7 = -1;
 		for (int j = 0; j < 20; j++)
 		{
-			List<(int, int)> list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+			List<(int, int)>? list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 			int num8 = SimulateForwardWithJumpAt(state, j, holdAfterLanding: false, list2);
 			OnSpeculativePath?.Invoke(list2, j, num8, arg4: false);
 			if (num8 > num6)
@@ -9569,7 +9879,7 @@ public class PathfinderEngine
 			return false;
 		}
 		_speculativeDepth++;
-		List<(int, int)> list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+		List<(int, int)>? list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 		int num5 = SimulateForwardWithJumpAt(state, -1, holdAfterLanding: false, list);
 		_speculativeDepth--;
 		OnSpeculativePath?.Invoke(list, -1, num5, arg4: false);
@@ -9583,7 +9893,7 @@ public class PathfinderEngine
 		_speculativeDepth++;
 		for (int j = 0; j < 35; j++)
 		{
-			List<(int, int)> list3 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+			List<(int, int)>? list3 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 			int finalX_px2 = state.X_fixed >> 8;
 			int num8 = SimulateForwardWithJumpAt(state, j, out finalX_px2, holdAfterLanding: false, -1, list3);
 			OnSpeculativePath?.Invoke(list3, j, num8, arg4: false);
@@ -9604,7 +9914,7 @@ public class PathfinderEngine
 		_speculativeDepth++;
 		for (int k = 0; k < 35; k++)
 		{
-			List<(int, int)> list4 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+			List<(int, int)>? list4 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 			int finalX_px3 = state.X_fixed >> 8;
 			int num9 = SimulateForwardWithJumpAt(state, k, out finalX_px3, holdAfterLanding: false, -1, list4, singleJumpOnly: true);
 			OnSpeculativePath?.Invoke(list4, k, num9, arg4: false);
@@ -9635,7 +9945,7 @@ public class PathfinderEngine
 					_speculativeDepth++;
 					for (int l = 0; l < 35; l++)
 					{
-						List<(int, int)> list5 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+						List<(int, int)>? list5 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 						int finalX_px5;
 						int num11 = SimulateForwardWithJumpAt(state, l, out finalX_px5, holdAfterLanding: false, 180, list5);
 						OnSpeculativePath?.Invoke(list5, l, num11, arg4: false);
@@ -9952,7 +10262,7 @@ public class PathfinderEngine
 			return false;
 		}
 		_speculativeDepth++;
-		List<(int, int)> list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+		List<(int, int)>? list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 		int num7 = SimulateForwardWithJumpAt(state, -1, holdAfterLanding: false, list);
 		OnSpeculativePath?.Invoke(list, -1, num7, arg4: false);
 		_speculativeDepth--;
@@ -9962,7 +10272,7 @@ public class PathfinderEngine
 		int num10 = Math.Min(15, 90);
 		for (int k = 0; k < num10; k++)
 		{
-			List<(int, int)> list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+			List<(int, int)>? list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 			int num11 = 1 + SimulateForwardWithJumpAt(state, k, holdAfterLanding: false, list2);
 			OnSpeculativePath?.Invoke(list2, k, num11, arg4: false);
 			if (num11 > num8)
@@ -10040,7 +10350,7 @@ public class PathfinderEngine
 			return false;
 		}
 		_speculativeDepth++;
-		List<(int, int)> list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+		List<(int, int)>? list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 		int num3 = SimulateRobotForward(state, 0, list);
 		_speculativeDepth--;
 		OnSpeculativePath?.Invoke(list, -1, num3, arg4: false);
@@ -10050,7 +10360,7 @@ public class PathfinderEngine
 		int[] array = new int[8] { 1, 3, 5, 8, 11, 14, 17, 19 };
 		foreach (int num6 in array)
 		{
-			List<(int, int)> list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+			List<(int, int)>? list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 			int num7 = SimulateRobotForward(state, num6, list2);
 			OnSpeculativePath?.Invoke(list2, num6, num7, arg4: true);
 			if (num7 > num4)
@@ -10171,15 +10481,15 @@ public class PathfinderEngine
 			return false;
 		}
 		_speculativeDepth++;
-		List<(int, int)> list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+		List<(int, int)>? list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 		int num3 = SimulateNinjaForward(state, null, list);
 		_speculativeDepth--;
 		OnSpeculativePath?.Invoke(list, -1, num3, arg4: false);
 		int num4 = num3;
-		int[] array = null;
+		int[]? array = null;
 		int num5 = (flag3 ? 3 : state.NinjaJumps);
 		_speculativeDepth++;
-		List<(int, int)> list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+		List<(int, int)>? list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 		int num6 = SimulateNinjaForward(state, new int[0], list2);
 		OnSpeculativePath?.Invoke(list2, 0, num6, arg4: true);
 		if (num6 > num4)
@@ -10192,7 +10502,7 @@ public class PathfinderEngine
 			int[] array2 = new int[5] { 3, 6, 10, 15, 20 };
 			foreach (int num7 in array2)
 			{
-				List<(int, int)> list3 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+				List<(int, int)>? list3 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 				int num8 = SimulateNinjaForward(state, new int[1] { num7 }, list3);
 				OnSpeculativePath?.Invoke(list3, num7, num8, arg4: true);
 				if (num8 > num4)
@@ -10211,7 +10521,7 @@ public class PathfinderEngine
 				{
 					int num9 = array3[j];
 					int num10 = array3[k];
-					List<(int, int)> list4 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+					List<(int, int)>? list4 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 					int num11 = SimulateNinjaForward(state, new int[2] { num9, num10 }, list4);
 					OnSpeculativePath?.Invoke(list4, num9 * 100 + num10, num11, arg4: true);
 					if (num11 > num4)
@@ -10328,9 +10638,9 @@ public class PathfinderEngine
 			return false;
 		}
 		_speculativeDepth++;
-		List<(int, int)> list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+		List<(int, int)>? list = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 		int num3 = SimulateWaveForward(state, hold: true, list);
-		List<(int, int)> list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
+		List<(int, int)>? list2 = ((_speculativeDepth == 1 && OnSpeculativePath != null) ? new List<(int, int)>() : null);
 		int num4 = SimulateWaveForward(state, hold: false, list2);
 		_speculativeDepth--;
 		CurrentSpeculativeVizMode = 6;
@@ -10444,6 +10754,9 @@ public class PathfinderEngine
 	private void WaveEject(ref SimState s, bool input, out bool died)
 	{
 		died = false;
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=WaveEject.in X={s.X_fixed >> 8} Y={s.Y_fixed >> 8} Vy={s.VelY_fixed} input={(input ? 1 : 0)} sFr={s.SlopeFrames} swOn={s.SlopeWasOnCounter} sT={s.SlopeType}");
+		int waveYPre = s.Y_fixed;
+		int waveVyPre = s.VelY_fixed;
 		int num = s.X_fixed >> 8;
 		int num2 = s.Y_fixed >> 8;
 		int num3 = num + 4;
@@ -10492,6 +10805,7 @@ public class PathfinderEngine
 				{
 					died = true;
 				}
+				SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=WaveEject.out Yold={waveYPre >> 8}.{(waveYPre & 0xFF):X2} Ynew={s.Y_fixed >> 8}.{(s.Y_fixed & 0xFF):X2} Vyold={waveVyPre} Vynew={s.VelY_fixed} died={(died ? 1 : 0)} sFr={s.SlopeFrames} swOn={s.SlopeWasOnCounter} sT={s.SlopeType}");
 				return;
 			}
 		}
@@ -10533,6 +10847,7 @@ public class PathfinderEngine
 					{
 						died = true;
 					}
+					SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=WaveEject.out Yold={waveYPre >> 8}.{(waveYPre & 0xFF):X2} Ynew={s.Y_fixed >> 8}.{(s.Y_fixed & 0xFF):X2} Vyold={waveVyPre} Vynew={s.VelY_fixed} died={(died ? 1 : 0)} sFr={s.SlopeFrames} swOn={s.SlopeWasOnCounter} sT={s.SlopeType}");
 					return;
 				}
 			}
@@ -12790,7 +13105,9 @@ public class PathfinderEngine
 
 	private static void PfUpdateSlopeCounters_Fresh(ref SimState s)
 	{
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=UpdateSlopeCountersFresh.in sFr={s.SlopeFrames} sT={s.SlopeType} Vy={s.VelY_fixed} Vx={s.VelX_fixed}");
 		SharedPhysics.UpdateSlopeCountersFresh(ref s.SlopeFrames, s.SlopeType, ref s.VelY_fixed, s.VelX_fixed);
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=UpdateSlopeCountersFresh.out sFr={s.SlopeFrames} sT={s.SlopeType} Vy={s.VelY_fixed} Vx={s.VelX_fixed}");
 	}
 
 	private static void PfApplySlopeVelocity(ref SimState s, int slopeType)
@@ -12823,3 +13140,4 @@ public class PathfinderEngine
 		return SharedPhysics.CheckSlopesUp(in _collisionMap, num, num, checkBaseY, hitboxW, input, s.GameMode, s.GravFlipped, s.VelX_fixed, ref s.LastSlopeType, ref s.SlopeJumpHigher);
 	}
 }
+

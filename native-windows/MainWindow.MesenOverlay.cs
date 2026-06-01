@@ -602,8 +602,16 @@ $@"-- FamidashEditor overlay script (auto-generated, do not edit)
 local scrollFile = ""famidash_overlay_scroll.txt""
 
 emu.addEventCallback(function()
-    local scrollX = emu.read32(0x04A6, emu.memType.nesMemory) or 0
-    local sy_raw  = emu.read16(0x04AA, emu.memType.nesMemory) or 0
+    local scrollX0 = emu.read32(0x04A6, emu.memType.nesMemory) or 0
+    local sy_raw0  = emu.read16(0x04AA, emu.memType.nesMemory) or 0
+    local scrollX1 = emu.read32(0x053E, emu.memType.nesMemory) or 0
+    local sy_raw1  = emu.read16(0x0542, emu.memType.nesMemory) or 0
+    local scrollX = scrollX0
+    local sy_raw = sy_raw0
+    if scrollX0 == 0 and sy_raw0 == 0 and (scrollX1 ~= 0 or sy_raw1 ~= 0) then
+        scrollX = scrollX1
+        sy_raw = sy_raw1
+    end
     -- calculate_linear_scroll_y: linear = lo + hi * 240 (matches nesdash.s implementation)
     local sy_lo   = sy_raw & 0xFF
     local sy_hi   = (sy_raw >> 8) & 0xFF
@@ -966,8 +974,16 @@ emu.addEventCallback(function()
     -- coords, then subtract nesYOffset to convert into pathfinder world coords
     -- (matches PathfinderEngine PathPoints which use the editor's row 0 as
     -- the origin, while the NES build skips top map rows).
-    local scrollX = emu.read32(0x04A6, emu.memType.nesMemory) or 0
-    local sy_raw  = emu.read16(0x04AA, emu.memType.nesMemory) or 0
+    local scrollX0 = emu.read32(0x04A6, emu.memType.nesMemory) or 0
+    local sy_raw0  = emu.read16(0x04AA, emu.memType.nesMemory) or 0
+    local scrollX1 = emu.read32(0x053E, emu.memType.nesMemory) or 0
+    local sy_raw1  = emu.read16(0x0542, emu.memType.nesMemory) or 0
+    local scrollX = scrollX0
+    local sy_raw = sy_raw0
+    if scrollX0 == 0 and sy_raw0 == 0 and (scrollX1 ~= 0 or sy_raw1 ~= 0) then
+        scrollX = scrollX1
+        sy_raw = sy_raw1
+    end
     local scrollY = (sy_raw & 0xFF) + ((sy_raw >> 8) & 0xFF) * 240
     local rawX = emu.read16(0x043D, emu.memType.nesMemory) or 0
     local rawY = emu.read16(0x0441, emu.memType.nesMemory) or 0

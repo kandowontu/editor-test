@@ -19,7 +19,7 @@ namespace FamidashEditor
         private bool pfBallHoldContinuation = false; // True when ball hold is continuing (not fresh press)
         private bool pfRawSequenceInput = false; // Raw PF sequence value BEFORE hold-continuation override (for P2 dual input)
         private const int PF_BALL_HOLD_FRAMES = 8; // Ball hold duration to bridge PF/sim timing divergence
-        private const int PF_FRAME_DELAY = 0; // Delay pathfinder inputs by N frames to compensate for sim timing
+        private const int PF_FRAME_DELAY = 0; // Sequence index delay disabled; simulator uses injection queue delay instead
         // Guard: each timer tick increments pfTickGeneration; PF_GetInput only advances pfFrameIndex
         // once per generation to prevent double-stepping even if SimulateNumericStep runs twice.
         private long pfTickGeneration = 0;

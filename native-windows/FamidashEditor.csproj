@@ -420,13 +420,17 @@
 
   <!-- Copy Mesen (bundled) to output folder after each build -->
   <Target Name="CopyMesenBundled" AfterTargets="Build"
-          Condition="Exists('C:\Editor Test\Mesen2\bin\win-x64\Release\Mesen.exe')">
+          Condition="Exists('C:\Editor Test\Mesen2Wide\bin\win-x64\Release\Mesen.exe')">
     <ItemGroup>
-      <MesenFiles Include="C:\Editor Test\Mesen2\bin\win-x64\Release\**\*" />
+      <MesenFiles Include="C:\Editor Test\Mesen2Wide\bin\win-x64\Release\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(MesenFiles)"
           DestinationFiles="@(MesenFiles->'$(OutDir)mesen\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
+    <Copy SourceFiles="C:\Editor Test\Mesen2Wide\bin\win-x64\Release\MesenCore.dll"
+          DestinationFiles="$(OutDir)mesen\Dependencies\MesenCore.dll"
+          SkipUnchangedFiles="false"
+          Condition="Exists('C:\Editor Test\Mesen2Wide\bin\win-x64\Release\MesenCore.dll') And Exists('$(OutDir)mesen\Dependencies')" />
   </Target>
 
 </Project>

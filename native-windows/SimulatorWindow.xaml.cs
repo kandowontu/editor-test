@@ -1881,13 +1881,21 @@ namespace FamidashEditor
             return killed;
         }
 
+        // NES collision probes use screen-space player Y high with proper borrow from camera subpixel.
+        // In simulator world-space fixed coordinates, this is equivalent to:
+        //   (cameraY>>8) + ((playerY-cameraY)>>8)
+        private int NesPlayerY_px(int playerYFixed)
+        {
+            return (cameraY_fixed >> 8) + ((playerYFixed - cameraY_fixed) >> 8);
+        }
+
         /// <summary>
         /// Check if the player's hitbox overlaps with any death tiles.
         /// Returns true if death collision is detected and NO DEATH mode is OFF.
         /// Returns false otherwise (safe or NO DEATH mode is ON).
         /// When death is detected, also triggers death state and returns the death location via out parameters.
         /// </summary>
-        private bool CheckDeathCollision(out int deathX_px, out int deathY_px)
+        private bool CheckDeathCollision(out int deathX_px, out int deathY_px, int? playerXFixedOverride = null)
         {
             deathX_px = 0;
             deathY_px = 0;
@@ -1898,8 +1906,8 @@ namespace FamidashEditor
             // If death already triggered, don't check again
             if (deathTriggered) return false;
 
-            int playerX_px = playerX_fixed >> 8;
-            int playerY_px = playerY_fixed >> 8;
+            int playerX_px = (playerXFixedOverride ?? playerX_fixed) >> 8;
+            int playerY_px = NesPlayerY_px(playerY_fixed);
             
             // Use player hitbox dimensions
             bool isMini = (currplayer_mini != 0);
@@ -4559,6 +4567,13 @@ namespace FamidashEditor
         private RenderTargetBitmap? tileLayerCache = null;
         private int cachedStartTileX = int.MinValue;
         private int cachedStartTileY = int.MinValue;
+        // Display scale chosen at launch (1–4). Sizes the viewport grid and 3D viewport.
+        internal int _simulatorDisplayScale = 1;
+        // 2-D zoom scale set by the zoom slider (1.0 = normal, <1 = zoomed out showing more world)
+        internal double sim2DZoomScale = 1.0;
+        // Actual tile coverage used by the last tile-cache build (may be wider/taller when zoomed out)
+        private int _currentCacheTilesX = NES_W + 1;
+        private int _currentCacheTilesY = NES_H + 1;
         private System.Windows.Controls.Image? tileLayerImage = null;
         private System.Windows.Controls.Image? spriteLayerImage = null;
         private System.Windows.Shapes.Rectangle? bgRectPersistent = null;
@@ -4779,6 +4794,18 @@ namespace FamidashEditor
                         break;
                     }
                     try { SimulateNumericStep(); } catch { }
+                    try
+                    {
+                        if (!windowClosed)
+                        {
+                            Dispatcher?.BeginInvoke(new Action(() =>
+                            {
+                                if (!windowClosed && !pfSimulating)
+                                    RenderFrame();
+                            }), System.Windows.Threading.DispatcherPriority.Render);
+                        }
+                    }
+                    catch { }
                     simAccumulatedMs -= SIM_STEP_MS;
                 // Path recording now happens in physics routines (SimulateNumericStep)
                 
@@ -4790,6 +4817,9 @@ namespace FamidashEditor
                     // GAMEMODE_NINJA(8), GAMEMODE_POGO(9), or nocamlock/nocamlockforced.
                     // FOOTBALL (11) is NOT in this list — it uses ship-style smooth scroll.
                     bool camFollowsY = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
+                    // During PF replay, camera/state updates must come only from the
+                    // deterministic numeric-step path. A second camera-follow pass here
+                    // can perturb Y/camera ordering and desync from PF.
                     if (physicsEnabled && jumpedOnce && !paused)
                     {
                         if ((!dual || twoplayer) && camFollowsY)
@@ -4940,6 +4970,12 @@ namespace FamidashEditor
         private DebugInfoWindow? debugWindow = null;
         // When true, the simulator is in camera-only mode: Up/Down pan camera only and physics is disabled
         private bool camModeActive = false;
+        // 2D mouse-drag camera panning state.
+        private bool twoDDragActive = false;
+        private System.Windows.Point twoDDragLastMouse;
+        // Render-only pan offsets so simulation camera logic cannot snap drag panning back.
+        private int twoDPanX_fixed = 0;
+        private int twoDPanY_fixed = 0;
         // Multiplier applied while Tab (or Shift+Tab / Ctrl+Shift+Tab) is held.
         // Default 1 (no extra multiplier). While Tab is down this becomes 2/4/8 per modifiers.
         private int tabSpeedMultiplier = 1;
@@ -5348,10 +5384,29 @@ namespace FamidashEditor
             RenderCanvas.Width = NES_W * TILE;
             RenderCanvas.Height = NES_H * TILE;
 
-            // Apply simulator scale: scale the RenderCanvas and overlay so the visible area is zoomed.
+            // Apply simulator scale: size the viewport grid and 3D viewport; canvas stays NES size
+            // and LayoutTransform handles pixel-doubling so the image fills the window correctly.
             try
             {
                 simulatorScale = Math.Max(1, Math.Min(4, simulatorScale));
+                _simulatorDisplayScale = simulatorScale;
+                double scaledW = (NES_W * TILE) * simulatorScale;
+                double scaledH = (NES_H * TILE) * simulatorScale;
+
+                // Size the containing Grid so it exactly matches the scaled gameplay area.
+                if (GameViewportSurface != null)
+                {
+                    GameViewportSurface.Width  = scaledW;
+                    GameViewportSurface.Height = scaledH;
+                }
+                // Size the 3D viewport to match.
+                if (FirstPersonViewport != null)
+                {
+                    FirstPersonViewport.Width  = scaledW;
+                    FirstPersonViewport.Height = scaledH;
+                }
+
+                // Scale the 2D canvas via LayoutTransform so content is pixel-doubled.
                 var scaleTransform = new System.Windows.Media.ScaleTransform(simulatorScale, simulatorScale);
                 RenderCanvas.LayoutTransform = scaleTransform;
                 try { PauseOverlay.LayoutTransform = scaleTransform; } catch { }
@@ -5361,8 +5416,8 @@ namespace FamidashEditor
                 // Account for window chrome (~40px) + SettingsPanel debug bar (~60px).
                 double widthPadding = 32;
                 double heightPadding = 110;
-                try { this.Width = (NES_W * TILE) * simulatorScale + widthPadding; } catch { }
-                try { this.Height = (NES_H * TILE) * simulatorScale + heightPadding; } catch { }
+                try { this.Width  = scaledW + widthPadding; } catch { }
+                try { this.Height = scaledH + heightPadding; } catch { }
             }
             catch { }
             // Keep nearest-neighbor sampling for bitmaps, but avoid forcing layout rounding/snapping
@@ -5538,6 +5593,8 @@ namespace FamidashEditor
                 try { ResetBluePadSystem(); } catch { }
             }
             catch { }
+
+            try { ApplyNesIntroFreezePrestepForSimulator(); } catch { }
             this.Loaded += (s, e) => { 
                 try { this.Focus(); Keyboard.Focus(this); } catch { }
                 // Update UI to reflect starting game mode
@@ -6312,7 +6369,88 @@ namespace FamidashEditor
             // Grab focus on the window to enable keyboard input (W, up/down)
             // Focus the window itself, not the canvas, so keyboard events reach the window handlers
             this.Focus();
+
+            // 2D camera panning with drag (disabled while 3D mode is active).
+            if (!firstPerson3DEnabled && RenderCanvas != null)
+            {
+                twoDDragActive = true;
+                twoDDragLastMouse = e.GetPosition(RenderCanvas);
+                try { RenderCanvas.CaptureMouse(); } catch { }
+            }
             e.Handled = true;
+        }
+
+        private void RenderCanvas_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (RenderCanvas != null)
+            {
+                twoDDragActive = false;
+                try { RenderCanvas.ReleaseMouseCapture(); } catch { }
+            }
+            e.Handled = true;
+        }
+
+        private void RenderCanvas_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (!twoDDragActive || firstPerson3DEnabled || RenderCanvas == null) return;
+
+            var now = e.GetPosition(RenderCanvas);
+            double dx = now.X - twoDDragLastMouse.X;
+            double dy = now.Y - twoDDragLastMouse.Y;
+            twoDDragLastMouse = now;
+
+            if (Math.Abs(dx) < 0.01 && Math.Abs(dy) < 0.01) return;
+
+            // Convert mouse delta from screen-space to world pixels under current render scale.
+            double totalScale = Math.Max(0.01, sim2DZoomScale * Math.Max(1, _simulatorDisplayScale));
+            int deltaX_fixed = (int)Math.Round((dx / totalScale) * 256.0);
+            int deltaY_fixed = (int)Math.Round((dy / totalScale) * 256.0);
+
+            // Dragging moves the world with the cursor, so render camera moves opposite the mouse.
+            int baseCameraX_fixed = cameraX_fixed + twoDPanX_fixed;
+            int baseCameraY_fixed = cameraY_fixed + twoDPanY_fixed;
+            int newCameraX_fixed = baseCameraX_fixed - deltaX_fixed;
+            int newCameraY_fixed = baseCameraY_fixed - deltaY_fixed;
+
+            int maxCameraX_fixed = Math.Max(0, (mapWidth - NES_W) * TILE) << 8;
+            int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+            int minCameraY_fixed = 0;
+
+            if (newCameraX_fixed < 0) newCameraX_fixed = 0;
+            if (newCameraX_fixed > maxCameraX_fixed) newCameraX_fixed = maxCameraX_fixed;
+            if (newCameraY_fixed < minCameraY_fixed) newCameraY_fixed = minCameraY_fixed;
+            if (newCameraY_fixed > maxCameraY_fixed) newCameraY_fixed = maxCameraY_fixed;
+
+            // Keep player center within one tile of each viewport edge while dragging.
+            int minPlayerScreenX = TILE;
+            int maxPlayerScreenX = (NES_W * TILE) - TILE;
+            int minPlayerScreenY = TILE;
+            int maxPlayerScreenY = (NES_H * TILE) - TILE;
+
+            int playerCenterWorldX = (playerX_fixed >> 8) + (playerVisualWidth / 2);
+            int playerCenterWorldY = (playerY_fixed >> 8) + (playerVisualHeight / 2) + gridRenderShiftYPx;
+
+            int newCameraX_px = newCameraX_fixed >> 8;
+            int playerCenterScreenX = playerCenterWorldX - newCameraX_px;
+            if (playerCenterScreenX < minPlayerScreenX) newCameraX_px = playerCenterWorldX - minPlayerScreenX;
+            if (playerCenterScreenX > maxPlayerScreenX) newCameraX_px = playerCenterWorldX - maxPlayerScreenX;
+
+            int newCameraY_px = newCameraY_fixed >> 8;
+            int playerCenterScreenY = playerCenterWorldY - newCameraY_px;
+            if (playerCenterScreenY < minPlayerScreenY) newCameraY_px = playerCenterWorldY - minPlayerScreenY;
+            if (playerCenterScreenY > maxPlayerScreenY) newCameraY_px = playerCenterWorldY - maxPlayerScreenY;
+
+            newCameraX_fixed = newCameraX_px << 8;
+            newCameraY_fixed = newCameraY_px << 8;
+
+            if (newCameraX_fixed < 0) newCameraX_fixed = 0;
+            if (newCameraX_fixed > maxCameraX_fixed) newCameraX_fixed = maxCameraX_fixed;
+            if (newCameraY_fixed < minCameraY_fixed) newCameraY_fixed = minCameraY_fixed;
+            if (newCameraY_fixed > maxCameraY_fixed) newCameraY_fixed = maxCameraY_fixed;
+
+            // Persist as render offsets relative to live simulation camera.
+            twoDPanX_fixed = newCameraX_fixed - cameraX_fixed;
+            twoDPanY_fixed = newCameraY_fixed - cameraY_fixed;
         }
 
         private void GameModeComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -6442,6 +6580,24 @@ namespace FamidashEditor
                 }
             }
             catch { }
+        }
+
+        private void ApplyNesIntroFreezePrestepForSimulator()
+        {
+            // Match PathfinderEngine's verified NES intro-freeze final pre-step.
+            // Applies only to cube/robot while not in dual mode.
+            if (dual) return;
+            if (currentGameMode != 0 && currentGameMode != 4) return;
+
+            int gravityStep = SharedPhysics.GetCubeGravity(miniMode);
+            if (gravityFlipped)
+            {
+                gravityStep = -gravityStep;
+            }
+
+            playerVelY_fixed += gravityStep;
+            playerY_fixed += playerVelY_fixed;
+            playerX_fixed += playerVelX_fixed;
         }
         
         private void UpdateGameModeDisplay()
@@ -6727,6 +6883,8 @@ namespace FamidashEditor
                 wasZeroedByCollisionLastFrame = true;
                 onGround = true;
 
+                try { ApplyNesIntroFreezePrestepForSimulator(); } catch { }
+
                 // Restore coins before reset so PF_LoadPrecomputedInputs can
                 // re-preseed them from scratch (sprites[idx] must be >= 0).
                 foreach (var (spriteIndex, spriteId) in collectedCoinInfo)
@@ -6961,6 +7119,8 @@ namespace FamidashEditor
                         
                         // Apply color triggers up to this position
                         ApplyColorTriggersUpToPosition(startX_px);
+
+                        try { ApplyNesIntroFreezePrestepForSimulator(); } catch { }
                         
                         // Cache the music time for when playback starts
                         // Don't seek here - will seek when playback actually starts
@@ -7027,6 +7187,12 @@ namespace FamidashEditor
                 }
             }
             catch { }
+
+            // When numeric simulation is active, it is the sole authority for
+            // movement/collision/camera state. Timer_Tick should only poll input
+            // to avoid a second legacy path mutating Y/collision between steps.
+            if (simTimer != null)
+                return;
 
             // Keep previous camera center for later anchor detection
             int prevCameraCenter_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
@@ -7345,7 +7511,10 @@ namespace FamidashEditor
                 {
                     // NES scroll.h cube branch (see camFollowsY above).
                     bool camFollowsY_2 = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
-                    if (physicsEnabled && jumpedOnce && !paused)
+                    // This UI-tick camera follow is fallback-only. When the numeric timer
+                    // is active, running this in parallel races simulation state and can
+                    // desync PF replay.
+                    if (physicsEnabled && jumpedOnce && !paused && simTimer == null)
                     {
                         if ((!dual || twoplayer) && camFollowsY_2)
                         {
@@ -8048,7 +8217,7 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            if (anchorX_center_fixed <= center_fixed)
+                            if (center_fixed >= prevCameraCenter_fixed && anchorX_center_fixed > prevCameraCenter_fixed && anchorX_center_fixed <= center_fixed)
                             {
                                 if (!processedSpeedPortals.Contains(idx))
                                 {
@@ -8158,7 +8327,7 @@ namespace FamidashEditor
                     else
                     {
                         // Camera-centered detection (player already past interaction line)
-                        if (anchorX_center_fixed <= center_fixed)
+                        if (center_fixed >= prevCameraCenter_fixed && anchorX_center_fixed > prevCameraCenter_fixed && anchorX_center_fixed <= center_fixed)
                         {
                             if (processedColorTriggers.Contains(idx))
                             {
@@ -8420,6 +8589,8 @@ namespace FamidashEditor
         {
             // Prevent rendering if window is closed
             if (windowClosed) return;
+
+            try { UpdateFirstPerson3DPrototype(); } catch { }
             
             // Update wave icon based on velocity (every frame)
             if (currentGameMode == 6)
@@ -9293,14 +9464,60 @@ namespace FamidashEditor
                 snapGravFlipped = gravityFlipped;
             }
 
-            // Compute pixel offset and starting tile index
-            int pixelX = snapCameraX >> 8; // full pixels
-            int subPixelX = snapCameraX & 0xFF; // fractional
+            int renderCameraX_fixed = snapCameraX + twoDPanX_fixed;
+            int renderCameraY_fixed = snapCameraY + twoDPanY_fixed;
+
+            int renderMaxCameraX_fixed = Math.Max(0, (mapWidth - NES_W) * TILE) << 8;
+            int renderMaxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+            if (renderCameraX_fixed < 0) renderCameraX_fixed = 0;
+            if (renderCameraX_fixed > renderMaxCameraX_fixed) renderCameraX_fixed = renderMaxCameraX_fixed;
+            if (renderCameraY_fixed < 0) renderCameraY_fixed = 0;
+            if (renderCameraY_fixed > renderMaxCameraY_fixed) renderCameraY_fixed = renderMaxCameraY_fixed;
+
+            // When zoomed in, compute a render-only camera that keeps the player anchored
+            // at its 1x screen position so zooming always centers around player motion.
+            if (sim2DZoomScale > 1.0 + 0.001)
+            {
+                int visibleW_pre = (int)Math.Round((NES_W * TILE) / sim2DZoomScale);
+                int visibleH_pre = (int)Math.Round((NES_H * TILE) / sim2DZoomScale);
+                int miniVisualShiftY = snapMiniMode ? 4 : 0;
+                int desiredTopX = (visibleW_pre - playerVisualWidth) / 2;
+                int desiredTopY = (visibleH_pre - playerVisualHeight) / 2;
+
+                // Keep the player's visual centered in the zoomed viewport.
+                int centeredCameraX_fixed = snapPlayerX - (desiredTopX << 8);
+                int centeredCameraY_fixed = snapPlayerY - ((desiredTopY - gridRenderShiftYPx - miniVisualShiftY) << 8);
+                renderCameraX_fixed = centeredCameraX_fixed + twoDPanX_fixed;
+                renderCameraY_fixed = centeredCameraY_fixed + twoDPanY_fixed;
+
+                int maxCameraX_fixed = Math.Max(0, (mapWidth - NES_W) * TILE) << 8;
+                int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                if (renderCameraX_fixed < 0) renderCameraX_fixed = 0;
+                if (renderCameraX_fixed > maxCameraX_fixed) renderCameraX_fixed = maxCameraX_fixed;
+                if (renderCameraY_fixed < 0) renderCameraY_fixed = 0;
+                if (renderCameraY_fixed > maxCameraY_fixed) renderCameraY_fixed = maxCameraY_fixed;
+            }
+
+            // Compute pixel offset and starting tile index from the render camera.
+            int pixelX = renderCameraX_fixed >> 8; // full pixels
+            int subPixelX = renderCameraX_fixed & 0xFF; // fractional
             int startTileX = pixelX / TILE;
             int offsetX = pixelX % TILE;
             double subPixelOffsetX = subPixelX / 256.0; // Convert to fractional pixels
-            int pixelY = snapCameraY >> 8;
-            int subPixelY = snapCameraY & 0xFF; // fractional Y
+
+            // When zoomed out, bias the render camera upward so more sky is visible and less
+            // ground fills the view. This render-only offset must be used consistently for tiles,
+            // sprites, and player drawing so everything stays aligned.
+            if (sim2DZoomScale < 1.0 - 0.001)
+            {
+                int cacheTilesYForZoom = (int)Math.Ceiling(NES_H / sim2DZoomScale) + 1;
+                int extraTilesY = Math.Max(0, cacheTilesYForZoom - (NES_H + 1));
+                int pullUpTiles = Math.Max(0, extraTilesY - 1);
+                renderCameraY_fixed -= pullUpTiles * TILE * 256;
+            }
+
+            int pixelY = renderCameraY_fixed >> 8;
+            int subPixelY = renderCameraY_fixed & 0xFF; // fractional Y
             double subPixelOffsetY = subPixelY / 256.0; // Convert to fractional pixels
 
             // If ground is present in the preview, reserve up to three ground rows at the bottom
@@ -9312,7 +9529,7 @@ namespace FamidashEditor
             }
             int groundPixels = groundRowsToReserve * TILE;
 
-            // Keep camera-aligned start/offset based on actual camera Y so sub-pixel translation
+            // Keep camera-aligned start/offset based on render camera Y so sub-pixel translation
             // remains consistent with the editor. We'll subtract ground rows when sampling map tiles.
             int startTileY = pixelY / TILE;
             int offsetY = pixelY % TILE;
@@ -9326,7 +9543,7 @@ namespace FamidashEditor
                     try { bgRectPersistent.Fill = new SolidColorBrush(Color.FromArgb(255, 0, 0, 0)); }
                     catch { bgRectPersistent.Fill = Brushes.Black; }
                 }
-                else if (bgRectPersistent != null && hasParallaxLayer && parallaxImages != null && parallaxImages.Length > 0)
+                else if (bgRectPersistent != null && hasParallaxLayer && ((parallaxImages != null && parallaxImages.Length > 0) || parallaxBitmap != null || parallaxBitmapToned != null))
                 {
                     // Prefer using the full parallax bitmap (if provided) so the entire image repeats.
                     ImageSource? src = null;
@@ -9339,7 +9556,7 @@ namespace FamidashEditor
                     {
                         // Parallax translation: background moves slower than camera based on parallaxX/Y.
                         double parallaxOffsetX = -(pixelX) * (1.0 - parallaxX);
-                        double parallaxOffsetY = -(snapCameraY >> 8) * (1.0 - parallaxY);
+                        double parallaxOffsetY = -(renderCameraY_fixed >> 8) * (1.0 - parallaxY);
 
                         // Reuse cached parallax brush — only recreate when the source image changes
                         if (_cachedParallaxBrush == null || _cachedParallaxSource != src)
@@ -9391,7 +9608,7 @@ namespace FamidashEditor
                                     Stretch = Stretch.None
                                 };
                                 double parallaxOffsetX2 = -(pixelX) * (1.0 - parallaxX);
-                                double parallaxOffsetY2 = -(snapCameraY >> 8) * (1.0 - parallaxY);
+                                double parallaxOffsetY2 = -(renderCameraY_fixed >> 8) * (1.0 - parallaxY);
                                 brush2.Transform = new TranslateTransform(parallaxOffsetX2, parallaxOffsetY2);
                                 if (bgRectPersistent != null) bgRectPersistent.Fill = brush2;
                             }
@@ -9419,8 +9636,13 @@ namespace FamidashEditor
             {
                 if (tileLayerImage != null && (tileLayerCache == null || cachedStartTileX != startTileX || cachedStartTileY != startTileY || (lastCacheHadAnimatedTiles && lastCacheAnimationFrame != animationFrame)))
                 {
-                    int cacheTilesX = NES_W + 1;
-                    int cacheTilesY = NES_H + 1;
+                    // When zoomed out, expand the tile coverage so more world is visible.
+                    int cacheTilesX = (sim2DZoomScale < 1.0 - 0.001)
+                        ? (int)Math.Ceiling(NES_W / sim2DZoomScale) + 1
+                        : NES_W + 1;
+                    int cacheTilesY = (sim2DZoomScale < 1.0 - 0.001)
+                        ? (int)Math.Ceiling(NES_H / sim2DZoomScale) + 1
+                        : NES_H + 1;
                     int pxW = cacheTilesX * TILE;
                     int pxH = cacheTilesY * TILE;
 
@@ -9439,7 +9661,7 @@ namespace FamidashEditor
                             }
                         }
                         catch { tileHitBrush = null; }
-                        int cacheTilesY_local = NES_H + 1;
+                        int cacheTilesY_local = cacheTilesY;
                         int groundRowsToReserve_local = groundRowsToReserve;
                         int groundStartRow_local = cacheTilesY_local - groundRowsToReserve_local;
 
@@ -9450,10 +9672,10 @@ namespace FamidashEditor
                             groundCols = Math.Max(1, groundImages.Length / groundTileRows);
                         }
 
-                        for (int vx = 0; vx <= NES_W; vx++)
+                        for (int vx = 0; vx < cacheTilesX; vx++)
                         {
                             int mapX = startTileX + vx;
-                            for (int vy = 0; vy <= NES_H; vy++)
+                            for (int vy = 0; vy < cacheTilesY; vy++)
                             {
                                 Rect dest = new Rect(vx * TILE, vy * TILE, TILE, TILE);
 
@@ -9928,6 +10150,8 @@ namespace FamidashEditor
                     lastCacheAnimationFrame = animationFrame;
                     cachedStartTileX = startTileX;
                     cachedStartTileY = startTileY;
+                    _currentCacheTilesX = cacheTilesX;
+                    _currentCacheTilesY = cacheTilesY;
                     tileLayerImage!.Source = tileLayerCache;
                     try { AppendSimDebug($"Assigned tileLayerImage.Source={(tileLayerImage.Source==null?"null":tileLayerImage.Source.GetType().Name)}"); } catch { }
                     tileLayerImage!.Width = pxW;
@@ -9946,10 +10170,10 @@ namespace FamidashEditor
                 if (ShowTileHitboxes)
                 {
                     // Reuse visible tile rects: iterate the same visible tile grid used for cache
-                    for (int vx = 0; vx <= NES_W; vx++)
+                    for (int vx = 0; vx < _currentCacheTilesX; vx++)
                     {
                         int mapX = startTileX + vx;
-                        for (int vy = 0; vy <= NES_H; vy++)
+                        for (int vy = 0; vy < _currentCacheTilesY; vy++)
                         {
                             int mapY = startTileY + groundRowsToReserve + vy;
                             if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) continue;
@@ -10178,10 +10402,10 @@ namespace FamidashEditor
             spritesInUse = 0;
             var spriteDv = new DrawingVisual();
             var spriteDc = spriteDv.RenderOpen();
-            for (int vx = 0; vx <= NES_W; vx++)
+            for (int vx = 0; vx < _currentCacheTilesX; vx++)
             {
                 int mapX = startTileX + vx;
-                for (int vy = 0; vy <= NES_H; vy++)
+                for (int vy = 0; vy < _currentCacheTilesY; vy++)
                 {
                     int mapY = startTileY + groundRowsToReserve + vy;
                     if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) continue;
@@ -10194,7 +10418,7 @@ namespace FamidashEditor
                     double cullPx = (vx * TILE) - offsetX;
                     double cullPy = (vy * TILE) - offsetY + gridRenderShiftYPx;
                     // Conservative bounds: assume max sprite size of 32x32 pixels
-                    if (cullPx + 32 < 0 || cullPx > NES_W * TILE || cullPy + 32 < 0 || cullPy > NES_H * TILE)
+                    if (cullPx + 32 < 0 || cullPx > _currentCacheTilesX * TILE || cullPy + 32 < 0 || cullPy > _currentCacheTilesY * TILE)
                     {
                         // Off-screen, skip all expensive processing for this sprite
                         continue;
@@ -10413,7 +10637,7 @@ namespace FamidashEditor
                         spriteHeight = bs.PixelHeight;
                     }
                     // Check if completely off the RTB (with margin for sprites that extend beyond)
-                    if (px + spriteWidth < -16 || px > (NES_W + 1) * TILE + 16 || py + spriteHeight < -16 || py > (NES_H + 1) * TILE + 16)
+                    if (px + spriteWidth < -16 || px > _currentCacheTilesX * TILE + 16 || py + spriteHeight < -16 || py > _currentCacheTilesY * TILE + 16)
                     {
                         // Off-screen: skip expensive tinting and compositing operations
                         continue;
@@ -10521,8 +10745,8 @@ namespace FamidashEditor
                         double hy_screen = (int)Math.Round(py - offsetY) + hyoff_o;
                         if (s_padDownIds.Contains(id_for_overlay)) hy_screen += 8;
 
-                        int pixelX_now2 = snapCameraX >> 8;
-                        int pixelY_now2 = snapCameraY >> 8;
+                        int pixelX_now2 = renderCameraX_fixed >> 8;
+                        int pixelY_now2 = renderCameraY_fixed >> 8;
                         int worldLeft2 = (int)Math.Round(hx_screen) + pixelX_now2;
                         int worldTop2 = (int)Math.Round(hy_screen) + pixelY_now2 - gridRenderShiftYPx;
                         int worldRight2 = worldLeft2 + Math.Max(1, hw_o) - 1;
@@ -10618,8 +10842,8 @@ namespace FamidashEditor
             spriteDc.Close();
             try
             {
-                int sprRtbW = (NES_W + 1) * TILE;
-                int sprRtbH = (NES_H + 1) * TILE;
+                int sprRtbW = _currentCacheTilesX * TILE;
+                int sprRtbH = _currentCacheTilesY * TILE;
                 var spriteRtb = new RenderTargetBitmap(sprRtbW, sprRtbH, 96, 96, PixelFormats.Pbgra32);
                 spriteRtb.Render(spriteDv);
                 try { spriteRtb.Freeze(); } catch { }
@@ -10649,8 +10873,8 @@ namespace FamidashEditor
                 int playerPixelX, playerPixelY;
                 int worldX, worldY;
                 {
-                    playerPixelX = (snapPlayerX >> 8) - (snapCameraX >> 8);
-                    playerPixelY = (snapPlayerY >> 8) - (snapCameraY >> 8) + gridRenderShiftYPx;
+                    playerPixelX = (snapPlayerX >> 8) - (renderCameraX_fixed >> 8);
+                    playerPixelY = (snapPlayerY >> 8) - (renderCameraY_fixed >> 8) + gridRenderShiftYPx;
                     
                     // Record center of player for path (use actual physics position)
                     worldX = (snapPlayerX >> 8) + (playerVisualWidth / 2);
@@ -10741,7 +10965,7 @@ namespace FamidashEditor
                         int ghostX = playerPixelX - (velXPx * 2 * (tg + 1));
                         // Y from old position history (index 0=newest; use tg*2 for spacing)
                         int histIdx = Math.Min((tg + 1) * 2, playerOldPosY.Length - 1);
-                        int ghostY = (playerOldPosY[histIdx] >> 8) - (snapCameraY >> 8) + gridRenderShiftYPx;
+                        int ghostY = (playerOldPosY[histIdx] >> 8) - (renderCameraY_fixed >> 8) + gridRenderShiftYPx;
                         if (snapMiniMode) ghostY += 4;
                         System.Windows.Controls.Canvas.SetLeft(trailGhosts[tg]!, ghostX);
                         System.Windows.Controls.Canvas.SetTop(trailGhosts[tg]!, ghostY);
@@ -10765,8 +10989,8 @@ namespace FamidashEditor
                 else
                 {
                     // Calculate player 2's screen position
-                    int player2PixelX = (player_x_fixed[1] >> 8) - (snapCameraX >> 8);
-                    int player2PixelY = (player_y_fixed[1] >> 8) - (snapCameraY >> 8);
+                    int player2PixelX = (player_x_fixed[1] >> 8) - (renderCameraX_fixed >> 8);
+                    int player2PixelY = (player_y_fixed[1] >> 8) - (renderCameraY_fixed >> 8);
 
                     // Apply mini mode visual adjustments for player 2
                     if (player_mini[1])  // Mini — gravity-independent offset
@@ -10798,8 +11022,8 @@ namespace FamidashEditor
             int playerCenter_fixed_now_local = snapPlayerX + centerOffset_fixed_local;
             bool isAnchoredNow = interactionScreenOffset_px >= 0 && playerCenter_fixed_now_local >= INTERACTION_LINE_FIXED;
 
-            double fracX = (snapCameraX & 0xFF) / 256.0;
-            double fracY = (snapCameraY & 0xFF) / 256.0;
+            double fracX = (renderCameraX_fixed & 0xFF) / 256.0;
+            double fracY = (renderCameraY_fixed & 0xFF) / 256.0;
 
             if (isAnchoredNow)
             {
@@ -11671,7 +11895,7 @@ namespace FamidashEditor
                         if (!MainWindow.Option_NoDeath && !deathTriggered && invincibleCounter == 0)
                         {
                             int floorSpikeX = preAdvancePlayerX_fixed >> 8;
-                            int floorSpikeY = playerY_fixed >> 8;
+                            int floorSpikeY = NesPlayerY_px(playerY_fixed);
                             // DIAG: log state near the problem spike area
                             if (floorSpikeX >= 6830 && floorSpikeX <= 6920 && currentGameMode == 4)
                             {
@@ -11729,7 +11953,7 @@ namespace FamidashEditor
                                 // OLD X, post-eject Y — matches NES x_movement_coll which refreshes
                                 // Generic.y from currplayer_y (post-eject) before calling bg_coll_R
                                 int playerX_px_fwd = preAdvancePlayerX_fixed >> 8;
-                                int playerY_px_fwd = playerY_fixed >> 8;
+                                int playerY_px_fwd = NesPlayerY_px(playerY_fixed);
                                 int hitboxW_fwd, hitboxH_fwd, hitboxOffsetY_fwd;
                                 if (currentGameMode == 6) // Wave: NES WAVE_WIDTH=8, WAVE_HEIGHT=8
                                 {
@@ -11847,7 +12071,7 @@ namespace FamidashEditor
                             currentGameMode != 6 && currentGameMode != 10)
                         {
                             int playerX_px_nudge = preAdvancePlayerX_fixed >> 8;
-                            int playerY_px_nudge = playerY_fixed >> 8;
+                            int playerY_px_nudge = NesPlayerY_px(playerY_fixed);
                             int hbW_nudge = (currplayer_mini != 0) ? 8 : 15;
                             int hbH_nudge = (currplayer_mini != 0) ? 7 : 15;
                             int centerY_nudge;
@@ -11903,7 +12127,7 @@ namespace FamidashEditor
                         if (!MainWindow.Option_NoDeath && !deathTriggered && (currentGameMode == 6 || currentGameMode == 10))
                         {
                             int wPx = preAdvancePlayerX_fixed >> 8;
-                            int wPy = playerY_fixed >> 8;
+                            int wPy = NesPlayerY_px(playerY_fixed);
                             const int WAVE_W = 8, WAVE_H = 8;
                             int groundRowsToReserve_ws = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
                             bool isMiniWave = (currplayer_mini != 0);
@@ -11991,7 +12215,7 @@ namespace FamidashEditor
                         // first and used NEW X — that lets the player's center pixel sweep past
                         // a half-slab side that NES kills on (a 1–3 px discrepancy depending on
                         // current speed). Run the death check FIRST, then advance.
-                        if (!deathTriggered && !camModeActive && CheckDeathCollision(out int deathX_px, out int deathY_px))
+                        if (!deathTriggered && !camModeActive && CheckDeathCollision(out int deathX_px, out int deathY_px, preAdvancePlayerX_fixed))
                         {
                             AppendSimDebug($"[DEATH] Death tile collision at ({deathX_px},{deathY_px}) (OLD X)");
                             deathTriggered = true;
@@ -12009,6 +12233,33 @@ namespace FamidashEditor
                                     {
                                         try { mw.PauseSimulatorPlayback(); } catch { }
                                         try { mw.AddDeathMarker(deathX_px, deathY_px); } catch { }
+                                    }
+                                }));
+                            }
+                            catch { }
+                        }
+
+                        // Empirical PF/ROM parity fallback: run center-point death probe at NEW X
+                        // after movement has advanced X. Keep OLD-X check as primary NES-order path.
+                        if (!deathTriggered && !camModeActive && attemptedPlayerX_fixed != preAdvancePlayerX_fixed &&
+                            CheckDeathCollision(out int deathX_new_px, out int deathY_new_px, attemptedPlayerX_fixed))
+                        {
+                            AppendSimDebug($"[DEATH] Death tile collision at ({deathX_new_px},{deathY_new_px}) (NEW X fallback)");
+                            deathTriggered = true;
+                            deathTileX = deathX_new_px;
+                            deathTileY = deathY_new_px;
+                            paused = true;
+                            _ = StopMusicAsync();
+
+                            try
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                                    if (this.Owner is MainWindow mw)
+                                    {
+                                        try { mw.PauseSimulatorPlayback(); } catch { }
+                                        try { mw.AddDeathMarker(deathX_new_px, deathY_new_px); } catch { }
                                     }
                                 }));
                             }
@@ -13108,7 +13359,7 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        if (anchorX_center_fixed <= center_fixed)
+                        if (center_fixed >= prevCameraCenter_fixed && anchorX_center_fixed > prevCameraCenter_fixed && anchorX_center_fixed <= center_fixed)
                         {
                             if (!processedSpeedPortals.Contains(idx))
                             {
@@ -13178,7 +13429,7 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        if (anchorX_center_fixed <= center_fixed)
+                        if (center_fixed >= prevCameraCenter_fixed && anchorX_center_fixed > prevCameraCenter_fixed && anchorX_center_fixed <= center_fixed)
                         {
                             if (!processedColorTriggers.Contains(idx))
                             {
@@ -13236,7 +13487,7 @@ namespace FamidashEditor
                         }
                         else
                         {
-                            if (anchorX_center_fixed <= center_fixed)
+                            if (center_fixed >= prevCameraCenter_fixed && anchorX_center_fixed > prevCameraCenter_fixed && anchorX_center_fixed <= center_fixed)
                                 activated = true;
                         }
 
@@ -13290,7 +13541,7 @@ namespace FamidashEditor
                     }
                     else
                     {
-                        if (anchorX_center_fixed <= center_fixed)
+                        if (center_fixed >= prevCameraCenter_fixed && anchorX_center_fixed > prevCameraCenter_fixed && anchorX_center_fixed <= center_fixed)
                             activated = true;
                     }
 
