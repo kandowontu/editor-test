@@ -2041,6 +2041,135 @@ internal static class SharedPhysics
 		return (hit: false, ceilingBottomY: 0, spikeDeath: item, hitCollision: MetatileCollision.COL_NONE);
 	}
 
+	private static (bool hit, int ejectU, bool spikeDeath, MetatileCollision hitCollision) CheckCeilingReturnU(in CollisionMap map, int playerX_px, int collX, int probeY, int collW)
+	{
+		int tmp8 = Mod16(probeY);
+		int tileY = (probeY >= 0) ? (probeY / 16) : ((probeY - 15) / 16);
+		int arrY = tileY + map.GroundRowsToReserve;
+		if (arrY < 0 || arrY >= map.MapHeight)
+		{
+			return (hit: false, ejectU: 0, spikeDeath: false, hitCollision: MetatileCollision.COL_NONE);
+		}
+		for (int i = 0; i < 3; i++)
+		{
+			int probeX = i switch
+			{
+				1 => collX + (collW >> 1),
+				0 => collX,
+				_ => collX + collW,
+			};
+			int tileX = probeX / 16;
+			if (tileX < 0 || tileX >= map.MapWidth)
+			{
+				continue;
+			}
+			int tileIndex = arrY * map.MapWidth + tileX;
+			if (tileIndex < 0 || tileIndex >= map.Tiles.Length)
+			{
+				continue;
+			}
+			MetatileCollision collision = MetatileCollisionTable.GetCollision((byte)MapTileForCollision(map.Tiles[tileIndex]));
+			if (collision == MetatileCollision.COL_NONE)
+			{
+				continue;
+			}
+			int localX = Mod16(probeX);
+			int localY = Mod16(probeY);
+			if ((collision == MetatileCollision.COL_DEATH_TOP || collision == MetatileCollision.COL_DEATH_BOTTOM) && MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
+			{
+				return (hit: false, ejectU: 0, spikeDeath: true, hitCollision: collision);
+			}
+			bool fullBlock = collision == MetatileCollision.COL_NO_SIDE || collision == MetatileCollision.COL_FLOOR_CEIL || (collision == MetatileCollision.COL_ALL && playerX_px >= 16);
+			bool partialBlock = BgCollMiniBlocksReturnU(collision, localX, localY, playerX_px, ref tmp8) || BgCollTopBottomSlabsReturnU(collision, localY, ref tmp8);
+			int ejectU = (fullBlock ? 240 : 248) | tmp8;
+			if (fullBlock || partialBlock)
+			{
+				return (hit: true, ejectU, spikeDeath: false, hitCollision: collision);
+			}
+		}
+		return (hit: false, ejectU: 0, spikeDeath: false, hitCollision: MetatileCollision.COL_NONE);
+	}
+
+	private static bool BgCollTopBottomSlabsReturnU(MetatileCollision collision, int localY, ref int tmp8)
+	{
+		switch (collision)
+		{
+		case MetatileCollision.COL_BOTTOM:
+			tmp8 = localY & 7;
+			return tmp8 != localY;
+		case MetatileCollision.COL_TOP:
+			tmp8 = localY & 7;
+			return tmp8 == localY;
+		default:
+			return false;
+		}
+	}
+
+	private static bool BgCollMiniBlocksReturnU(MetatileCollision collision, int localX, int localY, int playerX_px, ref int tmp8)
+	{
+		if (collision != MetatileCollision.COL_FLOOR_CEIL && playerX_px < 16)
+		{
+			return false;
+		}
+		switch (collision)
+		{
+		case MetatileCollision.COL_UP_LEFT:
+			tmp8 = localY & 7;
+			return localY < 8 && localX < 8;
+		case MetatileCollision.COL_UP_RIGHT:
+			tmp8 = localY & 7;
+			return localY < 8 && localX >= 8;
+		case MetatileCollision.COL_DOWN_LEFT:
+		case MetatileCollision.COL_LEFT_SPIKE_BLOCK:
+			tmp8 = localY & 7;
+			return localY >= 8 && localX < 8;
+		case MetatileCollision.COL_DOWN_RIGHT:
+		case MetatileCollision.COL_RIGHT_SPIKE_BLOCK:
+			tmp8 = localY & 7;
+			return localY >= 8 && localX >= 8;
+		case MetatileCollision.COL_BOTTOM_LEFT_SPIKE:
+		case MetatileCollision.COL_BOTTOM_RIGHT_SPIKE:
+		case MetatileCollision.COL_BOTTOM_CENTER_SPIKE:
+		case MetatileCollision.COL_BOTTOM_SPIKES:
+			tmp8 = localY & 7;
+			return tmp8 != localY;
+		case MetatileCollision.COL_TOP_CENTER_SPIKE:
+			tmp8 = localY & 7;
+			return tmp8 == localY;
+		case MetatileCollision.COL_LEFT:
+			tmp8 = localY & 0xF;
+			return localX < 8;
+		case MetatileCollision.COL_RIGHT:
+			tmp8 = localY & 0xF;
+			return localX >= 8;
+		case MetatileCollision.COL_TOP_LEFT_BOTTOM_RIGHT:
+			tmp8 = localY & 7;
+			return localX < 8 ? localY < 8 : localY >= 8;
+		case MetatileCollision.COL_TOP_RIGHT_BOTTOM_LEFT:
+			tmp8 = localY & 7;
+			return localX < 8 ? localY >= 8 : localY < 8;
+		case MetatileCollision.COL_TOP_RIGHT_STAIRS:
+			tmp8 = localY & 7;
+			return !(localY >= 8 && localX < 8);
+		case MetatileCollision.COL_TOP_LEFT_STAIRS:
+			tmp8 = localY & 7;
+			return !(localY >= 8 && localX >= 8);
+		case MetatileCollision.COL_BOTTOM_RIGHT_STAIRS:
+			tmp8 = localY & 7;
+			return !(localY < 8 && localX < 8);
+		case MetatileCollision.COL_BOTTOM_LEFT_STAIRS:
+			tmp8 = localY & 7;
+			return !(localY < 8 && localX >= 8);
+		default:
+			return false;
+		}
+	}
+
+	private static int Mod16(int value)
+	{
+		return (value % 16 + 16) % 16;
+	}
+
 	internal static bool CheckCenterPointDeath(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY)
 	{
 		FullTraceLog?.Invoke($"cur=0 gm=-1 tag=CheckCenterPointDeath.in X={playerX_px} Y={playerY_px} hbW={hbW} hbH={hbH} hbOffY={hbOffY}");
@@ -3085,8 +3214,9 @@ internal static class SharedPhysics
 			}
 			if (!flag2 && result.NewVelY_fixed < 0)
 			{
-				var (flag3, value4, flag4, metatileCollision) = CheckCeiling(in map, num, num4, cubeHitboxW, cubeHitboxH);
-				ballEjectDiagLog?.Invoke($"[BE_CEIL] probeX={num} probeY={num4} hbW={cubeHitboxW} hbH={cubeHitboxH} -> hit={flag3} ceilBotY={value4} spike={flag4} coll={metatileCollision}");
+				int num15 = num4 + 1;
+				var (flag3, num16, flag4, metatileCollision) = CheckCeilingReturnU(in map, num, num, num15, cubeHitboxW);
+				ballEjectDiagLog?.Invoke($"[BE_CEIL] probeX={num} probeY={num4} hbW={cubeHitboxW} hbH={cubeHitboxH} -> hit={flag3} spike={flag4} coll={metatileCollision}");
 				if (flag4)
 				{
 					result.Died = true;
@@ -3095,17 +3225,14 @@ internal static class SharedPhysics
 				if (flag3)
 				{
 					flag = true;
-					int num15 = num4 + 1;
-					int num16 = (num15 % 16 + 16) % 16;
-					bool flag5 = metatileCollision == MetatileCollision.COL_NO_SIDE || metatileCollision == MetatileCollision.COL_ALL || metatileCollision == MetatileCollision.COL_FLOOR_CEIL;
-					int num17 = (flag5 ? 240 : 248) | num16;
-					int num18 = (sbyte)(byte)num17;
+					int num17 = Mod16(num15);
+					int num18 = (sbyte)(byte)num16;
 					int num19 = result.NewY_fixed - camY_fixed >> 8;
 					int num20 = num19 - num18;
 					result.NewY_fixed = camY_fixed + (num20 << 8) + num8;
 					result.NewVelY_fixed = 0;
 					result.OnGround = true;
-					ballEjectDiagLog?.Invoke($"[BE_CEIL_EJECT] probeY_U={num15} tmp8_u={num16} udChecks={flag5} ejectU=0x{num17:X2} signed={num18} scrHi:{num19}->{num20} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
+					ballEjectDiagLog?.Invoke($"[BE_CEIL_EJECT] probeY_U={num15} tmp8_initial={num17} ejectU=0x{num16:X2} signed={num18} scrHi:{num19}->{num20} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
 				}
 			}
 			if (flag)
@@ -3289,45 +3416,89 @@ internal static class SharedPhysics
 		int hitboxOffsetY = GetHitboxOffsetY(gameMode, mini, gravFlipped);
 		int collX = num;
 		int collY = num2 + hitboxOffsetY;
+		UpdateSlopeCounters(ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.NewVelY_fixed, ref result.NewY_fixed, gameMode, gravFlipped, mini, ref result.LastSlopeType);
 		if (gameMode == 1 || gameMode == 3)
 		{
-			var (hit2, _, spike2, hitCollision2) = CheckCeiling(in map, collX, collY, cubeHitboxW, cubeHitboxH);
-			if (spike2)
+			int centerOffsetY = 16 - cubeHitboxH >> 1;
+			int miniOffsetY = mini ? centerOffsetY : 0;
+			int checkBaseYUp = num2 + centerOffsetY + (mini ? 1 : 2) + ((gameMode == 1) ? 1 : 0);
+			var (upSlopeHit, upSlopeEject, upSlopeType) = CheckSlopesUp(in map, num, num, checkBaseYUp, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			if (upSlopeType != 0)
 			{
-				result.DebugCeilSpike = true;
-				result.Died = true;
-				return result;
+				result.SlopeType = upSlopeType;
 			}
-			if (hit2)
+			if (upSlopeHit)
 			{
-				result.DebugCeilTileHit = true;
-				int yPx2 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
-				int adjust2 = ((yPx2 + hitboxOffsetY + 1) % 16 + 16) % 16;
-				int ejectU2 = (sbyte)(byte)(((hitCollision2 == MetatileCollision.COL_NO_SIDE || hitCollision2 == MetatileCollision.COL_ALL || hitCollision2 == MetatileCollision.COL_FLOOR_CEIL) ? 240 : 248) | adjust2);
-				int newYPx2 = yPx2 - ejectU2 - 1;
-				int yLow2 = (result.NewY_fixed - camY_fixed) & 0xFF;
-				result.NewY_fixed = camY_fixed + (newYPx2 - (camY_fixed >> 8) << 8) + yLow2;
+				result.DebugCeilSlopeHit = true;
+				int yPx = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
+				int yLow = (result.NewY_fixed - camY_fixed) & 0xFF;
+				int newYPx = yPx + upSlopeEject - 1;
+				result.NewY_fixed = camY_fixed + (newYPx - (camY_fixed >> 8) << 8) + yLow;
 				result.NewVelY_fixed = 0;
+				result.SlopeFrames = 1;
+				result.SlopeWasOnCounter = 3;
+				result.SlopeType = upSlopeType;
 			}
-			var (hit3, _, spike3, ejectD3, _) = CheckFloorDetailed(in map, collX, collY, cubeHitboxW, cubeHitboxH);
-			if (spike3)
+			else
 			{
-				result.DebugFloorSpike = true;
-				result.Died = true;
-				return result;
+				var (hit2, _, spike2, hitCollision2) = CheckCeiling(in map, collX, collY, cubeHitboxW, cubeHitboxH, result.NewVelY_fixed);
+				if (spike2)
+				{
+					result.DebugCeilSpike = true;
+					result.Died = true;
+					return result;
+				}
+				if (hit2)
+				{
+					result.DebugCeilTileHit = true;
+					int yPx2 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
+					int adjust2 = ((yPx2 + hitboxOffsetY + 1) % 16 + 16) % 16;
+					int ejectU2 = (sbyte)(byte)(((hitCollision2 == MetatileCollision.COL_NO_SIDE || hitCollision2 == MetatileCollision.COL_ALL || hitCollision2 == MetatileCollision.COL_FLOOR_CEIL) ? 240 : 248) | adjust2);
+					int newYPx2 = yPx2 - ejectU2 - 1;
+					int yLow2 = (result.NewY_fixed - camY_fixed) & 0xFF;
+					result.NewY_fixed = camY_fixed + (newYPx2 - (camY_fixed >> 8) << 8) + yLow2;
+					result.NewVelY_fixed = 0;
+				}
 			}
-			if (hit3)
+			int checkBaseYDown = num2 + miniOffsetY + cubeHitboxH - 2;
+			var (downSlopeHit, downSlopeEject, downSlopeType) = CheckSlopesDown(in map, num, num, checkBaseYDown, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			if (downSlopeType != 0)
 			{
-				result.DebugFloorTileHit = true;
+				result.SlopeType = downSlopeType;
+			}
+			if (downSlopeHit)
+			{
+				result.DebugFloorSlopeHit = true;
 				int yPx3 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
-				int newYPx3 = yPx3 - ejectD3;
 				int yLow3 = (result.NewY_fixed - camY_fixed) & 0xFF;
+				int newYPx3 = yPx3 - downSlopeEject;
 				result.NewY_fixed = camY_fixed + (newYPx3 - (camY_fixed >> 8) << 8) + yLow3;
 				result.NewVelY_fixed = 0;
+				result.SlopeFrames = 1;
+				result.SlopeWasOnCounter = 3;
+				result.SlopeType = downSlopeType;
+			}
+			else
+			{
+				var (hit3, _, spike3, ejectD3, _) = CheckFloorDetailed(in map, collX, collY, cubeHitboxW, cubeHitboxH, result.NewVelY_fixed);
+				if (spike3)
+				{
+					result.DebugFloorSpike = true;
+					result.Died = true;
+					return result;
+				}
+				if (hit3)
+				{
+					result.DebugFloorTileHit = true;
+					int yPx4 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
+					int newYPx4 = yPx4 - ejectD3;
+					int yLow4 = (result.NewY_fixed - camY_fixed) & 0xFF;
+					result.NewY_fixed = camY_fixed + (newYPx4 - (camY_fixed >> 8) << 8) + yLow4;
+					result.NewVelY_fixed = 0;
+				}
 			}
 			return result;
 		}
-		UpdateSlopeCounters(ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.NewVelY_fixed, ref result.NewY_fixed, gameMode, gravFlipped, mini, ref result.LastSlopeType);
 		int num3 = (mini ? (16 - cubeHitboxH >> 1) : 0);
 		int num4 = 16 - cubeHitboxH >> 1;
 		bool flag = result.NewVelY_fixed < 0;

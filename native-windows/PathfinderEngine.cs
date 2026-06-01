@@ -9047,17 +9047,6 @@ public class PathfinderEngine
 				s.DeathType = 9;
 				return false;
 			}
-			if (CheckSlopePenetrationDeath(ref s))
-			{
-				if (_speculativeDepth == 0)
-				{
-					_lastDeathReason = "SLOPE_DEATH_NEWX";
-					_lastDeathX = s.X_fixed >> 8;
-					_lastDeathY = s.Y_fixed >> 8;
-				}
-				s.DeathType = 9;
-				return false;
-			}
 		}
 		if (s.OnGround && s.VelY_fixed == 0 && s.GameMode != 1 && s.GameMode != 3 && s.GameMode != 5 && s.GameMode != 6 && s.GameMode != 7 && s.GameMode != 10 && !VerifyGroundSupport(ref s))
 		{
