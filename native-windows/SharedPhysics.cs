@@ -384,7 +384,7 @@ internal static class SharedPhysics
 
 	internal static readonly short[] EXIT_SLOPE_BALL_22 = new short[8] { -96, 96, -96, 96, -80, 80, -80, 80 };
 
-	internal static readonly short[] EXIT_SLOPE_BALL_66 = new short[8] { 365, -365, 365, -365, 432, -432, 432, -432 };
+	internal static readonly short[] EXIT_SLOPE_BALL_66 = new short[8] { 403, -403, 403, -403, 336, -336, 336, -336 };
 
 	internal static readonly short[] EXIT_SLOPE_CUBE_22 = new short[8] { -307, 307, -307, 307, -256, 256, -256, 256 };
 
@@ -2869,6 +2869,11 @@ internal static class SharedPhysics
 				slopeDiagLog?.Invoke($"[SLOPE/WEDGE_PROBE{i}] X={num} Y={checkBaseY} tile=({num2},{num3}) coll={tileCollision} -> WEDGE_MISS");
 				continue;
 			}
+			if (num4 == 0)
+			{
+				slopeDiagLog?.Invoke($"[SLOPE/WEDGE_PROBE{i}] X={num} Y={checkBaseY} tile=({num2},{num3}) coll={tileCollision} -> SENTINEL_HIT_NO_COL_END");
+				continue;
+			}
 			slopeDiagLog?.Invoke($"[SLOPE/WEDGE_PROBE{i}] X={num} Y={checkBaseY} tile=({num2},{num3}) coll={tileCollision} -> WEDGE_PASS newSlopeT={num4}");
 			flag = true;
 			if (gameMode == 0 || gameMode == 4 || gameMode == 8)
@@ -2914,7 +2919,7 @@ internal static class SharedPhysics
 		return flag;
 	}
 
-	internal static void UpdateSlopeCounters(ref int slopeWasOnCounter, ref int slopeType, ref int velY_fixed, ref int posY_fixed, int gameMode, bool gravFlipped, bool mini, ref int lastSlopeType)
+	internal static void UpdateSlopeCounters(ref int slopeWasOnCounter, ref int slopeType, ref int velY_fixed, ref int posY_fixed, int gameMode, bool gravFlipped, bool mini, ref int lastSlopeType, bool applyPosition = true)
 	{
 		Action<string> slopeDiagLog = SlopeDiagLog;
 		int value = slopeWasOnCounter;
@@ -2959,7 +2964,10 @@ internal static class SharedPhysics
 				}
 				}
 				velY_fixed += num4;
-				posY_fixed += num4;
+				if (applyPosition)
+				{
+					posY_fixed += num4;
+				}
 				slopeDiagLog?.Invoke($"[SLOPE/EXIT] swOn:{value}->0 sT={num} gm={gameMode} mini={mini} gF={gravFlipped} tblIdx={num3} tbl={value4} delta={num4} vy:{value2}->{velY_fixed} py:{value3}->{posY_fixed} sT:=0");
 				slopeType = 0;
 			}
@@ -3050,7 +3058,7 @@ internal static class SharedPhysics
 		}
 	}
 
-	internal static EjectResult CubeEject(in CollisionMap map, int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed, bool gravFlipped, bool mini, int gameMode, bool inputHeld, int slopeWasOnCounter, int slopeFrames, int slopeType, bool slopeJumpHigher, int lastSlopeType, int camY_fixed = 0)
+	internal static EjectResult CubeEject(in CollisionMap map, int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed, bool gravFlipped, bool mini, int gameMode, bool inputHeld, int slopeWasOnCounter, int slopeFrames, int slopeType, bool slopeJumpHigher, int lastSlopeType, int camY_fixed = 0, bool updateSlopeCounters = true)
 	{
 		EjectResult ejectResult = default(EjectResult);
 		ejectResult.NewY_fixed = playerY_fixed;
@@ -3062,12 +3070,15 @@ internal static class SharedPhysics
 		ejectResult.LastSlopeType = lastSlopeType;
 		EjectResult result = ejectResult;
 		int num = playerX_fixed >> 8;
-		int num2 = playerY_fixed >> 8;
-		int num3 = (playerY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
 		int cubeHitboxW = GetCubeHitboxW(mini);
 		int cubeHitboxH = GetCubeHitboxH(mini);
 		int hitboxOffsetY = GetHitboxOffsetY(gameMode, mini, gravFlipped);
-		UpdateSlopeCounters(ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.NewVelY_fixed, ref result.NewY_fixed, gameMode, gravFlipped, mini, ref result.LastSlopeType);
+		if (updateSlopeCounters)
+		{
+			UpdateSlopeCounters(ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.NewVelY_fixed, ref result.NewY_fixed, gameMode, gravFlipped, mini, ref result.LastSlopeType);
+		}
+		int num2 = result.NewY_fixed >> 8;
+		int num3 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
 		if (!gravFlipped)
 		{
 			int num4 = (mini ? (16 - cubeHitboxH >> 1) : 0);
@@ -3081,11 +3092,11 @@ internal static class SharedPhysics
 				result.SlopeType = slopeType2;
 				result.OnGround = true;
 				result.DebugFloorSlopeHit = true;
-				if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+				if (slopeType2 != 0 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
 				{
 					result.SlopeJumpHigher = true;
 				}
-				else
+				else if (slopeType2 != 0)
 				{
 					result.SlopeFrames = 1;
 					result.SlopeWasOnCounter = 3;
@@ -3118,16 +3129,16 @@ internal static class SharedPhysics
 			var (flag3, num8, slopeType3) = CheckSlopesUp(in map, num, num, checkBaseY2, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
 			if (flag3)
 			{
-				result.NewY_fixed = ((result.NewY_fixed >> 8) + num8 - 1 << 8) | (camY_fixed & 0xFF);
+				result.NewY_fixed = ((result.NewY_fixed >> 8) + num8 << 8) | (camY_fixed & 0xFF);
 				result.NewVelY_fixed = 0;
 				result.WasZeroed = true;
 				result.OnGround = true;
 				result.SlopeType = slopeType3;
-				if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+				if (slopeType3 != 0 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
 				{
 					result.SlopeJumpHigher = true;
 				}
-				else
+				else if (slopeType3 != 0)
 				{
 					result.SlopeFrames = 1;
 					result.SlopeWasOnCounter = 3;
@@ -3155,7 +3166,7 @@ internal static class SharedPhysics
 		return result;
 	}
 
-	internal static EjectResult BallEject(in CollisionMap map, int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed, bool gravFlipped, bool mini, int gameMode, bool inputHeld, int slopeWasOnCounter, int slopeFrames, int slopeType, bool slopeJumpHigher, int lastSlopeType, int camY_fixed = 0)
+	internal static EjectResult BallEject(in CollisionMap map, int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed, bool gravFlipped, bool mini, int gameMode, bool inputHeld, int slopeWasOnCounter, int slopeFrames, int slopeType, bool slopeJumpHigher, int lastSlopeType, int camY_fixed = 0, bool updateSlopeCounters = true)
 	{
 		EjectResult ejectResult = default(EjectResult);
 		ejectResult.NewY_fixed = playerY_fixed;
@@ -3167,22 +3178,25 @@ internal static class SharedPhysics
 		ejectResult.LastSlopeType = lastSlopeType;
 		EjectResult result = ejectResult;
 		int num = playerX_fixed >> 8;
-		int num2 = (playerY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
 		int cubeHitboxW = GetCubeHitboxW(mini);
 		int cubeHitboxH = GetCubeHitboxH(mini);
 		int miniCenterOffsetY = GetMiniCenterOffsetY(mini);
 		int num3 = ((!gravFlipped) ? 1 : (-1));
+		if (updateSlopeCounters)
+		{
+			UpdateSlopeCounters(ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.NewVelY_fixed, ref result.NewY_fixed, gameMode, gravFlipped, mini, ref result.LastSlopeType);
+		}
+		int num2 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
 		int num4 = num2 + miniCenterOffsetY + num3;
-		UpdateSlopeCounters(ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.NewVelY_fixed, ref result.NewY_fixed, gameMode, gravFlipped, mini, ref result.LastSlopeType);
 		Action<string> ballEjectDiagLog = BallEjectDiagLog;
 		if (ballEjectDiagLog != null)
 		{
 			int num5 = camY_fixed & 0xFF;
-			int num6 = playerY_fixed & 0xFF;
-			int value = (playerY_fixed - camY_fixed) & 0xFF;
-			int value2 = playerY_fixed - camY_fixed >> 8;
+			int num6 = result.NewY_fixed & 0xFF;
+			int value = (result.NewY_fixed - camY_fixed) & 0xFF;
+			int value2 = result.NewY_fixed - camY_fixed >> 8;
 			int value3 = ((num6 < num5) ? 1 : 0);
-			ballEjectDiagLog($"[BE_ENTRY] Yf=0x{playerY_fixed:X8} Yhi={playerY_fixed >> 8} Ylo=0x{num6:X2} camYf=0x{camY_fixed:X8} camHi={camY_fixed >> 8} camLo=0x{num5:X2} scrHi={value2} scrLo=0x{value:X2} borrow={value3} Ypx_nes={num2} collY={num4} velY={velY_fixed} gravF={gravFlipped} mini={mini} gm={gameMode} input={inputHeld} slopeT={result.SlopeType}/{result.SlopeFrames}");
+			ballEjectDiagLog($"[BE_ENTRY] Yf=0x{result.NewY_fixed:X8} Yhi={result.NewY_fixed >> 8} Ylo=0x{num6:X2} camYf=0x{camY_fixed:X8} camHi={camY_fixed >> 8} camLo=0x{num5:X2} scrHi={value2} scrLo=0x{value:X2} borrow={value3} Ypx_nes={num2} collY={num4} velY={result.NewVelY_fixed} gravF={gravFlipped} mini={mini} gm={gameMode} input={inputHeld} slopeT={result.SlopeType}/{result.SlopeFrames}");
 		}
 		int num7 = camY_fixed >> 8;
 		int num8 = (result.NewY_fixed - camY_fixed) & 0xFF;
@@ -3200,11 +3214,11 @@ internal static class SharedPhysics
 				result.NewVelY_fixed = 0;
 				result.OnGround = true;
 				result.SlopeType = num12;
-				if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+				if (num12 != 0 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
 				{
 					result.SlopeJumpHigher = true;
 				}
-				else
+				else if (num12 != 0)
 				{
 					result.SlopeFrames = 1;
 					result.SlopeWasOnCounter = 3;
@@ -3301,11 +3315,11 @@ internal static class SharedPhysics
 				result.NewVelY_fixed = 0;
 				result.OnGround = true;
 				result.SlopeType = num35;
-				if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+				if (num35 != 0 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
 				{
 					result.SlopeJumpHigher = true;
 				}
-				else
+				else if (num35 != 0)
 				{
 					result.SlopeFrames = 1;
 					result.SlopeWasOnCounter = 3;
@@ -3330,11 +3344,11 @@ internal static class SharedPhysics
 				result.NewVelY_fixed = 0;
 				result.OnGround = true;
 				result.SlopeType = num42;
-				if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+				if (num42 != 0 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
 				{
 					result.SlopeJumpHigher = true;
 				}
-				else
+				else if (num42 != 0)
 				{
 					result.SlopeFrames = 1;
 					result.SlopeWasOnCounter = 3;
@@ -3351,8 +3365,11 @@ internal static class SharedPhysics
 					result.NewY_fixed = camY_fixed + (num46 << 8) + num8;
 				}
 				result.NewVelY_fixed = 0;
-				result.SlopeFrames = 1;
-				result.SlopeWasOnCounter = 3;
+				if (slopeType2 != 0)
+				{
+					result.SlopeFrames = 1;
+					result.SlopeWasOnCounter = 3;
+				}
 				result.SlopeType = slopeType2;
 				result.OnGround = true;
 			}
@@ -3398,7 +3415,7 @@ internal static class SharedPhysics
 		return result;
 	}
 
-	internal static EjectResult ShipUfoEject(in CollisionMap map, int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed, bool gravFlipped, bool mini, int gameMode, bool inputHeld, int slopeWasOnCounter, int slopeFrames, int slopeType, bool slopeJumpHigher, int lastSlopeType, int camY_fixed = 0)
+	internal static EjectResult ShipUfoEject(in CollisionMap map, int playerX_fixed, int playerY_fixed, int velY_fixed, int velX_fixed, bool gravFlipped, bool mini, int gameMode, bool inputHeld, int slopeWasOnCounter, int slopeFrames, int slopeType, bool slopeJumpHigher, int lastSlopeType, int camY_fixed = 0, bool updateSlopeCounters = true)
 	{
 		EjectResult ejectResult = default(EjectResult);
 		ejectResult.NewY_fixed = playerY_fixed;
@@ -3410,13 +3427,16 @@ internal static class SharedPhysics
 		ejectResult.LastSlopeType = lastSlopeType;
 		EjectResult result = ejectResult;
 		int num = playerX_fixed >> 8;
-		int num2 = (playerY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
 		int cubeHitboxW = GetCubeHitboxW(mini);
 		int cubeHitboxH = GetCubeHitboxH(mini);
 		int hitboxOffsetY = GetHitboxOffsetY(gameMode, mini, gravFlipped);
+		if (updateSlopeCounters)
+		{
+			UpdateSlopeCounters(ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.NewVelY_fixed, ref result.NewY_fixed, gameMode, gravFlipped, mini, ref result.LastSlopeType);
+		}
+		int num2 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
 		int collX = num;
 		int collY = num2 + hitboxOffsetY;
-		UpdateSlopeCounters(ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.NewVelY_fixed, ref result.NewY_fixed, gameMode, gravFlipped, mini, ref result.LastSlopeType);
 		if (gameMode == 1 || gameMode == 3)
 		{
 			int centerOffsetY = 16 - cubeHitboxH >> 1;
@@ -3435,8 +3455,11 @@ internal static class SharedPhysics
 				int newYPx = yPx + upSlopeEject - 1;
 				result.NewY_fixed = camY_fixed + (newYPx - (camY_fixed >> 8) << 8) + yLow;
 				result.NewVelY_fixed = 0;
-				result.SlopeFrames = 1;
-				result.SlopeWasOnCounter = 3;
+				if (upSlopeType != 0)
+				{
+					result.SlopeFrames = 1;
+					result.SlopeWasOnCounter = 3;
+				}
 				result.SlopeType = upSlopeType;
 			}
 			else
@@ -3474,8 +3497,11 @@ internal static class SharedPhysics
 				int newYPx3 = yPx3 - downSlopeEject;
 				result.NewY_fixed = camY_fixed + (newYPx3 - (camY_fixed >> 8) << 8) + yLow3;
 				result.NewVelY_fixed = 0;
-				result.SlopeFrames = 1;
-				result.SlopeWasOnCounter = 3;
+				if (downSlopeType != 0)
+				{
+					result.SlopeFrames = 1;
+					result.SlopeWasOnCounter = 3;
+				}
 				result.SlopeType = downSlopeType;
 			}
 			else
@@ -3515,8 +3541,11 @@ internal static class SharedPhysics
 				int num7 = (result.NewY_fixed - camY_fixed) & 0xFF;
 				result.NewY_fixed = camY_fixed + (num6 - (camY_fixed >> 8) << 8) + num7;
 				result.NewVelY_fixed = 0;
-				result.SlopeFrames = 1;
-				result.SlopeWasOnCounter = 3;
+				if (slopeType2 != 0)
+				{
+					result.SlopeFrames = 1;
+					result.SlopeWasOnCounter = 3;
+				}
 				result.SlopeType = slopeType2;
 			}
 			else if (flag)
@@ -3567,8 +3596,11 @@ internal static class SharedPhysics
 					result.NewY_fixed = camY_fixed + (num16 - (camY_fixed >> 8) << 8) + num17;
 				}
 				result.NewVelY_fixed = 0;
-				result.SlopeFrames = 1;
-				result.SlopeWasOnCounter = 3;
+				if (num15 != 0)
+				{
+					result.SlopeFrames = 1;
+					result.SlopeWasOnCounter = 3;
+				}
 				result.SlopeType = num15;
 			}
 			else if (flag2)
@@ -3604,8 +3636,11 @@ internal static class SharedPhysics
 					result.NewY_fixed = camY_fixed + (num23 - (camY_fixed >> 8) << 8) + num24;
 				}
 				result.NewVelY_fixed = 0;
-				result.SlopeFrames = 1;
-				result.SlopeWasOnCounter = 3;
+				if (slopeType3 != 0)
+				{
+					result.SlopeFrames = 1;
+					result.SlopeWasOnCounter = 3;
+				}
 				result.SlopeType = slopeType3;
 			}
 			else if (flag2)
@@ -3642,8 +3677,11 @@ internal static class SharedPhysics
 				int num31 = (result.NewY_fixed - camY_fixed) & 0xFF;
 				result.NewY_fixed = camY_fixed + (num30 - (camY_fixed >> 8) << 8) + num31;
 				result.NewVelY_fixed = 0;
-				result.SlopeFrames = 1;
-				result.SlopeWasOnCounter = 3;
+				if (num29 != 0)
+				{
+					result.SlopeFrames = 1;
+					result.SlopeWasOnCounter = 3;
+				}
 				result.SlopeType = num29;
 			}
 			else if (flag)

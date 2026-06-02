@@ -8433,7 +8433,7 @@ public class PathfinderEngine
 				s.OnGround = false;
 				PfSlopeJumpCheck(ref s);
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			(ref s);
 		}
 		else if (s.GameMode == 9)
 		{

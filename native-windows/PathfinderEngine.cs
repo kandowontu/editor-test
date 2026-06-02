@@ -150,6 +150,8 @@ public class PathfinderEngine
 
 		public bool BlackOrbed;
 
+		public bool AirPressLatch;
+
 		public bool PrevInputHeld;
 
 		public bool JBlocked;
@@ -229,6 +231,8 @@ public class PathfinderEngine
 		public bool P2_Orbed;
 
 		public bool P2_BlackOrbed;
+
+		public bool P2_AirPressLatch;
 
 		public bool P2_PrevInputHeld;
 
@@ -592,6 +596,8 @@ public class PathfinderEngine
 	private const int MAX_BACKTRACK_SECONDS_COIN = 120;
 
 	private int _speculativeDepth;
+
+	private bool _bfsSearchActive;
 
 	private int _frameCounter;
 
@@ -2629,10 +2635,6 @@ public class PathfinderEngine
 			_cubeJumpedThisStep = false;
 			bool endLevel;
 			bool flag9 = StepFrame(ref s, flag6, out endLevel);
-			if (gameMode == 0 && flag6 && !_cubeJumpedThisStep && s.GameMode == 0 && s.Dashing == 0)
-			{
-				Inputs[i] = false;
-			}
 			TraceFrame(i, ref s, Inputs[i], flag9);
 			int num12 = (s.CameraY_fixed >> 8) + (s.Y_fixed - s.CameraY_fixed >> 8);
 			PathPoints.Add(((s.X_fixed >> 8) + 8, num12 + 8));
@@ -2988,12 +2990,13 @@ public class PathfinderEngine
 			1065 => 4, 
 			1310 => 5, 
 			_ => 7, 
-		}) & 7) << 8);
+		}) & 7) << 8) | (int)((s.PrevInputHeld ? 1u : 0u) << 11) | (int)((s.BallFlipCooldown != 0 ? 1u : 0u) << 12);
 		int num4 = s.ProcessedSprites.GetBitsHash();
 		if (s.RobotJumpTime > 0)
 		{
 			num4 = num4 * 31 + s.RobotJumpTime;
 		}
+		num4 = num4 * 397 + (s.AirPressLatch ? 1 : 0);
 		if (s.Step2Ejected)
 		{
 			num4 = 0;
@@ -3005,8 +3008,11 @@ public class PathfinderEngine
 			num4 = num4 * 397 + num5;
 			num4 = num4 * 397 + num6;
 			num4 = num4 * 397 + (s.P2_GravFlipped ? 1 : 0);
+			num4 = num4 * 397 + (s.P2_PrevInputHeld ? 1 : 0);
+			num4 = num4 * 397 + (s.P2_AirPressLatch ? 1 : 0);
+			num4 = num4 * 397 + ((s.P2_BallFlipCooldown != 0) ? 1 : 0);
 		}
-		return ((long)(num4 & 0x1FFFF) << 38) | ((long)(num3 & 0x7FF) << 27) | ((long)(num2 & 0x7FF) << 16) | (num & 0xFFFF);
+		return ((long)(num4 & 0x1FFFF) << 40) | ((long)(num3 & 0x1FFF) << 27) | ((long)(num2 & 0x7FF) << 16) | (num & 0xFFFF);
 	}
 
 	private int BfsScore(ref SimState s, int coinsCollected)
@@ -3070,6 +3076,7 @@ public class PathfinderEngine
 			_btSkipSpecificOrbs.Clear();
 			_btSkipSpecificPads.Clear();
 			_speculativeDepth = 1;
+			_bfsSearchActive = true;
 			int num2 = mapWidth * 16;
 			int num3 = startX_px;
 			int num4 = -1;
@@ -4365,6 +4372,7 @@ public class PathfinderEngine
 			ResultMessage = "BFS crashed: " + ex2.GetType().Name + ": " + ex2.Message;
 			Success = false;
 		}
+		_bfsSearchActive = false;
 		stopwatch.Stop();
 	}
 
@@ -4429,10 +4437,6 @@ public class PathfinderEngine
 			_cubeJumpedThisStep = false;
 			bool endLevel;
 			bool flag2 = StepFrame(ref s, flag, out endLevel);
-			if (gameMode == 0 && flag && !_cubeJumpedThisStep && s.GameMode == 0 && s.Dashing == 0)
-			{
-				Inputs[i] = false;
-			}
 			TraceFrame(i, ref s, Inputs[i], flag2);
 			_ = s.Mini;
 			int num2 = (s.CameraY_fixed >> 8) + (s.Y_fixed - s.CameraY_fixed >> 8);
@@ -8209,6 +8213,14 @@ public class PathfinderEngine
 		int x_fixed = s.X_fixed;
 		int num = x_fixed >> 8;
 		bool flag = input && !s.PrevInputHeld;
+		if (!input)
+		{
+			s.AirPressLatch = false;
+		}
+		else if (flag && s.VelY_fixed != 0 && s.GameMode != 1 && s.GameMode != 3)
+		{
+			s.AirPressLatch = true;
+		}
 		int gameMode = s.GameMode;
 		int velX_fixed = s.VelX_fixed;
 		int value = (s.CameraY_fixed >> 8) + (s.Y_fixed - s.CameraY_fixed >> 8);
@@ -8238,10 +8250,13 @@ public class PathfinderEngine
 			_p1OrbIndicesThisFrame.Clear();
 		}
 		OrbDbg($"POST_PROCESS pendSlots=[{s.PendingOrbIndex}/0x{((s.PendingOrbSpriteId >= 0) ? s.PendingOrbSpriteId : 0):X2},{s.PendingOrbExtra1Index}/0x{((s.PendingOrbExtra1SpriteId >= 0) ? s.PendingOrbExtra1SpriteId : 0):X2},{s.PendingOrbExtra2Index}/0x{((s.PendingOrbExtra2SpriteId >= 0) ? s.PendingOrbExtra2SpriteId : 0):X2}] input={input} pressEdge={flag}");
-		bool flag2 = flag;
+		bool normalOrbGate = input && (flag || s.AirPressLatch);
+		bool hasPendingNormalOrb = (s.PendingOrbIndex >= 0 && s.PendingOrbSpriteId != 123 && s.PendingOrbSpriteId != 124) || (s.PendingOrbExtra1Index >= 0 && s.PendingOrbExtra1SpriteId != 123 && s.PendingOrbExtra1SpriteId != 124) || (s.PendingOrbExtra2Index >= 0 && s.PendingOrbExtra2SpriteId != 123 && s.PendingOrbExtra2SpriteId != 124);
+		bool hasPendingMultiOrb = (s.PendingOrbIndex >= 0 && (s.PendingOrbSpriteId == 123 || s.PendingOrbSpriteId == 124)) || (s.PendingOrbExtra1Index >= 0 && (s.PendingOrbExtra1SpriteId == 123 || s.PendingOrbExtra1SpriteId == 124)) || (s.PendingOrbExtra2Index >= 0 && (s.PendingOrbExtra2SpriteId == 123 || s.PendingOrbExtra2SpriteId == 124));
+		bool flag2 = (hasPendingNormalOrb && normalOrbGate) || (hasPendingMultiOrb && flag);
 		if (s.PendingOrbIndex >= 0 && !flag2)
 		{
-			OrbDbg($"CLEAR reason=no_input_pressed pendSlots cleared without activation gateMode=press input={input} pressEdge={flag}");
+			OrbDbg($"CLEAR reason=no_input_pressed pendSlots cleared without activation gateMode=press_or_latch input={input} pressEdge={flag}");
 		}
 		if (s.PendingOrbIndex >= 0 && flag2)
 		{
@@ -8354,6 +8369,7 @@ public class PathfinderEngine
 				}
 			}
 			ClearPendingOrbs(ref s);
+			s.AirPressLatch = false;
 			orbHitThisFrame = true;
 			if (_speculativeDepth == 0)
 			{
@@ -8368,6 +8384,7 @@ public class PathfinderEngine
 		}
 		if (s.GameMode == 0)
 		{
+			PfUpdateSlopeCountersPreGravity(ref s);
 			PfSlopeDiag(ref s, "cube/pre-grav");
 			CubeGravity(ref s);
 			PfSlopeDiag(ref s, "cube/post-grav");
@@ -8414,6 +8431,7 @@ public class PathfinderEngine
 				{
 					s.VelY_fixed = GetJumpVel(s.Mini) * s.GravMul;
 					s.OnGround = false;
+					s.AirPressLatch = false;
 					if (_speculativeDepth == 0)
 					{
 						_cubeJumpedThisStep = true;
@@ -8421,7 +8439,7 @@ public class PathfinderEngine
 					PfSlopeJumpCheck(ref s);
 				}
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 			PfSlopeDiag(ref s, "cube/post-fresh");
 		}
 		else if (s.GameMode == 1)
@@ -8450,10 +8468,11 @@ public class PathfinderEngine
 				s.DeathType = 2;
 				return false;
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 		}
 		else if (s.GameMode == 2)
 		{
+			PfUpdateSlopeCountersPreGravity(ref s);
 			BallGravityStep(ref s);
 			bool died4 = false;
 			BallEject(ref s, input, out died4);
@@ -8462,7 +8481,8 @@ public class PathfinderEngine
 				s.DeathType = (byte)((s.DeathType >= 11) ? s.DeathType : 6);
 				return false;
 			}
-			if (input && !orbHitThisFrame && !s.Orbed && s.BallFlipCooldown == 0 && s.VelY_fixed == 0)
+			bool ballHeldForFlip = input;
+			if (ballHeldForFlip && !orbHitThisFrame && !s.Orbed && s.BallFlipCooldown == 0 && s.VelY_fixed == 0)
 			{
 				s.GravFlipped = !s.GravFlipped;
 				s.GravMul = ((!s.GravFlipped) ? 1 : (-1));
@@ -8471,12 +8491,13 @@ public class PathfinderEngine
 				s.BallFlipCooldown = 1;
 				s.BallInputBuffer = 0;
 				s.BallCooldownFrames = 0;
+				s.AirPressLatch = false;
 			}
 			if (s.BallFlipCooldown != 0 && !input)
 			{
 				s.BallFlipCooldown = 0;
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 		}
 		else if (s.GameMode == 3)
 		{
@@ -8498,7 +8519,7 @@ public class PathfinderEngine
 				int velY_fixed3 = UfoJumpVel(s.Mini) * -s.GravMul;
 				s.VelY_fixed = velY_fixed3;
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 		}
 		else if (s.GameMode == 4)
 		{
@@ -8532,6 +8553,7 @@ public class PathfinderEngine
 				s.VelY_fixed = -688 * s.GravMul;
 				s.RobotJumpTime = 19;
 				s.OnGround = false;
+				s.AirPressLatch = false;
 				PfSlopeJumpCheck(ref s);
 			}
 			else if (s.RobotJumpTime > 0)
@@ -8546,7 +8568,7 @@ public class PathfinderEngine
 					s.RobotJumpTime = 0;
 				}
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 		}
 		else if (s.GameMode == 6)
 		{
@@ -8583,7 +8605,7 @@ public class PathfinderEngine
 				s.DeathType = 2;
 				return false;
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 			if (CheckDeathCollision(ref s))
 			{
 				s.DeathType = 3;
@@ -8632,7 +8654,7 @@ public class PathfinderEngine
 				s.DeathType = 2;
 				return false;
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 			s.OnGround = s.VelY_fixed == 0;
 			bool flag6 = s.VelY_fixed == 0 && (!s.Orbed || s.BlackOrbed);
 			if (input && flag6)
@@ -8676,7 +8698,7 @@ public class PathfinderEngine
 				s.DeathType = 6;
 				return false;
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 			if (input && !s.PrevInputHeld && !s.Orbed)
 			{
 				s.GravFlipped = !s.GravFlipped;
@@ -8742,9 +8764,10 @@ public class PathfinderEngine
 				s.VelY_fixed = GetJumpVel(s.Mini) * s.GravMul;
 				s.NinjaJumps--;
 				s.OnGround = false;
+				s.AirPressLatch = false;
 				PfSlopeJumpCheck(ref s);
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 		}
 		else if (s.GameMode == 9)
 		{
@@ -8786,7 +8809,7 @@ public class PathfinderEngine
 				s.VelY_fixed = num21;
 				s.OnGround = false;
 			}
-			PfUpdateSlopeCounters_Fresh(ref s);
+			PfUpdateSlopeCounters_Fresh(ref s, velX_fixed);
 			if (flag && !orbHitThisFrame && !s.Orbed)
 			{
 				int num24 = (s.Mini ? SharedPhysics.PadOrbHeights_Mini[6][7] : SharedPhysics.PadOrbHeights[6][7]);
@@ -8866,6 +8889,7 @@ public class PathfinderEngine
 		}
 		if (!s.DualActive && (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9 || s.NoCamLockForced))
 		{
+			RefreshCubeRobotPortalTimer(ref s);
 			if (s.ExitPortalTimer != 0)
 			{
 				s.ExitPortalTimer--;
@@ -9090,6 +9114,7 @@ public class PathfinderEngine
 			int slopeType = s.SlopeType;
 			bool orbed = s.Orbed;
 			bool blackOrbed = s.BlackOrbed;
+			bool airPressLatch = s.AirPressLatch;
 			bool prevInputHeld = s.PrevInputHeld;
 			int dashing = s.Dashing;
 			bool jBlocked = s.JBlocked;
@@ -9116,6 +9141,7 @@ public class PathfinderEngine
 			s.SlopeType = s.P2_SlopeType;
 			s.Orbed = s.P2_Orbed;
 			s.BlackOrbed = s.P2_BlackOrbed;
+			s.AirPressLatch = s.P2_AirPressLatch;
 			s.PrevInputHeld = s.P2_PrevInputHeld;
 			s.Dashing = s.P2_Dashing;
 			s.JBlocked = s.P2_JBlocked;
@@ -9174,6 +9200,7 @@ public class PathfinderEngine
 			s.P2_SlopeType = s.SlopeType;
 			s.P2_Orbed = s.Orbed;
 			s.P2_BlackOrbed = s.BlackOrbed;
+			s.P2_AirPressLatch = s.AirPressLatch;
 			s.P2_PrevInputHeld = s.PrevInputHeld;
 			s.P2_Dashing = s.Dashing;
 			s.P2_JBlocked = s.JBlocked;
@@ -9210,6 +9237,7 @@ public class PathfinderEngine
 				s.SlopeType = slopeType;
 				s.Orbed = orbed;
 				s.BlackOrbed = blackOrbed;
+				s.AirPressLatch = airPressLatch;
 				s.PrevInputHeld = prevInputHeld;
 				s.Dashing = dashing;
 				s.JBlocked = jBlocked;
@@ -9245,6 +9273,7 @@ public class PathfinderEngine
 			s.SlopeType = slopeType;
 			s.Orbed = orbed;
 			s.BlackOrbed = blackOrbed;
+			s.AirPressLatch = airPressLatch;
 			s.PrevInputHeld = prevInputHeld;
 			s.Dashing = dashing;
 			s.JBlocked = jBlocked;
@@ -9320,7 +9349,7 @@ public class PathfinderEngine
 	private void CubeEject(ref SimState s, bool input, out bool died)
 	{
 		died = false;
-		SharedPhysics.EjectResult ejectResult = SharedPhysics.CubeEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed);
+		SharedPhysics.EjectResult ejectResult = SharedPhysics.CubeEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed, updateSlopeCounters: s.GameMode != 0);
 		s.Y_fixed = ejectResult.NewY_fixed;
 		s.VelY_fixed = ejectResult.NewVelY_fixed;
 		s.OnGround = ejectResult.OnGround;
@@ -9475,7 +9504,7 @@ public class PathfinderEngine
 	{
 		died = false;
 		s.OnGround = false;
-		SharedPhysics.EjectResult ejectResult = SharedPhysics.BallEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed);
+		SharedPhysics.EjectResult ejectResult = SharedPhysics.BallEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed, updateSlopeCounters: s.GameMode != 2);
 		s.Y_fixed = ejectResult.NewY_fixed;
 		s.VelY_fixed = ejectResult.NewVelY_fixed;
 		s.OnGround = ejectResult.OnGround;
@@ -12533,12 +12562,6 @@ public class PathfinderEngine
 					}
 					break;
 				}
-				s.WasZeroedByCollision = false;
-				s.SlopeWasOnCounter = 0;
-				s.SlopeFrames = 0;
-				s.SlopeType = 0;
-				s.LastSlopeType = 0;
-				s.BallInputBuffer = 0;
 				switch (num)
 				{
 				case 8:
@@ -12622,8 +12645,17 @@ public class PathfinderEngine
 		return true;
 	}
 
+	private static void ClearSlopeStuff(ref SimState s)
+	{
+		s.SlopeWasOnCounter = 0;
+		s.SlopeFrames = 0;
+		s.SlopeType = 0;
+		s.LastSlopeType = 0;
+	}
+
 	private void ApplyPadSprite(ref SimState s, int sid)
 	{
+		ClearSlopeStuff(ref s);
 		int num = (s.GravFlipped ? 1 : (-1));
 		if (IsYellowPad(sid))
 		{
@@ -12659,6 +12691,7 @@ public class PathfinderEngine
 
 	private void ApplyOrbSprite(ref SimState s, int sid)
 	{
+		ClearSlopeStuff(ref s);
 		int num = ((s.OrbUseFrameStartGravitySign ? s.GravFlippedAtFrameStart : s.GravFlipped) ? 1 : (-1));
 		if (IsYellowOrb(sid))
 		{
@@ -12829,6 +12862,49 @@ public class PathfinderEngine
 			if (s.CameraY_fixed > num2)
 			{
 				s.CameraY_fixed = num2;
+			}
+		}
+	}
+
+	private void RefreshCubeRobotPortalTimer(ref SimState s)
+	{
+		if (s.GameMode != 0 && s.GameMode != 4)
+		{
+			return;
+		}
+		int num = s.X_fixed >> 8;
+		int num2 = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
+		int hitboxW = GetHitboxW(s.Mini);
+		int hitboxH = GetHitboxH(s.Mini);
+		int hitboxOffsetY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
+		int num3 = num + 1;
+		int num4 = num3 + hitboxW;
+		int num5 = num2 + hitboxOffsetY;
+		int num6 = num5 + hitboxH;
+		SpriteEntry[] spritesArr = _spritesArr;
+		int num7 = SpriteLowerBound(num - 64);
+		for (int i = num7; i < spritesArr.Length; i++)
+		{
+			ref SpriteEntry reference = ref spritesArr[i];
+			if (reference.HitRight < num)
+			{
+				continue;
+			}
+			if (reference.AnchorX_px - 16 > num4 + 16)
+			{
+				break;
+			}
+			int spriteId = reference.SpriteId;
+			if (spriteId != 0 && spriteId != 4)
+			{
+				continue;
+			}
+			bool flag = num4 >= reference.HitLeft && reference.HitRight >= num3;
+			bool flag2 = num6 >= reference.HitTop && reference.HitBottom >= num5;
+			if (flag && flag2)
+			{
+				s.ExitPortalTimer = 10;
+				return;
 			}
 		}
 	}
@@ -13088,15 +13164,20 @@ public class PathfinderEngine
 		SharedPhysics.UpdateSlopeCounters(ref s.SlopeWasOnCounter, ref s.SlopeType, ref s.VelY_fixed, ref s.Y_fixed, s.GameMode, s.GravFlipped, s.Mini, ref s.LastSlopeType);
 	}
 
+	private static void PfUpdateSlopeCountersPreGravity(ref SimState s)
+	{
+		SharedPhysics.UpdateSlopeCounters(ref s.SlopeWasOnCounter, ref s.SlopeType, ref s.VelY_fixed, ref s.Y_fixed, s.GameMode, s.GravFlipped, s.Mini, ref s.LastSlopeType, applyPosition: false);
+	}
+
 	private void PfSlopeDiag(ref SimState s, string tag)
 	{
 	}
 
-	private static void PfUpdateSlopeCounters_Fresh(ref SimState s)
+	private static void PfUpdateSlopeCounters_Fresh(ref SimState s, int velX_fixed)
 	{
-		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=UpdateSlopeCountersFresh.in sFr={s.SlopeFrames} sT={s.SlopeType} Vy={s.VelY_fixed} Vx={s.VelX_fixed}");
-		SharedPhysics.UpdateSlopeCountersFresh(ref s.SlopeFrames, s.SlopeType, ref s.VelY_fixed, s.VelX_fixed);
-		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=UpdateSlopeCountersFresh.out sFr={s.SlopeFrames} sT={s.SlopeType} Vy={s.VelY_fixed} Vx={s.VelX_fixed}");
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=UpdateSlopeCountersFresh.in sFr={s.SlopeFrames} sT={s.SlopeType} Vy={s.VelY_fixed} Vx={velX_fixed}");
+		SharedPhysics.UpdateSlopeCountersFresh(ref s.SlopeFrames, s.SlopeType, ref s.VelY_fixed, velX_fixed);
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=UpdateSlopeCountersFresh.out sFr={s.SlopeFrames} sT={s.SlopeType} Vy={s.VelY_fixed} Vx={velX_fixed}");
 	}
 
 	private static void PfApplySlopeVelocity(ref SimState s, int slopeType)
