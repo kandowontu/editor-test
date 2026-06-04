@@ -2704,7 +2704,7 @@ internal static class SharedPhysics
 		return (hit: false, ejection: 0, slopeType: item);
 	}
 
-	internal static (bool hit, int ejection, int slopeType) CheckSlopesDown(in CollisionMap map, int playerX_px, int checkBaseX, int checkBaseY, int checkWidth, bool inputHeld, int gameMode, bool gravFlipped, int velX_fixed, ref int lastSlopeType, ref bool slopeJumpHigher)
+	internal static (bool hit, int ejection, int slopeType) CheckSlopesDown(in CollisionMap map, int playerX_px, int checkBaseX, int checkBaseY, int checkWidth, bool inputHeld, int gameMode, bool gravFlipped, int velX_fixed, ref int lastSlopeType, ref bool slopeJumpHigher, ref int slopeFrames, ref int slopeWasOnCounter)
 	{
 		if (playerX_px < 16)
 		{
@@ -2719,6 +2719,7 @@ internal static class SharedPhysics
 			int tileX = num / 16;
 			int tileY = checkBaseY / 16;
 			MetatileCollision tileCollision = GetTileCollision(in map, tileX, tileY);
+			FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=CheckSlopesDown.tile i={i} probeX={num} tileX={tileX} tileY={tileY} col={(int)tileCollision} probeY={checkBaseY} xInTile={num & 0xF} yInTile={checkBaseY & 0xF}");
 			if (tileCollision < MetatileCollision.COL_SLOPE_RD45 || tileCollision > MetatileCollision.COL_SLOPE_LU66_TOP)
 			{
 				continue;
@@ -2727,20 +2728,38 @@ internal static class SharedPhysics
 			bool item4 = tuple.hit;
 			int num2 = tuple.ejection;
 			int num3 = tuple.slopeType;
+			// NES bg_coll_slope resets slope_type to 0 when geometry misses and no active slope counter
+			if (!item4 && slopeWasOnCounter == 0)
+				num3 = 0;
 			int num4 = ((item4 && num3 == 0) ? lastSlopeType : num3);
-			if (i == 0 && ((uint)num4 & 4u) != 0)
+			// NES: 66° bottom-half "solid region" hits return slopeType=0 sentinel —
+			// skip direction filter for these, they are always valid collisions.
+			bool solidRegionHit = item4 && num3 == 0;
+			if (!solidRegionHit && i == 0 && ((uint)num4 & 4u) != 0)
 			{
-				if (item4 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+				// NES bg_coll_slope col_end: ALWAYS sets counters on geometry hit (all modes)
+				if (item4)
 				{
-					slopeJumpHigher = true;
+					slopeFrames = 1;
+					slopeWasOnCounter = 3;
+					if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+						slopeJumpHigher = true;
 				}
+				// NES bg_coll_return_slope: ALWAYS restores slope_type on rejection
+				item2 = lastSlopeType;
 			}
-			else if (i == 1 && (num4 & 4) == 0)
+			else if (!solidRegionHit && i == 1 && (num4 & 4) == 0)
 			{
-				if (item4 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+				// NES bg_coll_slope col_end: ALWAYS sets counters on geometry hit (all modes)
+				if (item4)
 				{
-					slopeJumpHigher = true;
+					slopeFrames = 1;
+					slopeWasOnCounter = 3;
+					if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+						slopeJumpHigher = true;
 				}
+				// NES bg_coll_return_slope: ALWAYS restores slope_type on rejection
+				item2 = lastSlopeType;
 			}
 			else if (item4)
 			{
@@ -2773,7 +2792,7 @@ internal static class SharedPhysics
 		return (hit: item3, ejection: item, slopeType: item2);
 	}
 
-	internal static (bool hit, int ejection, int slopeType) CheckSlopesUp(in CollisionMap map, int playerX_px, int checkBaseX, int checkBaseY, int checkWidth, bool inputHeld, int gameMode, bool gravFlipped, int velX_fixed, ref int lastSlopeType, ref bool slopeJumpHigher)
+	internal static (bool hit, int ejection, int slopeType) CheckSlopesUp(in CollisionMap map, int playerX_px, int checkBaseX, int checkBaseY, int checkWidth, bool inputHeld, int gameMode, bool gravFlipped, int velX_fixed, ref int lastSlopeType, ref bool slopeJumpHigher, ref int slopeFrames, ref int slopeWasOnCounter)
 	{
 		if (playerX_px < 16)
 		{
@@ -2788,6 +2807,7 @@ internal static class SharedPhysics
 			int tileX = num / 16;
 			int tileY = checkBaseY / 16;
 			MetatileCollision tileCollision = GetTileCollision(in map, tileX, tileY);
+			FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=CheckSlopesUp.tile i={i} probeX={num} tileX={tileX} tileY={tileY} col={(int)tileCollision} probeY={checkBaseY}");
 			if (tileCollision < MetatileCollision.COL_SLOPE_RD45 || tileCollision > MetatileCollision.COL_SLOPE_LU66_TOP)
 			{
 				continue;
@@ -2796,20 +2816,38 @@ internal static class SharedPhysics
 			bool item4 = tuple.hit;
 			int num2 = tuple.ejection;
 			int num3 = tuple.slopeType;
+			// NES bg_coll_slope resets slope_type to 0 when geometry misses and no active slope counter
+			if (!item4 && slopeWasOnCounter == 0)
+				num3 = 0;
 			int num4 = ((item4 && num3 == 0) ? lastSlopeType : num3);
-			if (i == 0 && ((uint)num4 & 4u) != 0)
+			// NES: 66° bottom-half "solid region" hits return slopeType=0 sentinel —
+			// skip direction filter for these, they are always valid collisions.
+			bool solidRegionHit = item4 && num3 == 0;
+			if (!solidRegionHit && i == 0 && ((uint)num4 & 4u) != 0)
 			{
-				if (item4 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+				// NES bg_coll_slope col_end: ALWAYS sets counters on geometry hit (all modes)
+				if (item4)
 				{
-					slopeJumpHigher = true;
+					slopeFrames = 1;
+					slopeWasOnCounter = 3;
+					if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+						slopeJumpHigher = true;
 				}
+				// NES bg_coll_return_slope: ALWAYS restores slope_type on rejection
+				item2 = lastSlopeType;
 			}
-			else if (i == 1 && (num4 & 4) == 0)
+			else if (!solidRegionHit && i == 1 && (num4 & 4) == 0)
 			{
-				if (item4 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+				// NES bg_coll_slope col_end: ALWAYS sets counters on geometry hit (all modes)
+				if (item4)
 				{
-					slopeJumpHigher = true;
+					slopeFrames = 1;
+					slopeWasOnCounter = 3;
+					if (inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
+						slopeJumpHigher = true;
 				}
+				// NES bg_coll_return_slope: ALWAYS restores slope_type on rejection
+				item2 = lastSlopeType;
 			}
 			else if (item4)
 			{
@@ -3083,13 +3121,19 @@ internal static class SharedPhysics
 		{
 			int num4 = (mini ? (16 - cubeHitboxH >> 1) : 0);
 			int checkBaseY = num2 + num4 + cubeHitboxH - 2;
-			var (flag, num5, slopeType2) = CheckSlopesDown(in map, num, num, checkBaseY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			int savedSlopeFrames = result.SlopeFrames;
+			int savedSlopeWasOn = result.SlopeWasOnCounter;
+			var (flag, num5, slopeType2) = CheckSlopesDown(in map, num, num, checkBaseY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
+			// NES bg_coll_return_slope modifies slope_type globally, but only when a slope
+			// tile is actually found (bg_collision_sub returns collision). Propagate only when
+			// CheckSlopesDown processed a slope tile (returned non-zero type or modified counters).
+			if (slopeType2 != 0 || result.SlopeFrames != savedSlopeFrames || result.SlopeWasOnCounter != savedSlopeWasOn)
+				result.SlopeType = slopeType2;
 			if (flag)
 			{
 				result.NewY_fixed = ((result.NewY_fixed >> 8) - num5 << 8) | (camY_fixed & 0xFF);
 				result.NewVelY_fixed = 0;
 				result.WasZeroed = true;
-				result.SlopeType = slopeType2;
 				result.OnGround = true;
 				result.DebugFloorSlopeHit = true;
 				if (slopeType2 != 0 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
@@ -3126,14 +3170,19 @@ internal static class SharedPhysics
 		{
 			int num7 = 16 - cubeHitboxH >> 1;
 			int checkBaseY2 = num2 + num7 + (mini ? 1 : 2) + ((gameMode == 1) ? 1 : 0);
-			var (flag3, num8, slopeType3) = CheckSlopesUp(in map, num, num, checkBaseY2, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			int savedSlopeFrames2 = result.SlopeFrames;
+			int savedSlopeWasOn2 = result.SlopeWasOnCounter;
+			var (flag3, num8, slopeType3) = CheckSlopesUp(in map, num, num, checkBaseY2, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
+			// NES bg_coll_return_slope modifies slope_type globally, but only when a slope
+			// tile is actually found. Propagate only when slope was processed.
+			if (slopeType3 != 0 || result.SlopeFrames != savedSlopeFrames2 || result.SlopeWasOnCounter != savedSlopeWasOn2)
+				result.SlopeType = slopeType3;
 			if (flag3)
 			{
 				result.NewY_fixed = ((result.NewY_fixed >> 8) + num8 << 8) | (camY_fixed & 0xFF);
 				result.NewVelY_fixed = 0;
 				result.WasZeroed = true;
 				result.OnGround = true;
-				result.SlopeType = slopeType3;
 				if (slopeType3 != 0 && inputHeld && (gameMode == 0 || gameMode == 4 || gameMode == 8))
 				{
 					result.SlopeJumpHigher = true;
@@ -3205,7 +3254,9 @@ internal static class SharedPhysics
 			bool flag = false;
 			int num9 = 16 - cubeHitboxH >> 1;
 			int num10 = num2 + num3 + num9 + (mini ? 1 : 2) + ((gameMode == 1) ? 1 : 0);
-			var (flag2, num11, num12) = CheckSlopesUp(in map, num, num, num10, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			int savedSlopeFramesGU = result.SlopeFrames;
+			int savedSlopeWasOnGU = result.SlopeWasOnCounter;
+			var (flag2, num11, num12) = CheckSlopesUp(in map, num, num, num10, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (flag2)
 			{
 				int num13 = result.NewY_fixed - camY_fixed >> 8;
@@ -3225,6 +3276,11 @@ internal static class SharedPhysics
 				}
 				flag = true;
 				ballEjectDiagLog?.Invoke($"[BE_CEIL_SLOPE] probeY={num10} eject={num11} sT={num12} scrHi:{num13}->{num14} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
+			}
+			// NES side effect: bg_coll_U modifies slope_type even when no ceiling collision
+			if (!flag2 && (num12 != 0 || result.SlopeFrames != savedSlopeFramesGU || result.SlopeWasOnCounter != savedSlopeWasOnGU))
+			{
+				result.SlopeType = num12;
 			}
 			if (!flag2 && result.NewVelY_fixed < 0)
 			{
@@ -3251,7 +3307,8 @@ internal static class SharedPhysics
 			}
 			if (flag)
 			{
-				int num21 = num2 + num3 + cubeHitboxH + miniCenterOffsetY;
+				int genericHeight = mini ? 8 : 16;
+				int num21 = num2 + num3 + genericHeight + miniCenterOffsetY;
 				int num22 = ((num21 >= 0) ? (num21 / 16) : ((num21 - 16 + 1) / 16)) + map.GroundRowsToReserve;
 				bool flag6 = false;
 				if (num22 >= 0 && num22 < map.MapHeight)
@@ -3304,9 +3361,14 @@ internal static class SharedPhysics
 					ballEjectDiagLog?.Invoke($"[BE_CEIL_D] probeY_D={num21} tmp8_d={num28} scrHi:{num30}->{num31} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
 				}
 			}
+			// NES: Generic.y is set ONCE before ball_eject and never changes, so bg_coll_D
+			// uses the ORIGINAL position for its slope/tile probe, not the post-ceiling-eject position.
+			// Keep using the original num2 (from entry) for the floor probe — do NOT recalculate.
 			int num32 = (mini ? (16 - cubeHitboxH >> 1) : 0);
 			int num33 = num2 + num3 + num32 + cubeHitboxH - 2;
-			var (flag7, num34, num35) = CheckSlopesDown(in map, num, num, num33, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			int savedSlopeFramesGD = result.SlopeFrames;
+			int savedSlopeWasOnGD = result.SlopeWasOnCounter;
+			var (flag7, num34, num35) = CheckSlopesDown(in map, num, num, num33, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (flag7)
 			{
 				int num36 = result.NewY_fixed - camY_fixed >> 8;
@@ -3326,6 +3388,39 @@ internal static class SharedPhysics
 				}
 				ballEjectDiagLog?.Invoke($"[BE_FLOOR_SLOPE_F] probeY={num33} eject={num34} sT={num35} scrHi:{num36}->{num37} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
 			}
+			else if (result.NewVelY_fixed >= 0)
+			{
+				// NES bg_coll_D tile check: runs when slope check fails and vel >= 0
+				var (flag12, num58, flag13) = CheckFloor(in map, num, num4, cubeHitboxW, cubeHitboxH);
+				if (flag13)
+				{
+					result.Died = true;
+					return result;
+				}
+				if (flag12)
+				{
+					if (flag2)
+					{
+						// Ceiling slope was hit: use relative eject (NES ball_eject behavior)
+						int ejectD2 = (num4 + cubeHitboxH) & 0xF;
+						int currentScreenY2 = result.NewY_fixed - camY_fixed >> 8;
+						int newScreenY2 = currentScreenY2 - ejectD2;
+						result.NewY_fixed = camY_fixed + (newScreenY2 << 8) + num8;
+					}
+					else
+					{
+						int num59 = num58 - cubeHitboxH - miniCenterOffsetY - num3 - num7;
+						result.NewY_fixed = camY_fixed + (num59 << 8) + num8;
+					}
+					result.NewVelY_fixed = 0;
+					result.OnGround = true;
+				}
+			}
+			// NES side effect: bg_coll_D modifies slope_type even when no floor slope collision
+			if (!flag7 && (num35 != 0 || result.SlopeFrames != savedSlopeFramesGD || result.SlopeWasOnCounter != savedSlopeWasOnGD))
+			{
+				result.SlopeType = num35;
+			}
 			ballEjectDiagLog?.Invoke($"[BE_EXIT_U] outYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px) outVelY={result.NewVelY_fixed} onG={result.OnGround} hadUpHit={flag} slopeU={flag2} slopeD={flag7} sF={result.SlopeFrames} sT={result.SlopeType} swOn={result.SlopeWasOnCounter}");
 		}
 		else
@@ -3335,7 +3430,9 @@ internal static class SharedPhysics
 			int num39 = num2 + num3 + (16 - cubeHitboxH >> 1) + (mini ? 1 : 2) + ((gameMode == 1) ? 1 : 0);
 			int num40 = playerX_fixed >> 8;
 			ApplySlopeWedgeStateOnly(in map, num40, num40, num39, cubeHitboxW, inputHeld, gameMode, gravFlipped, ref result.SlopeFrames, ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher);
-			var (flag8, num41, num42) = CheckSlopesUp(in map, num, num40, num39, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			int savedSlopeFramesU = result.SlopeFrames;
+			int savedSlopeWasOnU = result.SlopeWasOnCounter;
+			var (flag8, num41, num42) = CheckSlopesUp(in map, num, num40, num39, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (flag8)
 			{
 				int num43 = result.NewY_fixed - camY_fixed >> 8;
@@ -3355,8 +3452,15 @@ internal static class SharedPhysics
 				}
 				ballEjectDiagLog?.Invoke($"[BE_CEIL_SLOPE_N] probeY={num39} eject={num41} sT={num42} scrHi:{num43}->{num44} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
 			}
+			// NES side effect: bg_coll_U modifies slope_type even when no ceiling collision
+			if (!flag8 && (num42 != 0 || result.SlopeFrames != savedSlopeFramesU || result.SlopeWasOnCounter != savedSlopeWasOnU))
+			{
+				result.SlopeType = num42;
+			}
 			ApplySlopeWedgeStateOnly(in map, num40, num40, checkBaseY, cubeHitboxW, inputHeld, gameMode, gravFlipped, ref result.SlopeFrames, ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher);
-			var (flag9, num45, slopeType2) = CheckSlopesDown(in map, num40, num40, checkBaseY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			int savedSlopeFramesD = result.SlopeFrames;
+			int savedSlopeWasOnD = result.SlopeWasOnCounter;
+			var (flag9, num45, slopeType2) = CheckSlopesDown(in map, num40, num40, checkBaseY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (flag9)
 			{
 				if (num45 > 0)
@@ -3404,11 +3508,28 @@ internal static class SharedPhysics
 				}
 				if (flag10)
 				{
-					int num57 = num47 - cubeHitboxH - miniCenterOffsetY - num3 - num7;
-					result.NewY_fixed = camY_fixed + (num57 << 8) + num8;
+					if (flag8)
+					{
+						// NES ball_eject: when ceiling slope hit, floor eject is relative
+						// Y = current_Y - eject_D, where eject_D = (probe_bottom) & 0xF
+						int ejectD = (num4 + cubeHitboxH) & 0xF;
+						int currentScreenY = result.NewY_fixed - camY_fixed >> 8;
+						int newScreenY = currentScreenY - ejectD;
+						result.NewY_fixed = camY_fixed + (newScreenY << 8) + num8;
+					}
+					else
+					{
+						int num57 = num47 - cubeHitboxH - miniCenterOffsetY - num3 - num7;
+						result.NewY_fixed = camY_fixed + (num57 << 8) + num8;
+					}
 					result.NewVelY_fixed = 0;
 					result.OnGround = true;
 				}
+			}
+			// NES side effect: bg_coll_D modifies slope_type even when no floor slope collision
+			if (!flag9 && (slopeType2 != 0 || result.SlopeFrames != savedSlopeFramesD || result.SlopeWasOnCounter != savedSlopeWasOnD))
+			{
+				result.SlopeType = slopeType2;
 			}
 			ballEjectDiagLog?.Invoke($"[BE_EXIT_D] outYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px) outVelY={result.NewVelY_fixed} onG={result.OnGround} slopeHit={flag9} slopeT={result.SlopeType}");
 		}
@@ -3439,10 +3560,13 @@ internal static class SharedPhysics
 		int collY = num2 + hitboxOffsetY;
 		if (gameMode == 1 || gameMode == 3)
 		{
+			int genericWidth = cubeHitboxW; // NES CUBE_WIDTH = {0x0F, 0x08} = {15, 8}
+			int genericHeight = mini ? 8 : 16;
 			int centerOffsetY = 16 - cubeHitboxH >> 1;
 			int miniOffsetY = mini ? centerOffsetY : 0;
 			int checkBaseYUp = num2 + centerOffsetY + (mini ? 1 : 2) + ((gameMode == 1) ? 1 : 0);
-			var (upSlopeHit, upSlopeEject, upSlopeType) = CheckSlopesUp(in map, num, num, checkBaseYUp, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			var (upSlopeHit, upSlopeEject, upSlopeType) = CheckSlopesUp(in map, num, num, checkBaseYUp, genericWidth, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
+			FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=ShipUfoEject_SlopeUp.check hit={upSlopeHit} eject={upSlopeEject} sT={upSlopeType} probeY={checkBaseYUp} num2={num2} px={num} hbW={cubeHitboxW} swOn={result.SlopeWasOnCounter} lstST={result.LastSlopeType} velY={result.NewVelY_fixed}");
 			if (upSlopeType != 0)
 			{
 				result.SlopeType = upSlopeType;
@@ -3484,7 +3608,8 @@ internal static class SharedPhysics
 				}
 			}
 			int checkBaseYDown = num2 + miniOffsetY + cubeHitboxH - 2;
-			var (downSlopeHit, downSlopeEject, downSlopeType) = CheckSlopesDown(in map, num, num, checkBaseYDown, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			var (downSlopeHit, downSlopeEject, downSlopeType) = CheckSlopesDown(in map, num, num, checkBaseYDown, genericWidth, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
+			FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=ShipUfoEject_SlopeDown.check hit={downSlopeHit} eject={downSlopeEject} sT={downSlopeType} probeY={checkBaseYDown} num2={num2}");
 			if (downSlopeType != 0)
 			{
 				result.SlopeType = downSlopeType;
@@ -3533,7 +3658,8 @@ internal static class SharedPhysics
 		{
 			bool flag3 = false;
 			int checkBaseY = num2 + num4 + (mini ? 1 : 2) + ((gameMode == 1) ? 1 : 0);
-			var (flag4, num5, slopeType2) = CheckSlopesUp(in map, num, num, checkBaseY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			var (flag4, num5, slopeType2) = CheckSlopesUp(in map, num, num, checkBaseY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
+			FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=ShipUfoEject_SlopeUp.check hit={flag4} eject={num5} sT={slopeType2} probeY={checkBaseY} num2={num2} px={num} hbW={cubeHitboxW} swOn={result.SlopeWasOnCounter} lstST={result.LastSlopeType} velY={result.NewVelY_fixed}");
 			if (flag4)
 			{
 				result.DebugCeilSlopeHit = true;
@@ -3551,6 +3677,7 @@ internal static class SharedPhysics
 			else if (flag)
 			{
 				var (flag5, num8, flag6, metatileCollision) = CheckCeiling(in map, collX, collY, cubeHitboxW, cubeHitboxH);
+				FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=ShipUfoEject_Ceiling.check hit={flag5} spike={flag6} coll={metatileCollision} collX={collX} collY={collY}");
 				if (flag6)
 				{
 					result.DebugCeilSpike = true;
@@ -3581,7 +3708,7 @@ internal static class SharedPhysics
 			flag = result.NewVelY_fixed < 0;
 			flag2 = result.NewVelY_fixed >= 0;
 			int checkBaseY2 = num2 + num3 + cubeHitboxH - 2;
-			var (flag7, num14, num15) = CheckSlopesDown(in map, num, num, checkBaseY2, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			var (flag7, num14, num15) = CheckSlopesDown(in map, num, num, checkBaseY2, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (num15 != 0)
 			{
 				result.SlopeType = num15;
@@ -3625,7 +3752,7 @@ internal static class SharedPhysics
 		else
 		{
 			int checkBaseY3 = num2 + num3 + cubeHitboxH - 2;
-			var (flag10, num22, slopeType3) = CheckSlopesDown(in map, num, num, checkBaseY3, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			var (flag10, num22, slopeType3) = CheckSlopesDown(in map, num, num, checkBaseY3, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (flag10)
 			{
 				result.DebugFloorSlopeHit = true;
@@ -3665,7 +3792,7 @@ internal static class SharedPhysics
 			flag = result.NewVelY_fixed < 0;
 			flag2 = result.NewVelY_fixed >= 0;
 			int checkBaseY4 = num2 + num4 + (mini ? 1 : 2) + ((gameMode == 1) ? 1 : 0);
-			var (flag12, num28, num29) = CheckSlopesUp(in map, num, num, checkBaseY4, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher);
+			var (flag12, num28, num29) = CheckSlopesUp(in map, num, num, checkBaseY4, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
 			if (num29 != 0)
 			{
 				result.SlopeType = num29;

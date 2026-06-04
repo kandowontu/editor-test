@@ -605,6 +605,9 @@ public class PathfinderEngine
 	private static bool _dualP2Guard;
 
 	[ThreadStatic]
+	private static bool _dualActivatedThisProcessSprites;
+
+	[ThreadStatic]
 	private static List<int>? _p1OrbIndicesThisFrame;
 
 	[ThreadStatic]
@@ -1389,6 +1392,12 @@ public class PathfinderEngine
 			int num = (s.X_fixed >> 8) + 8;
 			int num2 = (s.CameraY_fixed >> 8) + ((s.Y_fixed - s.CameraY_fixed) >> 8) + 8;
 			_traceWriter.WriteLine($"{frame},0x{s.X_fixed:X},0x{s.Y_fixed:X},0x{s.VelY_fixed:X},{(input ? 1 : 0)},{(alive ? 1 : 0)},{num},{num2},{(s.OnGround ? 1 : 0)},{s.CameraY_fixed >> 8},{s.TargetCameraY_fixed >> 8},{s.GameMode},{(s.GravFlipped ? 1 : 0)},{(s.ShipDbgCeilSlopeHit ? 1 : 0)},{(s.ShipDbgCeilTileHit ? 1 : 0)},{(s.ShipDbgCeilSpike ? 1 : 0)},{(s.ShipDbgFloorSlopeHit ? 1 : 0)},{(s.ShipDbgFloorTileHit ? 1 : 0)},{(s.ShipDbgFloorSpike ? 1 : 0)},0x{s.CameraY_fixed:X},{s.Y_fixed & 0xFF},{s.CameraY_fixed & 0xFF},{s.ScrollYSubpx},{(s.Mini ? 1 : 0)},0x{s.VelX_fixed:X},{s.SlopeType},{s.LastSlopeType},{s.SlopeFrames},{s.SlopeWasOnCounter}");
+			if (s.DualActive)
+			{
+				int p2Xpx = (s.X_fixed >> 8) + 8;
+				int p2Ypx = (s.CameraY_fixed >> 8) + ((s.P2_Y_fixed - s.CameraY_fixed) >> 8) + 8;
+				_traceWriter.WriteLine($"p2,{frame},0x{s.P2_Y_fixed:X},0x{s.P2_VelY_fixed:X},{(input ? 1 : 0)},{(alive ? 1 : 0)},{p2Xpx},{p2Ypx},{(s.P2_OnGround ? 1 : 0)},{s.CameraY_fixed >> 8},{s.TargetCameraY_fixed >> 8},{s.GameMode},{(s.P2_GravFlipped ? 1 : 0)},0,0,0,0,0,0,0x{s.CameraY_fixed:X},{s.P2_Y_fixed & 0xFF},{s.CameraY_fixed & 0xFF},{s.ScrollYSubpx},{(s.P2_Mini ? 1 : 0)},0x{s.VelX_fixed:X},{s.P2_SlopeType},{s.P2_LastSlopeType},{s.P2_SlopeFrames},{s.P2_SlopeWasOnCounter}");
+			}
 		}
 		catch
 		{
@@ -1512,6 +1521,13 @@ public class PathfinderEngine
 				.Append(',')
 				.Append(Inputs[i] ? 1 : 0)
 				.Append('\n');
+		}
+		if (Path2Points != null && Path2Points.Count > 0)
+		{
+			foreach (var p2 in Path2Points)
+			{
+				stringBuilder.Append("p2,").Append(p2.x).Append(',').Append(p2.y).Append('\n');
+			}
 		}
 		return stringBuilder.ToString();
 	}
@@ -8501,6 +8517,7 @@ public class PathfinderEngine
 		}
 		else if (s.GameMode == 3)
 		{
+			PfUpdateSlopeCountersPreGravity(ref s);
 			UfoGravityStep(ref s);
 			ShipEject(ref s, input, out var died5);
 			if (died5)
@@ -11337,7 +11354,7 @@ public class PathfinderEngine
 	private void ShipEject(ref SimState s, bool input, out bool died)
 	{
 		died = false;
-		SharedPhysics.EjectResult ejectResult = SharedPhysics.ShipUfoEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed);
+		SharedPhysics.EjectResult ejectResult = SharedPhysics.ShipUfoEject(in _collisionMap, s.X_fixed, s.Y_fixed, s.VelY_fixed, s.VelX_fixed, s.GravFlipped, s.Mini, s.GameMode, input, s.SlopeWasOnCounter, s.SlopeFrames, s.SlopeType, s.SlopeJumpHigher, s.LastSlopeType, s.CameraY_fixed, updateSlopeCounters: s.GameMode != 3);
 		s.Y_fixed = ejectResult.NewY_fixed;
 		s.VelY_fixed = ejectResult.NewVelY_fixed;
 		s.SlopeType = ejectResult.SlopeType;
@@ -11604,6 +11621,7 @@ public class PathfinderEngine
 	private bool ProcessSprites(ref SimState s, int currentX_px, out bool orbHitThisFrame)
 	{
 		orbHitThisFrame = false;
+		_dualActivatedThisProcessSprites = false;
 		s.GravFlippedAtFrameStart = s.GravFlipped;
 		s.OrbUseFrameStartGravitySign = false;
 		Span<int> span = stackalloc int[16];
@@ -11661,6 +11679,7 @@ public class PathfinderEngine
 				if (spriteId == 34 && !s.DualActive)
 				{
 					s.DualActive = true;
+					_dualActivatedThisProcessSprites = true;
 					s.TargetCameraY_fixed = NesNtCameraTarget_fixed(reference.AnchorY_px - 8);
 					s.P2_Y_fixed = s.Y_fixed;
 					s.P2_VelY_fixed = -s.VelY_fixed;
@@ -12295,7 +12314,11 @@ public class PathfinderEngine
 				s.ProcessedSprites.Add(reference8.Index);
 			}
 		}
-		return false;
+		if (_dualActivatedThisProcessSprites && s.DualActive)
+	{
+		s.P2_VelY_fixed = -s.VelY_fixed;
+	}
+	return false;
 	}
 
 	private void CheckGravityPortalsPostY(ref SimState s, int prevX_px)
@@ -12543,12 +12566,12 @@ public class PathfinderEngine
 				case 1:
 				case 2:
 				case 3:
-					s.VelY_fixed >>= 1;
+					s.VelY_fixed /= 2;
 					break;
 				case 4:
 					if (flag)
 					{
-						s.VelY_fixed >>= 1;
+						s.VelY_fixed /= 2;
 					}
 					break;
 				case 0:
@@ -13197,7 +13220,7 @@ public class PathfinderEngine
 		int hitboxH = GetHitboxH(s.Mini);
 		int num2 = (s.Mini ? (16 - hitboxH >> 1) : 0);
 		int checkBaseY = (s.Y_fixed >> 8) + num2 + hitboxH - 2;
-		return SharedPhysics.CheckSlopesDown(in _collisionMap, num, num, checkBaseY, hitboxW, input, s.GameMode, s.GravFlipped, s.VelX_fixed, ref s.LastSlopeType, ref s.SlopeJumpHigher);
+		return SharedPhysics.CheckSlopesDown(in _collisionMap, num, num, checkBaseY, hitboxW, input, s.GameMode, s.GravFlipped, s.VelX_fixed, ref s.LastSlopeType, ref s.SlopeJumpHigher, ref s.SlopeFrames, ref s.SlopeWasOnCounter);
 	}
 
 	private (bool hit, int ejection, int slopeType) PfCheckSlopesUp(ref SimState s, bool input)
@@ -13207,7 +13230,7 @@ public class PathfinderEngine
 		int hitboxH = GetHitboxH(s.Mini);
 		int num2 = (s.Mini ? (16 - hitboxH >> 1) : 0);
 		int checkBaseY = (s.Y_fixed >> 8) + num2 + (s.Mini ? 1 : 2) + ((s.GameMode == 1) ? 1 : 0);
-		return SharedPhysics.CheckSlopesUp(in _collisionMap, num, num, checkBaseY, hitboxW, input, s.GameMode, s.GravFlipped, s.VelX_fixed, ref s.LastSlopeType, ref s.SlopeJumpHigher);
+		return SharedPhysics.CheckSlopesUp(in _collisionMap, num, num, checkBaseY, hitboxW, input, s.GameMode, s.GravFlipped, s.VelX_fixed, ref s.LastSlopeType, ref s.SlopeJumpHigher, ref s.SlopeFrames, ref s.SlopeWasOnCounter);
 	}
 }
 
