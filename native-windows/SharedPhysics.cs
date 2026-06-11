@@ -1799,6 +1799,10 @@ internal static class SharedPhysics
 			int item = num2 * 16;
 			return (hit: true, surfaceY: item, spikeDeath: false, ejectD: num & 0xF, collisionType: MetatileCollision.COL_ALL);
 		}
+		// NES: tmp8 is global — mini-block probes set it as a side effect, and
+		// subsequent COL_ALL probes (which short-circuit via bg_coll_U_D_checks)
+		// inherit the stale tmp8 instead of computing num8 & 0xF independently.
+		int runningTmp8 = -1;
 		bool flag = false;
 		for (int i = 0; i < 3; i++)
 		{
@@ -1836,6 +1840,10 @@ internal static class SharedPhysics
 			int topOffsetPx;
 			if (IsMiniBlockType(collision))
 			{
+				// NES bg_coll_mini_blocks sets tmp8 = yInTile & 7 unconditionally
+				// when it processes any mini-block tile, even if the X-column check
+				// (IsMiniBlockFloorHit) fails. Stale tmp8 propagates to later probes.
+				runningTmp8 = num8 & 7;
 				if (IsMiniBlockFloorHit(collision, localX, num8))
 				{
 					int num9 = num2 * 16 + GetMiniBlockFloorSurface(collision);
@@ -1880,7 +1888,12 @@ internal static class SharedPhysics
 				int num12 = num11 + topOffsetPx;
 				if (num >= num12 && TileOccupiesPixel(collision, localX, num8))
 				{
-					int item3 = (flag2 ? (num8 & 7) : (num8 & 0xF));
+					// NES: if a mini-block probe already set tmp8, COL_ALL uses stale tmp8
+					// (bg_coll_U_D_checks short-circuits without resetting it).
+					// NES bg_coll_top_bottom_slabs: COL_TOP/COL_BOTTOM use tmp8 = tmp2 & 0x07
+					// (eject mod 8, not mod 16), same as stairs types.
+					bool isHalfSlab = (collision == MetatileCollision.COL_TOP || collision == MetatileCollision.COL_BOTTOM);
+					int item3 = ((flag2 || isHalfSlab) ? (num8 & 7) : (runningTmp8 >= 0 ? runningTmp8 : num8 & 0xF));
 					return (hit: true, surfaceY: num12, spikeDeath: false, ejectD: item3, collisionType: collision);
 				}
 			}
@@ -2428,6 +2441,11 @@ internal static class SharedPhysics
 	internal static (int nudge, int slopeType) GetForwardSlopeNudge(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY, int gameMode, bool mini, bool gravFlipped)
 	{
 		FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=GetForwardSlopeNudge.in X={playerX_px} Y={playerY_px} hbW={hbW} hbH={hbH} hbOffY={hbOffY} mode={gameMode} mini={(mini ? 1 : 0)} gF={(gravFlipped ? 1 : 0)}");
+		// NES bg_collision_sub uses 8-bit temp_x; forward probe wraps at 256 and reads wrong tile
+		if (((playerX_px & 0xFF) + hbW) > 255)
+		{
+			return (nudge: 0, slopeType: 0);
+		}
 		int num = playerX_px + hbW;
 		int num2 = playerY_px + (mini ? ((16 - hbH >> 1) + (hbH >> 1)) : (hbH >> 1));
 		if (mini && (gameMode == 0 || gameMode == 4 || gameMode == 8))
@@ -2732,13 +2750,14 @@ internal static class SharedPhysics
 			if (!item4 && slopeWasOnCounter == 0)
 				num3 = 0;
 			int num4 = ((item4 && num3 == 0) ? lastSlopeType : num3);
-			// NES: 66° bottom-half "solid region" hits return slopeType=0 sentinel —
-			// skip direction filter for these, they are always valid collisions.
-			bool solidRegionHit = item4 && num3 == 0;
-			if (!solidRegionHit && i == 0 && ((uint)num4 & 4u) != 0)
+			// NES bg_coll_return_slope: direction filter ALWAYS runs — even for 66° solid-region
+			// early returns (bg_coll_slope returns 1 but doesn't set currplayer_slope_type).
+			// Uses num4 which falls back to lastSlopeType when num3==0 (matching NES behaviour).
+			if (i == 0 && ((uint)num4 & 4u) != 0)
 			{
-				// NES bg_coll_slope col_end: ALWAYS sets counters on geometry hit (all modes)
-				if (item4)
+				// NES bg_coll_slope col_end: sets counters on geometry hit — but 66° early-return
+				// hits (num3==0) skip col_end entirely, so counters must NOT be updated for those.
+				if (item4 && num3 != 0)
 				{
 					slopeFrames = 1;
 					slopeWasOnCounter = 3;
@@ -2748,10 +2767,11 @@ internal static class SharedPhysics
 				// NES bg_coll_return_slope: ALWAYS restores slope_type on rejection
 				item2 = lastSlopeType;
 			}
-			else if (!solidRegionHit && i == 1 && (num4 & 4) == 0)
+			else if (i == 1 && (num4 & 4) == 0)
 			{
-				// NES bg_coll_slope col_end: ALWAYS sets counters on geometry hit (all modes)
-				if (item4)
+				// NES bg_coll_slope col_end: sets counters on geometry hit — but 66° early-return
+				// hits (num3==0) skip col_end entirely, so counters must NOT be updated for those.
+				if (item4 && num3 != 0)
 				{
 					slopeFrames = 1;
 					slopeWasOnCounter = 3;
@@ -2820,13 +2840,14 @@ internal static class SharedPhysics
 			if (!item4 && slopeWasOnCounter == 0)
 				num3 = 0;
 			int num4 = ((item4 && num3 == 0) ? lastSlopeType : num3);
-			// NES: 66° bottom-half "solid region" hits return slopeType=0 sentinel —
-			// skip direction filter for these, they are always valid collisions.
-			bool solidRegionHit = item4 && num3 == 0;
-			if (!solidRegionHit && i == 0 && ((uint)num4 & 4u) != 0)
+			// NES bg_coll_return_slope: direction filter ALWAYS runs — even for 66° solid-region
+			// early returns (bg_coll_slope returns 1 but doesn't set currplayer_slope_type).
+			// Uses num4 which falls back to lastSlopeType when num3==0 (matching NES behaviour).
+			if (i == 0 && ((uint)num4 & 4u) != 0)
 			{
-				// NES bg_coll_slope col_end: ALWAYS sets counters on geometry hit (all modes)
-				if (item4)
+				// NES bg_coll_slope col_end: sets counters on geometry hit — but 66° early-return
+				// hits (num3==0) skip col_end entirely, so counters must NOT be updated for those.
+				if (item4 && num3 != 0)
 				{
 					slopeFrames = 1;
 					slopeWasOnCounter = 3;
@@ -2836,10 +2857,11 @@ internal static class SharedPhysics
 				// NES bg_coll_return_slope: ALWAYS restores slope_type on rejection
 				item2 = lastSlopeType;
 			}
-			else if (!solidRegionHit && i == 1 && (num4 & 4) == 0)
+			else if (i == 1 && (num4 & 4) == 0)
 			{
-				// NES bg_coll_slope col_end: ALWAYS sets counters on geometry hit (all modes)
-				if (item4)
+				// NES bg_coll_slope col_end: sets counters on geometry hit — but 66° early-return
+				// hits (num3==0) skip col_end entirely, so counters must NOT be updated for those.
+				if (item4 && num3 != 0)
 				{
 					slopeFrames = 1;
 					slopeWasOnCounter = 3;
@@ -3237,6 +3259,7 @@ internal static class SharedPhysics
 		}
 		int num2 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
 		int num4 = num2 + miniCenterOffsetY + num3;
+		FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=BallEject.entry Yf=0x{result.NewY_fixed:X} camYf=0x{camY_fixed:X} num2={num2} num3={num3} num4={num4} velY={result.NewVelY_fixed} gravF={gravFlipped} updSlope={updateSlopeCounters}");
 		Action<string> ballEjectDiagLog = BallEjectDiagLog;
 		if (ballEjectDiagLog != null)
 		{
@@ -3305,7 +3328,7 @@ internal static class SharedPhysics
 					ballEjectDiagLog?.Invoke($"[BE_CEIL_EJECT] probeY_U={num15} tmp8_initial={num17} ejectU=0x{num16:X2} signed={num18} scrHi:{num19}->{num20} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
 				}
 			}
-			if (flag)
+				if (flag)
 			{
 				int genericHeight = mini ? 8 : 16;
 				int num21 = num2 + num3 + genericHeight + miniCenterOffsetY;
@@ -3364,6 +3387,9 @@ internal static class SharedPhysics
 			// NES: Generic.y is set ONCE before ball_eject and never changes, so bg_coll_D
 			// uses the ORIGINAL position for its slope/tile probe, not the post-ceiling-eject position.
 			// Keep using the original num2 (from entry) for the floor probe — do NOT recalculate.
+			// NES ball_movement: Generic.y = high_byte(currplayer_y) ± 1.
+			// bg_coll_D probes at Generic.y + Generic.height = (num2 + num3) + height.
+			// Non-ball modes use different Generic.y (no ±1 offset), so keep existing formula.
 			int num32 = (mini ? (16 - cubeHitboxH >> 1) : 0);
 			int num33 = num2 + num3 + num32 + cubeHitboxH - 2;
 			int savedSlopeFramesGD = result.SlopeFrames;
@@ -3457,6 +3483,30 @@ internal static class SharedPhysics
 			{
 				result.SlopeType = num42;
 			}
+			// NES bg_coll_U ceiling tile check: runs when vel < 0 and no slope ceiling hit
+			bool ceilTileHitN = false;
+			if (!flag8 && result.NewVelY_fixed < 0)
+			{
+				int ceilTileProbeY = num2 + num3 + (mini ? (16 - cubeHitboxH >> 1) : 0) + ((gameMode == 6 || gameMode == 10) ? 0 : 1);
+				var (ceilHit, ceilEjectU, ceilSpike, ceilColl) = CheckCeilingReturnU(in map, num, num, ceilTileProbeY, cubeHitboxW);
+				ballEjectDiagLog?.Invoke($"[BE_CEIL_TILE_N] probeX={num} probeY={ceilTileProbeY} -> hit={ceilHit} spike={ceilSpike} coll={ceilColl}");
+				if (ceilSpike)
+				{
+					result.Died = true;
+					return result;
+				}
+				if (ceilHit)
+				{
+					ceilTileHitN = true;
+					int ceilSigned = (sbyte)(byte)ceilEjectU;
+					int ceilScreenY = result.NewY_fixed - camY_fixed >> 8;
+					int ceilNewScreenY = ceilScreenY - ceilSigned;
+					result.NewY_fixed = camY_fixed + (ceilNewScreenY << 8) + num8;
+					result.NewVelY_fixed = 0;
+					result.OnGround = true;
+					ballEjectDiagLog?.Invoke($"[BE_CEIL_EJECT_N] probeY={ceilTileProbeY} ejectU=0x{ceilEjectU:X2} signed={ceilSigned} scrHi:{ceilScreenY}->{ceilNewScreenY} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
+				}
+			}
 			ApplySlopeWedgeStateOnly(in map, num40, num40, checkBaseY, cubeHitboxW, inputHeld, gameMode, gravFlipped, ref result.SlopeFrames, ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher);
 			int savedSlopeFramesD = result.SlopeFrames;
 			int savedSlopeWasOnD = result.SlopeWasOnCounter;
@@ -3508,10 +3558,9 @@ internal static class SharedPhysics
 				}
 				if (flag10)
 				{
-					if (flag8)
+					if (flag8 || ceilTileHitN)
 					{
-						// NES ball_eject: when ceiling slope hit, floor eject is relative
-						// Y = current_Y - eject_D, where eject_D = (probe_bottom) & 0xF
+						// NES ball_eject: when ceiling hit, floor eject is relative
 						int ejectD = (num4 + cubeHitboxH) & 0xF;
 						int currentScreenY = result.NewY_fixed - camY_fixed >> 8;
 						int newScreenY = currentScreenY - ejectD;
@@ -3583,11 +3632,19 @@ internal static class SharedPhysics
 				{
 					result.SlopeFrames = 1;
 					result.SlopeWasOnCounter = 3;
+					// NES bg_coll_slope only sets currplayer_slope_type for geometric
+					// slope hits, not for 66° solid-region early returns.
+					result.SlopeType = upSlopeType;
 				}
-				result.SlopeType = upSlopeType;
 			}
 			else
 			{
+				// NES bg_coll_U: the SLOPE section has no velocity gate (always
+				// runs), but the NON-SLOPE section has a velocity gate (only
+				// runs when vel < 0).  CheckSlopesUp above already handles
+				// the slope section unconditionally.  CheckCeiling handles
+				// non-slope tiles and must respect the velocity gate — pass
+				// the actual velocity so it early-returns when vel >= 0.
 				var (hit2, _, spike2, hitCollision2) = CheckCeiling(in map, collX, collY, cubeHitboxW, cubeHitboxH, result.NewVelY_fixed);
 				if (spike2)
 				{
@@ -3605,6 +3662,11 @@ internal static class SharedPhysics
 					int yLow2 = (result.NewY_fixed - camY_fixed) & 0xFF;
 					result.NewY_fixed = camY_fixed + (newYPx2 - (camY_fixed >> 8) << 8) + yLow2;
 					result.NewVelY_fixed = 0;
+					// NES: Generic.y = high_byte(currplayer_y) is updated by ceiling eject.
+					// bg_coll_D uses the post-eject Generic.y for its floor probe.
+					// Recalculate num2/collY to match.
+					num2 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
+					collY = num2 + hitboxOffsetY;
 				}
 			}
 			int checkBaseYDown = num2 + miniOffsetY + cubeHitboxH - 2;
@@ -3626,8 +3688,11 @@ internal static class SharedPhysics
 				{
 					result.SlopeFrames = 1;
 					result.SlopeWasOnCounter = 3;
+					// NES bg_coll_slope only sets currplayer_slope_type for geometric
+					// slope hits, not for 66° solid-region early returns (return 1
+					// without setting slope_type). So only overwrite when non-zero.
+					result.SlopeType = downSlopeType;
 				}
-				result.SlopeType = downSlopeType;
 			}
 			else
 			{
@@ -3671,8 +3736,10 @@ internal static class SharedPhysics
 				{
 					result.SlopeFrames = 1;
 					result.SlopeWasOnCounter = 3;
+					// NES bg_coll_slope only sets currplayer_slope_type for geometric
+					// slope hits, not for 66° solid-region early returns.
+					result.SlopeType = slopeType2;
 				}
-				result.SlopeType = slopeType2;
 			}
 			else if (flag)
 			{
@@ -3727,8 +3794,10 @@ internal static class SharedPhysics
 				{
 					result.SlopeFrames = 1;
 					result.SlopeWasOnCounter = 3;
+					// NES bg_coll_slope only sets currplayer_slope_type for geometric
+					// slope hits, not for 66° solid-region early returns.
+					result.SlopeType = num15;
 				}
-				result.SlopeType = num15;
 			}
 			else if (flag2)
 			{
@@ -3767,8 +3836,10 @@ internal static class SharedPhysics
 				{
 					result.SlopeFrames = 1;
 					result.SlopeWasOnCounter = 3;
+					// NES bg_coll_slope only sets currplayer_slope_type for geometric
+					// slope hits, not for 66° solid-region early returns.
+					result.SlopeType = slopeType3;
 				}
-				result.SlopeType = slopeType3;
 			}
 			else if (flag2)
 			{

@@ -597,6 +597,8 @@ public class PathfinderEngine
 
 	private int _speculativeDepth;
 
+	private bool _stepFrameInputHeld;
+
 	private bool _bfsSearchActive;
 
 	private int _frameCounter;
@@ -1765,6 +1767,14 @@ public class PathfinderEngine
 		}
 		string value6 = $"[PF_DIAG] tiles={this.tiles.Length} tileHash=0x{num34:X8} sprites={this.sprites.Length} sprHash=0x{num35:X8} offsets={this.spritePixelOffsets.Count} offHash=0x{num37:X8} anchors={this.spriteAnchors.Count} anchHash=0x{num38:X8} w={mapWidth} h={mapHeight} ground={groundRowsToReserve} maxFall=0x{this.maxFallSpeed:X} spriteEntries={allSprites.Count}";
 		_log.WriteLine(value6);
+		// Dump slot assignments for speed portals (diagnostic)
+		for (int dbgI = 0; dbgI < num19; dbgI++)
+		{
+			if (IsSpeedPortal(_spritesArr[dbgI].SpriteId))
+			{
+				_log.WriteLine($"[SPEED_PORTAL_SLOT] idx={_spritesArr[dbgI].Index} sid={_spritesArr[dbgI].SpriteId} anchor=({_spritesArr[dbgI].AnchorX_px},{_spritesArr[dbgI].AnchorY_px}) slot={_spritesArr[dbgI].AllocatedSlot}");
+			}
+		}
 		_log.Flush();
 	}
 
@@ -8215,6 +8225,7 @@ public class PathfinderEngine
 
 	private bool StepFrame(ref SimState s, bool input, out bool endLevel)
 	{
+		_stepFrameInputHeld = input;
 		endLevel = false;
 		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=frame.in X={s.X_fixed >> 8}.{(s.X_fixed & 0xFF):X2} Y={s.Y_fixed >> 8}.{(s.Y_fixed & 0xFF):X2} Ypx={((s.Y_fixed - s.CameraY_fixed) >> 8) + (s.CameraY_fixed >> 8)} Vx={s.VelX_fixed} Vy={s.VelY_fixed} sFr={s.SlopeFrames} swOn={s.SlopeWasOnCounter} sT={s.SlopeType} lst={s.LastSlopeType} inp={(input ? 1 : 0)} grav={(s.GravFlipped ? 1 : 0)} mini={(s.Mini ? 1 : 0)} gm={s.GameMode} onG={(s.OnGround ? 1 : 0)} dash={s.Dashing} camY={s.CameraY_fixed >> 8}.{(s.CameraY_fixed & 0xFF):X2}");
 		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=StepFrame.in input={(input ? 1 : 0)} prevHeld={(s.PrevInputHeld ? 1 : 0)} dash={s.Dashing} orbed={(s.Orbed ? 1 : 0)} dual={(s.DualActive ? 1 : 0)}");
@@ -8252,7 +8263,21 @@ public class PathfinderEngine
 		}
 		bool orbHitThisFrame = false;
 		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.in X={num} Y={(s.Y_fixed >> 8)} mode={s.GameMode} pendOrb={s.PendingOrbIndex}");
-		endLevel = ProcessSprites(ref s, num, out orbHitThisFrame);
+		int _dbgVelXBefore = s.VelX_fixed;
+		int _dbgYBeforePS = s.Y_fixed;
+		endLevel = ProcessSprites(ref s, num, input, out orbHitThisFrame);
+		if (s.Y_fixed != _dbgYBeforePS)
+		{
+			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.Ychanged oldY=0x{_dbgYBeforePS:X} newY=0x{s.Y_fixed:X} delta={s.Y_fixed - _dbgYBeforePS}");
+		}
+		if (s.VelX_fixed != _dbgVelXBefore)
+		{
+			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.velXChanged oldVelX={_dbgVelXBefore} newVelX={s.VelX_fixed}");
+		}
+		// NES execution order: sprite_collide → movement (Y) → x_movement_coll → x_movement.
+		// Y movement (wave, slope counters) always uses the OLD currplayer_vel_x because
+		// x_movement (which reloads it from the speed table) runs AFTER Y movement.
+		// velX_fixed was captured at frame start (line 8252) and must NOT be recaptured.
 		if (endLevel)
 		{
 			return true;
@@ -8395,7 +8420,7 @@ public class PathfinderEngine
 		int x_fixed2 = s.X_fixed + s.VelX_fixed;
 		if (!_dualP2Guard)
 		{
-			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=CheckGravityModTriggersAtNewX.in gMod={s.GravityMod}");
+			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=CheckGravityModTriggersAtNewX.in gMod={s.GravityMod} Y=0x{s.Y_fixed:X}");
 			CheckGravityModTriggersAtNewX(ref s);
 		}
 		if (s.GameMode == 0)
@@ -8489,7 +8514,10 @@ public class PathfinderEngine
 		else if (s.GameMode == 2)
 		{
 			PfUpdateSlopeCountersPreGravity(ref s);
+			int _dbgYBeforeGrav = s.Y_fixed;
+			int _dbgVelBeforeGrav = s.VelY_fixed;
 			BallGravityStep(ref s);
+			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=BallGravDbg Ybefore=0x{_dbgYBeforeGrav:X} Vbefore={_dbgVelBeforeGrav} Yafter=0x{s.Y_fixed:X} Vafter={s.VelY_fixed} mini={s.Mini} grav={s.GravFlipped} gMod={s.GravityMod} mapH={mapHeight}");
 			bool died4 = false;
 			BallEject(ref s, input, out died4);
 			if (died4)
@@ -8498,8 +8526,13 @@ public class PathfinderEngine
 				return false;
 			}
 			bool ballHeldForFlip = input;
+			if (s.VelY_fixed == 0 && ballHeldForFlip)
+			{
+				SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=BallSwitchCheck vel=0 inp={input} orbHit={orbHitThisFrame} orbed={s.Orbed} cooldown={s.BallFlipCooldown} grav={s.GravFlipped} Y=0x{s.Y_fixed:X}");
+			}
 			if (ballHeldForFlip && !orbHitThisFrame && !s.Orbed && s.BallFlipCooldown == 0 && s.VelY_fixed == 0)
 			{
+				SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=BallSwitchFire grav={s.GravFlipped}->{ !s.GravFlipped} vel={BallSwitchVel(s.Mini) * ((!s.GravFlipped) ? -1 : 1)}");
 				s.GravFlipped = !s.GravFlipped;
 				s.GravMul = ((!s.GravFlipped) ? 1 : (-1));
 				s.VelY_fixed = BallSwitchVel(s.Mini) * s.GravMul;
@@ -8531,6 +8564,11 @@ public class PathfinderEngine
 				s.DeathType = 2;
 				return false;
 			}
+			// NES: UFO jump does NOT fire on the first frame of a mode transition
+			// into UFO.  The press edge is consumed by check_for_cube_data_2_set
+			// (which runs while gamemode is still the OLD mode) and by the time
+			// ufo_movement executes the jump check, it doesn't trigger.
+			// Only allow the UFO jump when gameMode was already UFO (no transition).
 			if (flag && !orbHitThisFrame && gameMode == 3)
 			{
 				int velY_fixed3 = UfoJumpVel(s.Mini) * -s.GravMul;
@@ -8565,7 +8603,7 @@ public class PathfinderEngine
 				s.DeathType = 3;
 				return false;
 			}
-			if (flag && s.VelY_fixed == 0 && !s.Orbed)
+			if ((flag || s.AirPressLatch) && input && s.VelY_fixed == 0 && !s.Orbed)
 			{
 				s.VelY_fixed = -688 * s.GravMul;
 				s.RobotJumpTime = 19;
@@ -9116,6 +9154,8 @@ public class PathfinderEngine
 		if (s.DualActive && !_dualP2Guard)
 		{
 			int y_fixed = s.Y_fixed;
+			if ((s.CameraY_fixed >> 8) < (s.TargetCameraY_fixed >> 8))
+				y_fixed += 256;
 			int num57 = s.VelY_fixed;
 			bool flag9 = s.GravFlipped;
 			int gravMul = s.GravMul;
@@ -11618,7 +11658,7 @@ public class PathfinderEngine
 		s.PendingOrbExtra2SpriteId = -1;
 	}
 
-	private bool ProcessSprites(ref SimState s, int currentX_px, out bool orbHitThisFrame)
+	private bool ProcessSprites(ref SimState s, int currentX_px, bool inputHeld, out bool orbHitThisFrame)
 	{
 		orbHitThisFrame = false;
 		_dualActivatedThisProcessSprites = false;
@@ -11850,6 +11890,7 @@ public class PathfinderEngine
 			}
 			bool num27 = num11 >= reference6.HitLeft && reference6.HitRight >= num10;
 			bool flag5 = num9 >= reference6.HitTop && reference6.HitBottom >= num8;
+			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm=-1 tag=SpeedPortalScan.check sid={reference6.SpriteId} idx={reference6.Index} anchor=({reference6.AnchorX_px},{reference6.AnchorY_px}) hit=({reference6.HitLeft},{reference6.HitTop})-({reference6.HitRight},{reference6.HitBottom}) player=({num10},{num8})-({num11},{num9}) xO={num27} yO={flag5}");
 			if (!(num27 && flag5))
 			{
 				continue;
@@ -11906,12 +11947,48 @@ public class PathfinderEngine
 				}
 				span4[num35 + 1] = num33;
 			}
-			for (int num37 = 0; num37 < num29; num37++)
+			// NES sprite_collide only processes sprites whose activesprites_active=1.
+			// Sprites near the NES Y-page boundary can be considered offscreen even
+			// when their HitTop/HitBottom overlaps the player in PF world coords.
+			// When multiple speed portals overlap with DIFFERENT speeds, the marginal
+			// one may be offscreen in NES. Use max Y-overlap as proxy: the portal most
+			// centered on the player is most likely active in NES.
+			if (num29 > 1)
 			{
-				int num38 = SpriteIdToSpeedFixed(spritesArr[span4[num37]].SpriteId);
-				if (num38 > 0)
+				int bestIdx = -1;
+				int bestOverlap = -1;
+				for (int oi = 0; oi < num29; oi++)
 				{
-					s.VelX_fixed = num38;
+					ref SpriteEntry oe = ref spritesArr[span4[oi]];
+					int overlapTop = Math.Max(num8, oe.HitTop);
+					int overlapBot = Math.Min(num9, oe.HitBottom);
+					int yOverlap = overlapBot - overlapTop;
+					if (yOverlap > bestOverlap)
+					{
+						bestOverlap = yOverlap;
+						bestIdx = oi;
+					}
+				}
+				if (bestIdx >= 0)
+				{
+					int bestSpeed = SpriteIdToSpeedFixed(spritesArr[span4[bestIdx]].SpriteId);
+					if (bestSpeed > 0)
+					{
+						SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm=-1 tag=SpeedPortalScan.apply sid={spritesArr[span4[bestIdx]].SpriteId} idx={spritesArr[span4[bestIdx]].Index} slot={spritesArr[span4[bestIdx]].AllocatedSlot} oldVelX={s.VelX_fixed} newVelX={bestSpeed} bestOverlap={bestOverlap}/{num29}");
+						s.VelX_fixed = bestSpeed;
+					}
+				}
+			}
+			else
+			{
+				for (int num37 = 0; num37 < num29; num37++)
+				{
+					int num38 = SpriteIdToSpeedFixed(spritesArr[span4[num37]].SpriteId);
+					if (num38 > 0)
+					{
+						SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm=-1 tag=SpeedPortalScan.apply sid={spritesArr[span4[num37]].SpriteId} idx={spritesArr[span4[num37]].Index} slot={spritesArr[span4[num37]].AllocatedSlot} oldVelX={s.VelX_fixed} newVelX={num38}");
+						s.VelX_fixed = num38;
+					}
 				}
 			}
 		}
@@ -12127,6 +12204,17 @@ public class PathfinderEngine
 				OrbDbg($"CHECK sid=0x{spriteId4:X2} idx={reference8.Index} anchor=({reference8.AnchorX_px},{reference8.AnchorY_px}) sprBox=({reference8.HitLeft},{reference8.HitTop})-({reference8.HitRight},{reference8.HitBottom}) plBox=({num10},{num50})-({num11},{num51}) playerY_px={num2} hbH={num6} hbW={num5} mini={s.Mini} gravF={s.GravFlipped} orbOffY={miniCenterOffsetY} xO={flag18} yO={flag19} processed={s.ProcessedSprites.Contains(reference8.Index)} pendSlots=[{s.PendingOrbIndex},{s.PendingOrbExtra1Index},{s.PendingOrbExtra2Index}]");
 				if (flag18 && flag19)
 				{
+					// NES sprite_gamemode_main (sprite_loading.h:466-468): merely TOUCHING
+					// an orb routed via spcl_orb_cmn while holding A in BALL mode sets
+					// ball_switched=1 (blocks the manual gravity switch until A release),
+					// even if the orb never activates (no press). White orbs use the
+					// separate spcl_wht_orb handler with no such side effect.
+					// PF's BallFlipCooldown is the ball_switched analog (identical
+					// release-reset semantics at the ball switch check).
+					if (s.GameMode == 2 && inputHeld && !IsWhiteOrb(spriteId4) && !s.ProcessedSprites.Contains(reference8.Index))
+					{
+						s.BallFlipCooldown = 1;
+					}
 					AddPendingOrb(ref s, reference8.Index, spriteId4);
 					OrbDbg($"PEND sid=0x{spriteId4:X2} idx={reference8.Index} pendSlots=[{s.PendingOrbIndex},{s.PendingOrbExtra1Index},{s.PendingOrbExtra2Index}]");
 				}
@@ -12143,6 +12231,12 @@ public class PathfinderEngine
 					bool flag20 = num53 >= reference8.HitTop && reference8.HitBottom >= num52;
 					if (num54 && flag20)
 					{
+						// NES: dash orbs are cases inside sprite_gamemode_main, so mere
+						// touch with A held in BALL mode also sets ball_switched=1.
+						if (s.GameMode == 2 && inputHeld && !s.ProcessedSprites.Contains(reference8.Index))
+						{
+							s.BallFlipCooldown = 1;
+						}
 						AddPendingOrb(ref s, reference8.Index, spriteId4);
 					}
 				}
@@ -12225,6 +12319,9 @@ public class PathfinderEngine
 			}
 			if (IsTeleportPortalEntrance(spriteId4))
 			{
+				// NES teleport portals do NOT set activesprites_activated[index].
+				// They fire every frame the player overlaps them. Do NOT add to
+				// ProcessedSprites — the overlap check is the only gate.
 				bool num63 = num11 >= reference8.HitLeft && reference8.HitRight >= num10;
 				bool flag27 = num9 >= reference8.HitTop && reference8.HitBottom >= num8;
 				if (!(num63 && flag27))
@@ -12232,7 +12329,6 @@ public class PathfinderEngine
 					continue;
 				}
 				ApplyTeleportPortal(ref s, reference8, spriteId4, currentX_px);
-				s.ProcessedSprites.Add(reference8.Index);
 				num2 = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
 				num8 = num2 + num7;
 				num9 = num8 + num6;
@@ -12561,17 +12657,21 @@ public class PathfinderEngine
 				}
 				s.RainbowMaxMode = 0;
 				bool flag = gameMode == 6 || gameMode == 7;
+				// NES cc65 compiles /= 2 as arithmetic shift right on
+				// the 6502, which rounds toward -∞.  C# /= 2 truncates
+				// toward zero.  Use >>= 1 (C# arithmetic shift right for
+				// signed int) to match NES rounding for odd negative values.
 				switch (num)
 				{
 				case 1:
 				case 2:
 				case 3:
-					s.VelY_fixed /= 2;
+					s.VelY_fixed >>= 1;
 					break;
 				case 4:
 					if (flag)
 					{
-						s.VelY_fixed /= 2;
+						s.VelY_fixed >>= 1;
 					}
 					break;
 				case 0:
@@ -12960,7 +13060,7 @@ public class PathfinderEngine
 				int anchorX_px = allSprite.AnchorX_px;
 				if (anchorX_px >= num && anchorX_px <= num2)
 				{
-					num3 = ((!flag) ? (allSprite.HitTop + 1) : (allSprite.HitTop + 16 + 1));
+					num3 = ((!flag) ? allSprite.HitTop : (allSprite.HitTop + 16));
 					flag2 = true;
 				}
 			}
