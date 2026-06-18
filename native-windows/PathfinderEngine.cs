@@ -63,6 +63,8 @@ public class PathfinderEngine
 	{
 		public int Index;
 
+		public int ProcessKey;
+
 		public int SpriteId;
 
 		public int AnchorX_px;
@@ -258,10 +260,30 @@ public class PathfinderEngine
 
 		public int P2_PendingOrbExtra2SpriteId;
 
+		// NES 16-slot sprite table (runtime, per-frame updated)
+		public int[] NesSlots;       // [16] index into _nesSpritesArr, or -1
+		public bool[] NesSlotDead;   // [16] true if sprite type was changed to $FF
+		public bool[] NesSlotActive; // [16] activesprites_active, set by check_spr_objects
+		public int[] NesSlotWorldY;  // [16] mutable activesprites_y world byte
+		public int NesSprDataPtr;    // next index in _nesStreamOrder
+		public int TeleportOutputY_px;
+		public int[] CoinTimer;      // coin1/coin2/coin3 shared animation timers
+		public int[] CoinSpeed;      // coin1/coin2/coin3 shared 8.8 speeds
+		public bool CoinAnimating;
+
 		public SimState Clone()
 		{
 			SimState result = this;
 			result.ProcessedSprites = ProcessedSprites.Clone();
+			if (NesSlots != null)
+			{
+				result.NesSlots = (int[])NesSlots.Clone();
+				result.NesSlotDead = (bool[])NesSlotDead.Clone();
+				result.NesSlotActive = (bool[])NesSlotActive.Clone();
+				result.NesSlotWorldY = (int[])NesSlotWorldY.Clone();
+			}
+			if (CoinTimer != null) result.CoinTimer = (int[])CoinTimer.Clone();
+			if (CoinSpeed != null) result.CoinSpeed = (int[])CoinSpeed.Clone();
 			if (RainbowShadows != null)
 			{
 				result.RainbowShadows = new SimState[RainbowShadows.Length];
@@ -269,6 +291,17 @@ public class PathfinderEngine
 				{
 					result.RainbowShadows[i] = RainbowShadows[i];
 					result.RainbowShadows[i].ProcessedSprites = RainbowShadows[i].ProcessedSprites.Clone();
+					if (RainbowShadows[i].NesSlots != null)
+					{
+						result.RainbowShadows[i].NesSlots = (int[])RainbowShadows[i].NesSlots.Clone();
+						result.RainbowShadows[i].NesSlotDead = (bool[])RainbowShadows[i].NesSlotDead.Clone();
+						result.RainbowShadows[i].NesSlotActive = (bool[])RainbowShadows[i].NesSlotActive.Clone();
+						result.RainbowShadows[i].NesSlotWorldY = (int[])RainbowShadows[i].NesSlotWorldY.Clone();
+					}
+					if (RainbowShadows[i].CoinTimer != null)
+						result.RainbowShadows[i].CoinTimer = (int[])RainbowShadows[i].CoinTimer.Clone();
+					if (RainbowShadows[i].CoinSpeed != null)
+						result.RainbowShadows[i].CoinSpeed = (int[])RainbowShadows[i].CoinSpeed.Clone();
 				}
 			}
 			return result;
@@ -706,6 +739,56 @@ public class PathfinderEngine
 	private int[] _spriteCompactMap;
 
 	private int _spriteCompactCount;
+
+	// Exact NES-exported sprite records, kept separate from the editor's
+	// collision-resolved sprite grid.
+	private SpriteEntry[] _nesSpritesArr;
+	// NES sprite data stream: indices into _nesSpritesArr, already in exporter column-major order.
+	private int[] _nesStreamOrder;
+	// World X for each _nesSpritesArr entry (used for NES off-screen-left check)
+	private int[] _nesSpriteWorldX;
+
+	private const int NES_DECO = 0xFE;
+	private const int NES_COLR = 0xFD;
+	private const int NES_OUTL = 0xFC;
+	private const int NES_SPBH = 0xFF;
+	private const int NES_PLAYER_SCREEN_X_PX = 0x50;
+
+	// NES sprite_heights table — determines DECO/COLR/OUTL/SPBH behavior for slot management
+	private static readonly int[] _nesSprH = {
+		0x34, 0x34, 0x34, 0x34, 0x34, 0x12, 0x12, 0xFF, // 00-07
+		0x28, 0x28, 0x03, 0x12, 0x03, 0x03, 0x03, 0xFF, // 08-0F
+		0x0E, 0x0E, 0x0E, 0x0E, 0x24, 0x24, 0x24, 0x34, // 10-17
+		0x34, 0x34, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x12, // 18-1F
+		0x24, 0x24, 0x34, 0x34, 0x34, 0x03, 0x03, 0x12, // 20-27
+		0x12, 0x12, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, // 28-2F
+		0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, // 30-37
+		0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, // 38-3F
+		0xFE, 0xFE, 0xFE, 0xFE, 0x12, 0x12, 0x12, 0x28, // 40-47
+		0x28, 0xFE, 0xFE, 0x34, 0x12, 0x12, 0x30, 0xFF, // 48-4F
+		0x12, 0x12, 0x03, 0x03, 0x12, 0x12, 0x03, 0x03, // 50-57
+		0x34, 0x10, 0xFF, 0x12, 0x12, 0x12, 0x12, 0x34, // 58-5F
+		0x34, 0x34, 0x34, 0x34, 0x34, 0x02, 0x10, 0xFF, // 60-67
+		0x10, 0xFF, 0x34, 0x34, 0x34, 0x20, 0x08, 0xFF, // 68-6F
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x10, 0xFF, 0x10, // 70-77
+		0xFF, 0x12, 0x12, 0x12, 0x12, 0xFF, 0xFF, 0xFF, // 78-7F
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, // 80-87
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0x00, 0xFF, 0xFD, // 88-8F
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, // 90-97
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0x00, 0xFF, 0xFD, // 98-9F
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, // A0-A7
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0x00, 0xFD, 0xFC, // A8-AF
+		0xFC, 0xFC, 0xFC, 0xFC, 0xFC, 0xFC, 0xFC, 0xFC, // B0-B7
+		0xFC, 0xFC, 0xFC, 0xFC, 0xFC, 0xFC, 0xFC, 0xFC, // B8-BF
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, // C0-C7
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0x00, 0x00, 0xFD, // C8-CF
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, // D0-D7
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFF, 0xFF, 0xFF, // D8-DF
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFD, // E0-E7
+		0xFD, 0xFD, 0xFD, 0xFD, 0xFD, 0xFF, 0xFF, 0xFF, // E8-EF
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x10, 0x10, // F0-F7
+		0x10, 0x10, 0x1F, 0x10, 0x10, 0x03, 0x03, 0x00, // F8-FF
+	};
 
 	private const int BFS_MAX_FRONTIER = 120000;
 
@@ -1445,6 +1528,22 @@ public class PathfinderEngine
 		return SharedPhysics.IsCoinSprite(sid);
 	}
 
+	private static int GetNesCoinKind(int sid)
+	{
+		return sid switch
+		{
+			0x07 or 0x1C => 0,
+			0x1A or 0x1D => 1,
+			0x1B or 0x1E => 2,
+			_ => -1
+		};
+	}
+
+	private static bool IsRegularNesCoin(int sid)
+	{
+		return sid == 0x07 || sid == 0x1A || sid == 0x1B;
+	}
+
 	private static bool IsMiniCoinSprite(int sid)
 	{
 		return SharedPhysics.IsMiniCoinSprite(sid);
@@ -1477,12 +1576,12 @@ public class PathfinderEngine
 
 	private static bool IsTeleportPortalEntrance(int sid)
 	{
-		return SharedPhysics.IsTeleportPortalEntrance(sid);
+		return sid == 0x59 || SharedPhysics.IsTeleportPortalEntrance(sid);
 	}
 
 	private static bool IsTeleportPortalExit(int sid)
 	{
-		return SharedPhysics.IsTeleportPortalExit(sid);
+		return sid == 0x5A || SharedPhysics.IsTeleportPortalExit(sid);
 	}
 
 	private static bool IsVerticalTeleportEntrance(int sid)
@@ -1534,7 +1633,7 @@ public class PathfinderEngine
 		return stringBuilder.ToString();
 	}
 
-	public PathfinderEngine(int[] tiles, int[] sprites, Dictionary<int, (int anchorTileX, int anchorTileY)> spriteAnchors, int mapWidth, int mapHeight, bool hasGroundLayer, int groundTileRows, int maxFallSpeed = 6, Dictionary<int, (int offsetX, int offsetY)>? spritePixelOffsets = null)
+	public PathfinderEngine(int[] tiles, int[] sprites, Dictionary<int, (int anchorTileX, int anchorTileY)> spriteAnchors, int mapWidth, int mapHeight, bool hasGroundLayer, int groundTileRows, int maxFallSpeed = 6, Dictionary<int, (int offsetX, int offsetY)>? spritePixelOffsets = null, int[]? nesSpriteLayer = null, NesSpriteRecord[]? nesSpriteRecords = null)
 	{
 		this.tiles = (tiles ?? Array.Empty<int>()).Select((int t) => (t >= 0) ? t : 0).ToArray();
 		this.sprites = sprites ?? Array.Empty<int>();
@@ -1626,6 +1725,7 @@ public class PathfinderEngine
 			allSprites.Add(new SpriteEntry
 			{
 				Index = i,
+				ProcessKey = i,
 				SpriteId = num5,
 				AnchorX_px = num18 * 16 + 8 + num13,
 				AnchorY_px = (num7 - groundRowsToReserve) * 16 + 8 + num14,
@@ -1647,100 +1747,91 @@ public class PathfinderEngine
 			return num40.CompareTo(value7);
 		});
 		_spritesArr = allSprites.ToArray();
-		int num19 = _spritesArr.Length;
-		int num20 = this.mapWidth;
-		Dictionary<int, (int, int)> dictionary = this.spritePixelOffsets;
-		int[] array = new int[num19];
-		long[] streamKey = new long[num19];
-		int[] array2 = new int[num19];
-		for (int j = 0; j < num19; j++)
+		var nesSprites = new List<SpriteEntry>();
+		var nesWorldX = new List<int>();
+		void AddNesSprite(int rawSid, int baseX, int baseY, int rawOrdinal)
 		{
-			int index = _spritesArr[j].Index;
-			int num21 = index % num20;
-			int num22 = index / num20;
-			int num23 = num21 * 16;
-			if (dictionary.TryGetValue(index, out var value5))
+			int sid = SharedPhysics.NormalizePortalGeometrySid(rawSid & 0xFF);
+			int width = sid >= 0 && sid < sprite_widths.Length ? sprite_widths[sid] : 16;
+			int height = sid >= 0 && sid < sprite_heights.Length ? sprite_heights[sid] : 16;
+			int xOffset = sid >= 0 && sid < sprite_x_offset.Length ? sprite_x_offset[sid] : 0;
+			int yOffset = sid >= 0 && sid < sprite_y_offset.Length ? sprite_y_offset[sid] : 0;
+			int hitLeft = baseX + xOffset;
+			int hitTop = baseY + yOffset - 1;
+			int processKey = this.sprites.Length + rawOrdinal;
+			nesSprites.Add(new SpriteEntry
 			{
-				num23 += value5.Item1;
+				Index = processKey,
+				ProcessKey = processKey,
+				SpriteId = rawSid,
+				AnchorX_px = baseX + 8,
+				AnchorY_px = baseY + 8,
+				HitLeft = hitLeft,
+				HitTop = hitTop,
+				HitRight = hitLeft + Math.Max(1, width),
+				HitBottom = hitTop + Math.Max(1, height),
+				AllocatedSlot = -1
+			});
+			nesWorldX.Add(baseX);
+		}
+
+		if (nesSpriteRecords != null)
+		{
+			for (int rawOrdinal = 0; rawOrdinal < nesSpriteRecords.Length; rawOrdinal++)
+			{
+				NesSpriteRecord record = nesSpriteRecords[rawOrdinal];
+				AddNesSprite(
+					record.SpriteId,
+					record.X,
+					record.Y - _nesCoordOffset,
+					rawOrdinal);
 			}
-			array[j] = num23;
-			streamKey[j] = ((long)num21 << 32) | (uint)num22;
-			array2[j] = j;
 		}
-		Array.Sort(array2, (int a, int b) => streamKey[a].CompareTo(streamKey[b]));
-		int[] array3 = new int[16];
-		int[] array4 = new int[16];
-		for (int k = 0; k < 16; k++)
+		else
 		{
-			array3[k] = -1;
-			array4[k] = int.MinValue;
-		}
-		int num24 = 0;
-		int num25 = 0;
-		for (int l = 0; l < num19; l++)
-		{
-			_spritesArr[l].AllocatedSlot = -1;
-		}
-		int num26 = 15;
-		while (num26 >= 0 && num24 < num19)
-		{
-			int num27 = (array3[num26] = array2[num24++]);
-			array4[num26] = array[num27];
-			_spritesArr[num27].AllocatedSlot = num26;
-			num25++;
-			num26--;
-		}
-		while (num25 > 0 || num24 < num19)
-		{
-			int num28 = int.MaxValue;
-			for (int m = 0; m < 16; m++)
+			int[] rawNesLayer = nesSpriteLayer != null && nesSpriteLayer.Length == this.sprites.Length
+				? nesSpriteLayer
+				: this.sprites;
+			for (int column = 0; column < this.mapWidth; column++)
 			{
-				if (array3[m] >= 0)
+				for (int row = 0; row < this.mapHeight; row++)
 				{
-					int num29 = array4[m] + 1;
-					if (num29 < num28)
-					{
-						num28 = num29;
-					}
-				}
-			}
-			if (num28 == int.MaxValue)
-			{
-				break;
-			}
-			int num30 = num28;
-			for (int num31 = 15; num31 >= 0; num31--)
-			{
-				int num32 = array3[num31];
-				if (num32 < 0 || array4[num31] < num30)
-				{
-					if (num32 >= 0)
-					{
-						num25--;
-					}
-					if (num24 >= num19)
-					{
-						array3[num31] = -1;
-						array4[num31] = int.MinValue;
-					}
-					else
-					{
-						int num33 = (array3[num31] = array2[num24++]);
-						array4[num31] = array[num33];
-						_spritesArr[num33].AllocatedSlot = num31;
-						num25++;
-					}
+					int sourceIndex = row * this.mapWidth + column;
+					if ((uint)sourceIndex >= (uint)rawNesLayer.Length)
+						continue;
+					int rawSid = rawNesLayer[sourceIndex];
+					if (rawSid < 0)
+						continue;
+
+					int pixelOffsetX = 0;
+					int pixelOffsetY = 0;
+					if (this.spritePixelOffsets.TryGetValue(sourceIndex, out var rawOffset))
+						(pixelOffsetX, pixelOffsetY) = rawOffset;
+					AddNesSprite(
+						rawSid,
+						column * 16 + pixelOffsetX,
+						(row - groundRowsToReserve) * 16 + pixelOffsetY,
+						nesSprites.Count);
 				}
 			}
 		}
+		_nesSpritesArr = nesSprites.ToArray();
+		_nesStreamOrder = Enumerable.Range(0, _nesSpritesArr.Length).ToArray();
+		_nesSpriteWorldX = nesWorldX.ToArray();
+		int nesSpriteCount = _nesSpritesArr.Length;
 		_modePortalPositions = new List<(int, int)>();
-		allCoins = allSprites.Where((SpriteEntry sp) => IsCoinSprite(sp.SpriteId) || IsMiniCoinSprite(sp.SpriteId)).ToList();
-		_spriteCompactMap = new int[this.sprites.Length];
+		allCoins = _nesSpritesArr.Where((SpriteEntry sp) => IsCoinSprite(sp.SpriteId) || IsMiniCoinSprite(sp.SpriteId)).ToList();
+		_spriteCompactMap = new int[this.sprites.Length + nesSpriteCount];
 		Array.Fill(_spriteCompactMap, -1);
 		_spriteCompactCount = 0;
 		foreach (SpriteEntry allSprite in allSprites)
 		{
-			_spriteCompactMap[allSprite.Index] = _spriteCompactCount++;
+			if (_spriteCompactMap[allSprite.ProcessKey] < 0)
+				_spriteCompactMap[allSprite.ProcessKey] = _spriteCompactCount++;
+		}
+		foreach (SpriteEntry nesSprite in _nesSpritesArr)
+		{
+			_spriteCompactMap[nesSprite.ProcessKey] = _spriteCompactCount++;
 		}
 		PathPoints = new List<(int, int)>();
 		Path2Points = new List<(int, int)>();
@@ -1765,17 +1856,106 @@ public class PathfinderEngine
 		{
 			num38 = num38 * 31 + item2.Key + item2.Value.Item1 * 7 + item2.Value.Item2 * 13;
 		}
-		string value6 = $"[PF_DIAG] tiles={this.tiles.Length} tileHash=0x{num34:X8} sprites={this.sprites.Length} sprHash=0x{num35:X8} offsets={this.spritePixelOffsets.Count} offHash=0x{num37:X8} anchors={this.spriteAnchors.Count} anchHash=0x{num38:X8} w={mapWidth} h={mapHeight} ground={groundRowsToReserve} maxFall=0x{this.maxFallSpeed:X} spriteEntries={allSprites.Count}";
+		string value6 = $"[PF_DIAG] tiles={this.tiles.Length} tileHash=0x{num34:X8} sprites={this.sprites.Length} sprHash=0x{num35:X8} offsets={this.spritePixelOffsets.Count} offHash=0x{num37:X8} anchors={this.spriteAnchors.Count} anchHash=0x{num38:X8} w={mapWidth} h={mapHeight} ground={groundRowsToReserve} maxFall=0x{this.maxFallSpeed:X} spriteEntries={allSprites.Count} nesSpriteRecords={nesSpriteCount}";
 		_log.WriteLine(value6);
-		// Dump slot assignments for speed portals (diagnostic)
-		for (int dbgI = 0; dbgI < num19; dbgI++)
+		// A stream record has no permanent slot. The NES assigns and replaces
+		// live slots dynamically as check_spr_objects walks slots 15 down to 0.
+		for (int dbgI = 0; dbgI < nesSpriteCount; dbgI++)
 		{
-			if (IsSpeedPortal(_spritesArr[dbgI].SpriteId))
+			if (IsSpeedPortal(_nesSpritesArr[dbgI].SpriteId))
 			{
-				_log.WriteLine($"[SPEED_PORTAL_SLOT] idx={_spritesArr[dbgI].Index} sid={_spritesArr[dbgI].SpriteId} anchor=({_spritesArr[dbgI].AnchorX_px},{_spritesArr[dbgI].AnchorY_px}) slot={_spritesArr[dbgI].AllocatedSlot}");
+				_log.WriteLine($"[SPEED_PORTAL_STREAM] stream={dbgI} idx={_nesSpritesArr[dbgI].Index} sid={_nesSpritesArr[dbgI].SpriteId} anchor=({_nesSpritesArr[dbgI].AnchorX_px},{_nesSpritesArr[dbgI].AnchorY_px})");
 			}
 		}
 		_log.Flush();
+	}
+
+	private void InitNesSlots(ref SimState s)
+	{
+		s.NesSlots = new int[16];
+		s.NesSlotDead = new bool[16];
+		s.NesSlotActive = new bool[16];
+		s.NesSlotWorldY = new int[16];
+		s.CoinTimer = new int[3];
+		s.CoinSpeed = new int[3];
+		s.CoinAnimating = false;
+		for (int i = 0; i < 16; i++) s.NesSlots[i] = -1;
+		s.NesSprDataPtr = 0;
+		s.TeleportOutputY_px = 0;
+		int slot = 15;
+		while (slot >= 0 && s.NesSprDataPtr < _nesStreamOrder.Length)
+		{
+			s.NesSlots[slot] = _nesStreamOrder[s.NesSprDataPtr];
+			s.NesSlotWorldY[slot] = _nesSpritesArr[s.NesSlots[slot]].AnchorY_px - 8;
+			s.NesSlotDead[slot] = false;
+			s.NesSlotActive[slot] = false;
+			s.NesSprDataPtr++;
+			slot--;
+		}
+	}
+
+	private void NesLoadNextSprite(ref SimState s, int slot)
+	{
+		if (s.NesSprDataPtr < _nesStreamOrder.Length)
+		{
+			s.NesSlots[slot] = _nesStreamOrder[s.NesSprDataPtr++];
+			s.NesSlotWorldY[slot] = _nesSpritesArr[s.NesSlots[slot]].AnchorY_px - 8;
+			s.NesSlotDead[slot] = false;
+			s.NesSlotActive[slot] = false;
+		}
+		else
+		{
+			s.NesSlots[slot] = -1;
+			s.NesSlotWorldY[slot] = 0;
+			s.NesSlotDead[slot] = false;
+			s.NesSlotActive[slot] = false;
+		}
+	}
+
+	private void CheckSprObjects(ref SimState s)
+	{
+		// In normal autoscroll play the NES holds currplayer_x at $50 once
+		// scrolling begins. check_spr_objects compares sprite world X against
+		// that scroll value, so derive the same scroll from PF's world X.
+		int scrollX_px = Math.Max(0, (s.X_fixed >> 8) - NES_PLAYER_SCREEN_X_PX);
+		int scrollY_px = s.CameraY_fixed >> 8;
+		for (int slot = 15; slot >= 0; slot--)
+		{
+			int sprIdx = s.NesSlots[slot];
+			if (sprIdx < 0)
+			{
+				NesLoadNextSprite(ref s, slot);
+				continue;
+			}
+			if (s.NesSlotDead[slot])
+			{
+				NesLoadNextSprite(ref s, slot);
+				continue;
+			}
+			int relX = _nesSpriteWorldX[sprIdx] - scrollX_px;
+			if (relX < 0)
+			{
+				if (IsRegularNesCoin(_nesSpritesArr[sprIdx].SpriteId & 0xFF))
+					s.CoinAnimating = false;
+				NesLoadNextSprite(ref s, slot);
+				continue;
+			}
+			if (relX >= 256)
+			{
+				s.NesSlotActive[slot] = false;
+				continue;
+			}
+
+			// nesdash.s deliberately clears carry before SBC, so the vertical
+			// visibility test is rawY - scrollY - 1.
+			int rawY = s.NesSlotWorldY[slot];
+			int relY = rawY - scrollY_px - 1;
+			bool visible = relY >= 0 && relY < 256;
+			if (!visible && s.CoinAnimating &&
+				IsRegularNesCoin(_nesSpritesArr[sprIdx].SpriteId & 0xFF))
+				visible = true;
+			s.NesSlotActive[slot] = visible;
+		}
 	}
 
 	public void ReplayInputSequence(int startX_px, int startY_px, int startSpeedUiIndex, int startGameMode, bool startGravFlipped, bool startMini, IList<bool> inputs, int preRollFrames, TextWriter output)
@@ -1824,6 +2004,7 @@ public class PathfinderEngine
 		simState.TargetCameraY_fixed = num;
 		SimState s = simState;
 		ApplyPortalsUpTo(ref s, startX_px);
+		InitNesSlots(ref s);
 		ApplyNesIntroFreezePrestep(ref s);
 		output.WriteLine("tasFrame,gameFrame,x,y,velY,jump,onGround,event");
 		int num2 = preRollFrames + inputs.Count;
@@ -2253,6 +2434,7 @@ public class PathfinderEngine
 		simState.TargetCameraY_fixed = num;
 		SimState s = simState;
 		ApplyPortalsUpTo(ref s, startX_px);
+		InitNesSlots(ref s);
 		ApplyNesIntroFreezePrestep(ref s);
 		for (int i = 0; i < inputs.Count; i++)
 		{
@@ -2446,6 +2628,7 @@ public class PathfinderEngine
 		simState.TargetCameraY_fixed = num;
 		SimState s = simState;
 		ApplyPortalsUpTo(ref s, startX_px);
+		InitNesSlots(ref s);
 		ApplyNesIntroFreezePrestep(ref s);
 		PathPoints.Clear();
 		Path2Points.Clear();
@@ -3098,6 +3281,7 @@ public class PathfinderEngine
 			simState.TargetCameraY_fixed = num;
 			SimState s = simState;
 			ApplyPortalsUpTo(ref s, startX_px);
+			InitNesSlots(ref s);
 			ApplyNesIntroFreezePrestep(ref s);
 			_btSkipSpecificOrbs.Clear();
 			_btSkipSpecificPads.Clear();
@@ -4446,6 +4630,7 @@ public class PathfinderEngine
 		simState.TargetCameraY_fixed = num;
 		SimState s = simState;
 		ApplyPortalsUpTo(ref s, startX_px);
+		InitNesSlots(ref s);
 		ApplyNesIntroFreezePrestep(ref s);
 		PathPoints.Clear();
 		Path2Points.Clear();
@@ -4545,6 +4730,7 @@ public class PathfinderEngine
 		simState.TargetCameraY_fixed = ComputeInitCameraY(startY_px);
 		SimState s = simState;
 		ApplyPortalsUpTo(ref s, startX_px);
+		InitNesSlots(ref s);
 		ApplyNesIntroFreezePrestep(ref s);
 		foreach (SpriteEntry item3 in list)
 		{
@@ -8262,10 +8448,16 @@ public class PathfinderEngine
 			s.Orbed = false;
 		}
 		bool orbHitThisFrame = false;
-		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.in X={num} Y={(s.Y_fixed >> 8)} mode={s.GameMode} pendOrb={s.PendingOrbIndex}");
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.in X={num} Y={(s.Y_fixed >> 8)} mode={s.GameMode}");
+		if (!_dualP2Guard)
+		{
+			if (_p1OrbIndicesThisFrame == null)
+				_p1OrbIndicesThisFrame = new List<int>();
+			_p1OrbIndicesThisFrame.Clear();
+		}
 		int _dbgVelXBefore = s.VelX_fixed;
 		int _dbgYBeforePS = s.Y_fixed;
-		endLevel = ProcessSprites(ref s, num, input, out orbHitThisFrame);
+		endLevel = ProcessSpritesNesOrder(ref s, num, input, flag, out orbHitThisFrame);
 		if (s.Y_fixed != _dbgYBeforePS)
 		{
 			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ProcessSprites.Ychanged oldY=0x{_dbgYBeforePS:X} newY=0x{s.Y_fixed:X} delta={s.Y_fixed - _dbgYBeforePS}");
@@ -8282,147 +8474,7 @@ public class PathfinderEngine
 		{
 			return true;
 		}
-		if (!_dualP2Guard)
-		{
-			if (_p1OrbIndicesThisFrame == null)
-			{
-				_p1OrbIndicesThisFrame = new List<int>();
-			}
-			_p1OrbIndicesThisFrame.Clear();
-		}
-		OrbDbg($"POST_PROCESS pendSlots=[{s.PendingOrbIndex}/0x{((s.PendingOrbSpriteId >= 0) ? s.PendingOrbSpriteId : 0):X2},{s.PendingOrbExtra1Index}/0x{((s.PendingOrbExtra1SpriteId >= 0) ? s.PendingOrbExtra1SpriteId : 0):X2},{s.PendingOrbExtra2Index}/0x{((s.PendingOrbExtra2SpriteId >= 0) ? s.PendingOrbExtra2SpriteId : 0):X2}] input={input} pressEdge={flag}");
-		bool normalOrbGate = input && (flag || s.AirPressLatch);
-		bool hasPendingNormalOrb = (s.PendingOrbIndex >= 0 && s.PendingOrbSpriteId != 123 && s.PendingOrbSpriteId != 124) || (s.PendingOrbExtra1Index >= 0 && s.PendingOrbExtra1SpriteId != 123 && s.PendingOrbExtra1SpriteId != 124) || (s.PendingOrbExtra2Index >= 0 && s.PendingOrbExtra2SpriteId != 123 && s.PendingOrbExtra2SpriteId != 124);
-		bool hasPendingMultiOrb = (s.PendingOrbIndex >= 0 && (s.PendingOrbSpriteId == 123 || s.PendingOrbSpriteId == 124)) || (s.PendingOrbExtra1Index >= 0 && (s.PendingOrbExtra1SpriteId == 123 || s.PendingOrbExtra1SpriteId == 124)) || (s.PendingOrbExtra2Index >= 0 && (s.PendingOrbExtra2SpriteId == 123 || s.PendingOrbExtra2SpriteId == 124));
-		bool flag2 = (hasPendingNormalOrb && normalOrbGate) || (hasPendingMultiOrb && flag);
-		if (s.PendingOrbIndex >= 0 && !flag2)
-		{
-			OrbDbg($"CLEAR reason=no_input_pressed pendSlots cleared without activation gateMode=press_or_latch input={input} pressEdge={flag}");
-		}
-		if (s.PendingOrbIndex >= 0 && flag2)
-		{
-			int num2 = num + 1;
-			int hitboxW = GetHitboxW(s.Mini);
-			int hitboxH = GetHitboxH(s.Mini);
-			int miniCenterOffsetY = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
-			int num3 = (s.Y_fixed >> 8) + miniCenterOffsetY;
-			int num4 = num3 + hitboxH;
-			int num5 = num2 + hitboxW;
-			for (int i = 0; i < 3; i++)
-			{
-				int num6;
-				int num7;
-				switch (i)
-				{
-				case 0:
-					num6 = s.PendingOrbIndex;
-					num7 = s.PendingOrbSpriteId;
-					break;
-				case 1:
-					num6 = s.PendingOrbExtra1Index;
-					num7 = s.PendingOrbExtra1SpriteId;
-					break;
-				default:
-					num6 = s.PendingOrbExtra2Index;
-					num7 = s.PendingOrbExtra2SpriteId;
-					break;
-				}
-				if (num6 < 0)
-				{
-					continue;
-				}
-				if ((num7 == 123 || num7 == 124) && !flag)
-				{
-					OrbDbg($"SKIP kind=ACT slot={i} sid=0x{num7:X2} idx={num6} reason=multi_held_no_press_edge");
-					continue;
-				}
-				int velY_fixed = s.VelY_fixed;
-				bool gravFlipped = s.GravFlipped;
-				OrbDbg($"ACT slot={i} sid=0x{num7:X2} idx={num6} gravF_before={gravFlipped} mini={s.Mini} velY_before=0x{velY_fixed:X} press={flag} held={input}");
-				if (_speculativeDepth == 0)
-				{
-					_hitOrbHistory.Add(num6);
-				}
-				if (IsDashOrb(num7))
-				{
-					ApplyDashOrb(ref s, num7);
-					s.ProcessedSprites.Add(num6);
-					if (!_dualP2Guard)
-					{
-						if (_p1OrbIndicesThisFrame != null) _p1OrbIndicesThisFrame.Add(num6);
-					}
-				}
-				else if (IsSpiderOrb(num7))
-				{
-					bool goUp = num7 == 84;
-					ApplySpiderTeleport(ref s, goUp);
-					s.Orbed = true;
-					s.ProcessedSprites.Add(num6);
-					if (!_dualP2Guard)
-					{
-						if (_p1OrbIndicesThisFrame != null) _p1OrbIndicesThisFrame.Add(num6);
-					}
-				}
-				else
-				{
-					ApplyOrbSprite(ref s, num7);
-					if (IsBlackOrb(num7) && s.GameMode == 5)
-					{
-						s.BlackOrbed = true;
-					}
-					if (num7 != 123 && num7 != 124)
-					{
-						s.ProcessedSprites.Add(num6);
-						if (!_dualP2Guard)
-						{
-							if (_p1OrbIndicesThisFrame != null) _p1OrbIndicesThisFrame.Add(num6);
-						}
-					}
-				}
-				bool flag3 = num7 == 123 || num7 == 124;
-				OrbDbg($"ACT_DONE slot={i} sid=0x{num7:X2} idx={num6} velY_after=0x{s.VelY_fixed:X} gravF_after={s.GravFlipped} dashing={s.Dashing} multiOrb={flag3}");
-				if (flag3)
-				{
-					continue;
-				}
-				for (int j = SpriteLowerBound(num - 64); j < _spritesArr.Length; j++)
-				{
-					ref SpriteEntry reference = ref _spritesArr[j];
-					if (reference.AnchorX_px - 16 > num5 + 16)
-					{
-						break;
-					}
-					if (reference.SpriteId != num7 || s.ProcessedSprites.Contains(reference.Index))
-					{
-						continue;
-					}
-					bool num8 = num5 >= reference.HitLeft && reference.HitRight >= num2;
-					bool flag4 = num4 >= reference.HitTop && reference.HitBottom >= num3;
-					if (num8 && flag4)
-					{
-						s.ProcessedSprites.Add(reference.Index);
-						if (!_dualP2Guard)
-						{
-							if (_p1OrbIndicesThisFrame != null) _p1OrbIndicesThisFrame.Add(reference.Index);
-						}
-						OrbDbg($"SWEEP slot={i} sid=0x{num7:X2} swept_idx={reference.Index} sprBox=({reference.HitLeft},{reference.HitTop})-({reference.HitRight},{reference.HitBottom}) plBox=({num2},{num3})-({num5},{num4})");
-					}
-				}
-			}
-			ClearPendingOrbs(ref s);
-			s.AirPressLatch = false;
-			orbHitThisFrame = true;
-			if (_speculativeDepth == 0)
-			{
-				_cubeJumpedThisStep = true;
-			}
-		}
 		int x_fixed2 = s.X_fixed + s.VelX_fixed;
-		if (!_dualP2Guard)
-		{
-			SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=CheckGravityModTriggersAtNewX.in gMod={s.GravityMod} Y=0x{s.Y_fixed:X}");
-			CheckGravityModTriggersAtNewX(ref s);
-		}
 		if (s.GameMode == 0)
 		{
 			PfUpdateSlopeCountersPreGravity(ref s);
@@ -8564,11 +8616,8 @@ public class PathfinderEngine
 				s.DeathType = 2;
 				return false;
 			}
-			// NES: UFO jump does NOT fire on the first frame of a mode transition
-			// into UFO.  The press edge is consumed by check_for_cube_data_2_set
-			// (which runs while gamemode is still the OLD mode) and by the time
-			// ufo_movement executes the jump check, it doesn't trigger.
-			// Only allow the UFO jump when gameMode was already UFO (no transition).
+			// Mesen/NES: a press that enters a UFO portal does not also flap on
+			// that transition frame. Only jump when the frame started in UFO.
 			if (flag && !orbHitThisFrame && gameMode == 3)
 			{
 				int velY_fixed3 = UfoJumpVel(s.Mini) * -s.GravMul;
@@ -8887,6 +8936,9 @@ public class PathfinderEngine
 		}
 		if (CheckFloorSpikes(ref s))
 		{
+			// NES x_movement_coll only sets cube_data here. runthecolls still
+			// calls x_movement before the frame is reported as dead.
+			s.X_fixed = x_fixed2;
 			if (_speculativeDepth == 0)
 			{
 				_lastDeathReason = "FLOOR_SPIKE";
@@ -8907,6 +8959,8 @@ public class PathfinderEngine
 			}
 			if (flag8)
 			{
+				// bg_coll_R marks cube_data, then NES still executes x_movement.
+				s.X_fixed = x_fixed2;
 				if (_speculativeDepth == 0)
 				{
 					_lastDeathReason = "FWD_DEATH";
@@ -8942,7 +8996,7 @@ public class PathfinderEngine
 				}
 			}
 		}
-		if (!s.DualActive && (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9 || s.NoCamLockForced))
+		if (!_dualP2Guard && !s.DualActive && (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8 || s.GameMode == 9 || s.NoCamLockForced))
 		{
 			RefreshCubeRobotPortalTimer(ref s);
 			if (s.ExitPortalTimer != 0)
@@ -9023,20 +9077,24 @@ public class PathfinderEngine
 				}
 			}
 		}
-		else
+		else if (!_dualP2Guard)
 		{
 			int num49 = s.CameraY_fixed >> 8;
 			int num50 = s.TargetCameraY_fixed >> 8;
+			int num51 = NesMaxCamY_px() << 8;
 			if (num50 > num49)
 			{
 				s.CameraY_fixed += 512;
 			}
-			else if (num50 < num49)
+			// NES process_y_scroll uses a second independent comparison after
+			// the upward step, so a +2 overshoot can immediately take the -3 path.
+			// Do not reverse a step past the physical bottom cap: the NES compares
+			// the still-higher encoded target_scroll_y before cap_scroll_y_at_bottom.
+			if (s.CameraY_fixed <= num51 && num50 < (s.CameraY_fixed >> 8))
 			{
 				s.CameraY_fixed -= 768;
 				s.Y_fixed -= 256;
 			}
-			int num51 = NesMaxCamY_px() << 8;
 			int num52 = -(groundRowsToReserve * 16) << 8;
 			if (s.CameraY_fixed < num52)
 			{
@@ -9056,6 +9114,7 @@ public class PathfinderEngine
 		{
 			if (num53 < 1536)
 			{
+				s.X_fixed = x_fixed2;
 				if (_speculativeDepth == 0)
 				{
 					_lastDeathReason = "OOB_TOP";
@@ -9067,6 +9126,7 @@ public class PathfinderEngine
 			}
 			if (num53 > 63744)
 			{
+				s.X_fixed = x_fixed2;
 				if (_speculativeDepth == 0)
 				{
 					_lastDeathReason = "OOB_BOTTOM";
@@ -9085,12 +9145,11 @@ public class PathfinderEngine
 		{
 			s.Y_fixed = s.CameraY_fixed + 1536;
 		}
-		if (!_dualP2Guard)
-		{
-			CheckGravityModTriggersAtNewX(ref s);
-		}
 		if (CheckDeathCollision(ref s))
 		{
+			// bg_coll_death probes Generic.x from before x_movement, but the
+			// persisted player position has already advanced for this frame.
+			s.X_fixed = x_fixed2;
 			if (_speculativeDepth == 0)
 			{
 				_lastDeathReason = "DEATH_COLL";
@@ -9102,6 +9161,7 @@ public class PathfinderEngine
 		}
 		if (CheckSlopePenetrationDeath(ref s))
 		{
+			s.X_fixed = x_fixed2;
 			if (_speculativeDepth == 0)
 			{
 				_lastDeathReason = "SLOPE_DEATH";
@@ -9151,11 +9211,13 @@ public class PathfinderEngine
 		s.HBlocked = false;
 		s.Dblocked = false;
 		s.PrevInputHeld = input;
+		// NES runs check_spr_objects once, after P1 movement/scroll and before
+		// switching to P2. P2 reuses that exact 16-slot ordering/active state.
+		if (!_dualP2Guard)
+			CheckSprObjects(ref s);
 		if (s.DualActive && !_dualP2Guard)
 		{
 			int y_fixed = s.Y_fixed;
-			if ((s.CameraY_fixed >> 8) < (s.TargetCameraY_fixed >> 8))
-				y_fixed += 256;
 			int num57 = s.VelY_fixed;
 			bool flag9 = s.GravFlipped;
 			int gravMul = s.GravMul;
@@ -11359,14 +11421,17 @@ public class PathfinderEngine
 		died = false;
 		int gravMul = s.GravMul;
 		bool flag = ((gravMul > 0) ? (s.VelY_fixed > 0) : (s.VelY_fixed < 0));
-		int num = ((holding && flag) ? (ShipGravityHoldFall(s.Mini) * gravMul) : (holding ? (ShipGravityBase(s.Mini) * gravMul) : (flag ? (ShipGravity(s.Mini) * gravMul) : (ShipGravityAfterHold(s.Mini) * gravMul))));
+		int num = ((holding && flag) ? ShipGravityHoldFall(s.Mini) : (holding ? ShipGravityBase(s.Mini) : (flag ? ShipGravity(s.Mini) : ShipGravityAfterHold(s.Mini)))) * gravMul;
 		if (s.GravFlipped ^ holding)
 		{
 			num = -num;
 		}
 		int tmpfallspeed = 17475;
 		int clampMaxY = Math.Max(0, mapHeight * 16 - 16) << 8;
+		int _dbgVelBefore = s.VelY_fixed;
+		int _dbgPosBefore = s.Y_fixed;
 		SharedPhysics.CommonGravityRoutine(ref s.VelY_fixed, ref s.Y_fixed, num, tmpfallspeed, s.GravFlipped ? 255 : 0, s.Dashing, s.GravityMod, 1.0, isFullSpeed: true, s.VelX_fixed, clampMaxY);
+		SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=ShipGravDbg hold={holding} fall={flag} gMul={gravMul} gFlip={s.GravFlipped} mini={s.Mini} accel={num} dash={s.Dashing} gMod={s.GravityMod} VelBefore={_dbgVelBefore} VelAfter={s.VelY_fixed} PosBefore=0x{_dbgPosBefore:X} PosAfter=0x{s.Y_fixed:X}");
 		if (!s.GravFlipped)
 		{
 			if (s.VelY_fixed < -1091)
@@ -11658,6 +11723,519 @@ public class PathfinderEngine
 		s.PendingOrbExtra2SpriteId = -1;
 	}
 
+	private bool ProcessSpritesNesOrder(ref SimState s, int currentX_px, bool inputHeld, bool pressEdge, out bool orbHitThisFrame)
+	{
+		orbHitThisFrame = false;
+		_dualActivatedThisProcessSprites = false;
+		s.GravFlippedAtFrameStart = s.GravFlipped;
+		s.OrbUseFrameStartGravitySign = false;
+		int playerY_px = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
+		bool isWaveOrSnake = s.GameMode == 6 || s.GameMode == 10;
+		int hitboxW = isWaveOrSnake ? 8 : GetHitboxW(s.Mini);
+		int hitboxH = isWaveOrSnake ? 8 : GetHitboxH(s.Mini);
+		int hitboxOffY = isWaveOrSnake ? 4 : GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
+		int plTop = playerY_px + hitboxOffY;
+		int plBot = plTop + hitboxH;
+		int plLeft = currentX_px + 1;
+		int plRight = plLeft + hitboxW;
+		bool dualActive = s.DualActive;
+		int scrollX_px = Math.Max(0, (s.X_fixed >> 8) - NES_PLAYER_SCREEN_X_PX);
+		int miniCenterOffY = SharedPhysics.GetMiniCenterOffsetY(s.Mini);
+		int orbPlTop = playerY_px + miniCenterOffY;
+		int orbPlBot = orbPlTop + hitboxH;
+
+		for (int slot = 0; slot < 16; slot++)
+		{
+			int sprIdx = s.NesSlots[slot];
+			if (sprIdx < 0 || s.NesSlotDead[slot] || !s.NesSlotActive[slot]) continue;
+			ref SpriteEntry spr = ref _nesSpritesArr[sprIdx];
+			int processKey = spr.ProcessKey;
+			int sid = spr.SpriteId & 0xFF;
+			int nesH = (sid < _nesSprH.Length) ? _nesSprH[sid] : 0;
+
+			if (nesH == NES_DECO) continue;
+			if (nesH == NES_COLR) { s.NesSlotDead[slot] = true; continue; }
+			if (nesH == NES_OUTL) { s.NesSlotDead[slot] = true; continue; }
+			if (nesH == 0) continue;
+
+			if (nesH == NES_SPBH)
+			{
+				// The ROM stores coin animation in the live slot Y byte, with
+				// one shared timer/speed pair per coin number. Both regular and
+				// already-collected coin records execute this animation.
+				int coinKind = GetNesCoinKind(sid);
+				if (coinKind >= 0 && s.CoinTimer[coinKind] != 0)
+				{
+					int yLow = ((s.NesSlotWorldY[slot] & 0xFF) -
+						((s.CoinSpeed[coinKind] >> 8) & 0xFF)) & 0xFF;
+					s.NesSlotWorldY[slot] =
+						(s.NesSlotWorldY[slot] & ~0xFF) | yLow;
+					s.CoinSpeed[coinKind] =
+						(s.CoinSpeed[coinKind] - 0x40) & 0xFFFF;
+					s.CoinTimer[coinKind] =
+						(s.CoinTimer[coinKind] + 1) & 0xFF;
+					if (s.CoinTimer[coinKind] == 40)
+					{
+						s.NesSlotDead[slot] = true;
+						s.CoinAnimating = false;
+						continue;
+					}
+				}
+
+				// Exit records continuously publish the shared teleport_output
+				// byte in slot order. Entrances consume whatever value has been
+				// published by an earlier active exit (possibly a prior frame).
+				if (IsTeleportPortalExit(sid))
+				{
+					int relY = s.NesSlotWorldY[slot] - (s.CameraY_fixed >> 8) - 1;
+					s.TeleportOutputY_px = sid == 0x5A ? relY : relY + 16;
+					continue;
+				}
+
+				// level_end is unconditional once its slot is active.
+				if (IsEndLevel(sid))
+				{
+					ApplyPortalSprite(ref s, sid);
+					s.ProcessedSprites.Add(processKey);
+					return true;
+				}
+
+				// Coins are the SPBH records that continue into ordinary
+				// collision handling. All other recognized triggers below run
+				// immediately and kill their slot, exactly like the ROM macro.
+				bool persistentCoin = sid == 0x07 || sid == 0x1A || sid == 0x1B ||
+					(sid >= 0x1C && sid <= 0x1E);
+				if (!persistentCoin)
+				{
+					switch (sid)
+					{
+						case 0x70: s.GravityMod = 1.0 / 3.0; break;
+						case 0x71: s.GravityMod = 0.5; break;
+						case 0x72: s.GravityMod = 2.0 / 3.0; break;
+						case 0x73: s.GravityMod = 2.0; break;
+						case 0x74: s.GravityMod = 1.0; break;
+						case 0x8E: s.WrapMode = true; break;
+						case 0x9E: s.WrapMode = false; break;
+						case 0xDD: s.NoCamLockForced = true; break;
+						case 0xED: s.NoCamLockForced = false; break;
+						case 0x6F:
+						case 0x7F:
+						case 0x7D:
+						case 0xDE:
+						case 0xDF:
+						case 0xEE:
+						case 0xEF:
+						case 0xF0:
+						case 0xF1:
+						case 0xF2:
+						case 0xF3:
+						case 0xF4:
+						case 0xF5:
+							break;
+						default:
+							// Unrecognized SPBH records remain resident and
+							// return zero collision height.
+							continue;
+					}
+					s.NesSlotDead[slot] = true;
+					continue;
+				}
+			}
+
+			bool xOv = plRight >= spr.HitLeft && spr.HitRight >= plLeft;
+
+			// Coins bypass the normal height table: SPBH returns a 16x16
+			// collision box after running the mutable slot animation above.
+			// Mini coins are killed immediately; full coins remain until their
+			// 40-tick animation changes the live slot type to $FF.
+			int nesCoinKind = GetNesCoinKind(sid);
+			if (nesCoinKind >= 0 || IsMiniCoinSprite(sid))
+			{
+				int coinLeft = _nesSpriteWorldX[sprIdx];
+				int coinTop = s.NesSlotWorldY[slot] - 1;
+				int coinRight = coinLeft + 0x10;
+				int coinBottom = coinTop + 0x10;
+				bool coinXOv = !((plRight + 1) < coinLeft || coinRight < plLeft);
+				bool coinYOv = !((plBot + 1) < coinTop || coinBottom < plTop);
+				if (coinXOv && coinYOv && !s.ProcessedSprites.Contains(processKey))
+				{
+					s.ProcessedSprites.Add(processKey);
+					if (IsMiniCoinSprite(sid))
+					{
+						s.NesSlotDead[slot] = true;
+					}
+					else if (s.CoinTimer[nesCoinKind] == 0)
+					{
+						s.CoinTimer[nesCoinKind] = 1;
+						s.CoinSpeed[nesCoinKind] = 0x0200;
+						s.CoinAnimating = true;
+					}
+				}
+				continue;
+			}
+
+			// Speed portals
+			if (IsSpeedPortal(sid))
+			{
+				bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+				if (xOv && yOv)
+				{
+					int spd = SpriteIdToSpeedFixed(sid);
+					if (spd > 0)
+					{
+						SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm=-1 tag=NesSlotSpeed sid={sid} idx={spr.Index} slot={slot} oldVelX={s.VelX_fixed} newVelX={spd}");
+						s.VelX_fixed = spd;
+					}
+				}
+				// NES spcl_spd_* only writes global speed. It never increments
+				// activesprites_activated, so overlapping speed portals re-fire
+				// every frame and the last colliding active slot wins.
+				continue;
+			}
+
+			if (s.ProcessedSprites.Contains(processKey)) continue;
+
+			// Dual/single portals
+			if (sid == 34 || sid == 35)
+			{
+				bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+				if (xOv && yOv)
+				{
+					if (sid == 34 && !s.DualActive)
+					{
+						s.DualActive = true;
+						_dualActivatedThisProcessSprites = true;
+						s.TargetCameraY_fixed = NesNtCameraTarget_fixed(spr.AnchorY_px - 8);
+						s.P2_Y_fixed = s.Y_fixed;
+						s.P2_VelY_fixed = -s.VelY_fixed;
+						s.P2_GravFlipped = !s.GravFlipped;
+						s.P2_GravMul = -s.GravMul;
+						s.P2_Mini = s.Mini;
+						s.P2_WasZeroedByCollision = false;
+						s.P2_OnGround = false;
+						s.P2_BallFlipCooldown = 0;
+						s.P2_BallInputBuffer = 0;
+						s.P2_BallCooldownFrames = 0;
+						s.P2_RobotJumpTime = 0;
+						s.P2_SlopeWasOnCounter = 0;
+						s.P2_SlopeFrames = 0;
+						s.P2_SlopeType = 0;
+						s.P2_Orbed = false;
+						s.P2_BlackOrbed = false;
+						s.P2_PrevInputHeld = s.PrevInputHeld;
+						s.P2_Dashing = 0;
+						s.P2_JBlocked = false;
+						s.P2_FBlocked = false;
+						s.P2_HBlocked = false;
+						s.P2_Dblocked = false;
+						s.P2_NinjaJumps = 0;
+						s.P2_PendingOrbIndex = -1;
+						s.P2_PendingOrbSpriteId = -1;
+						s.P2_PendingOrbExtra2Index = -1;
+						s.P2_PendingOrbExtra2SpriteId = -1;
+						s.P2_PendingOrbExtra1Index = -1;
+						s.P2_PendingOrbExtra1SpriteId = -1;
+					}
+					else if (sid == 35 && s.DualActive)
+					{
+						s.DualActive = false;
+						s.ExitPortalTimer = 10;
+					}
+					s.ProcessedSprites.Add(processKey);
+				}
+				continue;
+			}
+
+			// NoCamLock triggers (SPBH, X-overlap only)
+			if (sid == 221 || sid == 237)
+			{
+				if (xOv)
+				{
+					s.NoCamLockForced = sid == 221;
+					s.ProcessedSprites.Add(processKey);
+				}
+				continue;
+			}
+
+			// Wrap mode triggers (SPBH)
+			if (sid == 142 || sid == 158)
+			{
+				bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+				if (xOv && yOv)
+				{
+					s.WrapMode = sid == 142;
+					s.ProcessedSprites.Add(processKey);
+				}
+				continue;
+			}
+
+			// RainbowMax / random mode
+			if (sid == 100 || sid == 126)
+			{
+				if (!_dualP2Guard)
+				{
+					bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+					if (xOv && yOv)
+					{
+						if (s.RainbowMaxMode == 0)
+						{
+							if (s.GameMode == 6 || s.GameMode == 10) s.VelY_fixed = 0;
+							s.RainbowMaxMode = (sid == 100) ? 8 : 12;
+						}
+						s.RobotJumpTime = 0;
+						if (s.GameMode != 0 && s.GameMode != 4 && s.GameMode != 8 && s.GameMode != 9 && !dualActive)
+						{
+							s.TargetCameraY_fixed = NesNtCameraTarget_fixed(spr.AnchorY_px - 8);
+						}
+						s.ProcessedSprites.Add(processKey);
+					}
+				}
+				continue;
+			}
+
+			// Gravity mod triggers (0x5F-0x63)
+			if (sid >= 95 && sid <= 99)
+			{
+				bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+				if (xOv && yOv)
+				{
+					double gmod = 1.0;
+					switch (sid) { case 95: gmod = 1.0 / 3.0; break; case 96: gmod = 0.5; break; case 97: gmod = 2.0 / 3.0; break; case 98: gmod = 2.0; break; case 99: gmod = 1.0; break; }
+					s.GravityMod = gmod;
+					s.ProcessedSprites.Add(processKey);
+				}
+				continue;
+			}
+
+			// Camera visual triggers — skip
+			if (sid >= 112 && sid <= 116) continue;
+
+			// End level
+			if (IsEndLevel(sid))
+			{
+				int camTop = s.CameraY_fixed >> 8;
+				int camBot = camTop + 240;
+				int sprY = spr.AnchorY_px - 8;
+				bool camVisible = sprY + 16 >= camTop && sprY < camBot;
+				if (xOv && camVisible)
+				{
+					ApplyPortalSprite(ref s, sid);
+					s.ProcessedSprites.Add(processKey);
+					return true;
+				}
+				continue;
+			}
+
+			// Gamemode portals
+			if (IsGameModePortal(sid))
+			{
+				if (_dualP2Guard) continue;
+				bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+				if (xOv && yOv)
+				{
+					bool applied = ApplyPortalSprite(ref s, sid);
+					if (applied)
+					{
+						s.ProcessedSprites.Add(processKey);
+						if (s.GameMode != 0 && s.GameMode != 4 && s.GameMode != 8 && s.GameMode != 9 && !dualActive)
+							s.TargetCameraY_fixed = NesNtCameraTarget_fixed(spr.AnchorY_px - 8);
+					}
+				}
+				continue;
+			}
+
+			// Gravity portals
+			if (IsGravityPortal(sid))
+			{
+				bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+				if (xOv && yOv)
+				{
+					SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=NesSlotGravPortal sid={sid} idx={spr.Index} slot={slot} gravBefore={s.GravFlipped} velBefore={s.VelY_fixed}");
+					if (ApplyPortalSprite(ref s, sid))
+						s.ProcessedSprites.Add(processKey);
+				}
+				continue;
+			}
+
+			// Mini/Growth portals
+			if (IsMiniGrowthPortal(sid))
+			{
+				bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+				if (xOv && yOv)
+				{
+					if (ApplyPortalSprite(ref s, sid))
+						s.ProcessedSprites.Add(processKey);
+				}
+				continue;
+			}
+
+			// Pads
+			if (IsYellowPad(sid) || IsPinkPad(sid) || IsRedPad(sid) || IsBluePad(sid) || IsGreenPad(sid))
+			{
+				bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+				if (xOv && yOv)
+				{
+					bool shouldApply = true;
+					if (IsBluePad(sid))
+					{
+						bool isGravDown = (sid == 13 || sid == 253);
+						if (isGravDown && s.GravFlipped) shouldApply = false;
+						if (!isGravDown && !s.GravFlipped) shouldApply = false;
+					}
+					if (shouldApply)
+					{
+						ApplyPadSprite(ref s, sid);
+						orbHitThisFrame = true;
+					}
+					if (IsBluePad(sid) && !s.DualActive)
+						s.ProcessedSprites.Add(processKey);
+				}
+				continue;
+			}
+
+			// Spider pads
+			if (IsSpiderPad(sid))
+			{
+				bool xOvO = plRight >= spr.HitLeft && spr.HitRight >= plLeft;
+				bool yOvO = orbPlBot >= spr.HitTop && spr.HitBottom >= orbPlTop;
+				if (xOvO && yOvO)
+				{
+					ApplySpiderTeleport(ref s, sid == 86);
+					orbHitThisFrame = true;
+				}
+				continue;
+			}
+
+			// Orbs (yellow, pink, red, black, blue, green, white, skull + multi-orbs)
+			if (IsOrbSprite(sid))
+			{
+				if (s.Dashing != 0) continue;
+				bool xOvO = plRight >= spr.HitLeft && spr.HitRight >= plLeft;
+				bool yOvO = orbPlBot >= spr.HitTop && spr.HitBottom >= orbPlTop;
+				if (xOvO && yOvO)
+				{
+					if (s.GameMode == 2 && inputHeld && !IsWhiteOrb(sid))
+						s.BallFlipCooldown = 1;
+					bool isCubeGroup = s.GameMode == 0 || s.GameMode == 2 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode >= 10;
+					bool orbGate;
+					if (isCubeGroup)
+						orbGate = inputHeld && (s.Orbed || pressEdge || s.AirPressLatch);
+					else
+						orbGate = pressEdge;
+					bool isMultiOrb = sid == 123 || sid == 124;
+					if (isMultiOrb)
+						orbGate = pressEdge;
+					OrbDbg($"NES_SLOT_ORB slot={slot} sid=0x{sid:X2} idx={spr.Index} gate={orbGate} press={pressEdge} hold={inputHeld} orbed={s.Orbed} latch={s.AirPressLatch} cubeGrp={isCubeGroup} gm={s.GameMode}");
+					if (orbGate)
+					{
+						if (_speculativeDepth == 0)
+							_hitOrbHistory.Add(spr.Index);
+						ApplyOrbSprite(ref s, sid);
+						if (IsBlackOrb(sid) && s.GameMode == 5) s.BlackOrbed = true;
+						if (!isMultiOrb)
+						{
+							s.ProcessedSprites.Add(processKey);
+							if (!_dualP2Guard && _p1OrbIndicesThisFrame != null)
+								_p1OrbIndicesThisFrame.Add(processKey);
+						}
+						s.AirPressLatch = false;
+						orbHitThisFrame = true;
+						if (_speculativeDepth == 0) _cubeJumpedThisStep = true;
+						OrbDbg($"NES_SLOT_ORB_ACT slot={slot} sid=0x{sid:X2} idx={spr.Index} velY_after=0x{s.VelY_fixed:X} gravF_after={s.GravFlipped}");
+					}
+				}
+				continue;
+			}
+
+			// Dash orbs
+			if (IsDashOrb(sid))
+			{
+				if (s.Dashing != 0) continue;
+				bool xOvO = plRight >= spr.HitLeft && spr.HitRight >= plLeft;
+				bool yOvO = orbPlBot >= spr.HitTop && spr.HitBottom >= orbPlTop;
+				if (xOvO && yOvO)
+				{
+					if (s.GameMode == 2 && inputHeld)
+						s.BallFlipCooldown = 1;
+					bool isCubeGroup = s.GameMode == 0 || s.GameMode == 2 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode >= 10;
+					bool orbGate = isCubeGroup ? (inputHeld && (s.Orbed || pressEdge || s.AirPressLatch)) : pressEdge;
+					if (orbGate)
+					{
+						if (_speculativeDepth == 0) _hitOrbHistory.Add(spr.Index);
+						ApplyDashOrb(ref s, sid);
+						s.ProcessedSprites.Add(processKey);
+						if (!_dualP2Guard && _p1OrbIndicesThisFrame != null)
+							_p1OrbIndicesThisFrame.Add(processKey);
+						s.AirPressLatch = false;
+						orbHitThisFrame = true;
+						if (_speculativeDepth == 0) _cubeJumpedThisStep = true;
+					}
+				}
+				continue;
+			}
+
+			// Spider orbs
+			if (IsSpiderOrb(sid))
+			{
+				bool xOvO = plRight >= spr.HitLeft && spr.HitRight >= plLeft;
+				bool yOvO = orbPlBot >= spr.HitTop && spr.HitBottom >= orbPlTop;
+				if (xOvO && yOvO)
+				{
+					bool isCubeGroup = s.GameMode == 0 || s.GameMode == 2 || s.GameMode == 4 || s.GameMode == 5 || s.GameMode == 7 || s.GameMode == 8 || s.GameMode == 9 || s.GameMode >= 10;
+					bool orbGate = isCubeGroup ? (inputHeld && (s.Orbed || pressEdge || s.AirPressLatch)) : pressEdge;
+					if (orbGate)
+					{
+						if (_speculativeDepth == 0) _hitOrbHistory.Add(spr.Index);
+						ApplySpiderTeleport(ref s, sid == 84);
+						s.Orbed = true;
+						s.ProcessedSprites.Add(processKey);
+						if (!_dualP2Guard && _p1OrbIndicesThisFrame != null)
+							_p1OrbIndicesThisFrame.Add(processKey);
+						s.AirPressLatch = false;
+						orbHitThisFrame = true;
+						if (_speculativeDepth == 0) _cubeJumpedThisStep = true;
+					}
+				}
+				continue;
+			}
+
+			// Teleport portals
+			if (IsTeleportPortalEntrance(sid))
+			{
+				bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+				if (xOv && yOv)
+				{
+					ApplyTeleportPortal(ref s, spr, sid, currentX_px);
+					playerY_px = NesPlayerY_px(s.Y_fixed, s.CameraY_fixed);
+					plTop = playerY_px + hitboxOffY;
+					plBot = plTop + hitboxH;
+					orbPlTop = playerY_px + miniCenterOffY;
+					orbPlBot = orbPlTop + hitboxH;
+				}
+				continue;
+			}
+
+			// S-block (dash stop)
+			if (sid == 249)
+			{
+				bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop;
+				if (xOv && yOv && s.Dashing != 0) { s.Dashing = 0; s.Orbed = true; s.VelY_fixed = 0; }
+				continue;
+			}
+
+			// J/F/H/D blocks
+			if (sid == 247) { bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop; if (xOv && yOv) s.JBlocked = true; continue; }
+			if (sid == 246) { bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop; if (xOv && yOv) s.FBlocked = true; continue; }
+			if (sid == 248) { bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop; if (xOv && yOv) s.HBlocked = true; continue; }
+			if (sid == 250) { bool yOv = plBot >= spr.HitTop && spr.HitBottom >= plTop; if (xOv && yOv) s.Dblocked = true; continue; }
+		}
+
+		if (_dualActivatedThisProcessSprites && s.DualActive)
+			s.P2_VelY_fixed = -s.VelY_fixed;
+
+		return false;
+	}
+
 	private bool ProcessSprites(ref SimState s, int currentX_px, bool inputHeld, out bool orbHitThisFrame)
 	{
 		orbHitThisFrame = false;
@@ -11861,9 +12439,32 @@ public class PathfinderEngine
 			{
 				ref SpriteEntry reference5 = ref spritesArr[span3[n]];
 				int spriteId3 = reference5.SpriteId;
-				if (ApplyPortalSprite(ref s, spriteId3))
+				bool skipDueToBlueOrb = false;
+				for (int bp = num13; bp < num12; bp++)
 				{
-					s.ProcessedSprites.Add(reference5.Index);
+					ref SpriteEntry bRef = ref spritesArr[bp];
+					if (bRef.HitRight < currentX_px) continue;
+					if (bRef.AnchorX_px - 16 > num11 + 16) break;
+					if (s.ProcessedSprites.Contains(bRef.Index)) continue;
+					if (IsBlueOrb(bRef.SpriteId))
+					{
+						bool xOv = num11 >= bRef.HitLeft && bRef.HitRight >= num10;
+						bool yOv = num9 >= bRef.HitTop && bRef.HitBottom >= num8;
+						SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=GravPortalBlueOrbCheck portalSid={spriteId3} portalIdx={reference5.Index} blueOrbIdx={bRef.Index} xOv={xOv} yOv={yOv} blueIdxLower={bRef.Index < reference5.Index}");
+						if (xOv && yOv)
+						{
+							skipDueToBlueOrb = true;
+							break;
+						}
+					}
+				}
+				SharedPhysics.FullTraceLog?.Invoke($"cur=0 gm={s.GameMode} tag=GravPortalProcess sid={spriteId3} idx={reference5.Index} slot={reference5.AllocatedSlot} anchor=({reference5.AnchorX_px},{reference5.AnchorY_px}) skip={skipDueToBlueOrb} gravBefore={s.GravFlipped} velBefore={s.VelY_fixed}");
+				if (!skipDueToBlueOrb)
+				{
+					if (ApplyPortalSprite(ref s, spriteId3))
+					{
+						s.ProcessedSprites.Add(reference5.Index);
+					}
 				}
 				if (num < span.Length)
 				{
@@ -12657,10 +13258,7 @@ public class PathfinderEngine
 				}
 				s.RainbowMaxMode = 0;
 				bool flag = gameMode == 6 || gameMode == 7;
-				// NES cc65 compiles /= 2 as arithmetic shift right on
-				// the 6502, which rounds toward -∞.  C# /= 2 truncates
-				// toward zero.  Use >>= 1 (C# arithmetic shift right for
-				// signed int) to match NES rounding for odd negative values.
+				// cc65 compiles /= 2 as ASR (rounds toward -∞); C# /= 2 rounds toward 0
 				switch (num)
 				{
 				case 1:
@@ -13034,41 +13632,8 @@ public class PathfinderEngine
 
 	private void ApplyTeleportPortal(ref SimState s, SpriteEntry entrance, int entranceSid, int currentX_px)
 	{
-		bool flag = IsVerticalTeleportEntrance(entranceSid);
-		int num = currentX_px - 128;
-		int num2 = currentX_px + 128;
-		int num3 = -1;
-		bool flag2 = false;
-		foreach (SpriteEntry allSprite in allSprites)
-		{
-			int spriteId = allSprite.SpriteId;
-			if (!IsTeleportPortalExit(spriteId))
-			{
-				continue;
-			}
-			bool flag3 = false;
-			if (flag && spriteId == 79)
-			{
-				flag3 = true;
-			}
-			else if (!flag && (IsBottomRowTeleportExit(spriteId) || spriteId == 105 || spriteId == 120))
-			{
-				flag3 = true;
-			}
-			if (flag3)
-			{
-				int anchorX_px = allSprite.AnchorX_px;
-				if (anchorX_px >= num && anchorX_px <= num2)
-				{
-					num3 = ((!flag) ? allSprite.HitTop : (allSprite.HitTop + 16));
-					flag2 = true;
-				}
-			}
-		}
-		if (flag2)
-		{
-			s.Y_fixed = (num3 << 8) | (s.Y_fixed & 0xFF);
-		}
+		int destinationWorldY_px = (s.CameraY_fixed >> 8) + (s.TeleportOutputY_px & 0xFF);
+		s.Y_fixed = (destinationWorldY_px << 8) | (s.Y_fixed & 0xFF);
 	}
 
 	private MetatileCollision GetTileCollision(int tileX, int tileY)
@@ -13237,44 +13802,7 @@ public class PathfinderEngine
 			num4 = GetHitboxH(s.Mini);
 			hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
 		}
-		bool flag = SharedPhysics.CheckForwardCollision(in _collisionMap, num, num2, num3, num4, hbOffY, s.GameMode, s.Mini, s.GravFlipped, skipSlopeCheck: true);
-		if (!flag && _speculativeDepth > 0)
-		{
-			int num5 = num + num3;
-			int num7;
-			if (s.Mini)
-			{
-				int num6 = 16 - num4 >> 1;
-				num7 = num2 + num6 + (num4 >> 1);
-				if (s.GameMode == 0 || s.GameMode == 4 || s.GameMode == 8)
-				{
-					num7 += (s.GravFlipped ? 3 : (-2));
-				}
-			}
-			else
-			{
-				num7 = num2 + (num4 >> 1);
-			}
-			int num8 = num5 / 16;
-			int num9 = num7 / 16;
-			int num10 = num9 + _collisionMap.GroundRowsToReserve;
-			if (num8 >= 0 && num8 < _collisionMap.MapWidth && num10 >= 0 && num10 < _collisionMap.MapHeight)
-			{
-				MetatileCollision collision = MetatileCollisionTable.GetCollision((byte)MapTileForCollision(_collisionMap.Tiles[num10 * _collisionMap.MapWidth + num8]));
-				if (collision == MetatileCollision.COL_FLOOR_CEIL || collision == MetatileCollision.COL_NO_SIDE)
-				{
-					int num11 = num8 * 16;
-					int num12 = num9 * 16;
-					int localX = Math.Max(0, Math.Min(15, num5 - num11));
-					int localY = Math.Max(0, Math.Min(15, num7 - num12));
-					if (SharedPhysics.TileOccupiesPixel(collision, localX, localY))
-					{
-						flag = true;
-					}
-				}
-			}
-		}
-		return flag;
+		return SharedPhysics.CheckForwardCollision(in _collisionMap, num, num2, num3, num4, hbOffY, s.GameMode, s.Mini, s.GravFlipped, skipSlopeCheck: true);
 	}
 
 	private static (bool hit, int ejection, int slopeType) PfSlopeCalc(int temp_x, int temp_y, MetatileCollision collision)

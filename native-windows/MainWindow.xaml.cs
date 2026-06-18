@@ -7822,6 +7822,35 @@ namespace FamidashEditor
             EnsureNewTabButton();
         }
 
+        private int[] GetNesSpriteLayerForRuntime(int[] fallbackSprites)
+        {
+            if (!hasUnsavedChanges && !string.IsNullOrWhiteSpace(currentFilePath) && File.Exists(currentFilePath))
+            {
+                try
+                {
+                    var rawLayer = TmxHandler.LoadTmx(currentFilePath, useLegacyTriggerOffset).NesSpriteLayer;
+                    if (rawLayer != null && rawLayer.Length == fallbackSprites.Length)
+                        return rawLayer;
+                }
+                catch
+                {
+                }
+            }
+            return fallbackSprites.ToArray();
+        }
+
+        private NesSpriteRecord[]? GetNesSpriteRecordsForRuntime()
+        {
+            if (!hasUnsavedChanges &&
+                !string.IsNullOrWhiteSpace(currentFilePath) &&
+                File.Exists(currentFilePath) &&
+                NesSpriteDataLoader.TryLoadForTmx(currentFilePath, out var records))
+            {
+                return records;
+            }
+            return null;
+        }
+
         // Open the simulator window showing the current map state. This is lightweight
         // and copies the current tile/sprite arrays and tile images for rendering.
         public void OpenSimulatorWindow()
@@ -8298,6 +8327,8 @@ namespace FamidashEditor
                     // Preserve sprites as-is. If sprites are sentinel -1, leave them so
                     // the simulator does not render a sprite 0 on every cell.
                     var sanitizedSprites = (sprites ?? Array.Empty<int>()).ToArray();
+                    var nesSpriteLayerForRuntime = GetNesSpriteLayerForRuntime(sanitizedSprites);
+                    var nesSpriteRecordsForRuntime = GetNesSpriteRecordsForRuntime();
 
                     var sim = new SimulatorWindow(
                     sanitizedTiles,
@@ -8345,7 +8376,9 @@ namespace FamidashEditor
                     loadedSimulatorScale,
                     loadedMaxFallSpeed
                     ,
-                    (loadedStartingGameMode.HasValue ? loadedStartingGameMode.Value : 0)
+                    (loadedStartingGameMode.HasValue ? loadedStartingGameMode.Value : 0),
+                    nesSpriteLayerForRuntime,
+                    nesSpriteRecordsForRuntime
                     );
                     // Reset music playback rate to 100% (don't carry over from previous session)
                     try { if (famiIntegration != null) famiIntegration.SetPlaybackRate(1.0); } catch { }
@@ -21649,6 +21682,8 @@ namespace FamidashEditor
                 // Get starting game mode and speed
                 int startGameMode = loadedStartingGameMode.HasValue ? loadedStartingGameMode.Value : 0;
                 int startSpeedUiIndex = loadedStartingSpeedUiIndex;
+                var nesSpriteLayerForRuntime = GetNesSpriteLayerForRuntime(sprites);
+                var nesSpriteRecordsForRuntime = GetNesSpriteRecordsForRuntime();
 
                 StatusText.Text = "Pathfinder: Calculating...";
                 CalculatePathButton.IsEnabled = false;
@@ -21674,7 +21709,9 @@ namespace FamidashEditor
                             mapWidth, mapHeight,
                             hasGround, groundTileRows,
                             loadedMaxFallSpeed,
-                            spritePixelOffsets);
+                            spritePixelOffsets,
+                            nesSpriteLayerForRuntime,
+                            nesSpriteRecordsForRuntime);
                         engine.LevelName = currentFilePath ?? "";
                         engine.JumpTimingBias = jumpTimingBias;
                         engine.PreferCoins = preferCoins;

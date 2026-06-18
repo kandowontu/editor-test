@@ -31,6 +31,10 @@ namespace FamidashEditor
         // Track previous PF input to distinguish press (false→true) from hold (true→true).
         // NES only generates pressJump on the first frame of a button press, not on holds.
         private bool pfPrevInjectedPress = false;
+        // Preserve the raw PF rising edge separately from keyXPressedCount. Some
+        // non-bufferable orb paths synthesize a press while held, but UFO movement
+        // itself must still use the NES false→true edge.
+        private bool pfPressEdgeThisFrame = false;
 
         /// <summary>
         /// Called from SimulateNumericStep each frame when pathfinder is active.
@@ -153,6 +157,8 @@ namespace FamidashEditor
         /// </summary>
         private void PF_InjectInput(bool press)
         {
+            pfPressEdgeThisFrame = press && !pfPrevInjectedPress;
+
             // Always clear stale press at the start of each injection.
             // On the NES, pressJump is a single-frame rising edge — if nothing
             // consumed it this frame (e.g. cube was airborne), it's gone next
@@ -258,6 +264,7 @@ namespace FamidashEditor
             pfRawSequenceInput = false;
             pfLastAdvancedTick = -1;
             pfPrevInjectedPress = false;
+            pfPressEdgeThisFrame = false;
             pfInputSequence = null;
 
             try

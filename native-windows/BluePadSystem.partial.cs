@@ -51,10 +51,10 @@ namespace FamidashEditor
                 // Ground row adjustment matching PF's groundRowsToReserve
                 int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
 
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si];
-                    int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
 
                     bool isBottomPad = (sid == BOTTOM_BLUE_PAD || sid == BOTTOM_BLUE_PAD_MULTI);
@@ -80,9 +80,11 @@ namespace FamidashEditor
 
                     // Inline AABB matching PF's ProcessSprites:
                     // Use anchor-overridden id_for_geom for hitbox lookup (same as PF)
+                    bool useRawNesRecord = IsSimulatorNesRawDispatchIndex(idx);
                     int id_for_geom = sid & 0xFF;
                     int anchorKey = -1;
-                    if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
+                    if (!useRawNesRecord &&
+                        spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
                     {
                         anchorKey = anchor.anchorTileY * mapWidth + anchor.anchorTileX;
                         if (anchorKey >= 0 && anchorKey < sprites.Length)
@@ -92,9 +94,7 @@ namespace FamidashEditor
                         }
                     }
 
-                    // Use SharedPhysics tables (same as PF) — SIM's local sprite_y_offset has +8
-                    // globalObjectOffset baked into bottom pad entries (0x0A,0x0D,0x25,0x52,0x56,0xFD),
-                    // making hitboxes 8px lower than PF. SharedPhysics matches PF exactly.
+                    // Use the shared exact NES runtime geometry.
                     int hw = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_widths.Length) ? SharedPhysics.sprite_widths[id_for_geom] : TILE;
                     int hh = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_heights.Length) ? SharedPhysics.sprite_heights[id_for_geom] : TILE;
                     // NO hh >= 0xFC skip — PF doesn't skip sentinels for pad detection
@@ -103,11 +103,13 @@ namespace FamidashEditor
 
                     // Per-position pixel offset (matching PF's spritePixelOffsets lookup)
                     int pxOff = 0, pyOff = 0;
-                    if (anchorKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs))
+                    if (!useRawNesRecord &&
+                        anchorKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs))
                     {
                         pxOff = aoffs.offsetX; pyOff = aoffs.offsetY;
                     }
-                    else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs))
+                    else if (!useRawNesRecord &&
+                             spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs))
                     {
                         pxOff = offs.offsetX; pyOff = offs.offsetY;
                     }
@@ -115,8 +117,12 @@ namespace FamidashEditor
                     int storageTileX = idx % mapWidth;
                     int storageTileY = idx / mapWidth;
                     // NO bitmap override — PF uses table-based hitbox w/h only
-                    int spriteLeft = storageTileX * TILE + hxoff + pxOff;
-                    int spriteTop = (storageTileY - groundRowsLocal) * TILE + hyoff + pyOff - 1;
+                    int spriteLeft = (useRawNesRecord
+                        ? simulatorNesSpriteWorldX[idx]
+                        : storageTileX * TILE + pxOff) + hxoff;
+                    int spriteTop = (useRawNesRecord
+                        ? SimulatorNesDispatchWorldY()
+                        : (storageTileY - groundRowsLocal) * TILE + pyOff) + hyoff - 1;
                     int spriteRight = spriteLeft + Math.Max(1, hw);
                     int spriteBottom = spriteTop + Math.Max(1, hh);
 

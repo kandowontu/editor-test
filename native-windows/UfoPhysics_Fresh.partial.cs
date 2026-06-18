@@ -67,10 +67,14 @@ if (currplayer_mini != 0)
             // Check for jump input (press, not hold) - read without consuming first
             int pressCount = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0);
             bool pressedJump = pressCount > 0;
+            bool movementPressEdge = !pathfinderEnabled || pfPressEdgeThisFrame;
             
-            AppendSimDebug($"[UFO] Input: pressCount={pressCount}, pressedJump={pressedJump}, ufoOrbed={ufoOrbed}");
+            AppendSimDebug($"[UFO] Input: pressCount={pressCount}, pressedJump={pressedJump}, movementEdge={movementPressEdge}, entryMode={physicsFrameEntryGameMode}, ufoOrbed={ufoOrbed}");
             
-            if (pressedJump && !ufoOrbed) {
+            // Mesen/NES: entering UFO on a press frame halves the portal-entry
+            // velocity but does not also apply UFO_JUMP_VEL. A continued PF hold
+            // on the following frame is not a new movement press either.
+            if (pressedJump && movementPressEdge && physicsFrameEntryGameMode == 3 && !ufoOrbed) {
                 // Consume the press count now that we're using it
                 Interlocked.Exchange(ref keyXPressedCount, 0);
                 int baseJumpIdx = (miniMode ? 4 : 0);

@@ -39,7 +39,6 @@ namespace FamidashEditor
             "ninja_05_frame_5.png",
             "ninja_06_frame_6.png"
         };
-        private static readonly System.Collections.Generic.HashSet<int> s_padDownIds = new System.Collections.Generic.HashSet<int> { 0x52, 0x0A, 0x0D, 0x25, 0xFD };
 
         /// <summary>
         /// Load an embedded resource image by filename suffix, using a static cache so each
@@ -826,9 +825,9 @@ namespace FamidashEditor
             0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // C0-C7 (all COLR)
             0xFD,0xFD,0xFD,0xFD,0xFD,0x00,0x00,0xFD, // C8-CF
             0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // D0-D7 (all COLR)
-            0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0xFF,0x00, // D8-DF (DD-DE:SPBH, DF:KNDO)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0xFF,0xFF, // D8-DF (DD-DE:SPBH, DF:KNDO)
             0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // E0-E7 (all COLR)
-            0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0x00,0x00, // E8-EF (ED:SPBH, EE-EF:KNDO)
+            0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0xFF,0xFF, // E8-EF (ED:SPBH, EE-EF:KNDO)
             0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x10,0x10, // F0-F7 (F0-F5:SPBH)
             0x10,0x10,0x1F,0x10,0x10,0x03,0x03,0x00  // F8-FF
         };
@@ -876,7 +875,7 @@ namespace FamidashEditor
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 20-27
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 28-2F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 30-37
-            0x00,0x00,0x00,0x00,0x00,0x00,-0x08,0x00, // 38-3F (0x3E: -8 from NES globalObjectOffset for right medium post)
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 38-3F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01, // 40-47
             0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 48-4F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 50-57
@@ -905,16 +904,16 @@ namespace FamidashEditor
 
         private static readonly int[] sprite_y_offset = new int[] {
             -0x02,-0x02,-0x02,-0x02,-0x02,-0x01,-0x01,0x00, // 00-07
-            0x04,0x04,0x0D,-0x01,0x00,0x0D,0x00,0x00, // 08-0F (0x0A,0x0D: +8 from NES globalObjectOffset for bottom pads)
+            0x04,0x04,0x05,-0x01,0x00,0x05,0x00,0x00, // 08-0F
             0x01,0x01,0x01,0x01,-0x02,-0x02,-0x02,-0x02, // 10-17
             -0x02,-0x02,0x00,0x00,0x00,0x00,0x00,-0x01, // 18-1F
-            -0x02,-0x02,-0x02,-0x02,-0x02,0x0D,0x00,-0x01, // 20-27 (0x25: +8 from NES globalObjectOffset for bottom pads)
+            -0x02,-0x02,-0x02,-0x02,-0x02,0x05,0x00,-0x01, // 20-27
             -0x01,-0x01,0x00,0x00,0x00,0x00,0x00,0x00, // 28-2F
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 30-37
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 38-3F
             0x00,0x00,0x00,0x00,-0x01,-0x01,-0x01,0x04, // 40-47
             0x04,0x00,0x00,-0x02,0x00,-0x01,-0x01,0x00, // 48-4F
-            -0x01,-0x01,0x0D,0x00,-0x01,-0x01,0x0D,0x00, // 50-57 (0x52,0x56: +8 from NES globalObjectOffset for bottom pads)
+            -0x01,-0x01,0x05,0x00,-0x01,-0x01,0x05,0x00, // 50-57
             -0x02,0x00,0x00,-0x01,-0x01,-0x01,-0x01,-0x02, // 58-5F
             -0x02,-0x02,-0x02,-0x02,-0x02,0x00,0x00,0x00, // 60-67
             0x00,0x00,-0x02,-0x02,-0x02,0x00,0x04,0x00, // 68-6F
@@ -935,7 +934,7 @@ namespace FamidashEditor
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // E0-E7
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // E8-EF
             0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // F0-F7
-            0x00,0x00,-0x07,0x00,0x00,0x0D,0x02,0x00  // F8-FF (0xFD: +8 from NES globalObjectOffset for bottom pads)
+            0x00,0x00,-0x07,0x00,0x00,0x05,0x02,0x00  // F8-FF
         };
         // Pad / Orb velocity matrix (rows = pad/orb kind, cols = game mode)
         // Columns: 0=cube,1=ship,2=ball,3=ufo,4=robot,5=spider,6=wave,7=swing
@@ -965,6 +964,7 @@ namespace FamidashEditor
             {
                 int storageTileX = idx % mapWidth;
                 int storageTileY = idx / mapWidth;
+                bool useRawNesRecord = IsSimulatorNesRawDispatchIndex(idx);
 
                 // Geometry defaults to the instance SID. Portal classes must use
                 // their own SID geometry (NES sprite_collide indexes tables by
@@ -976,7 +976,8 @@ namespace FamidashEditor
                                          || SharedPhysics.IsGameModePortal(sid8)
                                          || SharedPhysics.IsGravityPortal(sid8)
                                          || SharedPhysics.IsMiniGrowthPortal(sid8));
-                if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
+                if (!useRawNesRecord &&
+                    spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
                 {
                     anchorKey = anchor.anchorTileY * mapWidth + anchor.anchorTileX;
                     // Prefer the anchor's sprite id for geometry lookup when anchored
@@ -995,26 +996,32 @@ namespace FamidashEditor
                 // NES sprite_collide() skips DECO/COLR/OUTL/SPBH sentinels (height >= 0xFC)
                 if (hh >= 0xFC) return false;
                 int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
-                // Use SharedPhysics.sprite_y_offset (same as PF) — SIM's local table has +8
-                // globalObjectOffset baked into bottom pad entries, causing hitbox mismatch
+                // Use the shared table so simulator and pathfinder consume the
+                // exact NES runtime geometry.
                 int hyoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom] : 0;
 
                 // Per-position pixel offset (visual shift).
                 int pxOff = 0; int pyOff = 0;
-                if (anchorKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs2))
+                if (!useRawNesRecord &&
+                    anchorKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs2))
                 {
                     pxOff = aoffs2.offsetX; pyOff = aoffs2.offsetY;
                 }
-                else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs2))
+                else if (!useRawNesRecord &&
+                    spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs2))
                 {
                     pxOff = offs2.offsetX; pyOff = offs2.offsetY;
                 }
 
                 // Compute world-space sprite rectangle using NES-style exclusive bounds
                 int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                int spriteLeft_world_px = storageTileX * TILE + hxoff + pxOff;
+                int spriteLeft_world_px = (useRawNesRecord
+                    ? simulatorNesSpriteWorldX[idx]
+                    : storageTileX * TILE + pxOff) + hxoff;
                 // NES check_spr_objects() applies -1 to sprite Y (clc;sbc intentionally subtracts 1 extra)
-                int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff - 1;
+                int spriteTop_world_px = (useRawNesRecord
+                    ? SimulatorNesDispatchWorldY()
+                    : (storageTileY - groundRowsToReserve_local) * TILE + pyOff) + hyoff - 1;
                 int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw);   // exclusive (NES-style)
                 int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh);   // exclusive (NES-style)
 
@@ -1022,7 +1029,7 @@ namespace FamidashEditor
                 // is available, prefer the image size for collision
                 try
                 {
-                    if (hw == TILE && hh == TILE)
+                    if (!useRawNesRecord && hw == TILE && hh == TILE)
                     {
                         BitmapSource? bs = null;
                         int keyGeom = id_for_geom & 0xFF;
@@ -1062,6 +1069,7 @@ namespace FamidashEditor
             {
                 int storageTileX = idx % mapWidth;
                 int storageTileY = idx / mapWidth;
+                bool useRawNesRecord = IsSimulatorNesRawDispatchIndex(idx);
 
                 // Geometry defaults to the instance SID. Portal classes must use
                 // their own SID geometry (NES sprite_collide indexes tables by
@@ -1073,7 +1081,8 @@ namespace FamidashEditor
                                          || SharedPhysics.IsGameModePortal(sid8)
                                          || SharedPhysics.IsGravityPortal(sid8)
                                          || SharedPhysics.IsMiniGrowthPortal(sid8));
-                if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
+                if (!useRawNesRecord &&
+                    spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
                 {
                     anchorKey = anchor.anchorTileY * mapWidth + anchor.anchorTileX;
                     // Prefer the anchor's sprite id for geometry lookup when anchored
@@ -1100,8 +1109,7 @@ namespace FamidashEditor
                 // need collision detection — callers pass ignoreSentinels=true for those.
                 if (!ignoreSentinels && hh >= 0xFC) return false;
                 int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
-                // Use SharedPhysics.sprite_y_offset (same as PF) — SIM's local table has +8
-                // globalObjectOffset baked into bottom pad entries, causing hitbox mismatch
+                // Use the shared exact NES runtime geometry.
                 int hyoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom] : 0;
 
                 // Per-position pixel offset (visual shift).
@@ -1109,11 +1117,13 @@ namespace FamidashEditor
                 // overlay visuals match the anchored geometry base. Otherwise prefer
                 // the sprite's own per-position offset.
                 int pxOff = 0; int pyOff = 0;
-                if (anchorKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs2))
+                if (!useRawNesRecord &&
+                    anchorKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs2))
                 {
                     pxOff = aoffs2.offsetX; pyOff = aoffs2.offsetY;
                 }
-                else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs2))
+                else if (!useRawNesRecord &&
+                    spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs2))
                 {
                     pxOff = offs2.offsetX; pyOff = offs2.offsetY;
                 }
@@ -1127,9 +1137,13 @@ namespace FamidashEditor
                 // reserve bottom ground rows. Adjust collision to match displayed origin
                 // by applying the same vertical shift when computing world sprite rect.
                 int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                int spriteLeft_world_px = storageTileX * TILE + hxoff + pxOff;
+                int spriteLeft_world_px = (useRawNesRecord
+                    ? simulatorNesSpriteWorldX[idx]
+                    : storageTileX * TILE + pxOff) + hxoff;
                 // NES check_spr_objects() applies -1 to sprite Y (clc;sbc intentionally subtracts 1 extra)
-                int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff - 1;
+                int spriteTop_world_px = (useRawNesRecord
+                    ? SimulatorNesDispatchWorldY()
+                    : (storageTileY - groundRowsToReserve_local) * TILE + pyOff) + hyoff - 1;
                 int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw);   // exclusive bound (NES: x + width)
                 int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh);   // exclusive bound (NES: y + height)
 
@@ -2087,9 +2101,10 @@ namespace FamidashEditor
                 // NOTE: Do NOT skip sub-tiles (spriteAnchors entries) — the PF
                 // processes every sprite index including sub-tiles, and gravity
                 // portals may only exist as sub-tiles of multi-tile sprites.
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
                     
                     // Check if this sprite is a gravity portal
@@ -2180,10 +2195,10 @@ namespace FamidashEditor
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
 
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si];
-                    int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
 
                     if (sid == 0x00 || sid == 0x01 || sid == 0x02 || sid == 0x03 || sid == 0x04 || sid == 0x17 || sid == 0x24 || sid == 0x4B || sid == 0x58 || sid == 0x6A || sid == 0x6B || sid == 0x6C)
@@ -2277,7 +2292,9 @@ namespace FamidashEditor
                             {
                                 int storageTileY = idx / mapWidth;
                                 int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                                int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
+                                int portalWorldY_px = IsSimulatorNesRawDispatchIndex(idx)
+                                    ? SimulatorNesDispatchWorldY()
+                                    : (storageTileY - groundRowsLocal) * TILE;
                                 targetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
                             }
                             catch { }
@@ -2376,9 +2393,10 @@ namespace FamidashEditor
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 // Iterate through sprites and check for gravity mod portals
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
                     
                     // Check if this sprite is a gravity mod portal (0x5F-0x63)
@@ -2440,9 +2458,10 @@ namespace FamidashEditor
                 bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
                 
                 // Scan all sprites for gravity mod triggers
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
                     
                     if (!IsGravityModTrigger(sid)) continue;
@@ -2556,9 +2575,10 @@ namespace FamidashEditor
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 // Iterate through ALL sprites and check for mini/growth portals
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
                     
                     // Check if this sprite is a mini or growth portal
@@ -2627,9 +2647,10 @@ namespace FamidashEditor
                 int center_fixed = cameraX_fixed + ((NES_W * TILE / 2) << 8);
                 bool crossedInteraction = prevPlayerCenter_fixed < INTERACTION_LINE_FIXED && attemptedPlayerCenter_fixed >= INTERACTION_LINE_FIXED;
 
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
 
                     bool isCamLockOn = (sid == 0xDD);
@@ -2696,9 +2717,10 @@ namespace FamidashEditor
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
 
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
 
                     bool isWrapOn = (sid == 0x8E);
@@ -2738,9 +2760,10 @@ namespace FamidashEditor
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
 
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
 
                     // Timewarp
@@ -2800,9 +2823,10 @@ namespace FamidashEditor
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid != 0x22) continue; // Only dual portal
                     
                     // Check if already activated
@@ -2859,7 +2883,9 @@ namespace FamidashEditor
                         {
                             int storageTileY = idx / mapWidth;
                             int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                            int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
+                            int portalWorldY_px = IsSimulatorNesRawDispatchIndex(idx)
+                                ? SimulatorNesDispatchWorldY()
+                                : (storageTileY - groundRowsLocal) * TILE;
                             targetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
                             AppendSimDebug($"[DUAL_PORTAL] Set targetCameraY={targetCameraY_fixed >> 8}px from portal at tileY={storageTileY}");
                         }
@@ -2904,9 +2930,10 @@ namespace FamidashEditor
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid != 0x23) continue; // Only single portal
                     
                     // Check if already activated
@@ -2924,7 +2951,9 @@ namespace FamidashEditor
                         {
                             int storageTileY = idx / mapWidth;
                             int groundRowsLocal = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                            int portalWorldY_px = (storageTileY - groundRowsLocal) * TILE;
+                            int portalWorldY_px = IsSimulatorNesRawDispatchIndex(idx)
+                                ? SimulatorNesDispatchWorldY()
+                                : (storageTileY - groundRowsLocal) * TILE;
                             targetCameraY_fixed = NesNtCameraTarget_fixed(portalWorldY_px);
                             AppendSimDebug($"[SINGLE_PORTAL] Set targetCameraY={targetCameraY_fixed >> 8}px from portal at tileY={storageTileY}");
                         }
@@ -2989,12 +3018,10 @@ namespace FamidashEditor
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
 
-                // groundRowsToReserve for sprite Y adjustment (matching PF and SpriteIntersectsPlayer)
-                int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
                     
                     // Check if this sprite is an alphabet block
@@ -3006,54 +3033,9 @@ namespace FamidashEditor
                     
                     if (!isSBlock && !isDBlock && !isHBlock && !isJBlock && !isFBlock) continue;
                     
-                    // Inline AABB collision matching PF's ProcessSprites exactly.
-                    // SpriteIntersectsPlayer has a bitmap size override that inflates
-                    // TILE-sized sprites using preview images, which breaks collision
-                    // for alphabet blocks. Use the sprite table geometry directly.
-                    int storageTileX = idx % mapWidth;
-                    int storageTileY = idx / mapWidth;
-
-                    int id_for_geom = sid & 0xFF;
-                    if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
-                    {
-                        int anchorKey = anchor.anchorTileY * mapWidth + anchor.anchorTileX;
-                        if (anchorKey >= 0 && anchorKey < sprites.Length)
-                        {
-                            int anchoredId = sprites[anchorKey];
-                            if (anchoredId >= 0 && anchoredId < 256) id_for_geom = anchoredId & 0xFF;
-                        }
-                    }
-
-                    int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
-                    int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
-                    if (hh >= 0xFC) continue; // skip DECO/COLR/OUTL/SPBH
-                    int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
-                    // Use SharedPhysics.sprite_y_offset (same as PF) — SIM's local table has +8
-                    // globalObjectOffset baked into bottom pad entries, causing hitbox mismatch
-                    int hyoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom] : 0;
-
-                    int pxOff = 0, pyOff = 0;
-                    {
-                        int aKey = -1;
-                        if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anch2))
-                            aKey = anch2.anchorTileY * mapWidth + anch2.anchorTileX;
-                        if (aKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(aKey, out var aoffs))
-                        { pxOff = aoffs.offsetX; pyOff = aoffs.offsetY; }
-                        else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs))
-                        { pxOff = offs.offsetX; pyOff = offs.offsetY; }
-                    }
-
-                    // Sprite hitbox (exclusive right/bottom, matching PF)
-                    int sprLeft = storageTileX * TILE + hxoff + pxOff;
-                    int sprTop = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff - 1;
-                    int sprRight = sprLeft + Math.Max(1, hw);   // exclusive
-                    int sprBottom = sprTop + Math.Max(1, hh);   // exclusive
-
-                    // AABB overlap check matching PF: inclusive player vs exclusive sprite
-                    bool xOverlap = !(playerRight_px < sprLeft || sprRight < playerX_px);
-                    bool yOverlap = !(playerBottom_px < sprTop || sprBottom < playerTop_px);
-                    
-                    if (xOverlap && yOverlap)
+                    if (SpriteIntersectsPlayer(
+                        idx, sid, playerX_px, playerRight_px,
+                        playerTop_px, playerBottom_px))
                     {
                         // S_BLOCK: Stop dashing, set orbed, zero velocity (sprite_loading.h line 935)
                         if (isSBlock && dashing[currplayer] != 0)
@@ -3124,14 +3106,20 @@ namespace FamidashEditor
                 int playerTop_px = playerY_px;
                 int playerBottom_px = playerY_px + hitboxH - 1;
 
-                int groundRowsToReserve_coin = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                int groundRowsToReserve_coin = (hasGroundLayer && groundTileRows > 0)
+                    ? Math.Min(3, groundTileRows)
+                    : 0;
 
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
-                    if (!IsCoinSprite(sid) && !SharedPhysics.IsMiniCoinSprite(sid)) continue;
+                    int coinKind = SimulatorNesCoinKind(sid);
+                    bool miniCoin = SharedPhysics.IsMiniCoinSprite(sid);
+                    if (coinKind < 0 && !miniCoin) continue;
                     if (collectedCoins.Contains(idx)) continue;
+                    bool useRawNesRecord = IsSimulatorNesRawDispatchIndex(idx);
 
                     // Coins use a simple 16×16 hitbox (NES sprite_load_special_behavior returns
                     // 0x10 for coins) with zero x/y offset. Don't use SpriteIntersectsPlayer
@@ -3143,18 +3131,25 @@ namespace FamidashEditor
                     // Apply per-position pixel offset if present
                     int pxOff_c = 0, pyOff_c = 0;
                     int anchorKey_c = -1;
-                    if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anch_c))
+                    if (!useRawNesRecord &&
+                        spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anch_c))
                         anchorKey_c = anch_c.anchorTileY * mapWidth + anch_c.anchorTileX;
-                    if (anchorKey_c >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey_c, out var aoffsc))
+                    if (!useRawNesRecord &&
+                        anchorKey_c >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey_c, out var aoffsc))
                     { pxOff_c = aoffsc.offsetX; pyOff_c = aoffsc.offsetY; }
-                    else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offsc))
+                    else if (!useRawNesRecord &&
+                        spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offsc))
                     { pxOff_c = offsc.offsetX; pyOff_c = offsc.offsetY; }
 
-                    int coinLeft = storageTileX_c * TILE + pxOff_c;
+                    int coinLeft = useRawNesRecord
+                        ? simulatorNesSpriteWorldX[idx]
+                        : storageTileX_c * TILE + pxOff_c;
                     // NES check_spr_objects applies -1 to ALL sprite Y positions
                     // (clc;sbc intentionally subtracts 1 extra). Coins go through
                     // check_spr_objects like all sprites, so the -1 applies here too.
-                    int coinTop  = (storageTileY_c - groundRowsToReserve_coin) * TILE + pyOff_c - 1;
+                    int coinTop = useRawNesRecord
+                        ? SimulatorNesDispatchWorldY() - 1
+                        : (storageTileY_c - groundRowsToReserve_coin) * TILE + pyOff_c - 1;
                     // NES uses exclusive bounds (edge-touching = collision): x1+w1 >= x2
                     int coinRight  = coinLeft + 0x10; // exclusive
                     int coinBottom = coinTop  + 0x10; // exclusive
@@ -3164,10 +3159,32 @@ namespace FamidashEditor
 
                     if (xOv && yOv)
                     {
-                        collectedCoins.Add(idx);
-                        collectedCoinInfo.Add((idx, sid));
-                        // Make the coin disappear by zeroing it out
-                        sprites[idx] = -1;
+                        if (useRawNesRecord)
+                        {
+                            if (miniCoin)
+                            {
+                                collectedCoins.Add(idx);
+                                collectedCoinInfo.Add((idx, sid));
+                                simulatorNesSlotDead[simulatorNesDispatchSlot] = true;
+                            }
+                            else if (simulatorCoinTimer[coinKind] == 0)
+                            {
+                                if (IsRegularSimulatorNesCoin(sid))
+                                {
+                                    collectedCoins.Add(idx);
+                                    collectedCoinInfo.Add((idx, sid));
+                                }
+                                simulatorCoinTimer[coinKind] = 1;
+                                simulatorCoinSpeed[coinKind] = 0x0200;
+                                simulatorCoinAnimating = true;
+                            }
+                        }
+                        else
+                        {
+                            collectedCoins.Add(idx);
+                            collectedCoinInfo.Add((idx, sid));
+                            sprites[idx] = -1;
+                        }
                         AppendSimDebug($"[COIN] Collected coin 0x{sid:X2} at sprite index {idx}");
                     }
                 }
@@ -3205,9 +3222,10 @@ namespace FamidashEditor
                 int playerBottom_px = playerY_px + hitboxH - 1;
                 
                 // Iterate through ALL sprites and check for pads
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
                     
                     // Check if this sprite is a pad
@@ -3388,9 +3406,10 @@ namespace FamidashEditor
                 int spiderOrbPadCount = 0;
                 
                 // Iterate through ALL sprites and check for spider orbs/pads
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
                 {
-                    int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                    int idx = SimulatorInteractionSpriteIndex(_si);
+                    int sid = SimulatorInteractionSpriteId(idx);
                     if (sid < 0) continue;
                     
                     // Spider orb up: 0x54, Spider orb down: 0x55
@@ -3761,6 +3780,9 @@ namespace FamidashEditor
 
         // Current player game mode: 0 = cube, 1 = ship, etc. Defaults to cube.
         private int currentGameMode = 0;
+        // Snapshot before sprite/portal processing. NES suppresses a UFO flap on
+        // the same frame that a portal changes another mode into UFO.
+        private int physicsFrameEntryGameMode = 0;
         // Level settings starting game mode (set once in constructor, used on restart)
         private int _levelStartGameMode = 0;
         
@@ -3802,8 +3824,453 @@ namespace FamidashEditor
         private System.Collections.Generic.HashSet<int> processedMiniPortals = new System.Collections.Generic.HashSet<int>();
         // Track random portals (0x64 and 0x7E) we've already activated so each only activates once
         private System.Collections.Generic.HashSet<int> processedRandomPortals = new System.Collections.Generic.HashSet<int>();
-        // Speed portals processed set: avoid re-applying speed change while portal remains near interaction line
+        // Legacy camera-mode speed tracking. Physics-mode sprite collisions use
+        // the NES slot ring below and deliberately re-fire speed portals.
         private System.Collections.Generic.HashSet<int> processedSpeedPortals = new System.Collections.Generic.HashSet<int>();
+        private readonly int[] simulatorNesSpriteIds = Array.Empty<int>();
+        private readonly NesSpriteRecord[]? simulatorNesSpriteRecords;
+        private int[] simulatorNesSpriteStream = Array.Empty<int>();
+        private int[] simulatorNesSpriteWorldX = Array.Empty<int>();
+        private int[] simulatorNesSpriteWorldY = Array.Empty<int>();
+        private readonly int[] simulatorNesSlots = new int[16];
+        private readonly bool[] simulatorNesSlotDead = new bool[16];
+        private readonly bool[] simulatorNesSlotActive = new bool[16];
+        private readonly int[] simulatorNesSlotWorldY = new int[16];
+        private readonly int[] simulatorCoinTimer = new int[3];
+        private readonly int[] simulatorCoinSpeed = new int[3];
+        private bool simulatorCoinAnimating = false;
+        private int simulatorNesSpriteDataPtr = 0;
+        private bool simulatorNesSlotsPrimed = false;
+        private int simulatorTeleportOutputY_px = 0;
+        private bool simulatorNesDispatchActive = false;
+        private int simulatorNesDispatchSlot = -1;
+        private int simulatorNesDispatchIndex = -1;
+        private int simulatorNesDispatchSpriteId = -1;
+        private readonly bool[] simulatorOrbPassComplete = new bool[2];
+        private readonly bool[] simulatorOrbResultConsumed = new bool[2];
+        private readonly bool[] simulatorOrbActivatedPending = new bool[2];
+        private bool SimulatorUsesExactNesRecords => simulatorNesSpriteRecords != null;
+        private readonly int[] simulatorOrbTypePending = new int[] { -1, -1 };
+
+        // Gameplay collision helpers normally expose every sprite. During the
+        // NES sprite_collide pass they expose exactly the current hardware slot,
+        // preserving the ROM's universal slot 0 -> 15 dispatch order while
+        // allowing the existing type-specific handlers to remain focused.
+        private int SimulatorInteractionSpriteCount =>
+            simulatorNesDispatchActive ? 1 : nonEmptySpriteIndices.Length;
+
+        private int SimulatorInteractionSpriteIndex(int scanIndex) =>
+            simulatorNesDispatchActive ? simulatorNesDispatchIndex : nonEmptySpriteIndices[scanIndex];
+
+        private int SimulatorInteractionSpriteId(int idx) =>
+            simulatorNesDispatchActive && idx == simulatorNesDispatchIndex
+                ? simulatorNesDispatchSpriteId
+                : sprites[idx];
+
+        private bool IsSimulatorNesRawDispatchIndex(int idx) =>
+            simulatorNesDispatchActive &&
+            idx == simulatorNesDispatchIndex &&
+            (uint)simulatorNesDispatchSlot < (uint)simulatorNesSlotWorldY.Length;
+
+        private int SimulatorNesDispatchWorldY() =>
+            simulatorNesSlotWorldY[simulatorNesDispatchSlot];
+
+        private static int SimulatorNesCoinKind(int sid) => sid switch
+        {
+            0x07 or 0x1C => 0,
+            0x1A or 0x1D => 1,
+            0x1B or 0x1E => 2,
+            _ => -1
+        };
+
+        private static bool IsRegularSimulatorNesCoin(int sid) =>
+            sid == 0x07 || sid == 0x1A || sid == 0x1B;
+
+        private void BeginSimulatorNesSpritePass()
+        {
+            simulatorOrbPassComplete[currplayer] = false;
+            simulatorOrbResultConsumed[currplayer] = false;
+            simulatorOrbActivatedPending[currplayer] = false;
+            simulatorOrbTypePending[currplayer] = -1;
+        }
+
+        private void EndSimulatorNesSpritePass()
+        {
+            simulatorNesDispatchActive = false;
+            simulatorNesDispatchSlot = -1;
+            simulatorNesDispatchIndex = -1;
+            simulatorNesDispatchSpriteId = -1;
+            simulatorOrbPassComplete[currplayer] = true;
+        }
+
+        private void SelectSimulatorNesSpriteSlot(int slot)
+        {
+            int idx = simulatorNesSlots[slot];
+            simulatorNesDispatchActive = idx >= 0 &&
+                simulatorNesSlotActive[slot] &&
+                !simulatorNesSlotDead[slot];
+            simulatorNesDispatchSlot = simulatorNesDispatchActive ? slot : -1;
+            simulatorNesDispatchIndex = simulatorNesDispatchActive ? idx : -1;
+            simulatorNesDispatchSpriteId = simulatorNesDispatchActive
+                ? (simulatorNesSpriteIds[idx] & 0xFF)
+                : -1;
+        }
+
+        private void CheckRegularOrbCollisionNesOrder()
+        {
+            if (!simulatorNesDispatchActive || simulatorNesDispatchSpriteId < 0)
+                return;
+
+            int mode = currentGameMode == 9 ? 7 : currentGameMode;
+            bool waveOrSnake = currentGameMode == 6 || currentGameMode == 10;
+            bool isMini = currplayer_mini != 0;
+            int hitboxW = waveOrSnake ? 8 : (isMini ? 8 : 15);
+            int hitboxH = waveOrSnake ? 8 : (isMini ? 7 : 15);
+            int playerX = (playerX_fixed >> 8) + 1;
+            int playerY = playerY_fixed >> 8;
+            playerY += waveOrSnake ? 4 : GetMiniSpriteOffsetY();
+
+            bool pressed = Interlocked.CompareExchange(ref keyXPressedCount, 0, 0) > 0;
+            bool held = IsXDownAsync() || keyXHeld;
+            int tempVelocityY = playerVelY_fixed;
+            var result = UpdateOrbSystem(
+                mode, playerX, playerY, hitboxW, hitboxH, 0,
+                pressed, held, currplayer_gravity != 0, isMini,
+                ref tempVelocityY);
+
+            if (result.activated)
+            {
+                playerVelY_fixed = tempVelocityY;
+                simulatorOrbActivatedPending[currplayer] = true;
+                simulatorOrbTypePending[currplayer] = result.orbType;
+                orbhitonthisframe[currplayer] = true;
+            }
+        }
+
+        private void BuildSimulatorNesSpriteStream()
+        {
+            if (simulatorNesSpriteRecords != null)
+            {
+                int count = simulatorNesSpriteRecords.Length;
+                simulatorNesSpriteWorldX = new int[count];
+                simulatorNesSpriteWorldY = new int[count];
+                simulatorNesSpriteStream = new int[count];
+                for (int i = 0; i < count; i++)
+                {
+                    NesSpriteRecord record = simulatorNesSpriteRecords[i];
+                    simulatorNesSpriteStream[i] = i;
+                    simulatorNesSpriteWorldX[i] = record.X;
+                    simulatorNesSpriteWorldY[i] = record.Y - _sim_nesCoordOffset;
+                }
+                return;
+            }
+
+            var stream = new System.Collections.Generic.List<int>();
+            simulatorNesSpriteWorldX = new int[sprites.Length];
+            simulatorNesSpriteWorldY = new int[sprites.Length];
+            int groundRowsToReserve = (hasGroundLayer && groundTileRows > 0)
+                ? Math.Min(3, groundTileRows)
+                : 0;
+            for (int column = 0; column < mapWidth; column++)
+            {
+                for (int row = 0; row < mapHeight; row++)
+                {
+                    int idx = row * mapWidth + column;
+                    if ((uint)idx >= (uint)simulatorNesSpriteIds.Length || simulatorNesSpriteIds[idx] < 0)
+                        continue;
+                    stream.Add(idx);
+                    int worldX = column * TILE;
+                    int worldY = (row - groundRowsToReserve) * TILE;
+                    if (spritePixelOffsets.TryGetValue(idx, out var offset))
+                    {
+                        worldX += offset.offsetX;
+                        worldY += offset.offsetY;
+                    }
+                    simulatorNesSpriteWorldX[idx] = worldX;
+                    simulatorNesSpriteWorldY[idx] = worldY;
+                }
+            }
+            simulatorNesSpriteStream = stream.ToArray();
+        }
+
+        private void InitializeSimulatorNesSlots()
+        {
+            Array.Fill(simulatorNesSlots, -1);
+            Array.Clear(simulatorNesSlotDead, 0, simulatorNesSlotDead.Length);
+            Array.Clear(simulatorNesSlotActive, 0, simulatorNesSlotActive.Length);
+            Array.Clear(simulatorNesSlotWorldY, 0, simulatorNesSlotWorldY.Length);
+            Array.Clear(simulatorCoinTimer, 0, simulatorCoinTimer.Length);
+            Array.Clear(simulatorCoinSpeed, 0, simulatorCoinSpeed.Length);
+            simulatorCoinAnimating = false;
+            simulatorNesSpriteDataPtr = 0;
+            simulatorNesSlotsPrimed = false;
+            simulatorTeleportOutputY_px = 0;
+            for (int slot = 15; slot >= 0 && simulatorNesSpriteDataPtr < simulatorNesSpriteStream.Length; slot--)
+            {
+                simulatorNesSlots[slot] = simulatorNesSpriteStream[simulatorNesSpriteDataPtr++];
+                simulatorNesSlotWorldY[slot] =
+                    simulatorNesSpriteWorldY[simulatorNesSlots[slot]];
+            }
+        }
+
+        private void LoadNextSimulatorNesSprite(int slot)
+        {
+            simulatorNesSlots[slot] = simulatorNesSpriteDataPtr < simulatorNesSpriteStream.Length
+                ? simulatorNesSpriteStream[simulatorNesSpriteDataPtr++]
+                : -1;
+            simulatorNesSlotWorldY[slot] = simulatorNesSlots[slot] >= 0
+                ? simulatorNesSpriteWorldY[simulatorNesSlots[slot]]
+                : 0;
+            simulatorNesSlotDead[slot] = false;
+            simulatorNesSlotActive[slot] = false;
+        }
+
+        private void UpdateSimulatorNesSlots()
+        {
+            int scrollX_px = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+            int scrollY_px = cameraY_fixed >> 8;
+            for (int slot = 15; slot >= 0; slot--)
+            {
+                int idx = simulatorNesSlots[slot];
+                if (idx < 0 || simulatorNesSlotDead[slot])
+                {
+                    LoadNextSimulatorNesSprite(slot);
+                    continue;
+                }
+                int relX = simulatorNesSpriteWorldX[idx] - scrollX_px;
+                if (relX < 0)
+                {
+                    if (IsRegularSimulatorNesCoin(simulatorNesSpriteIds[idx] & 0xFF))
+                        simulatorCoinAnimating = false;
+                    LoadNextSimulatorNesSprite(slot);
+                    continue;
+                }
+                if (relX >= 256)
+                {
+                    simulatorNesSlotActive[slot] = false;
+                    continue;
+                }
+
+                // check_spr_objects clears carry before SBC, making this
+                // raw sprite Y - scroll Y - 1.
+                int relY = simulatorNesSlotWorldY[slot] - scrollY_px - 1;
+                bool visible = relY >= 0 && relY < 256;
+                if (!visible && simulatorCoinAnimating &&
+                    IsRegularSimulatorNesCoin(simulatorNesSpriteIds[idx] & 0xFF))
+                    visible = true;
+                simulatorNesSlotActive[slot] = visible;
+            }
+        }
+
+        private void ApplySimulatorNesCameraScroll()
+        {
+            if (!physicsEnabled || !jumpedOnce || paused)
+                return;
+
+            // NES process_y_scroll runs once per gameplay frame, after P1's
+            // movement/collisions and before check_spr_objects/P2.
+            bool camFollowsY =
+                currentGameMode == 0 ||
+                currentGameMode == 4 ||
+                currentGameMode == 8 ||
+                currentGameMode == 9 ||
+                nocamlockforced;
+
+            if ((!dual || twoplayer) && camFollowsY)
+            {
+                int groundRowsReserved =
+                    (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                int minCameraY_fixed = -(groundRowsReserved * TILE) << 8;
+                int screenY_fixed = playerY_fixed - cameraY_fixed;
+                if (screenY_fixed < 0x4000)
+                {
+                    int needed_fixed = 0x4000 - screenY_fixed;
+                    cameraY_fixed -= needed_fixed;
+                    if (cameraY_fixed < minCameraY_fixed)
+                        cameraY_fixed = minCameraY_fixed;
+                }
+                else if ((screenY_fixed >> 8) >= 0xA0)
+                {
+                    int needed_fixed = screenY_fixed - 0xA000;
+                    int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+                    cameraY_fixed += needed_fixed;
+                    if (cameraY_fixed > maxCameraY_fixed)
+                        cameraY_fixed = maxCameraY_fixed;
+                }
+                return;
+            }
+
+            // Ship-style smooth scroll. NES performs two independent comparisons,
+            // so a +2 step may overshoot and immediately take the -3 branch.
+            int cameraY_px = cameraY_fixed >> 8;
+            int targetCameraY_px = targetCameraY_fixed >> 8;
+            int maxShipCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
+            if (targetCameraY_px > cameraY_px)
+                cameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
+
+            if (cameraY_fixed <= maxShipCameraY_fixed &&
+                targetCameraY_px < (cameraY_fixed >> 8))
+            {
+                cameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
+                playerY_fixed -= 0x0100;
+            }
+
+            int minShipCameraY_fixed =
+                -(((hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0) * TILE) << 8;
+            if (cameraY_fixed < minShipCameraY_fixed)
+                cameraY_fixed = minShipCameraY_fixed;
+            if (cameraY_fixed > maxShipCameraY_fixed)
+                cameraY_fixed = maxShipCameraY_fixed;
+        }
+
+        private bool PrepareSimulatorNesSpriteSlot()
+        {
+            if (!simulatorNesDispatchActive)
+                return false;
+
+            int idx = simulatorNesDispatchIndex;
+            int slot = simulatorNesDispatchSlot;
+            int sid = simulatorNesDispatchSpriteId & 0xFF;
+            int height = sid < sprite_heights.Length ? sprite_heights[sid] : 0;
+
+            // DECO records count and remain resident but never enter gameplay
+            // collision. COLR/OUTL records count, execute, and are replaced on
+            // the following check_spr_objects pass.
+            if (height == 0xFE)
+                return false;
+            if (height == 0xFD)
+            {
+                if (IsBackgroundTrigger(sid))
+                {
+                    pendingBgIdx = idx;
+                    pendingBgSid = sid;
+                    pendingTintChange = true;
+                }
+                else if (IsTileTrigger(sid))
+                {
+                    pendingTileIdx = idx;
+                    pendingTileSid = sid;
+                    pendingTintChange = true;
+                }
+                else if (IsGroundTrigger(sid))
+                {
+                    pendingGroundIdx = idx;
+                    pendingGroundSid = sid;
+                    pendingTintChange = true;
+                }
+                processedColorTriggers.Add(idx);
+                simulatorNesSlotDead[slot] = true;
+                return false;
+            }
+            if (height == 0xFC)
+            {
+                simulatorNesSlotDead[slot] = true;
+                return false;
+            }
+            if (height == 0)
+                return false;
+            if (height != 0xFF)
+                return true;
+
+            int coinKind = SimulatorNesCoinKind(sid);
+            if (coinKind >= 0 && simulatorCoinTimer[coinKind] != 0)
+            {
+                int yLow = ((simulatorNesSlotWorldY[slot] & 0xFF) -
+                    ((simulatorCoinSpeed[coinKind] >> 8) & 0xFF)) & 0xFF;
+                simulatorNesSlotWorldY[slot] =
+                    (simulatorNesSlotWorldY[slot] & ~0xFF) | yLow;
+                simulatorCoinSpeed[coinKind] =
+                    (simulatorCoinSpeed[coinKind] - 0x40) & 0xFFFF;
+                simulatorCoinTimer[coinKind] =
+                    (simulatorCoinTimer[coinKind] + 1) & 0xFF;
+                if (simulatorCoinTimer[coinKind] == 40)
+                {
+                    simulatorNesSlotDead[slot] = true;
+                    simulatorCoinAnimating = false;
+                    return false;
+                }
+            }
+
+            bool isTeleportExit = sid == 0x4F || sid == 0x5A ||
+                sid == 0x67 || sid == 0x69 || sid == 0x76 || sid == 0x78;
+            if (isTeleportExit)
+            {
+                int relY = simulatorNesSlotWorldY[slot] - (cameraY_fixed >> 8) - 1;
+                simulatorTeleportOutputY_px = sid == 0x5A ? relY : relY + TILE;
+                return false;
+            }
+
+            if (sid == 0x0F)
+            {
+                TriggerSimulatorLevelComplete(idx);
+                return false;
+            }
+
+            // Coins are SPBH records which continue into normal collision.
+            if (sid == 0x07 || sid == 0x1A || sid == 0x1B ||
+                (sid >= 0x1C && sid <= 0x1E))
+                return true;
+
+            bool consumed = true;
+            switch (sid)
+            {
+                case 0x70: gravityMultiplier = 1.0 / 3.0; UpdateEffectiveGravity(); break;
+                case 0x71: gravityMultiplier = 0.5; UpdateEffectiveGravity(); break;
+                case 0x72: gravityMultiplier = 2.0 / 3.0; UpdateEffectiveGravity(); break;
+                case 0x73: gravityMultiplier = 2.0; UpdateEffectiveGravity(); break;
+                case 0x74: gravityMultiplier = 1.0; UpdateEffectiveGravity(); break;
+                case 0x6F: playerInvis = true; break;
+                case 0x7F: playerInvis = false; break;
+                case 0x8E: wrapMode = true; break;
+                case 0x9E: wrapMode = false; break;
+                case 0xDD: nocamlockforced = true; break;
+                case 0xED: nocamlockforced = false; break;
+                case 0xF2: forcedTrails = 2; break;
+                case 0xF3: forcedTrails = 0; break;
+                case 0xF4: slowMode = true; break;
+                case 0xF5: slowMode = false; break;
+                case 0x7D:
+                case 0xDE:
+                case 0xDF:
+                case 0xEE:
+                case 0xEF:
+                case 0xF0:
+                case 0xF1:
+                    break;
+                default:
+                    consumed = false;
+                    break;
+            }
+
+            if (consumed)
+                simulatorNesSlotDead[slot] = true;
+
+            // Unknown SPBH records remain resident and have no collision.
+            return false;
+        }
+
+        private void TriggerSimulatorLevelComplete(int idx)
+        {
+            if (levelCompleteTriggered || deathTriggered)
+                return;
+
+            processedEndLevelTriggers.Add(idx);
+            levelCompleteTriggered = true;
+            paused = true;
+            AppendSimDebug($"[LEVEL_COMPLETE] NES active slot idx={idx}");
+            try
+            {
+                var coinInfoSnapshot =
+                    new System.Collections.Generic.List<(int spriteIndex, int spriteId)>(collectedCoinInfo);
+                Dispatcher?.BeginInvoke(new Action(() =>
+                {
+                    try { PauseOverlay.Visibility = System.Windows.Visibility.Collapsed; } catch { }
+                    try { LevelCompleteOverlay.Visibility = System.Windows.Visibility.Visible; } catch { }
+                    try { PopulateCoinDisplay(coinInfoSnapshot); } catch { }
+                }));
+            }
+            catch { }
+        }
         // Cam lock portals: 0xDD = cam lock ON (freeze camera Y), 0xED = cam lock OFF (resume auto-follow)
         private System.Collections.Generic.HashSet<int> processedCamLockPortals = new System.Collections.Generic.HashSet<int>();
         private bool nocamlockforced = false;
@@ -4809,75 +5276,6 @@ namespace FamidashEditor
                     simAccumulatedMs -= SIM_STEP_MS;
                 // Path recording now happens in physics routines (SimulateNumericStep)
                 
-                // Automatic camera-follow while physics is active: ensure player stays within vertical thresholds
-                try
-                {
-                    // Match Famidash process_y_scroll: cam follows Y for cube(0)/robot(4)/ninja(8)/pogo(9)/football(11), or when nocamlockforced
-                    // NES scroll.h cube branch: GAMEMODE_CUBE(0), GAMEMODE_ROBOT(4),
-                    // GAMEMODE_NINJA(8), GAMEMODE_POGO(9), or nocamlock/nocamlockforced.
-                    // FOOTBALL (11) is NOT in this list — it uses ship-style smooth scroll.
-                    bool camFollowsY = (currentGameMode == 0 || currentGameMode == 4 || currentGameMode == 8 || currentGameMode == 9 || nocamlockforced);
-                    // During PF replay, camera/state updates must come only from the
-                    // deterministic numeric-step path. A second camera-follow pass here
-                    // can perturb Y/camera ordering and desync from PF.
-                    if (physicsEnabled && jumpedOnce && !paused)
-                    {
-                        if ((!dual || twoplayer) && camFollowsY)
-                        {
-                            // Match NES process_y_scroll: top threshold 0x4000 (64px), bottom 0xA0 (160px)
-                            int grReserved_cam = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                            int minCamY_reserved = -(grReserved_cam * TILE) << 8;
-                            int screenY_fixed_post = playerY_fixed - cameraY_fixed;
-                            if (screenY_fixed_post < 0x4000)
-                            {
-                                // NES gate: only run when camera can actually move up.
-                                int need_fixed = 0x4000 - screenY_fixed_post;
-                                cameraY_fixed -= need_fixed;
-                                if (cameraY_fixed < minCamY_reserved) cameraY_fixed = minCamY_reserved;
-                                // World-Y of player is conserved by NES process_y_scroll;
-                                // PF cameraY_fixed has 8 fractional bits so the move
-                                // above tracks scroll precision natively. Do NOT touch
-                                // playerY_fixed.
-                            }
-                            else if ((screenY_fixed_post >> 8) >= 0xA0)
-                            {
-                                // NES gate: scroll_y < 0x2EF (cam not at bottom limit).
-                                int need_fixed = screenY_fixed_post - 0xA000;
-                                int maxCameraY_fixed = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                                cameraY_fixed += need_fixed;
-                                if (cameraY_fixed > maxCameraY_fixed) cameraY_fixed = maxCameraY_fixed;
-                            }
-                        }
-                        else
-                        {
-                            // Ship-style smooth scroll toward target.
-                            // NES net deltas (see PathfinderEngine for derivation):
-                            //   target > cam (cam moves down): scroll +2, screen −2, world Δ = 0
-                            //   target < cam (cam moves up):   scroll −3, screen +2, world Δ = −1
-                            // Comparison is INTEGER-PIXEL: NES `scroll_y` is byte-only
-                            // (subpx lives separately and isn't compared). PF cam may carry
-                            // a sub-pixel residue from cube-mode tracking — ignore it here.
-                            int _camPx = cameraY_fixed >> 8;
-                            int _tgtPx = targetCameraY_fixed >> 8;
-                            if (_tgtPx > _camPx)
-                            {
-                                cameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
-                            }
-                            else if (_tgtPx < _camPx)
-                            {
-                                cameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
-                                playerY_fixed -= 0x0100;
-                            }
-                            // Clamp to valid range
-                            int maxCamY = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
-                            int minCamY_ship = -(((hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0) * TILE) << 8;
-                            if (cameraY_fixed < minCamY_ship) cameraY_fixed = minCamY_ship;
-                            if (cameraY_fixed > maxCamY) cameraY_fixed = maxCamY;
-                        }
-                    }
-                }
-                catch { }
-
                 // OOB death / wrap mode: NES x_movement checks screen-relative Y.
                 // NES has a bug where dual disables OOB death (!dual guard), but
                 // for correctness we enforce OOB death even during dual so players
@@ -5027,7 +5425,9 @@ namespace FamidashEditor
             int? startingGroundColorCode = null,
             int simulatorScale = 1,
             int? maxFallSpeed = null,
-            int startingGameMode = 0
+            int startingGameMode = 0,
+            int[]? nesSpriteLayer = null,
+            NesSpriteRecord[]? nesSpriteRecords = null
             )
         {
             InitializeComponent();
@@ -5043,6 +5443,12 @@ namespace FamidashEditor
             try { PauseOverlay.Visibility = paused ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed; } catch { }
             this.tiles = tiles.ToArray();
             this.sprites = sprites.ToArray();
+            this.simulatorNesSpriteRecords = nesSpriteRecords?.ToArray();
+            this.simulatorNesSpriteIds = this.simulatorNesSpriteRecords != null
+                ? this.simulatorNesSpriteRecords.Select(record => record.SpriteId).ToArray()
+                : nesSpriteLayer != null && nesSpriteLayer.Length == this.sprites.Length
+                    ? nesSpriteLayer.ToArray()
+                    : this.sprites.ToArray();
             // Build non-empty sprite index for O(N_sprites) scanning instead of O(mapW*mapH)
             var _neList = new System.Collections.Generic.List<int>();
             for (int i = 0; i < this.sprites.Length; i++)
@@ -5050,11 +5456,19 @@ namespace FamidashEditor
             this.nonEmptySpriteIndices = _neList.ToArray();
             this.mapWidth = mapWidth;
             this.mapHeight = mapHeight;
+            this.hasGroundLayer = hasGroundLayer;
+            this.groundTileRows = groundTileRows;
+            {
+                int gRTR = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
+                _sim_nesCoordOffset = (57 - mapHeight + gRTR) * 16;
+            }
             this.tileImages = tileImages;
             this.tileTonedImages = tileTonedImages;
             this.spriteImages = spriteImages;
             this.spritePixelOffsets = new System.Collections.Generic.Dictionary<int, (int, int)>(spritePixelOffsets);
             this.spriteAnchors = new System.Collections.Generic.Dictionary<int, (int, int)>(spriteAnchors);
+            BuildSimulatorNesSpriteStream();
+            InitializeSimulatorNesSlots();
             // Store saw frame originals and initial tinted copies
             this.sawFrame1TilesOrig = sawFrame1TilesTinted != null ? (ImageSource[])sawFrame1TilesTinted.Clone() : null;
             this.sawFrame2TilesOrig = sawFrame2TilesTinted != null ? (ImageSource[])sawFrame2TilesTinted.Clone() : null;
@@ -5184,10 +5598,6 @@ namespace FamidashEditor
             this.groundRepeatX = groundRepeatX;
             this.hasGroundLayer = hasGroundLayer;
             this.groundTileRows = groundTileRows;
-            {
-                int gRTR = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                _sim_nesCoordOffset = (57 - mapHeight + gRTR) * 16;
-            }
 
             // If caller supplied per-level starting color codes, map them to trigger IDs and
             // apply the resulting tints immediately so the simulator starts with those colors.
@@ -6821,6 +7231,7 @@ namespace FamidashEditor
                 try { processedGravityPortals.Clear(); } catch { }
                 try { processedGravityModPortals.Clear(); } catch { }
                 try { processedSpeedPortals.Clear(); } catch { }
+                try { InitializeSimulatorNesSlots(); } catch { }
                 try { processedRandomPortals.Clear(); } catch { }
                 try { processedGameModePortals.Clear(); } catch { }
                 try { processedMiniPortals.Clear(); } catch { }  // Reset dual/single portal tracking
@@ -6889,7 +7300,8 @@ namespace FamidashEditor
                 // re-preseed them from scratch (sprites[idx] must be >= 0).
                 foreach (var (spriteIndex, spriteId) in collectedCoinInfo)
                 {
-                    if (spriteIndex >= 0 && spriteIndex < sprites.Length)
+                    if (!SimulatorUsesExactNesRecords &&
+                        spriteIndex >= 0 && spriteIndex < sprites.Length)
                         sprites[spriteIndex] = spriteId;
                 }
                 collectedCoins.Clear();
@@ -7545,16 +7957,16 @@ namespace FamidashEditor
                             // INTEGER-PIXEL comparison (NES `scroll_y` byte-only).
                             int _camPx2 = cameraY_fixed >> 8;
                             int _tgtPx2 = targetCameraY_fixed >> 8;
+                            int maxCamY_2 = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
                             if (_tgtPx2 > _camPx2)
                             {
                                 cameraY_fixed += SHIP_SCROLL_SPEED_UP_FIXED;
                             }
-                            else if (_tgtPx2 < _camPx2)
+                            if (cameraY_fixed <= maxCamY_2 && _tgtPx2 < (cameraY_fixed >> 8))
                             {
                                 cameraY_fixed -= SHIP_SCROLL_SPEED_DOWN_FIXED;
                                 playerY_fixed -= 0x0100;
                             }
-                            int maxCamY_2 = Math.Max(0, (mapHeight - NES_H) * TILE) << 8;
                             int minCamY_2 = -(((hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0) * TILE) << 8;
                             if (cameraY_fixed < minCamY_2) cameraY_fixed = minCamY_2;
                             if (cameraY_fixed > maxCamY_2) cameraY_fixed = maxCamY_2;
@@ -8099,7 +8511,7 @@ namespace FamidashEditor
                 int bestAnchor_fixed = int.MaxValue;
                 int? newSpeed_fixed = null;
 
-                if (crossedInteraction)
+                if (!physicsEnabled && crossedInteraction)
                 {
                     // Player crossed the interaction line this step: consider anchors between the
                     // previous player center and the fixed interaction line.
@@ -8233,7 +8645,7 @@ namespace FamidashEditor
                         }
                     }
                 }
-                else
+                else if (!physicsEnabled)
                 {
                     // Player already past interaction line
                     // When cam mode is ON: use camera-centered detection (screen threshold)
@@ -8277,7 +8689,7 @@ namespace FamidashEditor
                 int bestTile_fixed = int.MaxValue; int? tileIdx = null; int? tileSid = null;
                 int bestGround_fixed = int.MaxValue; int? groundIdx = null; int? groundSid = null;
 
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; !physicsEnabled && _si < nonEmptySpriteIndices.Length; _si++)
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
@@ -10743,7 +11155,6 @@ namespace FamidashEditor
                         // Convert RTB-local px/py to canvas-space for world coordinate computation
                         double hx_screen = (int)Math.Round(px - offsetX) + hxoff_o;
                         double hy_screen = (int)Math.Round(py - offsetY) + hyoff_o;
-                        if (s_padDownIds.Contains(id_for_overlay)) hy_screen += 8;
 
                         int pixelX_now2 = renderCameraX_fixed >> 8;
                         int pixelY_now2 = renderCameraY_fixed >> 8;
@@ -10821,9 +11232,8 @@ namespace FamidashEditor
 
                             double hx = hitbase_px_x + hxoff; // screen-space base + offsets
                             double hy = hitbase_px_y + hyoff;
-                            // If this sprite is a non-upside-down pad, shift hitbox down an extra 8 px on top of specified offsets
-                            // Known non-upside-down pad IDs include typical down variants; extend set as needed.
-                            // NES globalObjectOffset (+8 Y for bottom pads) is now baked into sprite_y_offset table
+                            // The generated record position already includes exporter offsets;
+                            // sprite_y_offset must remain the exact NES runtime table.
                             hrect.Width = Math.Max(1, hw);
                             hrect.Height = Math.Max(1, hh);
                             System.Windows.Controls.Canvas.SetLeft(hrect, hx);
@@ -11266,6 +11676,7 @@ namespace FamidashEditor
                     return;
                 
                 AppendSimDebug($"[STEP_START] step={simTickCount} pfFrame={pfFrameIndex} playerX_fixed=0x{playerX_fixed:X4} ({playerX_fixed >> 8}px), playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
+                physicsFrameEntryGameMode = currentGameMode;
 
                 // === PATHFINDER AI INPUT INJECTION ===
                 if (pathfinderEnabled)
@@ -11329,70 +11740,54 @@ namespace FamidashEditor
                 {
                     try
                     {
+                        // Gameplay begins with a ring prepared by the preceding
+                        // check_spr_objects. Prime it once at level start; normal
+                        // frames refresh it after P1 movement/scroll below.
+                        if (!simulatorNesSlotsPrimed)
+                        {
+                            UpdateSimulatorNesSlots();
+                            simulatorNesSlotsPrimed = true;
+                        }
+
                         // Reset orb/pad activation flag for this frame (will be set if collision occurs)
                         orbhitonthisframe[currplayer] = false;
-                        
-                        // Check for dual portal activation (sprite 0x22) - must be before other checks
-                        CheckDualPortal();
-                        
-                        // Check for single portal activation (sprite 0x23) - exits dual mode
-                        CheckSinglePortal();
-
-                        // Check for gamemode/random portal activation during sprite_collide
-                        CheckGameModePortals();
-                        
-                        // Blue pads must run BEFORE gravity portals: PF processes
-                        // sprites in spatial X order within a single loop, so a blue
-                        // pad to the LEFT of a gravity portal activates first (while
-                        // gravity is still in the pre-pad state).  If gravity portals
-                        // ran first, they'd flip gravity before the blue pad's gravity
-                        // gate fires, causing the pad to be skipped.
-                        CheckBluePadCollision();
-                        
-                        // Check for gravity portal activation
-                        CheckGravityPortals();
-                        AppendSimDebug($"[GRAV_PRE_MOVEMENT] currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed}");
-                        
-                        // Check for teleport portal activation (0x4E entrance, 0x4F exit)
-                        CheckTeleportPortals();
-                        
-                        // Check for gravity modifier portals (0x5F-0x63)
-                        CheckGravityModPortals();
-                        
-                        // Check for gravity modifier triggers (0x70-0x74)
-                        CheckGravityModTriggers(prevPlayerCenter_fixed, attemptedPlayerCenter_fixed);
-                        
-                        // Check for mini/growth portal activation
-                        CheckMiniGrowthPortals();
-                        
-                        // Check for cam lock portal activation (0xDD=lock, 0xED=unlock)
-                        CheckCamLockPortals(prevPlayerCenter_fixed, attemptedPlayerCenter_fixed);
-                        
-                        // Check for timewarp, hide player, and trail triggers
-                        CheckMiscTriggers();
-                        
-                        // Check for pad collision
-                        CheckPadCollision();
-                        CheckSpiderOrbPadCollision();
-                        CheckDashOrbCollision();
-                        CheckAlphabetBlocks();
-
-                        // Check for coin collection
-                        CheckCoinCollision();
-
-                        // === SPEED PORTAL CHECK (at OLD X, before X advance) ===
-                        // NES detects speed portals during sprite_collide at OLD X
-                        // before x_movement.  PF applies the new VelX for this frame's
-                        // X advance (ProcessSprites runs before X = X + VelX).
-                        // After detection we recompute attemptedPlayerX_fixed so this
-                        // frame's advance uses the new speed — matching PF.
-                        //
-                        // CRITICAL: Use NES-style collision (sprite table dimensions only),
-                        // NOT SpriteIntersectsPlayer which expands TILE-sized hitboxes to
-                        // match rendered image sizes.  PF uses pure table dimensions via
-                        // pre-computed HitLeft/HitRight, so SIM must match to avoid
-                        // detecting speed portals 1 frame early (causing permanent X offset).
+                        BeginSimulatorNesSpritePass();
+                        try
                         {
+                            // NES sprite_collide dispatches each loaded hardware
+                            // slot immediately. Every gameplay sprite category must
+                            // therefore run inside this one slot 0 -> 15 walk.
+                            for (int nesSlot = 0; nesSlot < simulatorNesSlots.Length; nesSlot++)
+                            {
+                                SelectSimulatorNesSpriteSlot(nesSlot);
+                                if (!simulatorNesDispatchActive || !PrepareSimulatorNesSpriteSlot())
+                                {
+                                    if (levelCompleteTriggered)
+                                        break;
+                                    continue;
+                                }
+
+                                CheckDualPortal();
+                                CheckSinglePortal();
+                                CheckGameModePortals();
+                                CheckBluePadCollision();
+                                CheckGravityPortals();
+                                CheckTeleportPortals();
+                                CheckGravityModPortals();
+                                CheckGravityModTriggers(prevPlayerCenter_fixed, attemptedPlayerCenter_fixed);
+                                CheckMiniGrowthPortals();
+                                CheckCamLockPortals(prevPlayerCenter_fixed, attemptedPlayerCenter_fixed);
+                                CheckMiscTriggers();
+                                CheckPadCollision();
+                                CheckSpiderOrbPadCollision();
+                                CheckRegularOrbCollisionNesOrder();
+                                CheckDashOrbCollision();
+                                CheckAlphabetBlocks();
+                                CheckCoinCollision();
+
+                                // === SPEED PORTAL CHECK (at OLD X, before X advance) ===
+                                // NES detects speed portals during sprite_collide at OLD X.
+                                {
                             int hitboxW_sp1 = entryMiniMode_sp ? 8 : 15;
                             int hitboxH_sp1 = entryMiniMode_sp ? 7 : 15;
                             // Use EXCLUSIVE player bounds (matching PF ProcessSprites exactly)
@@ -11404,49 +11799,27 @@ namespace FamidashEditor
                             int miniOffY_sp1 = entryMiniMode_sp ? ((0x10 - 7) >> 1) : 0;
                             int playerTop_sp1 = (entryPlayerY_fixed_sp >> 8) + miniOffY_sp1;
                             int playerBottom_sp1 = playerTop_sp1 + hitboxH_sp1;  // exclusive
-                            int groundRowsToReserve_sp1 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                            for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                            for (int slot_sp1 = 0; slot_sp1 < simulatorNesSlots.Length; slot_sp1++)
                             {
-                                int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                                if (slot_sp1 != simulatorNesDispatchSlot) continue;
+                                int idx = simulatorNesSlots[slot_sp1];
+                                if (idx < 0) continue;
+                                int sid = simulatorNesSpriteIds[idx];
                                 if (sid < 0) continue;
                                 if (!speedPortalMap.ContainsKey(sid)) continue;
-                                if (processedSpeedPortals.Contains(idx)) continue;
 
                                 // Compute sprite hitbox using NES table dimensions only
                                 // (matching PF's SpriteEntry pre-computation, no image expansion)
-                                int storageTileX_sp1 = idx % mapWidth;
-                                int storageTileY_sp1 = idx / mapWidth;
                                 int sid8_sp1 = sid & 0xFF;
                                 int id_for_geom_sp1 = sid8_sp1;
-                                int anchorKey_sp1 = -1;
-                                bool allowAnchorGeom_sp1 = !(SharedPhysics.IsSpeedPortal(sid8_sp1)
-                                                             || SharedPhysics.IsGameModePortal(sid8_sp1)
-                                                             || SharedPhysics.IsGravityPortal(sid8_sp1)
-                                                             || SharedPhysics.IsMiniGrowthPortal(sid8_sp1));
-                                if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor_sp1))
-                                {
-                                    anchorKey_sp1 = anchor_sp1.anchorTileY * mapWidth + anchor_sp1.anchorTileX;
-                                    if (allowAnchorGeom_sp1 && anchorKey_sp1 >= 0 && anchorKey_sp1 < sprites.Length)
-                                    {
-                                        int anchoredId_sp1 = sprites[anchorKey_sp1];
-                                        if (anchoredId_sp1 >= 0 && anchoredId_sp1 < 256) id_for_geom_sp1 = anchoredId_sp1 & 0xFF;
-                                    }
-                                }
                                 int hw_sp1 = (id_for_geom_sp1 >= 0 && id_for_geom_sp1 < sprite_widths.Length) ? sprite_widths[id_for_geom_sp1] : TILE;
                                 int hh_sp1 = (id_for_geom_sp1 >= 0 && id_for_geom_sp1 < sprite_heights.Length) ? sprite_heights[id_for_geom_sp1] : TILE;
                                 if (hh_sp1 >= 0xFC) continue; // skip DECO/COLR/OUTL/SPBH sentinels
                                 int hxoff_sp1 = (id_for_geom_sp1 >= 0 && id_for_geom_sp1 < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom_sp1] : 0;
                                 int hyoff_sp1 = (id_for_geom_sp1 >= 0 && id_for_geom_sp1 < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom_sp1] : 0;
-                                int pxOff_sp1 = 0, pyOff_sp1 = 0;
-                                if (anchorKey_sp1 >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey_sp1, out var aoffs_sp1))
-                                { pxOff_sp1 = aoffs_sp1.offsetX; pyOff_sp1 = aoffs_sp1.offsetY; }
-                                else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs_sp1))
-                                { pxOff_sp1 = offs_sp1.offsetX; pyOff_sp1 = offs_sp1.offsetY; }
-
-                                int sLeft_sp1 = storageTileX_sp1 * TILE + hxoff_sp1 + pxOff_sp1;
-                                // Speed portals in NES sprite_collide do not use the
-                                // extra -1 Y bias from check_spr_objects-style paths.
-                                int sTop_sp1 = (storageTileY_sp1 - groundRowsToReserve_sp1) * TILE + hyoff_sp1 + pyOff_sp1;
+                                int sLeft_sp1 = simulatorNesSpriteWorldX[idx] + hxoff_sp1;
+                                // check_spr_objects stores realy as worldY-scrollY-1.
+                                int sTop_sp1 = SimulatorNesDispatchWorldY() + hyoff_sp1 - 1;
                                 int sRight_sp1 = sLeft_sp1 + Math.Max(1, hw_sp1);   // exclusive (NES-style)
                                 int sBottom_sp1 = sTop_sp1 + Math.Max(1, hh_sp1);   // exclusive (NES-style)
 
@@ -11469,7 +11842,7 @@ namespace FamidashEditor
                                     // so the speed portal re-fires every frame
                                     // the player overlaps it. Wave physics fix
                                     // depends on this re-fire.
-                                    AppendSimDebug($"[SPEED_P1] sid=0x{sid:X2} VelX -> 0x{spd:X4}");
+                                    AppendSimDebug($"[SPEED_P1] slot={slot_sp1} sid=0x{sid:X2} VelX -> 0x{spd:X4}");
                                     // Recompute X advance with new speed so this frame uses it (matching PF)
                                     if (isFullSpeed)
                                         attemptedPlayerX_fixed = playerX_fixed + (currentSpeed_fixed * speedMultiplierLocal);
@@ -11479,6 +11852,13 @@ namespace FamidashEditor
                                 }
                             }
                         }
+                            }
+                        }
+                        finally
+                        {
+                            EndSimulatorNesSpritePass();
+                        }
+                        AppendSimDebug($"[GRAV_PRE_MOVEMENT] currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed}");
                     }
                     catch { }
                 }
@@ -12277,6 +12657,15 @@ namespace FamidashEditor
                         
                         // Clear dblocked every frame (matches state_game.h line 636)
                         dblocked = false;
+
+                        // Exact NES order:
+                        // P1 sprite_collide -> movement/collisions -> scroll ->
+                        // check_spr_objects -> save P1 -> P2 sprite_collide.
+                        // P2 must consume the same refreshed 16-slot ring and must
+                        // not run either camera scrolling or slot refresh again.
+                        ApplySimulatorNesCameraScroll();
+                        UpdateSimulatorNesSlots();
+                        simulatorNesSlotsPrimed = true;
                         
                         // Dashing and orbed are now cleared before sprite interactions
                         // (matching NES state_game.h lines 372-374 and 557-559)
@@ -12439,75 +12828,66 @@ namespace FamidashEditor
                             try
                             {
                                 orbhitonthisframe[currplayer] = false;
-                                // Check for single portal activation (sprite 0x23) - exits dual mode
-                                CheckSinglePortal();
-                                // Dual portal check is not needed here (only one-way into dual mode)
-                                // Blue pads before gravity portals (matching PF spatial order)
-                                CheckBluePadCollision();
-                                CheckGravityPortals();
-                                CheckGravityModPortals();
-                                CheckMiniGrowthPortals();
-                                CheckPadCollision();
-                                CheckSpiderOrbPadCollision();
-                                CheckDashOrbCollision();
-                                CheckAlphabetBlocks();
-                                CheckCoinCollision();
-
-                                // Speed portal check for P2 — if P2's hitbox overlaps a
-                                // speed portal that P1 missed (different Y), the shared
-                                // speed must still update, matching PF's recursive StepFrame
-                                // which runs ProcessSprites for P2 at P2's Y.
-                                // Uses NES table dimensions + PF-matching exclusive overlap
-                                // (same formula as SPEED_P1, no SpriteIntersectsPlayer
-                                // image expansion).
+                                bool entryMiniMode_sp2 = miniMode;
+                                int entryPlayerY_fixed_sp2 = playerY_fixed;
+                                BeginSimulatorNesSpritePass();
+                                try
                                 {
-                                    int hitboxW_sp2 = miniMode ? 8 : 15;
-                                    int hitboxH_sp2 = miniMode ? 7 : 15;
+                                    for (int nesSlot = 0; nesSlot < simulatorNesSlots.Length; nesSlot++)
+                                    {
+                                        SelectSimulatorNesSpriteSlot(nesSlot);
+                                        if (!simulatorNesDispatchActive || !PrepareSimulatorNesSpriteSlot())
+                                        {
+                                            if (levelCompleteTriggered)
+                                                break;
+                                            continue;
+                                        }
+
+                                        CheckDualPortal();
+                                        CheckSinglePortal();
+                                        CheckGameModePortals();
+                                        CheckBluePadCollision();
+                                        CheckGravityPortals();
+                                        CheckTeleportPortals();
+                                        CheckGravityModPortals();
+                                        CheckGravityModTriggers(prevPlayerCenter_fixed, attemptedPlayerCenter_fixed);
+                                        CheckMiniGrowthPortals();
+                                        CheckCamLockPortals(prevPlayerCenter_fixed, attemptedPlayerCenter_fixed);
+                                        CheckMiscTriggers();
+                                        CheckPadCollision();
+                                        CheckSpiderOrbPadCollision();
+                                        CheckRegularOrbCollisionNesOrder();
+                                        CheckDashOrbCollision();
+                                        CheckAlphabetBlocks();
+                                        CheckCoinCollision();
+
+                                        // Speed portal check for this exact P2 NES slot.
+                                        {
+                                    int hitboxW_sp2 = entryMiniMode_sp2 ? 8 : 15;
+                                    int hitboxH_sp2 = entryMiniMode_sp2 ? 7 : 15;
                                     int nesX_sp2 = (playerX_fixed >> 8) + 1;
                                     int playerRight_sp2 = nesX_sp2 + hitboxW_sp2;  // exclusive
-                                    int playerTop_sp2 = (playerY_fixed >> 8) + GetMiniSpriteOffsetY();
+                                    int miniOffY_sp2 = entryMiniMode_sp2 ? ((0x10 - 7) >> 1) : 0;
+                                    int playerTop_sp2 = (entryPlayerY_fixed_sp2 >> 8) + miniOffY_sp2;
                                     int playerBottom_sp2 = playerTop_sp2 + hitboxH_sp2;  // exclusive
-                                    int groundRowsToReserve_sp2 = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                                    for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                                    for (int slot_sp2 = 0; slot_sp2 < simulatorNesSlots.Length; slot_sp2++)
                                     {
-                                        int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
+                                        if (slot_sp2 != simulatorNesDispatchSlot) continue;
+                                        int idx = simulatorNesSlots[slot_sp2];
+                                        if (idx < 0) continue;
+                                        int sid = simulatorNesSpriteIds[idx];
                                         if (sid < 0) continue;
                                         if (!speedPortalMap.ContainsKey(sid)) continue;
-                                        if (processedSpeedPortals.Contains(idx)) continue;
 
-                                        int storageTileX_sp2 = idx % mapWidth;
-                                        int storageTileY_sp2 = idx / mapWidth;
                                         int sid8_sp2 = sid & 0xFF;
                                         int id_for_geom_sp2 = sid8_sp2;
-                                        int anchorKey_sp2 = -1;
-                                        bool allowAnchorGeom_sp2 = !(SharedPhysics.IsSpeedPortal(sid8_sp2)
-                                                                     || SharedPhysics.IsGameModePortal(sid8_sp2)
-                                                                     || SharedPhysics.IsGravityPortal(sid8_sp2)
-                                                                     || SharedPhysics.IsMiniGrowthPortal(sid8_sp2));
-                                        if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor_sp2))
-                                        {
-                                            anchorKey_sp2 = anchor_sp2.anchorTileY * mapWidth + anchor_sp2.anchorTileX;
-                                            if (allowAnchorGeom_sp2 && anchorKey_sp2 >= 0 && anchorKey_sp2 < sprites.Length)
-                                            {
-                                                int anchoredId_sp2 = sprites[anchorKey_sp2];
-                                                if (anchoredId_sp2 >= 0 && anchoredId_sp2 < 256) id_for_geom_sp2 = anchoredId_sp2 & 0xFF;
-                                            }
-                                        }
                                         int hw_sp2 = (id_for_geom_sp2 >= 0 && id_for_geom_sp2 < sprite_widths.Length) ? sprite_widths[id_for_geom_sp2] : TILE;
                                         int hh_sp2 = (id_for_geom_sp2 >= 0 && id_for_geom_sp2 < sprite_heights.Length) ? sprite_heights[id_for_geom_sp2] : TILE;
                                         if (hh_sp2 >= 0xFC) continue;
                                         int hxoff_sp2 = (id_for_geom_sp2 >= 0 && id_for_geom_sp2 < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom_sp2] : 0;
                                         int hyoff_sp2 = (id_for_geom_sp2 >= 0 && id_for_geom_sp2 < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom_sp2] : 0;
-                                        int pxOff_sp2 = 0, pyOff_sp2 = 0;
-                                        if (anchorKey_sp2 >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey_sp2, out var aoffs_sp2))
-                                        { pxOff_sp2 = aoffs_sp2.offsetX; pyOff_sp2 = aoffs_sp2.offsetY; }
-                                        else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs_sp2))
-                                        { pxOff_sp2 = offs_sp2.offsetX; pyOff_sp2 = offs_sp2.offsetY; }
-
-                                        int sLeft_sp2 = storageTileX_sp2 * TILE + hxoff_sp2 + pxOff_sp2;
-                                        // Keep P2 speed checks in lockstep with P1/PF:
-                                        // no extra -1 Y bias for speed portal overlaps.
-                                        int sTop_sp2 = (storageTileY_sp2 - groundRowsToReserve_sp2) * TILE + hyoff_sp2 + pyOff_sp2;
+                                        int sLeft_sp2 = simulatorNesSpriteWorldX[idx] + hxoff_sp2;
+                                        int sTop_sp2 = SimulatorNesDispatchWorldY() + hyoff_sp2 - 1;
                                         int sRight_sp2 = sLeft_sp2 + Math.Max(1, hw_sp2);
                                         int sBottom_sp2 = sTop_sp2 + Math.Max(1, hh_sp2);
 
@@ -12526,9 +12906,15 @@ namespace FamidashEditor
                                             // NES `spcl_spd_*` does NOT one-shot via
                                             // idx8_inc; speed portals re-fire every
                                             // frame the player overlaps them.
-                                            AppendSimDebug($"[SPEED_P2] sid=0x{sid:X2} VelX -> 0x{spd:X4}");
+                                            AppendSimDebug($"[SPEED_P2] slot={slot_sp2} sid=0x{sid:X2} VelX -> 0x{spd:X4}");
                                         }
                                     }
+                                }
+                                    }
+                                }
+                                finally
+                                {
+                                    EndSimulatorNesSpritePass();
                                 }
                             }
                             catch { }
@@ -13307,7 +13693,7 @@ namespace FamidashEditor
                 // Skip legacy detection to avoid wrong-timing speed changes.
                 if (!physicsEnabled)
                 {
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; !physicsEnabled && _si < nonEmptySpriteIndices.Length; _si++)
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
@@ -13404,7 +13790,7 @@ namespace FamidashEditor
                 int bestTile_fixed = int.MaxValue; int? tileIdxLocal = null; int? tileSidLocal = null;
                 int bestGround_fixed = int.MaxValue; int? groundIdxLocal = null; int? groundSidLocal = null;
 
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; !physicsEnabled && _si < nonEmptySpriteIndices.Length; _si++)
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid < 0) continue;
@@ -13450,7 +13836,7 @@ namespace FamidashEditor
                 // Detect end-level trigger (sprite 0x0F) using the same X position logic as color triggers.
                 // NES only processes sprites that are loaded into activesprites slots, which requires
                 // them to be on-screen. Add a Y visibility check so off-screen triggers don't fire.
-                if (!levelCompleteTriggered && !deathTriggered)
+                if (!physicsEnabled && !levelCompleteTriggered && !deathTriggered)
                 {
                     int screenTopY = cameraY_fixed >> 8;
                     int screenBottomY = screenTopY + NES_H * TILE;
@@ -13525,7 +13911,7 @@ namespace FamidashEditor
                 // Detect hide/show player triggers (0x6F=hide, 0x7F=show) using
                 // the same X-crossing logic as end-level/color triggers.
                 // NES activates these on X threshold crossing, not hitbox overlap.
-                for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+                for (int _si = 0; !physicsEnabled && _si < nonEmptySpriteIndices.Length; _si++)
                 {
                     int idx = nonEmptySpriteIndices[_si]; int sid = sprites[idx];
                     if (sid != 0x6F && sid != 0x7F) continue;

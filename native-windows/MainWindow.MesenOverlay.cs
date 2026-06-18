@@ -627,11 +627,11 @@ emu.addEventCallback(function()
 end, emu.eventType.endFrame)
 ";
 
-            // Replay table is keyed by the player's pixel X (and Y as a tiebreaker).
             // Lua reads NES _player_x ($043D, 16-bit lo|hi) and _player_y ($0441) every frame.
             // px = (read16(_player_x) >> 8) + 8 matches PathfinderEngine PathPoints (hitbox center).
-            // A monotonic forward cursor advances while the next entry's X has been reached,
-            // so backward motion (death respawn) re-arms via a 0->non-zero transition.
+            // The first replay X is used only to latch past the NES intro-freeze pre-step.
+            // From then on the replay cursor is clocked by NES-local physics movement, never
+            // by the predicted PF path; a real divergence therefore cannot retime the inputs.
             string replayPart =
 $@"
 -- ── Replay injector ────────────────────────────────────────────────────────
@@ -671,6 +671,8 @@ local armed = false
 local prevPx = -1
 local lastA = false
 local frameIdx = 0
+local replayClockStarted = false
+local replayClockPrevPx = nil
 local traceFp = nil
 local orbDbgFp = nil
 local physDbgFp = nil
@@ -694,6 +696,8 @@ local function clearPathOverlay()
     armed = false
     lastA = false
     prevPx = -1
+    replayClockStarted = false
+    replayClockPrevPx = nil
     nesTrail = {{}}
     nesTrailHead = 1
     nesTrailCount = 0
@@ -953,7 +957,8 @@ emu.addMemoryCallback(_cpyWriteSnap, emu.callbackType.write, 0x006A)
 emu.addMemoryCallback(_cpyWriteSnap, emu.callbackType.write, 0x006B)
 
 -- Per-frame: track player position, arm replay on level start (0 -> non-zero),
--- advance cursor monotonically, capture the desired A state for the next poll.
+-- then advance the replay from NES-local physics movement.  The PF path is
+-- deliberately not used as an ongoing clock.
 emu.addEventCallback(function()
     if #replay == 0 then
         emu.drawString(8, 8, ""REPLAY: file empty or missing"", 0xFF6666, 0x000000)
@@ -995,6 +1000,8 @@ emu.addEventCallback(function()
         cursor = 1
         armed = true
         frameIdx = 0
+        replayClockStarted = false
+        replayClockPrevPx = px
         -- Reset the actual-NES trail on respawn so old trails don't linger.
         nesTrail = {{}}
         nesTrailHead = 1
@@ -1062,21 +1069,39 @@ emu.addEventCallback(function()
     end
 
     if armed then
-        -- Guard: at game-start scrollX is garbage (~0xFFFFFF82), making px ~4
-        -- billion and blowing the cursor to #replay in one step.  Only advance
-        -- when px is in a plausible in-level range (NES level width << 500000px).
-        if px >= 0 and px < 524288 then
-            while cursor < #replay and replay[cursor + 1].x <= px do
-                cursor = cursor + 1
+        local plausiblePx = px >= 0 and px < 524288
+        local movedThisFrame = plausiblePx and replayClockPrevPx ~= nil and px ~= replayClockPrevPx
+
+        -- Pathfinder applies the NES intro-freeze pre-step before recording
+        -- PathPoints[0].  Latch when NES first reaches that same initial X,
+        -- then use only actual NES movement as the replay clock.  This one-time
+        -- gate handles startup/lag frames without letting a later PF position
+        -- mismatch delay or accelerate the injected input stream.
+        if not replayClockStarted then
+            local firstEntry = replay[1]
+            if movedThisFrame and firstEntry and px >= firstEntry.x then
+                replayClockStarted = true
+                cursor = 1
             end
+        elseif movedThisFrame and cursor < #replay then
+            cursor = cursor + 1
         end
+        if plausiblePx then replayClockPrevPx = px end
+
         -- Frame alignment: PathPoints[cursor] is the post-physics position for
         -- sim frame `cursor`, produced by Inputs[cursor]. We've just observed
         -- that position in endFrame N. The next emulator inputPolled will be
         -- for frame N+1, so we must feed Inputs[cursor+1] -- otherwise the
         -- press lands one frame late (jumps fire after the spike).
         local curEntry = replay[cursor]
-        local nextEntry = replay[cursor + 1] or replay[cursor]
+        local nextEntry
+        if replayClockStarted then
+            nextEntry = replay[cursor + 1] or replay[cursor]
+        else
+            -- Feed Inputs[0] through the hidden intro pre-step.  Once the first
+            -- recorded PF/NES position is observed, the normal +1 phase applies.
+            nextEntry = replay[1]
+        end
         local curA = curEntry and (curEntry.a == 1) or false
         lastA = nextEntry and (nextEntry.a == 1) or false
 

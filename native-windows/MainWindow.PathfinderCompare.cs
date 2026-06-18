@@ -223,17 +223,11 @@ namespace FamidashEditor
                 fullRows.AppendLine("rom_f, sim_f, rom_xy, sim_xy, dx, dy, a_next, sim_a");
 
                 // Frame alignment: Lua's `cursor` is 1-based and replay[1] =
-                // PathPoints[0] (spawn, pre-physics on both sides). The Lua
-                // advance loop `while replay[cursor+1].x <= px` lands on the
-                // largest cursor whose replay[cursor].x equals NES.px AFTER
-                // the current frame's physics. So NES cursor=N matches
-                // PF.PathPoints[N-1] (single Lua-base offset, NO extra
-                // skip-pre-physics step). Empirically verified: at NES px=152,
-                // Lua reports cursor=64 because replay[64].x=PF.PathPoints[63].x
-                // =152, and PF.PathPoints[63]=(152,377) exactly equals NES.
-                // The previous `cursor-2` mapping put the entire compare one
-                // PF frame behind, manifesting as ~7px dy spikes at every
-                // jump/portal/slope event (1 frame of jump-velocity).
+                // PathPoints[0], the first recorded post-physics position after
+                // Pathfinder's NES intro-freeze pre-step.  Lua uses that first
+                // X only as a startup latch, then increments the cursor once per
+                // NES-local physics movement.  NES cursor=N therefore matches
+                // PF.PathPoints[N-1] (single Lua-base offset).
                 foreach (var r in rom)
                 {
                     if (r.SimCursor < 1) continue; // skip pre-spawn rows

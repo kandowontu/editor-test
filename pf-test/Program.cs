@@ -247,8 +247,8 @@ if (!gotOffsetsFromConfig)
         Console.WriteLine($"No config or metadata found for sprite offsets");
     }
 }
-// globalObjectOffsets (bottom pad +8Y, medium post -8X) are now baked into
-// SharedPhysics.sprite_y_offset / sprite_x_offset tables, matching SimulatorWindow.
+// Generated NES records already contain exporter globalObjectOffsets.
+// Runtime sprite offset tables therefore remain byte-for-byte NES values.
 
 // Ground layer: the GUI always loads a ground bitmap (3 tile rows reserved)
 bool hasGround = true;
@@ -278,12 +278,19 @@ Console.WriteLine($"Spawn: spawnHi=0x{nesSpawnHi:X2} scrollHi=0x{nesScrollHi:X2}
 
 Console.WriteLine($"Start: ({startX_px}, {startY_px})  speed={startSpeedUiIndex}  maxFall=0x{maxFallSpeed:X}  bias={jumpTimingBias:F2}  mode={startGameMode}");
 
+NesSpriteRecord[]? nesSpriteRecords =
+    NesSpriteDataLoader.TryLoadForTmx(tmxPath, out NesSpriteRecord[] generatedSpriteRecords)
+        ? generatedSpriteRecords
+        : null;
+
 var engine = new PathfinderEngine(
     tiles, sprites, spriteAnchors,
     mapWidth, level.Height,
     hasGround, groundTileRows,
     maxFallSpeed,
-    spritePixelOffsets);
+    spritePixelOffsets,
+    level.NesSpriteLayer,
+    nesSpriteRecords);
 engine.LevelName = tmxPath;
 engine.JumpTimingBias = jumpTimingBias;
 engine.PreferCoins = preferCoins;
@@ -308,8 +315,22 @@ if (tasInputFile != null)
     var tasLines = File.ReadAllLines(tasInputFile);
     const string IDLE = "|..|........|........";
     var tasInputs = new List<bool>(tasLines.Length);
-    foreach (var line in tasLines)
-        tasInputs.Add(line != IDLE);
+    if (tasLines.Length > 0 && tasLines[0].StartsWith("frame,X_fixed,", StringComparison.Ordinal))
+    {
+        // Accept a Pathfinder frame trace directly so a reported divergence can
+        // be replayed byte-for-byte without first converting it to FCEUX TAS text.
+        foreach (var line in tasLines.Skip(1))
+        {
+            var fields = line.Split(',');
+            if (fields.Length > 4 && int.TryParse(fields[0], out _))
+                tasInputs.Add(fields[4] == "1");
+        }
+    }
+    else
+    {
+        foreach (var line in tasLines)
+            tasInputs.Add(line != IDLE);
+    }
 
     Console.WriteLine($"TAS replay: {tasInputs.Count} frames, preroll={tasPreRollFrames}");
     Console.WriteLine($"Jump frames: {tasInputs.Count(b => b)}");

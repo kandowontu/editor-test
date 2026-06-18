@@ -99,11 +99,13 @@ namespace FamidashEditor
             {
                 int storageTileX = idx % mapWidth;
                 int storageTileY = idx / mapWidth;
+                bool useRawNesRecord = IsSimulatorNesRawDispatchIndex(idx);
 
                 // Get sprite geometry from tables
                 int id_for_geom = spriteType & 0xFF;
                 int anchorKey = -1;
-                if (spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
+                if (!useRawNesRecord &&
+                    spriteAnchors != null && spriteAnchors.TryGetValue(idx, out var anchor))
                 {
                     anchorKey = anchor.anchorTileY * mapWidth + anchor.anchorTileX;
                     if (anchorKey >= 0 && anchorKey < sprites.Length)
@@ -118,24 +120,32 @@ namespace FamidashEditor
                 // NES sprite_collide() skips DECO/COLR/OUTL/SPBH sentinels (height >= 0xFC)
                 if (hh >= 0xFC) return false;
                 int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
-                int hyoff = (id_for_geom >= 0 && id_for_geom < sprite_y_offset.Length) ? sprite_y_offset[id_for_geom] : 0;
+                int hyoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_y_offset.Length)
+                    ? SharedPhysics.sprite_y_offset[id_for_geom]
+                    : 0;
 
                 // Per-position pixel offset
                 int pxOff = 0; int pyOff = 0;
-                if (anchorKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs2))
+                if (!useRawNesRecord &&
+                    anchorKey >= 0 && spritePixelOffsets != null && spritePixelOffsets.TryGetValue(anchorKey, out var aoffs2))
                 {
                     pxOff = aoffs2.offsetX; pyOff = aoffs2.offsetY;
                 }
-                else if (spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs2))
+                else if (!useRawNesRecord &&
+                    spritePixelOffsets != null && spritePixelOffsets.TryGetValue(idx, out var offs2))
                 {
                     pxOff = offs2.offsetX; pyOff = offs2.offsetY;
                 }
 
                 // Compute world-space sprite rectangle (NES-style exclusive bounds)
                 int groundRowsToReserve_local = (hasGroundLayer && groundTileRows > 0) ? Math.Min(3, groundTileRows) : 0;
-                int spriteLeft_world_px = storageTileX * TILE + hxoff + pxOff;
+                int spriteLeft_world_px = (useRawNesRecord
+                    ? simulatorNesSpriteWorldX[idx]
+                    : storageTileX * TILE + pxOff) + hxoff;
                 // NES check_spr_objects() applies -1 to sprite Y (clc;sbc intentionally subtracts 1 extra)
-                int spriteTop_world_px = (storageTileY - groundRowsToReserve_local) * TILE + hyoff + pyOff - 1;
+                int spriteTop_world_px = (useRawNesRecord
+                    ? SimulatorNesDispatchWorldY()
+                    : (storageTileY - groundRowsToReserve_local) * TILE + pyOff) + hyoff - 1;
                 int spriteRight_world_px = spriteLeft_world_px + Math.Max(1, hw);   // exclusive (NES-style)
                 int spriteBottom_world_px = spriteTop_world_px + Math.Max(1, hh);   // exclusive (NES-style)
 
@@ -161,6 +171,20 @@ namespace FamidashEditor
                                       int scrollX_px, bool xPressed, bool xHeld, bool gravityInverted, bool mini,
                                       ref int velocityY)
         {
+            // Regular orbs are dispatched during the universal NES slot pass.
+            // The mode physics routine still consumes the result later so its
+            // mode-specific input/animation bookkeeping remains unchanged.
+            if (!simulatorNesDispatchActive && simulatorOrbPassComplete[currplayer])
+            {
+                if (!simulatorOrbResultConsumed[currplayer])
+                {
+                    simulatorOrbResultConsumed[currplayer] = true;
+                    velocityY = playerVelY_fixed;
+                    return (simulatorOrbActivatedPending[currplayer], simulatorOrbTypePending[currplayer]);
+                }
+                return (false, -1);
+            }
+
             bool canBuffer = CanBufferOrb(gamemode);
             bool orbActivatedThisFrame = false;
             int activatedOrbType = -1;
@@ -183,12 +207,14 @@ namespace FamidashEditor
             bool pendingShouldActivate = false;
 
             // Scan all sprites for orb collisions
-            for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+            for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
             {
-                int idx = nonEmptySpriteIndices[_si]; int spriteType = sprites[idx];
+                int idx = SimulatorInteractionSpriteIndex(_si);
+                int spriteType = SimulatorInteractionSpriteId(idx);
                 if (spriteType == -1) continue; // Empty
                 // NES only checks anchor sprites — skip sub-tiles of multi-tile sprites
-                if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
+                if (!IsSimulatorNesRawDispatchIndex(idx) &&
+                    spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
                 
                 // Check if this is an orb sprite type
                 if (!IsOrbSprite(spriteType)) continue;
@@ -279,17 +305,20 @@ namespace FamidashEditor
                     // this sweep the player would re-trigger the same physical
                     // orb on adjacent tiles in a later frame (matching PF, which
                     // adds every overlapping tile's index to ProcessedSprites).
-                    for (int _si2 = 0; _si2 < nonEmptySpriteIndices.Length; _si2++)
+                    if (!simulatorNesDispatchActive)
                     {
-                        if (_si2 == pendingOrbSi) continue;
-                        int idx2 = nonEmptySpriteIndices[_si2];
-                        if (sprites[idx2] != pendingOrbType) continue;
-                        if (spriteAnchors != null && spriteAnchors.ContainsKey(idx2)) continue;
-                        if (playerProcessedOrbs[currplayer].Contains(idx2)) continue;
-                        if (CheckOrbCollision(idx2, pendingOrbType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                        for (int _si2 = 0; _si2 < nonEmptySpriteIndices.Length; _si2++)
                         {
-                            playerProcessedOrbs[currplayer].Add(idx2);
-                            if (!dual) orbActivated[idx2] = true;
+                            if (_si2 == pendingOrbSi) continue;
+                            int idx2 = nonEmptySpriteIndices[_si2];
+                            if (sprites[idx2] != pendingOrbType) continue;
+                            if (spriteAnchors != null && spriteAnchors.ContainsKey(idx2)) continue;
+                            if (playerProcessedOrbs[currplayer].Contains(idx2)) continue;
+                            if (CheckOrbCollision(idx2, pendingOrbType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
+                            {
+                                playerProcessedOrbs[currplayer].Add(idx2);
+                                if (!dual) orbActivated[idx2] = true;
+                            }
                         }
                     }
                 }
@@ -410,6 +439,20 @@ namespace FamidashEditor
                     break;
                     
                 case TELEPORT_ORB_ENTER:
+                    if (simulatorNesDispatchActive)
+                    {
+                        int destinationWorldY_px =
+                            (cameraY_fixed >> 8) + (simulatorTeleportOutputY_px & 0xFF);
+                        playerY_fixed =
+                            (destinationWorldY_px << 8) | (playerY_fixed & 0xFF);
+                        velocityY = 0;
+                        playerVelY_fixed = 0;
+                        orbed[currplayer] = true;
+                        AppendSimDebug(
+                            $"[TELEPORT_ORB] NES shared output Y={destinationWorldY_px}");
+                        break;
+                    }
+
                     // Teleport orb: find corresponding exit orb (0x5A) on visible screen and teleport player there
                     // Only exit orbs currently visible on screen are active
                     bool foundExit = false;
@@ -636,11 +679,13 @@ namespace FamidashEditor
             int playerTop_px = playerY_px;
             int playerBottom_px = playerY_px + hitboxH - 1;
 
-            for (int _si = 0; _si < nonEmptySpriteIndices.Length; _si++)
+            for (int _si = 0; _si < SimulatorInteractionSpriteCount; _si++)
             {
-                int idx = nonEmptySpriteIndices[_si]; int spriteType = sprites[idx];
+                int idx = SimulatorInteractionSpriteIndex(_si);
+                int spriteType = SimulatorInteractionSpriteId(idx);
                 if (spriteType == -1) continue;
-                if (spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
+                if (!IsSimulatorNesRawDispatchIndex(idx) &&
+                    spriteAnchors != null && spriteAnchors.ContainsKey(idx)) continue;
 
                 // Check if this is a dash orb
                 bool isDashOrb = spriteType == DASH_ORB || spriteType == DASH_GRAVITY_ORB ||

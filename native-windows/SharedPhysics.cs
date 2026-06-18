@@ -318,7 +318,7 @@ internal static class SharedPhysics
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 0, -8, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 1, 1, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -343,14 +343,14 @@ internal static class SharedPhysics
 	internal static readonly int[] sprite_y_offset = new int[256]
 	{
 		-2, -2, -2, -2, -2, -1, -1, 0, 4, 4,
-		13, -1, 0, 13, 0, 0, 1, 1, 1, 1,
+		5, -1, 0, 5, 0, 0, 1, 1, 1, 1,
 		-2, -2, -2, -2, -2, -2, 0, 0, 0, 0,
-		0, -1, -2, -2, -2, -2, -2, 13, 0, -1,
+		0, -1, -2, -2, -2, -2, -2, 5, 0, -1,
 		-1, -1, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, -1, -1,
 		-1, 4, 4, 0, 0, -2, 0, -1, -1, 0,
-		-1, -1, 13, 0, -1, -1, 13, 0, -2, 0,
+		-1, -1, 5, 0, -1, -1, 5, 0, -2, 0,
 		0, -1, -1, -1, -1, -2, -2, -2, -2, -2,
 		-2, 0, 0, 0, 0, 0, -2, -2, -2, 0,
 		4, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -367,7 +367,7 @@ internal static class SharedPhysics
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		-7, 0, 0, 13, 2, 0
+		-7, 0, 0, 5, 2, 0
 	};
 
 	internal const int SLOPE_22DEG = 2;
@@ -2240,11 +2240,13 @@ internal static class SharedPhysics
 		{
 			return false;
 		}
-		MetatileCollision collision = MetatileCollisionTable.GetCollision((byte)MapTileForCollision(map.Tiles[num5]));
+		int rawTile = map.Tiles[num5];
+		MetatileCollision collision = MetatileCollisionTable.GetCollision((byte)MapTileForCollision(rawTile));
 		int num6 = num3 * 16;
 		int num7 = (num4 - map.GroundRowsToReserve) * 16;
 		int localX = Math.Max(0, Math.Min(15, num - num6));
 		int localY = Math.Max(0, Math.Min(15, num2 - num7));
+		FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=CheckDeathCollision.tile cX={num} cY={num2} tCol={num3} tRow={num4} tid=0x{rawTile:X} col={collision} lX={localX} lY={localY}");
 		if (MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
 		{
 			return true;
@@ -2418,7 +2420,8 @@ internal static class SharedPhysics
 		{
 			return false;
 		}
-		MetatileCollision collision = MetatileCollisionTable.GetCollision((byte)MapTileForCollision(map.Tiles[num6]));
+		int rawTile = map.Tiles[num6];
+		MetatileCollision collision = MetatileCollisionTable.GetCollision((byte)MapTileForCollision(rawTile));
 		if (collision == MetatileCollision.COL_FLOOR_CEIL || collision == MetatileCollision.COL_NO_SIDE)
 		{
 			return false;
@@ -2431,7 +2434,10 @@ internal static class SharedPhysics
 		int num8 = num4 * 16;
 		int localX = Math.Max(0, Math.Min(15, num - num7));
 		int localY = Math.Max(0, Math.Min(15, num2 - num8));
-		if (TileOccupiesPixel(collision, localX, localY) || MetatileCollisionTable.TileKillsAtPixel(collision, localX, localY))
+		FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=CheckForwardCollision.tile cX={num} cY={num2} tCol={num3} tRow={num5} tid=0x{rawTile:X} col={collision} lX={localX} lY={localY}");
+		if (collision == MetatileCollision.COL_ALL ||
+			MetatileCollisionTable.TileKillsAtSideProbe(collision, localX, localY) ||
+			MetatileCollisionTable.TileBlocksAtSideProbe(collision, localX, localY))
 		{
 			return true;
 		}
@@ -3328,62 +3334,6 @@ internal static class SharedPhysics
 					ballEjectDiagLog?.Invoke($"[BE_CEIL_EJECT] probeY_U={num15} tmp8_initial={num17} ejectU=0x{num16:X2} signed={num18} scrHi:{num19}->{num20} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
 				}
 			}
-				if (flag)
-			{
-				int genericHeight = mini ? 8 : 16;
-				int num21 = num2 + num3 + genericHeight + miniCenterOffsetY;
-				int num22 = ((num21 >= 0) ? (num21 / 16) : ((num21 - 16 + 1) / 16)) + map.GroundRowsToReserve;
-				bool flag6 = false;
-				if (num22 >= 0 && num22 < map.MapHeight)
-				{
-					int num23 = num;
-					int num24 = num + cubeHitboxW;
-					for (int i = 0; i < 3; i++)
-					{
-						if (flag6)
-						{
-							break;
-						}
-						int num25 = i switch
-						{
-							1 => num23 + (cubeHitboxW >> 1), 
-							0 => num23, 
-							_ => num24, 
-						};
-						int num26 = num25 / 16;
-						if (num26 < 0 || num26 >= map.MapWidth)
-						{
-							continue;
-						}
-						int num27 = num22 * map.MapWidth + num26;
-						if (num27 < 0 || num27 >= map.Tiles.Length)
-						{
-							continue;
-						}
-						MetatileCollision collision = MetatileCollisionTable.GetCollision((byte)MapTileForCollision(map.Tiles[num27]));
-						if (collision != 0)
-						{
-							int localX = (num25 % 16 + 16) % 16;
-							int localY = (num21 % 16 + 16) % 16;
-							if (TileOccupiesPixel(collision, localX, localY))
-							{
-								flag6 = true;
-							}
-						}
-					}
-				}
-				if (flag6)
-				{
-					int num28 = (num21 % 16 + 16) % 16;
-					int num29 = num28;
-					int num30 = result.NewY_fixed - camY_fixed >> 8;
-					int num31 = num30 - num29;
-					result.NewY_fixed = camY_fixed + (num31 << 8) + num8;
-					result.NewVelY_fixed = 0;
-					result.OnGround = true;
-					ballEjectDiagLog?.Invoke($"[BE_CEIL_D] probeY_D={num21} tmp8_d={num28} scrHi:{num30}->{num31} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
-				}
-			}
 			// NES: Generic.y is set ONCE before ball_eject and never changes, so bg_coll_D
 			// uses the ORIGINAL position for its slope/tile probe, not the post-ceiling-eject position.
 			// Keep using the original num2 (from entry) for the floor probe — do NOT recalculate.
@@ -3425,19 +3375,11 @@ internal static class SharedPhysics
 				}
 				if (flag12)
 				{
-					if (flag2)
-					{
-						// Ceiling slope was hit: use relative eject (NES ball_eject behavior)
-						int ejectD2 = (num4 + cubeHitboxH) & 0xF;
-						int currentScreenY2 = result.NewY_fixed - camY_fixed >> 8;
-						int newScreenY2 = currentScreenY2 - ejectD2;
-						result.NewY_fixed = camY_fixed + (newScreenY2 << 8) + num8;
-					}
-					else
-					{
-						int num59 = num58 - cubeHitboxH - miniCenterOffsetY - num3 - num7;
-						result.NewY_fixed = camY_fixed + (num59 << 8) + num8;
-					}
+					// NES bg_coll_D: high_byte(currplayer_y) -= eject_D (always relative)
+					int ejectD = Mod16(num4 + cubeHitboxH);
+					int currentScreenY = result.NewY_fixed - camY_fixed >> 8;
+					int newScreenY = currentScreenY - ejectD;
+					result.NewY_fixed = camY_fixed + (newScreenY << 8) + num8;
 					result.NewVelY_fixed = 0;
 					result.OnGround = true;
 				}
@@ -3662,11 +3604,9 @@ internal static class SharedPhysics
 					int yLow2 = (result.NewY_fixed - camY_fixed) & 0xFF;
 					result.NewY_fixed = camY_fixed + (newYPx2 - (camY_fixed >> 8) << 8) + yLow2;
 					result.NewVelY_fixed = 0;
-					// NES: Generic.y = high_byte(currplayer_y) is updated by ceiling eject.
-					// bg_coll_D uses the post-eject Generic.y for its floor probe.
-					// Recalculate num2/collY to match.
-					num2 = (result.NewY_fixed - camY_fixed >> 8) + (camY_fixed >> 8);
-					collY = num2 + hitboxOffsetY;
+					// NES: Generic.y is set ONCE (gamemode_ship.h:51) before
+					// ufo_ship_eject and is NOT updated by the ceiling eject.
+					// bg_coll_D uses stale pre-eject Generic.y for its floor probe.
 				}
 			}
 			int checkBaseYDown = num2 + miniOffsetY + cubeHitboxH - 2;

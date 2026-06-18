@@ -19,6 +19,7 @@
   <ItemGroup>
     <!-- Link to the real source files so changes propagate automatically -->
     <Compile Include="..\native-windows\PathfinderEngine.cs" Link="PathfinderEngine.cs" />
+    <Compile Include="..\native-windows\NesSpriteData.cs" Link="NesSpriteData.cs" />
     <Compile Include="..\native-windows\SharedPhysics.cs" Link="SharedPhysics.cs" />
     <Compile Include="..\native-windows\TmxHandler.cs" Link="TmxHandler.cs" />
     <Compile Include="..\native-windows\MetatileCollision.cs" Link="MetatileCollision.cs" />

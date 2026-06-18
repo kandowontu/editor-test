@@ -55,9 +55,9 @@ namespace FamidashEditor
                 0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // C0-C7
                 0xFD,0xFD,0xFD,0xFD,0xFD,0x00,0x00,0xFD, // C8-CF
                 0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // D0-D7
-                0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0xFF,0x00, // D8-DF
+                0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0xFF,0xFF, // D8-DF
                 0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD,0xFD, // E0-E7
-                0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0x00,0x00, // E8-EF
+                0xFD,0xFD,0xFD,0xFD,0xFD,0xFF,0xFF,0xFF, // E8-EF
                 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x10,0x10, // F0-F7
                 0x10,0x10,0x1F,0x10,0x10,0x03,0x03,0x00  // F8-FF
             };
@@ -102,6 +102,12 @@ namespace FamidashEditor
             string? tilesetSource = null;
             string? spritesetSource = null;
             var tilesets = map.Elements("tileset").ToList();
+            var allFirstGids = tilesets
+                .Select(tileset => (int?)tileset.Attribute("firstgid") ?? 0)
+                .Where(firstgid => firstgid > 0)
+                .ToList();
+            if (allFirstGids.Count == 0)
+                allFirstGids.Add(TilesFirstGid);
 
             // Collect all tileset firstgid values that should be treated as sprite tilesets.
             // TMX files sometimes include the same sprite image as multiple tilesets
@@ -144,6 +150,10 @@ namespace FamidashEditor
             // Initialize separate tiles and sprites arrays with -1 (empty)
             int[] tiles = Enumerable.Repeat(-1, totalTiles).ToArray();
             int[] sprites = Enumerable.Repeat(-1, totalTiles).ToArray();
+            // Preserve the exact sprite record stream consumed by the NES exporter.
+            // export_levels.py selects the first numeric-id "SP" layer and emits it
+            // column-major, before the editor shifts triggers or resolves collisions.
+            int[] nesSpriteLayer = Enumerable.Repeat(-1, totalTiles).ToArray();
             
             // Track sprite collisions during loading
             var collisionMessages = new System.Collections.Generic.List<string>();
@@ -156,6 +166,34 @@ namespace FamidashEditor
             // TMX uses GIDs: 0=empty, TilesFirstGid..TilesFirstGid+TilesCount-1 = tileset, SpriteFirstGid..SpriteFirstGid+TilesCount-1 = sprites tileset
             // Convert to editor format: -1=empty, 0..TilesCount-1 = famidash tiles/sprites
             var layers = map.Elements("layer").ToList();
+            var nesExportSpriteLayer = layers
+                .Where(layer => string.Equals((string?)layer.Attribute("name"), "SP", StringComparison.Ordinal))
+                .OrderBy(layer => (int?)layer.Attribute("id") ?? int.MaxValue)
+                .FirstOrDefault();
+            var nesExportData = nesExportSpriteLayer?
+                .Elements("data")
+                .FirstOrDefault(data => string.Equals((string?)data.Attribute("encoding"), "csv", StringComparison.Ordinal));
+            if (nesExportData != null)
+            {
+                var exportedLayerTiles = nesExportData.Value.Trim()
+                    .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(value => int.Parse(value.Trim()))
+                    .ToArray();
+                for (int i = 0; i < Math.Min(exportedLayerTiles.Length, totalTiles); i++)
+                {
+                    int gid = exportedLayerTiles[i];
+                    if (gid <= 0)
+                        continue;
+
+                    int tilesetIndex = 0;
+                    while (tilesetIndex + 1 < allFirstGids.Count &&
+                           allFirstGids[tilesetIndex + 1] <= gid)
+                    {
+                        tilesetIndex++;
+                    }
+                    nesSpriteLayer[i] = gid - allFirstGids[tilesetIndex];
+                }
+            }
             
             foreach (var layer in layers)
             {
@@ -578,6 +616,7 @@ namespace FamidashEditor
                 Height = height,
                 Tiles = tiles,
                 Sprites = sprites,
+                NesSpriteLayer = nesSpriteLayer,
                 TilesetSource = tilesetSource,
                 SpritesetSource = spritesetSource,
                 HasEditorSettings = hasEditorSettings,
@@ -947,6 +986,7 @@ namespace FamidashEditor
         public int Height { get; set; }
         public int[]? Tiles { get; set; }
         public int[]? Sprites { get; set; }  // Separate sprites array
+        public int[]? NesSpriteLayer { get; set; } // Raw first SP layer, matching NES export order/source
         
         // Tileset sources (preserve from loaded file)
         public string? TilesetSource { get; set; } = "famidash.bmp";
