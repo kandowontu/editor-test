@@ -126,9 +126,34 @@ namespace FamidashEditor
                     int spriteRight = spriteLeft + Math.Max(1, hw);
                     int spriteBottom = spriteTop + Math.Max(1, hh);
 
-                    // Overlap check matching PF's ProcessSprites exactly
-                    bool xOverlap = !(padRight < spriteLeft || spriteRight < padLeft);
-                    bool yOverlap = !(playerBottom < spriteTop || spriteBottom < playerTop);
+                    bool xOverlap;
+                    bool yOverlap;
+                    if (useRawNesRecord)
+                    {
+                        int scrollX_px = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                        int playerLeft_screen_px = padLeft - scrollX_px;
+                        int playerTop_screen_px = playerTop - (cameraY_fixed >> 8);
+                        spriteLeft = SimulatorNesSaturatingOffset(
+                            SimulatorNesDispatchRealX(), hxoff);
+                        spriteTop = SimulatorNesSaturatingOffset(
+                            SimulatorNesDispatchRealY(), hyoff);
+                        spriteRight = spriteLeft + Math.Max(1, hw);
+                        spriteBottom = spriteTop + Math.Max(1, hh);
+                        xOverlap = SimulatorNesAxisOverlaps(
+                            playerLeft_screen_px, hitboxW, spriteLeft, hw);
+                        yOverlap = SimulatorNesAxisOverlaps(
+                            playerTop_screen_px, hitboxH, spriteTop, hh);
+                        padLeft = playerLeft_screen_px;
+                        padRight = padLeft + hitboxW;
+                        playerTop = playerTop_screen_px;
+                        playerBottom = playerTop + hitboxH;
+                    }
+                    else
+                    {
+                        // Overlap check matching PF's ProcessSprites exactly
+                        xOverlap = !(padRight < spriteLeft || spriteRight < padLeft);
+                        yOverlap = !(playerBottom < spriteTop || spriteBottom < playerTop);
+                    }
 
                     // DEBUG: trace blue pad collision math in critical X range
                     if (isBottomPad && padLeft >= 4500 && padLeft <= 4560)

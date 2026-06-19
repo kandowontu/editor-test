@@ -124,6 +124,25 @@ namespace FamidashEditor
                     ? SharedPhysics.sprite_y_offset[id_for_geom]
                     : 0;
 
+                if (useRawNesRecord)
+                {
+                    int scrollX_px = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                    int playerLeft_screen_px = playerLeft_px - scrollX_px;
+                    int playerTop_screen_px = playerTop_px - (cameraY_fixed >> 8);
+                    int playerWidth = playerRight_px - playerLeft_px + 1;
+                    int playerHeight = playerBottom_px - playerTop_px + 1;
+                    int spriteLeft_screen_px =
+                        SimulatorNesSaturatingOffset(SimulatorNesDispatchRealX(), hxoff);
+                    int spriteTop_screen_px =
+                        SimulatorNesSaturatingOffset(SimulatorNesDispatchRealY(), hyoff);
+                    return SimulatorNesAxisOverlaps(
+                               playerLeft_screen_px, playerWidth,
+                               spriteLeft_screen_px, hw) &&
+                           SimulatorNesAxisOverlaps(
+                               playerTop_screen_px, playerHeight,
+                               spriteTop_screen_px, hh);
+                }
+
                 // Per-position pixel offset
                 int pxOff = 0; int pyOff = 0;
                 if (!useRawNesRecord &&
@@ -219,10 +238,6 @@ namespace FamidashEditor
                 // Check if this is an orb sprite type
                 if (!IsOrbSprite(spriteType)) continue;
                 
-                // CRITICAL: Do not activate orbs while dashing (from dash orb)
-                // Dash state prevents all orb activations until dash ends
-                if (dashing[currplayer] != 0) continue;
-                
                 // Check collision with player using same method as pads/portals
                 if (!CheckOrbCollision(idx, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     continue;
@@ -231,7 +246,14 @@ namespace FamidashEditor
                 // Per-player tracking: each player can independently activate the same orb
                 // but cannot re-activate an orb they already triggered
                 bool isMultiOrb = (spriteType == BLUE_ORB_MULTI || spriteType == GREEN_ORB_MULTI);
-                if (!isMultiOrb && playerProcessedOrbs[currplayer].Contains(idx))
+                if (!dual && !isMultiOrb && playerProcessedOrbs[currplayer].Contains(idx))
+                    continue;
+
+                if (SetsNesUfoOrbed(spriteType))
+                    ufoOrbed[currplayer] = true;
+
+                // NES common-orb dispatch sets ufo_orbed before checking dash state.
+                if (dashing[currplayer] != 0)
                     continue;
                     
                 // Handle activation based on gamemode and input
@@ -355,6 +377,17 @@ namespace FamidashEditor
                    spriteType == TELEPORT_ORB_ENTER;
                    // Spider orbs/pads (0x54-0x57) are handled separately
                    // TELEPORT_ORB_EXIT (0x5A) is NOT activatable - only provides Y position
+        }
+
+        private static bool SetsNesUfoOrbed(int spriteType)
+        {
+            return spriteType switch
+            {
+                0x05 or 0x06 or 0x0B or 0x1F or 0x27 or 0x28 or 0x29 or 0x44 or
+                0x45 or 0x46 or 0x4C or 0x4D or 0x50 or 0x51 or
+                0x5B or 0x5C or 0x5D or 0x5E or 0x7B or 0x7C => true,
+                _ => false
+            };
         }
         
         /// <summary>
@@ -625,6 +658,7 @@ namespace FamidashEditor
             orbHoldConsumedKeyStillDown[currplayer] = false;
             orbHoldSuppressing[currplayer] = false;
             ballInputBufferCountdown[currplayer] = 0;
+            Array.Clear(ufoOrbed, 0, ufoOrbed.Length);
             
             // Debug: Log all orbs in the level
             try
@@ -696,12 +730,6 @@ namespace FamidashEditor
 
                 if (!isDashOrb) continue;
 
-                // Skip dash orbs while already dashing (matches PF and NES behavior).
-                // NES sprite_gamemode_main() requires a fresh press (cube_data & 2 || press)
-                // to activate — during continuous hold (dashing), the inner condition fails
-                // so the orb is NOT consumed.  PF skips with: if (s.Dashing != 0) continue;
-                if (dashing[currplayer] != 0) continue;
-
                 // Check for collision
                 if (!CheckOrbCollision(idx, spriteType, playerLeft_px, playerRight_px, playerTop_px, playerBottom_px))
                     continue;
@@ -709,6 +737,13 @@ namespace FamidashEditor
                 // Check if already activated (prevent reactivation)
                 // In dual mode, each player can independently activate the same orb
                 if (!dual && orbActivated.ContainsKey(idx) && orbActivated[idx])
+                    continue;
+
+                if (SetsNesUfoOrbed(spriteType))
+                    ufoOrbed[currplayer] = true;
+
+                // NES common-orb dispatch sets ufo_orbed before checking dash state.
+                if (dashing[currplayer] != 0)
                     continue;
 
                 // Check for press/hold/buffer like regular orbs

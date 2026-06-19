@@ -988,8 +988,10 @@ namespace FamidashEditor
                     }
                 }
 
-                // Keep all gamemode portals on one canonical hitbox profile.
-                id_for_geom = SharedPhysics.NormalizePortalGeometrySid(id_for_geom);
+                // Raw NES records index the geometry tables with their exact SID.
+                // Canonical portal geometry only applies to editor-grid sprites.
+                if (!useRawNesRecord)
+                    id_for_geom = SharedPhysics.NormalizePortalGeometrySid(id_for_geom);
 
                 int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
                 int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
@@ -999,6 +1001,25 @@ namespace FamidashEditor
                 // Use the shared table so simulator and pathfinder consume the
                 // exact NES runtime geometry.
                 int hyoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom] : 0;
+
+                if (useRawNesRecord)
+                {
+                    int scrollX_px = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                    int playerLeft_screen_px = playerLeft_px - scrollX_px;
+                    int playerTop_screen_px = playerTop_px - (cameraY_fixed >> 8);
+                    int playerWidth = playerRight_px - playerLeft_px + 1;
+                    int playerHeight = playerBottom_px - playerTop_px + 1;
+                    int spriteLeft_screen_px =
+                        SimulatorNesSaturatingOffset(SimulatorNesDispatchRealX(), hxoff);
+                    int spriteTop_screen_px =
+                        SimulatorNesSaturatingOffset(SimulatorNesDispatchRealY(), hyoff);
+                    return SimulatorNesAxisOverlaps(
+                               playerLeft_screen_px, playerWidth,
+                               spriteLeft_screen_px, hw) &&
+                           SimulatorNesAxisOverlaps(
+                               playerTop_screen_px, playerHeight,
+                               spriteTop_screen_px, hh);
+                }
 
                 // Per-position pixel offset (visual shift).
                 int pxOff = 0; int pyOff = 0;
@@ -1099,8 +1120,10 @@ namespace FamidashEditor
                     // the correct world rect).
                 }
 
-                // Keep all gamemode portals on one canonical hitbox profile.
-                id_for_geom = SharedPhysics.NormalizePortalGeometrySid(id_for_geom);
+                // Raw NES records index the geometry tables with their exact SID.
+                // Canonical portal geometry only applies to editor-grid sprites.
+                if (!useRawNesRecord)
+                    id_for_geom = SharedPhysics.NormalizePortalGeometrySid(id_for_geom);
 
                 int hw = (id_for_geom >= 0 && id_for_geom < sprite_widths.Length) ? sprite_widths[id_for_geom] : TILE;
                 int hh = (id_for_geom >= 0 && id_for_geom < sprite_heights.Length) ? sprite_heights[id_for_geom] : TILE;
@@ -1111,6 +1134,29 @@ namespace FamidashEditor
                 int hxoff = (id_for_geom >= 0 && id_for_geom < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom] : 0;
                 // Use the shared exact NES runtime geometry.
                 int hyoff = (id_for_geom >= 0 && id_for_geom < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom] : 0;
+
+                // The NES collides against the cached 8-bit screen coordinates
+                // produced by check_spr_objects, including offset saturation and
+                // ADC carry behavior. Reconstructing a world rectangle loses
+                // exact edge contacts when scroll_y has a fractional component.
+                if (useRawNesRecord && hh < 0xFC)
+                {
+                    int scrollX_px = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                    int playerLeft_screen_px = playerLeft_px - scrollX_px;
+                    int playerTop_screen_px = playerTop_px - (cameraY_fixed >> 8);
+                    int playerWidth = playerRight_px - playerLeft_px + 1;
+                    int playerHeight = playerBottom_px - playerTop_px + 1;
+                    int spriteLeft_screen_px =
+                        SimulatorNesSaturatingOffset(SimulatorNesDispatchRealX(), hxoff);
+                    int spriteTop_screen_px =
+                        SimulatorNesSaturatingOffset(SimulatorNesDispatchRealY(), hyoff);
+                    return SimulatorNesAxisOverlaps(
+                               playerLeft_screen_px, playerWidth,
+                               spriteLeft_screen_px, hw) &&
+                           SimulatorNesAxisOverlaps(
+                               playerTop_screen_px, playerHeight,
+                               spriteTop_screen_px, hh);
+                }
 
                 // Per-position pixel offset (visual shift).
                 // When anchored, prefer the anchor tile's pixel offset so collision and
@@ -2155,6 +2201,7 @@ namespace FamidashEditor
                             // cc65 optimizes int /= 2 → asr (arithmetic shift floors negatives).
                             // C# /= 2 truncates toward zero — use >>= 1 to match NES exactly.
                             playerVelY_fixed >>= 1;
+                            robotJumpTime[currplayer] = 0;
                             
                             AppendSimDebug($"[GRAV_PORTAL] POST-ACTIVATION: currplayer_gravity={currplayer_gravity:X2} gravityFlipped={gravityFlipped} gravityReversed={gravityReversed}");
                             
@@ -2866,6 +2913,7 @@ namespace FamidashEditor
                         orbBufferActive[1] = false;
                         orbHoldSuppressing[1] = false;
                         orbHoldConsumedKeyStillDown[1] = false;
+                        ufoOrbed[1] = false;
                         p2BallHoldCounter = 0;
                         
                         // Initialize player 2 rotation state (start upright, same as P1 portal entry)
@@ -3142,20 +3190,35 @@ namespace FamidashEditor
                     { pxOff_c = offsc.offsetX; pyOff_c = offsc.offsetY; }
 
                     int coinLeft = useRawNesRecord
-                        ? simulatorNesSpriteWorldX[idx]
+                        ? SimulatorNesDispatchRealX()
                         : storageTileX_c * TILE + pxOff_c;
                     // NES check_spr_objects applies -1 to ALL sprite Y positions
                     // (clc;sbc intentionally subtracts 1 extra). Coins go through
                     // check_spr_objects like all sprites, so the -1 applies here too.
                     int coinTop = useRawNesRecord
-                        ? SimulatorNesDispatchWorldY() - 1
+                        ? SimulatorNesDispatchRealY()
                         : (storageTileY_c - groundRowsToReserve_coin) * TILE + pyOff_c - 1;
                     // NES uses exclusive bounds (edge-touching = collision): x1+w1 >= x2
                     int coinRight  = coinLeft + 0x10; // exclusive
                     int coinBottom = coinTop  + 0x10; // exclusive
 
-                    bool xOv = !((playerRight_px + 1) < coinLeft || coinRight < playerLeft_px);
-                    bool yOv = !((playerBottom_px + 1) < coinTop || coinBottom < playerTop_px);
+                    bool xOv;
+                    bool yOv;
+                    if (useRawNesRecord)
+                    {
+                        int scrollX_px = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                        int playerLeft_screen_px = playerLeft_px - scrollX_px;
+                        int playerTop_screen_px = playerTop_px - (cameraY_fixed >> 8);
+                        xOv = SimulatorNesAxisOverlaps(
+                            playerLeft_screen_px, hitboxW, coinLeft, 0x10);
+                        yOv = SimulatorNesAxisOverlaps(
+                            playerTop_screen_px, hitboxH, coinTop, 0x10);
+                    }
+                    else
+                    {
+                        xOv = !((playerRight_px + 1) < coinLeft || coinRight < playerLeft_px);
+                        yOv = !((playerBottom_px + 1) < coinTop || coinBottom < playerTop_px);
+                    }
 
                     if (xOv && yOv)
                     {
@@ -3780,9 +3843,6 @@ namespace FamidashEditor
 
         // Current player game mode: 0 = cube, 1 = ship, etc. Defaults to cube.
         private int currentGameMode = 0;
-        // Snapshot before sprite/portal processing. NES suppresses a UFO flap on
-        // the same frame that a portal changes another mode into UFO.
-        private int physicsFrameEntryGameMode = 0;
         // Level settings starting game mode (set once in constructor, used on restart)
         private int _levelStartGameMode = 0;
         
@@ -3836,6 +3896,8 @@ namespace FamidashEditor
         private readonly bool[] simulatorNesSlotDead = new bool[16];
         private readonly bool[] simulatorNesSlotActive = new bool[16];
         private readonly int[] simulatorNesSlotWorldY = new int[16];
+        private readonly int[] simulatorNesSlotRealX = new int[16];
+        private readonly int[] simulatorNesSlotRealY = new int[16];
         private readonly int[] simulatorCoinTimer = new int[3];
         private readonly int[] simulatorCoinSpeed = new int[3];
         private bool simulatorCoinAnimating = false;
@@ -3874,6 +3936,33 @@ namespace FamidashEditor
 
         private int SimulatorNesDispatchWorldY() =>
             simulatorNesSlotWorldY[simulatorNesDispatchSlot];
+
+        private int SimulatorNesDispatchRealX() =>
+            simulatorNesSlotRealX[simulatorNesDispatchSlot];
+
+        private int SimulatorNesDispatchRealY() =>
+            simulatorNesSlotRealY[simulatorNesDispatchSlot];
+
+        private static int SimulatorNesSaturatingOffset(int coordinate, int signedOffset) =>
+            Math.Clamp((coordinate & 0xFF) + signedOffset, 0, 0xFF);
+
+        private static bool SimulatorNesAxisOverlaps(int first, int firstSize, int second, int secondSize)
+        {
+            first &= 0xFF;
+            second &= 0xFF;
+            firstSize &= 0xFF;
+            secondSize &= 0xFF;
+
+            int firstEnd = first + firstSize;
+            if (firstEnd <= 0xFF && firstEnd < second)
+                return false;
+
+            int secondEnd = second + secondSize;
+            if (secondEnd <= 0xFF && secondEnd < first)
+                return false;
+
+            return true;
+        }
 
         private static int SimulatorNesCoinKind(int sid) => sid switch
         {
@@ -3999,6 +4088,8 @@ namespace FamidashEditor
             Array.Clear(simulatorNesSlotDead, 0, simulatorNesSlotDead.Length);
             Array.Clear(simulatorNesSlotActive, 0, simulatorNesSlotActive.Length);
             Array.Clear(simulatorNesSlotWorldY, 0, simulatorNesSlotWorldY.Length);
+            Array.Clear(simulatorNesSlotRealX, 0, simulatorNesSlotRealX.Length);
+            Array.Clear(simulatorNesSlotRealY, 0, simulatorNesSlotRealY.Length);
             Array.Clear(simulatorCoinTimer, 0, simulatorCoinTimer.Length);
             Array.Clear(simulatorCoinSpeed, 0, simulatorCoinSpeed.Length);
             simulatorCoinAnimating = false;
@@ -4010,6 +4101,10 @@ namespace FamidashEditor
                 simulatorNesSlots[slot] = simulatorNesSpriteStream[simulatorNesSpriteDataPtr++];
                 simulatorNesSlotWorldY[slot] =
                     simulatorNesSpriteWorldY[simulatorNesSlots[slot]];
+                simulatorNesSlotRealX[slot] =
+                    simulatorNesSpriteWorldX[simulatorNesSlots[slot]] & 0xFF;
+                simulatorNesSlotRealY[slot] =
+                    simulatorNesSlotWorldY[slot] & 0xFF;
             }
         }
 
@@ -4021,6 +4116,10 @@ namespace FamidashEditor
             simulatorNesSlotWorldY[slot] = simulatorNesSlots[slot] >= 0
                 ? simulatorNesSpriteWorldY[simulatorNesSlots[slot]]
                 : 0;
+            simulatorNesSlotRealX[slot] = simulatorNesSlots[slot] >= 0
+                ? simulatorNesSpriteWorldX[simulatorNesSlots[slot]] & 0xFF
+                : 0;
+            simulatorNesSlotRealY[slot] = simulatorNesSlotWorldY[slot] & 0xFF;
             simulatorNesSlotDead[slot] = false;
             simulatorNesSlotActive[slot] = false;
         }
@@ -4038,6 +4137,7 @@ namespace FamidashEditor
                     continue;
                 }
                 int relX = simulatorNesSpriteWorldX[idx] - scrollX_px;
+                simulatorNesSlotRealX[slot] = relX & 0xFF;
                 if (relX < 0)
                 {
                     if (IsRegularSimulatorNesCoin(simulatorNesSpriteIds[idx] & 0xFF))
@@ -4054,6 +4154,7 @@ namespace FamidashEditor
                 // check_spr_objects clears carry before SBC, making this
                 // raw sprite Y - scroll Y - 1.
                 int relY = simulatorNesSlotWorldY[slot] - scrollY_px - 1;
+                simulatorNesSlotRealY[slot] = relY & 0xFF;
                 bool visible = relY >= 0 && relY < 256;
                 if (!visible && simulatorCoinAnimating &&
                     IsRegularSimulatorNesCoin(simulatorNesSpriteIds[idx] & 0xFF))
@@ -4195,7 +4296,7 @@ namespace FamidashEditor
                 sid == 0x67 || sid == 0x69 || sid == 0x76 || sid == 0x78;
             if (isTeleportExit)
             {
-                int relY = simulatorNesSlotWorldY[slot] - (cameraY_fixed >> 8) - 1;
+                int relY = simulatorNesSlotRealY[slot];
                 simulatorTeleportOutputY_px = sid == 0x5A ? relY : relY + TILE;
                 return false;
             }
@@ -4413,7 +4514,7 @@ namespace FamidashEditor
         // When P2 receives a raw True in ball mode, this is set to PF_BALL_HOLD_FRAMES
         // and decremented each frame, providing keyXHeld=true to bridge air-to-landing.
         private int p2BallHoldCounter = 0;
-        private bool ufoOrbed = false;
+        private bool[] ufoOrbed = new bool[2];
         private bool[] orbed = new bool[2]; // Prevents jumps/teleports until X released (spider orbs/pads, teleport portals, S blocks, J blocks)
         private bool blackOrbed = false; // Spider black orb hold mechanic
         private int[] dashing = new int[2]; // 0=not dashing, 1=horizontal, 2=45deg up, 3=45deg down, 4=upward, 5=downward
@@ -7316,7 +7417,7 @@ namespace FamidashEditor
                 ballSwitched[0] = false;
                 ballFlipCooldown = 0;
                 p2BallHoldCounter = 0;
-                ufoOrbed = false;
+                Array.Clear(ufoOrbed, 0, ufoOrbed.Length);
 
                 // Stop music first (same as death) before restarting simulation
                 try
@@ -11676,7 +11777,6 @@ namespace FamidashEditor
                     return;
                 
                 AppendSimDebug($"[STEP_START] step={simTickCount} pfFrame={pfFrameIndex} playerX_fixed=0x{playerX_fixed:X4} ({playerX_fixed >> 8}px), playerY_fixed=0x{playerY_fixed:X4} ({playerY_fixed >> 8}px), playerVelY_fixed=0x{playerVelY_fixed:X4}");
-                physicsFrameEntryGameMode = currentGameMode;
 
                 // === PATHFINDER AI INPUT INJECTION ===
                 if (pathfinderEnabled)
@@ -11793,12 +11893,12 @@ namespace FamidashEditor
                             // Use EXCLUSIVE player bounds (matching PF ProcessSprites exactly)
                             // PF: nesX = currentX_px + 1; playerRight = nesX + hbW (exclusive)
                             // PF overlap: !(playerRight < sp.HitLeft || sp.HitRight < nesX)
-                            int nesX_sp1 = (playerX_fixed >> 8) + 1;
-                            int playerRight_sp1 = nesX_sp1 + hitboxW_sp1;  // exclusive
+                            int scrollX_sp1 = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                            int nesX_sp1 = (playerX_fixed >> 8) + 1 - scrollX_sp1;
                             // Use entry mini state for Y offset (PF computes hbOffY at ProcessSprites entry)
                             int miniOffY_sp1 = entryMiniMode_sp ? ((0x10 - 7) >> 1) : 0;
-                            int playerTop_sp1 = (entryPlayerY_fixed_sp >> 8) + miniOffY_sp1;
-                            int playerBottom_sp1 = playerTop_sp1 + hitboxH_sp1;  // exclusive
+                            int playerTop_sp1 = (entryPlayerY_fixed_sp >> 8) +
+                                miniOffY_sp1 - (cameraY_fixed >> 8);
                             for (int slot_sp1 = 0; slot_sp1 < simulatorNesSlots.Length; slot_sp1++)
                             {
                                 if (slot_sp1 != simulatorNesDispatchSlot) continue;
@@ -11817,16 +11917,14 @@ namespace FamidashEditor
                                 if (hh_sp1 >= 0xFC) continue; // skip DECO/COLR/OUTL/SPBH sentinels
                                 int hxoff_sp1 = (id_for_geom_sp1 >= 0 && id_for_geom_sp1 < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom_sp1] : 0;
                                 int hyoff_sp1 = (id_for_geom_sp1 >= 0 && id_for_geom_sp1 < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom_sp1] : 0;
-                                int sLeft_sp1 = simulatorNesSpriteWorldX[idx] + hxoff_sp1;
-                                // check_spr_objects stores realy as worldY-scrollY-1.
-                                int sTop_sp1 = SimulatorNesDispatchWorldY() + hyoff_sp1 - 1;
-                                int sRight_sp1 = sLeft_sp1 + Math.Max(1, hw_sp1);   // exclusive (NES-style)
-                                int sBottom_sp1 = sTop_sp1 + Math.Max(1, hh_sp1);   // exclusive (NES-style)
-
-                                // NES overlap: all bounds exclusive, use < (matching PF ProcessSprites exactly)
-                                // NES check_collision: (x1+w1 >= x2) && (x2+w2 >= x1) — touching = overlap
-                                bool xOverlap_sp1 = !(playerRight_sp1 < sLeft_sp1 || sRight_sp1 < nesX_sp1);
-                                bool yOverlap_sp1 = !(playerBottom_sp1 < sTop_sp1 || sBottom_sp1 < playerTop_sp1);
+                                int sLeft_sp1 = SimulatorNesSaturatingOffset(
+                                    simulatorNesSlotRealX[slot_sp1], hxoff_sp1);
+                                int sTop_sp1 = SimulatorNesSaturatingOffset(
+                                    simulatorNesSlotRealY[slot_sp1], hyoff_sp1);
+                                bool xOverlap_sp1 = SimulatorNesAxisOverlaps(
+                                    nesX_sp1, hitboxW_sp1, sLeft_sp1, hw_sp1);
+                                bool yOverlap_sp1 = SimulatorNesAxisOverlaps(
+                                    playerTop_sp1, hitboxH_sp1, sTop_sp1, hh_sp1);
                                 if (xOverlap_sp1 && yOverlap_sp1)
                                 {
                                     int spd = speedPortalMap[sid];
@@ -12865,11 +12963,11 @@ namespace FamidashEditor
                                         {
                                     int hitboxW_sp2 = entryMiniMode_sp2 ? 8 : 15;
                                     int hitboxH_sp2 = entryMiniMode_sp2 ? 7 : 15;
-                                    int nesX_sp2 = (playerX_fixed >> 8) + 1;
-                                    int playerRight_sp2 = nesX_sp2 + hitboxW_sp2;  // exclusive
+                                    int scrollX_sp2 = Math.Max(0, (playerX_fixed >> 8) - 0x50);
+                                    int nesX_sp2 = (playerX_fixed >> 8) + 1 - scrollX_sp2;
                                     int miniOffY_sp2 = entryMiniMode_sp2 ? ((0x10 - 7) >> 1) : 0;
-                                    int playerTop_sp2 = (entryPlayerY_fixed_sp2 >> 8) + miniOffY_sp2;
-                                    int playerBottom_sp2 = playerTop_sp2 + hitboxH_sp2;  // exclusive
+                                    int playerTop_sp2 = (entryPlayerY_fixed_sp2 >> 8) +
+                                        miniOffY_sp2 - (cameraY_fixed >> 8);
                                     for (int slot_sp2 = 0; slot_sp2 < simulatorNesSlots.Length; slot_sp2++)
                                     {
                                         if (slot_sp2 != simulatorNesDispatchSlot) continue;
@@ -12886,13 +12984,14 @@ namespace FamidashEditor
                                         if (hh_sp2 >= 0xFC) continue;
                                         int hxoff_sp2 = (id_for_geom_sp2 >= 0 && id_for_geom_sp2 < sprite_x_offset.Length) ? sprite_x_offset[id_for_geom_sp2] : 0;
                                         int hyoff_sp2 = (id_for_geom_sp2 >= 0 && id_for_geom_sp2 < SharedPhysics.sprite_y_offset.Length) ? SharedPhysics.sprite_y_offset[id_for_geom_sp2] : 0;
-                                        int sLeft_sp2 = simulatorNesSpriteWorldX[idx] + hxoff_sp2;
-                                        int sTop_sp2 = SimulatorNesDispatchWorldY() + hyoff_sp2 - 1;
-                                        int sRight_sp2 = sLeft_sp2 + Math.Max(1, hw_sp2);
-                                        int sBottom_sp2 = sTop_sp2 + Math.Max(1, hh_sp2);
-
-                                        bool xOverlap_sp2 = !(playerRight_sp2 < sLeft_sp2 || sRight_sp2 < nesX_sp2);
-                                        bool yOverlap_sp2 = !(playerBottom_sp2 < sTop_sp2 || sBottom_sp2 < playerTop_sp2);
+                                        int sLeft_sp2 = SimulatorNesSaturatingOffset(
+                                            simulatorNesSlotRealX[slot_sp2], hxoff_sp2);
+                                        int sTop_sp2 = SimulatorNesSaturatingOffset(
+                                            simulatorNesSlotRealY[slot_sp2], hyoff_sp2);
+                                        bool xOverlap_sp2 = SimulatorNesAxisOverlaps(
+                                            nesX_sp2, hitboxW_sp2, sLeft_sp2, hw_sp2);
+                                        bool yOverlap_sp2 = SimulatorNesAxisOverlaps(
+                                            playerTop_sp2, hitboxH_sp2, sTop_sp2, hh_sp2);
                                         if (xOverlap_sp2 && yOverlap_sp2)
                                         {
                                             int spd = speedPortalMap[sid];

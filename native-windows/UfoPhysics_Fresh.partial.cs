@@ -69,12 +69,9 @@ if (currplayer_mini != 0)
             bool pressedJump = pressCount > 0;
             bool movementPressEdge = !pathfinderEnabled || pfPressEdgeThisFrame;
             
-            AppendSimDebug($"[UFO] Input: pressCount={pressCount}, pressedJump={pressedJump}, movementEdge={movementPressEdge}, entryMode={physicsFrameEntryGameMode}, ufoOrbed={ufoOrbed}");
+            AppendSimDebug($"[UFO] Input: pressCount={pressCount}, pressedJump={pressedJump}, movementEdge={movementPressEdge}, ufoOrbed={ufoOrbed[currplayer]}");
             
-            // Mesen/NES: entering UFO on a press frame halves the portal-entry
-            // velocity but does not also apply UFO_JUMP_VEL. A continued PF hold
-            // on the following frame is not a new movement press either.
-            if (pressedJump && movementPressEdge && physicsFrameEntryGameMode == 3 && !ufoOrbed) {
+            if (pressedJump && movementPressEdge && !ufoOrbed[currplayer]) {
                 // Consume the press count now that we're using it
                 Interlocked.Exchange(ref keyXPressedCount, 0);
                 int baseJumpIdx = (miniMode ? 4 : 0);
@@ -84,7 +81,7 @@ if (currplayer_mini != 0)
                 playerVelY_fixed = jumpVel; // JUMP
                 AppendSimDebug($"[UFO] JUMP! table_idx={currplayer_table_idx}, jumpVel={jumpVel}, velY={playerVelY_fixed}");
             }
-            ufoOrbed = false;
+            ufoOrbed[currplayer] = false;
             
             // Update slope exit velocity counters AFTER jump (NES: x_movement_coll
             // runs apply_slope_vel after ufo_movement, so it overwrites the jump

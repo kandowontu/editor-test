@@ -2444,7 +2444,7 @@ internal static class SharedPhysics
 		return false;
 	}
 
-	internal static (int nudge, int slopeType) GetForwardSlopeNudge(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY, int gameMode, bool mini, bool gravFlipped)
+	internal static (int nudge, int slopeType) GetForwardSlopeNudge(in CollisionMap map, int playerX_px, int playerY_px, int hbW, int hbH, int hbOffY, int gameMode, bool mini, bool gravFlipped, int currentSlopeType)
 	{
 		FullTraceLog?.Invoke($"cur=0 gm={gameMode} tag=GetForwardSlopeNudge.in X={playerX_px} Y={playerY_px} hbW={hbW} hbH={hbH} hbOffY={hbOffY} mode={gameMode} mini={(mini ? 1 : 0)} gF={(gravFlipped ? 1 : 0)}");
 		// NES bg_collision_sub uses 8-bit temp_x; forward probe wraps at 256 and reads wrong tile
@@ -2483,7 +2483,11 @@ internal static class SharedPhysics
 		{
 			return (nudge: 0, slopeType: 0);
 		}
-		return (nudge: (collision == MetatileCollision.COL_SLOPE_RU45 || collision == MetatileCollision.COL_SLOPE_LU45 || (collision >= MetatileCollision.COL_SLOPE_RU22_RIGHT && collision <= MetatileCollision.COL_SLOPE_LU22_LEFT) || (collision >= MetatileCollision.COL_SLOPE_RU66_TOP && collision <= MetatileCollision.COL_SLOPE_LU66_TOP)) ? 2 : (-2), slopeType: item);
+		// NES 66-degree bottom halves can return collision before bg_coll_slope
+		// writes currplayer_slope_type. The side nudge then uses its stale value,
+		// while the early return still must not start new slope counters.
+		int nudgeSlopeType = item != 0 ? item : currentSlopeType;
+		return (nudge: (nudgeSlopeType & SLOPE_UD) != 0 ? 2 : (-2), slopeType: item);
 	}
 
 	internal static void CommonGravityRoutine(ref int velY, ref int posY, int tmpgravity, int tmpfallspeed, int gravityDir, int dashMode, double gravityMod, double timeScale, bool isFullSpeed, int velocityX, int clampMaxY)
@@ -3397,7 +3401,6 @@ internal static class SharedPhysics
 			int checkBaseY = num2 + num3 + num38 + cubeHitboxH - 2;
 			int num39 = num2 + num3 + (16 - cubeHitboxH >> 1) + (mini ? 1 : 2) + ((gameMode == 1) ? 1 : 0);
 			int num40 = playerX_fixed >> 8;
-			ApplySlopeWedgeStateOnly(in map, num40, num40, num39, cubeHitboxW, inputHeld, gameMode, gravFlipped, ref result.SlopeFrames, ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher);
 			int savedSlopeFramesU = result.SlopeFrames;
 			int savedSlopeWasOnU = result.SlopeWasOnCounter;
 			var (flag8, num41, num42) = CheckSlopesUp(in map, num, num40, num39, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);
@@ -3449,7 +3452,6 @@ internal static class SharedPhysics
 					ballEjectDiagLog?.Invoke($"[BE_CEIL_EJECT_N] probeY={ceilTileProbeY} ejectU=0x{ceilEjectU:X2} signed={ceilSigned} scrHi:{ceilScreenY}->{ceilNewScreenY} newYf=0x{result.NewY_fixed:X8} ({result.NewY_fixed >> 8}px)");
 				}
 			}
-			ApplySlopeWedgeStateOnly(in map, num40, num40, checkBaseY, cubeHitboxW, inputHeld, gameMode, gravFlipped, ref result.SlopeFrames, ref result.SlopeWasOnCounter, ref result.SlopeType, ref result.LastSlopeType, ref result.SlopeJumpHigher);
 			int savedSlopeFramesD = result.SlopeFrames;
 			int savedSlopeWasOnD = result.SlopeWasOnCounter;
 			var (flag9, num45, slopeType2) = CheckSlopesDown(in map, num40, num40, checkBaseY, cubeHitboxW, inputHeld, gameMode, gravFlipped, velX_fixed, ref result.LastSlopeType, ref result.SlopeJumpHigher, ref result.SlopeFrames, ref result.SlopeWasOnCounter);

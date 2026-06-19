@@ -350,9 +350,9 @@ namespace FamidashEditor
                 int pressCount = Interlocked.Exchange(ref keyXPressedCount, 0);
                 bool pressedJump = pressCount > 0;
                 
-                AppendSimDebug($"[SWING] pressCount={pressCount} pressedJump={pressedJump} ufoOrbed={ufoOrbed}");
+                AppendSimDebug($"[SWING] pressCount={pressCount} pressedJump={pressedJump} ufoOrbed={ufoOrbed[currplayer]}");
                 
-                if (pressedJump && !ufoOrbed) {
+                if (pressedJump && !ufoOrbed[currplayer] && !orbed[currplayer]) {
                     AppendSimDebug($"[SWING] FLIPPING GRAVITY!");
                     InvertGravity_Fresh();
                     UpdateCurrplayerTableIdx_Fresh(); // Must update table_idx AFTER gravity flip!
@@ -378,6 +378,8 @@ namespace FamidashEditor
                     ClearOrbBuffer();
                 }
             }
+
+            ufoOrbed[currplayer] = false;
             
             // Record position for trail (skip during pathfinder speculative simulation)
             if (!pfSimulating)

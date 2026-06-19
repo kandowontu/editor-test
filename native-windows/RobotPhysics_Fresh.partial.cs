@@ -73,18 +73,6 @@ if (currplayer_mini != 0)
             
             AppendSimDebug($"[ROBOT] jumpPressed={robotJumpPressed[currplayer]}, holdJump={holdJump}, orbed={orbed[currplayer]}, dashing={dashing[currplayer]}");
             
-            // Continue jump if timer active and holding
-            if (robotJumpTime[currplayer] > 0 && !orbed[currplayer] && dashing[currplayer] == 0) {
-                robotJumpTime[currplayer]--;
-                if (holdJump) {
-                    playerVelY_fixed = GameModePhysics.ROBOT_JUMP_VEL(baseTableIdx) * gravityMultiplier;
-                    AppendSimDebug($"[ROBOT] Jump continue: vel={playerVelY_fixed}, time={robotJumpTime[currplayer]}");
-                } else {
-                    robotJumpTime[currplayer] = 0; // Released - stop jump
-                    AppendSimDebug($"[ROBOT] Jump cancelled - released button");
-                }
-            }
-            
             // Apply gravity (applies simTimeScale internally)
             // Famidash always applies gravity every frame, even on pad/orb hit frames
             CommonGravityRoutine_Fresh();
@@ -112,21 +100,28 @@ if (currplayer_mini != 0)
             }
             
             // Collision
-            byte gravityAtFrameStart = currplayer_gravity;
             CubeEject_Fresh();
             
-            // Robot jump start - check after collision (when we know if grounded)
-            if (playerVelY_fixed == 0 && robotJumpPressed[currplayer] && !orbed[currplayer] && dashing[currplayer] == 0) {
+            // NES robot order is gravity/movement -> eject -> jump start/continuation.
+            // The selected robot velocity is therefore for the NEXT frame.
+            if (playerVelY_fixed == 0 && robotJumpPressed[currplayer] && !hblocked && dashing[currplayer] == 0) {
                 robotJumpPressed[currplayer] = false; // Clear flag
-                if (holdJump) {
-                    if (pressJump) {
-                        // Just pressed - start jump
-                        playerVelY_fixed = GameModePhysics.ROBOT_JUMP_VEL(baseTableIdx) * gravityMultiplier;
-                        robotJumpTime[currplayer] = 19; // ROBOT_JUMP_TIME for 60fps (0x13)
-                        // NES slope_jump_check: add extra velocity when jumping off a slope
-                        SlopeJumpCheck_Fresh();
-                        AppendSimDebug($"[ROBOT] Jump started: vel={playerVelY_fixed}, time={robotJumpTime[currplayer]}");
-                    }
+                if (holdJump && !orbed[currplayer]) {
+                    playerVelY_fixed = GameModePhysics.ROBOT_JUMP_VEL(baseTableIdx) * gravityMultiplier;
+                    robotJumpTime[currplayer] = GameModePhysics.ROBOT_JUMP_TIME;
+                    AppendSimDebug($"[ROBOT] Jump started: vel={playerVelY_fixed}, time={robotJumpTime[currplayer]}");
+                }
+            }
+            else if (robotJumpTime[currplayer] > 0 && !hblocked) {
+                robotJumpPressed[currplayer] = false;
+                robotJumpTime[currplayer]--;
+                if ((holdJump && !jblocked && !orbed[currplayer]) ||
+                    (pressJump && jblocked && !orbed[currplayer])) {
+                    playerVelY_fixed = GameModePhysics.ROBOT_JUMP_VEL(baseTableIdx) * gravityMultiplier;
+                    AppendSimDebug($"[ROBOT] Jump continue: vel={playerVelY_fixed}, time={robotJumpTime[currplayer]}");
+                } else {
+                    robotJumpTime[currplayer] = 0;
+                    AppendSimDebug($"[ROBOT] Jump cancelled");
                 }
             }
             
