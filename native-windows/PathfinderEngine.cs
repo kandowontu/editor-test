@@ -13872,6 +13872,33 @@ public class PathfinderEngine
 			hbH = GetHitboxH(s.Mini);
 			hbOffY = GetHitboxOffsetY(s.GameMode, s.Mini, s.GravFlipped);
 		}
+		// NES bg_coll_death (collision.h:1045) probes player center and runs the
+		// bg_coll_U_D_checks || ... || bg_coll_slope chain. For slope tiles that
+		// fall through to bg_coll_slope, the jump-table assignment in bg_coll_slope
+		// sets currplayer_slope_type as a side effect (even when geometry misses,
+		// as long as currplayer_was_on_slope_counter != 0). This pollution is what
+		// later flips the decrement_was_on_slope exit-velocity check from "rising"
+		// (RU22, applies +80 boost) to "falling" (LU22, no boost). Without this,
+		// PF carries the stale ceiling-slope type into the next frame's decrement.
+		int probeX = playerX_px + (hbW >> 1) - 1;
+		int probeY = playerY_px + hbH / 2 + hbOffY;
+		MetatileCollision probeCol = GetTileCollision(probeX / 16, probeY / 16);
+		if (probeCol >= MetatileCollision.COL_SLOPE_RD45 && probeCol <= MetatileCollision.COL_SLOPE_LU66_TOP)
+		{
+			var (slpHit, _, polluteSlope) = PfSlopeCalc(probeX, probeY, probeCol);
+			if (slpHit)
+			{
+				s.SlopeType = polluteSlope;
+				s.SlopeFrames = 1;
+				s.SlopeWasOnCounter = 3;
+				if (polluteSlope != 0) s.LastSlopeType = polluteSlope;
+			}
+			else if (s.SlopeWasOnCounter != 0 && polluteSlope != 0)
+			{
+				// NES bg_coll_slope col_end miss path: cpsT keeps jump-table value when cpswOn != 0
+				s.SlopeType = polluteSlope;
+			}
+		}
 		return SharedPhysics.CheckDeathCollision(in _collisionMap, playerX_px, playerY_px, hbW, hbH, hbOffY, s.GameMode, s.Dblocked);
 	}
 
